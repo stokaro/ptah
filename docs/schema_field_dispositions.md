@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-612 fields are reachable from the desired schema, and each one carries
+616 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 516 | reaches rendered SQL on at least one target |
+| `ddl` | 520 | reaches rendered SQL on at least one target |
 | `comparison` | 24 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -138,6 +138,10 @@ None.
 | `mysqlschema.DesiredTable.AutoIncrement` | `ddl` | — |
 | `mysqlschema.DesiredTable.Charset` | `ddl` | — |
 | `mysqlschema.DesiredTable.Engine` | `ddl` | — |
+| `pgextension.DesiredExtension.Comment` | `ddl` | — |
+| `pgextension.DesiredExtension.IfNotExists` | `ddl` | — |
+| `pgextension.DesiredExtension.Schema` | `ddl` | — |
+| `pgextension.DesiredExtension.Version` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Command` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Comment` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Composition` | `ddl` | — |

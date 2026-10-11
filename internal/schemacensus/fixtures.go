@@ -188,6 +188,7 @@ func Fixtures() []Fixture {
 		{Name: "security-policy", Schema: securityPolicyFixture()},
 		{Name: "pgpolicy-policy", Schema: tablePolicyFixture()},
 		{Name: "pgpolicy-table-state", Schema: tableRowSecurityFixture()},
+		{Name: "pgextension-extension", Schema: ownedExtensionFixture()},
 		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
 		{Name: "external-objects", Schema: externalObjectsFixture(),
 			Flags: []capability.Capability{capability.ExternalDataSources}},

@@ -22,6 +22,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/feature/synonym"
@@ -125,10 +126,11 @@ func validateRowPolicyObjects(dialect string, objects schemaext.Objects) error {
 }
 
 // validatePostgresFamilyObjects accepts the continuous aggregates a
-// PostgreSQL-family target's TimescaleDB owner plans, and the policies the
-// row-security owner plans on a target it is registered for, and refuses
-// every other named object. Capability gating stays with rendering, which
-// writes the skip line on a target without the key.
+// PostgreSQL-family target's TimescaleDB owner plans, the policies the
+// row-security owner plans on a target it is registered for, and the
+// extensions the extension owner plans on every target of the family, and
+// refuses every other named object. Capability gating stays with rendering,
+// which writes the skip line on a target without the key.
 func validatePostgresFamilyObjects(dialect string, objects schemaext.Objects) error {
 	all, err := objects.All()
 	if err != nil {
@@ -148,6 +150,13 @@ func validatePostgresFamilyObjects(dialect string, objects schemaext.Objects) er
 				return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
 			}
 			if _, err := pgpolicy.DesiredPolicyObject(object.Ref, *value); err != nil {
+				return err
+			}
+		case *pgextension.DesiredExtension:
+			if err := pgextension.ValidateRef(object.Ref); err != nil {
+				return err
+			}
+			if err := pgextension.ValidateDesired(value); err != nil {
 				return err
 			}
 		default:

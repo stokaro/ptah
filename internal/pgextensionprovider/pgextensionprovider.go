@@ -2,7 +2,7 @@
 // package pgextension as one engine provider: its codecs, and its conversion,
 // comparison, planning, declaration and reversal services on every
 // PostgreSQL-family target, and its reports in both representations. The
-// bundled runtime does not select it yet.
+// bundled runtime selects it without the reports.
 package pgextensionprovider
 
 import (
