@@ -6,14 +6,12 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/ydbsource"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
@@ -24,8 +22,8 @@ import (
 // turn export loss into a successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
-		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) ||
-			ref.Kind == objectidentity.Kind(pgextension.ExtensionKind) || r.owners.Encodes(schemaext.Kind(ref.Kind)) {
+		if ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) || ref.Kind == objectidentity.Kind(pgextension.ExtensionKind) ||
+			r.owners.Encodes(schemaext.Kind(ref.Kind)) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
@@ -97,41 +95,4 @@ var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexte
 
 func featurePath(ref objectidentity.ID) string {
 	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)
-}
-
-// coordinationNode holds the validated inputs for one HCL block.
-type coordinationNode struct {
-	ref  objectidentity.ID
-	spec ydbcoordination.Spec
-}
-
-// captureCoordinationNodes validates every supported standalone object before
-// rendering. A malformed known value cannot silently become an export warning.
-func (r *renderer) captureCoordinationNodes() error {
-	directives, err := ydbsource.HCLCoordinationDirectives(r.db.FeatureCoverage)
-	if err != nil {
-		return err
-	}
-	r.coordinationDirectives = directives
-	objects, err := r.db.FeatureObjects.All()
-	if err != nil {
-		return err
-	}
-	for _, object := range objects {
-		if object.Ref.Kind != objectidentity.Kind(ydbcoordination.Kind) {
-			continue
-		}
-		node, ok := object.Value.(*ydbcoordination.Desired)
-		if !ok {
-			return fmt.Errorf("%w: HCL requires desired coordination values", schemaext.ErrInvalidValue)
-		}
-		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
-			return err
-		}
-		if err := ydbcoordination.Validate(node.Spec); err != nil {
-			return err
-		}
-		r.coordinationNodes = append(r.coordinationNodes, coordinationNode{ref: object.Ref, spec: node.Spec})
-	}
-	return nil
 }

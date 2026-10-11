@@ -206,7 +206,8 @@ func documentedLimits(set coverage.Set) coverage.Set {
 }
 
 // renderCoverageHeader writes the document's coverage record as directive
-// comments below the generated-code marker.
+// comments below the generated-code marker, then the lines the owners write
+// there, such as the YDB owner's captured claim.
 //
 // It goes in the document rather than only on the diagnostics stream because
 // the command that reads the document back is a different process: `schema
@@ -216,8 +217,8 @@ func (r *renderer) renderCoverageHeader() {
 	for _, directive := range r.notDescribed().Directives() {
 		r.builder.WriteString("// " + directive + "\n")
 	}
-	for _, directive := range r.coordinationDirectives {
-		r.builder.WriteString("// " + directive + "\n")
+	for _, line := range r.ownerHeader {
+		r.builder.WriteString("// " + line + "\n")
 	}
 }
 

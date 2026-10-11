@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
@@ -1236,29 +1235,4 @@ func containsFold(values []string, target string) bool {
 		}
 	}
 	return false
-}
-
-// coordinationNodeBlocks writes the YDB coordination node blocks, which
-// [renderer.renderAfterTables] places. The block is a Ptah extension because
-// a document that cannot name a node cannot ask for it to be kept. A setting
-// the declaration leaves unset is left out, and the reader takes it as YDB's
-// default.
-func (r *renderer) coordinationNodeBlocks() []slotBlock {
-	blocks := make([]slotBlock, 0, len(r.coordinationNodes))
-	for _, node := range r.coordinationNodes {
-		schema := r.schemaFor(node.ref.Schema.Source)
-		text := r.capture(func() {
-			r.linef(`coordination_node %s {`, quote(node.ref.Name.Source))
-			if schema != "" {
-				r.rawAttr(1, "schema", r.schemaRef(schema))
-			}
-			for _, setting := range ydbcoordination.Attributes(node.spec) {
-				r.stringAttr(1, setting[0], setting[1])
-			}
-			r.line("}")
-			r.line("")
-		})
-		blocks = append(blocks, slotBlock{blockType: "coordination_node", schema: schema, name: node.ref.Name.Source, text: text})
-	}
-	return blocks
 }

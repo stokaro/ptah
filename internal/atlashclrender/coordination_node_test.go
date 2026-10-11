@@ -114,3 +114,18 @@ func TestHCLRefusesIncompatibleAndDuplicateCapturedModels(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderRefusesACoordinationNodeYDBWouldNotKeep refuses a node whose
+// settings YDB would move into its range, rather than write a block the
+// reader refuses.
+func TestRenderRefusesACoordinationNodeYDBWouldNotKeep(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		ydbcoordination.DesiredObject("app", "limits", "", ydbcoordination.Spec{SelfCheckPeriodMillis: 100}),
+	))}
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
+
+	c.Assert(err, qt.ErrorMatches, `.*self_check_period PT0\.1S: YDB runs a node's self-check every PT0\.5S to PT10S.*`)
+	c.Assert(result.Data, qt.IsNil)
+}
