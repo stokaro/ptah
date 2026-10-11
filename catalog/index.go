@@ -12,7 +12,7 @@ func (i Index) Clone() Index {
 	i.Parts = slices.Clone(i.Parts)
 	i.IncludeColumns = slices.Clone(i.IncludeColumns)
 	i.StorageParams = maps.Clone(i.StorageParams)
-	i.RequiresExtensions = slices.Clone(i.RequiresExtensions)
+	i.Requires = slices.Clone(i.Requires)
 	if i.NullsDistinct != nil {
 		i.NullsDistinct = new(*i.NullsDistinct)
 	}

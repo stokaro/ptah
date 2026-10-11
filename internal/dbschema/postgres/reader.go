@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/feature/pgextension"
@@ -1835,11 +1836,11 @@ func buildPostgresIndex(dialect string, row postgresIndexRow) (catalog.Index, er
 		return catalog.Index{}, fmt.Errorf("failed to parse index include columns for %s: %w", row.indexName, err)
 	}
 
-	index.RequiresExtensions, err = decodePostgresNameList(row.requiredExtensions)
+	required, err := decodePostgresNameList(row.requiredExtensions)
 	if err != nil {
 		return catalog.Index{}, fmt.Errorf("failed to parse index required extensions for %s: %w", row.indexName, err)
 	}
-	slices.Sort(index.RequiresExtensions)
+	index.Requires = extensionRequirements(required)
 
 	index.Parts, err = parsePostgresIndexParts(index.Columns, row.keyAttnums)
 	if err != nil {
@@ -1912,6 +1913,21 @@ func postgresIndexStorageParams(value string) (map[string]string, error) {
 // index row -- the INCLUDE payload columns, the extensions the index resolves
 // to -- and reports nil for an absent or empty one. Neither list is expected to
 // be present on most indexes, so empty is not an error.
+// extensionRequirements names the extensions an index or a constraint needs by
+// the identity the extension owner gives them outside its own package, so the
+// common model records them without naming the owner. They are sorted by
+// name.
+func extensionRequirements(names []string) []objectidentity.ID {
+	if len(names) == 0 {
+		return nil
+	}
+	refs := make([]objectidentity.ID, 0, len(names))
+	for _, name := range slices.Sorted(slices.Values(names)) {
+		refs = append(refs, pgextension.Subject(pgextension.Ref(name)))
+	}
+	return refs
+}
+
 func decodePostgresNameList(value string) ([]string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || trimmed == "[]" {
@@ -2591,7 +2607,6 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse required extensions for constraint %s: %w", constraintName, err)
 		}
-		slices.Sort(required)
 
 		// Convert PostgreSQL constraint type to standard type
 		var stdType string
@@ -2603,13 +2618,13 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 		}
 
 		constraint := catalog.Constraint{
-			Name:               constraintName,
-			TableName:          tableName,
-			Schema:             r.outputSchema(schemaName),
-			Type:               stdType,
-			RequiresExtensions: required,
-			Comment:            comment,
-			Deferrable:         deferrable,
+			Name:       constraintName,
+			TableName:  tableName,
+			Schema:     r.outputSchema(schemaName),
+			Type:       stdType,
+			Requires:   extensionRequirements(required),
+			Comment:    comment,
+			Deferrable: deferrable,
 		}
 		if deferrable {
 			constraint.Initially = deferralTimings[deferred]

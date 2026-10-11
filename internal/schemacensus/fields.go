@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 )
 
@@ -70,7 +71,7 @@ func walkType(t reflect.Type, found map[string]reflect.Type, visiting map[reflec
 			continue
 		}
 		found[typeName(t)+"."+field.Name] = field.Type
-		if next := elementType(field.Type); strings.HasPrefix(next.PkgPath(), ptahModule) {
+		if next := elementType(field.Type); descends(next) {
 			walkType(next, found, visiting)
 		}
 	}
@@ -79,6 +80,20 @@ func walkType(t reflect.Type, found map[string]reflect.Type, visiting map[reflec
 // ptahModule scopes the descent to this module's own types. A time.Time reached
 // from the model is one field, not a census of the standard library.
 const ptahModule = "ptah.run"
+
+// identityType is one value to the census rather than a type to descend into.
+// An identity names an object another field holds it for, such as an
+// extension an index requires: its kind, name and spelling facts mean nothing
+// apart, a conversion or a comparison that kept some of them and dropped the
+// rest would lose the identity, and the field that holds it is where that loss
+// shows. So the field gets one disposition and the parts get none.
+var identityType = reflect.TypeFor[objectidentity.ID]()
+
+// descends reports whether a walk enters the fields of t: a type of this
+// module, other than one the census reads as one value.
+func descends(t reflect.Type) bool {
+	return strings.HasPrefix(t.PkgPath(), ptahModule) && t != identityType
+}
 
 // Populated reports whether any instance of the field named by path carries a
 // value other than its zero.
@@ -122,6 +137,9 @@ func PopulatedFields(schema schemamodel.Database) map[string]bool {
 				walk(v.MapIndex(key))
 			}
 		case reflect.Struct:
+			if v.Type() == identityType {
+				return
+			}
 			owner := typeName(v.Type())
 			for index := range v.Type().NumField() {
 				field := v.Type().Field(index)

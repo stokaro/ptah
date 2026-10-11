@@ -4,6 +4,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -20,6 +21,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/capabilityprobe"
 )
@@ -1123,7 +1125,7 @@ func constraintExcludeFixture() schemamodel.Database {
 	db.Constraints = []schemamodel.Constraint{{
 		StructName: "T", Table: "t", Name: "t_excl", Type: "EXCLUDE",
 		ExcludeElements: "s WITH =", UsingMethod: "gist", WhereCondition: "s IS NOT NULL",
-		RequiresExtensions: []string{"btree_gist"},
+		Requires: []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 	}}
 	return db
 }
@@ -1310,7 +1312,7 @@ func indexFullTextFixture() schemamodel.Database {
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
 		Type: "GIN", Operator: "gin_trgm_ops",
-		RequiresExtensions: []string{"pg_trgm"},
+		Requires: []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
 	}}
 	return db
 }

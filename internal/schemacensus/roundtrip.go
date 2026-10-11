@@ -213,7 +213,7 @@ func (c compared) leaves() string {
 		return ""
 	}
 	element := elementType(c.typ)
-	if element.Kind() != reflect.Struct || !strings.HasPrefix(element.PkgPath(), ptahModule) {
+	if element.Kind() != reflect.Struct || !descends(element) {
 		return ""
 	}
 	return typeName(element) + "."

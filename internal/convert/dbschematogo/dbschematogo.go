@@ -345,7 +345,7 @@ func convertIndexes(
 			// Carried rather than recomputed: only the reader has the catalog,
 			// and an operator class the index's own DDL leaves implicit is
 			// reachable no other way.
-			RequiresExtensions: slices.Clone(dbIndex.RequiresExtensions),
+			Requires: slices.Clone(dbIndex.Requires),
 		}
 		indexes = append(indexes, index)
 	}
@@ -942,7 +942,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		Comment:         dbConstraint.Comment,
 		// The index backing this constraint is dropped above so the constraint
 		// renders once; what that index needed does not go with it.
-		RequiresExtensions: slices.Clone(dbConstraint.RequiresExtensions),
+		Requires: slices.Clone(dbConstraint.Requires),
 	}, true
 }
 
