@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
@@ -114,7 +115,7 @@ func (r *Runtime) registerHCL(providers []Provider) error {
 			if extension.Owner != provider.ID {
 				return fmt.Errorf("%w: provider %q registers HCL blocks owned by %q", ErrInvalidRegistration, provider.ID, extension.Owner)
 			}
-			for _, kind := range extension.Kinds {
+			for _, kind := range slices.Concat(extension.Kinds, extension.Unrecorded) {
 				if !r.ownsCodec(provider.ID, kind, schemaext.Desired) {
 					return fmt.Errorf("%w: provider %q claims model %q for HCL without owning its desired codec",
 						ErrInvalidRegistration, provider.ID, kind)

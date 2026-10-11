@@ -17,15 +17,12 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/risk"
 )
 
@@ -610,10 +607,7 @@ func hclRepresentsExportMetadata(metadata schemamodel.ExportMetadata) bool {
 func (r *renderer) renderBody() {
 	r.reportDialectScopes()
 	r.reportExportMetadata()
-	r.reportColumnFamilies()
-	r.reportColumnTables()
 	r.reportFeatureObjects()
-	r.reportTablePartitioning()
 	r.renderBeforeTypes()
 	r.renderSequences()
 	r.renderUserTypes()
@@ -1240,8 +1234,7 @@ func (r *renderer) renderIndex(slot ownerSlot, index schemamodel.Index) {
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
-	r.renderVectorSettings(index.Facets)
-	r.renderIndexPartitioning(index.Facets)
+	r.slotOthers(2, slot, hclext.SlotIndex)
 	if pages, ok := index.StorageParams["pages_per_range"]; ok {
 		// `page_per_range`, singular, is the spelling the pinned Atlas community
 		// binary v1.3.0 both emits and honors. Measured on PostgreSQL 17.10
@@ -1764,30 +1757,6 @@ func (r *renderer) tableColumnRefs(table string, columns []string) string {
 	return "[" + strings.Join(refs, ", ") + "]"
 }
 
-// renderVectorSettings writes a YDB vector index's settings, the owner's
-// facet, declared or read, as the index block attributes the HCL parser
-// reads them from, so an inspected vector index applies back as the same
-// index. They are a Ptah extension: Atlas has no YDB driver and so no
-// spelling for them.
-func (r *renderer) renderVectorSettings(facets schemaext.Facets) {
-	vector, found := vectorSettings(facets)
-	if !found {
-		return
-	}
-	count := func(n uint64) string {
-		if n == 0 {
-			return ""
-		}
-		return strconv.FormatUint(n, 10)
-	}
-	r.stringAttr(2, ydbindex.AttributeDistance, vector.Distance)
-	r.stringAttr(2, ydbindex.AttributeSimilarity, vector.Similarity)
-	r.stringAttr(2, ydbindex.AttributeVectorType, vector.VectorType)
-	r.rawAttr(2, ydbindex.AttributeVectorDimension, count(vector.Dimension))
-	r.rawAttr(2, ydbindex.AttributeLevels, count(vector.Levels))
-	r.rawAttr(2, ydbindex.AttributeClusters, count(vector.Clusters))
-}
-
 // renderIndexStorageParams writes the storage parameters that have no
 // Atlas-compatible attribute, or names them as omitted.
 //
@@ -1832,16 +1801,4 @@ func (r *renderer) renderIndexStorageParams(index schemamodel.Index) {
 		pairs = append(pairs, fmt.Sprintf("%s = %s", name, quote(index.StorageParams[name])))
 	}
 	r.rawAttr(2, "storage_params", "{ "+strings.Join(pairs, ", ")+" }")
-}
-
-// vectorSettings are the vector index settings facets hold, declared or read.
-// An invalid value holds none here and is refused where it is used.
-func vectorSettings(facets schemaext.Facets) (ydbschema.VectorSettings, bool) {
-	if declared, found, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](facets, ydbschema.VectorIndexKind); err == nil && found {
-		return declared.Settings(), true
-	}
-	if observed, found, err := schemaext.FacetAs[*ydbschema.ObservedVectorIndex](facets, ydbschema.VectorIndexKind); err == nil && found {
-		return observed.Settings(), true
-	}
-	return ydbschema.VectorSettings{}, false
 }

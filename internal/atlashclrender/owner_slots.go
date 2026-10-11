@@ -46,10 +46,23 @@ var slotPositions = map[hclext.SlotKind][]string{
 	hclext.SlotIndex:  {"parser"},
 }
 
+// slotOwnNames are the attributes and nested blocks a kind of block the
+// writer writes has a place for its owners' other attributes in, and writes
+// itself, so an owner may not write them: an index writes its owners' other
+// attributes after its include list, such as a YDB vector index's settings.
+// A kind of block missing here has no such place, and refuses every
+// attribute its positions do not name.
+var slotOwnNames = map[hclext.SlotKind][]string{
+	hclext.SlotIndex: {"unique", "type", "where", "comment", "ops", "nulls_distinct", "include", "page_per_range", "storage_params",
+		"platform", "on", "columns"},
+}
+
 // ownerSlot is what the owners add to one of the writer's blocks: the
-// attributes by name, and the losses in the owners' order.
+// attributes by name and in the owners' order, and the losses in the owners'
+// order.
 type ownerSlot struct {
 	attributes map[string]hclext.Value
+	ordered    []hclext.EncodedAttribute
 	losses     []string
 }
 
@@ -59,67 +72,103 @@ func slotTable(table schemamodel.Table) hclext.Table {
 }
 
 // slotRequest is the writer's blocks the render writes that hold facets, as
-// the owners are handed them: each table's columns, primary key, constraints
-// and indexes, in the order they are written. A document that writes one
-// block twice with facets an owner writes is refused, since HCL cannot tell
-// the two apart.
+// the owners are handed them: the tables in the document's order, then each
+// table's columns, primary key, constraints and indexes, in the order they
+// are written. A document that writes one block twice with facets an owner
+// writes is refused, since HCL cannot tell the two apart.
 func (r *renderer) slotRequest() (hclext.EncodeRequest, error) {
 	var request hclext.EncodeRequest
-	seen := make(map[hclext.Slot]bool)
-	add := func(slots *[]hclext.SlotFacets, slot hclext.Slot, facets schemaext.Facets) error {
-		if facets.Len() == 0 {
-			return nil
+	slots := slotCollector{owners: r.owners, seen: make(map[hclext.Slot]bool)}
+	for _, table := range r.db.Tables {
+		slot := hclext.Slot{Kind: hclext.SlotTable, Table: slotTable(table)}
+		if err := slots.claim(slot, table.Facets); err != nil {
+			return hclext.EncodeRequest{}, err
 		}
-		if slices.ContainsFunc(facets.Kinds(), r.owners.Encodes) {
-			if seen[slot] {
-				return fmt.Errorf("the document writes %s twice with owner settings, which HCL cannot tell apart", slot)
-			}
-			seen[slot] = true
-		}
-		*slots = append(*slots, hclext.SlotFacets{Slot: slot, Facets: facets})
-		return nil
+		request.Tables = append(request.Tables, hclext.TableFacets{Table: slot.Table, Facets: table.Facets})
 	}
 	for _, table := range r.layout.tables {
-		owner := slotTable(table)
-		fields := r.layout.fieldsByStruct[table.StructName]
-		for _, field := range fields {
-			if err := add(&request.Columns, hclext.Slot{Kind: hclext.SlotColumn, Table: owner, Name: field.Name}, field.Facets); err != nil {
-				return hclext.EncodeRequest{}, err
-			}
-		}
-		if writesPrimaryKey(table, fields) {
-			if err := add(&request.Keys, hclext.Slot{Kind: hclext.SlotKey, Table: owner, Primary: true}, table.PrimaryKeyFacets); err != nil {
-				return hclext.EncodeRequest{}, err
-			}
-		}
-		for _, constraint := range r.layout.constraintsByTable[table.QualifiedName()] {
-			if err := add(&request.Keys, hclext.Slot{Kind: hclext.SlotKey, Table: owner, Name: constraint.Name}, constraint.Facets); err != nil {
-				return hclext.EncodeRequest{}, err
-			}
-		}
-		for _, index := range r.layout.indexesByTable[table.QualifiedName()] {
-			if err := add(&request.Indexes, hclext.Slot{Kind: hclext.SlotIndex, Table: owner, Name: index.Name}, index.Facets); err != nil {
-				return hclext.EncodeRequest{}, err
-			}
+		if err := r.tableSlots(&slots, &request, table); err != nil {
+			return hclext.EncodeRequest{}, err
 		}
 	}
 	return request, nil
 }
 
+// tableSlots adds a table's columns, primary key, constraints and indexes
+// that hold facets to request.
+func (r *renderer) tableSlots(slots *slotCollector, request *hclext.EncodeRequest, table schemamodel.Table) error {
+	owner := slotTable(table)
+	fields := r.layout.fieldsByStruct[table.StructName]
+	for _, field := range fields {
+		if err := slots.add(&request.Columns, hclext.Slot{Kind: hclext.SlotColumn, Table: owner, Name: field.Name}, field.Facets); err != nil {
+			return err
+		}
+	}
+	if writesPrimaryKey(table, fields) {
+		if err := slots.add(&request.Keys, hclext.Slot{Kind: hclext.SlotKey, Table: owner, Primary: true}, table.PrimaryKeyFacets); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range r.layout.constraintsByTable[table.QualifiedName()] {
+		if err := slots.add(&request.Keys, hclext.Slot{Kind: hclext.SlotKey, Table: owner, Name: constraint.Name}, constraint.Facets); err != nil {
+			return err
+		}
+	}
+	for _, index := range r.layout.indexesByTable[table.QualifiedName()] {
+		if err := slots.add(&request.Indexes, hclext.Slot{Kind: hclext.SlotIndex, Table: owner, Name: index.Name}, index.Facets); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// slotCollector gathers the blocks the owners are handed, and refuses one
+// the document writes twice with facets an owner writes.
+type slotCollector struct {
+	owners hclext.Set
+	seen   map[hclext.Slot]bool
+}
+
+// claim records a block whose facets hold a kind an owner writes, and
+// refuses one recorded before.
+func (s *slotCollector) claim(slot hclext.Slot, facets schemaext.Facets) error {
+	if !slices.ContainsFunc(facets.Kinds(), s.owners.Encodes) {
+		return nil
+	}
+	if s.seen[slot] {
+		return fmt.Errorf("the document writes %s twice with owner settings, which HCL cannot tell apart", slot)
+	}
+	s.seen[slot] = true
+	return nil
+}
+
+// add hands a block that holds facets to the owners.
+func (s *slotCollector) add(slots *[]hclext.SlotFacets, slot hclext.Slot, facets schemaext.Facets) error {
+	if facets.Len() == 0 {
+		return nil
+	}
+	if err := s.claim(slot, facets); err != nil {
+		return err
+	}
+	*slots = append(*slots, hclext.SlotFacets{Slot: slot, Facets: facets})
+	return nil
+}
+
 // collectSlots merges what the owners add to the writer's blocks, by block,
-// and refuses an attribute the block has no place for.
+// and refuses an attribute the block has no place for or writes itself.
 func collectSlots(written []hclext.SlotAttributes) (map[hclext.Slot]ownerSlot, error) {
 	slots := make(map[hclext.Slot]ownerSlot, len(written))
 	for _, entry := range written {
 		slot := slots[entry.Slot]
 		for _, attribute := range entry.Attributes {
-			if !slices.Contains(slotPositions[entry.Slot.Kind], attribute.Name) {
-				return nil, fmt.Errorf("an HCL encoder wrote attribute %q of %s, which the writer has no place for", attribute.Name, entry.Slot)
+			if err := placeSlotAttribute(entry.Slot, attribute.Name); err != nil {
+				return nil, err
 			}
 			if slot.attributes == nil {
 				slot.attributes = make(map[string]hclext.Value)
 			}
 			slot.attributes[attribute.Name] = attribute.Value
+			slot.ordered = append(slot.ordered, attribute)
 		}
 		slot.losses = append(slot.losses, entry.Losses...)
 		slots[entry.Slot] = slot
@@ -137,6 +186,32 @@ func (r *renderer) ownerSlot(slot hclext.Slot, facets schemaext.Facets) ownerSlo
 		return ownerSlot{}
 	}
 	return r.slots[slot]
+}
+
+// placeSlotAttribute refuses an attribute a block has no place for, or
+// writes itself.
+func placeSlotAttribute(slot hclext.Slot, name string) error {
+	own, placed := slotOwnNames[slot.Kind]
+	switch {
+	case slices.Contains(slotPositions[slot.Kind], name):
+		return nil
+	case !placed:
+		return fmt.Errorf("an HCL encoder wrote attribute %q of %s, which the writer has no place for", name, slot)
+	case slices.Contains(own, name):
+		return fmt.Errorf("an HCL encoder wrote attribute %q of %s, which the writer writes itself", name, slot)
+	default:
+		return nil
+	}
+}
+
+// slotOthers writes the attributes the owners gave the block that the
+// Atlas layout places nowhere, in the owners' order.
+func (r *renderer) slotOthers(indent int, slot ownerSlot, kind hclext.SlotKind) {
+	for _, attribute := range slot.ordered {
+		if !slices.Contains(slotPositions[kind], attribute.Name) {
+			r.rawAttr(indent, attribute.Name, r.ownerValue(attribute.Value))
+		}
+	}
 }
 
 // slotAttr writes the attribute name an owner gave the block, if one did.

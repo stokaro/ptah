@@ -338,3 +338,17 @@ func TestSet_Encode_KeepsEachOwnersAttributesOfOneBlock(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(encoded.Attributes, qt.HasLen, 2)
 }
+
+// TestSet_Unrecorded reports the models an extension says an HCL document
+// cannot record a limit of, as the set froze them: changing the caller's
+// slice afterwards changes nothing.
+func TestSet_Unrecorded(t *testing.T) {
+	c := qt.New(t)
+	unrecorded := []schemaext.Kind{"example.org/a/secret"}
+	set := must.Must(hclext.NewSet(hclext.Extension{Owner: "example.org/a", Unrecorded: unrecorded}))
+	unrecorded[0] = "example.org/a/other"
+
+	c.Assert(set.Unrecorded("example.org/a/secret"), qt.IsTrue)
+	c.Assert(set.Unrecorded("example.org/a/other"), qt.IsFalse)
+	c.Assert(hclext.None().Unrecorded("example.org/a/secret"), qt.IsFalse)
+}

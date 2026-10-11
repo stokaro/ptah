@@ -2832,11 +2832,16 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
   reading it back binds that object to, so a scope the block restores is not a
   loss. An object of a kind no encoder writes is reported as one HCL does not
   represent.
+- `Extension.Unrecorded` names models whose not-described records no header
+  entry or captured claim can carry. The writer reports such a record, of an
+  object the document does not hold, as a loss.
 - `EncodeResult.Attributes` adds to the writer's own blocks, one
   `SlotAttributes` for each `Slot` the encoder was handed. The writer places
   an attribute where the Atlas layout puts it, such as a table's `engine`,
-  which takes the place of the common one, and refuses one the block has no
-  place for. A `Number` is written bare. `SQL` text is written as `sql(...)`
+  which takes the place of the common one. An index writes an owner's other
+  attributes after its `include`, in the owner's order, and refuses one it
+  writes itself; any other block refuses an attribute it has no place for. A
+  `Number` is written bare. `SQL` text is written as `sql(...)`
   and never evaluated. `Set.Encode` refuses two encoders writing one attribute
   of one block. The writer reports `Losses` where it writes the block, at the
   path it names the block with, and refuses a document that repeats a block's
@@ -2845,9 +2850,11 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 `synonym.HCL` reads and writes the `synonym` block, `tssource.HCL` the
 `hypertable` and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
 `extended_property` block. `ydbsource.HCL` reads and writes the
-`coordination_node` block and the captured header, and reads the vector and
-partitioning attributes of an `index` block and the `coordination_node` header
-entries. `pgpolicysource.HCL` reads and writes the `policy` block and a table's
+`coordination_node` block, the captured header, and the vector and
+partitioning attributes of an `index` block, and reads the `coordination_node`
+header entries. It reports the column families, column storage and
+partitioning of a table as losses at the table, and names the YDB secrets,
+topics, external objects, replications and transfers as unrecorded. `pgpolicysource.HCL` reads and writes the `policy` block and a table's
 `row_security` block, and `pgextensionsource.HCL` the `extension` block.
 
 `mysqlsource.HCL` reads no block: it claims that an index an HCL document

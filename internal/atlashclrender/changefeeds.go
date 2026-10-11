@@ -2,14 +2,9 @@ package atlashclrender
 
 import (
 	"fmt"
-	"slices"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbsecret"
-	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
@@ -31,7 +26,7 @@ func (r *renderer) reportFeatureObjects() {
 	}
 	for _, record := range r.db.FeatureCoverage.SubjectRecords() {
 		state := record.Knowledge.State
-		if !slices.Contains(unrecordableLimits, record.Kind) || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
+		if !r.owners.Unrecorded(record.Kind) || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
 			continue
 		}
 		if _, held, err := r.db.FeatureObjects.Get(record.Subject); held || err != nil {
@@ -47,31 +42,30 @@ func (r *renderer) reportFeatureObjects() {
 	r.reportFacets()
 }
 
-// reportFacets reports each facet the document leaves out. A table's facets
-// name the table, so the reader knows which table's setting is missing; any
-// other slot names the kind alone.
+// reportFacets reports each facet the document leaves out: a facet of a
+// table, a column, an index, a primary key or a constraint that no owner of
+// the render writes, and every facet anywhere else. A table's facets name the
+// table, so the reader knows which table's setting is missing; any other slot
+// names the kind alone.
 func (r *renderer) reportFacets() {
 	tables := make(map[*schemaext.Facets]string, len(r.db.Tables))
-	writes := make(map[*schemaext.Facets]func(schemaext.Kind) bool, len(r.db.Tables)+len(r.db.Indexes)+len(r.db.Fields))
-	writesTable, writesKey := WritesTableFacet(r.owners), WritesKeyFacet(r.owners)
-	writesIndex, writesColumn := WritesIndexFacet(r.owners), WritesColumnFacet(r.owners)
+	blocks := make(map[*schemaext.Facets]bool, 2*len(r.db.Tables)+len(r.db.Constraints)+len(r.db.Indexes)+len(r.db.Fields))
 	for i := range r.db.Tables {
 		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
-		writes[&r.db.Tables[i].Facets] = writesTable
-		writes[&r.db.Tables[i].PrimaryKeyFacets] = writesKey
+		blocks[&r.db.Tables[i].Facets], blocks[&r.db.Tables[i].PrimaryKeyFacets] = true, true
 	}
 	for i := range r.db.Constraints {
-		writes[&r.db.Constraints[i].Facets] = writesKey
+		blocks[&r.db.Constraints[i].Facets] = true
 	}
 	for i := range r.db.Indexes {
-		writes[&r.db.Indexes[i].Facets] = writesIndex
+		blocks[&r.db.Indexes[i].Facets] = true
 	}
 	for i := range r.db.Fields {
-		writes[&r.db.Fields[i].Facets] = writesColumn
+		blocks[&r.db.Fields[i].Facets] = true
 	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
-			if written, found := writes[facets]; found && written(kind) {
+			if blocks[facets] && r.owners.Encodes(kind) {
 				continue
 			}
 			path, held := tables[facets]
@@ -86,11 +80,6 @@ func (r *renderer) reportFacets() {
 		}
 	}
 }
-
-// unrecordableLimits are the kinds whose source limits HCL has no directive
-// for. Changefeeds, streaming queries and pools report their own losses.
-var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind,
-	ydbreplication.ReplicationKind, ydbreplication.TransferKind}
 
 func featurePath(ref objectidentity.ID) string {
 	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)

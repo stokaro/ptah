@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -188,4 +189,121 @@ func TestRender_RefusesAnOwnersAttribute_FailurePath(t *testing.T) {
 			c.Assert(result.Data, qt.IsNil)
 		})
 	}
+}
+
+// TestRender_WritesAnOwnersOtherIndexAttributesAfterInclude writes the
+// attributes an owner gives an index that the Atlas layout places nowhere
+// after the index's include list, in the owner's order, a number bare.
+func TestRender_WritesAnOwnersOtherIndexAttributesAfterInclude(t *testing.T) {
+	c := qt.New(t)
+	db := gadgetDocument()
+	db.Fields = append(db.Fields, schemamodel.Field{StructName: "T", Name: "v", Type: "TEXT"})
+	db.Indexes = []schemamodel.Index{{StructName: "T", Name: "i", Fields: []string{"v"}, IncludeColumns: []string{"id"}, Comment: "c",
+		StorageParams: map[string]string{"pages_per_range": "8"}, Facets: gadgetFacets("index")}}
+	owner := slotWriter{attributes: map[string][]hclext.EncodedAttribute{"index": {
+		{Name: "zeta", Value: hclext.Value{Kind: hclext.String, Text: "z"}},
+		{Name: "parser", Value: hclext.Value{Kind: hclext.String, Text: "ngram"}},
+		{Name: "alpha", Value: hclext.Value{Kind: hclext.Number, Text: "3"}},
+	}}}
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, `  index "i" {
+    parser = "ngram"
+    comment = "c"
+    include = [column.id]
+    zeta = "z"
+    alpha = 3
+    page_per_range = 8
+    columns = [column.v]
+  }
+`)
+}
+
+// TestRender_RefusesAnIndexAttributeTheWriterWrites_FailurePath refuses an
+// owner's index attribute of a name the index block writes itself, whether
+// or not the block writes it this time.
+func TestRender_RefusesAnIndexAttributeTheWriterWrites_FailurePath(t *testing.T) {
+	for _, name := range []string{"comment", "columns", "storage_params", "on"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			db := gadgetDocument()
+			db.Indexes = []schemamodel.Index{{StructName: "T", Name: "i", Fields: []string{"id"}, Facets: gadgetFacets("index")}}
+			owner := slotWriter{attributes: map[string][]hclext.EncodedAttribute{"index": {{Name: name, Value: hclext.Value{Kind: hclext.String, Text: "x"}}}}}
+
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
+
+			c.Assert(err, qt.ErrorMatches, `an HCL encoder wrote attribute "`+name+`" of index "i" of table "t", which the writer writes itself`)
+			c.Assert(result.Data, qt.IsNil)
+		})
+	}
+}
+
+// TestRender_RefusesTwoTablesOfOneNameWithOwnerFacets refuses a document
+// that writes two tables of one name that both hold an owner's facets, which
+// HCL cannot tell apart.
+func TestRender_RefusesTwoTablesOfOneNameWithOwnerFacets(t *testing.T) {
+	c := qt.New(t)
+	db := gadgetDocument()
+	db.Tables = []schemamodel.Table{{StructName: "T", Name: "t", Facets: gadgetFacets("table")}, {StructName: "T", Name: "t", Facets: gadgetFacets("table")}}
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(writtenSlots())})
+
+	c.Assert(err, qt.ErrorMatches, `the document writes table "t" twice with owner settings, which HCL cannot tell apart`)
+	c.Assert(result.Data, qt.IsNil)
+}
+
+// TestRender_ReportsALimitAnOwnerCannotRecord reports a not-described record
+// of a model an owner says HCL cannot record a limit of, for an object the
+// document does not hold, and nothing for the same record without the
+// owner's word.
+func TestRender_ReportsALimitAnOwnerCannotRecord(t *testing.T) {
+	ref := gadgetObject("app", "g", "widget").Ref
+	coverage := schemaext.OwnedCoverageSource("example.org/custom", func() []schemaext.Codec { return []schemaext.Codec{gadgetCodec()} })
+	limited := must.Must(coverage(gadgetKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: gadgetKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves it"}}}))
+	recorded := must.Must(engine.New(engine.Provider{ID: "example.org/custom", Codecs: []schemaext.Codec{gadgetCodec()},
+		HCL: []hclext.Extension{{Owner: "example.org/custom", Unrecorded: []schemaext.Kind{gadgetKind}}}})).HCL()
+	tests := []struct {
+		name   string
+		owners hclext.Set
+		want   []atlashclrender.Diagnostic
+	}{
+		{name: "an owner that cannot record it", owners: recorded, want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning,
+			Path: `features["example.org/custom/gadget"][""]["app"][""]["g"][""]`,
+			Message: `feature object example.org/custom/gadget app.g of kind example.org/custom/gadget is not described ` +
+				`(the source leaves it), and HCL cannot record that`}}},
+		{name: "no owner's word", owners: hclext.None()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := gadgetDocument()
+			db.FeatureCoverage = limited
+
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: test.owners})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Diagnostics, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestRender_ReportsAnOwnersFacetNoBlockHolds reports an owner's facet that
+// the database or a schema holds, which no block the owner writes into
+// carries, and not the same facet a table holds.
+func TestRender_ReportsAnOwnersFacetNoBlockHolds(t *testing.T) {
+	c := qt.New(t)
+	db := gadgetDocument()
+	db.Facets = gadgetFacets("document")
+	db.Schemas = []schemamodel.Schema{{Name: "app", Facets: gadgetFacets("schema")}}
+	db.Tables[0].Facets = gadgetFacets("table")
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(slotWriter{})})
+
+	c.Assert(err, qt.IsNil)
+	lost := atlashclrender.Diagnostic{Severity: atlashclrender.SeverityWarning, Path: "feature.example.org/custom/gadget",
+		Message: "feature facet example.org/custom/gadget is not represented in HCL"}
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{lost, lost})
 }
