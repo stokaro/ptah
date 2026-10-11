@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
@@ -39,6 +40,7 @@ type InspectRuntime interface {
 	schemacomparison.Runtime
 	atlasreport.InspectRuntime
 	yamlext.Runtime
+	sqlext.Runtime
 }
 
 // InspectOptions configures Atlas-compatible schema inspection.

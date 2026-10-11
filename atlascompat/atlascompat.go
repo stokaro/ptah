@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
+	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/convert/dbschematogo"
@@ -60,6 +61,11 @@ type ParseSQLOptions struct {
 	Capabilities capability.Capabilities
 	// Timeout caps parser work. Zero keeps Ptah's parser default.
 	Timeout time.Duration
+	// SQL selects the owners whose syntax the input carries beside the
+	// shared grammar, usually the SQL set of the caller's runtime, such as
+	// ClickHouse's data-skipping index. The zero value reads the shared
+	// grammar alone.
+	SQL sqlext.Set
 }
 
 // ParseSQL parses SQL DDL into Ptah AST statements.
@@ -73,7 +79,7 @@ type ParseSQLOptions struct {
 // refusal is the contract, and the message is diagnostic text rather than
 // something to branch on.
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
-	parserOpts := make([]parser.Option, 0, 3)
+	parserOpts := make([]parser.Option, 0, 4)
 	if strings.TrimSpace(opts.Dialect) != "" {
 		parserOpts = append(parserOpts, parser.WithDialect(opts.Dialect))
 	}
@@ -83,6 +89,7 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 	if opts.Timeout > 0 {
 		parserOpts = append(parserOpts, parser.WithTimeout(opts.Timeout))
 	}
+	parserOpts = append(parserOpts, parser.WithSQL(opts.SQL))
 	return parser.NewParser(sql, parserOpts...).Parse()
 }
 

@@ -41,6 +41,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/engine`
 - `ptah.run/engine/builtin`
 - `ptah.run/core/schemasource`
+- `ptah.run/core/sqlext`
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlext`
 - `ptah.run/core/yamlschema`
@@ -2577,6 +2578,30 @@ decoder. An `EntrySection` reads a table key whose value is not a scalar,
 such as a table's changefeeds, through the same strict decode callback a
 `Section` gets.
 
+`core/sqlext` is the SQL schema reader's contract with the owners whose syntax
+a SQL document carries. An `Extension` names its owner and targets and
+registers each piece of syntax as a `Pattern`: a `Site` where it stands, the
+words it opens with, the words that may or may not follow them, the words that
+end it, and whether a document that names no target consults it too.
+Matching is data, so the reader finds every span with its own lexer. It hands
+an owner's `Parser` every span of one document in one call and applies the
+`Value` it returns for each: an index a table element or an ALTER TABLE
+operation declares, the owner's operation payload, or facets of a view.
+
+`engine.Provider.SQL` registers an extension, and `engine.Runtime.SQL` returns
+the frozen set. An extension reads only targets its provider registers, and
+two patterns one document could consult at one site that can match the same
+syntax are refused at registration. The zero set is refused with
+`sqlext.ErrUnselected`, and `sqlext.None` reads the shared grammar alone.
+`Extension.Coverage` is the claim a document of the owner's targets makes.
+
+`chsource.SQL` reads ClickHouse's data-skipping index inside a column list and
+in ALTER TABLE ... ADD INDEX, and a materialized view's refresh schedule and
+storage clause, and claims refresh coverage for a ClickHouse document.
+`atlascompat.ParseSQLOptions.SQL` selects the owners a parse reads with; its
+zero value reads the shared grammar alone. A lint run reads statements with the
+SQL owners of its `lint.Runtime`.
+
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
@@ -2765,10 +2790,13 @@ CockroachDB, YugabyteDB or Spanner target on its own preset, because all three
 speak the PostgreSQL wire protocol and may report exactly that banner.
 
 `migration/lint` provides the compact `LintFS` findings API and the richer
-`AnalyzeFS` API. Both take a context and a `lintext.Runtime`, and a nil
-runtime is refused: the run's target's owner splits the migrations through
+`AnalyzeFS` API. Both take a context and a `lint.Runtime`, a
+`lintext.Runtime` that also answers `sqlext.Runtime`, and a nil runtime is
+refused: the run's target's owner splits the migrations through
 `Runtime.SplitStatements`, all files in one call, and a run that names no
-dialect splits with the dialect-blind scanner. `AnalyzeFS` captures each
+dialect splits with the dialect-blind scanner. The statements are read with
+the runtime's SQL owners, so an owner's statement counts as the change it
+makes. `AnalyzeFS` captures each
 migration input once: SQL files,
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
 prepared files and findings together with a read-only source snapshot. Capture

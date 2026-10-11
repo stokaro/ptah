@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
+	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintscan"
@@ -239,6 +240,9 @@ type File struct {
 	// dialect is the target the run was started with, for the rules whose
 	// measured answer differs between the two engines of one family.
 	dialect string
+	// owners are the owners whose syntax the file's statements carry, the
+	// SQL set of the run's runtime.
+	owners sqlext.Set
 	// registered is the set of rule codes this run compares selectors
 	// against, so a selector that names one of them selects it alone.
 	registered map[string]struct{}
@@ -434,7 +438,7 @@ func validateOptions(runtime lintext.Runtime, opts Options) (migrationfile.DirFo
 // which is the community binary's exit-0 behavior on an empty directory
 // (stokaro/ptah#1241). The divergence is deliberate, so a caller branching on
 // "empty directory" needs to know which profile it runs under.
-func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Options) (Analysis, error) {
+func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (Analysis, error) {
 	if ctx == nil || runtime == nil {
 		return Analysis{}, errors.New("lint analysis requires a context and an engine runtime")
 	}
@@ -509,6 +513,7 @@ func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Op
 	if err != nil {
 		return Analysis{}, err
 	}
+	withOwners(files, runtime.SQL())
 	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope)
 	if opts.Dialect == platform.YDB {
 		ydbHistory(files)
@@ -551,7 +556,7 @@ func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Op
 // file, line, and rule code. Call [AnalyzeFS] when prepared files or the source
 // snapshot are also needed; option validation and the empty-directory behavior
 // are [AnalyzeFS]'s.
-func LintFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Options) ([]Finding, error) {
+func LintFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) ([]Finding, error) {
 	analysis, err := AnalyzeFS(ctx, runtime, fsys, opts)
 	if err != nil {
 		return nil, err
@@ -857,4 +862,21 @@ type RoutineDefinition struct {
 	// Verbatim literals are what lets a rule match a call by name without
 	// firing on `EXECUTE 'SELECT now()'` or on a commented-out one.
 	BodyWords []string
+}
+
+// Runtime selects what a lint run takes from its targets' owners: the
+// splitting of statements and the owners' rules, and the owners whose syntax
+// the statements carry. *ptah.run/engine.Runtime implements it.
+type Runtime interface {
+	lintext.Runtime
+	sqlext.Runtime
+}
+
+// withOwners reads every file's statements with owners, the owners whose
+// syntax they carry, so a statement such as ClickHouse's ALTER TABLE ... ADD
+// INDEX ... TYPE counts as the change it makes.
+func withOwners(files []File, owners sqlext.Set) {
+	for i := range files {
+		files[i].owners = owners
+	}
 }

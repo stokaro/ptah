@@ -601,7 +601,9 @@ if len(findings) > 0 {
 target's owner splits the migrations into statements through
 `Runtime.SplitStatements`, so where a statement ends and what a comment is
 are the dialect's own answers; a run that names no dialect splits with the
-dialect-blind scanner. The bundled `builtin.New` runtime splits every
+dialect-blind scanner. The statements are then read with the runtime's SQL
+owners, so an owner's syntax, such as ClickHouse's data-skipping index, counts
+as the change it makes. The bundled `builtin.New` runtime splits every
 built-in dialect.
 
 The runtime also holds the rules the engine owners check, such as the

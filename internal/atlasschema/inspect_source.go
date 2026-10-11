@@ -351,6 +351,7 @@ func inspectOnDev(
 		// required variable "tenant"`.
 		desired, err = schemafile.LoadSources(set.SchemaFileSources(), schemafile.Options{
 			YAML:                  opts.Runtime.YAML(),
+			SQL:                   opts.Runtime.SQL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
 			DatabaseURL:           devURL,
 			Dialect:               dialect,

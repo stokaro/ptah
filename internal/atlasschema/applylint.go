@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ptah.run/core/lintext"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
 )
@@ -41,7 +40,7 @@ type PlanLintOptions struct {
 //
 // The statements are linted as a migration file in a scratch directory because
 // the engine reads a filesystem. Nothing is left behind.
-func LintPlan(ctx context.Context, runtime lintext.Runtime, statements []string, opts PlanLintOptions) ([]lint.Finding, error) {
+func LintPlan(ctx context.Context, runtime lint.Runtime, statements []string, opts PlanLintOptions) ([]lint.Finding, error) {
 	enabled := lintPlanEnabledCodes(opts.RuleConfigs, opts.Dialect)
 	if len(enabled) == 0 {
 		return nil, nil

@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 )
 
 // Document is a schema read one file at a time: the model the earlier files
@@ -30,15 +31,26 @@ type Document struct {
 
 // parseNotes is what a parse of one file found about the AST it returned that
 // no common node carries: the index a MySQL `FOREIGN KEY name (columns)`
-// clause names. internal/parser's Parser answers it.
+// clause names, and the index an owner's ALTER TABLE operation declares.
+// internal/parser's Parser answers it.
 type parseNotes interface {
 	ForeignKeyIndex(index *ast.IndexNode) bool
+	DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool)
 }
 
 // foreignKeyIndex reports whether the parse found index named by a foreign key
 // clause. A document without notes found none.
 func (d *Document) foreignKeyIndex(index *ast.IndexNode) bool {
 	return d != nil && d.notes != nil && d.notes.ForeignKeyIndex(index)
+}
+
+// declaredIndex returns the index an owner's ALTER TABLE operation declares.
+// A document without notes found none.
+func (d *Document) declaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool) {
+	if d == nil || d.notes == nil {
+		return sqlext.Index{}, false
+	}
+	return d.notes.DeclaredIndex(operation)
 }
 
 // NewDocument starts a document whose earlier files built base. base is the

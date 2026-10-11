@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/lintext"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
@@ -152,7 +151,7 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 // selected pending migration versions.
 func Analyze(
 	ctx context.Context,
-	runtime lintext.Runtime,
+	runtime lint.Runtime,
 	fsys fs.FS,
 	pending []int64,
 	databaseDialect,
@@ -169,7 +168,7 @@ func Analyze(
 // was loaded before migration planning.
 func AnalyzeWithPolicy(
 	ctx context.Context,
-	runtime lintext.Runtime,
+	runtime lint.Runtime,
 	fsys fs.FS,
 	pending []int64,
 	policy Policy,

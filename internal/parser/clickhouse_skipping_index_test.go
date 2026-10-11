@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -22,7 +23,8 @@ import (
 func renderClickHouseSchema(c *qt.C, sqlText string) string {
 	c.Helper()
 
-	database, _, err := sqlschema.Read([]byte(sqlText), platform.ClickHouse)
+	database, _, err := sqlschema.ReadWith(context.Background(), []byte(sqlText), platform.ClickHouse, nil,
+		sqlschema.Options{Owners: clickHouseOwners()})
 	c.Assert(err, qt.IsNil)
 
 	rendered, err := builtin.GetOrderedCreateStatements(&database, platform.ClickHouse)
@@ -40,7 +42,7 @@ func renderClickHouseSchema(c *qt.C, sqlText string) string {
 func parseOneAlter(c *qt.C, sql string) *ast.AlterTableNode {
 	c.Helper()
 
-	statements, err := parser.NewParser(sql, parser.WithDialect(platform.ClickHouse)).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.ClickHouse), withClickHouseOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	alter, ok := statements.Statements[0].(*ast.AlterTableNode)
@@ -168,7 +170,7 @@ func TestParserRefusesAMalformedSkippingIndex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := parser.NewParser(tt.statement, parser.WithDialect(platform.ClickHouse)).Parse()
+			_, err := parser.NewParser(tt.statement, parser.WithDialect(platform.ClickHouse), withClickHouseOwners()).Parse()
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 		})
@@ -327,7 +329,7 @@ func TestAnInlineIndexOnAnotherDialectIsNotASkippingIndex(t *testing.T) {
 func parseOneClickHouseTable(c *qt.C, sql string) *ast.CreateTableNode {
 	c.Helper()
 
-	statements, err := parser.NewParser(sql, parser.WithDialect(platform.ClickHouse)).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.ClickHouse), withClickHouseOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	table, ok := statements.Statements[0].(*ast.CreateTableNode)

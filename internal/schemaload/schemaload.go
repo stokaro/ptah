@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/ociartifact"
@@ -35,6 +36,7 @@ import (
 type Owners interface {
 	annotation.Runtime
 	yamlext.Runtime
+	sqlext.Runtime
 	coverage.Runtime
 }
 
@@ -336,7 +338,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.CoverageVocabulary()), command)
+	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.CoverageVocabulary()), command)
 }
 
 func commandDisplay(command schemasource.Command) string {
@@ -502,6 +504,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		DatabaseURL:        o.DatabaseURL,
 		Dialect:            o.Dialect,
 		YAML:               o.yaml(),
+		SQL:                o.sql(),
 		CoverageVocabulary: o.vocabulary(),
 		Vars:               o.Vars,
 		VarValues:          o.VarValues,
@@ -667,4 +670,13 @@ func (o Options) yaml() yamlext.Set {
 		return yamlext.Set{}
 	}
 	return o.Owners.YAML()
+}
+
+// sql is the SQL owners of the load, or the zero set, which a SQL read
+// refuses, when the caller selected no owners.
+func (o Options) sql() sqlext.Set {
+	if o.Owners == nil {
+		return sqlext.Set{}
+	}
+	return o.Owners.SQL()
 }

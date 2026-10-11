@@ -22,7 +22,7 @@ func TestLoadPath_ReadsADBMLDocument(t *testing.T) {
 	document := "Table public.users {\n  id bigint [pk, increment]\n  email text [not null, unique]\n}\n"
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 
-	db, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
+	db, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -38,7 +38,7 @@ func TestLoadPath_ADBMLSyntaxErrorNamesTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.dbml")
 	c.Assert(os.WriteFile(path, []byte("Table t {\n  a int [nope]\n}\n"), 0o600), qt.IsNil)
 
-	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
+	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "broken.dbml:")
@@ -53,7 +53,7 @@ func TestLoadPath_AnUnknownExtensionNamesDBMLAmongTheSupportedOnes(t *testing.T)
 	path := filepath.Join(t.TempDir(), "schema.txt")
 	c.Assert(os.WriteFile(path, []byte("nothing\n"), 0o600), qt.IsNil)
 
-	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
+	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, ".dbml")
@@ -79,7 +79,7 @@ func TestLoadPath_ADBMLLossReachesTheReportIgnoredChannel(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	var reported bytes.Buffer
 
-	db, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), ReportIgnored: &reported})
+	db, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), ReportIgnored: &reported})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -99,7 +99,7 @@ func TestLoadPath_ADBMLDocumentWithNothingToLoseReportsNothing(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte("Table t {\n  a int [pk]\n}\n"), 0o600), qt.IsNil)
 	var reported bytes.Buffer
 
-	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), ReportIgnored: &reported})
+	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), ReportIgnored: &reported})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(reported.String(), qt.Equals, "")

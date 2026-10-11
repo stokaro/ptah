@@ -43,7 +43,7 @@ func writeUnknownHCLNamesFixture(c *qt.C) string {
 func TestLoad_RefusesUnknownHCLNamesByDefault(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemafile.Load(writeUnknownHCLNamesFixture(c), schemafile.Options{YAML: builtintest.Runtime().YAML()})
+	_, err := schemafile.Load(writeUnknownHCLNamesFixture(c), schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
 
 	c.Assert(err, qt.ErrorMatches, `.*unsupported top-level block "annotation".*`)
 }
@@ -57,7 +57,7 @@ func TestLoad_IgnoresUnknownHCLNamesWhenAsked(t *testing.T) {
 
 	db, err := schemafile.Load(
 		writeUnknownHCLNamesFixture(c),
-		schemafile.Options{YAML: builtintest.Runtime().YAML(), IgnoreUnknownHCLNames: true},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), IgnoreUnknownHCLNames: true},
 	)
 
 	c.Assert(err, qt.IsNil)

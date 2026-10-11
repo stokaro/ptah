@@ -1,6 +1,7 @@
 package sqlschema
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/clickhouse/chsource"
+	"ptah.run/core/sqlext"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/internal/parser"
@@ -32,6 +33,9 @@ import (
 // guarded, and the declaration order a directory reports is the statements'
 // rather than the model's. A caller that needs neither ignores the second
 // result.
+//
+// Read selects no owner, so it reads the shared grammar alone; [ReadWith]
+// takes the owners whose syntax a document carries.
 func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList, error) {
 	return ReadOnto(data, dialect, nil)
 }
@@ -50,16 +54,30 @@ func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList
 func ReadOnto(
 	data []byte, dialect string, document *Document,
 ) (schemamodel.Database, *ast.StatementList, error) {
-	return ReadOntoWithVocabulary(data, dialect, document, schemacoverage.Vocabulary{})
+	return ReadWith(context.Background(), data, dialect, document, Options{Owners: sqlext.None()})
 }
 
-// ReadOntoWithVocabulary is [ReadOnto] for a file whose `ptah:not-described`
-// header may name the coverage kinds of vocabulary, usually the vocabulary of
-// the runtime the caller compares with, such as a YDB changefeed. [ReadOnto]
-// reads the common kinds only.
-func ReadOntoWithVocabulary(
-	data []byte, dialect string, document *Document, vocabulary schemacoverage.Vocabulary,
+// Options is what a read takes from its caller beside the document.
+type Options struct {
+	// Owners are the owners whose syntax the document may carry, and whose
+	// claims a document of the dialect makes about their models. The zero
+	// value is refused; [sqlext.None] reads the shared grammar alone.
+	Owners sqlext.Set
+	// Vocabulary is the coverage kinds the document's `ptah:not-described`
+	// header may name beside the common ones, usually the vocabulary of the
+	// runtime the caller compares with, such as a YDB changefeed.
+	Vocabulary schemacoverage.Vocabulary
+}
+
+// ReadWith is [ReadOnto] with the owners and the coverage vocabulary the
+// caller selects. ctx bounds the owners' reading of their syntax.
+func ReadWith(
+	ctx context.Context, data []byte, dialect string, document *Document, opts Options,
 ) (schemamodel.Database, *ast.StatementList, error) {
+	if !opts.Owners.Selected() {
+		return schemamodel.Database{}, nil, sqlext.ErrUnselected
+	}
+	vocabulary := opts.Vocabulary
 	// SQL sources have their own declaration vocabulary. Ignoring a captured
 	// HCL account would replace its explicit claims with that vocabulary.
 	for body := range schemacoverage.HeaderComments(string(data)) {
@@ -67,8 +85,8 @@ func ReadOntoWithVocabulary(
 			return schemamodel.Database{}, nil, fmt.Errorf("%w: SQL schema sources cannot decode a feature coverage header; read the HCL source instead", ptaherr.ErrUnsupportedFeature)
 		}
 	}
-	parsed := parser.NewParser(string(data), parser.WithDialect(dialect))
-	statements, err := parsed.Parse()
+	parsed := parser.NewParser(string(data), parser.WithDialect(dialect), parser.WithSQL(opts.Owners))
+	statements, err := parsed.ParseContext(ctx)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
@@ -104,10 +122,6 @@ func ReadOntoWithVocabulary(
 		// Spanner SQL spells a row deletion policy as a table clause, so a
 		// table without one requests none.
 		database.FeatureCoverage, err = spannersource.Coverage()
-	case platform.NormalizeDialect(dialect) == platform.ClickHouse:
-		// A ClickHouse materialized view states its refresh schedule in its
-		// CREATE statement, so a view without one declares a plain view.
-		database.FeatureCoverage, err = chsource.RefreshCoverage()
 	case platform.NormalizeDialect(dialect) == platform.MySQL || platform.NormalizeDialect(dialect) == platform.MariaDB:
 		// An index states its KEY_BLOCK_SIZE in its own definition, so an
 		// index without one declares none.
@@ -121,6 +135,16 @@ func ReadOntoWithVocabulary(
 	}
 	if err != nil {
 		return schemamodel.Database{}, nil, err
+	}
+	// What a document of the dialect states about an owner's models is the
+	// owner's claim, such as a ClickHouse materialized view's refresh
+	// schedule, which its CREATE statement states.
+	claim, claimed, err := opts.Owners.Coverage(platform.NormalizeDialect(dialect))
+	if err != nil {
+		return schemamodel.Database{}, nil, err
+	}
+	if claimed {
+		database.FeatureCoverage = claim
 	}
 	if alone {
 		if err := OwnRowSecurity(&database, dialect); err != nil {

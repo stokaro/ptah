@@ -13,14 +13,13 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 // readClickHouseRefresh reads one materialized view from a ClickHouse schema
 // file and returns its declared refresh schedule and whether it has one.
 func readClickHouseRefresh(c *qt.C, sql string) (*chschema.DesiredRefresh, bool) {
 	c.Helper()
-	database, _, err := sqlschema.Read([]byte(sql), platform.ClickHouse)
+	database, _, err := readWithOwners([]byte(sql), platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.MaterializedViews, qt.HasLen, 1)
 	c.Assert(database.MaterializedViews[0].Body, qt.Equals, "SELECT count() AS c FROM src")
@@ -95,7 +94,7 @@ func TestRead_ClickHouseMaterializedViewWithoutRefresh(t *testing.T) {
 func TestRead_ClickHouseMaterializedViewRefresh_FailurePath(t *testing.T) {
 	t.Run("schedule with SETTINGS", func(t *testing.T) {
 		c := qt.New(t)
-		database, _, err := sqlschema.Read([]byte(
+		database, _, err := readWithOwners([]byte(
 			"CREATE MATERIALIZED VIEW hourly REFRESH EVERY 1 HOUR SETTINGS refresh_retries = 2 AS SELECT count() AS c FROM src;",
 		), platform.ClickHouse)
 		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
@@ -104,7 +103,7 @@ func TestRead_ClickHouseMaterializedViewRefresh_FailurePath(t *testing.T) {
 	})
 	t.Run("another storage", func(t *testing.T) {
 		c := qt.New(t)
-		database, _, err := sqlschema.Read([]byte(
+		database, _, err := readWithOwners([]byte(
 			"CREATE MATERIALIZED VIEW hourly ENGINE = ReplacingMergeTree ORDER BY c AS SELECT count() AS c FROM src;",
 		), platform.ClickHouse)
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

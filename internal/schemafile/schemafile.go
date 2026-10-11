@@ -2,6 +2,7 @@
 package schemafile
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -41,6 +43,11 @@ type Options struct {
 	// compares with. Loading a YAML file refuses the zero value; pass
 	// yamlext.None to read the frontend's own keys only.
 	YAML yamlext.Set
+	// SQL selects the feature owners whose syntax a SQL schema file may
+	// carry, usually the SQL set of the runtime the caller renders and
+	// compares with. Loading a SQL file refuses the zero value; pass
+	// sqlext.None to read the shared grammar only.
+	SQL sqlext.Set
 	// CoverageVocabulary is the coverage kinds an HCL or SQL document's
 	// `ptah:not-described` header may name, usually the vocabulary of the
 	// runtime the caller compares with. The zero value holds the common kinds
@@ -821,7 +828,10 @@ func loadSQLFileWithStatements(
 		}
 		earlier.YDBDatabasePath = root
 	}
-	db, statements, err := sqlschema.ReadOntoWithVocabulary(data, opts.Dialect, earlier, opts.CoverageVocabulary)
+	// The loaders take no context yet. The owners read their syntax in
+	// process, so the parse bounds the read.
+	db, statements, err := sqlschema.ReadWith(context.Background(), data, opts.Dialect, earlier,
+		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}

@@ -30,7 +30,6 @@ import (
 	"ptah.run/core/ast"
 	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/privilegefold"
@@ -1105,11 +1104,11 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.ExtensionAlterOperation:
-		switch added := typed.Payload.(type) {
-		case *ydbast.AddChangefeed:
+		if index, declared := target.document.declaredIndex(typed); declared {
+			return appendDeclaredIndex(database, target, index, sourcePlatform)
+		}
+		if added, ok := typed.Payload.(*ydbast.AddChangefeed); ok {
 			return appendChangefeed(target, added.Changefeed)
-		case *chast.AddSkippingIndex:
-			return appendSkippingIndex(database, target, added, sourcePlatform)
 		}
 		return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(op))
 	case *ast.AddColumnOperation:

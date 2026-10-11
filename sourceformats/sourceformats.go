@@ -7,9 +7,12 @@
 package sourceformats
 
 import (
+	"context"
+
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
@@ -17,14 +20,17 @@ import (
 )
 
 // New returns the readers with owners selecting the feature owners a YAML
-// document may declare, and vocabulary the coverage kinds an SQL or HCL
-// document's header may name. SQL and HCL are read by the bundled readers.
-func New(owners yamlext.Set, vocabulary coverage.Vocabulary) schemasource.Formats {
-	return readers{owners: owners, vocabulary: vocabulary}
+// document may declare, sql the owners whose syntax a SQL document may carry,
+// and vocabulary the coverage kinds an SQL or HCL document's header may name.
+// SQL and HCL are read by the bundled readers. Reading SQL refuses the zero
+// sql set; pass sqlext.None to read the shared grammar only.
+func New(owners yamlext.Set, sql sqlext.Set, vocabulary coverage.Vocabulary) schemasource.Formats {
+	return readers{owners: owners, sql: sql, vocabulary: vocabulary}
 }
 
 type readers struct {
 	owners     yamlext.Set
+	sql        sqlext.Set
 	vocabulary coverage.Vocabulary
 }
 
@@ -35,7 +41,10 @@ func (r readers) ReadYAML(data []byte) (*schemamodel.Database, error) {
 
 // ReadSQL reads SQL DDL with an optional dialect hint.
 func (r readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, error) {
-	db, _, err := sqlschema.ReadOntoWithVocabulary(data, dialect, nil, r.vocabulary)
+	// The program has already run when its output is read, and the owners
+	// read their syntax in process, so the parse bounds the read.
+	db, _, err := sqlschema.ReadWith(context.Background(), data, dialect, nil,
+		sqlschema.Options{Owners: r.sql, Vocabulary: r.vocabulary})
 	if err != nil {
 		return nil, err
 	}
