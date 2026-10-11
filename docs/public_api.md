@@ -122,6 +122,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbcoordination`
 - `ptah.run/dialect/ydb/ydbdiff`
 - `ptah.run/dialect/ydb/ydbexternal`
+- `ptah.run/dialect/ydb/ydblint`
 - `ptah.run/dialect/ydb/ydbplan`
 - `ptah.run/dialect/ydb/ydbrender`
 - `ptah.run/dialect/ydb/ydbreplication`
@@ -325,6 +326,16 @@ from another process:
   line, the canonical text, the words, the routine a statement defines, and
   the comments directly above it, which the host reads suppression
   directives from.
+- A statement's `Effects` are facts a rule shared by every dialect reads and
+  only the dialect's owner recognizes: a drop that loses state, a unique index
+  in the dialect's own spelling, the steps of a table rebuild. A split lists
+  the facts it judged in `SplitResult.Judged`; a host takes the owner's
+  rebuild steps in place of matching them itself.
+- `Annotator` judges facts over a split the owner did not make: a run that
+  names no target splits with the host's dialect-blind scanner and asks every
+  annotator in one call. The answer is best-effort, and a statement the
+  owner's own lexing would split differently is declined, which a host reports
+  as unjudged rather than as one without the fact.
 - `Service` checks the rules an owner publishes over a whole run, one call
   per run with every file. A `CheckResult` must be `Complete`; an error is
   never a clean run. A finding about a statement may name its `Subject`s.
@@ -334,18 +345,20 @@ from another process:
   for. The host reads the state those files' versions start from on a dev
   database and calls again with the `Baseline`; without a dev database it
   reports the input as unmet. The package documentation is the full account.
-- `ValidateSplit` and `ValidateCheck` refuse a reply that does not answer its
-  request, wrapping `ErrInvalid`.
+- `ValidateSplit`, `ValidateAnnotate` and `ValidateCheck` refuse a reply that
+  does not answer its request, wrapping `ErrInvalid`.
 - `Checks` is the in-process `Service` over Go functions that an owner
   registers instead of answering requests by hand. It judges text, so it
   refuses a rule that reads a baseline.
 
 `engine.Provider.Lint` publishes an owner's rules and the service that checks
-them, and `engine.Target.Splitter` registers a target's splitter; the bundled
-runtime registers one for every built-in dialect. `engine.Runtime` answers
+them, `engine.Target.Splitter` registers a target's splitter, and
+`engine.Target.Annotator` its annotator; the bundled runtime registers a
+splitter for every built-in dialect. `engine.Runtime` answers
 `lintext.Runtime`: `LintRules` reads the published rules without calling an
 owner, `SplitStatements` asks the target's splitter under its canonical name,
-and `CheckMigrations` sends each owner its codes in one call and joins the
+`AnnotateStatements` asks every annotator once and joins the answers, and
+`CheckMigrations` sends each owner its codes in one call and joins the
 findings and baseline subjects. A code belongs to one rule across every
 provider, and a rule judges targets the runtime registers; registration refuses
 anything else.
@@ -359,6 +372,14 @@ The bundled runtime registers both on the postgres target.
 MariaDB: `Rules` publishes the MY family and the online rule ON102 as data, and
 `Service` checks them. The bundled runtime registers both on the mysql target;
 each rule names the targets it judges.
+
+`dialect/ydb/ydblint` is the YDB owner's part of migration lint: `Rules`
+publishes the YD family as data and `Service` checks it, reading what a table
+looks like from the directory's own history. `Splitter` reads YDB migrations as
+YQL and reports each statement's effects, and `Annotator` judges dropped
+topics, transfers, coordination nodes, streaming queries and async
+replications over the split of a run that names no dialect. The bundled
+runtime registers all four on the ydb target.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and

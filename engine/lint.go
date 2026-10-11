@@ -166,6 +166,65 @@ func (r *Runtime) CheckMigrations(ctx context.Context, request lintext.CheckRequ
 	return result, ctx.Err()
 }
 
+// AnnotateStatements asks every target that registers an annotator, in
+// target name order, for the facts of the request's statements, one call per
+// annotator, and joins the answers: each statement's effects in that order,
+// and every statement an annotator declined with the target that declined it.
+// A request whose sources and statement lists do not pair up, and a reply that
+// does not answer its request, wrap lintext.ErrInvalid; an error returns no
+// result.
+func (r *Runtime) AnnotateStatements(ctx context.Context, request lintext.AnnotateRequest) (lintext.AnnotateResult, error) {
+	if ctx == nil {
+		return lintext.AnnotateResult{}, fmt.Errorf("%w: annotating requires a context", lintext.ErrInvalid)
+	}
+	if err := lintext.ValidateAnnotateRequest(request); err != nil {
+		return lintext.AnnotateResult{}, err
+	}
+	result := lintext.AnnotateResult{Files: make([][]lintext.Annotation, len(request.Files))}
+	for i, statements := range request.Files {
+		result.Files[i] = make([]lintext.Annotation, len(statements))
+	}
+	for _, selected := range r.annotators() {
+		if err := ctx.Err(); err != nil {
+			return lintext.AnnotateResult{}, err
+		}
+		reply, err := selected.annotator.AnnotateStatements(ctx, request)
+		if err != nil {
+			return lintext.AnnotateResult{}, err
+		}
+		if err := lintext.ValidateAnnotate(request, reply); err != nil {
+			return lintext.AnnotateResult{}, fmt.Errorf("statement annotator of %q: %w", selected.owner, err)
+		}
+		for i, annotations := range reply.Files {
+			for j, annotation := range annotations {
+				joined := &result.Files[i][j]
+				joined.Effects = append(joined.Effects, annotation.Effects...)
+				if annotation.Declined {
+					joined.Declined = true
+					result.Declined = append(result.Declined, lintext.Declined{Target: selected.name, File: i, Statement: j})
+				}
+			}
+		}
+	}
+	return result, ctx.Err()
+}
+
+// annotators are the targets that register an annotator, each once, in name
+// order.
+func (r *Runtime) annotators() []target {
+	if r == nil {
+		return nil
+	}
+	var found []target
+	for name, selected := range r.targets {
+		if selected.annotator != nil && name == selected.name {
+			found = append(found, selected)
+		}
+	}
+	slices.SortFunc(found, func(a, b target) int { return cmp.Compare(a.name, b.name) })
+	return found
+}
+
 // lintTarget resolves the target a lint call names to its canonical name. An
 // empty name stays empty: a run that names no target.
 func (r *Runtime) lintTarget(name string) (string, error) {

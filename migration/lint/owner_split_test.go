@@ -56,9 +56,9 @@ func ruleCodes(findings []lint.Finding) []string {
 }
 
 // A run that names a target reads the statements its owner splits, in one
-// call for every file: an owner that answers the drop as no statement at all
-// leaves the data-safety rule nothing to find, which the bundled splitter
-// finds.
+// call for every file, each named with its version and its half: an owner
+// that answers the drop as no statement at all leaves the data-safety rule
+// nothing to find, which the bundled splitter finds.
 func TestLintFS_ReadsTheOwnersSplit(t *testing.T) {
 	c := qt.New(t)
 	var requests []lintext.SplitRequest
@@ -71,8 +71,8 @@ func TestLintFS_ReadsTheOwnersSplit(t *testing.T) {
 	c.Assert(ruleCodes(silent), qt.Not(qt.Contains), "DS101")
 	c.Assert(ruleCodes(bundled), qt.Contains, "DS101")
 	c.Assert(requests, qt.DeepEquals, []lintext.SplitRequest{{Target: "postgres", Sources: []lintext.Source{
-		{Name: "0000000001_drop.down.sql", SQL: "CREATE TABLE users (id int);\n"},
-		{Name: "0000000001_drop.up.sql", SQL: "DROP TABLE users;\n"},
+		{Name: "0000000001_drop.down.sql", SQL: "CREATE TABLE users (id int);\n", Version: 1, Down: true},
+		{Name: "0000000001_drop.up.sql", SQL: "DROP TABLE users;\n", Version: 1, Up: true},
 	}}})
 }
 

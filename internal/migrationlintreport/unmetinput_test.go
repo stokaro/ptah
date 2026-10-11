@@ -91,3 +91,34 @@ func TestWriteUnmetInputNoticeIsSilentForAnEmptyReport(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
 }
+
+// A statement an owner declined to judge on a run that names no dialect is
+// named, since the clean report says nothing about it; a run whose every
+// statement was judged writes nothing.
+func TestWriteUnmetInputNoticeNamesUnjudgedStatements(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{name: "a drop YQL reads inside a string", sql: "SELECT 'a\\';\nDROP TOPIC t;\nSELECT '';\nDROP TOPIC u;\nSELECT '';\n",
+			want: "warning: the ydb owner did not judge 1_t.sql:2, 1_t.sql:4: its own lexing splits the text differently " +
+				"than the dialect-blind scanner this run used, so the rules that read what only ydb recognizes did not " +
+				"check them; name the dialect to read the text one way\n"},
+		{name: "every drop judged", sql: "DROP TOPIC t;\n", want: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
+				"1_t.sql": {Data: []byte(test.sql)},
+			}, lint.Options{DirFormat: migrationfile.DirFormatAtlas})
+			c.Assert(err, qt.IsNil)
+			var out strings.Builder
+
+			err = migrationlintreport.WriteUnmetInputNotice(&out, migrationlintreport.Report{Analysis: analysis})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
+}

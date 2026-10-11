@@ -119,6 +119,7 @@ func checkFiles(files []File) []lintext.File {
 			Down:          file.IsDown,
 			HasPair:       file.HasPair,
 			NoTransaction: file.NoTransaction,
+			Repeatable:    file.Repeatable,
 			Statements:    slices.Clone(file.contract),
 		})
 	}

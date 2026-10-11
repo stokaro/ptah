@@ -21,6 +21,7 @@ import (
 	"ptah.run/dialect/ydb/ydbconvert"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydblint"
 	"ptah.run/dialect/ydb/ydbplan"
 	"ptah.run/dialect/ydb/ydbreport"
 	"ptah.run/dialect/ydb/ydbreverse"
@@ -78,7 +79,8 @@ func New() (*engine.Runtime, error) {
 				Preparation: schemapreparation.Identity{},
 				Creations:   schemaprojection.IdentityCreations{},
 				// Every built-in dialect splits its migrations with the
-				// lint scanner in the dialect's mode.
+				// lint scanner in the dialect's mode; YDB's owner replaces it
+				// below.
 				Splitter: lintscan.Splitter{Dialect: name},
 			}},
 		}
@@ -115,6 +117,12 @@ func New() (*engine.Runtime, error) {
 			registerSQLiteServices(&provider)
 		}
 		if name == platform.YDB {
+			// The YDB owner splits its migrations as YQL and reports the
+			// facts the shared lint rules read, and judges one of them over
+			// the split of a run that names no dialect.
+			provider.Targets[0].Splitter = ydblint.Splitter{}
+			provider.Targets[0].Annotator = ydblint.Annotator{}
+			provider.Lint = []engine.Lint{{Rules: ydblint.Rules(), Service: ydblint.Service{}}}
 			// A YDB read reports a UNIQUE constraint as an index and a
 			// privilege as a permission name; the comparison lowers the
 			// desired schema to match.

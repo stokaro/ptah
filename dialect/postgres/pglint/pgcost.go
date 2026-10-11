@@ -348,7 +348,7 @@ func primaryKeyColumns(file *lintkit.File, site pgPrimaryKeySite) []string {
 		return site.columns
 	}
 	name := lintkit.NormalizeIdent(lintkit.LastComponent(site.usingIndex))
-	for _, built := range lintkit.UniqueIndexSites(file.Statements, file.Target.Name) {
+	for _, built := range lintkit.UniqueIndexSites(file.Statements) {
 		if built.Statement < site.statement && built.Table.Normalized == site.table.Normalized &&
 			lintkit.NormalizeIdent(lintkit.LastComponent(built.Name)) == name {
 			return built.Columns

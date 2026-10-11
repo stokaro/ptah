@@ -1,9 +1,11 @@
-package lint
+package ydblint
 
 import (
 	"fmt"
 	"slices"
 
+	"ptah.run/core/lintext"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/yqlddl"
 )
 
@@ -23,18 +25,20 @@ import (
 // FAMILY in the same statement declares one, so neither is reported. The
 // table's families are read from the directory's own migrations, as YD104
 // reads its indexes, and a table the directory did not create is not judged.
-func ydbUndeclaredColumnFamilyRule() Rule {
-	return Rule{
-		Code:     "YD119",
-		Title:    "column family the table does not have",
-		Severity: SeverityWarning,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbUndeclaredColumnFamilyRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD119",
+			Title:    "column family the table does not have",
+			Severity: lintext.Warning,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
@@ -45,18 +49,14 @@ func ydbUndeclaredColumnFamilyRule() Rule {
 				table := state.table(read.Name)
 				for _, action := range read.Actions {
 					if family, undeclared := table.undeclaredFamily(action); undeclared {
-						findings = append(findings, Finding{
-							Rule:     "YD119",
-							Title:    "column family the table does not have",
-							Severity: SeverityWarning,
-							File:     file.Path,
-							Line:     stmt.Line,
+						findings = append(findings, lintext.Violation{
+							Statement: i,
 							Message: fmt.Sprintf(
 								"%s has no column family %s, and YDB does not refuse the statement: it creates %s "+
 									"with its own settings, no compression and the database's default pool, and YQL "+
 									"has no DROP FAMILY; add the family with ADD FAMILY first, or name one the table has",
 								read.Name, family, family),
-							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+							Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: read.Name}},
 						})
 					}
 					table = table.applyAction(action)

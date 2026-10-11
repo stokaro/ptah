@@ -1,4 +1,4 @@
-package lint
+package ydblint
 
 import (
 	"cmp"
@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -21,43 +22,19 @@ import (
 	"ptah.run/internal/yqlquery"
 )
 
-// The YD family: YDB statements the server refuses, or applies with an effect
-// the statement does not state. Each rule reads YQL through internal/yqlddl,
-// which `ptah sql lint` reads it through too, and each trap was measured on
-// YDB 26.2.1.14 and 25.1.4.7 with the answers quoted at the rule.
-//
-// Every rule here describes whether a statement can run or what it does when
-// it runs, which the server decides the same way in either direction, so each
-// one reads the down half of a migration as well.
-//
-// YD104, YD105, YD106 and YD118 need to know what the table looks like before
-// the statement: whether an index uses a column, which column the TTL reads,
-// what its minimum partition count and its partition size are, which views
-// read a table. They read that state from the directory itself, whether or not
-// the run has a dev database: the up migrations before the analyzed version, in
-// version order, then the statements of the file before the one analyzed. A
-// table created outside the directory is unknown to it, and an unknown table
-// reports nothing.
-//
-// A run that names no dialect runs every rule, YD included, and reads the
-// text with the hybrid lexer, which does not read YQL, against a target that
-// answers no capability. A YD rule says nothing there ([ydbRun]): judging
-// another dialect's SQL by what YDB refuses would report hazards that are not
-// there, and YD103 would take DD101's place on every NOT NULL column.
-
 // ydbRules is the YD family.
-func ydbRules() []Rule {
-	return []Rule{
+func ydbRules(h history) []lintkit.Rule {
+	return []lintkit.Rule{
 		ydbUniqueIndexOnExistingTableRule(),
 		ydbMixedQueryRule(),
 		ydbAddColumnRefusedRule(),
-		ydbDropUsedColumnRule(),
-		ydbPartitionMinimumResetRule(),
-		ydbPartitionSizeResetRule(),
-		ydbViewOrphanedRule(),
-		ydbNarrowSerialSequenceRule(),
-		ydbReplayedRestartRule(),
-		ydbMovedTableWithChangefeedRule(),
+		ydbDropUsedColumnRule(h),
+		ydbPartitionMinimumResetRule(h),
+		ydbPartitionSizeResetRule(h),
+		ydbViewOrphanedRule(h),
+		ydbNarrowSerialSequenceRule(h),
+		ydbReplayedRestartRule(h),
+		ydbMovedTableWithChangefeedRule(h),
 		ydbGrantOptionRevokeRule(),
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
@@ -66,13 +43,13 @@ func ydbRules() []Rule {
 		ydbBackupCollectionDropRule(),
 		ydbAnalyzeRule(),
 		ydbVectorIndexUnbuiltRule(),
-		ydbVectorIndexStaleRule(),
-		ydbReplicationDroppedWithoutFailoverRule(),
+		ydbVectorIndexStaleRule(h),
+		ydbReplicationDroppedWithoutFailoverRule(h),
 		ydbSecretInClearRule(),
-		ydbUndeclaredColumnFamilyRule(),
+		ydbUndeclaredColumnFamilyRule(h),
 		ydbSchemaSecretInClearRule(),
 		ydbDeprecatedSecretRule(),
-		ydbCommentLeftBehindRule(),
+		ydbCommentLeftBehindRule(h),
 		ydbStreamingCheckpointRule(),
 	}
 }
@@ -81,9 +58,9 @@ func ydbRules() []Rule {
 var ydbOnly = []string{platform.YDB}
 
 // ydbRun reports whether the run targets YDB, which a YD rule needs before it
-// reads anything; see the family comment above.
-func ydbRun(target Target) bool {
-	return target.Dialect == platform.YDB
+// reads anything; see the package documentation.
+func ydbRun(target lintext.Target) bool {
+	return target.Name == platform.YDB
 }
 
 // ydbUniqueIndexOnExistingTableRule reports a unique index added to a table
@@ -100,20 +77,22 @@ func ydbRun(target Target) bool {
 // builds it over an empty table and fails on a duplicate (`Duplicate key
 // found`), which is MF101's and MF102's question rather than this rule's. On a
 // target that refuses the index, this rule replaces theirs.
-func ydbUniqueIndexOnExistingTableRule() Rule {
-	return Rule{
-		Code:          "YD101",
-		Title:         "unique index added to an existing table",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		Subsumes:      []string{"MF101", "MF102"},
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbUniqueIndexOnExistingTableRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD101",
+			Title:         "unique index added to an existing table",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+			Subsumes:      []string{"MF101", "MF102"},
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
-			action, missing := missingRequirement(read, stmt.Target, capability.UniqueIndexOnExistingTable)
+			action, missing := missingRequirement(read, file.Target, capability.UniqueIndexOnExistingTable)
 			if !missing {
 				return false, ""
 			}
@@ -130,33 +109,30 @@ func ydbUniqueIndexOnExistingTableRule() Rule {
 // YDB refuses whole; [yqlquery.Reader.Mixed] has the measurements. The
 // migrator runs every other scheme statement as a query of its own, so only
 // those two shapes can mix.
-func ydbMixedQueryRule() Rule {
-	return Rule{
-		Code:     "YD102",
-		Title:    "scheme and data statements in one query",
-		Severity: SeverityError,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbMixedQueryRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD102",
+			Title:    "scheme and data statements in one query",
+			Severity: lintext.Error,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
 			var reader yqlquery.Reader
-			var findings []Finding
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if !reader.Mixed(stmt.SQL) {
 					continue
 				}
-				findings = append(findings, Finding{
-					Rule:     "YD102",
-					Title:    "scheme and data statements in one query",
-					Severity: SeverityError,
-					File:     file.Path,
-					Line:     stmt.Line,
+				findings = append(findings, lintext.Violation{
+					Statement: i,
 					Message: "this statement runs a scheme statement and a statement that reads or writes a table in one query, " +
 						"which YDB refuses whole (Queries with mixed data and scheme operations are not supported); " +
 						"move the scheme statement out of the block or action into a statement of its own",
-					Context: statementFindingContext(i),
 				})
 			}
 			return findings
@@ -176,26 +152,28 @@ func ydbMixedQueryRule() Rule {
 // [capability.AddColumnWithDefault]. Neither depends on the rows, so a table
 // this migration created is no exception, which is where it differs from
 // DD101; it replaces DD101 on the statement.
-func ydbAddColumnRefusedRule() Rule {
-	return Rule{
-		Code:          "YD103",
-		Title:         "column added in a form YDB refuses",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		Subsumes:      []string{"DD101"},
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbAddColumnRefusedRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD103",
+			Title:         "column added in a form YDB refuses",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+			Subsumes:      []string{"DD101"},
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
-			if action, missing := missingRequirement(read, stmt.Target, capability.AddColumnWithDefault); missing {
+			if action, missing := missingRequirement(read, file.Target, capability.AddColumnWithDefault); missing {
 				return true, fmt.Sprintf(
 					"ADD COLUMN %s gives the column a default, which needs target capability %s, unavailable on this %s target; "+
 						"add the column without a default and write its values in a data statement",
 					action.Column.Name, capability.AddColumnWithDefault, platform.YDB)
 			}
-			withDefault := stmt.Target.Capabilities.Has(capability.AddColumnWithDefault)
+			withDefault := file.Target.Capabilities.Has(capability.AddColumnWithDefault)
 			for _, action := range read.Actions {
 				if action.Kind != yqlddl.AddColumn {
 					continue
@@ -230,18 +208,20 @@ func ydbAddColumnRefusedRule() Rule {
 //
 // After ALTER TABLE ... DROP INDEX, and after ALTER TABLE ... RESET (TTL),
 // each drop is accepted.
-func ydbDropUsedColumnRule() Rule {
-	return Rule{
-		Code:     "YD104",
-		Title:    "column dropped while an index or the TTL uses it",
-		Severity: SeverityError,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbDropUsedColumnRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD104",
+			Title:    "column dropped while an index or the TTL uses it",
+			Severity: lintext.Error,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
@@ -253,16 +233,12 @@ func ydbDropUsedColumnRule() Rule {
 				for _, action := range read.Actions {
 					if action.Kind == yqlddl.DropColumn {
 						if message, used := table.dropRefusal(action.Column.Name); used {
-							findings = append(findings, Finding{
-								Rule:     "YD104",
-								Title:    "column dropped while an index or the TTL uses it",
-								Severity: SeverityError,
-								File:     file.Path,
-								Line:     stmt.Line,
-								Message:  fmt.Sprintf("DROP COLUMN %s: %s", action.Column.Name, message),
-								Context: statementFindingContext(i, Subject{
-									Kind: SubjectColumn, Name: action.Column.Name, Parent: read.Name,
-								}),
+							findings = append(findings, lintext.Violation{
+								Statement: i,
+								Message:   fmt.Sprintf("DROP COLUMN %s: %s", action.Column.Name, message),
+								Subjects: []lintext.Subject{{
+									Kind: lintext.SubjectColumn, Name: action.Column.Name, Parent: read.Name,
+								}},
 							})
 						}
 					}
@@ -291,8 +267,8 @@ func ydbDropUsedColumnRule() Rule {
 // table whose minimum was 1 already loses nothing, so the rule stays silent
 // where the directory's own history says so (see [ydbTable.minPartitions]),
 // and warns where it does not know.
-func ydbPartitionMinimumResetRule() Rule {
-	return ydbTableResetRule("YD105", "partitioning change resets the minimum partition count", partitionMinimumReset)
+func ydbPartitionMinimumResetRule(h history) lintkit.Rule {
+	return ydbTableResetRule(h, "YD105", "partitioning change resets the minimum partition count", partitionMinimumReset)
 }
 
 // ydbTableResetRule is a warning about an ALTER TABLE that resets a setting of
@@ -300,30 +276,28 @@ func ydbPartitionMinimumResetRule() Rule {
 // history leaves it before that statement, and says why the statement resets
 // the setting; the history then takes the statement whether it was reported or
 // not.
-func ydbTableResetRule(code, title string, reset func(yqlddl.Statement, ydbTable) (string, bool)) Rule {
-	return Rule{
-		Code:     code,
-		Title:    title,
-		Severity: SeverityWarning,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbTableResetRule(h history, code, title string, reset func(yqlddl.Statement, ydbTable) (string, bool)) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     code,
+			Title:    title,
+			Severity: lintext.Warning,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
 				if message, resets := reset(read, state.table(read.Name)); resets {
-					findings = append(findings, Finding{
-						Rule:     code,
-						Title:    title,
-						Severity: SeverityWarning,
-						File:     file.Path,
-						Line:     stmt.Line,
-						Message:  message,
-						Context:  statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					findings = append(findings, lintext.Violation{
+						Statement: i,
+						Message:   message,
+						Subjects:  []lintext.Subject{{Kind: lintext.SubjectTable, Name: read.Name}},
 					})
 				}
 				state.apply(read)
@@ -446,8 +420,8 @@ func alteredMinPartitions(read yqlddl.Statement, table ydbTable) (int, bool) {
 // loses nothing, so the rule stays silent where the directory's own history
 // says so (see [ydbTable.sizeMB]), and warns where it does not know. YD105
 // reports the minimum the same statement resets.
-func ydbPartitionSizeResetRule() Rule {
-	return ydbTableResetRule("YD118", "partitioning change resets the partition size", partitionSizeReset)
+func ydbPartitionSizeResetRule(h history) lintkit.Rule {
+	return ydbTableResetRule(h, "YD118", "partitioning change resets the partition size", partitionSizeReset)
 }
 
 // partitionSizeReset says why an ALTER TABLE of table resets its partition
@@ -535,7 +509,7 @@ const ydbPartitionSize = "AUTO_PARTITIONING_PARTITION_SIZE_MB"
 // missingRequirement returns the first action of a statement that needs key,
 // and reports whether the target lacks it; see [yqlddl.Statement.Requirements],
 // which `ptah sql lint` judges a YQL statement by too.
-func missingRequirement(read yqlddl.Statement, target Target, key capability.Capability) (yqlddl.Action, bool) {
+func missingRequirement(read yqlddl.Statement, target lintext.Target, key capability.Capability) (yqlddl.Action, bool) {
 	if target.Capabilities.Has(key) {
 		return yqlddl.Action{}, false
 	}
@@ -571,21 +545,23 @@ func settingsSet(read yqlddl.Statement) []yqlddl.Setting {
 // RENAME TO vmoved` the read answers the same, and renaming the table back
 // makes the view read it again.
 //
-// The renames of a table rebuild are left out (see [fileRebuilds]): the copy
+// The renames of a table rebuild are left out (see [history.rebuilds]): the copy
 // takes the table's name back in the next statement, and the view reads it.
-func ydbViewOrphanedRule() Rule {
-	return Rule{
-		Code:     "YD106",
-		Title:    "table dropped or renamed while a view reads it",
-		Severity: SeverityError,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbViewOrphanedRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD106",
+			Title:    "table dropped or renamed while a view reads it",
+			Severity: lintext.Error,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			rebuilds := fileRebuilds(file)
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			rebuilds := h.rebuilds(file)
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
@@ -598,7 +574,7 @@ func ydbViewOrphanedRule() Rule {
 						"DROP TABLE %s leaves %s reading a table that does not exist: YDB keeps a view whose table is dropped, "+
 							"and every read of it fails; drop or recreate %s first",
 						read.Name, viewList(views), pronounFor(views))
-				case read.Kind == yqlddl.AlterTable && !rebuilds.renames[i]:
+				case read.Kind == yqlddl.AlterTable && !rebuilds.Renames[i]:
 					if newName, renamed := tableRenamedTo(read); renamed {
 						message = fmt.Sprintf(
 							"ALTER TABLE %s RENAME TO %s leaves %s reading a table that does not exist: a view reads its table "+
@@ -607,14 +583,10 @@ func ydbViewOrphanedRule() Rule {
 					}
 				}
 				if message != "" {
-					findings = append(findings, Finding{
-						Rule:     "YD106",
-						Title:    "table dropped or renamed while a view reads it",
-						Severity: SeverityError,
-						File:     file.Path,
-						Line:     stmt.Line,
-						Message:  message,
-						Context:  statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					findings = append(findings, lintext.Violation{
+						Statement: i,
+						Message:   message,
+						Subjects:  []lintext.Subject{{Kind: lintext.SubjectTable, Name: read.Name}},
 					})
 				}
 				state.apply(read)
@@ -633,18 +605,20 @@ func ydbViewOrphanedRule() Rule {
 // with one changefeed or several, and after DROP CHANGEFEED of each the same
 // rename is accepted. The table's changefeeds are read from the directory's
 // own migrations, as YD104 reads its indexes.
-func ydbMovedTableWithChangefeedRule() Rule {
-	return Rule{
-		Code:     "YD109",
-		Title:    "table renamed while it carries a changefeed",
-		Severity: SeverityError,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbMovedTableWithChangefeedRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD109",
+			Title:    "table renamed while it carries a changefeed",
+			Severity: lintext.Error,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
@@ -655,18 +629,14 @@ func ydbMovedTableWithChangefeedRule() Rule {
 				table := state.table(read.Name)
 				for _, action := range read.Actions {
 					if action.Kind == yqlddl.RenameTable && len(table.changefeeds) > 0 {
-						findings = append(findings, Finding{
-							Rule:     "YD109",
-							Title:    "table renamed while it carries a changefeed",
-							Severity: SeverityError,
-							File:     file.Path,
-							Line:     stmt.Line,
+						findings = append(findings, lintext.Violation{
+							Statement: i,
 							Message: fmt.Sprintf(
 								"RENAME TO moves %s, which carries %s, and YDB moves no table that carries one "+
 									"(Cannot move table with cdc streams); drop the changefeeds first and add them again after "+
 									"the move, which restarts each stream",
 								read.Name, changefeedList(table.changefeeds)),
-							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+							Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: read.Name}},
 						})
 					}
 					table = table.applyAction(action)
@@ -899,19 +869,21 @@ func (s *ydbSchema) applyComment(sql string) {
 // the table's 10240 bytes of attributes, and a column or an index created
 // later under the old name reads it as its own. Ptah's plans remove and move
 // it themselves; a hand-written migration has to.
-func ydbCommentLeftBehindRule() Rule {
-	return Rule{
-		Code:     "YD150",
-		Title:    "comment left behind by a drop or a rename",
-		Severity: SeverityWarning,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbCommentLeftBehindRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD150",
+			Title:    "comment left behind by a drop or a rename",
+			Severity: lintext.Warning,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
+			state := h.before(file)
 			type leftBehind struct {
-				finding Finding
+				finding lintext.Violation
 				table   string
 				key     string
 			}
@@ -934,23 +906,19 @@ func ydbCommentLeftBehindRule() Rule {
 				for _, action := range read.Actions {
 					key, message := commentLeftBehind(read.Name, action, table.comments)
 					if key != "" {
-						pending = append(pending, leftBehind{table: read.Name, key: key, finding: Finding{
-							Rule:     "YD150",
-							Title:    "comment left behind by a drop or a rename",
-							Severity: SeverityWarning,
-							File:     file.Path,
-							Line:     stmt.Line,
-							Message:  message,
-							Context: statementFindingContext(i, Subject{
-								Kind: SubjectTable, Name: read.Name,
-							}),
+						pending = append(pending, leftBehind{table: read.Name, key: key, finding: lintext.Violation{
+							Statement: i,
+							Message:   message,
+							Subjects: []lintext.Subject{{
+								Kind: lintext.SubjectTable, Name: read.Name,
+							}},
 						}})
 					}
 					table = table.applyAction(action)
 				}
 				state.store(read, table)
 			}
-			findings := make([]Finding, 0, len(pending))
+			findings := make([]lintext.Violation, 0, len(pending))
 			for _, left := range pending {
 				findings = append(findings, left.finding)
 			}
@@ -1052,19 +1020,21 @@ func (s *ydbSchema) sequenceOwner(path string) (table, column string, ok bool) {
 // The statement succeeds, and the column stores the value past its range as a
 // negative number without an error. A BigSerial's maximum is the Int64
 // maximum already.
-func ydbNarrowSerialSequenceRule() Rule {
-	return Rule{
-		Code:          "YD107",
-		Title:         "ALTER SEQUENCE widens a 16-bit or 32-bit Serial",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckFile: func(file *File) []Finding {
+func ydbNarrowSerialSequenceRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD107",
+			Title:         "ALTER SEQUENCE widens a 16-bit or 32-bit Serial",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) || file.Target.Capabilities.Has(capability.SerialSequenceKeepsRange) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
@@ -1072,18 +1042,14 @@ func ydbNarrowSerialSequenceRule() Rule {
 					table, column, owned := state.sequenceOwner(read.Name)
 					serial := state.table(table).serials[column]
 					if owned && (serial == "Serial" || serial == "SmallSerial") {
-						findings = append(findings, Finding{
-							Rule:     "YD107",
-							Title:    "ALTER SEQUENCE widens a 16-bit or 32-bit Serial",
-							Severity: SeverityError,
-							File:     file.Path,
-							Line:     stmt.Line,
+						findings = append(findings, lintext.Violation{
+							Statement: i,
 							Message: fmt.Sprintf(
 								"ALTER SEQUENCE %s raises the maximum of the sequence of %s column %s.%s to the Int64 maximum, "+
 									"and the column then stores the value past its own maximum as a negative number without "+
 									"an error; declare the column BigSerial to give its sequence a start or an increment",
 								read.Name, serial, table, column),
-							Context: statementFindingContext(i, Subject{Kind: SubjectColumn, Name: column, Parent: table}),
+							Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: column, Parent: table}},
 						})
 					}
 				}
@@ -1100,38 +1066,36 @@ func ydbNarrowSerialSequenceRule() Rule {
 // ... INCREMENT BY 1` succeeds and moves the next value back to 500, and the
 // next insert fails with `Conflict with existing key`. A RESTART of the
 // statement's own sets a new value instead.
-func ydbReplayedRestartRule() Rule {
-	return Rule{
-		Code:          "YD108",
-		Title:         "ALTER SEQUENCE replays an earlier RESTART",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckFile: func(file *File) []Finding {
+func ydbReplayedRestartRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD108",
+			Title:         "ALTER SEQUENCE replays an earlier RESTART",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
 				if read.Kind == yqlddl.AlterSequence && !read.Restart {
 					table, column, owned := state.sequenceOwner(read.Name)
 					if restart, restarted := state.table(table).restarts[column]; owned && restarted {
-						findings = append(findings, Finding{
-							Rule:     "YD108",
-							Title:    "ALTER SEQUENCE replays an earlier RESTART",
-							Severity: SeverityError,
-							File:     file.Path,
-							Line:     stmt.Line,
+						findings = append(findings, lintext.Violation{
+							Statement: i,
 							Message: fmt.Sprintf(
 								"ALTER SEQUENCE %s alters a sequence an earlier statement restarted at %s, and YDB replays that "+
 									"restart on every later ALTER SEQUENCE, so the next row of %s takes %s again and fails on a key "+
 									"a row already holds (Conflict with existing key); restart it in this statement at a value "+
 									"past every row, or leave it as it is",
 								read.Name, restart, table, restart),
-							Context: statementFindingContext(i, Subject{Kind: SubjectColumn, Name: column, Parent: table}),
+							Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: column, Parent: table}},
 						})
 					}
 				}
@@ -1219,51 +1183,6 @@ func (t ydbTable) dropRefusal(column string) (string, bool) {
 	return "", false
 }
 
-// ydbHistory computes, for every migration file of a YDB analysis, the schema
-// the directory's own up migrations leave before the file runs: for an up
-// file, the up migrations of lower versions; for a down file, those and the up
-// migration of its own version, which the down half undoes. Files are read in
-// version order, as the migrator applies them.
-func ydbHistory(files []File) {
-	ups := make([]int, 0, len(files))
-	for i := range files {
-		if files[i].IsUp && files[i].Version > 0 && !files[i].Repeatable {
-			ups = append(ups, i)
-		}
-	}
-	slices.SortStableFunc(ups, func(a, b int) int { return cmp.Compare(files[a].Version, files[b].Version) })
-	state := (*ydbSchema)(nil).clone()
-	after := make(map[int64]*ydbSchema, len(ups))
-	for _, index := range ups {
-		file := &files[index]
-		file.ydbBefore = state.clone()
-		for i := range file.Statements {
-			state.apply(yqlddl.Read(file.Statements[i].SQL))
-			state.applyComment(file.Statements[i].SQL)
-		}
-		after[file.Version] = state.clone()
-	}
-	for i := range files {
-		if !files[i].IsDown || files[i].Version <= 0 {
-			continue
-		}
-		files[i].ydbBefore = stateThrough(ups, files, after, files[i].Version)
-	}
-}
-
-// stateThrough is the schema after every up migration whose version is at
-// most version.
-func stateThrough(ups []int, files []File, after map[int64]*ydbSchema, version int64) *ydbSchema {
-	var latest *ydbSchema
-	for _, index := range ups {
-		if files[index].Version > version {
-			break
-		}
-		latest = after[files[index].Version]
-	}
-	return latest
-}
-
 // ydbGrantOptionRevokeRule reports REVOKE GRANT OPTION FOR, which on YDB takes
 // away the permission it names together with the right to grant it. YDB keeps
 // WITH GRANT OPTION as a permission of its own, ydb.access.grant, beside the
@@ -1273,15 +1192,17 @@ func stateThrough(ups []int, files []File, after map[int64]*ydbSchema, version i
 // OPTION FOR SELECT ...` leaves it neither, where the statement reads as
 // keeping SELECT. Revoking the GRANT permission alone takes the option and
 // keeps the rest.
-func ydbGrantOptionRevokeRule() Rule {
-	return Rule{
-		Code:          "YD110",
-		Title:         "REVOKE GRANT OPTION FOR revokes the permission too",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) || !lintkit.HasWordPrefix(stmt.Words, "REVOKE", "GRANT", "OPTION", "FOR") {
+func ydbGrantOptionRevokeRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD110",
+			Title:         "REVOKE GRANT OPTION FOR revokes the permission too",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) || !lintkit.HasWordPrefix(stmt.Words, "REVOKE", "GRANT", "OPTION", "FOR") {
 				return false, ""
 			}
 			return true, "REVOKE GRANT OPTION FOR takes away the permission it names as well as " +
@@ -1296,15 +1217,17 @@ func ydbGrantOptionRevokeRule() Rule {
 // 26.2.1.14: after `DROP USER u`, .sys/auth_permissions still lists u's
 // entries, and a user created later under the same name holds them. DS107
 // reports the drop itself; this rule says what it leaves.
-func ydbPrincipalDropRule() Rule {
-	return Rule{
-		Code:          "YD111",
-		Title:         "dropped user or group keeps its permissions",
-		Severity:      SeverityWarning,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) || !lintkit.HasWordPrefix(stmt.Words, "DROP") || len(stmt.Words) < 2 {
+func ydbPrincipalDropRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD111",
+			Title:         "dropped user or group keeps its permissions",
+			Severity:      lintext.Warning,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) || !lintkit.HasWordPrefix(stmt.Words, "DROP") || len(stmt.Words) < 2 {
 				return false, ""
 			}
 			kind := stmt.Words[1]
@@ -1330,15 +1253,17 @@ func ydbPrincipalDropRule() Rule {
 // on the other. A consumer's availability_period is the exception: 26.2.1.14
 // resets it, and 25.1.4.7 has no availability period to reset. Ptah writes
 // SET with the value instead.
-func ydbTopicResetRule() Rule {
-	return Rule{
-		Code:          "YD113",
-		Title:         "topic setting reset",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbTopicResetRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD113",
+			Title:         "topic setting reset",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
@@ -1399,15 +1324,17 @@ func resetNames(action yqlddl.Action) []string {
 //   - a consumer of type shared in CREATE TOPIC is created as an ordinary
 //     consumer on 26.2.1.14 (ADD CONSUMER refuses it: `shared consumers is
 //     disabled`), and 25.1.4.7 refuses the option.
-func ydbTopicSettingIgnoredRule() Rule {
-	return Rule{
-		Code:          "YD114",
-		Title:         "topic setting YDB keeps as nothing",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbTopicSettingIgnoredRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD114",
+			Title:         "topic setting YDB keeps as nothing",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
@@ -1516,20 +1443,22 @@ func unknownCodec(list string) string {
 // rows, so a migration that creates the table applies and the first rebuild
 // fails. [yqlddl.Statement.Requirements] decides which statement needs which
 // key, as `ptah sql lint` reads it.
-func ydbVectorIndexUnbuiltRule() Rule {
-	return Rule{
-		Code:          "YD130",
-		Title:         "vector index the target does not build",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbVectorIndexUnbuiltRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD130",
+			Title:         "vector index the target does not build",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
 			for _, requirement := range read.Requirements() {
-				if stmt.Target.Capabilities.Has(requirement.Capability) {
+				if file.Target.Capabilities.Has(requirement.Capability) {
 					continue
 				}
 				name := requiredIndex(read, requirement).Name
@@ -1571,36 +1500,34 @@ func requiredIndex(read yqlddl.Statement, requirement yqlddl.Requirement) yqlddl
 // indexes; a table created outside it reports nothing. The rule reads the up
 // migrations only: a down migration's writes meet the same index, and the
 // state before one is not the state the directory's own history builds.
-func ydbVectorIndexStaleRule() Rule {
-	return Rule{
-		Code:     "YD131",
-		Title:    "rows written past a vector index that does not take them",
-		Severity: SeverityWarning,
-		Dialects: ydbOnly,
-		CheckFile: func(file *File) []Finding {
+func ydbVectorIndexStaleRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "YD131",
+			Title:    "rows written past a vector index that does not take them",
+			Severity: lintext.Warning,
+			Targets:  ydbOnly,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			caps := file.Target.Capabilities
 			if !ydbRun(file.Target) || !caps.Has(capability.VectorIndexes) || caps.Has(capability.VectorIndexMaintainedOnWrite) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if table, writes := yqlddl.WrittenTable(stmt.SQL); writes {
 					if index, held := state.table(table).vectorIndex(); held {
-						findings = append(findings, Finding{
-							Rule:     "YD131",
-							Title:    "rows written past a vector index that does not take them",
-							Severity: SeverityWarning,
-							File:     file.Path,
-							Line:     stmt.Line,
+						findings = append(findings, lintext.Violation{
+							Statement: i,
 							Message: fmt.Sprintf("this statement writes rows into %s, whose vector index %s does not take "+
 								"them on this target (needs target capability %s): a search through the index answers as "+
 								"the table stood when the index was built; write the rows before the index is added, or "+
 								"drop and add the index after them. Rows the application writes later meet the same, and "+
 								"YDB 25.3 and later keep the index current",
 								table, index, capability.VectorIndexMaintainedOnWrite),
-							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: table}),
+							Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: table}},
 						})
 					}
 				}
@@ -1637,36 +1564,34 @@ func (t ydbTable) vectorIndex() (string, bool) {
 // ordinary writable tables behind a plain DROP, and CASCADE drops them, which
 // DS107 judges. The failover is read from the directory: the up migrations
 // before the analyzed version, then the file's statements before the drop.
-func ydbReplicationDroppedWithoutFailoverRule() Rule {
-	return Rule{
-		Code:          "YD115",
-		Title:         "async replication dropped without failover",
-		Severity:      SeverityWarning,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckFile: func(file *File) []Finding {
+func ydbReplicationDroppedWithoutFailoverRule(h history) lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD115",
+			Title:         "async replication dropped without failover",
+			Severity:      lintext.Warning,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !ydbRun(file.Target) {
 				return nil
 			}
-			state := file.ydbBefore.clone()
-			var findings []Finding
+			state := h.before(file)
+			var findings []lintext.Violation
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
 				if read.Kind == yqlddl.DropAsyncReplication && read.Name != "" && !read.Cascade &&
 					!state.failedOver[read.Name] {
-					findings = append(findings, Finding{
-						Rule:     "YD115",
-						Title:    "async replication dropped without failover",
-						Severity: SeverityWarning,
-						File:     file.Path,
-						Line:     stmt.Line,
+					findings = append(findings, lintext.Violation{
+						Statement: i,
 						Message: fmt.Sprintf("DROP ASYNC REPLICATION %s keeps its replica tables, and YDB keeps a "+
 							"replica of a replication that was not failed over read-only for good (path is an async "+
 							"replica table); fail it over first with ALTER ASYNC REPLICATION %s SET (STATE = 'DONE', "+
 							"FAILOVER_MODE = 'FORCE') to keep writable tables, or drop it with CASCADE to drop them",
 							read.Name, read.Name),
-						Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+						Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: read.Name}},
 					})
 				}
 				state.apply(read)
@@ -1695,15 +1620,17 @@ func failsOver(read yqlddl.Statement) bool {
 // description reads back neither, the password as no password at all and the
 // token as no credential. The value stays in the migration file, and in every
 // copy of it, while the database holds a secret nobody can read back.
-func ydbSecretInClearRule() Rule {
-	return Rule{
-		Code:          "YD116",
-		Title:         "secret written in clear",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbSecretInClearRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD116",
+			Title:         "secret written in clear",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
@@ -1736,15 +1663,17 @@ func ydbSecretInClearRule() Rule {
 // access permissions`. Only a restart of a local-ydb server brought the
 // database back, by creating a new one. A pool's name is case-sensitive, so
 // only `default` itself is reported.
-func ydbDefaultPoolDropRule() Rule {
-	return Rule{
-		Code:          "YD120",
-		Title:         "the resource pool default dropped",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbDefaultPoolDropRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD120",
+			Title:         "the resource pool default dropped",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
@@ -1766,15 +1695,17 @@ func ydbDefaultPoolDropRule() Rule {
 // exits, and its last log line is the schemeshard's TDropBackupCollection
 // propose, on a collection that held no backup as well as one that did.
 // 26.2.1.14 drops the collection and serves on.
-func ydbBackupCollectionDropRule() Rule {
-	return Rule{
-		Code:          "YD121",
-		Title:         "backup collection dropped",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) || yqlddl.Read(stmt.SQL).Kind != yqlddl.DropBackupCollection {
+func ydbBackupCollectionDropRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD121",
+			Title:         "backup collection dropped",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) || yqlddl.Read(stmt.SQL).Kind != yqlddl.DropBackupCollection {
 				return false, ""
 			}
 			return true, "DROP BACKUP COLLECTION deletes every backup the collection holds, and a YDB 25.1 " +
@@ -1795,15 +1726,17 @@ func ydbBackupCollectionDropRule() Rule {
 // column table), and refuse more than one table in a statement (`ANALYZE
 // with multitables hasn't been implemented yet`). The migrator runs each scheme statement as a query of its own, so a
 // refused ANALYZE stops the migration after the statements before it applied.
-func ydbAnalyzeRule() Rule {
-	return Rule{
-		Code:          "YD122",
-		Title:         "ANALYZE in a migration",
-		Severity:      SeverityWarning,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) || yqlddl.Read(stmt.SQL).Kind != yqlddl.Analyze {
+func ydbAnalyzeRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD122",
+			Title:         "ANALYZE in a migration",
+			Severity:      lintext.Warning,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) || yqlddl.Read(stmt.SQL).Kind != yqlddl.Analyze {
 				return false, ""
 			}
 			return true, "ANALYZE collects column statistics and changes no schema; YDB runs it only with the " +

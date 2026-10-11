@@ -89,7 +89,7 @@ func atlasGapDroppedTableRule() Rule {
 					created[ref] = true
 					continue
 				}
-				if rebuilds.drops[i] {
+				if rebuilds.Drops[i] {
 					// The rebuild's copy holds the name again by the end of
 					// the file; see [fileRebuilds].
 					continue
@@ -114,7 +114,7 @@ func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, create
 	if !lintkit.HasWordPrefix(stmt.Words, "DROP", "TABLE") {
 		return nil
 	}
-	tables, complete := droppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
+	tables, complete := lintkit.DroppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
 	if complete && len(tables) == 0 {
 		return nil
 	}
