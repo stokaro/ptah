@@ -96,3 +96,31 @@ func TestRenderIsIdempotentOnItsOwnOutput(t *testing.T) {
 		})
 	}
 }
+
+// TestTyped writes a number and a boolean bare where the column's type takes
+// them bare, passes an existing literal through, and quotes everything else
+// once: a value that is no plain number, an array's default, and any value of
+// a type the table does not classify.
+func TestTyped(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		value      string
+		want       string
+	}{
+		{name: "an integer", columnType: "integer", value: "7", want: "7"},
+		{name: "a sized numeric", columnType: "numeric(10,2)", value: "1.50", want: "1.50"},
+		{name: "a boolean in any case", columnType: "BOOLEAN", value: "TRUE", want: "true"},
+		{name: "text", columnType: "text", value: "it's", want: "'it''s'"},
+		{name: "a literal already", columnType: "integer", value: "'7'", want: "'7'"},
+		{name: "not a plain number", columnType: "numeric", value: "NaN", want: "'NaN'"},
+		{name: "not a boolean word", columnType: "bool", value: "yes", want: "'yes'"},
+		{name: "an array", columnType: "integer[]", value: "{1,2}", want: "'{1,2}'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(defaultlit.Typed(test.columnType, test.value, quotePostgres), qt.Equals, test.want)
+		})
+	}
+}
