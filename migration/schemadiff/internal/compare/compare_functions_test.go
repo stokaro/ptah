@@ -94,14 +94,16 @@ func TestFunctionDefinitions_NoChangeWhenIdentical(t *testing.T) {
 func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *testing.T) {
 	c := qt.New(t)
 
-	// The annotation omits security, volatility, AND language; PostgreSQL
-	// reports the implicit defaults (INVOKER, VOLATILE, plpgsql for a typical
-	// trigger/RLS helper). The comparator must normalize the Go side so no
-	// spurious diff is reported.
+	// The annotation omits security and volatility; PostgreSQL reports the
+	// implicit defaults (INVOKER, VOLATILE for a typical trigger/RLS helper).
+	// The comparator must normalize the Go side so no spurious diff is
+	// reported. The language an annotation omits is the target's, which the
+	// PostgreSQL lowering gives it before the comparator runs.
 	gen := schemamodel.Function{
-		Name:    "f",
-		Returns: "integer",
-		Body:    "BEGIN RETURN 1; END;",
+		Name:     "f",
+		Returns:  "integer",
+		Language: "plpgsql",
+		Body:     "BEGIN RETURN 1; END;",
 	}
 	db := catalog.Function{
 		Name:       "f",

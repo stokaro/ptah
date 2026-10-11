@@ -144,9 +144,9 @@ func withCapabilities(info catalog.ServerInfo, caps capability.Capabilities) cat
 func TestCompareWithDatabaseInfoAllowsAForeignDefinerLanguageThisTargetSkips(t *testing.T) {
 	c := qt.New(t)
 	desired := mysqlDefinerDesired("RETURN 2", "DEFINER")
-	// An omitted annotation language canonicalizes to plpgsql. Checking after
-	// canonicalization is what keeps this on the planner's skip path.
-	desired.Functions[0].Language = ""
+	// A routine declared in plpgsql, which MySQL does not run. An omitted
+	// language is the target's own, SQL, and takes the replacement path.
+	desired.Functions[0].Language = "plpgsql"
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
 		t.Context(), desired,

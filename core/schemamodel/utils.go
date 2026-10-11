@@ -1325,7 +1325,7 @@ func deduplicateDatabase(
 	})
 	r.EmbeddedFields = deduplicateEmbeddedFields(r.EmbeddedFields, resolver, resolveScope)
 	r.Extensions = deduplicateExtensions(r.Extensions)
-	r.Functions = deduplicateNamedDefinitions(r.Functions, routineIdentityOf)
+	r.Functions = deduplicateFunctions(r.Functions)
 
 	deduplicateSchemaObjects(r)
 	rlsResolver := newRLSTableResolver(r.Tables, resolver)
@@ -1543,6 +1543,28 @@ func deduplicateNamedDefinitions[T any, K comparable](definitions []T, identity 
 		}
 		seen[key] = struct{}{}
 		deduplicated = append(deduplicated, definition)
+	}
+	return deduplicated
+}
+
+// deduplicateFunctions keeps the first declaration of each routine, with the
+// language a later declaration states where the first states none. The
+// conflict check has already refused declarations that differ in anything
+// else; see [compositeDefinitionValidator.functions].
+func deduplicateFunctions(functions []Function) []Function {
+	index := make(map[routineIdentity]int, len(functions))
+	deduplicated := make([]Function, 0, len(functions))
+	for _, function := range functions {
+		identity := routineIdentityOf(function)
+		kept, exists := index[identity]
+		if !exists {
+			index[identity] = len(deduplicated)
+			deduplicated = append(deduplicated, function)
+			continue
+		}
+		if deduplicated[kept].Language == "" {
+			deduplicated[kept].Language = function.Language
+		}
 	}
 	return deduplicated
 }

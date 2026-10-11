@@ -402,6 +402,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"column comparison", declared.Comparison.Columns},
 		{"index comparison", declared.Comparison.Indexes},
 		{"view comparison", declared.Comparison.Views},
+		{"routine comparison", declared.Comparison.Routines},
 		{"statement splitter", declared.Splitter},
 		{"statement annotator", declared.Annotator},
 		{"routine body reader", declared.RoutineBodies},

@@ -22,6 +22,10 @@ import (
 	"strings"
 )
 
+// Language is the one routine language MySQL and MariaDB run, as their catalog
+// reports it. A routine that declares no language is in it.
+const Language = "sql"
+
 // Volatility values, spelled as [schemamodel.Function.Canonicalize] leaves them.
 const (
 	Immutable = "IMMUTABLE"
@@ -55,10 +59,7 @@ func IdentityKey(name string) string {
 // DDL on a MySQL-family target.
 //
 // MySQL and MariaDB run exactly one routine language, SQL. An empty value is
-// accepted because an [ast.CreateFunctionNode] built directly carries no
-// language and the renderer has always treated that as SQL; note that a
-// declaration parsed from an annotation never arrives empty, because
-// [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql.
+// a routine that declares no language, which is a routine in the target's.
 //
 // It lives here, next to the rest of the family's routine rules, because TWO
 // callers must agree on it and they are in different packages. The renderer
@@ -71,7 +72,7 @@ func IdentityKey(name string) string {
 // One predicate, two consumers, so the two halves cannot drift apart again.
 func RunsLanguage(language string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(language))
-	return normalized == "" || normalized == "sql"
+	return normalized == "" || normalized == Language
 }
 
 // Characteristic returns the routine characteristic clause that encodes

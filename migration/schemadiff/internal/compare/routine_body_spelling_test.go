@@ -36,6 +36,7 @@ func routineWithBody(body string, spellings map[string]config.RoutineArguments) 
 			Language: "sql", Security: "INVOKER", Volatility: "STABLE",
 		}}},
 		diff, platform.CockroachDB, identifier.ForDialect(platform.CockroachDB), spellings,
+		nil,
 	)
 	return diff
 }

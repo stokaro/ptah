@@ -20,6 +20,10 @@ import (
 	"ptah.run/core/routineext"
 )
 
+// Language is the language of a PostgreSQL routine that declares none, which
+// is the language the server assumes for one written by hand.
+const Language = "plpgsql"
+
 // Reader reads the routine bodies of the PostgreSQL family: postgres,
 // cockroachdb, yugabytedb and spanner. Its zero value is ready to use.
 type Reader struct{}

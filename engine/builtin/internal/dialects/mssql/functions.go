@@ -39,10 +39,8 @@ import (
 // written here, because the planner has to reach the same answer -- it must not
 // plan a drop whose create this branch is about to skip.
 //
-// The trap that costs an afternoon is the same one too, and the message names
-// it: [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql,
-// so a function annotated without `language=` lands in this branch and is
-// skipped when it looks like it should have been generated.
+// Only a declared language lands here. A routine that declares none is in this
+// target's own, SQL, and is generated.
 func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure is gated on its own key. The two are one catalog object
 	// differing in one property, but a target can host one and not the other,
@@ -61,9 +59,7 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 			"-- SQLSERVER: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
 			escapeIdentifier(node.Name), language)
 		r.w.WriteLinef(
-			"--   If this body is T-SQL, declare language=\"sql\": an annotation that omits the")
-		r.w.WriteLinef(
-			"--   language is defaulted to plpgsql and is skipped here for the same reason.")
+			"--   If this body is T-SQL, declare language=\"sql\" or no language.")
 		return nil
 	}
 	// A parameter default is accepted by the engine and then invisible to

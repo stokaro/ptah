@@ -395,7 +395,8 @@ canonical name; a target without one wraps `ptaherr.ErrUnsupportedDialect`.
 `Reader` splits a PL/pgSQL body into the statements of its outer block, each
 IF, CASE, loop, nested block and EXCEPTION section carrying the statements it
 runs, and reads a body in any other language as one statement. The bundled
-runtime registers it on every target of the PostgreSQL family.
+runtime registers it on every target of the PostgreSQL family. `Language` is
+the language of a PostgreSQL routine that declares none, plpgsql.
 
 `dialect/mysql/mysqlroutine` is the MySQL owner's routine body reader for MySQL
 and MariaDB. `Reader` splits a compound body into the statements of its outer
@@ -414,7 +415,8 @@ an `IF`, a `WHILE` or a nested block runs, so it reports each of those as
 opaque. `EXEC` or `EXECUTE` running a string or `sp_executesql` is dynamic. A
 T-SQL variable carries an `@` prefix and cannot share a name with a column, so
 every reading reports its column reads as attributable. The bundled runtime
-registers it on the sqlserver target.
+registers it on the sqlserver target. `Language` is the language of every SQL
+Server routine, as the reader reports it.
 
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
 publishes the PG and TX families and the online rules ON101 and ON103 as data,
@@ -1743,7 +1745,11 @@ typed literal back as its value.
 target that registers it has the whole index definition compared; it also says
 which facet kinds an index rename keeps, and without it an index carrying any
 facet is dropped and built again rather than renamed. `Rules.Views` compares
-view and materialized view queries in place of the shared reading. A nil member
+view and materialized view queries in place of the shared reading.
+`Rules.Routines` states the language the target applies to a routine that
+declares none, and the shared comparison reads an omitted language as that one
+on both sides, while the diff keeps the declaration as written;
+`RoutineDefaults` is a `Routines` that answers with its own values. A nil member
 keeps the shared rule, and a typed-nil member is an invalid registration.
 `Runtime.ComparisonRules` returns a target's rules under any of its names, and
 refuses an unregistered target with `ptaherr.ErrUnsupportedDialect`.

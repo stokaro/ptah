@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/routineext"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
@@ -33,6 +34,8 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/lintscan"
+	mysqlrules "ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/oracleroutine"
 	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbcomparison"
@@ -87,8 +90,9 @@ func New() (*engine.Runtime, error) {
 				// below.
 				Splitter: lintscan.Splitter{Dialect: name},
 				// A routine body is the engine's own language, so its owner
-				// reads it.
+				// reads it, and a routine that declares no language is in it.
 				RoutineBodies: routineBodyReader(name),
+				Comparison:    schemacomparison.Rules{Routines: routineDefaults(name)},
 			}},
 		}
 		if name == platform.YDB {
@@ -202,6 +206,24 @@ func routineBodyReader(name string) routineext.Reader {
 		return mysqlroutine.Reader{}
 	case name == platform.SQLServer:
 		return mssqlroutine.Reader{}
+	default:
+		return nil
+	}
+}
+
+// routineDefaults are the attributes the target's engine applies to a routine
+// whose declaration leaves them out, as its reader reports them, or nil for a
+// target whose reader reports no routines.
+func routineDefaults(name string) schemacomparison.Routines {
+	switch {
+	case platform.IsPostgresFamily(name):
+		return schemacomparison.RoutineDefaults{Language: pgroutine.Language}
+	case name == platform.MySQL, name == platform.MariaDB:
+		return schemacomparison.RoutineDefaults{Language: mysqlrules.Language}
+	case name == platform.SQLServer:
+		return schemacomparison.RoutineDefaults{Language: mssqlroutine.Language}
+	case name == platform.Oracle:
+		return schemacomparison.RoutineDefaults{Language: oracleroutine.Language}
 	default:
 		return nil
 	}

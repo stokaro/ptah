@@ -261,9 +261,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		// anyway made `schema apply` execute the drop, create nothing, and
 		// report success -- the operator asked for a change and got a deletion.
 		// Measured on MySQL 26.7.0 and MariaDB 12.3.2: zero rows in
-		// information_schema.ROUTINES afterwards. The shape needs no exotic
-		// schema, because Canonicalize defaults an omitted `language=` to
-		// plpgsql, so an ordinary annotation reaches it.
+		// information_schema.ROUTINES afterwards.
 		//
 		// The CREATE node is still emitted, and that is deliberate: it renders
 		// the skip comment, so the plan says which function was left alone

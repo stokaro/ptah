@@ -47,7 +47,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
-| `core/schemacomparison` | Target rules the shared comparison reads columns, index options and view queries through. |
+| `core/schemacomparison` | Target rules the shared comparison reads columns, index options, view queries and omitted routine attributes through. |
 | `core/schemapreparation` | Selected column-key and facet resolution with independent source and prepared captures. |
 | `core/schemaext` | Typed feature values, source coverage, explicit codecs, dependency captures, and conservative effects. |
 | `core/schemaprojection` | Target-owned CREATE defaults, constraint effects, and table-state predictions. |
@@ -316,7 +316,10 @@ takes from a target: how a column's type, default and sequence, an index's
 options and a view's query read on it. YDB registers all three, so a declared
 BIGINT compares as the Int64 its catalog reports, a declared BTREE as the
 synchronous global index, and a view's query in the form the server stores
-it. A nil member keeps the shared rule.
+it. `Routines` names the language a routine that declares none is in, so the
+comparison reads an omitted language as the target's: plpgsql on the PostgreSQL
+family, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle. A nil member
+keeps the shared rule.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
 files used as current state. It predicts CREATE defaults and column keys.

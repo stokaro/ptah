@@ -843,7 +843,7 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 		fn.Kind = routineKind(routineType)
 		fn.Body = body.String
 		fn.Schema = dbName
-		fn.Language = "sql"
+		fn.Language = mysqlroutine.Language
 		fn.Returns = mysqlroutine.NormalizeType(returns.String)
 		fn.Parameters = parameters[routineParameterKey(routineType, fn.Name)]
 		fn.Volatility = mysqlroutine.VolatilityFromCatalog(isDeterministic, sqlDataAccess)

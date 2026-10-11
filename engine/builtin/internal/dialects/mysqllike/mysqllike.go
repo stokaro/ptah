@@ -1432,15 +1432,9 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	// by. The only alternative is `exclude` in ptah.yaml, which is an
 	// operator-side filter at invocation, not a property of the declaration.
 	//
-	// What the message says is the part worth getting right. A skip naming only
-	// the language is not enough: [schemamodel.Function.Canonicalize] defaults
-	// an UNSET language to plpgsql -- PostgreSQL's default, baked into a
-	// dialect-neutral type -- so a function annotated without `language=` lands
-	// here too and is skipped when it should have been generated. Measured on
-	// MySQL 26.7.0 and MariaDB 12.3.2: `schema apply` exits 0 having created
-	// nothing, and the diff asks for the same function forever. That trap costs
-	// an afternoon to find, so the comment names it and names the one word that
-	// settles it.
+	// Only a declared language lands here. A routine that declares none is in
+	// this target's own, SQL, and is generated; the comment names the one word
+	// that settles a declaration in the wrong language.
 	//
 	// The message never blames the engine. `-- CREATE FUNCTION f1 not supported
 	// in MySQL` is false, because MySQL hosts functions perfectly well
@@ -1455,9 +1449,7 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 			"-- %s: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
 			r.dialectUpper, escapeIdentifier(node.Name), language)
 		r.w.WriteLinef(
-			"--   If this body is SQL, declare language=\"sql\": an annotation that omits the")
-		r.w.WriteLinef(
-			"--   language is defaulted to plpgsql and is skipped here for the same reason.")
+			"--   If this body is SQL, declare language=\"sql\" or no language.")
 		return nil
 	}
 	// Both refusals happen before anything is written. A value this target

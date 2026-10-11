@@ -22,6 +22,9 @@ type Rules struct {
 	Indexes Indexes
 	// Views compares the queries of views and materialized views.
 	Views Views
+	// Routines gives a routine the attributes the target applies where its
+	// declaration states none.
+	Routines Routines
 }
 
 // Columns compares the column definitions of one target, and reads back the
@@ -75,6 +78,30 @@ type Views interface {
 	// target. It replaces the shared comparison's reading of a view's or a
 	// materialized view's query.
 	QueryEqual(desired, current string) bool
+}
+
+// Routines states what a target applies to a routine whose declaration leaves
+// an attribute out. The shared comparison reads an omitted attribute as the
+// target's on both sides, so a declaration that leaves it out compares equal
+// to the routine the catalog reports, and the declaration is still written as
+// it was declared.
+type Routines interface {
+	// Defaults returns the values the target applies, as its reader reports
+	// them. An empty value leaves the attribute as declared.
+	Defaults() RoutineDefaults
+}
+
+// RoutineDefaults are the values a target applies to a routine that states
+// none. It is itself a [Routines] that answers with its own values, which is
+// what a target with fixed defaults registers.
+type RoutineDefaults struct {
+	// Language is the routine language, such as plpgsql or sql.
+	Language string
+}
+
+// Defaults returns d.
+func (d RoutineDefaults) Defaults() RoutineDefaults {
+	return d
 }
 
 // Runtime selects the rules a registered target gives the comparison.

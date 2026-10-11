@@ -140,18 +140,10 @@ func TestVisitNode_CreateFunctionLanguageDecidesWhetherTheBodyCanRun(t *testing.
 	}
 }
 
-// TestVisitNode_CreateFunctionSkipNamesTheCanonicalizeDefault pins the part of the
-// skip message that is new.
-//
-// [schemamodel.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
-// function annotated without `language=` reaches the skip branch and is passed
-// over when it should have been generated. Measured on MySQL 26.7.0 and MariaDB
-// 12.3.2, `schema apply` then exits 0 having created nothing and the diff asks
-// for the same function on every run. The renderer cannot tell that case apart
-// from a deliberate plpgsql declaration -- both arrive as the same value -- so
-// it cannot choose for the operator, but it can say which two readings exist
-// and which word settles it.
-func TestVisitNode_CreateFunctionSkipNamesTheCanonicalizeDefault(t *testing.T) {
+// TestVisitNode_CreateFunctionSkipNamesTheWordThatSettlesIt pins the hint a
+// skip carries: a function declared in plpgsql is not generated here, and the
+// message names the declaration that would be, language="sql" or none.
+func TestVisitNode_CreateFunctionSkipNamesTheWordThatSettlesIt(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -163,8 +155,7 @@ func TestVisitNode_CreateFunctionSkipNamesTheCanonicalizeDefault(t *testing.T) {
 			})
 
 			c.Assert(err, qt.IsNil)
-			c.Check(r.Output(), qt.Contains, `language="sql"`)
-			c.Check(r.Output(), qt.Contains, "defaulted to plpgsql")
+			c.Check(r.Output(), qt.Contains, `declare language="sql" or no language`)
 			// Every added line is a comment: a skipped function must leave no
 			// executable statement behind.
 			for line := range strings.SplitSeq(strings.TrimSpace(r.Output()), "\n") {

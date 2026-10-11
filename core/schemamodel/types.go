@@ -1469,16 +1469,17 @@ func (f Function) IsProcedure() bool {
 	return strings.EqualFold(strings.TrimSpace(f.Kind), FunctionKindProcedure)
 }
 
-// Canonicalize fills in PostgreSQL's implicit defaults and case-folds the
+// Canonicalize fills in the implicit defaults of the model and case-folds the
 // attributes that pg_proc/pg_language always report in canonical form. Apply
 // it immediately after constructing or mutating a Function so every downstream
 // consumer — parser, planner, renderer, comparator — sees the same values.
 //
-//   - Language: empty → "plpgsql"; otherwise lowercased. pg_language.lanname
-//     is stored lowercase, and the postgres renderer omits the LANGUAGE
-//     clause if this field is empty, which the server rejects with
-//     "ERROR: no language specified". Defaulting to plpgsql is what
-//     `CREATE FUNCTION` would assume in handwritten SQL too.
+//   - Language: lowercased and never defaulted. Each engine runs routines in
+//     a language of its own -- plpgsql on PostgreSQL, SQL on MySQL, MariaDB
+//     and SQL Server, PL/SQL on Oracle -- so an omitted language means the
+//     target's, and only a target can say which that is. A comparison reads
+//     it through the target's rules (schemacomparison.Routines), and each
+//     renderer writes its own.
 //   - Security: empty → "INVOKER"; otherwise uppercased. pg_proc surfaces
 //     this as either "DEFINER" or "INVOKER".
 //   - Volatility: empty → "VOLATILE"; otherwise uppercased. pg_proc surfaces
@@ -1506,9 +1507,6 @@ func (f *Function) Canonicalize() {
 	// before procedures existed into a form its author did not type.
 	f.Kind = strings.ToLower(strings.TrimSpace(f.Kind))
 	f.Language = strings.ToLower(f.Language)
-	if f.Language == "" {
-		f.Language = "plpgsql"
-	}
 	f.Security = strings.ToUpper(f.Security)
 	if f.Security == "" {
 		f.Security = "INVOKER"

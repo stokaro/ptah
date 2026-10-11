@@ -1200,7 +1200,7 @@
               "type": "string"
             },
             "language": {
-              "description": "Function language.",
+              "description": "Function language. Omitted means the target's own: plpgsql on PostgreSQL, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle.",
               "type": "string"
             },
             "leakproof": {
@@ -1716,7 +1716,7 @@
               "type": "string"
             },
             "language": {
-              "description": "Procedure language.",
+              "description": "Procedure language. Omitted means the target's own: plpgsql on PostgreSQL, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle.",
               "type": "string"
             },
             "name": {
