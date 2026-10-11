@@ -7,6 +7,8 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+
+	"ptah.run/internal/hcldiag"
 )
 
 // dynamicBlockType is the block a schema file writes to generate repeated
@@ -111,7 +113,7 @@ func (p *parser) dynamicLabels(block, content *hclsyntax.Block) ([]string, error
 	}
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
-		return nil, fmt.Errorf("evaluate dynamic labels at %s: %s", attr.SrcRange.String(), diags.Error())
+		return nil, fmt.Errorf("evaluate dynamic labels at %s: %s", attr.SrcRange.String(), hcldiag.Stable(diags).Error())
 	}
 	if value.IsNull() || !value.IsKnown() || (!value.Type().IsTupleType() && !value.Type().IsListType()) {
 		return nil, fmt.Errorf("dynamic labels at %s must be a known list of strings", attr.SrcRange.String())
@@ -170,7 +172,7 @@ func (p *parser) dynamicForEach(block *hclsyntax.Block) ([]dynamicElement, error
 	}
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
-		return nil, fmt.Errorf("evaluate dynamic for_each at %s: %s", attr.SrcRange.String(), diags.Error())
+		return nil, fmt.Errorf("evaluate dynamic for_each at %s: %s", attr.SrcRange.String(), hcldiag.Stable(diags).Error())
 	}
 	if value.IsNull() || !value.IsKnown() {
 		return nil, fmt.Errorf("dynamic for_each at %s is not a known collection", attr.SrcRange.String())
