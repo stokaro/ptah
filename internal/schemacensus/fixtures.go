@@ -187,6 +187,7 @@ func Fixtures() []Fixture {
 		{Name: "secret", Schema: secretFixture()},
 		{Name: "security-policy", Schema: securityPolicyFixture()},
 		{Name: "pgpolicy-policy", Schema: tablePolicyFixture()},
+		{Name: "pgpolicy-policy-declared", Schema: tableDeclaredPolicyFixture()},
 		{Name: "pgpolicy-table-state", Schema: tableRowSecurityFixture()},
 		{Name: "pgextension-extension", Schema: ownedExtensionFixture()},
 		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
@@ -247,6 +248,7 @@ func Fixtures() []Fixture {
 		{Name: "rls-host-table-only", Schema: rlsHostTableOnlyFixture()},
 		{Name: "constraint-host-struct-two-tables", Schema: constraintHostStructTwoTablesFixture()},
 		{Name: "index-host-struct-two-tables", Schema: indexHostStructTwoTablesFixture()},
+		{Name: "index-host-table-two-tables", Schema: indexHostTableTwoTablesFixture()},
 		{Name: "rls-host-struct-two-tables", Schema: rlsHostStructTwoTablesFixture()},
 	})
 }
@@ -275,10 +277,32 @@ func constraintHostStructTwoTablesFixture() schemamodel.Database {
 }
 
 func indexHostStructTwoTablesFixture() schemamodel.Database {
-	db := twoNamedTables()
+	db := twoIndexedTables()
 	db.Indexes = []schemamodel.Index{{
-		StructName: "B", Name: "idx_b_id", Fields: []string{"id"},
+		StructName: "B", Name: "idx_b_s", Fields: []string{"s"},
 	}}
+	return db
+}
+
+// indexHostTableTwoTablesFixture names the host by table name beside a second
+// table, so the round trip can move the index to the other one.
+func indexHostTableTwoTablesFixture() schemamodel.Database {
+	db := twoIndexedTables()
+	db.Indexes = []schemamodel.Index{{
+		TableName: "b", Name: "idx_b_s", Fields: []string{"s"},
+	}}
+	return db
+}
+
+// twoIndexedTables is [twoNamedTables] with a column outside the key on each
+// table. An index needs one on YDB, and moving the index to the other table
+// needs it there too.
+func twoIndexedTables() schemamodel.Database {
+	db := twoNamedTables()
+	db.Fields = append(db.Fields,
+		schemamodel.Field{StructName: "A", FieldName: "S", Name: "s", Type: "VARCHAR(32)", Nullable: true},
+		schemamodel.Field{StructName: "B", FieldName: "S", Name: "s", Type: "VARCHAR(32)", Nullable: true},
+	)
 	return db
 }
 

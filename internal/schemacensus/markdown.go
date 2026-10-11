@@ -63,6 +63,8 @@ func WriteMarkdown(w io.Writer) error {
 		}
 	}
 
+	writeRoundTripMarkdown(&out)
+
 	out.WriteString("\n### Every field\n\n")
 	out.WriteString("| Field | Disposition | Why it is not rendered |\n| --- | --- | --- |\n")
 	for _, entry := range entries {
@@ -75,4 +77,81 @@ func WriteMarkdown(w io.Writer) error {
 
 	_, err := io.WriteString(w, out.String())
 	return err
+}
+
+// writeRoundTripMarkdown renders the round trip's registers: the fixtures
+// whose round trip plans a change, the compared fields a change of which
+// plans nothing, the ones that by design do not, and the ones it cannot ask
+// about.
+func writeRoundTripMarkdown(out *strings.Builder) {
+	losses := RoundTripLosses()
+	out.WriteString("\n### Round trips that plan a change\n\n")
+	fmt.Fprintf(out, "%d recorded losses. Each is a fixture that, compared with its own conversion, plans a\n", len(losses))
+	out.WriteString("migration nobody asked for.\n\n")
+	out.WriteString("| Fixtures | Dialects | Directions | Why |\n| --- | --- | --- | --- |\n")
+	for _, loss := range losses {
+		fmt.Fprintf(out, "| %s | %s | %s | %s |\n",
+			fixtureList(loss.Fixtures), codeList(loss.Dialects), directionList(loss.Directions), loss.Reason)
+	}
+
+	for _, register := range []struct {
+		title, lead string
+		entries     []Unreached
+	}{
+		{
+			title:   "Compared fields a change of which plans nothing",
+			lead:    "known gaps: a conversion or the comparison drops each one on the dialects named",
+			entries: RoundTripGaps(),
+		},
+		{
+			title:   "Compared fields that do not reach a plan by design",
+			lead:    "exemptions, each with the reason it is right",
+			entries: RoundTripExemptions(),
+		},
+	} {
+		fmt.Fprintf(out, "\n### %s\n\n%d %s.\n\n", register.title, len(register.entries), register.lead)
+		out.WriteString("| Field | Dialects | Directions | Why |\n| --- | --- | --- | --- |\n")
+		for _, entry := range register.entries {
+			dialects := "any"
+			if entry.Dialects != nil {
+				dialects = codeList(entry.Dialects)
+			}
+			fmt.Fprintf(out, "| `%s` | %s | %s | %s |\n", entry.Field, dialects, directionList(entry.Directions), entry.Reason)
+		}
+	}
+
+	unmeasured := RoundTripUnmeasured()
+	out.WriteString("\n### Compared fields the round trip cannot ask about\n\n")
+	fmt.Fprintf(out, "%d, besides the ones only a recorded loss hides.\n\n", len(unmeasured))
+	out.WriteString("| Field | Why |\n| --- | --- |\n")
+	for _, entry := range unmeasured {
+		fmt.Fprintf(out, "| `%s` | %s |\n", entry.Field, entry.Reason)
+	}
+}
+
+// fixtureList names a few fixtures, or counts many.
+func fixtureList(fixtures []string) string {
+	if len(fixtures) > 4 {
+		return fmt.Sprintf("%d fixtures", len(fixtures))
+	}
+	return codeList(fixtures)
+}
+
+func codeList(values []string) string {
+	quoted := make([]string, len(values))
+	for index, value := range values {
+		quoted[index] = "`" + value + "`"
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func directionList(directions []Direction) string {
+	if directions == nil {
+		return "both"
+	}
+	names := make([]string, len(directions))
+	for index, direction := range directions {
+		names[index] = string(direction)
+	}
+	return strings.Join(names, ", ")
 }

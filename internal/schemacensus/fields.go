@@ -18,17 +18,23 @@ import (
 // -- a Spanner row-TTL parameter lives in core/ast and is exactly as droppable
 // as one that does not.
 func Fields() []string {
-	found := make(map[string]bool)
-	walkType(reflect.TypeFor[schemamodel.Database](), found, make(map[reflect.Type]bool))
-	for _, model := range featureCodecs() {
-		walkType(reflect.TypeOf(model.Codec.Prototype), found, make(map[reflect.Type]bool))
-	}
+	found := fieldTypes()
 	names := make([]string, 0, len(found))
 	for name := range found {
 		names = append(names, name)
 	}
 	slices.Sort(names)
 	return names
+}
+
+// fieldTypes maps every path [Fields] reports to the type the field holds.
+func fieldTypes() map[string]reflect.Type {
+	found := make(map[string]reflect.Type)
+	walkType(reflect.TypeFor[schemamodel.Database](), found, make(map[reflect.Type]bool))
+	for _, model := range featureCodecs() {
+		walkType(reflect.TypeOf(model.Codec.Prototype), found, make(map[reflect.Type]bool))
+	}
+	return found
 }
 
 // elementType unwraps pointers, slices, maps and arrays down to what they hold.
@@ -51,7 +57,7 @@ func typeName(t reflect.Type) string {
 
 // walkType records every exported field of t and descends into the Ptah types it
 // reaches. The visiting set breaks recursion through a type that reaches itself.
-func walkType(t reflect.Type, found map[string]bool, visiting map[reflect.Type]bool) {
+func walkType(t reflect.Type, found map[string]reflect.Type, visiting map[reflect.Type]bool) {
 	t = elementType(t)
 	if t.Kind() != reflect.Struct || visiting[t] {
 		return
@@ -63,7 +69,7 @@ func walkType(t reflect.Type, found map[string]bool, visiting map[reflect.Type]b
 		if field.PkgPath != "" {
 			continue
 		}
-		found[typeName(t)+"."+field.Name] = true
+		found[typeName(t)+"."+field.Name] = field.Type
 		if next := elementType(field.Type); strings.HasPrefix(next.PkgPath(), ptahModule) {
 			walkType(next, found, visiting)
 		}
