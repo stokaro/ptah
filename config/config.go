@@ -8,6 +8,7 @@ package config
 import (
 	"slices"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
@@ -506,6 +507,21 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions {
 	return &CompareOptions{
 		IgnoredExtensions: allExtensions,
 	}
+}
+
+// Exclusions returns the entries of [CompareOptions.IgnoredExtensions] as the
+// exclusions a feature comparison hands the extension owner, each spelled
+// exactly as the entry is and in the entries' order. A nil receiver excludes
+// nothing.
+func (c *CompareOptions) Exclusions() []schemaext.Exclusion {
+	if c == nil {
+		return nil
+	}
+	exclusions := make([]schemaext.Exclusion, 0, len(c.IgnoredExtensions))
+	for _, name := range c.IgnoredExtensions {
+		exclusions = append(exclusions, schemaext.Exclusion{Kind: coverage.Extension, Name: name})
+	}
+	return exclusions
 }
 
 // IsExtensionIgnored reports whether extensionName is one of the entries in

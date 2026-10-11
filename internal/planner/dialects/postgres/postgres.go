@@ -541,7 +541,7 @@ func (p *Planner) addSchemaPreconditions(
 		seen[schema] = struct{}{}
 		schemas = append(schemas, schema)
 	}
-	for _, schema := range p.extensionSchemas(diff) {
+	for _, schema := range p.placedSchemas(diff) {
 		if schema == "" || systemschema.IsUncreatableSchema(p.dialect, schema) {
 			continue
 		}
@@ -578,15 +578,17 @@ func (p *Planner) addSchemaPreconditions(
 	return result
 }
 
-// extensionSchemas are the schemas the plan's extensions are put into. The
-// addition carries the extension, so the inner search over the desired schema
-// is gone (stokaro/ptah#2315). A move names the schema it goes to the same
-// way: ALTER EXTENSION ... SET SCHEMA into a schema nothing created answers
-// `schema "ext" does not exist`, measured on PostgreSQL 18. A move carries
-// the schema resolved under the connection's default, so a declaration that
-// left the schema to that default names it here; like an addition that names
-// no schema, it needs no precondition.
-func (p *Planner) extensionSchemas(diff *difftypes.SchemaDiff) []string {
+// placedSchemas are the schemas the plan puts extensions and owners' objects
+// into. The addition carries the extension, so the inner search over the
+// desired schema is gone (stokaro/ptah#2315). A move names the schema it goes
+// to the same way: ALTER EXTENSION ... SET SCHEMA into a schema nothing
+// created answers `schema "ext" does not exist`, measured on PostgreSQL 18. A
+// move carries the schema resolved under the connection's default, so a
+// declaration that left the schema to that default names it here; like an
+// addition that names no schema, it needs no precondition. An owner's change
+// that places its object, such as an extension the owner installs or moves,
+// contributes its schema under the same rule.
+func (p *Planner) placedSchemas(diff *difftypes.SchemaDiff) []string {
 	schemas := make([]string, 0, len(diff.ExtensionsAdded)+len(diff.ExtensionsModified))
 	for _, extension := range diff.ExtensionsAdded {
 		schemas = append(schemas, extension.Schema)
@@ -595,6 +597,15 @@ func (p *Planner) extensionSchemas(diff *difftypes.SchemaDiff) []string {
 	for _, change := range diff.ExtensionsModified {
 		if change.ToSchema != change.FromSchema && change.ToSchema != defaultSchema {
 			schemas = append(schemas, change.ToSchema)
+		}
+	}
+	// An owner's change names the schema it puts its object into the same
+	// way; see [schemaext.SchemaPlacement].
+	for _, change := range diff.FeatureChanges {
+		if placed, ok := change.Value.(schemaext.SchemaPlacement); ok {
+			if schema := placed.PlacementSchema(); schema != defaultSchema {
+				schemas = append(schemas, schema)
+			}
 		}
 	}
 	return schemas
@@ -1921,6 +1932,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff)
 
+	// Feature operations of the prerequisite phase that create or change an
+	// object join the plan here: after the schemas they read and before every
+	// object that may use what they supply. Their drops join it at the end.
+	prerequisites := &featurehost.PrerequisiteWindows{Creation: len(result)}
+
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
 	result = p.addNewRoles(result, diff)
 
@@ -2126,6 +2142,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 16. Remove extensions (dangerous!)
 	result = p.removeExtensions(result, diff)
 
+	prerequisites.Removal = len(result)
+	windows.Prerequisites = prerequisites
 	return result, nil
 }
 

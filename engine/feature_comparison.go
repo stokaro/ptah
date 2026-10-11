@@ -26,6 +26,9 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		return schemaext.ComparisonResult{}, err
 	}
 	request.Target = selected.Name()
+	if err := r.validateExclusions(request.Exclusions); err != nil {
+		return schemaext.ComparisonResult{}, err
+	}
 	if request, err = r.foldCoverageLimits(request); err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
@@ -133,6 +136,8 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		Requests:          request.Requests,
 		DeclaredRelations: request.DeclaredRelations,
 		DatabasePath:      request.DatabasePath,
+		Exclusions:        request.Exclusions,
+		DeclaredColumns:   request.DeclaredColumns,
 	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {
@@ -161,4 +166,16 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		return schemaext.ObjectComparisonRequest{}, schemaext.FacetComparisonRequest{}, err
 	}
 	return objects, facets, nil
+}
+
+// validateExclusions refuses an exclusion of a kind the runtime's documents
+// cannot name, spelled exactly as the vocabulary spells it.
+func (r *Runtime) validateExclusions(exclusions []schemaext.Exclusion) error {
+	for _, exclusion := range exclusions {
+		kind, err := r.vocabulary.ParseKind(string(exclusion.Kind))
+		if err != nil || kind != exclusion.Kind {
+			return fmt.Errorf("%w: comparison exclusion of %q, which is not a coverage kind this runtime reads", schemaext.ErrInvalidValue, exclusion.Kind)
+		}
+	}
+	return nil
 }

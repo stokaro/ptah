@@ -41,6 +41,10 @@ const commonOwner = "ptah.run/postgres"
 // rebuilt domain or composite type drops an object a policy still uses, so a
 // plan that combines one of them with removing the policy fails at that
 // statement.
+//
+// The prerequisite creation window is after the schema preconditions and the
+// extensions the plan installs, before every other creation, and the
+// prerequisite removal window is after the last removal.
 func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, windows featurehost.Windows) ([]ast.Node, error) {
 	target := p.targetDialect()
 	if diff == nil || !hasFeatureChanges(target, diff) {
@@ -79,7 +83,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		return nil, err
 	}
 	request.CommonSteps = graph.CommonSteps()
-	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent)
+	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite)
 	if err != nil {
 		return nil, err
 	}

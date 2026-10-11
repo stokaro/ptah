@@ -116,16 +116,15 @@ func TestCommonWalkHonorsCancellationDuringVisitors(t *testing.T) {
 	}
 }
 
-// phasedDeclarationRuntime plans one standalone statement in the dependent
-// phase.
-type phasedDeclarationRuntime struct{}
+// phasedDeclarationRuntime plans one standalone statement in phase.
+type phasedDeclarationRuntime struct{ phase featureplan.Phase }
 
 func (phasedDeclarationRuntime) Codecs() schemaext.Registry               { return schemaext.Registry{} }
 func (phasedDeclarationRuntime) DeclaresKind(string, schemaext.Kind) bool { return false }
 
-func (phasedDeclarationRuntime) PlanDeclarations(context.Context, featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
+func (r phasedDeclarationRuntime) PlanDeclarations(context.Context, featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
 	step := plangraph.Step[featureplan.Operation]{ID: plangraph.StepID{Owner: "example.org/lowering", Name: "late"},
-		Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &phasedStatement{}, Phase: featureplan.PhaseDependent}}
+		Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &phasedStatement{}, Phase: r.phase}}
 	return featureplan.DeclarationResult{Complete: true, Contributions: []plangraph.Contribution[featureplan.Operation]{
 		{Owner: step.ID.Owner, Steps: []plangraph.Step[featureplan.Operation]{step}},
 	}}, nil
@@ -137,9 +136,9 @@ func (*phasedStatement) Kind() schemaext.Kind                 { return "example.
 func (*phasedStatement) CloneExtension() ast.ExtensionPayload { return &phasedStatement{} }
 
 // TestStandaloneLoweringRefusesAPhase pins that a whole-schema render refuses
-// an operation that asks for a phase: it orders an owner's steps by their
-// dependencies alone, so ignoring the phase would place the statement where
-// its owner did not ask for it.
+// an operation that asks for a phase it has no window for: it orders such a
+// step by its dependencies alone, so ignoring the phase would place the
+// statement where its owner did not ask for it.
 func TestStandaloneLoweringRefusesAPhase(t *testing.T) {
 	c := qt.New(t)
 	ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts(objectidentity.Kind(loweringKind), "public", "owned")
@@ -149,11 +148,102 @@ func TestStandaloneLoweringRefusesAPhase(t *testing.T) {
 	visited := 0
 
 	err = modelast.WalkDatabase(database, "postgres", func(ast.Node) error { visited++; return nil },
-		modelast.Lowering{Context: t.Context(), Runtime: phasedDeclarationRuntime{}})
+		modelast.Lowering{Context: t.Context(), Runtime: phasedDeclarationRuntime{phase: featureplan.PhaseDependent}})
 
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(err, qt.ErrorMatches, `.*declaration step example.org/lowering/late asks for the "dependent" phase.*`)
 	c.Assert(visited, qt.Equals, 0)
+}
+
+// renderedKinds names each statement a walk visited: a schema by its name, a
+// table, or an owner's statement.
+func renderedKinds(nodes []ast.Node) []string {
+	kinds := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		switch typed := node.(type) {
+		case *ast.CreateSchemaNode:
+			kinds = append(kinds, "schema "+typed.Name)
+		case *ast.CreateTableNode:
+			kinds = append(kinds, "table")
+		case *ast.ExtensionStatement:
+			kinds = append(kinds, "owner")
+		default:
+			kinds = append(kinds, fmt.Sprintf("%T", node))
+		}
+	}
+	return kinds
+}
+
+// TestStandaloneLoweringPlacesAPrerequisite pins the one phase a whole-schema
+// render has a window for: an object every other object may use, such as an
+// extension, is created after the schemas and before everything else, where
+// its dependencies alone would place it after the common statements.
+func TestStandaloneLoweringPlacesAPrerequisite(t *testing.T) {
+	tests := []struct {
+		name    string
+		phase   featureplan.Phase
+		schemas []schemamodel.Schema
+		want    []string
+	}{
+		{name: "after the schemas", phase: featureplan.PhasePrerequisite, schemas: []schemamodel.Schema{{Name: "app"}, {Name: "ext"}},
+			want: []string{"schema app", "schema ext", "owner", "table"}},
+		{name: "first, when the render creates no schema", phase: featureplan.PhasePrerequisite, want: []string{"owner", "table"}},
+		{name: "control: a step without a phase follows its dependencies alone", phase: featureplan.PhaseDefault,
+			schemas: []schemamodel.Schema{{Name: "app"}, {Name: "ext"}}, want: []string{"owner", "schema app", "schema ext", "table"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts(objectidentity.Kind(loweringKind), "", "owned")
+			database := schemamodel.Database{Schemas: test.schemas,
+				Tables:         []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+				Fields:         []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true}},
+				FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &loweringValue{Name: "owned"}}))}
+			var visited []ast.Node
+
+			err := modelast.WalkDatabase(database, "postgres", func(node ast.Node) error {
+				visited = append(visited, node)
+				return nil
+			}, modelast.Lowering{Context: t.Context(), Runtime: phasedDeclarationRuntime{phase: test.phase}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(renderedKinds(visited), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestStandaloneLoweringCreatesTheSchemaAnObjectIsPlacedIn pins that a render
+// creates the schema an owner's object names, as it creates the schema an
+// extension names, and creates none for the target's default schema.
+func TestStandaloneLoweringCreatesTheSchemaAnObjectIsPlacedIn(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		want   []string
+	}{
+		{name: "a named schema", schema: "ext", want: []string{"schema ext", "owner", "table"}},
+		{name: "the default schema", schema: "public", want: []string{"owner", "table"}},
+		{name: "no schema", want: []string{"owner", "table"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts(objectidentity.Kind(loweringKind), "", "owned")
+			database := schemamodel.Database{
+				Tables:         []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+				Fields:         []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true}},
+				FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &loweringValue{Name: "owned", Schema: test.schema}}))}
+			var visited []ast.Node
+
+			err := modelast.WalkDatabase(database, "postgres", func(node ast.Node) error {
+				visited = append(visited, node)
+				return nil
+			}, modelast.Lowering{Context: t.Context(), Runtime: phasedDeclarationRuntime{phase: featureplan.PhasePrerequisite}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(renderedKinds(visited), qt.DeepEquals, test.want)
+		})
+	}
 }
 
 // childRuntime plans each declaration as one statement after every common

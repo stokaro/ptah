@@ -97,8 +97,14 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: source.Owner, Dependencies: slices.Clone(source.Dependencies)}
 		for _, step := range source.Steps {
 			// A whole-schema render orders an owner's steps by their
-			// dependencies alone: it has no window a phase could select.
-			if step.Payload.Phase != featureplan.PhaseDefault {
+			// dependencies alone, except a prerequisite, which it runs after
+			// the schema statements and before the rest: an object every
+			// other object may use. It has no window for any other phase.
+			switch step.Payload.Phase {
+			case featureplan.PhaseDefault:
+			case featureplan.PhasePrerequisite:
+				contribution.Dependencies = append(contribution.Dependencies, prerequisiteDependencies(nodes, metadata, step.ID)...)
+			default:
 				return fmt.Errorf("%w: declaration step %s/%s asks for the %q phase, which a schema render has no window for",
 					schemaext.ErrInvalidValue, step.ID.Owner, step.ID.Name, step.Payload.Phase)
 			}
@@ -129,6 +135,27 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		}
 	}
 	return lowering.Context.Err()
+}
+
+// prerequisiteDependencies places step after the schema statements a render
+// opens with and before its first other statement, nodes and metadata being
+// the common sequence and its steps.
+func prerequisiteDependencies(nodes []ast.Node, metadata []featureplan.CommonStep, step plangraph.StepID) []plangraph.Dependency {
+	schemas := 0
+	for schemas < len(nodes) {
+		if _, ok := nodes[schemas].(*ast.CreateSchemaNode); !ok {
+			break
+		}
+		schemas++
+	}
+	var dependencies []plangraph.Dependency
+	if schemas > 0 {
+		dependencies = append(dependencies, plangraph.Dependency{Before: metadata[schemas-1].ID, After: step})
+	}
+	if schemas < len(metadata) {
+		dependencies = append(dependencies, plangraph.Dependency{Before: step, After: metadata[schemas].ID})
+	}
+	return dependencies
 }
 
 // declaredObjects selects the objects their owners plan as declarations, and

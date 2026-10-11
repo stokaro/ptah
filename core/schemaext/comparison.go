@@ -3,6 +3,7 @@ package schemaext
 import (
 	"context"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -40,6 +41,10 @@ type ParentState struct {
 // stores the path of a secret a data source names that way -- is read against
 // it; with an empty DatabasePath an owner cannot tell an absolute path of this
 // database from one of another and must not treat the two as equal.
+//
+// Exclusions and DeclaredColumns are the context [ComparisonRequest] gives an
+// owner: the subjects the run's configuration leaves out, and the columns the
+// desired schema declares.
 type ObjectComparisonRequest struct {
 	Target            string
 	Identifiers       identifier.Semantics
@@ -51,6 +56,30 @@ type ObjectComparisonRequest struct {
 	Requests          []ChangeRequest
 	DeclaredRelations []objectidentity.ID
 	DatabasePath      string
+	Exclusions        []Exclusion
+	DeclaredColumns   []DeclaredColumn
+}
+
+// Exclusion is one subject the run's configuration leaves out of a
+// comparison, such as an extension an ignore list names: a kind of the common
+// not-described vocabulary and a name exactly as the configuration spells it.
+// An owner plans nothing for an excluded subject in either direction and
+// reports nothing undecided about it, because the configuration already
+// decided. It compares the name exactly, without trimming or folding, so an
+// empty name excludes nothing.
+type Exclusion struct {
+	Kind coverage.Kind
+	Name string
+}
+
+// DeclaredColumn is one column the desired schema declares, for an owner whose
+// objects a common column may depend on, such as an extension that supplies
+// the column's type. Table is the column's table under the request's
+// identifier rules, and Type the column's type as the declaration spells it.
+type DeclaredColumn struct {
+	Table objectidentity.ID
+	Name  string
+	Type  string
 }
 
 // UndecidedChange is a requested state the available evidence cannot safely

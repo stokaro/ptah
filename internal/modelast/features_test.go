@@ -21,12 +21,18 @@ import (
 
 const loweringKind schemaext.Kind = "example.org/lowering-probe"
 
-type loweringValue struct{ Name string }
+// loweringValue is an owner's value. Schema, when set, is the schema it puts
+// its object into (see [schemaext.SchemaPlacement]).
+type loweringValue struct {
+	Name   string
+	Schema string
+}
 
 func (*loweringValue) Kind() schemaext.Kind { return loweringKind }
 func (v *loweringValue) Clone() schemaext.Value {
-	return &loweringValue{Name: v.Name}
+	return &loweringValue{Name: v.Name, Schema: v.Schema}
 }
+func (v *loweringValue) PlacementSchema() string { return v.Schema }
 func (v *loweringValue) Equal(other schemaext.Value) bool {
 	w, ok := other.(*loweringValue)
 	return ok && w != nil && *v == *w

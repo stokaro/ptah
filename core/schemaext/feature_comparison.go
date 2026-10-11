@@ -47,6 +47,13 @@ type ComparisonRequest struct {
 	// runtime folds the records the owner maps onto its models into their
 	// coverage; see [LimitMapping]. Records nothing maps change nothing here.
 	DesiredLimits, CurrentLimits coverage.Set
+	// Exclusions are the subjects the run's configuration leaves out of the
+	// comparison; see [Exclusion]. The runtime refuses a kind it does not
+	// read.
+	Exclusions []Exclusion
+	// DeclaredColumns are the columns the desired schema declares, for an
+	// owner whose objects a common column may depend on; see [DeclaredColumn].
+	DeclaredColumns []DeclaredColumn
 }
 
 // ComparisonResult joins the selected object and facet owners' replies. No

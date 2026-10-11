@@ -43,10 +43,10 @@ func comparisonIdentifiers(desired *schemamodel.Database, current *catalog.Datab
 // with the desired state the owners made effective, such as an observed
 // setting a source that cannot describe it leaves unmanaged.
 func compareEffectiveFeatures(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, target string,
-	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, requests []schemaext.ChangeRequest,
+	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, opts *config.CompareOptions,
 	runtime schemaext.ComparisonRuntime,
 ) (schemaext.ComparisonResult, *schemamodel.Database, error) {
-	result, err := compareFeatures(ctx, desired, current, target, semantics, caps, parents, requests, runtime)
+	result, err := compareFeatures(ctx, desired, current, target, semantics, caps, parents, opts, runtime)
 	if err != nil {
 		return schemaext.ComparisonResult{}, nil, err
 	}
@@ -57,10 +57,15 @@ func compareEffectiveFeatures(ctx context.Context, desired *schemamodel.Database
 	return result, effective, nil
 }
 
+// compareFeatures hands both sides' feature state to the runtime, with the
+// context an owner may need: each side's not-described record, the
+// exclusions the options configure, and the columns the desired schema
+// declares.
 func compareFeatures(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, target string,
-	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, requests []schemaext.ChangeRequest,
+	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, opts *config.CompareOptions,
 	runtime schemaext.ComparisonRuntime,
 ) (schemaext.ComparisonResult, error) {
+	requests := opts.FeatureRequests
 	declared, observed, err := captureFeatureStates(desired, current, target, semantics)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -89,7 +94,8 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 	}
 	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps,
 		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, semantics),
-		DatabasePath: current.DatabasePath, DesiredLimits: desired.NotDescribed, CurrentLimits: current.NotDescribed})
+		DatabasePath: current.DatabasePath, DesiredLimits: desired.NotDescribed, CurrentLimits: current.NotDescribed,
+		Exclusions: opts.Exclusions(), DeclaredColumns: declaredColumns(desired, semantics)})
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
@@ -97,6 +103,25 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		return schemaext.ComparisonResult{}, fmt.Errorf("%w: feature comparison did not complete", schemaext.ErrInvalidValue)
 	}
 	return result, ctx.Err()
+}
+
+// declaredColumns lists the columns the desired schema declares on its
+// tables, under the comparison's identifier rules. The comparison has folded
+// embedded fields into the desired schema it holds by now, so they are among
+// its fields.
+func declaredColumns(desired *schemamodel.Database, semantics identifier.Semantics) []schemaext.DeclaredColumn {
+	builder := objectidentity.NewBuilder(semantics)
+	tables := make(map[string]objectidentity.ID, len(desired.Tables))
+	for _, table := range desired.Tables {
+		tables[table.StructName] = builder.TableParts(table.Schema, table.Name)
+	}
+	var columns []schemaext.DeclaredColumn
+	for _, field := range desired.Fields {
+		if table, found := tables[field.StructName]; found {
+			columns = append(columns, schemaext.DeclaredColumn{Table: table, Name: field.Name, Type: field.Type})
+		}
+	}
+	return columns
 }
 
 // declaredRelations names the views and materialized views the desired

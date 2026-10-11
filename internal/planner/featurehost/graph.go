@@ -3,6 +3,7 @@ package featurehost
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"ptah.run/core/ast"
@@ -34,8 +35,23 @@ import (
 //
 // The indexes are nondecreasing in the order Creation, Dependent, Removal, so
 // windows at one index nest in that order.
+//
+// Prerequisites holds the windows of [featureplan.PhasePrerequisite], and is
+// nil for a host that has none.
 type Windows struct {
 	Creation, Dependent, Removal int
+	Prerequisites                *PrerequisiteWindows
+}
+
+// PrerequisiteWindows are the two windows of [featureplan.PhasePrerequisite],
+// for an object every other object may use, such as a PostgreSQL extension.
+// Creation lies after the host creates schemas and before it creates or
+// changes any other object, so it is at or before [Windows.Creation]; Removal
+// lies after the host removes every other object, so it is at or after
+// [Windows.Removal]. A creation or a change joins the first and a drop the
+// second.
+type PrerequisiteWindows struct {
+	Creation, Removal int
 }
 
 // Graph is a host's common sequence as graph units, one per node, with an
@@ -43,35 +59,48 @@ type Windows struct {
 // [Graph.CommonSteps] to the owners in the planning request, and join their
 // reply with [Graph.Schedule].
 type Graph struct {
-	contribution plangraph.Contribution[[]ast.Node]
-	steps        []featureplan.CommonStep
-	windows      [3][2]plangraph.StepID
+	contribution  plangraph.Contribution[[]ast.Node]
+	steps         []featureplan.CommonStep
+	windows       [5][2]plangraph.StepID
+	prerequisites bool
 }
 
+// The windows in the order their positions must keep.
 const (
-	creationWindow = iota
+	prerequisiteCreationWindow = iota
+	creationWindow
 	dependentWindow
 	removalWindow
+	prerequisiteRemovalWindow
 )
+
+var windowNames = [5]string{"prerequisite-creations", "feature-creations", "dependent-operations", "feature-removals", "prerequisite-removals"}
 
 // NewGraph builds the graph of nodes under owner. effects holds each node's
 // effects, or is nil when the host knows none; a node with an unknown
 // footprint orders nothing beyond its position. Windows outside the sequence
 // or out of order are refused.
 func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, windows Windows) (*Graph, error) {
-	positions := []int{windows.Creation, windows.Dependent, windows.Removal}
-	if !slices.IsSorted(positions) || positions[0] < 0 || positions[2] > len(nodes) {
-		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, positions, len(nodes))
+	positions := map[int]int{creationWindow: windows.Creation, dependentWindow: windows.Dependent, removalWindow: windows.Removal}
+	if windows.Prerequisites != nil {
+		positions[prerequisiteCreationWindow] = windows.Prerequisites.Creation
+		positions[prerequisiteRemovalWindow] = windows.Prerequisites.Removal
+	}
+	ordered := make([]int, 0, len(positions))
+	for _, window := range slices.Sorted(maps.Keys(positions)) {
+		ordered = append(ordered, positions[window])
+	}
+	if !slices.IsSorted(ordered) || ordered[0] < 0 || ordered[len(ordered)-1] > len(nodes) {
+		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, ordered, len(nodes))
 	}
 	if effects != nil && len(effects) != len(nodes) {
 		return nil, fmt.Errorf("%w: %d effect lists for %d common nodes", schemaext.ErrInvalidValue, len(effects), len(nodes))
 	}
-	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}}
-	names := [3]string{"feature-creations", "dependent-operations", "feature-removals"}
+	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil}
 	for i := 0; i <= len(nodes); i++ {
-		for window, position := range positions {
-			if position == i {
-				graph.windows[window] = [2]plangraph.StepID{graph.marker("common/" + names[window]), graph.marker("common/after-" + names[window])}
+		for _, window := range slices.Sorted(maps.Keys(positions)) {
+			if positions[window] == i {
+				graph.windows[window] = [2]plangraph.StepID{graph.marker("common/" + windowNames[window]), graph.marker("common/after-" + windowNames[window])}
 			}
 		}
 		if i == len(nodes) {
@@ -113,8 +142,11 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 // Schedule joins the owners' contributions to the common sequence and returns
 // the nodes in plan order. Each feature step joins one window: a step whose
 // operation asked for [featureplan.PhaseDependent] joins the dependent
-// window, and any other the removal window when it drops an object and the
-// creation window otherwise. A step that creates an object another step drops
+// window; one that asked for [featureplan.PhasePrerequisite] joins the
+// prerequisite removal window when it drops an object and the prerequisite
+// creation window otherwise, and is refused by a graph without them; and any
+// other joins the removal window when it drops an object and the creation
+// window otherwise. A step that creates an object another step drops
 // is refused unless both are dependent, because the windows would run the
 // creation first. The effects of different contributions are then ordered by
 // [plangraph.LifecycleDependencies], so an owner that creates an object
@@ -130,9 +162,12 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 		Steps: slices.Clone(g.contribution.Steps), Dependencies: slices.Clone(g.contribution.Dependencies)}
 	for _, contribution := range features.Contributions {
 		for _, step := range contribution.Steps {
-			window := g.window(features.Phases[step.ID], slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
+			window, err := g.window(features.Phases[step.ID], slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
 				return effect.Action == plangraph.Drop
 			}))
+			if err != nil {
+				return nil, fmt.Errorf("feature step %s/%s: %w", step.ID.Owner, step.ID.Name, err)
+			}
 			common.Dependencies = append(common.Dependencies,
 				plangraph.Dependency{Before: window[0], After: step.ID}, plangraph.Dependency{Before: step.ID, After: window[1]})
 		}
@@ -153,14 +188,20 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 	return nodes, ctx.Err()
 }
 
-func (g *Graph) window(phase featureplan.Phase, drops bool) [2]plangraph.StepID {
+func (g *Graph) window(phase featureplan.Phase, drops bool) ([2]plangraph.StepID, error) {
 	switch {
 	case phase == featureplan.PhaseDependent:
-		return g.windows[dependentWindow]
+		return g.windows[dependentWindow], nil
+	case phase == featureplan.PhasePrerequisite && !g.prerequisites:
+		return [2]plangraph.StepID{}, fmt.Errorf("%w: the %q phase has no window in this host", schemaext.ErrInvalidValue, phase)
+	case phase == featureplan.PhasePrerequisite && drops:
+		return g.windows[prerequisiteRemovalWindow], nil
+	case phase == featureplan.PhasePrerequisite:
+		return g.windows[prerequisiteCreationWindow], nil
 	case drops:
-		return g.windows[removalWindow]
+		return g.windows[removalWindow], nil
 	default:
-		return g.windows[creationWindow]
+		return g.windows[creationWindow], nil
 	}
 }
 
