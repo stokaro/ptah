@@ -19,6 +19,15 @@ func WithSQL(owners sqlext.Set) Option {
 	}
 }
 
+// WithDeclared hands the owners the objects the documents read before this one
+// declared, such as the earlier files of a schema directory, which an owner's
+// statement may amend. Without it a document is read alone.
+func WithDeclared(objects schemaext.Objects) Option {
+	return func(p *Parser) {
+		p.declared = objects
+	}
+}
+
 // ownerClaim is a span an owner's pattern matched, waiting for the owner's
 // value, and where the value goes.
 type ownerClaim struct {
@@ -150,7 +159,7 @@ func (p *Parser) readOwnerClaims(ctx context.Context) error {
 	for _, claim := range p.ownerClaims {
 		matches = append(matches, claim.match)
 	}
-	values, err := p.owners.Parse(ctx, p.dialect, matches)
+	values, err := p.owners.Parse(ctx, p.dialect, matches, p.declared)
 	if err != nil {
 		return err
 	}
@@ -202,6 +211,22 @@ func (p *Parser) claimOwnerAlterOperation(table string) (ast.AlterOperation, boo
 	return operation, claimed
 }
 
+// claimOwnerStatement claims a whole statement an owner's pattern opens. It
+// stands where the statement stood, as the owner's statement, and what the
+// statement declares and amends is a note of the parse.
+func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
+	statement := &ast.ExtensionStatement{}
+	claimed := p.claimOwnerSyntax(sqlext.Statement, "", func(value sqlext.Value) error {
+		statement.Payload = value.Statement
+		if p.ownerStatements == nil {
+			p.ownerStatements = make(map[*ast.ExtensionStatement]sqlext.Value)
+		}
+		p.ownerStatements[statement] = sqlext.Value{Objects: value.Objects, Replaces: value.Replaces}
+		return nil
+	})
+	return statement, claimed
+}
+
 // claimOwnerViewClauses claims every owner's clause between a materialized
 // view's name and AS. The facets they read are the view's.
 func (p *Parser) claimOwnerViewClauses(view *ast.CreateMaterializedViewNode) {
@@ -227,6 +252,13 @@ func (p *Parser) claimOwnerViewClauses(view *ast.CreateMaterializedViewNode) {
 func (p *Parser) DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool) {
 	index, found := p.declaredIndexes[operation]
 	return index, found
+}
+
+// OwnerStatement returns the objects an owner's statement of the parsed
+// document declares and amends, as the value's Objects and Replaces.
+func (p *Parser) OwnerStatement(statement *ast.ExtensionStatement) (sqlext.Value, bool) {
+	value, found := p.ownerStatements[statement]
+	return value, found
 }
 
 // ParseContext is [Parser.Parse] with the context the owners' parsers run

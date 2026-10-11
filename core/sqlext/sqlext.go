@@ -55,6 +55,11 @@ const (
 	// the view's name and AS. A span ends at a top-level AS or at the end of
 	// the statement. Its [Value] carries the owner's facets of the view.
 	ViewClause Site = "view-clause"
+	// Statement is a whole top-level statement. A span ends at the semicolon
+	// that ends the statement or at the end of the document. Its [Value] is
+	// the owner's statement, and may declare objects of the owner or amend
+	// objects declared before it.
+	Statement Site = "statement"
 )
 
 // Pattern is one piece of syntax an owner adds at a site. The frontend
@@ -120,6 +125,21 @@ type Value struct {
 	// Facets are the owner's settings of the subject, such as a materialized
 	// view's refresh schedule.
 	Facets schemaext.Facets
+	// Statement is the owner's payload of a statement, which a statement
+	// requires. The parse places it where the statement stood, for the
+	// readers of syntax such as lint.
+	Statement ast.ExtensionPayload
+	// Objects are the objects a statement declares, each of one of the
+	// extension's Kinds. The reader adds them to the document and refuses an
+	// object the document declares twice.
+	Objects []schemaext.Object
+	// Replaces are new values of objects declared before the statement, in
+	// the document or in [Request.Declared], such as the comment a COMMENT ON
+	// statement gives an object a CREATE declared. Each is of one of the
+	// extension's Kinds. The reader replaces each and refuses one nothing
+	// declared. An owner refuses a statement that amends an object it cannot
+	// find with an error wrapping [ErrUndeclared].
+	Replaces []schemaext.Object
 }
 
 // Request is every claim of one document an extension's patterns matched.
@@ -129,6 +149,11 @@ type Request struct {
 	Target string
 	// Claims are the claims, in the order the document holds them.
 	Claims []Claim
+	// Declared are the objects of the extension's Kinds that the documents
+	// read before this one declared, such as the earlier files of a schema
+	// directory, which a statement may amend. A document read alone has
+	// none.
+	Declared []schemaext.Object
 }
 
 // Result is an owner's reading of a [Request].
@@ -164,6 +189,10 @@ type Extension struct {
 	// the common coverage vocabulary, such as a YDB topic the document
 	// leaves unmanaged.
 	Header []coverage.Kind
+	// Kinds are the object kinds the owner's statements declare and amend.
+	// A statement's objects must be of these kinds, and a request carries
+	// the objects of these kinds that earlier documents declared.
+	Kinds []schemaext.Kind
 	// Coverage is the knowledge a document of one of Targets holds about the
 	// owner's models, such as the refresh schedule a ClickHouse materialized
 	// view states in its CREATE statement. It is handed the entries of the

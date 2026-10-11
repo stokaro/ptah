@@ -31,11 +31,13 @@ type Document struct {
 
 // parseNotes is what a parse of one file found about the AST it returned that
 // no common node carries: the index a MySQL `FOREIGN KEY name (columns)`
-// clause names, and the index an owner's ALTER TABLE operation declares.
-// internal/parser's Parser answers it.
+// clause names, the index an owner's ALTER TABLE operation declares, and the
+// objects an owner's statement declares and amends. internal/parser's Parser
+// answers it.
 type parseNotes interface {
 	ForeignKeyIndex(index *ast.IndexNode) bool
 	DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool)
+	OwnerStatement(statement *ast.ExtensionStatement) (sqlext.Value, bool)
 }
 
 // foreignKeyIndex reports whether the parse found index named by a foreign key
@@ -51,6 +53,15 @@ func (d *Document) declaredIndex(operation *ast.ExtensionAlterOperation) (sqlext
 		return sqlext.Index{}, false
 	}
 	return d.notes.DeclaredIndex(operation)
+}
+
+// ownerStatement returns the objects an owner's statement declares and
+// amends. A document without notes has no owner's statement.
+func (d *Document) ownerStatement(statement *ast.ExtensionStatement) (sqlext.Value, bool) {
+	if d == nil || d.notes == nil {
+		return sqlext.Value{}, false
+	}
+	return d.notes.OwnerStatement(statement)
 }
 
 // NewDocument starts a document whose earlier files built base. base is the

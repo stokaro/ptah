@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 )
 
@@ -236,7 +237,7 @@ func TestSet_Parse_HappyPath(t *testing.T) {
 		{Candidate: b, Claim: sqlext.Claim{Pattern: "b", Text: "B 3"}},
 	}
 
-	values, err := set.Parse(t.Context(), "x", matches)
+	values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(indexNames(values), qt.DeepEquals, []string{"B 1", "A 2", "B 3"})
@@ -278,7 +279,7 @@ func TestSet_Parse_FailurePath(t *testing.T) {
 				sqlext.Pattern{Name: "a", Site: sqlext.TableElement, Words: []string{"A"}})))
 			matches := []sqlext.Match{{Candidate: set.Candidates("x", sqlext.TableElement)[0], Claim: sqlext.Claim{Pattern: "a", Text: "A"}}}
 
-			values, err := set.Parse(t.Context(), "x", matches)
+			values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(values, qt.IsNil)
