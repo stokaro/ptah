@@ -98,6 +98,9 @@ func (Service) PlanDeclarations(ctx context.Context, request featureplan.Declara
 			return featureplan.DeclarationResult{}, err
 		}
 		if refusal != nil {
+			// A declaration's refusal names the declared model, which is what
+			// the render was handed, not the change it was planned as.
+			refusal.Kind = string(pgextension.ExtensionKind)
 			return featureplan.DeclarationResult{Complete: true, Diagnostics: []featureplan.DeclarationDiagnostic{{Problem: *refusal, Object: new(index)}}}, nil
 		}
 		contribution.Steps = append(contribution.Steps, steps.steps...)

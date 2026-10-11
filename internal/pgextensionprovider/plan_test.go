@@ -180,3 +180,21 @@ func TestPlanExtensions_DeclaresForARender(t *testing.T) {
 		{Payload: &pgextension.CommentOperation{Name: "pg_trgm", Comment: "trigrams"}, Phase: featureplan.PhasePrerequisite, Effect: plangraph.Alter},
 	})
 }
+
+// TestPlanExtensions_RefusesADeclarationTheTargetCannotInstall pins the
+// render's refusal of an installation schema on a target without one: it
+// names the declared extension, which the runtime holds the diagnostic to.
+func TestPlanExtensions_RefusesADeclarationTheTargetCannotInstall(t *testing.T) {
+	c := qt.New(t)
+	request := featureplan.DeclarationRequest{Target: "cockroachdb", Identifiers: identifier.ForDialect("cockroachdb"), Capabilities: capability.Postgres17(),
+		Objects: []schemaext.Object{declared("pg_trgm", pgextension.DesiredExtension{Schema: "ext"})}}
+
+	result, err := newRuntime(c).PlanDeclarations(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.ValidateOutcome(request), qt.IsNil)
+	c.Assert(result.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(result.Err(request), qt.ErrorMatches,
+		`(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`)
+}
