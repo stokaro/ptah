@@ -46,7 +46,7 @@ func readingWrites(statements []routineext.Statement, routine, kind string) (wri
 			stmtWrites, stmtUnresolved = descendOrRefuse(statement, routine, kind)
 		case routineext.StatementInert:
 		case routineext.StatementDynamic:
-			stmtUnresolved = []string{fmt.Sprintf("an %s composes its statement at run time", strings.ToUpper(statement.Label))}
+			stmtUnresolved = []string{dynamicReason(statement.Label)}
 		default:
 			stmtWrites, stmtUnresolved = classifyRawStatement(statement.SQL, routine, kind)
 		}
@@ -147,4 +147,19 @@ func readingOrControlWord(word string) bool {
 	default:
 		return false
 	}
+}
+
+// dynamicReason says that a statement composes its SQL at run time, naming
+// it by its label: an EXECUTE, a PREPARE. The label is optional in the
+// contract, so a statement without one is named only as a statement.
+func dynamicReason(label string) string {
+	if label == "" {
+		return "a statement composes its SQL at run time"
+	}
+	keyword := strings.ToUpper(label)
+	article := "a"
+	if strings.ContainsRune("AEIOU", rune(keyword[0])) {
+		article = "an"
+	}
+	return fmt.Sprintf("%s %s composes its statement at run time", article, keyword)
 }

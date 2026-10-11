@@ -39,12 +39,12 @@ func (Reader) ReadBodies(ctx context.Context, request routineext.ReadRequest) (r
 	}
 	result := routineext.ReadResult{Bodies: make([]routineext.Reading, 0, len(request.Bodies))}
 	for _, body := range request.Bodies {
-		if err := ctx.Err(); err != nil {
-			return routineext.ReadResult{}, err
-		}
 		result.Bodies = append(result.Bodies, routineext.Reading{Statements: read(body), ColumnReads: true})
 	}
-	return result, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return routineext.ReadResult{}, err
+	}
+	return result, nil
 }
 
 // read splits one body: a PL/pgSQL body into its statements, and a body in any

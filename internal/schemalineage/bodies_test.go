@@ -140,3 +140,48 @@ func TestDeriveRoutines_ReadsFollowTheOwnersWord(t *testing.T) {
 		"so the writes are complete; the columns it reads are not resolved, because a declared variable takes "+
 		"precedence over a column of the same name on this engine and the body does not distinguish them")
 }
+
+// dynamicReader reads a body as one statement that composes SQL at run time,
+// carrying label.
+type dynamicReader struct {
+	label string
+}
+
+func (r dynamicReader) ReadBodies(_ context.Context, request routineext.ReadRequest) (routineext.ReadResult, error) {
+	result := routineext.ReadResult{}
+	for _, body := range request.Bodies {
+		result.Bodies = append(result.Bodies, routineext.Reading{
+			Statements:  []routineext.Statement{{Kind: routineext.StatementDynamic, Label: r.label, SQL: body.SQL}},
+			ColumnReads: true,
+		})
+	}
+	return result, nil
+}
+
+// A statement that composes SQL is named by its label, with the article the
+// keyword takes, and as a statement when the reader gave it no label: the
+// label is optional in the contract.
+func TestDeriveRoutines_ADynamicStatementIsNamedByItsLabel(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		label string
+		want  string
+	}{
+		{name: "a keyword that takes a", label: "prepare", want: "a PREPARE composes its statement at run time"},
+		{name: "a keyword that takes an", label: "execute", want: "an EXECUTE composes its statement at run time"},
+		{name: "no label", label: "", want: "a statement composes its SQL at run time"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(engine.New(engine.Provider{ID: "example.org/postgres", Targets: []engine.Target{
+				{Name: "postgres", RoutineBodies: dynamicReader{label: test.label}}}}))
+
+			result, err := schemalineage.DeriveRoutines(c.Context(), runtime, proceduralRoutine("BEGIN EXECUTE 'x'; END;"), "postgres")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Reason, qt.Equals, "the body is plpgsql: "+test.want+
+				", so the writes are not complete; the reads are those of its statements that name one table")
+		})
+	}
+}

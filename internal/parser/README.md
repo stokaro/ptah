@@ -158,12 +158,11 @@ mode stays best-effort; dialect mode can use a routine boundary detector that is
 specific to the selected SQL family without turning the generic DDL parser into
 a stored-procedure sub-language parser.
 
-MySQL and MariaDB dialect mode parses routine headers and top-level routine-body
-statement boundaries into `ast.MySQLRoutineNode`. Expressions remain raw SQL
-fragments in this slice, but declaration statements now carry typed metadata
-for local variables, named conditions, cursors, and handlers. Labels and
-control-flow statement classes are still distinguished without parsing scalar
-SQL expressions.
+MySQL and MariaDB dialect mode parses a routine header into
+`ast.MySQLRoutineNode` and keeps the body as its text. This package does not
+split a MySQL body into statements. The MySQL owner does
+(`dialect/mysql/mysqlroutine`), through the runtime's routine body reader
+(`core/routineext`).
 
 PostgreSQL-family dialect mode keeps `CREATE FUNCTION` rendering on
 `ast.CreateFunctionNode`, but attaches parser-only `PostgresRoutineBody`

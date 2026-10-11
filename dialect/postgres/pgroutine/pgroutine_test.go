@@ -233,19 +233,22 @@ func TestReader_ReadBodies_FailurePath(t *testing.T) {
 		name    string
 		ctx     context.Context
 		target  string
+		bodies  []routineext.Body
 		wantIs  error
 		wantErr string
 	}{
 		{name: "a target outside the family", ctx: context.Background(), target: "mysql", wantIs: ptaherr.ErrUnsupportedDialect,
 			wantErr: `.*the PostgreSQL routine body reader on "mysql"`},
 		{name: "no context", target: "postgres", wantIs: routineext.ErrInvalid, wantErr: `.*reading routine bodies requires a context`},
-		{name: "canceled", ctx: canceled, target: "postgres", wantIs: context.Canceled, wantErr: `context canceled`},
+		{name: "canceled", ctx: canceled, target: "postgres", bodies: []routineext.Body{{Language: "sql", SQL: "SELECT 1"}}, wantIs: context.Canceled,
+			wantErr: `context canceled`},
+		{name: "canceled with no bodies", ctx: canceled, target: "postgres", wantIs: context.Canceled, wantErr: `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			result, err := pgroutine.Reader{}.ReadBodies(test.ctx, routineext.ReadRequest{Target: test.target,
-				Bodies: []routineext.Body{{Language: "sql", SQL: "SELECT 1"}}})
+				Bodies: test.bodies})
 
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

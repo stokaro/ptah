@@ -91,6 +91,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mysql/mysqlplan`
 - `ptah.run/dialect/mysql/mysqlrender`
 - `ptah.run/dialect/mysql/mysqlreport`
+- `ptah.run/dialect/mysql/mysqlroutine`
 - `ptah.run/dialect/mysql/mysqlschema`
 - `ptah.run/dialect/mysql/mysqlsource`
 - `ptah.run/dialect/postgres/pglint`
@@ -383,6 +384,15 @@ canonical name; a target without one wraps `ptaherr.ErrUnsupportedDialect`.
 IF, CASE, loop, nested block and EXCEPTION section carrying the statements it
 runs, and reads a body in any other language as one statement. The bundled
 runtime registers it on every target of the PostgreSQL family.
+
+`dialect/mysql/mysqlroutine` is the MySQL owner's routine body reader for MySQL
+and MariaDB. `Reader` splits a compound body into the statements of its outer
+`BEGIN ... END` and reads a `RETURN` body as one statement. It does not split
+the statements a branch, a loop, a nested block or a handler runs, so it
+reports each of those as opaque. MySQL resolves a name that a declared
+variable and a column share to the variable, so no reading reports its column
+reads as attributable. The bundled runtime registers it on the mysql and
+mariadb targets.
 
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
 publishes the PG and TX families and the online rules ON101 and ON103 as data,

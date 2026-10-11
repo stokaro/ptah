@@ -246,11 +246,10 @@ func analyzeProcedural(routine schemamodel.Function, dialect, kind string, readi
 	if !analyzed {
 		return procedural{}, false
 	}
-	analysis := procedural{writes: writes, unresolved: unresolved, columnReads: readsAreDerivable(dialect)}
-	if analysis.columnReads {
-		analysis.statements = proceduralStatementSQL(routine)
-	}
-	return analysis, true
+	// The one dialect analyzed here is T-SQL. Its variables carry an @ prefix
+	// and cannot share a name with a column, so a name in its body may be
+	// attributed as a column read.
+	return procedural{writes: writes, unresolved: unresolved, statements: proceduralStatementSQL(routine), columnReads: true}, true
 }
 
 // bodyLanguage names the language a body is written in for the reason line.

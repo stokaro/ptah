@@ -1,6 +1,7 @@
 package sqllint_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -127,4 +128,39 @@ func countCode(codes []string, want string) int {
 		found += len(strings.Split(code, want)) - 1
 	}
 	return found
+}
+
+// dynamicMessages lists the position and message of each SQL003 finding.
+func dynamicMessages(findings []sqllint.Finding) []string {
+	messages := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Rule == sqllint.RuleDynamicSQL {
+			messages = append(messages, fmt.Sprintf("%d:%d %s", finding.Line, finding.Column, finding.Message))
+		}
+	}
+	return messages
+}
+
+// TestLintSource_MySQLSaysWhichStatementComposes pins the MySQL finding.
+//
+// Each finding names the statement that composes SQL and points at it.
+// Releasing a prepared statement composes nothing, so neither spelling of it
+// is reported.
+func TestLintSource_MySQLSaysWhichStatementComposes(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "x.sql", SQL: "CREATE PROCEDURE p()\nBEGIN\n" +
+				"  SET @s = 'DROP TABLE t';\n  PREPARE stmt FROM @s;\n  EXECUTE stmt;\n  DEALLOCATE PREPARE stmt;\n" +
+				"  DROP PREPARE stmt;\nEND"},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: dialect})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(dynamicMessages(findings), qt.DeepEquals, []string{
+				"4:3 procedure p builds SQL at run time with PREPARE",
+				"5:3 procedure p builds SQL at run time with EXECUTE",
+			})
+		})
+	}
 }

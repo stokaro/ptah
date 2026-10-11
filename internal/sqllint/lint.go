@@ -408,15 +408,19 @@ func readRoutineBodies(ctx context.Context, items []sourceItem, opts Options) (m
 	return readings, nil
 }
 
-// routineBodyOf is the body of a PostgreSQL routine a node defines.
+// routineBodyOf is the body of a routine a node defines, in the language of
+// the node's dialect.
 //
-// There are two node kinds, and the difference is not about what was parsed.
-// A PROCEDURE becomes a PostgresRoutineNode carrying its body; a FUNCTION
-// becomes a CreateFunctionNode, and `Parser.attachPostgresFunctionBody` fills
-// its RoutineBody. Reading only the first node type left every function
-// unexamined while looking like a parser limitation.
+// A PostgreSQL routine arrives as one of two node kinds, and the difference is
+// not about what was parsed. A PROCEDURE becomes a PostgresRoutineNode
+// carrying its body; a FUNCTION becomes a CreateFunctionNode, and
+// `Parser.attachPostgresFunctionBody` fills its RoutineBody. Reading only the
+// first node type left every function unexamined while looking like a parser
+// limitation. A MySQL routine is a MySQLRoutineNode.
 func routineBodyOf(node ast.Node) (routineext.Body, bool) {
 	switch node := node.(type) {
+	case *ast.MySQLRoutineNode:
+		return routineext.Body{Kind: string(node.Kind), SQL: node.Body.SQL}, true
 	case *ast.PostgresRoutineNode:
 		return routineext.Body{Kind: string(node.Kind), Language: node.Language, SQL: node.Body.SQL}, true
 	case *ast.CreateFunctionNode:
@@ -802,9 +806,12 @@ func flattenRoutineStatements(statements []routineext.Statement) []routineext.St
 	return flat
 }
 
-// postgresRoutineLabel names the PostgreSQL routine a node defines, for a finding.
-func postgresRoutineLabel(stmt ast.Node) string {
+// readRoutineLabel names the routine a node whose body was read defines, for
+// a finding.
+func readRoutineLabel(stmt ast.Node) string {
 	switch node := stmt.(type) {
+	case *ast.MySQLRoutineNode:
+		return routineLabel(string(node.Kind), node.Name)
 	case *ast.PostgresRoutineNode:
 		return fmt.Sprintf("%s %s", node.Kind, node.Name)
 	case *ast.CreateFunctionNode:
@@ -817,10 +824,10 @@ func postgresRoutineLabel(stmt ast.Node) string {
 	return ""
 }
 
-// dialectDynamicFindings reports the dynamic SQL a MySQL or T-SQL body builds.
+// dialectDynamicFindings reports the dynamic SQL a T-SQL body builds.
 //
-// Separate from the owner's reading below because the MySQL and T-SQL parsers
-// leave a dynamic statement in the raw kind for the leading words to identify.
+// Separate from the owner's reading below because the T-SQL parser leaves a
+// dynamic statement in the raw kind for the leading words to identify.
 func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
 	label, dynamic := dialectDynamicStatements(stmt)
 	findings := make([]Finding, 0, len(dynamic))
@@ -857,8 +864,8 @@ func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
 // One finding per dynamic statement rather than one per routine: each is a
 // separate place the analysis stops, and each gets its own position.
 //
-// A MySQL or T-SQL body is read here by [dialectDynamicFindings] until its
-// owner reads it.
+// A T-SQL body is read here by [dialectDynamicFindings] until its owner reads
+// it.
 type dynamicSQLRule struct{}
 
 func (dynamicSQLRule) ID() string {
@@ -873,7 +880,7 @@ func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 	if !read {
 		return nil
 	}
-	label := postgresRoutineLabel(stmt)
+	label := readRoutineLabel(stmt)
 
 	var findings []Finding
 	for _, statement := range flattenRoutineStatements(reading.Statements) {
@@ -893,11 +900,20 @@ func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 			Line:      line,
 			Column:    column,
 			Dialect:   ctx.Dialect,
-			Message:   fmt.Sprintf("%s builds SQL at run time with %s", label, strings.ToUpper(statement.Label)),
+			Message:   dynamicMessage(label, statement.Label),
 			Rationale: "The statement text is not known until the routine runs, so nothing here can resolve what it reads or writes.",
 		})
 	}
 	return findings
+}
+
+// dynamicMessage names the routine and, when the reader labeled it, the
+// statement that composes SQL. The label is optional in the contract.
+func dynamicMessage(routine, statement string) string {
+	if statement == "" {
+		return fmt.Sprintf("%s builds SQL at run time", routine)
+	}
+	return fmt.Sprintf("%s builds SQL at run time with %s", routine, strings.ToUpper(statement))
 }
 
 func (c Context) unsupportedModeledSQLFinding(label string, offset int) Finding {

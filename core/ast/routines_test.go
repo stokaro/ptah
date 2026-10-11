@@ -16,13 +16,7 @@ func TestNewMySQLRoutine(t *testing.T) {
 	routine.Parameters = ""
 	routine.Returns = "int"
 	routine.SetCharacteristics([]string{"DETERMINISTIC"})
-	routine.Body = ast.MySQLRoutineBody{
-		SQL: "RETURN 1",
-		Statements: []ast.MySQLRoutineStatement{{
-			Kind: ast.MySQLRoutineStatementReturn,
-			SQL:  "RETURN 1",
-		}},
-	}
+	routine.Body = ast.MySQLRoutineBody{SQL: "RETURN 1"}
 
 	c.Assert(routine.SQL, qt.Equals, "CREATE FUNCTION fn() RETURNS int RETURN 1;")
 	c.Assert(routine.Dialect, qt.Equals, "mysql")
@@ -30,10 +24,7 @@ func TestNewMySQLRoutine(t *testing.T) {
 	c.Assert(routine.Name, qt.Equals, "fn")
 	c.Assert(routine.Returns, qt.Equals, "int")
 	c.Assert(routine.Characteristics, qt.DeepEquals, []string{"DETERMINISTIC"})
-	c.Assert(routine.Body.Statements, qt.DeepEquals, []ast.MySQLRoutineStatement{{
-		Kind: ast.MySQLRoutineStatementReturn,
-		SQL:  "RETURN 1",
-	}})
+	c.Assert(routine.Body, qt.Equals, ast.MySQLRoutineBody{SQL: "RETURN 1"})
 }
 
 // TestMySQLRoutineNode_AcceptHandsTheVisitorTheRoutine pins that the visitor

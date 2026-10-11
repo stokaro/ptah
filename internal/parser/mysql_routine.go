@@ -284,28 +284,16 @@ func (p mysqlRoutineParser) parseRoutineBody(bodyIdx int) (ast.MySQLRoutineBody,
 		if err != nil {
 			return ast.MySQLRoutineBody{}, err
 		}
-		return ast.MySQLRoutineBody{
-			SQL:        bodySQL,
-			Statements: parseMySQLRoutineBodyStatements(bodySQL),
-		}, nil
+		return ast.MySQLRoutineBody{SQL: bodySQL}, nil
 	case p.tokens[bodyIdx].MatchIdentifierValue("BEGIN"):
 		bodySQL, err := p.collectCompoundBodySQL(bodyIdx)
 		if err != nil {
 			return ast.MySQLRoutineBody{}, err
 		}
-		return ast.MySQLRoutineBody{
-			SQL:        bodySQL,
-			Statements: parseMySQLRoutineBodyStatements(bodySQL),
-		}, nil
+		return ast.MySQLRoutineBody{SQL: bodySQL}, nil
 	case p.tokens[bodyIdx].MatchIdentifierValue("RETURN"):
 		bodySQL := strings.TrimSpace(p.rawFragment(p.tokens[bodyIdx].Start, p.statementEndFrom(bodyIdx)))
-		return ast.MySQLRoutineBody{
-			SQL: bodySQL,
-			Statements: []ast.MySQLRoutineStatement{{
-				Kind: ast.MySQLRoutineStatementReturn,
-				SQL:  bodySQL,
-			}},
-		}, nil
+		return ast.MySQLRoutineBody{SQL: bodySQL}, nil
 	default:
 		return ast.MySQLRoutineBody{}, fmt.Errorf("unsupported MySQL routine body at position %d", p.tokens[bodyIdx].Start)
 	}
@@ -365,241 +353,7 @@ func (p mysqlRoutineParser) statementEndFrom(startIdx int) int {
 	return len(p.input)
 }
 
-func parseMySQLRoutineBodyStatements(bodySQL string) []ast.MySQLRoutineStatement {
-	parser := mysqlRoutineBodyParser{
-		input:  strings.TrimSpace(bodySQL),
-		tokens: tokenizeMySQLRoutineSQL(bodySQL),
-	}
-	return parser.parseStatements()
-}
-
-type mysqlRoutineBodyParser struct {
-	input  string
-	tokens []lexer.Token
-}
-
-func (p mysqlRoutineBodyParser) parseStatements() []ast.MySQLRoutineStatement {
-	beginIdx, endIdx := p.outerBlockRange()
-	if beginIdx == -1 || endIdx == -1 || beginIdx >= endIdx {
-		return p.singleStatement()
-	}
-
-	statements := make([]ast.MySQLRoutineStatement, 0)
-	statementStartIdx := -1
-	depth := 0
-	caseDepth := 0
-	pendingEndTrailer := false
-
-	for i := beginIdx + 1; i < endIdx; i++ {
-		tok := p.tokens[i]
-		if statementStartIdx == -1 {
-			if isMySQLRoutineTrivia(tok) {
-				continue
-			}
-			statementStartIdx = i
-		}
-
-		if tok.Type == lexer.TokenIdentifier {
-			keyword := strings.ToUpper(tok.Value)
-			if keyword != "IF" || !p.isScalarIF(i) {
-				trackRoutineCompoundKeyword(keyword, &depth, &caseDepth, &pendingEndTrailer)
-			}
-		}
-
-		if tok.Type == lexer.TokenSemicolon && depth == 0 && caseDepth == 0 && statementStartIdx != -1 {
-			statements = append(statements, p.statement(statementStartIdx, i))
-			statementStartIdx = -1
-			pendingEndTrailer = false
-			continue
-		}
-
-		if tok.Type == lexer.TokenSemicolon {
-			pendingEndTrailer = false
-		}
-	}
-
-	if statementStartIdx != -1 {
-		statements = append(statements, p.statement(statementStartIdx, endIdx))
-	}
-	return statements
-}
-
-func (p mysqlRoutineBodyParser) singleStatement() []ast.MySQLRoutineStatement {
-	startIdx := p.nextSignificant(0)
-	if startIdx == -1 {
-		return nil
-	}
-	endIdx := len(p.tokens) - 1
-	if endIdx < startIdx {
-		return nil
-	}
-	return []ast.MySQLRoutineStatement{p.statement(startIdx, endIdx)}
-}
-
-func (p mysqlRoutineBodyParser) statement(startIdx, endIdx int) ast.MySQLRoutineStatement {
-	if startIdx < 0 || endIdx >= len(p.tokens) || startIdx > endIdx {
-		return ast.MySQLRoutineStatement{}
-	}
-	end := p.tokens[endIdx].End
-	if p.tokens[endIdx].Type == lexer.TokenEOF {
-		end = p.tokens[endIdx].Start
-	}
-	sql := strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end))
-	statement := ast.MySQLRoutineStatement{
-		Kind: p.classifyStatement(startIdx),
-		SQL:  sql,
-	}
-	p.populateDeclareMetadata(&statement, startIdx, endIdx)
-	return statement
-}
-
-func (p mysqlRoutineBodyParser) populateDeclareMetadata(statement *ast.MySQLRoutineStatement, startIdx, endIdx int) {
-	if statement == nil {
-		return
-	}
-
-	switch statement.Kind {
-	case ast.MySQLRoutineStatementDeclaration:
-		statement.Declaration = p.parseDeclareStatement(startIdx, endIdx)
-	case ast.MySQLRoutineStatementCursor:
-		statement.Cursor = p.parseCursorStatement(startIdx, endIdx)
-	case ast.MySQLRoutineStatementHandler:
-		statement.Handler = p.parseHandlerStatement(startIdx, endIdx)
-	}
-}
-
-func (p mysqlRoutineBodyParser) findSignificantKeyword(startIdx, endIdx int, keyword string) int {
-	for i := startIdx; i < endIdx; i++ {
-		if p.tokens[i].MatchIdentifierValue(keyword) {
-			return i
-		}
-	}
-	return -1
-}
-
-func (p mysqlRoutineBodyParser) statementContentEnd(endIdx int) int {
-	if endIdx < 0 || endIdx >= len(p.tokens) {
-		return len(p.input)
-	}
-	if p.tokens[endIdx].Type == lexer.TokenSemicolon || p.tokens[endIdx].Type == lexer.TokenEOF {
-		return p.tokens[endIdx].Start
-	}
-	return p.tokens[endIdx].End
-}
-
-func (p mysqlRoutineBodyParser) rawTokenRange(startIdx, end int) string {
-	if startIdx < 0 || startIdx >= len(p.tokens) {
-		return ""
-	}
-	return strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end))
-}
-
-func (p mysqlRoutineBodyParser) classifyStatement(startIdx int) ast.MySQLRoutineStatementKind {
-	if p.isLabelStatement(startIdx) {
-		return ast.MySQLRoutineStatementLabel
-	}
-
-	tok := p.tokens[startIdx]
-	if tok.Type != lexer.TokenIdentifier {
-		return ast.MySQLRoutineStatementRaw
-	}
-
-	keyword := strings.ToUpper(tok.Value)
-	switch keyword {
-	case "DECLARE":
-		return p.classifyDeclareStatement(startIdx)
-	case "IF":
-		if p.isScalarIF(startIdx) {
-			return ast.MySQLRoutineStatementRaw
-		}
-		return ast.MySQLRoutineStatementIf
-	}
-
-	if kind, ok := mysqlRoutineStatementKindsByKeyword[keyword]; ok {
-		return kind
-	}
-	return ast.MySQLRoutineStatementRaw
-}
-
-var mysqlRoutineStatementKindsByKeyword = map[string]ast.MySQLRoutineStatementKind{
-	"CASE":    ast.MySQLRoutineStatementCase,
-	"BEGIN":   ast.MySQLRoutineStatementBlock,
-	"LOOP":    ast.MySQLRoutineStatementLoop,
-	"WHILE":   ast.MySQLRoutineStatementWhile,
-	"REPEAT":  ast.MySQLRoutineStatementRepeat,
-	"LEAVE":   ast.MySQLRoutineStatementLeave,
-	"ITERATE": ast.MySQLRoutineStatementIterate,
-	"RETURN":  ast.MySQLRoutineStatementReturn,
-	"SET":     ast.MySQLRoutineStatementSet,
-	"SELECT":  ast.MySQLRoutineStatementSelect,
-	"INSERT":  ast.MySQLRoutineStatementInsert,
-	"UPDATE":  ast.MySQLRoutineStatementUpdate,
-	"DELETE":  ast.MySQLRoutineStatementDelete,
-	"OPEN":    ast.MySQLRoutineStatementOpen,
-	"FETCH":   ast.MySQLRoutineStatementFetch,
-	"CLOSE":   ast.MySQLRoutineStatementClose,
-}
-
-func (p mysqlRoutineBodyParser) classifyDeclareStatement(startIdx int) ast.MySQLRoutineStatementKind {
-	for i := startIdx + 1; i < len(p.tokens); i++ {
-		if p.tokens[i].Type == lexer.TokenSemicolon || p.tokens[i].Type == lexer.TokenEOF {
-			return ast.MySQLRoutineStatementDeclaration
-		}
-		if p.tokens[i].MatchIdentifierValue("HANDLER") {
-			return ast.MySQLRoutineStatementHandler
-		}
-		if p.tokens[i].MatchIdentifierValue("CURSOR") {
-			return ast.MySQLRoutineStatementCursor
-		}
-	}
-	return ast.MySQLRoutineStatementDeclaration
-}
-
-func (p mysqlRoutineBodyParser) outerBlockRange() (beginIdx, endIdx int) {
-	beginIdx = p.nextSignificant(0)
-	if beginIdx != -1 && p.isLabelStatement(beginIdx) {
-		colonIdx := p.nextSignificant(beginIdx + 1)
-		beginIdx = p.nextSignificant(colonIdx + 1)
-	}
-	if beginIdx == -1 || !p.tokens[beginIdx].MatchIdentifierValue("BEGIN") {
-		return -1, -1
-	}
-
-	depth := 0
-	caseDepth := 0
-	pendingEndTrailer := false
-	for i := beginIdx; i < len(p.tokens); i++ {
-		tok := p.tokens[i]
-		if tok.Type == lexer.TokenSemicolon {
-			pendingEndTrailer = false
-			continue
-		}
-		if tok.Type != lexer.TokenIdentifier {
-			continue
-		}
-		keyword := strings.ToUpper(tok.Value)
-		if keyword == "IF" && p.isScalarIF(i) {
-			continue
-		}
-		trackRoutineCompoundKeyword(keyword, &depth, &caseDepth, &pendingEndTrailer)
-		if depth == 0 && keyword == "END" {
-			return beginIdx, i
-		}
-	}
-	return -1, -1
-}
-
-func (p mysqlRoutineBodyParser) isLabelStatement(startIdx int) bool {
-	nextIdx := p.nextSignificant(startIdx + 1)
-	return nextIdx != -1 && p.tokens[nextIdx].MatchOperatorValue(":")
-}
-
 func (p mysqlRoutineParser) isScalarIF(idx int) bool {
-	nextIdx := p.nextSignificant(idx + 1)
-	return isScalarMySQLRoutineIF(p.tokens, nextIdx)
-}
-
-func (p mysqlRoutineBodyParser) isScalarIF(idx int) bool {
 	nextIdx := p.nextSignificant(idx + 1)
 	return isScalarMySQLRoutineIF(p.tokens, nextIdx)
 }
@@ -656,10 +410,6 @@ func (p mysqlRoutineParser) nextSignificant(startIdx int) int {
 	return nextSignificantMySQLRoutineToken(p.tokens, startIdx)
 }
 
-func (p mysqlRoutineBodyParser) nextSignificant(startIdx int) int {
-	return nextSignificantMySQLRoutineToken(p.tokens, startIdx)
-}
-
 func nextSignificantMySQLRoutineToken(tokens []lexer.Token, startIdx int) int {
 	for i := max(startIdx, 0); i < len(tokens); i++ {
 		if !isMySQLRoutineTrivia(tokens[i]) && tokens[i].Type != lexer.TokenEOF {
@@ -681,10 +431,6 @@ func (p mysqlRoutineParser) rawToken(idx int) string {
 }
 
 func (p mysqlRoutineParser) rawFragment(start, end int) string {
-	return rawMySQLRoutineFragment(p.input, start, end)
-}
-
-func (p mysqlRoutineBodyParser) rawFragment(start, end int) string {
 	return rawMySQLRoutineFragment(p.input, start, end)
 }
 
@@ -712,18 +458,4 @@ var mysqlRoutineCharacteristicKeywords = []string{
 	"NOT",
 	"READS",
 	"SQL",
-}
-
-// ParseMySQLRoutineBody splits a MySQL routine body into the statements it
-// holds.
-//
-// The whole-statement parser reaches this through a CREATE PROCEDURE it just
-// read, and had the only way in. A caller holding a body -- which is what a
-// schema model carries -- would otherwise have to synthesize a CREATE PROCEDURE
-// around the text to get it parsed again (stokaro/ptah#2394).
-func ParseMySQLRoutineBody(body string) ast.MySQLRoutineBody {
-	return ast.MySQLRoutineBody{
-		SQL:        body,
-		Statements: parseMySQLRoutineBodyStatements(body),
-	}
 }

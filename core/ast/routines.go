@@ -140,87 +140,16 @@ type MySQLRoutineNode struct {
 	// Characteristics stores raw routine characteristics before the body, such
 	// as DETERMINISTIC, SQL SECURITY INVOKER, or MODIFIES SQL DATA.
 	Characteristics []string
-	// Body is the parsed routine body. Expressions remain raw SQL fragments;
-	// statement boundaries and procedural statement kinds are modeled.
+	// Body is the routine body as the statement writes it.
 	Body MySQLRoutineBody
 }
 
-// MySQLRoutineBody contains a parsed MySQL routine body.
+// MySQLRoutineBody is the body of a MySQL routine as the statement writes it.
 type MySQLRoutineBody struct {
-	// SQL is the full body fragment, usually BEGIN ... END or RETURN ...
+	// SQL is the full body fragment, usually BEGIN ... END or RETURN ... What
+	// its statements are is the MySQL owner's to read: a host asks the
+	// runtime's routine body reader (ptah.run/core/routineext).
 	SQL string
-	// Statements are the top-level routine-body statements.
-	Statements []MySQLRoutineStatement
-}
-
-// MySQLRoutineStatementKind identifies a MySQL routine-body statement class.
-type MySQLRoutineStatementKind string
-
-const (
-	MySQLRoutineStatementRaw         MySQLRoutineStatementKind = "raw"
-	MySQLRoutineStatementDeclaration MySQLRoutineStatementKind = "declaration"
-	MySQLRoutineStatementHandler     MySQLRoutineStatementKind = "handler"
-	MySQLRoutineStatementCursor      MySQLRoutineStatementKind = "cursor"
-	MySQLRoutineStatementIf          MySQLRoutineStatementKind = "if"
-	MySQLRoutineStatementCase        MySQLRoutineStatementKind = "case"
-	MySQLRoutineStatementBlock       MySQLRoutineStatementKind = "block"
-	MySQLRoutineStatementLoop        MySQLRoutineStatementKind = "loop"
-	MySQLRoutineStatementWhile       MySQLRoutineStatementKind = "while"
-	MySQLRoutineStatementRepeat      MySQLRoutineStatementKind = "repeat"
-	MySQLRoutineStatementLeave       MySQLRoutineStatementKind = "leave"
-	MySQLRoutineStatementIterate     MySQLRoutineStatementKind = "iterate"
-	MySQLRoutineStatementReturn      MySQLRoutineStatementKind = "return"
-	MySQLRoutineStatementSet         MySQLRoutineStatementKind = "set"
-	MySQLRoutineStatementSelect      MySQLRoutineStatementKind = "select"
-	MySQLRoutineStatementInsert      MySQLRoutineStatementKind = "insert"
-	MySQLRoutineStatementUpdate      MySQLRoutineStatementKind = "update"
-	MySQLRoutineStatementDelete      MySQLRoutineStatementKind = "delete"
-	MySQLRoutineStatementOpen        MySQLRoutineStatementKind = "open"
-	MySQLRoutineStatementFetch       MySQLRoutineStatementKind = "fetch"
-	MySQLRoutineStatementClose       MySQLRoutineStatementKind = "close"
-	MySQLRoutineStatementLabel       MySQLRoutineStatementKind = "label"
-)
-
-// MySQLRoutineStatement is one top-level statement inside a MySQL routine
-// body. SQL expression internals are preserved as raw fragments.
-type MySQLRoutineStatement struct {
-	Kind        MySQLRoutineStatementKind
-	SQL         string
-	Declaration *MySQLRoutineDeclaration
-	Cursor      *MySQLRoutineCursor
-	Handler     *MySQLRoutineHandler
-}
-
-// MySQLRoutineDeclarationKind identifies the DECLARE subform.
-type MySQLRoutineDeclarationKind string
-
-const (
-	MySQLRoutineDeclarationVariable  MySQLRoutineDeclarationKind = "variable"
-	MySQLRoutineDeclarationCondition MySQLRoutineDeclarationKind = "condition"
-)
-
-// MySQLRoutineDeclaration models DECLARE variable and condition statements.
-// TypeSQL, DefaultSQL, and ConditionSQL remain raw MySQL fragments; expression
-// parsing is intentionally outside the routine statement-boundary layer.
-type MySQLRoutineDeclaration struct {
-	Kind         MySQLRoutineDeclarationKind
-	Names        []string
-	TypeSQL      string
-	DefaultSQL   string
-	ConditionSQL string
-}
-
-// MySQLRoutineCursor models DECLARE ... CURSOR statements.
-type MySQLRoutineCursor struct {
-	Name      string
-	SelectSQL string
-}
-
-// MySQLRoutineHandler models DECLARE ... HANDLER statements.
-type MySQLRoutineHandler struct {
-	Action       string
-	Conditions   []string
-	StatementSQL string
 }
 
 // NewMySQLRoutine creates a MySQL-family routine node.

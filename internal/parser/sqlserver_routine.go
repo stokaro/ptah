@@ -589,9 +589,8 @@ func (p sqlServerRoutineBodyParser) rawFragment(start, end int) string {
 // ParseSQLServerRoutineBody splits a T-SQL routine body into the statements it
 // holds.
 //
-// The counterpart of [ParseMySQLRoutineBody], and it exists for the same
-// reason: a caller with a body and no CREATE PROCEDURE around it had no way to
-// reach this split.
+// A caller holding a body with no CREATE PROCEDURE around it, which is what a
+// schema model carries, has no other way to reach this split.
 func ParseSQLServerRoutineBody(body string) ast.SQLServerRoutineBody {
 	return ast.SQLServerRoutineBody{
 		SQL:        body,
