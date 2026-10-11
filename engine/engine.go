@@ -91,6 +91,13 @@ type Provider struct {
 	// [Runtime.CoverageVocabulary]. A kind belongs to one provider and is
 	// never a common kind.
 	CoverageKinds []coverage.Kind
+	// ProcessCoverageKinds are the not-described coverage kinds the
+	// provider's reader records for an owner to consult in the same process,
+	// which no document names, such as a YDB replica table. A writer leaves
+	// a record of one out of a document; one of a kind the runtime knows
+	// neither way is refused. A kind is registered once, and never as a
+	// CoverageKinds kind or a common kind.
+	ProcessCoverageKinds []coverage.Kind
 	// CoverageLimits map not-described kinds onto the provider's named-object
 	// models, so a description that declines a kind, such as a document whose
 	// header says it does not describe policies, does not describe the

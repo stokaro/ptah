@@ -18,9 +18,10 @@ const (
 	// table at its path; the replication owns it.
 	//
 	// It is consulted in process rather than serialized: [CoverageKinds]
-	// leaves it out, so no document can name it and a set carrying it does
-	// not survive a round trip through one. Hold the record in memory and
-	// consult it there.
+	// leaves it out and [ProcessCoverageKinds] names it, so no document can
+	// name it, a writer leaves it out of one, and a set carrying it does not
+	// survive a round trip through one. Hold the record in memory and consult
+	// it there.
 	CoverageReplicaTable coverage.Kind = "replica_table"
 	// CoverageChangefeed is a changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
@@ -46,4 +47,11 @@ const (
 // slice. [CoverageReplicaTable] is not among them.
 func CoverageKinds() []coverage.Kind {
 	return []coverage.Kind{CoverageChangefeed, CoverageColumnTable, CoverageTableOption, CoverageTTL}
+}
+
+// ProcessCoverageKinds returns the YDB coverage kinds a read records for the
+// owner to consult in the same process, which no document names, in a new
+// slice: [CoverageReplicaTable].
+func ProcessCoverageKinds() []coverage.Kind {
+	return []coverage.Kind{CoverageReplicaTable}
 }

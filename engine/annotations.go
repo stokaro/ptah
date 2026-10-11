@@ -42,15 +42,20 @@ func (r *Runtime) registerAnnotations(providers []Provider) error {
 	return nil
 }
 
-// registerCoverageKinds freezes every provider's coverage kinds into the
-// runtime's vocabulary. Two providers claiming one kind, and a provider
-// claiming a common kind, are refused.
+// registerCoverageKinds freezes every provider's coverage kinds and
+// in-process coverage kinds into the runtime's vocabulary. Two providers
+// claiming one kind, a provider claiming a common kind, and a kind registered
+// both ways are refused.
 func (r *Runtime) registerCoverageKinds(providers []Provider) error {
-	var kinds []coverage.Kind
+	var kinds, process []coverage.Kind
 	for _, provider := range providers {
 		kinds = append(kinds, provider.CoverageKinds...)
+		process = append(process, provider.ProcessCoverageKinds...)
 	}
 	vocabulary, err := coverage.NewVocabulary(kinds...)
+	if err == nil {
+		vocabulary, err = vocabulary.WithProcess(process...)
+	}
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}

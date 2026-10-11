@@ -41,7 +41,8 @@ func TestReader_HCLExportKeepsWhatTheReadDidNotDescribe(t *testing.T) {
 	runtime := must.Must(builtin.New())
 	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), read, "ydb", runtime))
 
-	exported, err := atlashclrender.RenderInspected(described, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
+	exported, err := atlashclrender.RenderInspected(described, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
+		CoverageVocabulary: runtime.CoverageVocabulary(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(exported.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), CoverageVocabulary: runtime.CoverageVocabulary()})
 

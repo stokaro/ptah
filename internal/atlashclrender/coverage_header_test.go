@@ -183,8 +183,9 @@ func suppressedBlocks(kinds ...coverage.Kind) coverage.Set {
 // TestRenderWritesTheDescriptionsOwnLimits writes the record a description
 // carries of what it did not describe into the header, so the document read
 // back keeps it, beside what the compatibility surface adds. A YDB replica
-// table is consulted in process only and no document can name it, so its
-// record stays out of the header: written, the document would not read back.
+// table is consulted in process only, and the runtime's vocabulary knows that
+// no document can name it, so its record stays out of the header: written,
+// the document would not read back.
 func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 	c := qt.New(t)
 	db := coverageBareDatabase()
@@ -194,7 +195,8 @@ func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 		coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: "replica.accounts", Reason: coverage.Unsupported, Provenance: coverage.Observed},
 	)
 
-	result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
+	result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
+		CoverageVocabulary: builtintest.Runtime().CoverageVocabulary(), Dialect: platform.YDB})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{
@@ -205,4 +207,39 @@ func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 		`ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,
 		"ptah:not-described role reason=not-inspected provenance=observed",
 	})
+}
+
+// TestRenderRefusesALimitTheVocabularyCannotName_FailurePath refuses a
+// description's record of a kind the render's vocabulary does not know,
+// rather than leaving it out of the header: the document read back would
+// describe the database as complete where the read was not, and the next plan
+// would drop what it never saw. The zero vocabulary knows the common kinds
+// alone, so a YDB changefeed is refused, and so is a YDB replica table, which
+// only the runtime's vocabulary knows to leave out.
+func TestRenderRefusesALimitTheVocabularyCannotName_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		object  coverage.Object
+		wantErr string
+	}{
+		{name: "a YDB changefeed", object: coverage.Object{Kind: ydbschema.CoverageChangefeed, Name: "app.t", Reason: coverage.Unsupported,
+			Provenance: coverage.Observed},
+			wantErr: `the document records changefeed as not described, which the coverage vocabulary cannot name: unknown coverage kind "changefeed": .*`},
+		{name: "a YDB replica table", object: coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: "replica.accounts",
+			Reason: coverage.Unsupported, Provenance: coverage.Observed},
+			wantErr: `the document records replica_table as not described, which the coverage vocabulary cannot name: unknown coverage kind "replica_table": .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := coverageBareDatabase()
+			db.NotDescribed = coverage.Set{}.With(test.object)
+
+			result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(result.Data, qt.IsNil)
+			c.Assert(result.NotDescribed.Directives(), qt.HasLen, 0)
+		})
+	}
 }

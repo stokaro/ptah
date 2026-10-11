@@ -173,9 +173,11 @@ func New() (*engine.Runtime, error) {
 			provider.YAML = append(provider.YAML, ydbsource.YAML())
 			provider.HCL = append(provider.HCL, ydbsource.HCL())
 			provider.SQL = append(provider.SQL, ydbsql.SQL())
-			// The YDB state a read records and does not describe, which a
-			// document's header may name.
+			// The YDB state a read records and does not describe: what a
+			// document's header may name, and what the owner consults in
+			// process and no document names.
 			provider.CoverageKinds = append(provider.CoverageKinds, ydbschema.CoverageKinds()...)
+			provider.ProcessCoverageKinds = append(provider.ProcessCoverageKinds, ydbschema.ProcessCoverageKinds()...)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

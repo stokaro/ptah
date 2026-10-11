@@ -91,6 +91,13 @@ type Options struct {
 	// [hclext.None] writes this package's own blocks alone, reporting an
 	// owner's object as one HCL does not represent.
 	HCL hclext.Set
+	// CoverageVocabulary is the coverage kinds the document's header may
+	// name, usually the caller's runtime's, which also knows the kinds an
+	// owner consults in process and the header leaves out. A not-described
+	// record of a kind it does not know is refused: leaving the record out
+	// would describe the database as complete where the read was not. The
+	// zero value knows the common kinds alone.
+	CoverageVocabulary coverage.Vocabulary
 	// Dialect writes a column type that dialect's Atlas HCL schema does not
 	// model as a sql() call. Empty writes every column type as the IR spells
 	// it.
@@ -200,8 +207,13 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		return Result{}, err
 	}
 
+	documented, err := documentedLimits(db.NotDescribed, opts.CoverageVocabulary)
+	if err != nil {
+		return Result{}, err
+	}
 	r := renderer{
 		db:                     db,
+		documented:             documented,
 		dialect:                dialect,
 		defaultSchema:          defaultSchema,
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
@@ -276,6 +288,9 @@ type renderer struct {
 	// wrote, filled by [renderer.schemaRef] as the body is rendered and read
 	// afterwards by [renderer.referencedSchemas].
 	schemaRefs map[string]bool
+	// documented is the description's own record of what it does not
+	// describe, as the document carries it; see [documentedLimits].
+	documented coverage.Set
 	// owners are the feature owners whose objects this render writes,
 	// ownerBlocks the blocks they wrote, ownerHeader the lines they write in
 	// the header, and slots what they add to this writer's own blocks; see

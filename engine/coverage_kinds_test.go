@@ -49,3 +49,49 @@ func TestRuntime_CoverageVocabulary_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*coverage kind "sequence" is a common kind and cannot be an owner's`)
 	c.Assert(common, qt.IsNil)
 }
+
+// TestRuntime_CoverageVocabulary_KnowsInProcessKinds knows a provider's
+// in-process kind, which no document names, so the vocabulary refuses it by
+// name.
+func TestRuntime_CoverageVocabulary_KnowsInProcessKinds(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/replicas", CoverageKinds: []coverage.Kind{"changefeed"},
+		ProcessCoverageKinds: []coverage.Kind{"replica_table"}}))
+
+	c.Assert(runtime.CoverageVocabulary().InProcess("replica_table"), qt.IsTrue)
+	c.Assert(runtime.CoverageVocabulary().InProcess("changefeed"), qt.IsFalse)
+	kind, err := runtime.CoverageVocabulary().ParseKind("replica_table")
+	c.Assert(err, qt.ErrorMatches, `unknown coverage kind "replica_table": valid kinds are .*`)
+	c.Assert(kind, qt.Equals, coverage.Kind(""))
+}
+
+// TestRuntime_CoverageVocabulary_RefusesAnInProcessKind_FailurePath refuses
+// an in-process kind two providers register, and one another provider
+// registers as a kind documents name.
+func TestRuntime_CoverageVocabulary_RefusesAnInProcessKind_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		providers []engine.Provider
+		wantErr   string
+	}{
+		{name: "twice", providers: []engine.Provider{
+			{ID: "example.org/first", ProcessCoverageKinds: []coverage.Kind{"replica_table"}},
+			{ID: "example.org/second", ProcessCoverageKinds: []coverage.Kind{"replica_table"}}},
+			wantErr: `.*in-process coverage kind "replica_table" is registered twice`},
+		{name: "a kind documents name", providers: []engine.Provider{
+			{ID: "example.org/first", CoverageKinds: []coverage.Kind{"replica_table"}},
+			{ID: "example.org/second", ProcessCoverageKinds: []coverage.Kind{"replica_table"}}},
+			wantErr: `.*coverage kind "replica_table" is a kind documents name and cannot be in-process`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			runtime, err := engine.New(test.providers...)
+
+			c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(runtime, qt.IsNil)
+		})
+	}
+}

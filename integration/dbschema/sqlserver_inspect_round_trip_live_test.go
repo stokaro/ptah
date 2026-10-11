@@ -75,7 +75,8 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	c.Assert(recorded, qt.IsTrue)
 	c.Assert(unwritable, qt.DeepEquals, mssqlproperty.UnrepresentableValue("int"))
 
-	rendered, err := atlashclrender.RenderInspected(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "sqlserver", must.Must(builtin.New()))), schemaName, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
+	rendered, err := atlashclrender.RenderInspected(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "sqlserver", must.Must(builtin.New()))), schemaName, atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
+		CoverageVocabulary: builtintest.Runtime().CoverageVocabulary(), Dialect: platform.SQLServer})
 	c.Assert(err, qt.IsNil)
 	document := string(rendered.Data)
 

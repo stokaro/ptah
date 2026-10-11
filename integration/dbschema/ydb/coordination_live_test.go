@@ -191,7 +191,8 @@ func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
 				Schemas:         []schemamodel.Schema{{Name: coordinationSchema}},
 				FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 			}
-			exported, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
+			exported, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
+				CoverageVocabulary: builtintest.Runtime().CoverageVocabulary(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			complete, err := atlashcl.ParseWithOptions(exported.Data, "complete.hcl", owners)
 			c.Assert(err, qt.IsNil)

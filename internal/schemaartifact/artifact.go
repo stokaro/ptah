@@ -155,7 +155,7 @@ func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabu
 			return nil, err
 		}
 	}
-	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: hcl})
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: hcl, CoverageVocabulary: vocabulary})
 	if err != nil {
 		return nil, fmt.Errorf("render canonical schema HCL: %w", err)
 	}
@@ -169,7 +169,7 @@ func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabu
 	if err != nil {
 		return nil, fmt.Errorf("validate canonical schema HCL: %w", err)
 	}
-	roundTrip, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: hcl})
+	roundTrip, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: hcl, CoverageVocabulary: vocabulary})
 	if err != nil {
 		return nil, fmt.Errorf("re-render canonical schema HCL: %w", err)
 	}

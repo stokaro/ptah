@@ -12,11 +12,17 @@ import (
 // A runtime builds it from its providers; see
 // [ptah.run/engine.Runtime.CoverageVocabulary].
 //
+// It also knows the owners' in-process kinds: state a read records and an
+// owner consults in the same process, which no document names, such as a
+// YDB replica table. A writer leaves a record of one out of a document and
+// refuses a record of a kind the vocabulary does not know at all.
+//
 // Its zero value holds the common kinds only, so an owner's kind is refused
 // by name unless its owner was selected. A Vocabulary is immutable and safe
 // for concurrent use.
 type Vocabulary struct {
-	owned []Kind
+	owned   []Kind
+	process []Kind
 }
 
 // NewVocabulary returns a vocabulary of the common kinds and owned. Each owned
@@ -27,7 +33,7 @@ func NewVocabulary(owned ...Kind) (Vocabulary, error) {
 	result := Vocabulary{owned: make([]Kind, 0, len(owned))}
 	for _, kind := range owned {
 		token := string(kind)
-		if token == "" || token != strings.ToLower(strings.TrimSpace(token)) || strings.ContainsAny(token, " \t\"=") {
+		if !isKindName(token) {
 			return Vocabulary{}, fmt.Errorf("coverage kind %q is not a lower-case name", token)
 		}
 		if slices.Contains(kinds, kind) {
@@ -40,6 +46,41 @@ func NewVocabulary(owned ...Kind) (Vocabulary, error) {
 	}
 	slices.Sort(result.owned)
 	return result, nil
+}
+
+// WithProcess returns the vocabulary that also knows kinds as in-process
+// kinds; see [Vocabulary.InProcess]. Each must be a lower-case name, appear
+// once, and be neither a common kind nor one the vocabulary accepts, so a
+// kind a document may name cannot also be left out of every document.
+func (v Vocabulary) WithProcess(kinds ...Kind) (Vocabulary, error) {
+	result := Vocabulary{owned: v.owned, process: slices.Clone(v.process)}
+	for _, kind := range kinds {
+		token := string(kind)
+		if !isKindName(token) {
+			return Vocabulary{}, fmt.Errorf("in-process coverage kind %q is not a lower-case name", token)
+		}
+		if slices.Contains(v.Kinds(), kind) {
+			return Vocabulary{}, fmt.Errorf("coverage kind %q is a kind documents name and cannot be in-process", token)
+		}
+		if slices.Contains(result.process, kind) {
+			return Vocabulary{}, fmt.Errorf("in-process coverage kind %q is registered twice", token)
+		}
+		result.process = append(result.process, kind)
+	}
+	slices.Sort(result.process)
+	return result, nil
+}
+
+// isKindName reports whether token is a lower-case name a header can spell.
+func isKindName(token string) bool {
+	return token != "" && token == strings.ToLower(strings.TrimSpace(token)) && !strings.ContainsAny(token, " \t\"=")
+}
+
+// InProcess reports whether kind is an in-process kind of the vocabulary:
+// one a read records and an owner consults in the same process, which no
+// document names. [Vocabulary.ParseKind] refuses it.
+func (v Vocabulary) InProcess(kind Kind) bool {
+	return slices.Contains(v.process, kind)
 }
 
 // Kinds returns every kind the vocabulary accepts, common and owned, in a new

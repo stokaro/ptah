@@ -415,9 +415,9 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 		return atlashclrender.Result{}, err
 	}
 	if r.omitAtlasRefusedBlocks {
-		return atlashclrender.RenderInspectedForAtlasCLI(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), Dialect: r.info.Dialect})
+		return atlashclrender.RenderInspectedForAtlasCLI(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), CoverageVocabulary: r.coverageVocabulary(), Dialect: r.info.Dialect})
 	}
-	return atlashclrender.RenderInspected(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), Dialect: r.info.Dialect})
+	return atlashclrender.RenderInspected(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), CoverageVocabulary: r.coverageVocabulary(), Dialect: r.info.Dialect})
 }
 
 // hclSource exports typed table and index settings as the platform properties
