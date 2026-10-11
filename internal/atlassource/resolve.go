@@ -15,6 +15,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
@@ -44,6 +45,7 @@ import (
 // *ptah.run/engine.Runtime implements it.
 type Runtime interface {
 	schemaext.ConversionRuntime
+	schemacomparison.Runtime
 	yamlext.Runtime
 	coverage.Runtime
 }
@@ -214,12 +216,20 @@ func (s State) ExtensionNames() map[string]bool {
 	return names
 }
 
+// StateRuntime converts a state in both directions for [State.WithoutStartingPoint]:
+// a declaration into a catalog, and the filtered catalog back into a
+// declaration with its target's comparison rules.
+type StateRuntime interface {
+	goschematodb.Runtime
+	schemacomparison.Runtime
+}
+
 // WithoutStartingPoint returns the state without the objects of its dev
 // database's starting point that other does not hold, so a comparison with
 // other reads what the source built rather than what the dev database started
 // from. A state read from no such dev database comes back as it is. See
 // [devclean.Baseline.WithoutStartingPoint].
-func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect string, runtime goschematodb.Runtime) (State, error) {
+func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect string, runtime StateRuntime) (State, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return State{}, err
 	}

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -141,10 +142,19 @@ type LoweringRuntime interface {
 // the IR, which is what lets a plan target the introspected database itself
 // instead of a reduced copy of it.
 //
-// The caller supplies the target and selected feature runtime. Conversion
-// errors, including provider failures and cancellation, return no schema.
-func DBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect string, runtime schemaext.ConversionRuntime) (*schemamodel.Database, error) {
+// The caller supplies the target and the runtime that selected it. Conversion
+// errors, including provider failures, an unregistered target and
+// cancellation, return no schema.
+func DBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect string, runtime ConversionRuntime) (*schemamodel.Database, error) {
 	return dbschematogo.ConvertDBSchemaToGoSchema(ctx, dbSchema, dialect, runtime)
+}
+
+// ConversionRuntime selects the feature conversion of the target a catalog was
+// read from, and the comparison rules through which a default its catalog
+// reports reads back as a value. *engine.Runtime satisfies it.
+type ConversionRuntime interface {
+	schemaext.ConversionRuntime
+	schemacomparison.Runtime
 }
 
 // SumEntry is one migration file and its content hash.

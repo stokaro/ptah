@@ -64,6 +64,7 @@ func TestComparisonRules_FailurePath(t *testing.T) {
 }
 
 func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
+	var columns *sequenceColumns
 	var indexes *equalIndexes
 	var views *equalViews
 	tests := []struct {
@@ -71,6 +72,7 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 		rules   schemacomparison.Rules
 		message string
 	}{
+		{name: "column rules", rules: schemacomparison.Rules{Columns: columns}, message: `.*typed-nil column comparison service`},
 		{name: "index rules", rules: schemacomparison.Rules{Indexes: indexes}, message: `.*typed-nil index comparison service`},
 		{name: "view rules", rules: schemacomparison.Rules{Views: views}, message: `.*typed-nil view comparison service`},
 	}

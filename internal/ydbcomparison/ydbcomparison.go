@@ -1,6 +1,7 @@
 // Package ydbcomparison holds the rules YDB gives the shared schema
-// comparison ([schemacomparison.Rules]): how an index definition and a view's
-// query read on YDB. The built-in runtime registers them on its YDB target,
+// comparison ([schemacomparison.Rules]): how a column's type, default and
+// sequence, an index definition and a view's query read on YDB, and how a
+// default a YDB catalog reports reads back as a value. The built-in runtime registers them on its YDB target,
 // so the shared comparison holds no YDB knowledge of its own. The comparison
 // of YDB's own feature objects, such as changefeeds, is the YDB owner's
 // object comparison and lives elsewhere.
@@ -18,7 +19,7 @@ import (
 
 // Rules returns YDB's comparison rules.
 func Rules() schemacomparison.Rules {
-	return schemacomparison.Rules{Indexes: Indexes{}, Views: Views{}}
+	return schemacomparison.Rules{Columns: Columns{}, Indexes: Indexes{}, Views: Views{}}
 }
 
 // Indexes compares YDB index definitions.

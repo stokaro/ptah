@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlext"
@@ -35,6 +36,7 @@ import (
 // one selected build.
 type InspectRuntime interface {
 	goschematodb.Runtime
+	schemacomparison.Runtime
 	atlasreport.InspectRuntime
 	yamlext.Runtime
 }

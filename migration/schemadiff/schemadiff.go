@@ -157,6 +157,7 @@ func compareReportingUndecidedAdditions(
 			Generated:      opts.GeneratedExpressions,
 			Columns:        opts.ColumnSpellings,
 			DefaultIntSize: defaultIntSize,
+			ColumnRules:    rules.Columns,
 		},
 		caps,
 	)

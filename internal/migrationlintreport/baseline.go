@@ -9,7 +9,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -41,7 +40,7 @@ func readBaselineState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	version int64,
 	schemas []string,
-	runtime schemaext.ConversionRuntime,
+	runtime dbschematogo.Runtime,
 ) (baselineState, error) {
 	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
@@ -258,7 +257,7 @@ func numericDataType(column catalog.Column) string {
 // contributes no dependent, so the rule stays silent about it rather than
 // naming a reader it did not establish -- the rule reports a fact, and the
 // analysis's own undecided list is where the gaps are stated.
-func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime schemaext.ConversionRuntime) ([]lint.BaselineDependent, error) {
+func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime dbschematogo.Runtime) ([]lint.BaselineDependent, error) {
 	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, dialect, runtime)
 	if err != nil {
 		return nil, err

@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
-	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 // TestColumnsWithDialect_YDBTypes_HappyPath pins the type pairs that are one
@@ -45,7 +44,7 @@ func TestColumnsWithDialect_YDBTypes_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(
+			diff := columnsWithYDBRules(
 				schemamodel.Field{Name: "c", Type: test.declared, Nullable: true},
 				catalog.Column{Name: "c", DataType: test.catalog, ColumnType: test.catalog, IsNullable: "YES"},
 				platform.YDB,
@@ -81,7 +80,7 @@ func TestColumnsWithDialect_YDBTypes_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(
+			diff := columnsWithYDBRules(
 				schemamodel.Field{Name: "c", Type: test.declared, Nullable: true},
 				catalog.Column{Name: "c", DataType: test.catalog, ColumnType: test.catalog, IsNullable: "YES"},
 				platform.YDB,
@@ -111,7 +110,7 @@ func TestColumnsWithDialect_YDBKeyIsNotNull(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(
+			diff := columnsWithYDBRules(
 				schemamodel.Field{Name: "id", Type: "BIGINT", Primary: true, Nullable: true},
 				catalog.Column{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: test.dbNullable, IsPrimaryKey: true},
 				platform.YDB,
@@ -145,7 +144,7 @@ func TestColumnsWithDialect_YDBSerialIsNotNull(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(
+			diff := columnsWithYDBRules(
 				test.field,
 				catalog.Column{Name: "n", DataType: "BigSerial", ColumnType: "BigSerial", IsNullable: test.dbNullable, IsAutoIncrement: true},
 				platform.YDB,
@@ -186,7 +185,7 @@ func TestColumnsWithDialect_YDBIncrementingIntegerIsASerial(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(test.field, test.catalog, platform.YDB)
+			diff := columnsWithYDBRules(test.field, test.catalog, platform.YDB)
 
 			c.Assert(diff.Changes, qt.DeepEquals, test.want)
 		})
@@ -309,7 +308,7 @@ func TestColumnsWithDialect_YDBDefaults_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(
+			diff := columnsWithYDBRules(
 				schemamodel.Field{Name: "c", Type: test.declared, Nullable: true, Default: test.declaration},
 				catalog.Column{Name: "c", DataType: test.catalog, ColumnType: test.catalog, IsNullable: "YES",
 					ColumnDefault: test.stored},
@@ -338,7 +337,7 @@ func TestColumnsWithDialect_YDBDefaults_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.ColumnsWithDialect(
+			diff := columnsWithYDBRules(
 				schemamodel.Field{Name: "c", Type: "TEXT", Nullable: true, Default: test.declaration},
 				catalog.Column{Name: "c", DataType: "Utf8", ColumnType: "Utf8", IsNullable: "YES",
 					ColumnDefault: test.stored},
@@ -355,7 +354,7 @@ func TestColumnsWithDialect_YDBDefaults_FailurePath(t *testing.T) {
 func TestColumnsWithDialect_YDBSerialHasNoDefault(t *testing.T) {
 	c := qt.New(t)
 
-	diff := compare.ColumnsWithDialect(
+	diff := columnsWithYDBRules(
 		schemamodel.Field{Name: "id", Type: "BIGINT", AutoInc: true, Primary: true},
 		catalog.Column{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO",
 			IsPrimaryKey: true, IsAutoIncrement: true},

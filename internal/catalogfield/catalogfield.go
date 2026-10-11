@@ -19,10 +19,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
-	"ptah.run/internal/ydbtype"
 )
 
 // ForeignKey is the field-level foreign key a column carries, in the spelling a
@@ -60,9 +59,10 @@ type Options struct {
 	// ForeignKey is the column's own foreign key, or nil.
 	ForeignKey *ForeignKey
 
-	// Dialect is the dialect that reported the column. It decides how a
-	// reported default is told apart from an expression; see [Field].
-	Dialect string
+	// Columns are the column rules of the target that reported the column,
+	// nil where it registers none. They decide whether a reported default is
+	// a literal written from a value; see [Field].
+	Columns schemacomparison.Columns
 }
 
 // Field describes one reported column as a field of the desired-schema model.
@@ -71,10 +71,11 @@ type Options struct {
 // parsed from, and a column the database reported was not parsed from any.
 //
 // A reported default becomes the field's Default when it is a value and its
-// DefaultExpr when it is an expression. A quoted default is a value. On YDB
-// every stored default is a value, reported as the typed YQL literal
-// internal/ydbtype writes (`5t`, `'x'u`, `Timestamp('...')`), and is carried
-// as the value that literal was written from.
+// DefaultExpr when it is an expression. A quoted default is a value. A default
+// the target's column rules read as a literal written from a value
+// ([schemacomparison.Columns.DefaultValue]) is carried as that value: on YDB
+// every stored default is a value, reported as a typed YQL literal (`5t`,
+// `'x'u`, `Timestamp('...')`).
 func Field(column catalog.Column, opts Options) schemamodel.Field {
 	field := schemamodel.Field{
 		Facets:             column.Facets,
@@ -101,7 +102,7 @@ func Field(column catalog.Column, opts Options) schemamodel.Field {
 		field.GeneratedExpression = *column.GeneratedExpression
 	}
 	if column.ColumnDefault != nil && serialType(column) == "" {
-		setDefault(&field, *column.ColumnDefault, opts.Dialect)
+		setDefault(&field, *column.ColumnDefault, opts.Columns)
 	}
 	if opts.ForeignKey != nil {
 		field.Foreign = opts.ForeignKey.Reference
@@ -249,9 +250,9 @@ func sizedType(dbColumn catalog.Column) string {
 	return ""
 }
 
-func setDefault(field *schemamodel.Field, defaultSQL, dialect string) {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		if value, isLiteral := ydbtype.LiteralValue(defaultSQL); isLiteral {
+func setDefault(field *schemamodel.Field, defaultSQL string, rules schemacomparison.Columns) {
+	if rules != nil {
+		if value, isLiteral := rules.DefaultValue(defaultSQL); isLiteral {
 			field.Default = value
 			field.DefaultSet = true
 			return

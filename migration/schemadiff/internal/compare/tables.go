@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
@@ -127,6 +128,8 @@ type TableContext struct {
 	// CockroachDB gives a column declared INT or INTEGER, 0 where no connection
 	// read it.
 	DefaultIntSize int
+	// ColumnRules are the target's column rules, nil where it registers none.
+	ColumnRules schemacomparison.Columns
 }
 
 // TablesAndColumnsWithTableContext is [TablesAndColumnsWithSemantics] told

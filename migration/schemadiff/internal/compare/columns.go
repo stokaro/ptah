@@ -2,6 +2,7 @@ package compare
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chtype"
@@ -21,8 +23,6 @@ import (
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/typechange"
-	"ptah.run/internal/ydbsequence"
-	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -183,7 +183,7 @@ func tableColumnsWithSemantics(
 
 	for identity, column := range dbColumns {
 		if _, exists := genColumns[identity]; !exists {
-			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column, dialect))
+			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column, spellings.ColumnRules))
 		}
 	}
 
@@ -211,6 +211,7 @@ func tableColumnsWithSemantics(
 				columnSpellings:      spellings.Columns,
 				defaultIntSize:       spellings.DefaultIntSize,
 				serialSequences:      caps.Has(capability.SerialSequenceOptions),
+				rules:                spellings.ColumnRules,
 			})
 			// A comment-only difference has no entry in Changes, and it is
 			// still a difference: without the second condition a column whose
@@ -365,7 +366,13 @@ func Columns(genCol schemamodel.Field, dbCol catalog.Column) difftypes.ColumnDif
 // comparison that has a desired schema to consult goes through
 // tableColumnsWithSemantics, which passes that set down.
 func ColumnsWithDialect(genCol schemamodel.Field, dbCol catalog.Column, dialect string) difftypes.ColumnDiff {
-	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil, columnContext{})
+	return ColumnsWithRules(genCol, dbCol, dialect, nil)
+}
+
+// ColumnsWithRules is [ColumnsWithDialect] with the target's column rules,
+// nil where it registers none.
+func ColumnsWithRules(genCol schemamodel.Field, dbCol catalog.Column, dialect string, rules schemacomparison.Columns) difftypes.ColumnDiff {
+	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil, columnContext{rules: rules})
 }
 
 // columnContext carries what a column comparison needs about the table it sits
@@ -390,6 +397,8 @@ type columnContext struct {
 	// serialSequences compares the start and the increment of a Serial
 	// column's sequence, on a target with [capability.SerialSequenceOptions].
 	serialSequences bool
+	// rules are the target's column rules, nil where it registers none.
+	rules schemacomparison.Columns
 }
 
 // columnSpelling returns the server's spelling of the column's type and
@@ -455,7 +464,7 @@ func columnsWithDesiredDomains(
 	sameType := spelled && strings.EqualFold(spelling.Type, strings.TrimSpace(dbRawType))
 	declared := genCol
 	declared.Type = resolvedDeclaredType(genCol.Type, dialect, ctx.defaultIntSize)
-	if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains); change != "" && !sameType {
+	if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
 		colDiff.Changes["type"] = change
 	}
 
@@ -467,15 +476,20 @@ func columnsWithDesiredDomains(
 	if genCol.Primary && primaryKeyImpliesNotNull(dialect) {
 		genNullable = false
 	}
-	if writesYDBSerial(genCol, dialect) {
+	// A target may create a column NOT NULL whatever its declaration says,
+	// as YDB does a Serial column.
+	if ctx.rules != nil && ctx.rules.AlwaysNotNull(genCol) {
 		genNullable = false
 	}
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
 	}
-	if ctx.serialSequences && serialSequenceChanges(colDiff.Changes, genCol, dbCol) {
-		colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
+	if ctx.serialSequences && ctx.rules != nil {
+		if changes := ctx.rules.SequenceChanges(genCol, dbCol); len(changes) > 0 {
+			maps.Copy(colDiff.Changes, changes)
+			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
+		}
 	}
 
 	// Compare primary key
@@ -499,7 +513,7 @@ func columnsWithDesiredDomains(
 		colDiff.Changes["generated"] = diff
 	}
 
-	if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled); change != "" {
+	if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled, ctx.rules); change != "" {
 		colDiff.Changes[key] = change
 	}
 
@@ -507,25 +521,31 @@ func columnsWithDesiredDomains(
 }
 
 // columnDefaultChange compares a column's declared default with the live one
-// and returns the change key and text, or an empty change.
+// and returns the change key and text, or an empty change. A target's column
+// rules, where it registers them, compare the two in place of the shared
+// reading below.
 func columnDefaultChange(
 	genCol schemamodel.Field,
 	dbCol catalog.Column,
 	genType, dialect string,
 	spelling config.ColumnSpelling,
 	spelled bool,
+	rules schemacomparison.Columns,
 ) (key, change string) {
 	// Compare default values (simplified)
 	genDefault := genCol.Default
 	if genDefault == "" {
 		genDefault = genCol.DefaultExpr
 	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	if rules != nil {
 		dbDefault := ""
 		if dbCol.ColumnDefault != nil {
 			dbDefault = *dbCol.ColumnDefault
 		}
-		return ydbDefaultChange(genCol, dbCol, genDefault, dbDefault)
+		if change := rules.DefaultChange(genCol, dbCol, genDefault, dbDefault); change != "" {
+			return "default", change
+		}
+		return "", ""
 	}
 	// Default is a literal value, while DefaultExpr is SQL. The renderer quotes
 	// the literal NULL, so feed its quoted form to the normalizer too. Otherwise
@@ -707,6 +727,7 @@ func columnTypeChange(
 	dbCol catalog.Column,
 	dbRawType, dialect string,
 	desiredDomains map[string]domainIdentity,
+	rules schemacomparison.Columns,
 ) string {
 	dbDomain, dbIsDomain := dbColumnDomainIdentity(dbCol)
 	desiredDomain, desiredIsDomain := desiredColumnDomainIdentity(genCol.Type, desiredDomains)
@@ -721,10 +742,12 @@ func columnTypeChange(
 		return ""
 	}
 
-	switch platform.NormalizeDialect(dialect) {
-	case platform.YDB:
-		return ydbColumnTypeChange(genCol, dbCol, dbRawType)
-	case platform.ClickHouse:
+	// A target that registers column rules compares the type itself, as YDB
+	// does through its own type map.
+	if rules != nil {
+		return rules.TypeChange(genCol, dbCol, dbRawType)
+	}
+	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
 	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
@@ -1056,8 +1079,6 @@ func normalizeColumnTypesForDialect(
 		// has to answer is not "are these the same word" but "would rendering
 		// this declaration produce the type the catalog holds".
 		return normalize.Type(oracletype.Map(genType)), normalize.Type(dbType)
-	case platform.YDB:
-		return ydbComparableTypes(genType, dbType)
 	case platform.CockroachDB:
 		return normalize.Type(cockroachCatalogTypeName(genType)), normalize.Type(cockroachCatalogTypeName(dbType))
 	default:
@@ -1148,25 +1169,6 @@ func spannerStringType(raw, normalized string) string {
 	return "text"
 }
 
-// ydbColumnTypeChange compares a YDB column's type. An integer that increments,
-// on either side, is read as the Serial type the renderer writes for it: a
-// declared BIGINT with auto_increment is a BigSerial, and so is a column the
-// other side reports as an incrementing Int64.
-func ydbColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawType string) string {
-	declared, current := genCol.Type, dbRawType
-	if genCol.AutoInc || genCol.IdentityGeneration != "" {
-		declared = ydbSerialOf(declared)
-	}
-	if dbCol.IsAutoIncrement {
-		current = ydbSerialOf(current)
-	}
-	desiredType, currentType := ydbComparableTypes(declared, current)
-	if desiredType == currentType {
-		return ""
-	}
-	return fmt.Sprintf("%s -> %s", currentType, desiredType)
-}
-
 // clickHouseColumnTypeChange compares a ClickHouse column's type as the
 // server stores it, width included.
 //
@@ -1211,135 +1213,6 @@ func clickHouseMappedType(declared string) string {
 		return declared
 	}
 	return mapping.Type
-}
-
-// ydbDefaultChange compares a YDB column's default as YQL literals. YDB
-// stores a default as a typed value, and the reader reports it as the literal
-// ydbtype.Literal writes for it; the declaration is written through the same
-// function in the type the column has, so `5`, `+5` and `05` on an Int8 column
-// all compare as `5t`, and a declared TIMESTAMP default compares in the
-// Timestamp64 or Timestamp spelling the server built. A Serial column takes
-// its value from its sequence, so the reader reports no default for one and
-// there is nothing to compare.
-func ydbDefaultChange(genCol schemamodel.Field, dbCol catalog.Column, declared, current string) (key, change string) {
-	if strings.TrimSpace(declared) == "" && current == "" {
-		return "", ""
-	}
-	if ydbDeclaredDefault(genCol, dbCol.RawType(), declared) == current {
-		return "", ""
-	}
-	return "default", fmt.Sprintf("%s -> %s", current, declared)
-}
-
-// ydbDeclaredDefault writes a declared default as the literal the YDB renderer
-// writes for it: in the catalog's type where the declaration lands on that
-// type, and in the declaration's own type otherwise. A NULL default writes
-// nothing, as the renderer writes none. An expression, and a value the type
-// cannot hold, are compared as written.
-func ydbDeclaredDefault(genCol schemamodel.Field, catalogType, declared string) string {
-	if strings.TrimSpace(genCol.Default) == "" && strings.TrimSpace(genCol.DefaultExpr) != "" {
-		return declared
-	}
-	value, isNull := ydbtype.DeclaredValue(declared)
-	if isNull {
-		return ""
-	}
-	columnType, _ := ydbComparableTypes(genCol.Type, catalogType)
-	literal, err := ydbtype.Literal(columnType, value, capability.Capabilities{
-		capability.SmallIntegerDefaults: true,
-		capability.DocumentTypeDefaults: true,
-	})
-	if err != nil {
-		return declared
-	}
-	return literal
-}
-
-// ydbSerialOf answers the Serial type an incrementing integer of columnType
-// is written as, and columnType itself where YDB has no Serial for it.
-func ydbSerialOf(columnType string) string {
-	renderings := ydbtype.Renderings(columnType)
-	if len(renderings) == 0 {
-		return columnType
-	}
-	if serial, ok := ydbtype.SerialFor(renderings[0]); ok {
-		return serial
-	}
-	return columnType
-}
-
-// serialSequenceChanges records a difference in the start or the increment of
-// a Serial column's sequence, under the attribute names a declaration spells
-// them with. It compares only where both sides are Serial: a column that is
-// Serial on one side only has a type difference, which says more.
-//
-// Each side is read through [ydbsequence.Canonical], so an omitted setting is
-// the 1 a sequence nobody altered has, and `0100` is 100. Both settings are
-// compared and recorded on their own, while the plan writes both whatever
-// changed, so a value is never left to whatever the server keeps. It reports
-// whether it recorded either.
-func serialSequenceChanges(changes map[string]string, genCol schemamodel.Field, dbCol catalog.Column) bool {
-	declaredSerial := genCol.AutoInc || genCol.IdentityGeneration != "" || ydbtype.DeclaresSerial(genCol.Type)
-	if !declaredSerial || !dbCol.IsAutoIncrement {
-		return false
-	}
-	recorded := false
-	for _, setting := range []struct{ key, declared, current string }{
-		{"identity_start", genCol.IdentityStart, dbCol.IdentityStart},
-		{"identity_increment", genCol.IdentityIncrement, dbCol.IdentityIncrement},
-	} {
-		declared, current := ydbsequence.Canonical(setting.declared), ydbsequence.Canonical(setting.current)
-		if declared != current {
-			changes[setting.key] = current + " -> " + declared
-			recorded = true
-		}
-	}
-	return recorded
-}
-
-// writesYDBSerial reports a column the YDB renderer writes as a Serial type,
-// which it writes NOT NULL whatever the field says: a Serial column always
-// holds a value from its sequence. Without this a Serial column declared
-// without not_null would plan DROP NOT NULL against the column Ptah built, on
-// every run.
-func writesYDBSerial(genCol schemamodel.Field, dialect string) bool {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
-		return false
-	}
-	return ydbsequence.DeclaresSerialColumn(genCol.Type, genCol.AutoInc, genCol.IdentityGeneration)
-}
-
-// ydbComparableTypes reads both sides through the YDB type map, the one the
-// renderer writes from, and calls them equal when any type the declaration can
-// land on is a type the other side can be. A declared TIMESTAMP is Timestamp64
-// on a line with the wide types and Timestamp on one without, and a table
-// built on either answers the declaration. A declared VARCHAR(255) is Utf8,
-// whose length YDB does not keep, so the length is not a difference here; the
-// render reports it as dropped instead.
-//
-// The current side goes through the map too because it is not always a
-// catalog: a file-to-file comparison hands it a declaration, VARCHAR(255)
-// where a server would say Utf8. A catalog spelling maps to itself, since the
-// map reads YDB's own names case-sensitively -- Int8 is YDB's 8-bit integer,
-// INT8 is SQL's 64-bit one. The full spelling is compared, Decimal(10,2)
-// against Decimal(12,2) included, so no width check runs after this.
-func ydbComparableTypes(declared, current string) (desiredType, currentType string) {
-	want := ydbtype.Renderings(declared)
-	have := ydbtype.Renderings(current)
-	if len(have) == 0 {
-		have = []string{strings.TrimSpace(current)}
-	}
-	for _, rendering := range want {
-		for _, candidate := range have {
-			if strings.EqualFold(rendering, candidate) {
-				return candidate, candidate
-			}
-		}
-	}
-	if len(want) == 0 {
-		return strings.TrimSpace(declared), have[0]
-	}
-	return want[0], have[0]
 }
 
 // renderedSQLiteType is the type SQLite's renderer would write for a
@@ -1735,8 +1608,8 @@ func writeSQLServerBracketedIdentifier(b *strings.Builder, expression string, st
 // The forward direction is unaffected: a DECLARED field carries its own foreign
 // key, the constraint comparison reports none for it, and the column path is
 // the only one that emits it.
-func removedColumn(reported catalog.Column, dialect string) schemamodel.Field {
-	field := catalogfield.Field(reported, catalogfield.Options{Dialect: dialect})
+func removedColumn(reported catalog.Column, rules schemacomparison.Columns) schemamodel.Field {
+	field := catalogfield.Field(reported, catalogfield.Options{Columns: rules})
 	field.Primary = false
 	field.Foreign = ""
 	field.ForeignKeyName = ""

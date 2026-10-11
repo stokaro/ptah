@@ -112,7 +112,7 @@ func (p Policy) ValidateInspectedSchema(database *schemamodel.Database) error {
 // Community Edition inspector does not expose, then validates the exact state
 // that downstream inspection renders. Full mode returns the original snapshot
 // unchanged so its richer round-trip remains available by default.
-func (p Policy) PrepareInspectedSchema(ctx context.Context, current *catalog.Database, dialect string, runtime schemaext.ConversionRuntime) (*catalog.Database, error) {
+func (p Policy) PrepareInspectedSchema(ctx context.Context, current *catalog.Database, dialect string, runtime dbschematogo.Runtime) (*catalog.Database, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}

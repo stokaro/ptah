@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/migration/schemadiff"
@@ -86,4 +87,77 @@ func TestCompare_IndexRulesDecideWhatARenameCarries(t *testing.T) {
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, tt.wantAdded)
 		})
 	}
+}
+
+// sequenceColumns compares only a column's sequence start, and calls every
+// other column property equal.
+type sequenceColumns struct{}
+
+func (sequenceColumns) TypeChange(schemamodel.Field, catalog.Column, string) string { return "" }
+
+func (sequenceColumns) DefaultChange(_ schemamodel.Field, _ catalog.Column, _, _ string) string {
+	return ""
+}
+
+func (sequenceColumns) AlwaysNotNull(schemamodel.Field) bool { return false }
+
+func (sequenceColumns) SequenceChanges(desired schemamodel.Field, current catalog.Column) map[string]string {
+	return map[string]string{"identity_start": current.IdentityStart + " -> " + desired.IdentityStart}
+}
+
+func (sequenceColumns) DefaultValue(string) (string, bool) { return "", false }
+
+// TestCompare_ColumnRulesCompareTheSequence shows that a comparison asks the
+// selected target's column rules about a column's sequence, on a target with
+// [capability.SerialSequenceOptions] only, and carries the restart value the
+// read reported with the change.
+func TestCompare_ColumnRulesCompareTheSequence(t *testing.T) {
+	cases := []struct {
+		name        string
+		caps        capability.Capabilities
+		wantChanges []map[string]string
+		wantRestart []string
+	}{
+		{name: "with the capability", caps: capability.Capabilities{capability.SerialSequenceOptions: true},
+			wantChanges: []map[string]string{{"identity_start": "1 -> 5"}}, wantRestart: []string{"7"}},
+		{name: "without it", caps: capability.Capabilities{}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := acceptedRuntime{Runtime: mustRuntime(c, engine.Provider{ID: "example.org/sequences", Targets: []engine.Target{{
+				Name: "custom", Preparation: schemapreparation.Identity{}, Comparison: schemacomparison.Rules{Columns: sequenceColumns{}},
+			}}})}
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Orders", Name: "orders"}},
+				Fields: []schemamodel.Field{{StructName: "Orders", Name: "id", Type: "BIGINT", Nullable: true, AutoInc: true, IdentityStart: "5"}},
+			}
+			current := &catalog.Database{Tables: []catalog.Table{{Name: "orders", Type: "TABLE", Columns: []catalog.Column{{
+				Name: "id", DataType: "BIGINT", ColumnType: "BIGINT", IsNullable: "YES", IsAutoIncrement: true,
+				IdentityStart: "1", SequenceRestart: "7",
+			}}}}}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current,
+				catalog.ServerInfo{Dialect: "custom", Capabilities: tt.caps}, nil, runtime)
+
+			c.Assert(err, qt.IsNil)
+			changes, restarts := modifiedColumns(diff)
+			c.Assert(changes, qt.DeepEquals, tt.wantChanges)
+			c.Assert(restarts, qt.DeepEquals, tt.wantRestart)
+		})
+	}
+}
+
+// modifiedColumns lists the changes and the restart value of every column
+// diff modifies.
+func modifiedColumns(diff *difftypes.SchemaDiff) ([]map[string]string, []string) {
+	var changes []map[string]string
+	var restarts []string
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			changes = append(changes, column.Changes)
+			restarts = append(restarts, column.CurrentSequenceRestart)
+		}
+	}
+	return changes, restarts
 }

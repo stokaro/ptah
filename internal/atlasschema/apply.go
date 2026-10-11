@@ -326,7 +326,7 @@ func PreflightApplyTarget(
 	schemas []string,
 	validateSchema func(*schemamodel.Database) error,
 	validateLiveObject func(LiveSchemaObject) error,
-	runtime schemaext.ConversionRuntime,
+	runtime dbschematogo.Runtime,
 ) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return err
@@ -614,7 +614,7 @@ func validateCurrentApplySchema(
 	current *catalog.Database,
 	dialect string,
 	validate func(*schemamodel.Database) error,
-	runtime schemaext.ConversionRuntime,
+	runtime dbschematogo.Runtime,
 ) error {
 	if validate == nil {
 		return nil
