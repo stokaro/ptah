@@ -41,6 +41,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 )
 
 func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
@@ -83,7 +84,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 					document, readErr := os.ReadFile(member)
 					c.Assert(readErr, qt.IsNil)
 
-					declared, decodeErr := atlashcl.Parse(document, member)
+					declared, decodeErr := atlashcl.ParseWithOptions(document, member, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 					c.Assert(decodeErr, qt.IsNil)
 					c.Assert(declared.NotDescribed, qt.DeepEquals, wantRecord)
 

@@ -10,6 +10,7 @@ import (
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderWritesEveryBlockBodyAsEvaluableHCL pins that no attribute Ptah
@@ -290,7 +291,7 @@ func renderAndParse(c *qt.C, db *schemamodel.Database) *schemamodel.Database {
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", result.Data))
 	return parsed
 }
@@ -324,12 +325,12 @@ func TestRenderedSchemaIsStableAcrossAParseAndRerender(t *testing.T) {
 	first, err := atlashclrender.RenderInspected(everyTouchedConstruct(), platform.Postgres, "public")
 	c.Assert(err, qt.IsNil)
 
-	parsedOnce, err := atlashcl.Parse(first.Data, "rendered.hcl")
+	parsedOnce, err := atlashcl.ParseWithOptions(first.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", first.Data))
 	second, err := atlashclrender.RenderInspected(parsedOnce, platform.Postgres, "public")
 	c.Assert(err, qt.IsNil)
 
-	parsedTwice, err := atlashcl.Parse(second.Data, "rendered.hcl")
+	parsedTwice, err := atlashcl.ParseWithOptions(second.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", second.Data))
 	third, err := atlashclrender.RenderInspected(parsedTwice, platform.Postgres, "public")
 

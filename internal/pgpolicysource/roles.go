@@ -4,7 +4,8 @@
 // A reader and the writer that exports to the same format use it, so a
 // written list reads back as the same selectors. [Annotations] is the owner's
 // side of the Go annotation frontend, which hands it the row-level security
-// declarations their target scope makes the owner's.
+// declarations their target scope makes the owner's; [YAML] and [HCL] are its
+// side of the YAML and HCL frontends.
 package pgpolicysource
 
 import (

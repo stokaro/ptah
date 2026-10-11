@@ -297,7 +297,10 @@ community CLI refuses the same document.
 
 - Refused: `table`, `column`, `index`, a named `check` or `constraint`,
   `foreign_key`, `enum`, `sequence`, `domain`, `composite`, `range`,
-  `extension`, `trigger`, `policy`.
+  `extension`, `trigger`.
+- Refused whatever the variable says: two `policy` blocks that declare one
+  policy. The refusal names both blocks, since a merge would keep whichever
+  came last.
 - Exempt under every setting: `schema`, because a directory of HCL files is one
   document and its files each open with the same block; `function`, because two
   blocks sharing a name can be two legal overloads; `permission`, which renders

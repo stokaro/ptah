@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // nativeInspectedBlockTypes is every top-level block spelling an inspected
@@ -724,7 +725,7 @@ func TestRenderInspectedForAtlasCLIOutputIsSelfConsistent(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := atlashcl.Parse(result.Data, "compat.hcl")
+			parsed, err := atlashcl.ParseWithOptions(result.Data, "compat.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil, qt.Commentf("Ptah cannot read its own compatibility output"))
 
 			declared := make(map[string]bool)

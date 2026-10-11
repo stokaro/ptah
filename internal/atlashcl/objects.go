@@ -20,9 +20,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/matviewrefresh"
-	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/viewcolumns"
@@ -671,101 +669,6 @@ func (p *parser) parseTriggerEvent(block *hclsyntax.Block) (triggerEventSpec, er
 	return triggerEventSpec{timing: timing, event: event}, nil
 }
 
-func (p *parser) parsePolicy(block *hclsyntax.Block) error {
-	name, err := p.objectName(block, "policy")
-	if err != nil {
-		return err
-	}
-	if err := p.rejectUnsupportedPolicyAttrs(block); err != nil {
-		return err
-	}
-	roles, err := p.parseRoleTargets(block, "to")
-	if err != nil {
-		return err
-	}
-	table := objectRefName(p.optionalRawExpr(block.Body.Attributes["on"]), "table")
-	if table == "" {
-		return p.blockError(block, "policy %q requires on", name)
-	}
-	restrictive, err := p.policyRestrictive(block, name)
-	if err != nil {
-		return err
-	}
-	selectors := make([]string, 0, len(roles))
-	for _, role := range roles {
-		selectors = append(selectors, rowSecurityRole(role))
-	}
-	policy, err := pgpolicysource.Attributes{
-		For: p.optionalString(block.Body.Attributes["for"]), To: strings.Join(selectors, ","),
-		Using: p.optionalString(block.Body.Attributes["using"]), WithCheck: p.optionalString(block.Body.Attributes["check"]),
-		Restrictive: restrictive, Comment: p.optionalString(block.Body.Attributes["comment"]),
-	}.Policy()
-	if err != nil {
-		return p.blockError(block, "policy %q: %w", name, err)
-	}
-	p.policies = append(p.policies, hclPolicy{origin: p.blockOrigin(block, "policy "+strconv.Quote(name)), name: name, table: table, policy: policy})
-	return nil
-}
-
-// rowSecurityRole spells one HCL role target in [pgpolicysource.ParseRoleList]'s
-// grammar. HCL writes a role by its exact name, so a name is quoted; a target
-// spelling a role keyword is that keyword, as the writer spells one.
-func rowSecurityRole(target string) string {
-	if pgpolicysource.SpellsKeyword(target) {
-		return target
-	}
-	return `"` + strings.ReplaceAll(target, `"`, `""`) + `"`
-}
-
-// policyRestrictive reads a policy's `as`, which selects how the policy
-// combines with the table's others rather than how it is spelled.
-//
-// An unrecognized value is refused rather than folded into the permissive
-// default: the default is the weaker of the two, so guessing it turns a
-// misspelled RESTRICTIVE into a policy that grants what its author wrote it to
-// withhold.
-func (p *parser) policyRestrictive(block *hclsyntax.Block, name string) (bool, error) {
-	attr := block.Body.Attributes["as"]
-	if attr == nil {
-		return false, nil
-	}
-	switch strings.ToUpper(strings.TrimSpace(p.optionalString(attr))) {
-	case "PERMISSIVE":
-		return false, nil
-	case "RESTRICTIVE":
-		return true, nil
-	default:
-		return false, p.blockError(block,
-			"policy %q as must be PERMISSIVE or RESTRICTIVE", name)
-	}
-}
-
-func (p *parser) parseRowSecurity(table *schemamodel.Table, block *hclsyntax.Block) error {
-	if len(block.Labels) != 0 {
-		return p.blockError(block, "row_security block does not accept labels")
-	}
-	if err := p.rejectUnsupportedRowSecurityAttrs(block); err != nil {
-		return err
-	}
-	enabled, err := p.boolAttr(block, "enabled", "row_security", false)
-	if err != nil {
-		return err
-	}
-	if !enabled {
-		return p.blockError(block, "row_security requires enabled = true")
-	}
-	forced, err := p.boolAttr(block, "enforced", "row_security", false)
-	if err != nil {
-		return err
-	}
-	p.switches = append(p.switches, hclSwitches{
-		origin: p.blockOrigin(block, fmt.Sprintf("row_security of table %q", table.Name)), schema: table.Schema, table: table.Name,
-		state: pgpolicy.DesiredTableState{Enabled: true, Forced: forced, Comment: p.optionalString(block.Body.Attributes["comment"]),
-			StructName: table.StructName},
-	})
-	return nil
-}
-
 func (p *parser) parseRole(block *hclsyntax.Block) error {
 	name, err := p.objectName(block, "role")
 	if err != nil {
@@ -1238,22 +1141,6 @@ func (p *parser) objectName(block *hclsyntax.Block, blockType string) (string, e
 	}
 }
 
-func (p *parser) parseRoleTargets(block *hclsyntax.Block, attrName string) ([]string, error) {
-	attr := block.Body.Attributes[attrName]
-	if attr == nil {
-		return nil, nil
-	}
-	exprs := []hclsyntax.Expression{attr.Expr}
-	if tuple, ok := attr.Expr.(*hclsyntax.TupleConsExpr); ok {
-		exprs = tuple.Exprs
-	}
-	values := make([]string, 0, len(exprs))
-	for _, expr := range exprs {
-		values = append(values, roleTargetName(p.rawExprNode(expr)))
-	}
-	return values, nil
-}
-
 func (p *parser) rawListAttr(block *hclsyntax.Block, attrName string) ([]string, error) {
 	attr := block.Body.Attributes[attrName]
 	if attr == nil {
@@ -1363,32 +1250,6 @@ func (p *parser) rejectUnsupportedTriggerEventAttrs(block *hclsyntax.Block) erro
 		allowed[strings.ToLower(keyword)] = true
 	}
 	return p.rejectUnsupportedAttrs(block, allowed, "trigger event")
-}
-
-func (p *parser) rejectUnsupportedPolicyAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocks(block, "policy"); err != nil {
-		return err
-	}
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"on":      true,
-		"as":      true,
-		"for":     true,
-		"to":      true,
-		"using":   true,
-		"check":   true,
-		"comment": true,
-	}, "policy")
-}
-
-func (p *parser) rejectUnsupportedRowSecurityAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocks(block, "row_security"); err != nil {
-		return err
-	}
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"enabled":  true,
-		"enforced": true,
-		"comment":  true,
-	}, "row_security")
 }
 
 func (p *parser) rejectUnsupportedRoleAttrs(block *hclsyntax.Block) error {

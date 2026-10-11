@@ -112,6 +112,21 @@ func TestNewSet_FailurePath(t *testing.T) {
 		{name: "index attributes with a naming", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
 			hclext.Block{Site: hclext.IndexAttributes, Type: "index", Naming: hclext.SchemaAndName})},
 			wantErr: `HCL index-attributes block of example.org/a must be of type "index" with no naming`},
+		{name: "a table block with a naming", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.InTable, Type: "gadget", Naming: hclext.JoinedName})},
+			wantErr: `HCL in-table block "gadget" of example.org/a takes no naming`},
+		{name: "a reference that refers to nothing", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.JoinedName,
+				Attributes: []hclext.Attribute{{Name: "on", Kind: hclext.Ref}}})},
+			wantErr: `HCL attribute "on" of example.org/a block "gadget" is a reference and names no type it refers to`},
+		{name: "a list of references that refers to nothing", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.JoinedName,
+				Attributes: []hclext.Attribute{{Name: "to", Kind: hclext.Refs, Refers: " "}}})},
+			wantErr: `HCL attribute "to" of example.org/a block "gadget" is a references and names no type it refers to`},
+		{name: "text that refers to something", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
+				Attributes: []hclext.Attribute{{Name: "note", Kind: hclext.Text, Refers: "table"}}})},
+			wantErr: `HCL attribute "note" of example.org/a block "gadget" is a text and refers to nothing`},
 		{name: "one block read twice", extensions: []hclext.Extension{
 			extension("example.org/a", "example.org/a/x", decoder, block("gadget")),
 			extension("example.org/b", "example.org/b/x", decoder, block("gadget"))},
@@ -129,14 +144,20 @@ func TestNewSet_FailurePath(t *testing.T) {
 	}
 }
 
-// TestNewSet_HappyPath accepts every naming and every attribute kind.
+// TestNewSet_HappyPath accepts every site, every naming and every attribute
+// kind. A block named by its labels alone takes no `schema` attribute, so it
+// may take an attribute of that name.
 func TestNewSet_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	set, err := hclext.NewSet(extension("example.org/a", "example.org/a/x", answeringDecoder{},
 		hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
 			Attributes: []hclext.Attribute{{Name: "size", Kind: hclext.String}, {Name: "note", Kind: hclext.Text}, {Name: "on", Kind: hclext.Bool}}},
-		hclext.Block{Site: hclext.TopLevel, Type: "widget", Naming: hclext.SchemaAndQualifiedName}))
+		hclext.Block{Site: hclext.TopLevel, Type: "widget", Naming: hclext.SchemaAndQualifiedName},
+		hclext.Block{Site: hclext.TopLevel, Type: "rule", Naming: hclext.JoinedName, Attributes: []hclext.Attribute{
+			{Name: "schema", Kind: hclext.Text}, {Name: "on", Kind: hclext.Ref, Refers: "table"}, {Name: "to", Kind: hclext.Refs, Refers: "role"}}},
+		hclext.Block{Site: hclext.InTable, Type: "switch", Attributes: []hclext.Attribute{{Name: "on", Kind: hclext.Bool}}},
+		hclext.Block{Site: hclext.IndexAttributes, Type: "index", Attributes: []hclext.Attribute{{Name: "tune", Kind: hclext.Text}}}))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Selected(), qt.IsTrue)
@@ -255,9 +276,31 @@ func TestSet_Decode_ReturnsTheEarliestRefusal(t *testing.T) {
 	c.Assert(declarations, qt.IsNil)
 }
 
+// TestSet_Decode_PrefersARefusalOfAClaim returns an owner's refusal of a
+// claim over another owner's refusal of the document as a whole, which names
+// no claim and so cannot say where the document is first wrong.
+func TestSet_Decode_PrefersARefusalOfAClaim(t *testing.T) {
+	c := qt.New(t)
+	set := must.Must(hclext.NewSet(
+		extension("example.org/a", "example.org/a/x", answeringDecoder{err: errors.New("two gadgets declare one object")}, block("gadget")),
+		extension("example.org/b", "example.org/b/x", answeringDecoder{err: &hclext.ClaimError{Claim: 0, Err: errors.New("refused")}}, block("widget")),
+	))
+	gadget, _ := set.Lookup(hclext.TopLevel, "gadget")
+	widget, _ := set.Lookup(hclext.TopLevel, "widget")
+	matches := []hclext.Match{
+		{Shape: gadget, Claim: hclext.Claim{Block: "gadget", Name: "g1"}},
+		{Shape: widget, Claim: hclext.Claim{Block: "widget", Name: "w1"}},
+	}
+
+	declarations, err := set.Decode(t.Context(), matches)
+
+	c.Assert(err, qt.ErrorMatches, `claim 1: refused`)
+	c.Assert(declarations, qt.IsNil)
+}
+
 // TestSet_Coverage_HandsEachOwnerItsHeader hands each owner the header
-// entries of its own kinds, and the captured header only to the owner that
-// reads one.
+// entries of its own kinds, the captured header only to the owner that reads
+// one, and the declared objects to every owner.
 func TestSet_Coverage_HandsEachOwnerItsHeader(t *testing.T) {
 	c := qt.New(t)
 	var first, second hclext.CoverageRequest
@@ -272,12 +315,17 @@ func TestSet_Coverage_HandsEachOwnerItsHeader(t *testing.T) {
 		hclext.Extension{Owner: "example.org/b", Header: []coverage.Kind{"widget"}, Coverage: recording(&second)},
 	))
 	header := []coverage.Object{{Kind: "Gizmo", Name: "g"}, {Kind: "widget", Name: "w"}}
+	declared := must.Must(schemaext.NewObjects(object("example.org/a/x", "g1")))
 
-	_, err := set.Coverage(header, []string{"ptah:feature-coverage {}"})
+	_, err := set.Coverage(hclext.CoverageRequest{Limits: header, Captured: []string{"ptah:feature-coverage {}"}, Declared: declared})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(first, qt.DeepEquals, hclext.CoverageRequest{Limits: []coverage.Object{{Kind: "Gizmo", Name: "g"}}, Captured: []string{"ptah:feature-coverage {}"}})
-	c.Assert(second, qt.DeepEquals, hclext.CoverageRequest{Limits: []coverage.Object{{Kind: "widget", Name: "w"}}})
+	c.Assert(first.Limits, qt.DeepEquals, []coverage.Object{{Kind: "Gizmo", Name: "g"}})
+	c.Assert(first.Captured, qt.DeepEquals, []string{"ptah:feature-coverage {}"})
+	c.Assert(first.Declared.Len(), qt.Equals, 1)
+	c.Assert(second.Limits, qt.DeepEquals, []coverage.Object{{Kind: "widget", Name: "w"}})
+	c.Assert(second.Captured, qt.IsNil)
+	c.Assert(second.Declared.Len(), qt.Equals, 1)
 	c.Assert(set.ReadsHeader(" GIZMO "), qt.IsTrue)
 	c.Assert(set.ReadsHeader("\u017fecret"), qt.IsFalse)
 	c.Assert(set.ReadsCapturedCoverage(), qt.IsTrue)
@@ -292,8 +340,8 @@ func TestSet_Coverage(t *testing.T) {
 	}}
 	silent := hclext.Extension{Owner: "example.org/b"}
 
-	claims, err := must.Must(hclext.NewSet(claimed, silent)).Coverage(nil, nil)
-	none, noneErr := must.Must(hclext.NewSet(silent)).Coverage(nil, nil)
+	claims, err := must.Must(hclext.NewSet(claimed, silent)).Coverage(hclext.CoverageRequest{})
+	none, noneErr := must.Must(hclext.NewSet(silent)).Coverage(hclext.CoverageRequest{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(claims.Representation(), qt.Equals, schemaext.Desired)

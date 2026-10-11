@@ -1,10 +1,8 @@
 package pgpolicysource
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/objectidentity"
@@ -14,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 )
 
@@ -243,37 +242,14 @@ func Claim(coverage schemaext.Coverage, objects schemaext.Objects) (schemaext.Co
 
 // DeclaredTable finds the table a row-security declaration names among a
 // document's tables: the one structName maps to when table is empty, and
-// otherwise the one of that name, in the schema a qualified reference names.
-// It returns -1 when no table matches, and refuses a reference that more than
-// one table matches, naming their schemas.
+// otherwise the one [tablelookup.Declared] finds.
 func DeclaredTable(tables []schemamodel.Table, structName, table string) (int, error) {
 	if table == "" {
 		return slices.IndexFunc(tables, func(declared schemamodel.Table) bool {
 			return structName != "" && declared.StructName == structName
 		}), nil
 	}
-	ref, ok := tableref.Parse(table)
-	if !ok {
-		return -1, fmt.Errorf("%w: %q is not a table reference", ptaherr.ErrInvalidAttributeValue, table)
-	}
-	var matches []int
-	for i, declared := range tables {
-		if declared.Name == ref.Name && (!ref.Qualified || declared.Schema == ref.Schema) {
-			matches = append(matches, i)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return -1, nil
-	case 1:
-		return matches[0], nil
-	}
-	schemas := make([]string, 0, len(matches))
-	for _, i := range matches {
-		schemas = append(schemas, strconv.Quote(cmp.Or(tables[i].Schema, "(default)")))
-	}
-	return -1, fmt.Errorf("%w: table %q is declared in schemas %s; name the schema",
-		ptaherr.ErrInvalidAttributeValue, table, strings.Join(schemas, " and "))
+	return tablelookup.Declared(tables, table)
 }
 
 // TableParts returns the schema and name a written table reference names.

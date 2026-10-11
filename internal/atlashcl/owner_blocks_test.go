@@ -124,9 +124,9 @@ func TestParseWithOptions_ReachesTheOwnersBlocks(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{
 		{Block: "gadget", Schema: "app", Name: "small", Attributes: map[string]hclext.Value{
-			"size": {Kind: hclext.String, Text: "s"}, "note": {Kind: hclext.Text, Text: "from a variable"}}},
+			"size": {Kind: hclext.String, Text: "s"}, "note": {Kind: hclext.Text, Text: "from a variable"}}, At: "schema.hcl:8"},
 		{Block: "gadget", Schema: "app", Name: "large", Attributes: map[string]hclext.Value{
-			"size": {Kind: hclext.String, Text: "l"}, "note": {Kind: hclext.Text, Text: "5"}}},
+			"size": {Kind: hclext.String, Text: "l"}, "note": {Kind: hclext.Text, Text: "5"}}, At: "schema.hcl:13"},
 	}}})
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 2)
 	c.Assert(claims, qt.Equals, 1)
@@ -344,8 +344,8 @@ func TestParseWithOptions_ReadsAQualifiedName(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests[0].Claims, qt.DeepEquals, []hclext.Claim{
-		{Block: "knob", Schema: "app", Name: "volume", Attributes: make(map[string]hclext.Value)},
-		{Block: "knob", Schema: "app", Name: "bass.boost", Attributes: make(map[string]hclext.Value)},
+		{Block: "knob", Schema: "app", Name: "volume", Attributes: make(map[string]hclext.Value), At: "schema.hcl:1"},
+		{Block: "knob", Schema: "app", Name: "bass.boost", Attributes: make(map[string]hclext.Value), At: "schema.hcl:2"},
 	})
 }
 
@@ -440,8 +440,8 @@ func TestParseWithOptions_ClaimsEveryIndexForTheOwner(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{
 		{Block: "index", Name: "fast", Attributes: map[string]hclext.Value{"tune": {Kind: hclext.Text, Text: "fast"}},
-			Index: &hclext.Index{Table: "t", Type: "btree"}},
-		{Block: "index", Name: "plain", Attributes: make(map[string]hclext.Value), Index: &hclext.Index{Table: "t"}},
+			Index: &hclext.Index{Table: "t", Type: "btree"}, At: "schema.hcl:5"},
+		{Block: "index", Name: "plain", Attributes: make(map[string]hclext.Value), Index: &hclext.Index{Table: "t"}, At: "schema.hcl:10"},
 	}}})
 	c.Assert(db.Indexes, qt.HasLen, 2)
 	tuned, _, err := schemaext.FacetAs[*gadget](db.Indexes[0].Facets, gadgetKind)

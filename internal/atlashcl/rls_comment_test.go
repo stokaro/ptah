@@ -9,14 +9,13 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/builtintest"
 )
 
 func TestParseRowSecurityComment(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 table "users" {
   column "id" {
     type = int
@@ -35,7 +34,7 @@ table "users" {
 func TestParseRowSecurityCommentAbsentIsEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 table "users" {
   column "id" {
     type = int
@@ -72,7 +71,7 @@ type SecurityMarker struct{}
 `)
 	c.Assert(err, qt.IsNil)
 
-	hclDB, err := atlashcl.Parse([]byte(`
+	hclDB, err := parseWithOwners([]byte(`
 table "users" {
   column "id" {
     type = int
