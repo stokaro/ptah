@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -114,17 +115,20 @@ func TestSQL_StatementsStandAsTheOwnersOperations(t *testing.T) {
 	})
 }
 
-// TestSQL_AnotherTargetKeepsTheSharedGrammar is the control: a document that
-// names a target outside the family reads CREATE EXTENSION through the shared
-// grammar, as it did.
-func TestSQL_AnotherTargetKeepsTheSharedGrammar(t *testing.T) {
+// TestSQL_AnotherTargetRefusesTheStatement is the control: the owner does not
+// read CREATE EXTENSION in a document that names a target outside the family,
+// and the read refuses the statement there, because that target refuses it
+// too, rather than keep it in the shared model.
+func TestSQL_AnotherTargetRefusesTheStatement(t *testing.T) {
 	c := qt.New(t)
 
-	db, _, err := readSQL(c, platform.MySQL, "CREATE EXTENSION pg_trgm;")
+	db, statements, err := readSQL(c, platform.MySQL, "CREATE EXTENSION pg_trgm;")
 
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and mysql refuses the statement`)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
-	c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{Name: "pg_trgm"}})
+	c.Assert(db.Extensions, qt.HasLen, 0)
+	c.Assert(statements, qt.IsNil)
 }
 
 // TestSQL_FailurePath pins the refusals of a statement the owner cannot read,

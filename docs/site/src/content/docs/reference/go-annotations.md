@@ -184,6 +184,13 @@ Rules:
 `table`, `field`, `index`, `constraint`, `embedded`, `enum` and `schema` — do
 not accept it.
 
+An `extension` scope may name only targets that can host an extension:
+`postgres`, `cockroachdb`, `yugabytedb` and `spanner`. A scope that names any
+other target is a parse error, because it asks for an extension where none can
+exist. An extension declared without `dialects` reaches every target, and a
+target that cannot host it leaves it out with a note, as a shared schema
+needs; YDB refuses it instead.
+
 ## Tables and columns
 
 ### `//ptah:schema:table`

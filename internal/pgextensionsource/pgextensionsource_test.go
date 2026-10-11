@@ -64,22 +64,51 @@ func TestReaders_OneDeclarationDecodesAlikeFromGoAndYAML(t *testing.T) {
 	c.Assert(fromYAML.FeatureCoverage.Lookup(pgextension.ExtensionKind, pgextension.Ref("citext")).State, qt.Equals, schemaext.Complete)
 }
 
-// TestReaders_ScopeDecidesTheOwner pins which declarations the owner reads:
-// one with no scope or scoped to the PostgreSQL family is its object, with
-// the scope it was written with, and one scoped to other targets stays in the
+// TestReaders_ScopeDecidesTheOwner_HappyPath pins which declarations the
+// owner reads: one with no scope and one scoped to the PostgreSQL family are
+// its objects, with the scope they were written with, and none stays in the
 // shared model.
-func TestReaders_ScopeDecidesTheOwner(t *testing.T) {
+func TestReaders_ScopeDecidesTheOwner_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	db := parseGo(c, "extensions.go", `//ptah:schema:extension name="pg_trgm"
-//ptah:schema:extension name="citext" dialects="postgres,cockroachdb"
-//ptah:schema:extension name="vector" dialects="mysql"`)
+//ptah:schema:extension name="citext" dialects="postgres,cockroachdb"`)
 
 	c.Assert(pgextension.Names(db.FeatureObjects), qt.DeepEquals, []string{"citext", "pg_trgm"})
 	scoped, _, err := db.FeatureObjects.Get(pgextension.Ref("citext"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(scoped.Targets, qt.DeepEquals, []string{"cockroachdb", "postgres"})
-	c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{Name: "vector", Dialects: []string{"mysql"}}})
+	c.Assert(db.Extensions, qt.HasLen, 0)
+}
+
+// TestReaders_ScopeDecidesTheOwner_FailurePath pins that a scope naming a
+// target that cannot host an extension is refused, alone or beside one that
+// can: the author named a target where no extension can exist. A declaration
+// without a scope is not refused, because it names no target; a target that
+// cannot host it leaves it out.
+func TestReaders_ScopeDecidesTheOwner_FailurePath(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope string
+		want  string
+	}{
+		{name: "only other targets", scope: "mysql,sqlite", want: `the scope names mysql,sqlite, which cannot host an extension`},
+		{name: "a family target beside another", scope: "postgres,mysql", want: `the scope names mysql, which cannot host an extension`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := goschema.ParseSource(goOwners, "extensions.go",
+				goSource(`//ptah:schema:extension name="vector" dialects="`+test.scope+`"`))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.want+`; scope the declaration to cockroachdb,postgres,spanner,yugabytedb, `+
+				`or leave dialects out to declare it for every target`)
+			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(db.Extensions, qt.HasLen, 0)
+		})
+	}
 }
 
 // source is one desired-schema source a test loads: a Go package file
