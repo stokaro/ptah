@@ -26,8 +26,8 @@ func (*providingChange) Kind() schemaext.Kind { return "example.org/provider/cha
 func (v *providingChange) CloneChange() schemaext.ChangeValue {
 	return &providingChange{Creates: v.Creates}
 }
-func (v *providingChange) ProvidedCapabilities(caps capability.Capabilities) capability.Capabilities {
-	return caps.With(capability.Hypertables, v.Creates)
+func (v *providingChange) ProvidedCapabilities(subject objectidentity.ID, caps capability.Capabilities) capability.Capabilities {
+	return caps.With(capability.Hypertables, v.Creates && subject.Name.Source == "timescaledb")
 }
 
 // renderingRuntime is the bundled runtime with an owner that accounts for

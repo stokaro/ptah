@@ -147,6 +147,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `feature/pgextension` | PostgreSQL extension models, changes, operations and codecs. |
+| `feature/pgextension/extensioncompare` | Comparison of PostgreSQL extensions. |
+| `feature/pgextension/extensionconvert` | Projection of PostgreSQL extensions between representations. |
 | `feature/pgextension/extensionrender` | Rendering of the PostgreSQL extension operations. |
 | `feature/pgpolicy` | PostgreSQL row-security policy and table-state models and codecs. |
 | `feature/pgpolicy/policycompare` | Comparison of PostgreSQL row-security policies and table switches. |

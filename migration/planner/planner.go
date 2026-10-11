@@ -818,11 +818,7 @@ func GenerateSchemaDiffRenderedPlan(
 	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
 	// An owner's object the plan creates provides what it provides the same
 	// way; the change answers for its own direction.
-	changes := make([]any, 0, len(diff.FeatureChanges))
-	for _, change := range diff.FeatureChanges {
-		changes = append(changes, change.Value)
-	}
-	caps = schemaext.ProvidedCapabilities(caps, changes...)
+	caps = schemaext.ProvidedByChanges(caps, diff.FeatureChanges)
 	// The planner resolves built-in transport spellings before selecting a
 	// target. Rendering must use that same target, not reinterpret the spelling.
 	target := platform.NormalizeDialect(dialect)
