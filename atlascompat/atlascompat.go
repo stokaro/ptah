@@ -43,9 +43,10 @@ const AtlasSumFileName = "atlas.sum"
 //
 // It selects no feature owner, so a block only an owner reads is refused as
 // an unsupported top-level block: today a `synonym`, a `hypertable`, a
-// `continuous_aggregate` and an `extended_property`, and the other owner
-// blocks -- `coordination_node` and `policy` -- as their owners take them
-// over. Read a
+// `continuous_aggregate`, an `extended_property` and a `coordination_node`,
+// and a `policy` once its owner takes it over. So is an attribute only an
+// owner reads, such as a YDB vector or partitioning setting on an `index`,
+// and a `ptah:feature-coverage` header, which only the YDB owner reads. Read a
 // document carrying one with [ParseAtlasHCLWithOptions] and the HCL set of a
 // runtime, such as the bundled one engine/builtin.Bundled returns.
 func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {

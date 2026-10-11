@@ -9,8 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
@@ -80,7 +82,7 @@ func gadgetOwners(requests *[]hclext.Request, claims *int) hclext.Set {
 			Blocks: []hclext.Block{{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
 				Attributes: []hclext.Attribute{{Name: "size", Kind: hclext.String}, {Name: "note", Kind: hclext.Text}}}},
 			Decoder: gadgetDecoder{requests: requests},
-			Coverage: func() (schemaext.Coverage, error) {
+			Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) {
 				*claims++
 				return schemaext.Coverage{}, nil
 			},
@@ -357,4 +359,171 @@ func tableGadgets(c *qt.C, db *schemamodel.Database) map[string]string {
 		sizes[table.Name] = set.Size
 	}
 	return sizes
+}
+
+// tunerDecoder sets a gadget, sized by the index's `tune` and type, on each
+// claimed index that writes `tune`, refuses a gadget block named "refused",
+// and records the requests it is given.
+type tunerDecoder struct {
+	requests *[]hclext.Request
+}
+
+func (d tunerDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
+	*d.requests = append(*d.requests, request)
+	declarations := make([]hclext.Declaration, 0, len(request.Claims))
+	for i, claim := range request.Claims {
+		if claim.Name == "refused" {
+			return hclext.Result{}, &hclext.ClaimError{Claim: i, Err: fmt.Errorf("gadget %q is refused", claim.Name)}
+		}
+		tune, written := claim.Attributes["tune"]
+		if claim.Index == nil || !written {
+			declarations = append(declarations, hclext.Declaration{})
+			continue
+		}
+		facets := must.Must(schemaext.NewFacets(&gadget{Size: tune.Text + "/" + claim.Index.Type}))
+		declarations = append(declarations, hclext.Declaration{Facets: facets})
+	}
+	return hclext.Result{Declarations: declarations}, nil
+}
+
+// tunerOwners registers the owner example.org/custom, which reads a `tune`
+// attribute of every index block and a `gadget` block, a `gizmo` header entry
+// and a captured header, and records the coverage requests it is given.
+func tunerOwners(requests *[]hclext.Request, coverageRequests *[]hclext.CoverageRequest, captured bool) hclext.Set {
+	return must.Must(engine.New(engine.Provider{
+		ID:     "example.org/custom",
+		Codecs: []schemaext.Codec{gadgetCodec()},
+		HCL: []hclext.Extension{{
+			Owner: "example.org/custom",
+			Kinds: []schemaext.Kind{gadgetKind},
+			Blocks: []hclext.Block{
+				{Site: hclext.IndexAttributes, Type: "index", Attributes: []hclext.Attribute{{Name: "tune", Kind: hclext.Text}}},
+				{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName},
+			},
+			Decoder:          tunerDecoder{requests: requests},
+			Header:           []coverage.Kind{"gizmo"},
+			CapturedCoverage: captured,
+			Coverage: func(request hclext.CoverageRequest) (schemaext.Coverage, error) {
+				*coverageRequests = append(*coverageRequests, request)
+				return schemaext.Coverage{}, nil
+			},
+		}},
+	})).HCL()
+}
+
+const tunedDocument = `table "t" {
+  column "a" {
+    type = int
+  }
+  index "fast" {
+    columns = [column.a]
+    type    = "btree"
+    tune    = "fast"
+  }
+  index "plain" {
+    columns = [column.a]
+  }
+}
+`
+
+// TestParseWithOptions_ClaimsEveryIndexForTheOwner hands the owner that reads
+// index attributes every index block, with what the reader knows of the
+// index, and adds the facets it returns to that index alone.
+func TestParseWithOptions_ClaimsEveryIndexForTheOwner(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+	var coverageRequests []hclext.CoverageRequest
+
+	db, err := atlashcl.ParseWithOptions([]byte(tunedDocument), "schema.hcl",
+		atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, false)})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{
+		{Block: "index", Name: "fast", Attributes: map[string]hclext.Value{"tune": {Kind: hclext.Text, Text: "fast"}},
+			Index: &hclext.Index{Table: "t", Type: "btree"}},
+		{Block: "index", Name: "plain", Attributes: make(map[string]hclext.Value), Index: &hclext.Index{Table: "t"}},
+	}}})
+	c.Assert(db.Indexes, qt.HasLen, 2)
+	tuned, _, err := schemaext.FacetAs[*gadget](db.Indexes[0].Facets, gadgetKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(tuned.Size, qt.Equals, "fast/btree")
+	c.Assert(db.Indexes[1].Facets.Len(), qt.Equals, 0)
+}
+
+// TestParseWithOptions_AdmitsAnIndexAttributeOnlyWithItsOwner is the
+// control: without the owner, `tune` is no attribute of an index block.
+func TestParseWithOptions_AdmitsAnIndexAttributeOnlyWithItsOwner(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.ParseWithOptions([]byte(tunedDocument), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
+
+	c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:5,3-8: unsupported index attribute "tune"`)
+	c.Assert(db, qt.IsNil)
+}
+
+// TestParseWithOptions_HandsTheOwnerItsHeader hands the owner the header
+// entries of its kind and the captured header, and keeps the other entries
+// in the common record.
+func TestParseWithOptions_HandsTheOwnerItsHeader(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+	var coverageRequests []hclext.CoverageRequest
+	document := "// ptah:not-described gizmo \"g1\"\n// ptah:not-described view\n// ptah:feature-coverage {\"exact\":true}\nschema \"app\" {}\n"
+
+	db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl",
+		atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, true)})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(coverageRequests, qt.HasLen, 1)
+	c.Assert(coverageRequests[0].Limits, qt.HasLen, 1)
+	c.Assert(coverageRequests[0].Limits[0].Name, qt.Equals, "g1")
+	c.Assert(coverageRequests[0].Captured, qt.DeepEquals, []string{`ptah:feature-coverage {"exact":true}`})
+	c.Assert(db.NotDescribed.Describes(coverage.View), qt.IsFalse)
+}
+
+// TestParseWithOptions_RefusesACapturedHeaderNoOwnerReads refuses a captured
+// header no selected owner reads rather than reading the document as
+// claiming nothing.
+func TestParseWithOptions_RefusesACapturedHeaderNoOwnerReads(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+	var coverageRequests []hclext.CoverageRequest
+
+	db, err := atlashcl.ParseWithOptions([]byte("// ptah:feature-coverage {}\nschema \"app\" {}\n"), "schema.hcl",
+		atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, false)})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*the document carries a ptah:feature-coverage header, and none of the selected owners reads one`)
+	c.Assert(db, qt.IsNil)
+}
+
+// TestParseWithOptions_ReportsTheEarliestRefusal refuses a document where it
+// is first wrong, whether an owner or the reader found that place: an owner's
+// refusal of an early block is reported before the reader's refusal of a
+// later one, though the reader found its own first.
+func TestParseWithOptions_ReportsTheEarliestRefusal(t *testing.T) {
+	laterTable := "table \"t\" {\n  column \"a\" {\n    type = int\n    null = \"x\"\n  }\n}\n"
+	tests := []struct {
+		name     string
+		document string
+		wantErr  string
+	}{
+		{name: "the owner's refusal comes first", document: "gadget \"refused\" {}\n" + laterTable,
+			wantErr: `parse HCL schema at schema\.hcl:1,1-7: gadget "refused" is refused`},
+		{name: "the reader's refusal comes first", document: laterTable + "gadget \"refused\" {}\n",
+			wantErr: `parse HCL schema at schema\.hcl:4,5-9: column attribute "null" must be a bool`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var requests []hclext.Request
+			var coverageRequests []hclext.CoverageRequest
+
+			db, err := atlashcl.ParseWithOptions([]byte(test.document), "schema.hcl",
+				atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, false)})
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+		})
+	}
 }

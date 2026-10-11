@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderedCoordinationNodeRoundTrips is `schema inspect > out.hcl` then
@@ -35,7 +36,7 @@ func TestRenderedCoordinationNodeRoundTrips(t *testing.T) {
 
 	result, err := atlashclrender.RenderInspected(db, platform.YDB, "")
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, `coordination_node "limits" {`)
@@ -53,11 +54,11 @@ func TestHCLCoordinationSourceLimitsSurviveRepeatedExport(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			c := qt.New(t)
-			original, err := atlashcl.Parse([]byte(source), "source.hcl")
+			original, err := atlashcl.ParseWithOptions([]byte(source), "source.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			first, err := atlashclrender.RenderForDialect(original, platform.YDB)
 			c.Assert(err, qt.IsNil)
-			parsed, err := atlashcl.Parse(first.Data, "export.hcl")
+			parsed, err := atlashcl.ParseWithOptions(first.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.FeatureCoverage.Equal(original.FeatureCoverage), qt.IsTrue)
 			second, err := atlashclrender.RenderForDialect(parsed, platform.YDB)
@@ -84,7 +85,7 @@ func TestRenderedHCLPreservesCoordinationEnrollment(t *testing.T) {
 				c := qt.New(t)
 				result, err := atlashclrender.RenderInspected(&schemamodel.Database{FeatureCoverage: test.known}, dialect, "")
 				c.Assert(err, qt.IsNil)
-				parsed, err := atlashcl.Parse(result.Data, "export.hcl")
+				parsed, err := atlashcl.ParseWithOptions(result.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 				c.Assert(err, qt.IsNil)
 				c.Assert(parsed.NotDescribed, qt.DeepEquals, result.NotDescribed)
 				c.Assert(parsed.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "locks")).State, qt.Equals, test.want)
@@ -107,7 +108,7 @@ func TestHCLRefusesIncompatibleAndDuplicateCapturedModels(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			parsed, err := atlashcl.Parse([]byte(test.text), "source.hcl")
+			parsed, err := atlashcl.ParseWithOptions([]byte(test.text), "source.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.ErrorIs, test.want)
 			c.Assert(parsed, qt.IsNil)
 		})

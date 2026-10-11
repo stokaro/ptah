@@ -85,7 +85,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(hclText, qt.Contains, `constraint "users_no_overlap"`)
 	c.Assert(hclText, qt.Not(qt.Contains), "embedded")
 
-	after, err := atlashcl.ParseFile(output)
+	after, err := atlashcl.ParseFileWithOptions(output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(after.Extensions, qt.DeepEquals, before.Extensions)
 	c.Assert(after.Sequences, qt.DeepEquals, withoutSequenceProvenance(before.Sequences))

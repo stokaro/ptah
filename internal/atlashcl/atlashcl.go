@@ -2,6 +2,7 @@
 package atlashcl
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -17,18 +18,15 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlsource"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbsource"
 )
 
 // Options configures HCL schema parsing.
@@ -248,40 +246,61 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	if err := schemamodel.ValidateRevokedGrants(p.db); err != nil {
 		return nil, fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
 	}
-	// A document's own account of its limits is part of the document. It rides
-	// in the leading comment header rather than in a block, because it has to
-	// survive being read by tools that are not Ptah -- the pinned Atlas
-	// community binary v1.3.0 reads a document carrying it at exit 0 -- and
-	// because a block would need a name that binary refuses.
-	var limits ydbsource.Limits
-	notDescribed, err := coverage.DecodeHeader(string(data), p.vocabulary, limits.ConsumeHCLDirective)
-	if err != nil {
-		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
-	}
-	p.db.NotDescribed = notDescribed
-	if p.db.FeatureCoverage, err = documentCoverage(string(data), limits, p.db.FeatureObjects, p.owners); err != nil {
+	if err := p.readHeader(); err != nil {
 		return nil, err
 	}
 	return p.db, nil
 }
 
-// documentCoverage is what a document knows about the owned models: the YDB
-// limits its directives record, the models its own blocks declare, the claims
-// of the owners whose blocks it may carry, and the row-security policies it
-// claims.
-func documentCoverage(data string, limits ydbsource.Limits, objects schemaext.Objects, owners hclext.Set) (schemaext.Coverage, error) {
-	known, _, err := ydbsource.ReadHCLCoverage(data, limits)
+// readHeader reads the document's account of its own limits into the
+// description, and with it the document's coverage of the owners' models. The
+// account is part of the document. It rides in the leading comment header
+// rather than in a block, because it has to survive being read by tools that
+// are not Ptah -- the pinned Atlas community binary v1.3.0 reads a document
+// carrying it at exit 0 -- and because a block would need a name that binary
+// refuses.
+func (p *parser) readHeader() error {
+	var owned []coverage.Object
+	notDescribed, err := coverage.DecodeHeader(string(p.src), p.vocabulary, func(object coverage.Object) (bool, error) {
+		if !p.owners.ReadsHeader(object.Kind) {
+			return false, nil
+		}
+		owned = append(owned, object)
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
+	}
+	p.db.NotDescribed = notDescribed
+	p.db.FeatureCoverage, err = documentCoverage(string(p.src), owned, p.db.FeatureObjects, p.owners)
+	return err
+}
+
+// documentCoverage is what a document knows about the owned models: the
+// claims of the owners whose blocks it may carry, each limited by the header
+// entries the owner reads and, for the owner that reads one, by the captured
+// feature coverage header; the models the format's own blocks declare; and
+// the row-security policies it claims.
+//
+// A captured header no selected owner reads is refused rather than ignored:
+// it is an exact claim an export wrote, and dropping it would read the
+// document as claiming nothing.
+func documentCoverage(data string, owned []coverage.Object, objects schemaext.Objects, owners hclext.Set) (schemaext.Coverage, error) {
+	captured := schemaext.CoverageHeaderBodies(data)
+	if len(captured) > 0 && !owners.ReadsCapturedCoverage() {
+		return schemaext.Coverage{}, fmt.Errorf("%w: the document carries a %s header, and none of the selected owners reads one",
+			ptaherr.ErrUnsupportedFeature, schemaext.CoverageHeaderMarker)
+	}
+	known, err := owners.Coverage(owned, captured)
 	if err != nil {
 		return schemaext.Coverage{}, err
+	}
+	if known.Representation() == "" {
+		if known, err = schemaext.NewCoverage(schemaext.Desired, nil, nil); err != nil {
+			return schemaext.Coverage{}, err
+		}
 	}
 	if known, err = withBlockCoverage(known); err != nil {
-		return schemaext.Coverage{}, err
-	}
-	claims, err := owners.Coverage()
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	if known, err = known.Combine(claims); err != nil {
 		return schemaext.Coverage{}, err
 	}
 	return pgpolicysource.Claim(known, objects)
@@ -395,14 +414,17 @@ type parser struct {
 
 // walk is the body walk, the one pass whose evaluations are the document's
 // own, followed by the owners' reading of the blocks the walk claimed: after
-// the walk, so each owner reads every block of its in one call.
+// the walk, so each owner reads every block of its in one call. Of a refusal
+// of the walk and one of an owner, the one earlier in the document is
+// returned; see [earliestError].
 func (p *parser) walk(body *hclsyntax.Body) error {
 	p.emitting = true
-	if err := p.parseBody(body); err != nil {
-		return err
-	}
+	walkErr := p.parseBody(body)
 	p.emitting = false
-	return p.readOwnerClaims()
+	// The owners read the blocks the walk claimed even when the walk was
+	// refused: an owner's refusal of an earlier block is the document's
+	// first mistake.
+	return earliestError(walkErr, p.readOwnerClaims())
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -434,7 +456,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"domain":            (*parser).parseDomain,
 	"composite":         (*parser).parseComposite,
 	"range":             (*parser).parseRange,
-	"coordination_node": (*parser).parseCoordinationNode,
 	"table":             (*parser).parseTable,
 	"extension":         (*parser).parseExtension,
 	"function":          (*parser).parseFunction,
@@ -719,6 +740,9 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 		}
 		index.TableName = table.QualifiedName()
 		p.db.Indexes = append(p.db.Indexes, index)
+		if err := p.claimOwnerIndex(block, len(p.db.Indexes)-1); err != nil {
+			return err
+		}
 	case "unique":
 		constraint, err := p.parseUnique(table.StructName, table.Name, block)
 		if err != nil {
@@ -1062,7 +1086,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err != nil {
 		return schemamodel.Index{}, err
 	}
-	return p.indexYDBSettings(block, schemamodel.Index{
+	return schemamodel.Index{
 		StructName:     structName,
 		Name:           block.Labels[0],
 		Fields:         columns,
@@ -1077,24 +1101,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		StorageParams:  storageParams,
 		Overrides:      mysqlProperties(overrides, map[string]string{"parser": parserName}),
 		TableName:      tableName,
-	})
-}
-
-// indexVector reads a YDB vector index's settings: attributes of the index
-// block named as the index annotation names them, a Ptah extension the Atlas
-// grammar has no counterpart for, since Atlas has no YDB driver.
-func (p *parser) indexVector(block *hclsyntax.Block, index schemamodel.Index) (*ydbschema.DesiredVectorIndex, error) {
-	values := make(map[string]string)
-	for _, name := range ydbindex.VectorAttributes() {
-		if attr := block.Body.Attributes[name]; attr != nil {
-			values[name] = p.exprString(attr)
-		}
-	}
-	vector, err := ydbindex.DeclareVector(values, index.Type, index.Operator)
-	if err != nil {
-		return nil, p.blockError(block, "index %q: %v", block.Labels[0], err)
-	}
-	return vector, nil
+	}, nil
 }
 
 func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Block) (schemamodel.Constraint, error) {
@@ -2053,16 +2060,13 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"where":           true,
 		"comment":         true,
 		"ops":             true,
-		// A YDB vector index's settings; see [parser.indexVector].
-		ydbindex.AttributeDistance:        true,
-		ydbindex.AttributeSimilarity:      true,
-		ydbindex.AttributeVectorType:      true,
-		ydbindex.AttributeVectorDimension: true,
-		ydbindex.AttributeLevels:          true,
-		ydbindex.AttributeClusters:        true,
 	}
-	for _, name := range ydbpartition.Attributes() {
-		attributes[name] = true
+	// The attributes an owner adds to the index block; see
+	// [parser.claimOwnerIndex].
+	if shape, owned := p.owners.Lookup(hclext.IndexAttributes, "index"); owned {
+		for _, attribute := range shape.Block.Attributes {
+			attributes[attribute.Name] = true
+		}
 	}
 	return p.rejectUnsupportedAttrs(block, attributes, "index")
 }
@@ -2649,11 +2653,60 @@ func (p *parser) rawExprNode(expr hclsyntax.Expression) string {
 
 // attributeError is a refusal positioned at an attribute's name.
 func (p *parser) attributeError(attr *hclsyntax.Attribute, format string, args ...any) error {
-	return fmt.Errorf("parse HCL schema at %s: %w", attr.NameRange.String(), fmt.Errorf(format, args...))
+	return &sourceError{start: attr.NameRange.Start,
+		err: fmt.Errorf("parse HCL schema at %s: %w", attr.NameRange.String(), fmt.Errorf(format, args...))}
 }
 
 func (p *parser) blockError(block *hclsyntax.Block, format string, args ...any) error {
-	return fmt.Errorf("parse HCL schema at %s: %w", block.TypeRange.String(), fmt.Errorf(format, args...))
+	return &sourceError{start: block.TypeRange.Start,
+		err: fmt.Errorf("parse HCL schema at %s: %w", block.TypeRange.String(), fmt.Errorf(format, args...))}
+}
+
+// sourceError is a refusal that knows where in the document it points, so a
+// refusal of the walk and one of an owner can be ordered by the document
+// rather than by when each was found; see [earliestError]. Its text is the
+// refusal's.
+type sourceError struct {
+	start hcl.Pos
+	err   error
+}
+
+func (e *sourceError) Error() string { return e.err.Error() }
+
+func (e *sourceError) Unwrap() error { return e.err }
+
+// errorStart returns where in the document err points, and false for a
+// refusal that names no position.
+func errorStart(err error) (hcl.Pos, bool) {
+	positioned, ok := errors.AsType[*sourceError](err)
+	if !ok {
+		return hcl.Pos{}, false
+	}
+	return positioned.start, true
+}
+
+// earliestError returns the refusal that points earlier in the document, of
+// one the walk raised and one an owner raised for a block the walk claimed
+// before it stopped. The document is refused where it is first wrong, whichever
+// of the two read that place, so the order does not depend on when the owners
+// run. A refusal that names no position yields to one that does: an owner's
+// claimed block came earlier in the walk than the walk's own refusal, and a
+// failing owner service says nothing about the document.
+func earliestError(walkErr, ownerErr error) error {
+	switch {
+	case walkErr == nil:
+		return ownerErr
+	case ownerErr == nil:
+		return walkErr
+	}
+	ownerAt, ownerKnown := errorStart(ownerErr)
+	if !ownerKnown {
+		return walkErr
+	}
+	if walkAt, walkKnown := errorStart(walkErr); walkKnown && walkAt.Byte < ownerAt.Byte {
+		return walkErr
+	}
+	return ownerErr
 }
 
 func refName(raw string) string {

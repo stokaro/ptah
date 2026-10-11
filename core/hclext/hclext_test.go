@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
@@ -105,6 +106,12 @@ func TestNewSet_FailurePath(t *testing.T) {
 			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
 				Attributes: []hclext.Attribute{{Name: "size", Kind: "expression"}}})},
 			wantErr: `HCL attribute "size" of example.org/a block "gadget" names unknown kind "expression"`},
+		{name: "index attributes of another block", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.IndexAttributes, Type: "table"})},
+			wantErr: `HCL index-attributes block of example.org/a must be of type "index" with no naming`},
+		{name: "index attributes with a naming", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.IndexAttributes, Type: "index", Naming: hclext.SchemaAndName})},
+			wantErr: `HCL index-attributes block of example.org/a must be of type "index" with no naming`},
 		{name: "one block read twice", extensions: []hclext.Extension{
 			extension("example.org/a", "example.org/a/x", decoder, block("gadget")),
 			extension("example.org/b", "example.org/b/x", decoder, block("gadget"))},
@@ -193,6 +200,9 @@ func TestSet_Decode_FailurePath(t *testing.T) {
 			wantErr: `invalid feature value: HCL decoder of example.org/b answered a model of kind "example.org/a/x", which its extension does not declare`},
 		{name: "a refused claim", decoder: answeringDecoder{err: &hclext.ClaimError{Claim: 1, Err: refused}},
 			wantErr: `claim 2: refused`},
+		{name: "a facet of another kind", decoder: answeringDecoder{result: hclext.Result{Declarations: []hclext.Declaration{
+			{Facets: must.Must(schemaext.NewFacets(&widget{kind: "example.org/a/x"}))}, {}}}},
+			wantErr: `invalid feature value: HCL decoder of example.org/b answered a model of kind "example.org/a/x", which its extension does not declare`},
 		{name: "a table setting of another kind", decoder: answeringDecoder{result: hclext.Result{Declarations: []hclext.Declaration{
 			{TableSetting: &widget{kind: "example.org/a/x"}}, {}}}},
 			wantErr: `invalid feature value: HCL decoder of example.org/b answered a model of kind "example.org/a/x", which its extension does not declare`},
@@ -221,16 +231,69 @@ func TestSet_Decode_FailurePath(t *testing.T) {
 	}
 }
 
+// TestSet_Decode_ReturnsTheEarliestRefusal returns the refusal of the claim
+// earliest among the matches, whichever owner refused it and in whichever
+// order the owners were called.
+func TestSet_Decode_ReturnsTheEarliestRefusal(t *testing.T) {
+	refused := errors.New("refused")
+	c := qt.New(t)
+	set := must.Must(hclext.NewSet(
+		extension("example.org/a", "example.org/a/x", answeringDecoder{err: &hclext.ClaimError{Claim: 1, Err: errors.New("later")}}, block("gadget")),
+		extension("example.org/b", "example.org/b/x", answeringDecoder{err: &hclext.ClaimError{Claim: 0, Err: refused}}, block("widget")),
+	))
+	gadget, _ := set.Lookup(hclext.TopLevel, "gadget")
+	widget, _ := set.Lookup(hclext.TopLevel, "widget")
+	matches := []hclext.Match{
+		{Shape: gadget, Claim: hclext.Claim{Block: "gadget", Name: "g1"}},
+		{Shape: widget, Claim: hclext.Claim{Block: "widget", Name: "w1"}},
+		{Shape: gadget, Claim: hclext.Claim{Block: "gadget", Name: "g2"}},
+	}
+
+	declarations, err := set.Decode(t.Context(), matches)
+
+	c.Assert(err, qt.ErrorMatches, `claim 1: refused`)
+	c.Assert(declarations, qt.IsNil)
+}
+
+// TestSet_Coverage_HandsEachOwnerItsHeader hands each owner the header
+// entries of its own kinds, and the captured header only to the owner that
+// reads one.
+func TestSet_Coverage_HandsEachOwnerItsHeader(t *testing.T) {
+	c := qt.New(t)
+	var first, second hclext.CoverageRequest
+	recording := func(into *hclext.CoverageRequest) func(hclext.CoverageRequest) (schemaext.Coverage, error) {
+		return func(request hclext.CoverageRequest) (schemaext.Coverage, error) {
+			*into = request
+			return schemaext.NewCoverage(schemaext.Desired, nil, nil)
+		}
+	}
+	set := must.Must(hclext.NewSet(
+		hclext.Extension{Owner: "example.org/a", Header: []coverage.Kind{"gizmo"}, CapturedCoverage: true, Coverage: recording(&first)},
+		hclext.Extension{Owner: "example.org/b", Header: []coverage.Kind{"widget"}, Coverage: recording(&second)},
+	))
+	header := []coverage.Object{{Kind: "Gizmo", Name: "g"}, {Kind: "widget", Name: "w"}}
+
+	_, err := set.Coverage(header, []string{"ptah:feature-coverage {}"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(first, qt.DeepEquals, hclext.CoverageRequest{Limits: []coverage.Object{{Kind: "Gizmo", Name: "g"}}, Captured: []string{"ptah:feature-coverage {}"}})
+	c.Assert(second, qt.DeepEquals, hclext.CoverageRequest{Limits: []coverage.Object{{Kind: "widget", Name: "w"}}})
+	c.Assert(set.ReadsHeader(" GIZMO "), qt.IsTrue)
+	c.Assert(set.ReadsHeader("\u017fecret"), qt.IsFalse)
+	c.Assert(set.ReadsCapturedCoverage(), qt.IsTrue)
+	c.Assert(hclext.None().ReadsCapturedCoverage(), qt.IsFalse)
+}
+
 // TestSet_Coverage combines the claims of the extensions that make one.
 func TestSet_Coverage(t *testing.T) {
 	c := qt.New(t)
-	claimed := hclext.Extension{Owner: "example.org/a", Coverage: func() (schemaext.Coverage, error) {
+	claimed := hclext.Extension{Owner: "example.org/a", Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) {
 		return schemaext.NewCoverage(schemaext.Desired, nil, nil)
 	}}
 	silent := hclext.Extension{Owner: "example.org/b"}
 
-	claims, err := must.Must(hclext.NewSet(claimed, silent)).Coverage()
-	none, noneErr := must.Must(hclext.NewSet(silent)).Coverage()
+	claims, err := must.Must(hclext.NewSet(claimed, silent)).Coverage(nil, nil)
+	none, noneErr := must.Must(hclext.NewSet(silent)).Coverage(nil, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(claims.Representation(), qt.Equals, schemaext.Desired)

@@ -54,6 +54,6 @@ func (hclDecoder) DecodeHCL(ctx context.Context, request hclext.Request) (hclext
 }
 
 // hclCoverage claims every synonym an HCL document can declare.
-func hclCoverage() (schemaext.Coverage, error) {
+func hclCoverage(hclext.CoverageRequest) (schemaext.Coverage, error) {
 	return Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 }

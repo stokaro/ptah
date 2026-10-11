@@ -6,14 +6,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/atlashcl"
 )
 
 // TestParse_YDBVectorIndex_FailurePath refuses a vector setting YDB would
 // refuse where the document wrote it, naming the index.
 func TestParse_YDBVectorIndex_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 table "docs" {
   column "id" {
     type = Uint64
