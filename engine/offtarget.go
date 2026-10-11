@@ -32,6 +32,14 @@ func (r *Runtime) registerOffTarget(owner string, policy OffTargetPolicy) error 
 	return nil
 }
 
+// Label returns the label kind's owner states for it in its off-target
+// answer, such as "PostgreSQL extension", and false where the owner states
+// none. A report names the model by it.
+func (r *Runtime) Label(kind schemaext.Kind) (string, bool) {
+	policy, stated := r.offTarget[kind]
+	return policy.Label, stated
+}
+
 // serves reports whether target compares or plans declarations of kind.
 func (r *Runtime) serves(target string, kind schemaext.Kind) bool {
 	key := conversionKey{target: target, kind: kind}

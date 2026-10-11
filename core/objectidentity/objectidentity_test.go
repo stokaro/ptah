@@ -1,6 +1,7 @@
 package objectidentity_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -365,6 +366,19 @@ func TestIdentity_StringSeparatesComponentsThatHoldADot(t *testing.T) {
 			c := qt.New(t)
 			id := builder.SchemaScopedParts("ptah.run/ydb/secret", test.schema, test.object)
 			c.Assert(id.String(), qt.Equals, test.want)
+			c.Assert(id.Path(), qt.Equals, strings.TrimPrefix(test.want, "ptah.run/ydb/secret "))
 		})
 	}
+}
+
+// TestIdentity_PathWritesTheSignature pins the rest of Path: a parent and a
+// signature, written as String writes them after the kind.
+func TestIdentity_PathWritesTheSignature(t *testing.T) {
+	c := qt.New(t)
+	id := objectidentity.ID{Kind: "example.org/routine", Schema: objectidentity.Part{Source: "app", Normalized: "app"},
+		Parent: objectidentity.Part{Source: "pkg", Normalized: "pkg"}, Name: objectidentity.Part{Source: "f", Normalized: "f"},
+		Signature: "integer"}
+
+	c.Assert(id.Path(), qt.Equals, "app.pkg.f(integer)")
+	c.Assert(id.String(), qt.Equals, "example.org/routine app.pkg.f(integer)")
 }

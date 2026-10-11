@@ -244,6 +244,11 @@ identity of its own, `KindPrimaryKey`, built by `PrimaryKeyOf` or
 the name the key carries differs by engine and by source, so the key a
 declaration describes pairs with the one a catalog reports under any name.
 
+`ID.String` writes an identity for a person, its kind first; `ID.Path` writes
+the same without the kind, for a report that names the kind in words. A
+component holding a dot or a double quote is quoted in both, so two
+identities never read alike.
+
 `core/manageddata.LoadRowValues` reads a managed-data YAML file while retaining
 scalar spelling and tags in `schemamodel.ManagedRow`. `LoadRows` reads resolved Go
 values for row comparison. `ResolveRows` resolves carried declarations without
@@ -2875,6 +2880,13 @@ A skipped object is a `schemaext.SkippedObject`: a render writes its
 writes as a comment. `engine.Target.RefusesSkips` makes a target refuse what an
 owner would skip there. A model without a statement reaches the target's
 services as before.
+
+The policy's `Label` is the owner's name for its model wherever a user meets
+one of its objects: the skip line, the undecided report, where
+`Runtime.CompareFeatures` fills `schemaext.UndecidedChange.Label` from it, and
+the note `schema render` writes for an object scoped to other targets, which
+asks `Runtime.Label`. A model whose owner states no policy is named by its
+kind.
 
 `schemaext.Redeclarable` is an owner's statement that its object is idempotent
 to declare: two packages that each use pg_trgm may each declare it. It is a

@@ -227,3 +227,34 @@ func TestScopeOffTarget_ADeclaredModelIsServed(t *testing.T) {
 	c.Assert(none, qt.HasLen, 0)
 	c.Assert(skipped, qt.HasLen, 1)
 }
+
+// TestCompareFeatures_NamesAnUndecidedModelByItsLabel pins that an undecided
+// object carries the label its owner states for the model, the one its skip
+// line uses, and none where the owner states none; Runtime.Label answers the
+// same.
+func TestCompareFeatures_NamesAnUndecidedModelByItsLabel(t *testing.T) {
+	c := qt.New(t)
+	provider := comparisonProvider(comparisonFunc(func(_ context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
+		return schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired, Undecided: []schemaext.UndecidedChange{
+			{Kind: conversionFirst, Subject: comparedRef(conversionFirst, "first"), Reason: "unknown"},
+			{Kind: conversionSecond, Subject: comparedRef(conversionSecond, "second"), Reason: "unknown"},
+		}}, nil
+	}))
+	provider.OffTarget = []engine.OffTargetPolicy{skipFirst}
+	runtime := mustRuntime(c, provider)
+	objects := bothModels(c)
+
+	result, err := runtime.CompareFeatures(t.Context(), schemaext.ComparisonRequest{Target: "custom", Owners: comparisonRequest(c).Parents,
+		Desired: schemaext.FeatureState{Objects: objects}, Current: schemaext.FeatureState{Objects: objects}})
+	c.Assert(err, qt.IsNil)
+	firstLabel, firstStated := runtime.Label(conversionFirst)
+	secondLabel, secondStated := runtime.Label(conversionSecond)
+
+	c.Assert(result.Undecided, qt.HasLen, 2)
+	c.Assert(result.Undecided[0].Label, qt.Equals, "first model")
+	c.Assert(result.Undecided[1].Label, qt.Equals, "")
+	c.Assert(firstLabel, qt.Equals, skipFirst.Label)
+	c.Assert(firstStated, qt.IsTrue)
+	c.Assert(secondLabel, qt.Equals, "")
+	c.Assert(secondStated, qt.IsFalse)
+}

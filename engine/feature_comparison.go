@@ -68,6 +68,9 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 	if err := ctx.Err(); err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
+	for i := range result.Undecided {
+		result.Undecided[i].Label, _ = r.Label(result.Undecided[i].Kind)
+	}
 	slices.SortFunc(result.Undecided, func(a, b schemaext.UndecidedChange) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), schemaext.CompareRefs(a.Subject, b.Subject))
 	})
