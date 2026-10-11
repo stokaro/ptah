@@ -186,3 +186,63 @@ func TestCollectMismatches_DescribesAViewsOwnerChange(t *testing.T) {
 	c.Assert(got[0].Message, qt.Equals, "materialized view mismatch daily: ptah.run/clickhouse/refresh-change EVERY 1 HOUR -> EVERY 2 HOUR")
 	c.Assert(got[0].Changes, qt.DeepEquals, map[string]string{"ptah.run/clickhouse/refresh-change": "EVERY 1 HOUR -> EVERY 2 HOUR"})
 }
+
+// describedChange is an owner change that says what changed.
+type describedChange struct{}
+
+func (*describedChange) Kind() schemaext.Kind               { return "example.org/described" }
+func (*describedChange) CloneChange() schemaext.ChangeValue { return &describedChange{} }
+func (*describedChange) String() string                     { return "EVERY 1 HOUR -> EVERY 2 HOUR" }
+
+// effectChange is an owner change that says why it matters.
+type effectChange struct{}
+
+func (*effectChange) Kind() schemaext.Kind               { return "example.org/effect" }
+func (*effectChange) CloneChange() schemaext.ChangeValue { return &effectChange{} }
+func (*effectChange) Effect() schemaext.Effect {
+	return schemaext.Effect{Impact: schemaext.Behavioral, Reason: "changes who may read the rows"}
+}
+
+// silentChange is an owner change that says nothing about itself.
+type silentChange struct{}
+
+func (*silentChange) Kind() schemaext.Kind               { return "example.org/silent" }
+func (*silentChange) CloneChange() schemaext.ChangeValue { return &silentChange{} }
+
+func exampleSubject(kind, schema, parent, name string) objectidentity.ID {
+	part := func(source string) objectidentity.Part {
+		return objectidentity.Part{Source: source, Normalized: source}
+	}
+	return objectidentity.ID{Kind: objectidentity.Kind(kind), Schema: part(schema), Parent: part(parent), Name: part(name)}
+}
+
+// TestCollectMismatches_ReportsEveryOwnerChange pins the row each owner change
+// gets, whichever owner made it, standalone or on a table: its subject with the
+// owner's kind, and what changed as the owner describes it. Before, a diff
+// holding only owner changes reported "schema differs" and nothing more.
+func TestCollectMismatches_ReportsEveryOwnerChange(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: exampleSubject("example.org/schedule", "app", "", "hourly"), Value: &describedChange{}},
+			{Subject: exampleSubject("example.org/policy", "app", "users", "tenant"), Value: &effectChange{}},
+		},
+		TablesModified: []difftypes.TableDiff{{TableName: "app.readings", FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: exampleSubject("example.org/setting", "app", "readings", "ttl"), Value: &silentChange{}},
+		}}},
+	}
+
+	got := collectMismatches(diff)
+
+	c.Assert(got, qt.DeepEquals, []Mismatch{
+		{Kind: "feature_mismatch", Object: "example.org/setting app.readings.ttl", Table: "app.readings",
+			Changes: map[string]string{"example.org/silent": "changed"},
+			Message: "feature mismatch example.org/setting app.readings.ttl: example.org/silent changed"},
+		{Kind: "feature_mismatch", Object: "example.org/policy app.users.tenant",
+			Changes: map[string]string{"example.org/effect": "changes who may read the rows"},
+			Message: "feature mismatch example.org/policy app.users.tenant: example.org/effect changes who may read the rows"},
+		{Kind: "feature_mismatch", Object: "example.org/schedule app.hourly",
+			Changes: map[string]string{"example.org/described": "EVERY 1 HOUR -> EVERY 2 HOUR"},
+			Message: "feature mismatch example.org/schedule app.hourly: example.org/described EVERY 1 HOUR -> EVERY 2 HOUR"},
+	})
+}
