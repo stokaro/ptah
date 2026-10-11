@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
@@ -144,8 +145,12 @@ func enumRepresented(removal removedLine, _, exportedDB *schemamodel.Database) b
 	})
 }
 
+// extensionRepresented reports whether the export holds the extension the
+// removed annotation named, in the common model or as the extension owner's
+// object.
 func extensionRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
-	return slices.ContainsFunc(exportedDB.Extensions, func(extension schemamodel.Extension) bool {
+	_, owned, err := exportedDB.FeatureObjects.Get(pgextension.Ref(removal.values["name"]))
+	return (owned && err == nil) || slices.ContainsFunc(exportedDB.Extensions, func(extension schemamodel.Extension) bool {
 		return extension.Name == removal.values["name"]
 	})
 }

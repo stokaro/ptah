@@ -22,6 +22,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/ydbsource"
 )
@@ -73,11 +74,13 @@ func (ctx *renderContext) captureFeatureObjects() error {
 		return err
 	}
 	ctx.changefeedsByTable = make(map[objectidentity.Key][]ydbschema.ChangefeedSpec)
+	ctx.captureCommonExtensions()
 	for _, object := range objects {
 		if err := ctx.captureFeatureObject(object, parents); err != nil {
 			return err
 		}
 	}
+	ctx.sortExtensions()
 	return nil
 }
 
@@ -114,6 +117,9 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 	}
 	if policy, ok := object.Value.(*pgpolicy.DesiredPolicy); ok {
 		return ctx.capturePolicy(object, policy)
+	}
+	if extension, ok := object.Value.(*pgextension.DesiredExtension); ok {
+		return ctx.captureExtension(object, extension)
 	}
 	if policy, ok := object.Value.(*mssqlschema.DesiredSecurityPolicy); ok {
 		return ctx.captureSecurityPolicy(object, policy)

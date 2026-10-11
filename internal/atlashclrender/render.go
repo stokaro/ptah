@@ -218,6 +218,9 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if err := r.captureRowSecurity(); err != nil {
 		return Result{}, err
 	}
+	if err := r.captureExtensions(); err != nil {
+		return Result{}, err
+	}
 	r.render()
 	return Result{
 		Data:         []byte(r.builder.String()),
@@ -234,6 +237,7 @@ type renderer struct {
 	hypertables            []hypertableBlock
 	aggregates             []aggregateBlock
 	policies               []policyBlock
+	extensions             []extensionBlock
 	tableStates            map[string]*pgpolicy.DesiredTableState
 	db                     *schemamodel.Database
 	dialect                string
@@ -460,9 +464,9 @@ func (r *renderer) schemaFor(schema string) string {
 // System-owned placement is rendered as a string rather than a schema block
 // reference by [renderer.renderExtensions], so preserving it cannot synthesize
 // a CREATE SCHEMA the server refuses.
-func (r *renderer) extensionSchemaFor(extension schemamodel.Extension) string {
-	if extension.Schema != "" {
-		return extension.Schema
+func (r *renderer) extensionSchemaFor(extension extensionBlock) string {
+	if extension.schema != "" {
+		return extension.schema
 	}
 	return r.defaultSchema
 }

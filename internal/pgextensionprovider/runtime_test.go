@@ -70,11 +70,11 @@ func TestConvertExtensions(t *testing.T) {
 		want     schemaext.Value
 	}{
 		{name: "a declaration", from: schemaext.Desired, to: schemaext.Observed,
-			value: &pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true},
-			want:  &pgextension.ObservedExtension{Schema: "ext", Version: "1.6", Comment: new("trigrams")}},
+			value: &pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true, Provides: []string{"word_similarity"}},
+			want:  &pgextension.ObservedExtension{Schema: "ext", Version: "1.6", Comment: new("trigrams"), Provides: []string{"word_similarity"}}},
 		{name: "an observation", from: schemaext.Observed, to: schemaext.Desired,
 			value: &pgextension.ObservedExtension{Schema: "public", Version: "1.5", Relocatable: true, Provides: []string{"similarity"}},
-			want:  &pgextension.DesiredExtension{Schema: "public", Version: "1.5", IfNotExists: true}},
+			want:  &pgextension.DesiredExtension{Schema: "public", Version: "1.5", IfNotExists: true, Provides: []string{"similarity"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

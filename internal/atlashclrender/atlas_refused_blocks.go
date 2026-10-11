@@ -327,19 +327,19 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 // [schemamodel.Extension.Provides] and the name scan can answer for it:
 // citext_pattern_ops, gin__int_ops, gist__intbig_ops, gin_trgm_ops,
 // gist_trgm_ops.
-func (r *renderer) omitRefusedExtension(path string, extension schemamodel.Extension) bool {
+func (r *renderer) omitRefusedExtension(path string, extension extensionBlock) bool {
 	return r.omitRefused(path, blockExtension, func() blockDependency {
 		// The extension's own name AND everything it supplies: a document that
 		// depends on `isn` says `isbn`, never `isn`. Provides is empty for
 		// sources with no catalog behind them, and the check then degenerates to
 		// the label, which is the most that can be known about such a source.
-		if r.documentNamesAny(append([]string{extension.Name}, extension.Provides...)) {
+		if r.documentNamesAny(append([]string{extension.name}, extension.provides...)) {
 			return blockDependency{
 				because: "another object in this document depends on it",
 				cost:    "leave a reference to an object nothing declares",
 			}
 		}
-		if r.documentRequiresExtension(extension.Name) {
+		if r.documentRequiresExtension(extension.name) {
 			return blockDependency{
 				because: "the catalog resolved an index or constraint in this document to an operator class" +
 					" or access method it supplies",

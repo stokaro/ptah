@@ -44,7 +44,7 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-616 fields are reachable from the desired schema, and each one carries
+617 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
@@ -54,7 +54,7 @@ exactly one disposition.
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 29 | identifies the source text the declaration was read from |
-| `export` | 11 | what a generated document carries, or reports that it cannot |
+| `export` | 12 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
 ### Fields that should render and do not
@@ -140,6 +140,7 @@ None.
 | `mysqlschema.DesiredTable.Engine` | `ddl` | — |
 | `pgextension.DesiredExtension.Comment` | `ddl` | — |
 | `pgextension.DesiredExtension.IfNotExists` | `ddl` | — |
+| `pgextension.DesiredExtension.Provides` | `export` | what a read reported the extension supplies; the Atlas-compatible HCL export keeps a block the document names through one, and nothing renders or compares it |
 | `pgextension.DesiredExtension.Schema` | `ddl` | — |
 | `pgextension.DesiredExtension.Version` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Command` | `ddl` | — |

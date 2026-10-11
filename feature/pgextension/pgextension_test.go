@@ -121,7 +121,8 @@ func TestObjects_FailurePath(t *testing.T) {
 }
 
 // TestObservedExtension_Desired pins the declaration that keeps an installed
-// extension as it is, which a rollback creates again with IF NOT EXISTS.
+// extension as it is, which a rollback creates again with IF NOT EXISTS, with
+// the members the read reported for an export to read.
 func TestObservedExtension_Desired(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -131,7 +132,7 @@ func TestObservedExtension_Desired(t *testing.T) {
 		{
 			name:     "with a comment",
 			observed: &pgextension.ObservedExtension{Schema: "ext", Version: "1.6", Relocatable: true, Comment: new("trigrams"), Provides: []string{"similarity"}},
-			want:     &pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true},
+			want:     &pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true, Provides: []string{"similarity"}},
 		},
 		{
 			name:     "without one",
@@ -174,9 +175,16 @@ func TestExtension_EqualAndCopy(t *testing.T) {
 		reordered.Provides = []string{"a", "b"}
 		other := observed.Copy()
 		other.Provides = []string{"a", "c"}
+		carried := observed.Desired()
+		carriedReordered := carried.Copy()
+		carriedReordered.Provides = []string{"a", "b"}
+		carriedOther := carried.Copy()
+		carriedOther.Provides = []string{"a", "c"}
 
 		c.Assert(observed.Equal(reordered), qt.IsTrue)
 		c.Assert(observed.Equal(other), qt.IsFalse)
+		c.Assert(carried.Equal(carriedReordered), qt.IsTrue)
+		c.Assert(carried.Equal(carriedOther), qt.IsFalse)
 	})
 
 	t.Run("a missing comment is not an empty one", func(t *testing.T) {
@@ -196,8 +204,13 @@ func TestExtension_EqualAndCopy(t *testing.T) {
 		*copied.Comment = "changed"
 		copied.Provides[0] = "changed"
 
+		declaredCopy := observed.Desired()
+		declaredOriginal := declaredCopy.Copy()
+		declaredCopy.Provides[0] = "changed"
+
 		c.Assert(*observed.Comment, qt.Equals, "x")
 		c.Assert(observed.Provides[0], qt.Equals, "b")
+		c.Assert(declaredOriginal.Provides[0], qt.Equals, "b")
 		c.Assert((*pgextension.ObservedExtension)(nil).Copy(), qt.IsNil)
 		c.Assert((*pgextension.DesiredExtension)(nil).Copy(), qt.IsNil)
 	})

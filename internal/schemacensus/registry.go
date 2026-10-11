@@ -76,6 +76,7 @@ var registry = []Entry{
 	{Field: "mssqlschema.Predicate.Type", Disposition: DDL},
 	{Field: "pgextension.DesiredExtension.Comment", Disposition: DDL},
 	{Field: "pgextension.DesiredExtension.IfNotExists", Disposition: DDL},
+	{Field: "pgextension.DesiredExtension.Provides", Disposition: Export, Reason: "what a read reported the extension supplies; the Atlas-compatible HCL export keeps a block the document names through one, and nothing renders or compares it"},
 	{Field: "pgextension.DesiredExtension.Schema", Disposition: DDL},
 	{Field: "pgextension.DesiredExtension.Version", Disposition: DDL},
 	{Field: "pgpolicy.DesiredPolicy.Command", Disposition: DDL},

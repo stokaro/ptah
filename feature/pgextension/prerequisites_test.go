@@ -68,8 +68,8 @@ func TestProvidedCapabilities(t *testing.T) {
 func TestDesiredExtension_Observed(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert((&pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true}).Observed(), qt.DeepEquals,
-		&pgextension.ObservedExtension{Schema: "ext", Version: "1.6", Comment: new("trigrams")})
+	c.Assert((&pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true, Provides: []string{"similarity"}}).Observed(),
+		qt.DeepEquals, &pgextension.ObservedExtension{Schema: "ext", Version: "1.6", Comment: new("trigrams"), Provides: []string{"similarity"}})
 	c.Assert((&pgextension.DesiredExtension{}).Observed(), qt.DeepEquals, &pgextension.ObservedExtension{})
 	c.Assert((*pgextension.DesiredExtension)(nil).Observed(), qt.IsNil)
 }

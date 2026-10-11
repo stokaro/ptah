@@ -2339,6 +2339,10 @@ without it. `Subject` names an extension in a plan step's effects under the
 common `objectidentity.KindExtension`, so another owner can order its steps
 after the extension without importing this package.
 
+A declaration made from a read also carries the read's `Provides`. No
+statement writes it and no comparison reads it; an export uses it to keep an
+extension a document still depends on.
+
 `Change` holds both operands and what the comparison established: the schema a
 surviving extension moves to, resolved under the target's default, and whether
 its comment changes. A version update needs no record of its own. `Operation`
