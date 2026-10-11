@@ -1354,9 +1354,27 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgextension-extensionplan",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension/extensionplan",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgextension-extensionrender",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgextension/extensionrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgextension-extensionreport",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension/extensionreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgextension-extensionreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension/extensionreverse",
       "claimed_by": null
     },
     {

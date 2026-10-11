@@ -136,7 +136,10 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgextension`
 - `ptah.run/feature/pgextension/extensioncompare`
 - `ptah.run/feature/pgextension/extensionconvert`
+- `ptah.run/feature/pgextension/extensionplan`
 - `ptah.run/feature/pgextension/extensionrender`
+- `ptah.run/feature/pgextension/extensionreport`
+- `ptah.run/feature/pgextension/extensionreverse`
 - `ptah.run/feature/pgpolicy`
 - `ptah.run/feature/pgpolicy/policycompare`
 - `ptah.run/feature/pgpolicy/policyconvert`
@@ -2350,6 +2353,18 @@ observation it predicts and an observation to the declaration that keeps it. A
 schema (`schemaext.SchemaPlacement`), and installing timescaledb provides
 TimescaleDB's capabilities (`schemaext.CapabilityProvider`). The provider maps
 the `extension` not-described kind onto the model.
+
+`feature/pgextension/extensionplan` plans every operation in
+`featureplan.PhasePrerequisite`: an installation and the comment it states, a
+drop with the warning notes, and for a surviving extension the version, then
+the schema, then the comment. A lower version and a move of an extension that
+is not relocatable are refused, as the server refuses them, and so are an
+installation schema and every change of an installed extension on CockroachDB
+and Spanner. `feature/pgextension/extensionreverse` drops what the forward
+plan installed, installs again what it dropped, and moves an extension and its
+comment back; a version stays where the forward plan put it, and the reversal
+says so in a limitation. `feature/pgextension/extensionreport` counts
+extensions under the `extensions` metric.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
 another object. A synonym is one feature object of `Kind`, identified by its
