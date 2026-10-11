@@ -1,10 +1,12 @@
-package lint
+package mysqllint
 
 import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintkit/mytype"
 )
 
 // A MySQL ENUM or SET column is defined by an ordered list of members, and
@@ -45,93 +47,29 @@ import (
 //
 // Precision over volume: a rule here fires only when the starting list is
 // known, which means the run supplied the schema state the migration starts
-// from ([Options.Baseline]). Without it the statement is still reported by
-// the generic DS103 and MY101, and [Analysis.UnmetInputs] names these rules
-// as the ones that could have said more.
-
-// memberKind is which of the two list-valued MySQL types a column has.
-type memberKind int
-
-const (
-	memberEnum memberKind = iota + 1
-	memberSet
-)
-
-func (k memberKind) String() string {
-	if k == memberSet {
-		return "SET"
-	}
-	return "ENUM"
-}
-
-// memberList is the ordered members of an ENUM or SET, with the quoting and
-// escapes of the DDL resolved so two spellings of one value compare equal.
-type memberList struct {
-	kind    memberKind
-	members []string
-}
+// from. Without it the statement is still reported by the generic DS103 and
+// MY101, and migration lint names these rules as the ones that could have
+// said more.
 
 // parseMemberSpelling reads the type as the server prints it in
 // information_schema.COLUMN_TYPE -- enum('a','b','c') or set('x','y') --
 // which is what the dev-database read puts in [lintext.BaselineColumn.ColumnType].
 // Anything else, including an empty spelling, is not a member list.
-func parseMemberSpelling(spelling string) (memberList, bool) {
+func parseMemberSpelling(spelling string) (mytype.MemberList, bool) {
 	text := strings.TrimSpace(spelling)
 	open := strings.IndexByte(text, '(')
 	if open < 0 || !strings.HasSuffix(text, ")") {
-		return memberList{}, false
+		return mytype.MemberList{}, false
 	}
-	kind, ok := memberKindOf(text[:open])
+	kind, ok := mytype.MemberKindOf(text[:open])
 	if !ok {
-		return memberList{}, false
+		return mytype.MemberList{}, false
 	}
 	members, ok := parseQuotedList(text[open+1 : len(text)-1])
 	if !ok {
-		return memberList{}, false
+		return mytype.MemberList{}, false
 	}
-	return memberList{kind: kind, members: members}, true
-}
-
-// memberListAt reads ENUM(...) or SET(...) from the statement words starting
-// at words[i], where the type keyword is expected. It returns the list and the
-// index of the word after the closing parenthesis.
-func memberListAt(words []string, i int) (memberList, int, bool) {
-	if i+1 >= len(words) || words[i+1] != "(" {
-		return memberList{}, i, false
-	}
-	kind, ok := memberKindOf(words[i])
-	if !ok {
-		return memberList{}, i, false
-	}
-	var members []string
-	j := i + 2
-	for j < len(words) {
-		word := words[j]
-		if word == ")" {
-			return memberList{kind: kind, members: members}, j + 1, len(members) > 0
-		}
-		if word == "," {
-			j++
-			continue
-		}
-		value, ok := unquoteMember(word)
-		if !ok {
-			return memberList{}, i, false
-		}
-		members = append(members, value)
-		j++
-	}
-	return memberList{}, i, false
-}
-
-func memberKindOf(keyword string) (memberKind, bool) {
-	switch strings.ToUpper(strings.TrimSpace(keyword)) {
-	case "ENUM":
-		return memberEnum, true
-	case "SET":
-		return memberSet, true
-	}
-	return 0, false
+	return mytype.MemberList{Kind: kind, Members: members}, true
 }
 
 // parseQuotedList splits the inside of enum(...) as the server prints it:
@@ -148,7 +86,7 @@ func parseQuotedList(inside string) ([]string, bool) {
 		if end < 0 {
 			return nil, false
 		}
-		value, ok := unquoteMember(rest[:end+1])
+		value, ok := mytype.UnquoteMember(rest[:end+1])
 		if !ok {
 			return nil, false
 		}
@@ -184,32 +122,6 @@ func quotedMemberEnd(s string) int {
 	return -1
 }
 
-// unquoteMember resolves one single-quoted DDL literal to the value the
-// server stores. MySQL trims trailing spaces from a member when the column is
-// created, so the value is compared trimmed the same way; the server's own
-// spelling of the type never carries them.
-func unquoteMember(word string) (string, bool) {
-	if len(word) < 2 || word[0] != '\'' || word[len(word)-1] != '\'' {
-		return "", false
-	}
-	inner := word[1 : len(word)-1]
-	var b strings.Builder
-	for i := 0; i < len(inner); i++ {
-		c := inner[i]
-		switch {
-		case c == '\\' && i+1 < len(inner):
-			i++
-			b.WriteByte(inner[i])
-		case c == '\'' && i+1 < len(inner) && inner[i+1] == '\'':
-			i++
-			b.WriteByte('\'')
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return strings.TrimRight(b.String(), " "), true
-}
-
 // memberTransition is what a new list does to an old one, in the terms the
 // server charges for.
 type memberTransition struct {
@@ -232,20 +144,20 @@ type memberTransition struct {
 // and insertion are three separate facts because a migration can do any
 // combination, and the diagnostic names each one the author has to answer
 // for.
-func compareMembers(old, updated memberList) memberTransition {
-	transition := memberTransition{oldCount: len(old.members), newCount: len(updated.members)}
-	newIndex := make(map[string]int, len(updated.members))
-	for i, member := range updated.members {
+func compareMembers(old, updated mytype.MemberList) memberTransition {
+	transition := memberTransition{oldCount: len(old.Members), newCount: len(updated.Members)}
+	newIndex := make(map[string]int, len(updated.Members))
+	for i, member := range updated.Members {
 		newIndex[member] = i
 	}
-	oldIndex := make(map[string]int, len(old.members))
-	for i, member := range old.members {
+	oldIndex := make(map[string]int, len(old.Members))
+	for i, member := range old.Members {
 		oldIndex[member] = i
 	}
 
 	lastSurvivor := -1
 	previous := -1
-	for _, member := range old.members {
+	for _, member := range old.Members {
 		position, kept := newIndex[member]
 		if !kept {
 			transition.removed = append(transition.removed, member)
@@ -259,7 +171,7 @@ func compareMembers(old, updated memberList) memberTransition {
 			lastSurvivor = position
 		}
 	}
-	for i, member := range updated.members {
+	for i, member := range updated.Members {
 		if _, existed := oldIndex[member]; existed {
 			continue
 		}
@@ -301,8 +213,8 @@ func setStorageBytes(members int) int {
 	}
 }
 
-func storageBytes(kind memberKind, members int) int {
-	if kind == memberSet {
+func storageBytes(kind mytype.MemberKind, members int) int {
+	if kind == mytype.Set {
 		return setStorageBytes(members)
 	}
 	return enumStorageBytes(members)
@@ -318,13 +230,13 @@ type memberChangeSite struct {
 	// renames it to, or oldName again for MODIFY.
 	oldName string
 	newName string
-	updated memberList
+	updated mytype.MemberList
 }
 
 // memberChangeSites finds every clause in a file that assigns a member list.
 // A clause whose new type is not ENUM or SET is not a site: what such a column
 // was before the clause is DS103's question, not this file's.
-func memberChangeSites(file *File) []memberChangeSite {
+func memberChangeSites(file *lintkit.File) []memberChangeSite {
 	var sites []memberChangeSite
 	for index := range file.Statements {
 		stmt := &file.Statements[index]
@@ -332,7 +244,7 @@ func memberChangeSites(file *File) []memberChangeSite {
 		if !lintkit.IsAlterTable(w) {
 			continue
 		}
-		table := lintkit.AlterTableReference(w, stmt.sourceWords)
+		table := lintkit.AlterTableReference(w, stmt.SourceWords)
 		for _, i := range lintkit.ClauseStarts(w) {
 			if i >= len(w) || (w[i] != "MODIFY" && w[i] != "CHANGE") {
 				continue
@@ -346,17 +258,17 @@ func memberChangeSites(file *File) []memberChangeSite {
 			if j >= len(w) || !lintkit.IdentLike(w[j]) {
 				continue
 			}
-			oldName := lintkit.SourceWordAt(w, stmt.sourceWords, j)
+			oldName := lintkit.SourceWordAt(w, stmt.SourceWords, j)
 			newName := oldName
 			j++
 			if change {
 				if j >= len(w) || !lintkit.IdentLike(w[j]) {
 					continue
 				}
-				newName = lintkit.SourceWordAt(w, stmt.sourceWords, j)
+				newName = lintkit.SourceWordAt(w, stmt.SourceWords, j)
 				j++
 			}
-			updated, _, ok := memberListAt(w, j)
+			updated, _, ok := mytype.MemberListAt(w, j)
 			if !ok {
 				continue
 			}
@@ -375,7 +287,7 @@ func memberChangeSites(file *File) []memberChangeSite {
 // memberChangeStatements is the [Rule.BaselineSubjects] predicate the family
 // shares: every statement with a site is one the rules need the starting
 // state for.
-func memberChangeStatements(file *File) []int {
+func memberChangeStatements(file *lintkit.File) []int {
 	var indexes []int
 	seen := -1
 	for _, site := range memberChangeSites(file) {
@@ -394,22 +306,22 @@ func memberChangeStatements(file *File) []int {
 // VARCHAR to ENUM is a type change, which DS103 already reports.
 type resolvedMemberChange struct {
 	site       memberChangeSite
-	old        memberList
+	old        mytype.MemberList
 	transition memberTransition
 }
 
-func resolveMemberChanges(file *File) []resolvedMemberChange {
+func resolveMemberChanges(file *lintkit.File) []resolvedMemberChange {
 	if !file.IsUp {
 		return nil
 	}
 	var resolved []resolvedMemberChange
 	for _, site := range memberChangeSites(file) {
-		column, ok := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
+		column, ok := file.Baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
 		if !ok {
 			continue
 		}
 		old, ok := parseMemberSpelling(column.ColumnType)
-		if !ok || old.kind != site.updated.kind {
+		if !ok || old.Kind != site.updated.Kind {
 			continue
 		}
 		resolved = append(resolved, resolvedMemberChange{
@@ -422,32 +334,14 @@ func resolveMemberChanges(file *File) []resolvedMemberChange {
 }
 
 // memberFinding builds one finding for a resolved change.
-func memberFinding(file *File, change resolvedMemberChange, code, title, message string) Finding {
-	stmt := &file.Statements[change.site.statement]
-	subject := Subject{
-		Kind:     SubjectColumn,
+func memberFinding(change resolvedMemberChange, message string) lintext.Violation {
+	subject := lintext.Subject{
+		Kind:     lintext.SubjectColumn,
 		Name:     change.site.newName,
 		Parent:   change.site.table.Name,
-		DataType: strings.ToLower(change.site.updated.kind.String()),
+		DataType: strings.ToLower(change.site.updated.Kind.String()),
 	}
-	return Finding{
-		Rule:     code,
-		Title:    title,
-		Severity: SeverityWarning,
-		File:     file.Path,
-		Line:     stmt.Line,
-		Message:  message,
-		Context:  statementFindingContext(change.site.statement, subject),
-	}
-}
-
-// quoteMembers spells members back the way the DDL does, for a message.
-func quoteMembers(members []string) string {
-	quoted := make([]string, 0, len(members))
-	for _, member := range members {
-		quoted = append(quoted, "'"+strings.ReplaceAll(member, "'", "''")+"'")
-	}
-	return strings.Join(quoted, ", ")
+	return lintext.Violation{Statement: change.site.statement, Message: message, Subjects: []lintext.Subject{subject}}
 }
 
 func (c resolvedMemberChange) column() string {
@@ -469,9 +363,9 @@ const memberCopyConsequence = "both MySQL and MariaDB refuse ALGORITHM=INSTANT a
 // mysqlMemberRules is the family: four facts about an ENUM list and the same
 // four about a SET list, one rule each, so a policy can pick which of them
 // to enforce and a reader sees which one a migration did.
-func mysqlMemberRules() []Rule {
-	var rules []Rule
-	for _, kind := range []memberKind{memberEnum, memberSet} {
+func mysqlMemberRules() []lintkit.Rule {
+	var rules []lintkit.Rule
+	for _, kind := range []mytype.MemberKind{mytype.Enum, mytype.Set} {
 		rules = append(rules,
 			memberRemovedRule(kind),
 			memberReorderedRule(kind),
@@ -485,36 +379,33 @@ func mysqlMemberRules() []Rule {
 // memberRuleCodes are the Atlas identifiers, kept because the analysis is the
 // same one Atlas documents under them (the identifier convention in
 // internal/lintcatalog).
-func memberRuleCode(kind memberKind, offset int) string {
-	if kind == memberSet {
+func memberRuleCode(kind mytype.MemberKind, offset int) string {
+	if kind == mytype.Set {
 		return fmt.Sprintf("MY12%d", offset)
 	}
 	return fmt.Sprintf("MY11%d", offset)
 }
 
-func memberRule(kind memberKind, offset int, title string, check func(resolvedMemberChange) (bool, string)) Rule {
+func memberRule(kind mytype.MemberKind, offset int, title string, check func(resolvedMemberChange) (bool, string)) lintkit.Rule {
 	code := memberRuleCode(kind, offset)
-	return Rule{
-		Code:     code,
-		Title:    title,
-		Severity: SeverityWarning,
-		Dialects: []string{"mysql", "mariadb"},
-		// The generic findings say "a column type changed" and "this ALTER
-		// usually rebuilds the table". Once this rule has said which member
-		// moved and that the server copies the table for it, those two add
-		// nothing an operator can act on, and repeating the statement three
-		// times reads as three hazards where there is one.
-		Subsumes:         []string{"DS103", "MY101"},
-		Input:            InputBaselineSchema,
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     code,
+			Title:    title,
+			Severity: lintext.Warning,
+			Targets:  []string{"mysql", "mariadb"},
+			Subsumes: []string{"DS103", "MY101"},
+			Input:    lintext.InputBaselineSchema,
+		},
 		BaselineSubjects: memberChangeStatements,
-		CheckFile: func(file *File) []Finding {
-			var findings []Finding
+		File: func(file *lintkit.File) []lintext.Violation {
+			var findings []lintext.Violation
 			for _, change := range resolveMemberChanges(file) {
-				if change.old.kind != kind {
+				if change.old.Kind != kind {
 					continue
 				}
 				if hit, message := check(change); hit {
-					findings = append(findings, memberFinding(file, change, code, title, message))
+					findings = append(findings, memberFinding(change, message))
 				}
 			}
 			return findings
@@ -522,7 +413,7 @@ func memberRule(kind memberKind, offset int, title string, check func(resolvedMe
 	}
 }
 
-func memberRemovedRule(kind memberKind) Rule {
+func memberRemovedRule(kind mytype.MemberKind) lintkit.Rule {
 	return memberRule(kind, 0, kind.String()+" member removed", func(c resolvedMemberChange) (bool, string) {
 		if len(c.transition.removed) == 0 {
 			return false, ""
@@ -533,14 +424,14 @@ func memberRemovedRule(kind memberKind) Rule {
 				"SQL mode both servers default to, and is stored as the empty value when strict mode is off. "+
 				"Keep the member and stop writing it, or move those rows to a surviving member first and run "+
 				"the change through an online-DDL tool such as gh-ost or pt-online-schema-change",
-			c.clause(), kind, lintkit.Plural(len(c.transition.removed)), quoteMembers(c.transition.removed),
+			c.clause(), kind, lintkit.Plural(len(c.transition.removed)), mytype.QuoteMembers(c.transition.removed),
 			c.column(), c.transition.newCount-len(c.transition.appended)-len(c.transition.inserted),
 			c.transition.oldCount, memberCopyConsequence,
 		)
 	})
 }
 
-func memberReorderedRule(kind memberKind) Rule {
+func memberReorderedRule(kind mytype.MemberKind) lintkit.Rule {
 	return memberRule(kind, 1, kind.String()+" members reordered", func(c resolvedMemberChange) (bool, string) {
 		if !c.transition.reordered {
 			return false, ""
@@ -548,13 +439,13 @@ func memberReorderedRule(kind memberKind) Rule {
 		return true, fmt.Sprintf(
 			"%s reorders the %s members of %s (%s becomes %s); the server stores each value by its position "+
 				"in the list, so every row is renumbered and %s. Keep the existing order and put new members at the end",
-			c.clause(), kind, c.column(), quoteMembers(c.old.members), quoteMembers(c.site.updated.members),
+			c.clause(), kind, c.column(), mytype.QuoteMembers(c.old.Members), mytype.QuoteMembers(c.site.updated.Members),
 			memberCopyConsequence,
 		)
 	})
 }
 
-func memberInsertedRule(kind memberKind) Rule {
+func memberInsertedRule(kind mytype.MemberKind) lintkit.Rule {
 	return memberRule(kind, 2, kind.String()+" member inserted before the end", func(c resolvedMemberChange) (bool, string) {
 		if len(c.transition.inserted) == 0 {
 			return false, ""
@@ -563,15 +454,15 @@ func memberInsertedRule(kind memberKind) Rule {
 			"%s inserts %s member%s %s into %s ahead of existing members; the server stores each value by its "+
 				"position in the list, so every member after the insertion is renumbered and %s. "+
 				"Append new members at the end instead, which both servers apply in place",
-			c.clause(), kind, lintkit.Plural(len(c.transition.inserted)), quoteMembers(c.transition.inserted), c.column(),
+			c.clause(), kind, lintkit.Plural(len(c.transition.inserted)), mytype.QuoteMembers(c.transition.inserted), c.column(),
 			memberCopyConsequence,
 		)
 	})
 }
 
-func memberStorageRule(kind memberKind) Rule {
+func memberStorageRule(kind mytype.MemberKind) lintkit.Rule {
 	title := "ENUM crosses the 255-member storage boundary"
-	if kind == memberSet {
+	if kind == mytype.Set {
 		title = "SET crosses a storage-size boundary"
 	}
 	return memberRule(kind, 3, title, func(c resolvedMemberChange) (bool, string) {
@@ -581,7 +472,7 @@ func memberStorageRule(kind memberKind) Rule {
 			return false, ""
 		}
 		boundary := "255 members, where an ENUM value grows from one byte to two"
-		if kind == memberSet {
+		if kind == mytype.Set {
 			boundary = "a multiple of eight members, where a SET value grows by a byte"
 		}
 		return true, fmt.Sprintf(

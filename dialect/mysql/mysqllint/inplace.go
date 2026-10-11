@@ -1,22 +1,24 @@
-package lint
+package mysqllint
 
 import (
 	"fmt"
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintkit/mytype"
 )
 
-// The cost rules in this package fire where a copy or a rewrite is
-// established, and stay quiet where the server applies the change in place.
-// Quiet is correct, but from the report it reads the same as "the rule did
-// not look", and DS103 and MY101 still describe the statement as one that may
-// truncate values or rebuild the table. MY130P in this file is the other half
-// of the measurement for the MySQL family: an info-severity finding that says
-// the clause was judged and applied in place, and how, for a statement whose
-// every clause the comparison could judge (stokaro/ptah#2956). The PostgreSQL
-// owner reports the same for PostgreSQL as PG301P.
+// The MySQL cost rules fire where a copy is established, and stay quiet where
+// the server applies the change in place. Quiet is correct, but from the
+// report it reads the same as "the rule did not look", and DS103 and MY101
+// still describe the statement as one that may truncate values or rebuild the
+// table. MY130P in this file is the other half of the measurement for the
+// MySQL family: an info-severity finding that says the clause was judged and
+// applied in place, and how, for a statement whose every clause the
+// comparison could judge (stokaro/ptah#2956). The PostgreSQL owner reports
+// the same for PostgreSQL as PG301P.
 //
 // The type half is the measurement in mysqlcost.go. The attribute half was
 // measured on MySQL 8.4.11 and MariaDB 11.8.9 by asking for ALGORITHM=INSTANT
@@ -42,56 +44,39 @@ import (
 // cover. The rule reads the schema state the version starts from and stays
 // silent without it, named as unmet.
 
-// inPlaceRules is the MySQL-family half of the in-place family; the
-// PostgreSQL half, PG301P, is the PostgreSQL owner's.
-func inPlaceRules() []Rule {
-	return []Rule{mysqlInPlaceRule()}
-}
-
 // mysqlInPlaceStatements lists the statements MY130P judges: every MODIFY
 // or CHANGE with a type, and every CONVERT TO CHARACTER SET.
-func mysqlInPlaceStatements(file *File) []int {
+func mysqlInPlaceStatements(file *lintkit.File) []int {
 	indexes := append(columnChangeStatements(file), charsetConversionStatements(file)...)
 	slices.Sort(indexes)
 	return slices.Compact(indexes)
 }
 
-func mysqlInPlaceRule() Rule {
-	return Rule{
-		Code:             "MY130P",
-		Title:            "column change applied in place",
-		Severity:         SeverityInfo,
-		Dialects:         mysqlFamily,
-		Subsumes:         []string{"DS103", "MY101"},
-		Input:            InputBaselineSchema,
+func mysqlInPlaceRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:     "MY130P",
+			Title:    "column change applied in place",
+			Severity: lintext.Info,
+			Targets:  lintkit.MySQLFamily,
+			Subsumes: []string{"DS103", "MY101"},
+			Input:    lintext.InputBaselineSchema,
+		},
 		BaselineSubjects: mysqlInPlaceStatements,
-		CheckFile: func(file *File) []Finding {
+		File: func(file *lintkit.File) []lintext.Violation {
 			if !file.IsUp {
 				return nil
 			}
-			var findings []Finding
+			var findings []lintext.Violation
 			for _, index := range mysqlInPlaceStatements(file) {
 				message, ok := mysqlInPlaceMessage(file, index)
 				if !ok {
 					continue
 				}
-				findings = append(findings, inPlaceFinding(file, index, "MY130P", "column change applied in place", message))
+				findings = append(findings, lintext.Violation{Statement: index, Message: message})
 			}
 			return findings
 		},
-	}
-}
-
-func inPlaceFinding(file *File, index int, code, title, message string) Finding {
-	stmt := &file.Statements[index]
-	return Finding{
-		Rule:     code,
-		Title:    title,
-		Severity: SeverityInfo,
-		File:     file.Path,
-		Line:     stmt.Line,
-		Message:  message,
-		Context:  statementFindingContext(index),
 	}
 }
 
@@ -99,7 +84,7 @@ func inPlaceFinding(file *File, index int, code, title, message string) Finding 
 // clause must be a MODIFY or CHANGE whose type change is in place or absent
 // and whose attributes are all in the measured set, or the statement must
 // be one CONVERT TO CHARACTER SET whose every column converts in place.
-func mysqlInPlaceMessage(file *File, index int) (string, bool) {
+func mysqlInPlaceMessage(file *lintkit.File, index int) (string, bool) {
 	stmt := &file.Statements[index]
 	w := stmt.Words
 	clauses := lintkit.ClauseStarts(w)
@@ -108,7 +93,7 @@ func mysqlInPlaceMessage(file *File, index int) (string, bool) {
 	}
 	var sentences []string
 	for _, change := range resolveColumnChanges(file) {
-		if change.site.statement != index {
+		if change.site.Statement != index {
 			continue
 		}
 		sentence, ok := mysqlInPlaceClause(file, change)
@@ -125,7 +110,7 @@ func mysqlInPlaceMessage(file *File, index int) (string, bool) {
 
 // mysqlInPlaceConversion judges a CONVERT TO CHARACTER SET: every character
 // column must convert in place, or the table must hold none.
-func mysqlInPlaceConversion(file *File, index int) (string, bool) {
+func mysqlInPlaceConversion(file *lintkit.File, index int) (string, bool) {
 	for _, conversion := range resolveCharsetConversions(file) {
 		if conversion.site.statement != index {
 			continue
@@ -218,21 +203,21 @@ func skipDefaultValue(w []string, k, end int) int {
 // mysqlInPlaceClause judges one MODIFY or CHANGE clause: the type change,
 // the nullability, and the instant attributes, each with the measured
 // algorithm, or nothing when any part is outside the measurement.
-func mysqlInPlaceClause(file *File, change resolvedColumnChange) (string, bool) {
+func mysqlInPlaceClause(file *lintkit.File, change resolvedColumnChange) (string, bool) {
 	if change.transition.outcome != typeInPlace && change.transition.outcome != typeUnchanged {
 		return "", false
 	}
-	stmt := &file.Statements[change.site.statement]
+	stmt := &file.Statements[change.site.Statement]
 	w := stmt.Words
-	_, after, ok := parseMySQLTypeAt(w, change.site.typeStart, "")
+	_, after, ok := mytype.ParseAt(w, change.site.TypeStart, "")
 	if !ok {
 		return "", false
 	}
-	attrs := parseMySQLAttributes(w, after, clauseEndFrom(w, change.site.typeStart))
+	attrs := parseMySQLAttributes(w, after, lintkit.ClauseEndFrom(w, change.site.TypeStart))
 	if attrs.unknown {
 		return "", false
 	}
-	column, ok := file.baseline.Column(change.site.table.Normalized, lintkit.NormalizeIdent(change.site.oldName))
+	column, ok := file.Baseline.Column(change.site.Table.Normalized, lintkit.NormalizeIdent(change.site.OldName))
 	if !ok {
 		return "", false
 	}
@@ -246,7 +231,7 @@ func mysqlInPlaceClause(file *File, change resolvedColumnChange) (string, bool) 
 	case !attrs.notNull && column.NotNull:
 		parts = append(parts, "drops NOT NULL, which rebuilds the table in place with writes allowed (INPLACE, LOCK=NONE)")
 	}
-	if change.site.oldName != change.site.newName {
+	if change.site.OldName != change.site.NewName {
 		attrs.instant = append([]string{"name"}, attrs.instant...)
 	}
 	if len(attrs.instant) > 0 {
@@ -255,5 +240,5 @@ func mysqlInPlaceClause(file *File, change resolvedColumnChange) (string, bool) 
 	if len(parts) == 0 {
 		return "", false
 	}
-	return fmt.Sprintf("%s %s.%s %s", change.clause(), change.site.table.Name, change.site.newName, strings.Join(parts, "; ")), true
+	return fmt.Sprintf("%s %s.%s %s", change.clause(), change.site.Table.Name, change.site.NewName, strings.Join(parts, "; ")), true
 }

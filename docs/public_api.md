@@ -85,6 +85,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mysql/mysqlcompare`
 - `ptah.run/dialect/mysql/mysqlconvert`
 - `ptah.run/dialect/mysql/mysqldiff`
+- `ptah.run/dialect/mysql/mysqllint`
 - `ptah.run/dialect/mysql/mysqlplan`
 - `ptah.run/dialect/mysql/mysqlrender`
 - `ptah.run/dialect/mysql/mysqlreport`
@@ -353,6 +354,11 @@ anything else.
 publishes the PG and TX families and the online rules ON101 and ON103 as data,
 and `Service` checks them, rules that read the starting schema state included.
 The bundled runtime registers both on the postgres target.
+
+`dialect/mysql/mysqllint` is the MySQL owner's lint rules for MySQL and
+MariaDB: `Rules` publishes the MY family and the online rule ON102 as data, and
+`Service` checks them. The bundled runtime registers both on the mysql target;
+each rule names the targets it judges.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and

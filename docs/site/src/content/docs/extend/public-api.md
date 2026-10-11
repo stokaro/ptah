@@ -59,6 +59,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/sqlext` | The SQL schema contract: the syntax an owner adds to the shared grammar, matched as data and read in one call per document, or a target's whole grammar, read in one call per load. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
+| `dialect/mysql/mysqllint` | The MySQL owner's migration lint rules for MySQL and MariaDB, published as data and checked once per run. |
 | `dialect/postgres/pglint` | The PostgreSQL owner's migration lint rules, published as data and checked once per run. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |

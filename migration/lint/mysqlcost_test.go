@@ -651,7 +651,7 @@ func TestCostRules_RunOnlyForTheMySQLFamily(t *testing.T) {
 }
 
 // TestPrimaryKeyAddedRule_SaysWhatWasMeasured pins the MY132 wording to the
-// measurement in mysqlcost.go rather than to the older claim that the
+// measurement in the MySQL owner's mysqlcost.go rather than to the older claim that the
 // rebuild blocks DML.
 func TestPrimaryKeyAddedRule_SaysWhatWasMeasured(t *testing.T) {
 	c := qt.New(t)

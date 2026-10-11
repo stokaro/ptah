@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintkit/mytype"
 )
 
 // Making a nullable column NOT NULL is a change whose outcome the rows
@@ -75,25 +76,25 @@ type notNullSite struct {
 // the type and nowhere else.
 func notNullSites(file *File) []notNullSite {
 	var sites []notNullSite
-	for _, site := range columnChangeSites(file) {
-		stmt := &file.Statements[site.statement]
+	for _, site := range mytype.ChangeSites(file.contract) {
+		stmt := &file.Statements[site.Statement]
 		w := stmt.Words
-		_, after, ok := parseMySQLTypeAt(w, site.typeStart, "")
+		_, after, ok := mytype.ParseAt(w, site.TypeStart, "")
 		if !ok {
 			continue
 		}
 		clause := "MODIFY COLUMN"
-		if site.oldName != site.newName {
+		if site.OldName != site.NewName {
 			clause = "CHANGE COLUMN"
 		}
 		if file.dialect == "clickhouse" {
-			if w[site.typeStart] != "NULLABLE" {
-				sites = append(sites, notNullSite{statement: site.statement, table: site.table, column: site.oldName, clause: clause})
+			if w[site.TypeStart] != "NULLABLE" {
+				sites = append(sites, notNullSite{statement: site.Statement, table: site.Table, column: site.OldName, clause: clause})
 			}
 			continue
 		}
-		if lintkit.HasWordSeq(w[after:clauseEndFrom(w, site.typeStart)], "NOT", "NULL") {
-			sites = append(sites, notNullSite{statement: site.statement, table: site.table, column: site.oldName, clause: clause})
+		if lintkit.HasWordSeq(w[after:lintkit.ClauseEndFrom(w, site.TypeStart)], "NOT", "NULL") {
+			sites = append(sites, notNullSite{statement: site.Statement, table: site.Table, column: site.OldName, clause: clause})
 		}
 	}
 	for index := range file.Statements {
@@ -112,17 +113,6 @@ func notNullSites(file *File) []notNullSite {
 		}
 	}
 	return sites
-}
-
-// clauseEndFrom is the end of the clause a word index sits in.
-func clauseEndFrom(w []string, index int) int {
-	end := len(w)
-	for _, start := range lintkit.ClauseStarts(w) {
-		if start > index {
-			end = min(end, start-1)
-		}
-	}
-	return end
 }
 
 // sqlServerNotNullClause reads ALTER COLUMN name type ... NOT NULL, the SQL
@@ -210,5 +200,19 @@ func nullableMadeNotNullRule() Rule {
 			}
 			return findings
 		},
+	}
+}
+
+// costFinding is a finding of a cost rule on one statement and subject.
+func costFinding(file *File, statement int, code, title, message string, subject Subject) Finding {
+	stmt := &file.Statements[statement]
+	return Finding{
+		Rule:     code,
+		Title:    title,
+		Severity: SeverityWarning,
+		File:     file.Path,
+		Line:     stmt.Line,
+		Message:  message,
+		Context:  statementFindingContext(statement, subject),
 	}
 }

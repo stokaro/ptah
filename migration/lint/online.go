@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"ptah.run/internal/lintkit"
 )
 
 // The ON family is an allowlist, which is what separates it from every other
-// family here.
+// family. Its rules are the engine owners': ON101 and ON103 the PostgreSQL
+// owner's, ON102 the MySQL owner's. This file holds the mode they run in,
+// which is this package's policy.
 //
 // The rest of this package is a blocklist: a rule fires on a hazard somebody
 // wrote a rule for, and a statement nobody anticipated -- a DDL form no rule
@@ -47,15 +47,6 @@ import (
 // holds a conflicting lock the ALTER waits -- with every later reader and
 // writer of that table waiting behind it. That is why the apply-time mode
 // requires a lock timeout rather than only reading the SQL.
-
-// onlineRules is the part of the family this package checks: the
-// MySQL-family rule, which checks that the statement asked the SERVER to
-// decide, a stronger answer and a shorter list. The PostgreSQL owner checks
-// ON101, which reads the statement and decides, and ON103; the mode selects
-// all of them the same way, by their family prefix.
-func onlineRules() []Rule {
-	return []Rule{mysqlOnlineRule()}
-}
 
 // onlineModeDialects are the dialects the online mode covers, in the order a
 // refusal names them.
@@ -95,66 +86,3 @@ func ValidateOnlineDialect(dialect string) error {
 // OnlineFamily is the identifier prefix of the rules the online mode reports
 // under. The apply-time gate blocks on it when the mode is selected.
 const OnlineFamily = "ON"
-
-func mysqlOnlineRule() Rule {
-	rule := Rule{
-		Code:     "ON102",
-		Title:    "statement does not ask MySQL to apply it online",
-		Severity: SeverityError,
-		Dialects: []string{"mysql", "mariadb"},
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if mysqlStatementIsOnline(stmt.Words) {
-				return false, ""
-			}
-			return true, "this statement does not ask the server to apply it without blocking writes; " +
-				"add ALGORITHM=INPLACE, LOCK=NONE (or ALGORITHM=INSTANT) so the server refuses what it " +
-				"cannot do online, or apply it in a window where a table copy is acceptable"
-		},
-	}
-	rule.AppliesToDown = true
-	return rule
-}
-
-// mysqlStatementIsOnline reports whether the statement asks the server to
-// apply it without blocking writes.
-//
-// The MySQL family needs no clause table, which is the point of asking. A
-// server that cannot honor ALGORITHM=INPLACE with LOCK=NONE refuses the whole
-// statement with 1845 or 1846 -- measured on MySQL 8.4.6 and MariaDB 12.3.3
-// over eighteen ALTER TABLE forms -- so the guarantee is the server's rather
-// than a model of it.
-//
-// Statements that lock nothing that exists are online for the same reason they
-// are on PostgreSQL.
-func mysqlStatementIsOnline(words []string) bool {
-	if len(words) == 0 {
-		return true
-	}
-	if !lintkit.IsAlterTable(words) {
-		return lintkit.HasWordPrefix(words, "CREATE", "TABLE") ||
-			lintkit.HasWordPrefix(words, "CREATE", "DATABASE") ||
-			lintkit.HasWordPrefix(words, "CREATE", "SCHEMA")
-	}
-	algorithm := mysqlClauseValue(words, "ALGORITHM")
-	if algorithm == "INSTANT" {
-		// INSTANT touches the catalog and nothing else, so it needs no lock
-		// level beside it.
-		return true
-	}
-	return algorithm == "INPLACE" && mysqlClauseValue(words, "LOCK") == "NONE"
-}
-
-// mysqlClauseValue reads the value of a trailing `NAME=VALUE` clause, upper
-// cased, and is empty when the statement carries no such clause.
-//
-// The words arrive with punctuation as its own entry, so the value sits two
-// positions after the name.
-func mysqlClauseValue(words []string, name string) string {
-	for index, word := range words {
-		if word != name || index+2 >= len(words) || words[index+1] != "=" {
-			continue
-		}
-		return strings.ToUpper(words[index+2])
-	}
-	return ""
-}

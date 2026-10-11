@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/lintkit"
 )
 
 // aliasSuppressionRow is one (dialect, selector) pair and whether the generic
@@ -28,7 +30,7 @@ type aliasSuppressionRow struct {
 // built-in table goes through.
 var scopedAliases = map[string]atlasAlias{
 	"PG9XX": {dialects: []string{"postgres"}, rules: []string{"DS103"}},
-	"MY9XX": {dialects: mysqlFamily, rules: []string{"CD103"}},
+	"MY9XX": {dialects: lintkit.MySQLFamily, rules: []string{"CD103"}},
 	"XX9XX": {rules: []string{"BC101"}},
 }
 

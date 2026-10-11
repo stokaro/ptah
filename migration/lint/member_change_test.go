@@ -336,7 +336,7 @@ func TestMemberRules_SubsumeTheGenericFindings(t *testing.T) {
 // TestMemberRules_LeaveTypeChangesToTheColumnTypeRule keeps the family to
 // the question it can answer. A column becoming a list, or a list becoming
 // the other kind of list, is a type change with no member transition to
-// describe, and MY130 reports it as the copy it is (mysqlcost.go).
+// describe, and MY130 reports it as the copy it is (the MySQL owner's mysqlcost.go).
 func TestMemberRules_LeaveTypeChangesToTheColumnTypeRule(t *testing.T) {
 	tests := []struct {
 		name       string

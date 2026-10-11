@@ -136,7 +136,7 @@ var atlasChecks = []AtlasCheck{
 	{Code: "MY123", Meaning: "exceeding a set-size boundary changes storage size and requires a table copy", PtahRules: []string{"MY123"}, Status: StatusCovered},
 
 	// The three copies below were measured on MySQL 8.4 and MariaDB 11.8.9
-	// with ALGORITHM=INSTANT, INPLACE and LOCK=NONE (migration/lint/mysqlcost.go).
+	// with ALGORITHM=INSTANT, INPLACE and LOCK=NONE (dialect/mysql/mysqllint/mysqlcost.go).
 	// MY130 and MY136 compare the column's current type, character set and
 	// collation, read from the dev database with the keys on the column, with
 	// what the clause assigns, so a VARCHAR widened within one length-prefix
@@ -242,7 +242,7 @@ var atlasChecks = []AtlasCheck{
 	{Code: "PG110", Meaning: "creating a table with non-optimal data alignment", PtahRules: []string{"PG110"}, Status: StatusCovered},
 
 	// Both rows below were measured on PostgreSQL 18.6 by relfilenode and the
-	// heap-scan counter (migration/lint/pgcost.go). PG301 compares the
+	// heap-scan counter (dialect/postgres/pglint/pgcost.go). PG301 compares the
 	// column's current type and collation, read from the dev database with
 	// the indexes on the column, with the clause's, so a widening PostgreSQL
 	// applies as a catalog edit is not reported as a rewrite and a collation

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"ptah.run/core/lintext"
 )
 
 // RoutineHeaderWords returns the words of a routine definition's header, and
@@ -526,4 +528,93 @@ func ParseTypeParams(words []string, j int) ([]int, int, bool) {
 		k++
 	}
 	return nil, j, false
+}
+
+// MySQLFamily is the pair Ptah's MySQL rules are defined for.
+var MySQLFamily = []string{"mysql", "mariadb"}
+
+// ClauseEndFrom is the end of the clause a word index sits in.
+func ClauseEndFrom(w []string, index int) int {
+	end := len(w)
+	for _, start := range ClauseStarts(w) {
+		if start > index {
+			end = min(end, start-1)
+		}
+	}
+	return end
+}
+
+// ScanModifyChange reports whether an ALTER TABLE statement rewrites a column
+// via the MySQL-family MODIFY/CHANGE clauses (COLUMN keyword optional).
+func ScanModifyChange(w []string) bool {
+	for _, i := range ClauseStarts(w) {
+		if i >= len(w) || (w[i] != "MODIFY" && w[i] != "CHANGE") {
+			continue
+		}
+		j := i + 1
+		if j < len(w) && w[j] == "COLUMN" {
+			j++
+		}
+		j = SkipIfExists(w, j)
+		if j < len(w) && IdentLike(w[j]) {
+			return true
+		}
+	}
+	return false
+}
+
+// NonNullableAddedColumnSubjects are the columns an ALTER TABLE adds NOT NULL
+// without a DEFAULT, each with the table and the type as written.
+func NonNullableAddedColumnSubjects(w, sourceWords []string) []lintext.Subject {
+	table := AlterTableReference(w, sourceWords)
+	var subjects []lintext.Subject
+	for _, i := range ClauseStarts(w) {
+		start, end, ok := AddColumnClause(w, i)
+		if !ok {
+			continue
+		}
+		clause := w[start:end]
+		if HasWordSeq(clause, "NOT", "NULL") && !slices.Contains(clause, "DEFAULT") {
+			subjects = append(subjects, lintext.Subject{
+				Kind:     lintext.SubjectColumn,
+				Name:     SourceWordAt(w, sourceWords, start-1),
+				Parent:   table.Name,
+				DataType: ColumnDataType(clause, sourceWords[start:end]),
+			})
+		}
+	}
+	return subjects
+}
+
+// ColumnDataType is the type part of a column definition as written: the
+// words before the first constraint word outside parentheses.
+func ColumnDataType(definition, sourceDefinition []string) string {
+	end := len(definition)
+	depth := 0
+	for i, word := range definition {
+		switch word {
+		case "(", "[":
+			depth++
+		case ")", "]":
+			depth = max(0, depth-1)
+		default:
+			if depth == 0 && ColumnConstraintWord(word) {
+				end = i
+				return strings.Join(sourceDefinition[:end], " ")
+			}
+		}
+	}
+	return strings.Join(sourceDefinition[:end], " ")
+}
+
+// ColumnConstraintWord reports a word that starts a column constraint or
+// attribute after the type.
+func ColumnConstraintWord(word string) bool {
+	switch word {
+	case "CHECK", "COLLATE", "COMMENT", "CONSTRAINT", "DEFAULT", "GENERATED",
+		"IDENTITY", "NOT", "NULL", "PRIMARY", "REFERENCES", "UNIQUE":
+		return true
+	default:
+		return false
+	}
 }

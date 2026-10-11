@@ -607,7 +607,7 @@ as the change it makes. The bundled `builtin.New` runtime splits every
 built-in dialect.
 
 The runtime also holds the rules the engine owners check, such as the
-PostgreSQL owner's PG and TX families. `lint.Rules(runtime)` lists them after
+PostgreSQL owner's PG and TX families and the MySQL owner's MY family. `lint.Rules(runtime)` lists them after
 the rules the lint package checks itself, and a run asks the owners for their
 findings through `Runtime.CheckMigrations`, once per run, then applies the
 same policy to them as to every other finding. The configuration loaders take

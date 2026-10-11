@@ -64,13 +64,8 @@ func checkOwnedRules(
 		file := &files[found.File]
 		finding := Finding{Rule: found.Code, Title: titles[found.Code], File: file.Path, Message: found.Message}
 		if found.Statement >= 0 {
-			subjects := make([]Subject, 0, len(found.Subjects))
-			for _, subject := range found.Subjects {
-				subjects = append(subjects, Subject{Kind: SubjectKind(subject.Kind), Name: subject.Name, Parent: subject.Parent,
-					DataType: subject.DataType})
-			}
 			finding.Line = file.Statements[found.Statement].Line
-			finding.Context = statementFindingContext(found.Statement, subjects...)
+			finding.Context = statementFindingContext(found.Statement, reportSubjects(found.Subjects)...)
 		}
 		if answer.findings[file.Name] == nil {
 			answer.findings[file.Name] = make(map[string][]Finding)
@@ -142,4 +137,15 @@ func requestBaseline(opts Options) *lintext.Baseline {
 		Hypertables: slices.Clone(opts.BaselineHypertables),
 		Dependents:  slices.Clone(opts.BaselineDependents),
 	}
+}
+
+// reportSubjects are subjects in the contract's form as a report carries
+// them.
+func reportSubjects(subjects []lintext.Subject) []Subject {
+	reported := make([]Subject, 0, len(subjects))
+	for _, subject := range subjects {
+		reported = append(reported, Subject{Kind: SubjectKind(subject.Kind), Name: subject.Name, Parent: subject.Parent,
+			DataType: subject.DataType})
+	}
+	return reported
 }
