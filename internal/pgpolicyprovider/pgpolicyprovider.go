@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -40,6 +41,7 @@ func Provider() engine.Provider {
 		Codecs:      slices.Concat(pgpolicy.Codecs(), pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
 		Annotations: []annotation.Extension{pgpolicysource.Annotations()},
 		YAML:        []yamlext.Extension{pgpolicysource.YAML()},
+		HCL:         []hclext.Extension{pgpolicysource.HCL()},
 		// A description that does not describe policies, such as a document
 		// whose policy blocks the compatibility surface left out, describes
 		// none of the owner's policies either.

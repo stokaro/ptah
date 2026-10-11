@@ -2686,11 +2686,13 @@ SQL owners of its `lint.Runtime`.
 
 `core/hclext` is the HCL schema reader's contract with the owners whose blocks
 an HCL document carries. An `Extension` registers each block as a `Block`
-shape: the site it stands at, its type, how its labels name the object
-(`SchemaAndName`, or `SchemaAndQualifiedName`, where a one-label `schema.name`
-names the schema too), and the attributes it takes and of which `Kind`. A
-shape at the `IndexAttributes` site adds attributes to the reader's own `index`
-block instead.
+shape: the site it stands at, its type, how its labels name the object, and
+the attributes it takes and of which `Kind`. A top-level block is named by
+`SchemaAndName`, by `SchemaAndQualifiedName`, where a one-label `schema.name`
+names the schema too, or by `JoinedName`, where two labels join into one name
+and the block takes no `schema`. A shape at the `IndexAttributes` site adds
+attributes to the reader's own `index` block. A shape at the `InTable` site is
+a block inside a `table`, with no labels.
 
 - The reader checks a block against its shape with the refusals it gives its
   own blocks, including the tolerance for unknown names.
@@ -2699,20 +2701,35 @@ block instead.
   reader produced, and a `Bool` is a bool: null reads as absent and any other
   value is refused, as the reader refuses one in its own blocks. Variables, locals, functions and the
   confinement of `file()` stay the reader's.
+- A `Ref` attribute is a required reference to an object of the type its
+  `Refers` names, which the owner receives as a `Reference{Kind, Schema,
+  Name}`. A reference to a `table` the document declares carries that table's
+  schema. One that several declared tables match is refused, naming their
+  schemas. A missing reference, or one to another type, is refused as
+  `<type> "<name>" requires <attribute>`.
+- A `Refs` attribute is a list of references, where a string or an identifier
+  names the object as written. An element that refers to another type is
+  refused. So is a string that spells a reference, such as `"role.app"`.
 - Once a document is read, the owner's `Decoder` gets every block of its in one
   call and returns, for each, the objects it declares and a `TableSetting` on
   the table its labels name, which the reader attaches once the load's tables
   are known. An owner of index attributes gets every `index` block, with the
   table, type and operator the reader read in `Claim.Index`, and returns the
-  `Facets` the reader adds to that index. A `ClaimError` refuses one block,
-  positioned at it. Of an owner's refusal and the reader's own, the reader
-  reports the one earlier in the document, so the result does not depend on
-  when the owner runs.
+  `Facets` the reader adds to that index. An `InTable` claim carries its table
+  in `Claim.Table`, and its `Facets` go to that table. `Claim.At` says where a
+  block stands, for a refusal that names two blocks.
+- A `ClaimError` refuses one block, positioned at it. Of an owner's refusal and
+  the reader's own, the reader reports the one earlier in the document, so the
+  result does not depend on when the owner runs. A refusal that names no
+  block, such as two blocks that declare one object, refuses the document as a
+  whole. The reader reports it after its own checks of the whole document, and
+  only when no owner refused a single block.
 - `Extension.Coverage` is the claim every HCL document makes, since a document
   names no target. Its `CoverageRequest` holds the header entries of the kinds
   the extension lists in `Header`, and, when `CapturedCoverage` is set, the
   bodies of the document's `ptah:feature-coverage` header. A document with
-  that header is refused when no selected owner reads it.
+  that header is refused when no selected owner reads it. `Declared` holds
+  the objects the document declares.
 
 `engine.Provider.HCL` registers an extension, and `engine.Runtime.HCL` returns
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
@@ -2722,7 +2739,8 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
 `extended_property` block. `ydbsource.HCL` reads the `coordination_node` block,
 the vector and partitioning attributes of an `index` block, the
-`coordination_node` header entries and the captured header.
+`coordination_node` header entries and the captured header. `pgpolicysource.HCL`
+reads the `policy` block and a table's `row_security` block.
 
 `atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
 blocks and attributes and the captured header are refused there, and so is

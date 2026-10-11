@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // coverageRemovalSeed holds one object of each block type the compatibility
@@ -55,7 +56,7 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 
 	t.Run("the document declares the three kinds it does not describe", func(t *testing.T) {
 		c := qt.New(t)
-		declared, decodeErr := atlashcl.Parse([]byte(inspected), "inspect.hcl")
+		declared, decodeErr := atlashcl.ParseWithOptions([]byte(inspected), "inspect.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 		c.Assert(decodeErr, qt.IsNil)
 		c.Assert(declared.NotDescribed, qt.DeepEquals, suppressedBlocks(
 			coverage.Extension, coverage.Policy, coverage.Sequence,

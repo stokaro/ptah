@@ -208,7 +208,6 @@ const (
 	kindView             = "view"
 	kindMaterializedView = "materialized view"
 	kindTrigger          = "trigger"
-	kindPolicy           = "policy"
 	kindRole             = "role"
 )
 
@@ -282,19 +281,21 @@ func (p *parser) rejectRedeclarations() error {
 // being closed is the fold's silent drop, so a COARSER key here would refuse a
 // pair the fold keeps apart, and a FINER one would leave a drop unreported.
 //
-// Where the fold resolves a reference and this list compares raw text -- indexes
-// and row-level security policies name their table through a resolver -- this
-// list is the finer of the two. That is the safe direction: it can only fail to
+// Where the fold resolves a reference and this list compares raw text -- an
+// index names its table through a resolver -- this list is the finer of the
+// two. That is the safe direction: it can only fail to
 // refuse a pair the fold folds, never refuse a pair it keeps.
 //
 // # The complete enumeration, one verdict per repeatable block kind
 //
 // Every block kind this parser accepts, at every nesting level it accepts one,
 // with the verdict and the reason. A kind absent from this comment is a kind
-// this parser does not accept.
+// this parser does not accept, or one a feature owner reads: a `policy`,
+// `row_security` or `synonym` block, among others, is its owner's, and the
+// owner refuses two blocks that declare one object, naming both.
 //
 // TOP LEVEL. `table`, `enum`, `sequence`, `domain`, `composite`, `range`,
-// `extension`, `trigger` and `policy` are refused by default. `view`,
+// `extension` and `trigger` are refused by default. `view`,
 // `materialized` and `role` are refused only under
 // [StrictRedeclarationsEnvVar], because the pinned binary reads a repeat of each
 // at exit 0 -- it drops the block unread -- and so did Ptah. Four are exempt
@@ -331,14 +332,11 @@ func (p *parser) rejectRedeclarations() error {
 // refused by default; `foreign_key` joins them here for the first time.
 // `unique` is refused only under [StrictRedeclarationsEnvVar], because the
 // pinned binary merges two `unique` blocks sharing a label into one and exits 0.
-// Three more are exempt:
+// Two more are exempt:
 //
 //   - `primary_key` carries no name, and the pinned binary merges two of them
 //     into one at exit 0 (measured). A table's second primary key is a
 //     structural mistake this ledger is the wrong place to name.
-//   - `row_security` carries no name either, and the pinned binary drops it
-//     unread at exit 0. Two of them enable the same thing twice, which
-//     PostgreSQL accepts.
 //   - `platform` is Ptah's own dialect-override block, and it already refuses a
 //     duplicated override key inside one dialect with its own error, so a
 //     collision is named where the keys are.
@@ -397,9 +395,6 @@ func (p *parser) documentDeclarations(policy redeclarationPolicy) []declaration 
 	}
 	for _, trigger := range db.Triggers {
 		objects = append(objects, declare(kindTrigger, qualifyWithOwner(trigger.Table, trigger.Name)))
-	}
-	for _, policyBlock := range p.policies {
-		objects = append(objects, declare(kindPolicy, qualifyWithOwner(policyBlock.table, policyBlock.name)))
 	}
 	return append(objects, declaredBeyondParity(db, policy)...)
 }

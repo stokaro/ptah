@@ -25,7 +25,6 @@ import (
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
-	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
 )
 
@@ -224,11 +223,11 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	if err := p.rejectRedeclarations(); err != nil {
 		return nil, err
 	}
-	// After the redeclaration check, which refuses a repeated policy block
-	// the way the pinned binary does, and before Finalize, which may reorder
-	// the tables the switches attach to.
-	if err := p.attachRowSecurity(); err != nil {
-		return nil, fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
+	// After the redeclaration check: an owner's refusal of the document as a
+	// whole, such as two policy blocks that declare one policy, names no
+	// block, so this package's own checks of the whole document come first.
+	if p.documentErr != nil {
+		return nil, fmt.Errorf("parse HCL schema %s: %w", p.filename, p.documentErr)
 	}
 	// After the redeclaration check, so a hypertable attaches to the one table
 	// block that declares its table. A caller assembling one schema from
@@ -279,8 +278,8 @@ func (p *parser) readHeader() error {
 // documentCoverage is what a document knows about the owned models: the
 // claims of the owners whose blocks it may carry, each limited by the header
 // entries the owner reads and, for the owner that reads one, by the captured
-// feature coverage header; the models the format's own blocks declare; and
-// the row-security policies it claims.
+// feature coverage header, and each handed the objects the document declares;
+// and the models the format's own blocks declare.
 //
 // A captured header no selected owner reads is refused rather than ignored:
 // it is an exact claim an export wrote, and dropping it would read the
@@ -291,7 +290,7 @@ func documentCoverage(data string, owned []coverage.Object, objects schemaext.Ob
 		return schemaext.Coverage{}, fmt.Errorf("%w: the document carries a %s header, and none of the selected owners reads one",
 			ptaherr.ErrUnsupportedFeature, schemaext.CoverageHeaderMarker)
 	}
-	known, err := owners.Coverage(owned, captured)
+	known, err := owners.Coverage(hclext.CoverageRequest{Limits: owned, Captured: captured, Declared: objects})
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -300,10 +299,7 @@ func documentCoverage(data string, owned []coverage.Object, objects schemaext.Ob
 			return schemaext.Coverage{}, err
 		}
 	}
-	if known, err = withBlockCoverage(known); err != nil {
-		return schemaext.Coverage{}, err
-	}
-	return pgpolicysource.Claim(known, objects)
+	return withBlockCoverage(known)
 }
 
 // projectFileBlocks names the top-level blocks that mark an HCL file as an Atlas
@@ -384,10 +380,6 @@ type parser struct {
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
 	pendingForeignRefs []pendingForeignRef
-	// policies and switches hold the document's row-level security until
-	// every table block is read; see [parser.attachRowSecurity].
-	policies []hclPolicy
-	switches []hclSwitches
 	// tableSettings holds the blocks that declare a setting of a table they
 	// name, attached once every table block is known; see
 	// [AttachTableSettings].
@@ -401,6 +393,10 @@ type parser struct {
 	// [parser.claimOwnerBlock].
 	owners      hclext.Set
 	ownerClaims []ownerClaim
+	// documentErr is an owner's refusal of the document as a whole, held
+	// until this package's own checks of the whole document pass; see
+	// [parser.decodeOwnerClaims].
+	documentErr error
 
 	// dynamicIterators names the iteration roots bound by the dynamic blocks
 	// currently being expanded, outermost first. See [parser.expandDynamic].
@@ -416,7 +412,9 @@ type parser struct {
 // own, followed by the owners' reading of the blocks the walk claimed: after
 // the walk, so each owner reads every block of its in one call. Of a refusal
 // of the walk and one of an owner, the one earlier in the document is
-// returned; see [earliestError].
+// returned; see [earliestError]. What the owners declare is added only to a
+// document the walk read whole, and an owner's refusal of the document as a
+// whole is held in documentErr; see [parser.decodeOwnerClaims].
 func (p *parser) walk(body *hclsyntax.Body) error {
 	p.emitting = true
 	walkErr := p.parseBody(body)
@@ -424,7 +422,14 @@ func (p *parser) walk(body *hclsyntax.Body) error {
 	// The owners read the blocks the walk claimed even when the walk was
 	// refused: an owner's refusal of an earlier block is the document's
 	// first mistake.
-	return earliestError(walkErr, p.readOwnerClaims())
+	declarations, documentErr, ownerErr := p.decodeOwnerClaims()
+	if walkErr != nil || ownerErr != nil {
+		return earliestError(walkErr, ownerErr)
+	}
+	if p.documentErr = documentErr; documentErr != nil {
+		return nil
+	}
+	return p.addOwnerDeclarations(declarations)
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -463,7 +468,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"view":              (*parser).parseView,
 	"materialized":      (*parser).parseMaterializedView,
 	"trigger":           (*parser).parseTrigger,
-	"policy":            (*parser).parsePolicy,
 	"role":              (*parser).parseRole,
 	"permission":        (*parser).parsePermission,
 	"revoke":            (*parser).parseRevoke,
@@ -777,8 +781,6 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 			return p.blockError(block, "table %q has multiple partition blocks", table.Name)
 		}
 		table.Partition = partition
-	case "row_security":
-		return p.parseRowSecurity(table, block)
 	default:
 		return p.parseAdditionalTableBlock(table, block)
 	}
@@ -797,6 +799,11 @@ func (p *parser) parseAdditionalTableBlock(table *schemamodel.Table, block *hcls
 		// Parsed before the child walk so duplicate dialect/key pairs are
 		// detected across all platform blocks on the table.
 	default:
+		// The table is appended to the document's tables once its blocks
+		// are read, so its position is the next one.
+		if shape, owned := p.owners.Lookup(hclext.InTable, block.Type); owned {
+			return p.claimOwnerTableBlock(table, len(p.db.Tables), block, shape)
+		}
 		return p.rejectUnsupportedBlock(block, "table")
 	}
 	return nil
@@ -2649,6 +2656,13 @@ func (p *parser) rawExpr(attr *hclsyntax.Attribute) string {
 
 func (p *parser) rawExprNode(expr hclsyntax.Expression) string {
 	return strings.TrimSpace(string(expr.Range().SliceBytes(p.src)))
+}
+
+// expressionError is a refusal positioned at an expression, such as one
+// element of a list.
+func (p *parser) expressionError(expr hclsyntax.Expression, format string, args ...any) error {
+	return &sourceError{start: expr.Range().Start,
+		err: fmt.Errorf("parse HCL schema at %s: %w", expr.Range().String(), fmt.Errorf(format, args...))}
 }
 
 // attributeError is a refusal positioned at an attribute's name.

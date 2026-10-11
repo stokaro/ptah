@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 )
@@ -410,28 +411,6 @@ trigger "users_touch" {
 `,
 			wantErr: `parse HCL schema schema.hcl: trigger "users.users_touch" is declared more than once;.*`,
 		},
-		{
-			name: "a row-level security policy declared twice",
-			source: `schema "public" {}
-table "users" {
-  schema = schema.public
-  column "id" { type = integer }
-}
-policy "users_tenant" {
-  on    = table.users
-  for   = SELECT
-  to    = [PUBLIC]
-  using = "true"
-}
-policy "users_tenant" {
-  on    = table.users
-  for   = SELECT
-  to    = [PUBLIC]
-  using = "true"
-}
-`,
-			wantErr: `parse HCL schema schema.hcl: policy "users.users_tenant" is declared more than once;.*`,
-		},
 	}
 
 	for _, test := range tests {
@@ -675,7 +654,7 @@ function "get_tenant" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(countDocument(db), qt.DeepEquals, test.want)
@@ -1063,6 +1042,48 @@ func TestParse_MergeRedeclarationsEnvVarLeavesTheDocumentRefused(t *testing.T) {
 			_, err := atlashcl.Parse([]byte(tableTwiceSource), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// policyDeclaredTwice declares one policy in two blocks.
+const policyDeclaredTwice = `schema "public" {}
+table "users" {
+  schema = schema.public
+  column "id" { type = integer }
+}
+policy "users_tenant" {
+  on    = table.users
+  for   = SELECT
+  to    = [PUBLIC]
+  using = "true"
+}
+policy "users_tenant" {
+  on    = table.public.users
+  for   = SELECT
+  to    = [PUBLIC]
+  using = "true"
+}
+`
+
+// TestParse_RefusesAPolicyDeclaredTwice refuses two policy blocks that declare
+// one policy, naming both. The row-security owner refuses them, not the
+// redeclaration ledger: its identity follows PostgreSQL's rules, so `users`
+// and `public.users` name one table, and merging the two blocks is no remedy,
+// so the refusal holds under PTAH_HCL_MERGE_REDECLARATIONS too.
+func TestParse_RefusesAPolicyDeclaredTwice(t *testing.T) {
+	for _, merge := range []string{"0", "1"} {
+		t.Run("merge="+merge, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, merge)
+
+			db, err := parseWithOwners([]byte(policyDeclaredTwice), "schema.hcl")
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorMatches, `parse HCL schema schema\.hcl: invalid annotation attribute value: `+
+				`policy "users_tenant" at schema\.hcl:6 and policy "users_tenant" at schema\.hcl:12 both declare `+
+				`policy "users_tenant" on table public\.users; keep one declaration`)
+			c.Assert(db, qt.IsNil)
 		})
 	}
 }

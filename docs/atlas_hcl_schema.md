@@ -155,7 +155,11 @@ current schema IR:
   and `comment`. `as` takes `PERMISSIVE` (the default, left unwritten) or
   `RESTRICTIVE`; any other value is refused, because permissive is the weaker
   of the two and folding a misspelling into it would grant access the policy
-  withholds
+  withholds. `to` lists roles as references (`role.app`), names
+  (`"app"`, `app`) or keywords (`PUBLIC`). A reference to another kind of
+  object, such as `view.v`, is refused. So is a string that spells a role
+  reference, such as `"role.app"`, because it is unclear whether it names
+  the role `app` or a role named `role.app`
 - PostgreSQL `sequence` blocks with `type`, `start`, `increment`, `min_value`,
   `max_value`, `cache`, `cycle`, `owned_by`, `if_not_exists`, and `comment`.
   `owned_by` takes the column reference `table.rooms.column.id` or the string
@@ -813,8 +817,15 @@ Which kinds refuse is decided by one measured rule: a repeat is refused where
 the Atlas community CLI refuses the same document. That is `table`, `column`,
 `index`, a named `check` or `constraint`, `foreign_key` (both the single-column
 form written onto a column and the multi-column form written as a table
-constraint), `enum`, `sequence`, `domain`, `composite`, `range`, `extension`,
-`trigger` and `policy`.
+constraint), `enum`, `sequence`, `domain`, `composite`, `range`, `extension`
+and `trigger`.
+
+Two `policy` blocks that declare one policy are refused too, naming both
+blocks. `users` and `public.users` name one table there, so the two spellings
+collide. Merging would keep whichever came last, so this refusal holds whatever
+the variables below say. The same goes for two `row_security` blocks of one
+table that ask for different switches. A repeat that asks for the same switches
+is read once.
 
 Repeats that CLI reads at exit 0 are read at exit 0 here too: `view`,
 `materialized` and `role`, whose blocks it drops unread, and `unique`,
@@ -829,7 +840,8 @@ same one; `function`, whose identity in PostgreSQL includes its argument types s
 two blocks sharing a name can be two overloads; `permission`, which renders a
 GRANT the engine accepts twice; and `data`, which declares no database object.
 
-Setting `PTAH_HCL_MERGE_REDECLARATIONS=1` restores the merge for every kind.
+Setting `PTAH_HCL_MERGE_REDECLARATIONS=1` restores the merge for every kind
+in the refused list above.
 
 An `enum` block accepts one or two labels. `enum "public" "mood"` names the
 schema and then the enum, exactly as `table` does, and is the spelling the Atlas

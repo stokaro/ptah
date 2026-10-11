@@ -1,24 +1,46 @@
 package atlashcl
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"maps"
+	"strconv"
 	"strings"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 
 	"ptah.run/core/hclext"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 )
 
 // ownerClaim is a block an owner's shape matched, waiting for the owner's
 // declaration, and the block a refusal is positioned at. index is where the
 // claimed index sits in the document's indexes, for an [hclext.IndexAttributes]
-// claim, and -1 for another.
+// claim, and table where the claim's table sits in the document's tables, for
+// an [hclext.InTable] claim; each is -1 for a claim at another site.
+// references are the [hclext.Ref] attributes the block writes, as written,
+// which are resolved once every table of the document is read.
 type ownerClaim struct {
-	block *hclsyntax.Block
-	match hclext.Match
-	index int
+	block      *hclsyntax.Block
+	match      hclext.Match
+	index      int
+	table      int
+	references []writtenReference
+}
+
+// writtenReference is a [hclext.Ref] attribute as the block writes it: the
+// reference read as text, waiting for the document's tables.
+type writtenReference struct {
+	attribute hclext.Attribute
+	text      string
 }
 
 // claimOwnerBlock reads a block an owner's shape matches with the refusals
@@ -32,31 +54,86 @@ type ownerClaim struct {
 // owner receives the values and never the expressions, so this package's
 // evaluation context stays its own.
 func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) error {
-	schema, name, err := p.objectSchemaAndName(block, block.Type)
+	schema, name, err := p.ownerName(block, shape.Block.Naming)
 	if err != nil {
 		return err
-	}
-	if ref, ok := tableref.Parse(name); ok && ref.Qualified && shape.Block.Naming == hclext.SchemaAndQualifiedName &&
-		strings.TrimSpace(schema) == "" {
-		schema, name = ref.Schema, ref.Name
 	}
 	if err := p.rejectNestedBlocks(block, block.Type); err != nil {
 		return err
 	}
-	supported := map[string]bool{"schema": true}
-	for _, attribute := range shape.Block.Attributes {
-		supported[attribute.Name] = true
-	}
-	if err := p.rejectUnsupportedAttrs(block, supported, block.Type); err != nil {
+	if err := p.rejectUnsupportedAttrs(block, ownerAttributeNames(shape, shape.Block.Naming != hclext.JoinedName), block.Type); err != nil {
 		return err
 	}
-	values, err := p.ownerValues(block, shape)
+	values, references, err := p.ownerValues(block, shape, name)
 	if err != nil {
 		return err
 	}
-	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, match: hclext.Match{Shape: shape,
-		Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values}}})
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: -1, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values,
+			At: blockAt(block)}}})
 	return nil
+}
+
+// ownerName reads the schema and the name a block's labels give the object,
+// as naming reads them.
+func (p *parser) ownerName(block *hclsyntax.Block, naming hclext.Naming) (schema, name string, err error) {
+	if naming == hclext.JoinedName {
+		name, err = p.objectName(block, block.Type)
+		return "", name, err
+	}
+	schema, name, err = p.objectSchemaAndName(block, block.Type)
+	if err != nil {
+		return "", "", err
+	}
+	if ref, ok := tableref.Parse(name); ok && ref.Qualified && naming == hclext.SchemaAndQualifiedName &&
+		strings.TrimSpace(schema) == "" {
+		schema, name = ref.Schema, ref.Name
+	}
+	return schema, name, nil
+}
+
+// ownerAttributeNames are the attributes a block of shape may write: the
+// shape's, and `schema` where its naming reads one.
+func ownerAttributeNames(shape hclext.Shape, withSchema bool) map[string]bool {
+	supported := map[string]bool{"schema": withSchema}
+	for _, attribute := range shape.Block.Attributes {
+		supported[attribute.Name] = true
+	}
+	return supported
+}
+
+// claimOwnerTableBlock records a block inside table, which the walk appends
+// to the document's tables at position once its blocks are read, for the
+// owner that reads it. The block takes no labels.
+func (p *parser) claimOwnerTableBlock(table *schemamodel.Table, position int, block *hclsyntax.Block, shape hclext.Shape) error {
+	if len(block.Labels) != 0 {
+		return p.blockError(block, "%s block does not accept labels", block.Type)
+	}
+	if err := p.rejectNestedBlocks(block, block.Type); err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedAttrs(block, ownerAttributeNames(shape, false), block.Type); err != nil {
+		return err
+	}
+	values, references, err := p.ownerValues(block, shape, "")
+	if err != nil {
+		return err
+	}
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Attributes: values, At: blockAt(block),
+			Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
+	return nil
+}
+
+// blockAt says where a block stands, as `<file>:<line>`.
+func blockAt(block *hclsyntax.Block) string {
+	return fmt.Sprintf("%s:%d", block.TypeRange.Filename, block.TypeRange.Start.Line)
+}
+
+// blockOrigin names a block in a refusal that has to name two: what it
+// declares and where.
+func (p *parser) blockOrigin(block *hclsyntax.Block, what string) string {
+	return what + " at " + blockAt(block)
 }
 
 // claimOwnerIndex records an index block, the one at position in the
@@ -69,22 +146,36 @@ func (p *parser) claimOwnerIndex(block *hclsyntax.Block, position int) error {
 	if !owned {
 		return nil
 	}
-	values, err := p.ownerValues(block, shape)
+	index := p.db.Indexes[position]
+	values, references, err := p.ownerValues(block, shape, index.Name)
 	if err != nil {
 		return err
 	}
-	index := p.db.Indexes[position]
-	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: position, match: hclext.Match{Shape: shape,
-		Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values,
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: position, table: -1, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values, At: blockAt(block),
 			Index: &hclext.Index{Table: index.TableName, Type: index.Type, Operator: index.Operator}}}})
 	return nil
 }
 
 // ownerValues reads the attributes of shape that block writes, each as its
-// kind and in the order the shape lists them.
-func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape) (map[string]hclext.Value, error) {
+// kind and in the order the shape lists them. A [hclext.Ref] attribute is
+// required, and is returned as written for [parser.resolveReference]; name
+// names the block in its refusal.
+func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name string) (map[string]hclext.Value, []writtenReference, error) {
 	values := make(map[string]hclext.Value, len(shape.Block.Attributes))
+	var references []writtenReference
 	for _, attribute := range shape.Block.Attributes {
+		if attribute.Kind == hclext.Ref {
+			// The reference this package reads anywhere, so a policy's
+			// `on` reads as a trigger's does; one to another type of
+			// object reads as none.
+			text := objectRefName(p.optionalRawExpr(block.Body.Attributes[attribute.Name]), attribute.Refers)
+			if text == "" {
+				return nil, nil, p.blockError(block, "%s %q requires %s", block.Type, name, attribute.Name)
+			}
+			references = append(references, writtenReference{attribute: attribute, text: text})
+			continue
+		}
 		if block.Body.Attributes[attribute.Name] == nil {
 			continue
 		}
@@ -92,18 +183,18 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape) (map[st
 		// once, as it does in a block of this package's own.
 		value, present, err := p.ownerValue(block, attribute)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if present {
 			values[attribute.Name] = value
 		}
 	}
-	return values, nil
+	return values, references, nil
 }
 
 // ownerValue reads one attribute as its kind: a [hclext.String] through
-// stringAttr, a [hclext.Bool] through optionalBoolPtr, and a [hclext.Text]
-// through exprString.
+// stringAttr, a [hclext.Bool] through optionalBoolPtr, a [hclext.Refs]
+// through referenceList, and a [hclext.Text] through exprString.
 func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) (hclext.Value, bool, error) {
 	attr := block.Body.Attributes[attribute.Name]
 	switch attribute.Kind {
@@ -116,32 +207,178 @@ func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) 
 			return hclext.Value{}, false, err
 		}
 		return hclext.Value{Kind: attribute.Kind, Bool: *value}, true, nil
+	case hclext.Refs:
+		references, err := p.referenceList(block, attr, attribute.Refers)
+		return hclext.Value{Kind: attribute.Kind, References: references}, err == nil, err
 	default:
 		return hclext.Value{Kind: attribute.Kind, Text: p.exprString(attr)}, true, nil
 	}
 }
 
-// readOwnerClaims hands every claimed block to its owner, one call per owner,
-// and adds the objects each declares in the document's order. A refusal is
-// positioned at the refused block, as a refusal of this package's own is,
-// and so is a second declaration of one object.
-func (p *parser) readOwnerClaims() error {
+// referenceList reads a [hclext.Refs] attribute: a list of references to
+// objects of the type refers names, or a single one. `role.app`,
+// `role["app"]` and `role.s.app` refer to it; an identifier or a string
+// names it as written; a variable, a local or a function names it with the
+// string it evaluates to. Any other element, such as a reference to another
+// type of object, is refused at the attribute rather than read as a name.
+//
+// A string that spells a reference, such as "role.app", is refused at the
+// element: this package once read it as the reference, and reading it now as
+// the name it writes would grant to another role with nothing to tell the
+// author. Refusing it costs a rare literal name one rewrite, and the meaning
+// never changes under anyone.
+func (p *parser) referenceList(block *hclsyntax.Block, attr *hclsyntax.Attribute, refers string) ([]hclext.Reference, error) {
+	exprs := []hclsyntax.Expression{attr.Expr}
+	if tuple, ok := attr.Expr.(*hclsyntax.TupleConsExpr); ok {
+		exprs = tuple.Exprs
+	}
+	references := make([]hclext.Reference, 0, len(exprs))
+	for _, expr := range exprs {
+		reference, written, ok := p.referenceElement(expr, refers)
+		if !ok {
+			return nil, p.attributeError(attr, "%s attribute %q: %s is not a %s reference", block.Type, attr.Name, p.rawExprNode(expr), refers)
+		}
+		if err := p.refuseSpelledReference(block, attr, expr, written, refers); err != nil {
+			return nil, err
+		}
+		references = append(references, reference)
+	}
+	return references, nil
+}
+
+// refuseSpelledReference refuses a name written as a string, at expr, that
+// spells a reference to an object of refers, as "role.app" or "role[\"app\"]"
+// does. The refusal suggests the reference written unquoted only where that
+// is a reference this package reads.
+func (p *parser) refuseSpelledReference(block *hclsyntax.Block, attr *hclsyntax.Attribute, expr hclsyntax.Expression, written, refers string) error {
+	prefix := refers + "."
+	name, spelled := strings.CutPrefix(written, prefix)
+	if !spelled {
+		prefix = refers + "["
+		if name, spelled = bracketObjectRefName(written, refers); !spelled {
+			return nil
+		}
+	}
+	if unquoted, diags := hclsyntax.ParseExpression([]byte(written), "reference.hcl", hcl.InitialPos); !diags.HasErrors() {
+		if _, _, readable := p.referenceElement(unquoted, refers); readable {
+			return p.expressionError(expr, "%s attribute %q: %q is ambiguous; write %s unquoted for the %s %s, or name the %s without the %s prefix",
+				block.Type, attr.Name, written, written, refers, name, refers, prefix)
+		}
+	}
+	return p.expressionError(expr, "%s attribute %q: %q is ambiguous; name the %s without the %s prefix",
+		block.Type, attr.Name, written, refers, prefix)
+}
+
+// referenceElement reads one element of a [hclext.Refs] attribute, with the
+// string it was written as, if it was one, and false for one that is no
+// reference to an object of refers.
+func (p *parser) referenceElement(expr hclsyntax.Expression, refers string) (hclext.Reference, string, bool) {
+	if mustEvaluate(expr) {
+		return stringReference(expr, p.ctx, refers)
+	}
+	traversal, diags := hcl.AbsTraversalForExpr(expr)
+	if diags.HasErrors() {
+		return stringReference(expr, nil, refers)
+	}
+	if len(traversal) == 1 {
+		return hclext.Reference{Kind: refers, Name: traversal.RootName()}, "", true
+	}
+	if traversal.RootName() != refers || len(traversal) > 3 {
+		return hclext.Reference{}, "", false
+	}
+	parts := make([]string, 0, len(traversal)-1)
+	for _, step := range traversal[1:] {
+		part, ok := traversalPart(step)
+		if !ok {
+			return hclext.Reference{}, "", false
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 1 {
+		return hclext.Reference{Kind: refers, Name: parts[0]}, "", true
+	}
+	return hclext.Reference{Kind: refers, Schema: parts[0], Name: parts[1]}, "", true
+}
+
+// stringReference reads an expression that evaluates to a string in ctx as
+// the name of an object of refers, with that string, and false for one that
+// does not.
+func stringReference(expr hclsyntax.Expression, ctx *hcl.EvalContext, refers string) (hclext.Reference, string, bool) {
+	value, diags := expr.Value(ctx)
+	if diags.HasErrors() || !value.IsKnown() || value.IsNull() || value.Type() != cty.String {
+		return hclext.Reference{}, "", false
+	}
+	return hclext.Reference{Kind: refers, Name: value.AsString()}, value.AsString(), true
+}
+
+// resolveReference reads a [hclext.Ref] attribute as written into the
+// object it refers to: a table the document declares, with that table's
+// schema, and otherwise the schema and name the reference writes. A
+// reference several declared tables match is refused, naming the block, and
+// so is one that is no reference. The reference as written is returned with
+// the refusal, so the owner can still check the block.
+func (p *parser) resolveReference(claim ownerClaim, written writtenReference) (hclext.Reference, error) {
+	refers := written.attribute.Refers
+	asWritten := hclext.Reference{Kind: refers, Name: written.text}
+	origin := p.blockOrigin(claim.block, claim.block.Type+" "+strconv.Quote(claim.match.Claim.Name))
+	if refers == "table" {
+		position, err := tablelookup.Declared(p.db.Tables, written.text)
+		if err != nil {
+			return asWritten, fmt.Errorf("%s: %w", origin, err)
+		}
+		if position >= 0 {
+			table := p.db.Tables[position]
+			return hclext.Reference{Kind: refers, Schema: table.Schema, Name: table.Name}, nil
+		}
+	}
+	ref, ok := tableref.Parse(written.text)
+	if !ok {
+		return asWritten, fmt.Errorf("%s: %w: %q is not a %s reference", origin, ptaherr.ErrInvalidAttributeValue, written.text, refers)
+	}
+	return hclext.Reference{Kind: refers, Schema: ref.Schema, Name: ref.Name}, nil
+}
+
+// decodeOwnerClaims hands every claimed block to its owner, one call per
+// owner, and returns what each declares. A refusal of one block is positioned
+// at it, as a refusal of this package's own is. A refusal of the document as
+// a whole -- a reference several declared tables match, or an owner's refusal
+// of two blocks that declare one object -- names no block, so it is returned
+// apart, as documentErr, for [ParseWithOptions] to report once this package
+// has checked the whole document.
+func (p *parser) decodeOwnerClaims() (declarations []hclext.Declaration, documentErr, err error) {
 	if len(p.ownerClaims) == 0 {
-		return nil
+		return nil, nil, nil
 	}
 	matches := make([]hclext.Match, 0, len(p.ownerClaims))
+	var unresolved error
 	for _, claim := range p.ownerClaims {
-		matches = append(matches, claim.match)
+		match := claim.match
+		if len(claim.references) > 0 {
+			match.Claim.Attributes = maps.Clone(match.Claim.Attributes)
+			for _, written := range claim.references {
+				reference, err := p.resolveReference(claim, written)
+				if unresolved == nil {
+					unresolved = err
+				}
+				match.Claim.Attributes[written.attribute.Name] = hclext.Value{Kind: hclext.Ref, Reference: &reference}
+			}
+		}
+		matches = append(matches, match)
 	}
 	// The loaders take no context yet. The owners read their blocks in
 	// process, so the walk bounds the read.
-	declarations, err := p.owners.Decode(context.Background(), matches)
+	declarations, err = p.owners.Decode(context.Background(), matches)
 	if refused, ok := errors.AsType[*hclext.ClaimError](err); ok {
-		return p.blockError(p.ownerClaims[refused.Claim].block, "%v", refused.Err)
+		return nil, nil, p.blockError(p.ownerClaims[refused.Claim].block, "%v", refused.Err)
 	}
-	if err != nil {
-		return err
+	if documentErr = cmp.Or(unresolved, err); documentErr != nil {
+		return nil, documentErr, nil
 	}
+	return declarations, nil, nil
+}
+
+// addOwnerDeclarations adds what each owner declared for its claims.
+func (p *parser) addOwnerDeclarations(declarations []hclext.Declaration) error {
 	for i, declaration := range declarations {
 		claim := p.ownerClaims[i]
 		for _, object := range declaration.Objects {
@@ -151,18 +388,37 @@ func (p *parser) readOwnerClaims() error {
 			}
 			p.db.FeatureObjects = objects
 		}
-		if claim.index >= 0 && declaration.Facets.Len() > 0 {
-			index := &p.db.Indexes[claim.index]
-			facets, err := index.Facets.Merge(declaration.Facets)
-			if err != nil {
-				return p.blockError(claim.block, "index %q: %v", index.Name, err)
-			}
-			index.Facets = facets
+		if err := p.addOwnerFacets(claim, declaration.Facets); err != nil {
+			return err
 		}
 		if declaration.TableSetting != nil {
 			p.tableSettings = append(p.tableSettings, TableSetting{Schema: claim.match.Claim.Schema, Table: claim.match.Claim.Name,
 				Block: claim.block.Type, Position: claim.block.TypeRange.String(), Value: declaration.TableSetting})
 		}
+	}
+	return nil
+}
+
+// addOwnerFacets adds facets an owner declared to the index or the table its
+// claim stands in.
+func (p *parser) addOwnerFacets(claim ownerClaim, facets schemaext.Facets) error {
+	switch {
+	case facets.Len() == 0:
+		return nil
+	case claim.index >= 0:
+		index := &p.db.Indexes[claim.index]
+		merged, err := index.Facets.Merge(facets)
+		if err != nil {
+			return p.blockError(claim.block, "index %q: %v", index.Name, err)
+		}
+		index.Facets = merged
+	case claim.table >= 0:
+		table := &p.db.Tables[claim.table]
+		merged, err := table.Facets.Merge(facets)
+		if err != nil {
+			return p.blockError(claim.block, "table %q: %v", table.Name, err)
+		}
+		table.Facets = merged
 	}
 	return nil
 }

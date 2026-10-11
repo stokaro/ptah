@@ -53,6 +53,12 @@ const (
 	// index's type may select the owner's reading without any of the
 	// owner's attributes. Its [Declaration] carries facets of the index.
 	IndexAttributes Site = "index-attributes"
+	// InTable is a block inside a `table` block, beside its columns. The
+	// [Block] has no naming, and the block takes no labels. Its claim carries
+	// the table in [Claim.Table], and its [Declaration] carries facets of the
+	// table. A block type the frontend reads itself inside a table is the
+	// frontend's, whatever an owner registers.
+	InTable Site = "in-table"
 )
 
 // Naming is how a block's labels name the object it declares.
@@ -69,6 +75,11 @@ const (
 	// `schema.name` where nothing else names a schema names the schema too:
 	// `app.hourly` is hourly in app, not a relation whose name holds a dot.
 	SchemaAndQualifiedName Naming = "schema-and-qualified-name"
+	// JoinedName names the object by its labels alone: one label is the
+	// name, and two are joined with a dot into one. The block takes no
+	// `schema` attribute, because the object is named inside the object a
+	// [Ref] attribute names, as a policy is named on its table.
+	JoinedName Naming = "joined-name"
 )
 
 // Kind is the kind of value an attribute takes. The frontend reads the
@@ -87,6 +98,22 @@ const (
 	// Bool is a bool. Null reads as if the attribute were absent, and any
 	// other value is refused, positioned at the attribute.
 	Bool Kind = "bool"
+	// Ref is a reference to an object of the [Attribute.Refers] type,
+	// read into a [Reference]: `table.users`, `table.app.users` or
+	// `table["users"]`, or a name written as a string, an identifier or a
+	// variable, where `app.users` names the schema too. A reference to a
+	// `table` the document declares carries that table's schema; one that
+	// several declared tables match is refused, naming their schemas, and
+	// one that none matches is kept as written. The attribute is required: a
+	// block that leaves it out, or writes a reference to another type, is
+	// refused as `<type> "<name>" requires <attribute>`.
+	Ref Kind = "reference"
+	// Refs is a list of references to objects of the
+	// [Attribute.Refers] type, or a single one, each read into a
+	// [Reference]: `role.app`, `role["app"]`, or a name written as a string
+	// or an identifier, which is the name as written. An element that refers
+	// to another type of object is refused, positioned at the attribute.
+	Refs Kind = "references"
 )
 
 // Attribute is one attribute a block takes.
@@ -95,6 +122,10 @@ type Attribute struct {
 	Name string
 	// Kind is the kind of value it takes.
 	Kind Kind
+	// Refers is the block type a [Ref] or [Refs] attribute
+	// refers to, such as "table" or "role". It is required for those kinds
+	// and refused for the others.
+	Refers string
 }
 
 // Block is the shape of one block an owner reads.
@@ -119,6 +150,22 @@ type Value struct {
 	Text string
 	// Bool is the value of a [Bool] attribute.
 	Bool bool
+	// Reference is the value of a [Ref] attribute.
+	Reference *Reference
+	// References is the value of a [Refs] attribute, in the order the
+	// document writes them.
+	References []Reference
+}
+
+// Reference is an object a [Ref] or [Refs] attribute refers to,
+// as the frontend resolved it.
+type Reference struct {
+	// Kind is the block type it refers to, the attribute's Refers.
+	Kind string
+	// Schema is the schema it names, or empty for none.
+	Schema string
+	// Name is the object's name.
+	Name string
 }
 
 // Claim is one block of a document an owner's shape matched.
@@ -135,6 +182,22 @@ type Claim struct {
 	// Index is the index an [IndexAttributes] claim is about, whose name is
 	// Name, and nil for a claim at another site.
 	Index *Index
+	// Table is the table an [InTable] claim stands in, and nil for a claim
+	// at another site.
+	Table *Table
+	// At is where the block stands, as `<file>:<line>`, for an owner that
+	// names two blocks in one refusal.
+	At string
+}
+
+// Table is what the frontend read of the table an [InTable] claim stands in.
+type Table struct {
+	// Schema is the table's schema, or empty for none.
+	Schema string
+	// Name is the table's name.
+	Name string
+	// Struct is the Go struct name the frontend gives the table.
+	Struct string
 }
 
 // Index is what the frontend read of an index an [IndexAttributes] claim is
@@ -169,8 +232,9 @@ type Declaration struct {
 	// setting of one table. Nil declares none.
 	TableSetting schemaext.Value
 	// Facets are settings of the claim's index, for an [IndexAttributes]
-	// claim, each of one of the extension's Kinds. The frontend adds them to
-	// the index's facets.
+	// claim, or of its table, for an [InTable] claim, each of one of the
+	// extension's Kinds. The frontend adds them to the index's or the
+	// table's facets.
 	Facets schemaext.Facets
 }
 
@@ -202,7 +266,10 @@ func (e *ClaimError) Unwrap() error {
 
 // Decoder reads the claims of one document. An owner refuses a block it
 // cannot read with a [ClaimError], and refuses the first such block of the
-// request, so a document is refused where it is first wrong.
+// request, so a document is refused where it is first wrong. It checks every
+// claim on its own before it refuses one claim against another, such as two
+// blocks that declare one object: that refusal names no single block, so
+// the frontend reports it once its own checks of the whole document pass.
 type Decoder interface {
 	DecodeHCL(ctx context.Context, request Request) (Result, error)
 }
@@ -231,12 +298,13 @@ type Extension struct {
 	// as that a document without a synonym block describes a database
 	// without a synonym. An HCL document names no target, so the claim
 	// holds for every document. It is handed the document's header entries
-	// of the Header kinds, and its captured header where CapturedCoverage is
-	// set. It is optional; without it the owner claims nothing.
+	// of the Header kinds, its captured header where CapturedCoverage is
+	// set, and the objects the document declares. It is optional; without
+	// it the owner claims nothing.
 	Coverage func(request CoverageRequest) (schemaext.Coverage, error)
 }
 
-// CoverageRequest is what a document's header says to one owner's claim.
+// CoverageRequest is what a document says to one owner's claim.
 type CoverageRequest struct {
 	// Limits are the header's `ptah:not-described` entries of the owner's
 	// Header kinds, in the header's order.
@@ -246,6 +314,10 @@ type CoverageRequest struct {
 	// schemaext.Registry.DecodeCoverageHeaderBodies decodes. Only an owner
 	// that sets CapturedCoverage receives them.
 	Captured []string
+	// Declared are the objects the document declares, the owners' and the
+	// frontend's, such as the policies whose tables a claim leaves to a
+	// default.
+	Declared schemaext.Objects
 }
 
 // Set is the frozen collection of extensions one parse selects. The zero
@@ -319,20 +391,13 @@ func NewSet(extensions ...Extension) (Set, error) {
 }
 
 func validateBlock(owner string, block Block) error {
-	if block.Site != TopLevel && block.Site != IndexAttributes {
-		return fmt.Errorf("HCL block %q of %s names unknown site %q", block.Type, owner, block.Site)
-	}
 	if strings.TrimSpace(block.Type) == "" {
 		return fmt.Errorf("HCL extension of %s declares a block without a type", owner)
 	}
-	if block.Site == IndexAttributes {
-		if block.Type != "index" || block.Naming != "" {
-			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
-		}
-	} else if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName {
-		return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
+	if err := validateNaming(owner, block); err != nil {
+		return err
 	}
-	names := map[string]bool{"schema": true}
+	names := map[string]bool{"schema": block.Naming == SchemaAndName || block.Naming == SchemaAndQualifiedName}
 	for _, attribute := range block.Attributes {
 		if strings.TrimSpace(attribute.Name) == "" {
 			return fmt.Errorf("HCL block %q of %s declares an attribute without a name", block.Type, owner)
@@ -342,9 +407,50 @@ func validateBlock(owner string, block Block) error {
 				schemaext.ErrDuplicate, block.Type, owner, attribute.Name)
 		}
 		names[attribute.Name] = true
-		if attribute.Kind != String && attribute.Kind != Text && attribute.Kind != Bool {
-			return fmt.Errorf("HCL attribute %q of %s block %q names unknown kind %q", attribute.Name, owner, block.Type, attribute.Kind)
+		if err := validateKind(owner, block, attribute); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// validateNaming refuses a site the frontend does not know, and a naming the
+// site does not take: an index or a table block has none, and a top-level
+// block one of the namings.
+func validateNaming(owner string, block Block) error {
+	switch block.Site {
+	case TopLevel:
+		if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName && block.Naming != JoinedName {
+			return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
+		}
+	case IndexAttributes:
+		if block.Type != "index" || block.Naming != "" {
+			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
+		}
+	case InTable:
+		if block.Naming != "" {
+			return fmt.Errorf("HCL %s block %q of %s takes no naming", block.Site, block.Type, owner)
+		}
+	default:
+		return fmt.Errorf("HCL block %q of %s names unknown site %q", block.Type, owner, block.Site)
+	}
+	return nil
+}
+
+// validateKind refuses an unknown kind, a reference without the type it
+// refers to, and a type to refer to on another kind.
+func validateKind(owner string, block Block, attribute Attribute) error {
+	switch attribute.Kind {
+	case String, Text, Bool:
+		if attribute.Refers != "" {
+			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and refers to nothing", attribute.Name, owner, block.Type, attribute.Kind)
+		}
+	case Ref, Refs:
+		if strings.TrimSpace(attribute.Refers) == "" {
+			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and names no type it refers to", attribute.Name, owner, block.Type, attribute.Kind)
+		}
+	default:
+		return fmt.Errorf("HCL attribute %q of %s block %q names unknown kind %q", attribute.Name, owner, block.Type, attribute.Kind)
 	}
 	return nil
 }
@@ -384,7 +490,9 @@ type Match struct {
 // order of matches. A decoder that fails, or answers with another number of
 // declarations than it was given claims, fails the decode. A [ClaimError] a
 // decoder returns is returned with Claim rewritten to the claim's index in
-// matches.
+// matches. Of the refusals of several decoders, the [ClaimError] of the
+// earliest claim is returned, and a refusal that is no ClaimError only where
+// no decoder refused a claim.
 func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error) {
 	declarations := make([]Declaration, len(matches))
 	positions := make(map[int][]int)
@@ -396,6 +504,7 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 		positions[match.Shape.extension] = append(positions[match.Shape.extension], position)
 	}
 	var earliest *ClaimError
+	var unpositioned error
 	for _, index := range order {
 		extension := s.extensions[index]
 		request := Request{Claims: make([]Claim, 0, len(positions[index]))}
@@ -412,7 +521,14 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 			continue
 		}
 		if err != nil {
-			return nil, err
+			// A refusal that names no claim yields to one that does: the
+			// document is refused where it is first wrong, and the first
+			// refusal of a claim is earlier than one of the document as a
+			// whole.
+			if unpositioned == nil {
+				unpositioned = err
+			}
+			continue
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -430,6 +546,9 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 	}
 	if earliest != nil {
 		return nil, earliest
+	}
+	if unpositioned != nil {
+		return nil, unpositioned
 	}
 	return declarations, nil
 }
@@ -454,24 +573,26 @@ func checkDeclaration(extension Extension, declaration Declaration) error {
 	return nil
 }
 
-// Coverage combines the claims of every extension of the set, each handed
-// the entries of header whose kind it reads and, where it reads one, the
-// captured header. A set without a claim has none. An extension's error is
-// returned as it is.
-func (s Set) Coverage(header []coverage.Object, captured []string) (schemaext.Coverage, error) {
+// Coverage combines the claims of every extension of the set. document is
+// what the whole document says: every header entry an owner reads, the
+// captured header and the declared objects. Each extension is handed the
+// entries of the kinds it reads, the captured header where it reads one, and
+// the declared objects. A set without a claim has none. An extension's error
+// is returned as it is.
+func (s Set) Coverage(document CoverageRequest) (schemaext.Coverage, error) {
 	var combined schemaext.Coverage
 	for _, extension := range s.extensions {
 		if extension.Coverage == nil {
 			continue
 		}
-		request := CoverageRequest{}
-		for _, entry := range header {
+		request := CoverageRequest{Declared: document.Declared}
+		for _, entry := range document.Limits {
 			if containsKind(extension.Header, entry.Kind) {
 				request.Limits = append(request.Limits, entry)
 			}
 		}
 		if extension.CapturedCoverage {
-			request.Captured = slices.Clone(captured)
+			request.Captured = slices.Clone(document.Captured)
 		}
 		// An owner's refusal is the reader's refusal of the document, in the
 		// owner's words, so it is not wrapped.

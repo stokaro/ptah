@@ -1308,7 +1308,7 @@ table "posts" {
 func TestParsePostgreSQLSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "public" {}
 
 extension "pg_trgm" {
@@ -1581,7 +1581,7 @@ table "users" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.input), "schema.hcl")
+			_, err := parseWithOwners([]byte(test.input), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
