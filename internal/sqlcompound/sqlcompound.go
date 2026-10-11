@@ -54,6 +54,13 @@ type State struct {
 	caseDepth                    int
 	pendingEndKeyword            bool
 	pendingCaseEndKeyword        bool
+	// pendingBegin holds a T-SQL BEGIN until the word after it says whether
+	// it opens a block; see [State.sqlServerWord].
+	pendingBegin bool
+	// blocksClosed records that a T-SQL END followed by a word closed the
+	// last open block, so the next semicolon ends the routine as it would
+	// have ended after "END;".
+	blocksClosed bool
 	// yql is the YQL position, which shares nothing with the routine bodies
 	// above.
 	yql yqlBodies
@@ -157,6 +164,10 @@ func (s *State) Word(value string) {
 		s.observeCreatePrefix(value)
 		return
 	}
+	if s.isSQLServer() {
+		s.sqlServerWord(value)
+		return
+	}
 
 	switch value {
 	case "CASE":
@@ -184,6 +195,46 @@ func (s *State) Word(value string) {
 			s.pendingEndKeyword = false
 		}
 		s.pendingCaseEndKeyword = false
+	}
+}
+
+// sqlServerWord follows the blocks of a T-SQL routine body, which differ from
+// the other dialects' in what a BEGIN and an END mean.
+//
+// BEGIN TRAN, BEGIN TRANSACTION, BEGIN DISTRIBUTED TRANSACTION, BEGIN DIALOG
+// and BEGIN CONVERSATION TIMER open no block, and END CONVERSATION closes
+// none, so a BEGIN and an END each wait for the word after them. An END that
+// closes a block closes it there: T-SQL ends no block with a word of its own
+// as `END IF` does elsewhere, and writes `END TRY BEGIN CATCH` with no
+// semicolon between the two. When that END closed the last open block, the
+// next semicolon ends the routine, as the one in "END;" does. The answers are
+// the ones the parser and the SQL Server owner use (stokaro/ptah#4461).
+func (s *State) sqlServerWord(value string) {
+	if s.pendingBegin {
+		s.pendingBegin = false
+		if SQLServerBeginOpensBlock(value) {
+			s.compoundDepth++
+			s.blocksClosed = false
+		}
+	}
+	if s.pendingEndKeyword {
+		s.pendingEndKeyword = false
+		if SQLServerEndClosesBlock(value) && s.compoundDepth > 0 {
+			s.compoundDepth--
+			s.blocksClosed = s.compoundDepth == 0
+		}
+	}
+	switch value {
+	case "CASE":
+		s.caseDepth++
+	case "BEGIN":
+		s.pendingBegin = true
+	case "END":
+		if s.caseDepth > 0 {
+			s.caseDepth--
+			return
+		}
+		s.pendingEndKeyword = true
 	}
 }
 
@@ -339,6 +390,10 @@ func (s *State) KeepSemicolonInsideStatement() bool {
 	if !s.inCompoundCreate {
 		return false
 	}
+	if s.blocksClosed {
+		s.inCompoundCreate = false
+		return false
+	}
 	if s.routineBodyOpener && !s.pendingEndKeyword {
 		return true
 	}
@@ -362,10 +417,11 @@ func (s *State) KeepSemicolonInsideStatement() bool {
 // DISTRIBUTED TRANSACTION, BEGIN DIALOG and BEGIN CONVERSATION TIMER are
 // statements of their own and open nothing.
 //
-// Two readers ask it and must agree: the parser, which finds where a CREATE
-// PROCEDURE or CREATE FUNCTION ends, and the SQL Server owner, which splits the
-// body inside it. A second list in either would let one of them read an END as
-// closing a block the other never opened.
+// Three readers ask it and must agree: the parser, which finds where a CREATE
+// PROCEDURE or CREATE FUNCTION ends; [State], which decides the same for the
+// migration splitters; and the SQL Server owner, which splits the body inside
+// it. A second list in any of them would let it read an END as closing a block
+// the others never opened.
 func SQLServerBeginOpensBlock(next string) bool {
 	switch strings.ToUpper(next) {
 	case "CONVERSATION", "DIALOG", "DISTRIBUTED", "TRAN", "TRANSACTION":
