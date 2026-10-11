@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/schemaext"
 )
 
 func validRule() lintext.Rule {
@@ -109,12 +110,19 @@ func TestValidateSplit_HappyPath(t *testing.T) {
 	c.Assert(lintext.ValidateSplit(request, result), qt.IsNil)
 }
 
-// A split may judge facts and report effects of them.
+// A split may judge facts and report effects of them, and an owner's safety
+// judgment of either impact it may make.
 func TestValidateSplit_Effects_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	request, result := splitOf("DROP TABLE a;", lintext.Statement{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a",
-		Effects: []lintext.Effect{{Fact: lintext.FactRebuildDrop}}})
-	result.Judged = []lintext.Fact{lintext.FactRebuildDrop, lintext.FactRebuildRename, lintext.FactStatefulDrop}
+	request, result := splitOf("DROP TABLE a;\nDROP TABLE b;",
+		lintext.Statement{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a", Effects: []lintext.Effect{
+			{Fact: lintext.FactRebuildDrop},
+			{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: "drops a table"},
+		}},
+		lintext.Statement{Start: 14, End: 26, Line: 2, SQL: "DROP TABLE b", Effects: []lintext.Effect{
+			{Fact: lintext.FactSafetyEffect, Impact: schemaext.Behavioral, Reason: "moves a table aside"},
+		}})
+	result.Judged = []lintext.Fact{lintext.FactRebuildDrop, lintext.FactRebuildRename, lintext.FactStatefulDrop, lintext.FactSafetyEffect}
 
 	c.Assert(lintext.ValidateSplit(request, result), qt.IsNil)
 }
@@ -145,6 +153,20 @@ func TestValidateSplit_FailurePath(t *testing.T) {
 		{"an effect of a fact not judged", []lintext.Statement{{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a",
 			Effects: []lintext.Effect{{Fact: lintext.FactUniqueIndex}}}}, 1, []lintext.Fact{lintext.FactStatefulDrop},
 			`.*statement 0 of 1.up.sql reports "unique-index", which the split does not judge`},
+		{"an additive judgment", judging(lintext.Effect{Fact: lintext.FactSafetyEffect, Impact: schemaext.Additive, Reason: "adds"}),
+			1, judgedFacts, `.*statement 0 of 1.up.sql judges impact "additive", which is not "behavioral" or "destructive"`},
+		{"a judgment without an impact", judging(lintext.Effect{Fact: lintext.FactSafetyEffect, Reason: "drops"}),
+			1, judgedFacts, `.*statement 0 of 1.up.sql judges impact "", which is not "behavioral" or "destructive"`},
+		{"a judgment without a reason", judging(lintext.Effect{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: " "}),
+			1, judgedFacts, `.*statement 0 of 1.up.sql judges impact "destructive" without a reason`},
+		{"two judgments of one statement", judging(
+			lintext.Effect{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: "drops"},
+			lintext.Effect{Fact: lintext.FactSafetyEffect, Impact: schemaext.Behavioral, Reason: "moves"}),
+			1, judgedFacts, `.*statement 0 of 1.up.sql reports "safety-effect" twice`},
+		{"an impact on another fact", judging(lintext.Effect{Fact: lintext.FactStatefulDrop, Impact: schemaext.Destructive}),
+			1, judgedFacts, `.*statement 0 of 1.up.sql carries an impact or a reason on "stateful-drop", which only "safety-effect" carries`},
+		{"a reason on another fact", judging(lintext.Effect{Fact: lintext.FactStatefulDrop, Reason: "drops"}),
+			1, judgedFacts, `.*statement 0 of 1.up.sql carries an impact or a reason on "stateful-drop", which only "safety-effect" carries`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -158,10 +180,19 @@ func TestValidateSplit_FailurePath(t *testing.T) {
 	}
 }
 
-// annotateRequest asks about stateful drops in one file of two statements.
+// judgedFacts are the facts the failing splits of one statement judge.
+var judgedFacts = []lintext.Fact{lintext.FactStatefulDrop, lintext.FactSafetyEffect}
+
+// judging is the statement DROP TABLE a of a split, with effects.
+func judging(effects ...lintext.Effect) []lintext.Statement {
+	return []lintext.Statement{{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a", Effects: effects}}
+}
+
+// annotateRequest asks about stateful drops and safety effects in one file of
+// two statements.
 func annotateRequest() lintext.AnnotateRequest {
 	const sql = "DROP TOPIC t;\nSELECT 1;"
-	return lintext.AnnotateRequest{Facts: []lintext.Fact{lintext.FactStatefulDrop},
+	return lintext.AnnotateRequest{Facts: []lintext.Fact{lintext.FactStatefulDrop, lintext.FactSafetyEffect},
 		Sources: []lintext.Source{{Name: "1.up.sql", SQL: sql}},
 		Files: [][]lintext.Statement{{
 			{Start: 0, End: 12, Line: 1, SQL: "DROP TOPIC t"},
@@ -177,7 +208,10 @@ func TestValidateAnnotate_HappyPath(t *testing.T) {
 
 	c.Assert(lintext.ValidateAnnotateRequest(request), qt.IsNil)
 	c.Assert(lintext.ValidateAnnotate(request, lintext.AnnotateResult{Files: [][]lintext.Annotation{{
-		{Effects: []lintext.Effect{{Fact: lintext.FactStatefulDrop, Object: "t", Kind: "TOPIC"}}},
+		{Effects: []lintext.Effect{
+			{Fact: lintext.FactStatefulDrop, Object: "t", Kind: "TOPIC"},
+			{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: "drops a topic"},
+		}},
 		{Declined: true},
 	}}}), qt.IsNil)
 }
@@ -195,6 +229,12 @@ func TestValidateAnnotate_FailurePath(t *testing.T) {
 			`.*statement 0 of file 0 is declined and carries effects`},
 		{"an effect the request did not ask about", [][]lintext.Annotation{{{}, {Effects: []lintext.Effect{{Fact: lintext.FactUniqueIndex}}}}},
 			`.*statement 1 of file 0 reports "unique-index", which the request did not ask about`},
+		{"an additive judgment", [][]lintext.Annotation{{{Effects: []lintext.Effect{
+			{Fact: lintext.FactSafetyEffect, Impact: schemaext.Additive, Reason: "adds"}}}, {}}},
+			`.*statement 0 of file 0 judges impact "additive", which is not "behavioral" or "destructive"`},
+		{"a reason on another fact", [][]lintext.Annotation{{{}, {Effects: []lintext.Effect{
+			{Fact: lintext.FactStatefulDrop, Reason: "drops"}}}}},
+			`.*statement 1 of file 0 carries an impact or a reason on "stateful-drop", which only "safety-effect" carries`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

@@ -721,3 +721,17 @@ v0.13.0 ptah.run/core/ast
 # implementation of SchemaRuntime adds that method. Pre-v1, so no
 # compatibility is owed.
 v0.13.0 ptah.run/engine
+
+# #4140 moves the reading of statements only an owner recognizes out of the
+# safety classifier into the owners, through the lintext fact
+# FactSafetyEffect. AssessSQL takes a context, a safety.Runtime and a target
+# and classifies a batch of statements; AssessRendered and
+# AssessRenderedWithCapabilities take a safety.RenderingRuntime, which adds the
+# owners' judgment to rendering. Pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/migration/safety
+
+# #4140: generator.Runtime includes safety.Runtime, so the statements a
+# generated migration renders are judged by their owners. An implementation of
+# Runtime adds SplitStatements and AnnotateStatements. Pre-v1, so no
+# compatibility is owed.
+v0.13.0 ptah.run/migration/generator

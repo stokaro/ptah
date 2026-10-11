@@ -78,8 +78,11 @@ func ValidateAnnotateRequest(request AnnotateRequest) error {
 
 // ValidateAnnotate reports a result that does not answer request: a file or
 // statement count other than the request's, an effect of a fact the request
-// did not ask about, or a declined statement that carries an effect. Each
-// failure wraps [ErrInvalid].
+// did not ask about, a declined statement that carries an effect, and effects
+// [ValidateSplit] refuses too: an Impact or a Reason on a fact other than
+// [FactSafetyEffect], a safety effect whose Impact is not Behavioral or
+// Destructive or whose Reason is empty, and two safety effects on one
+// statement. Each failure wraps [ErrInvalid].
 func ValidateAnnotate(request AnnotateRequest, result AnnotateResult) error {
 	if len(result.Files) != len(request.Files) {
 		return fmt.Errorf("%w: an annotation of %d files returned %d", ErrInvalid, len(request.Files), len(result.Files))
@@ -96,6 +99,9 @@ func ValidateAnnotate(request AnnotateRequest, result AnnotateResult) error {
 				if !slices.Contains(request.Facts, effect.Fact) {
 					return fmt.Errorf("%w: statement %d of file %d reports %q, which the request did not ask about", ErrInvalid, j, i, effect.Fact)
 				}
+			}
+			if fault := effectsFault(annotation.Effects); fault != "" {
+				return fmt.Errorf("%w: statement %d of file %d %s", ErrInvalid, j, i, fault)
 			}
 		}
 	}

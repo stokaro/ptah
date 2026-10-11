@@ -2,6 +2,7 @@ package atlasschema
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -79,8 +80,10 @@ func DetectPlanFormat(contents []byte) PlanFormat {
 // ReadPlanDocument loads and validates a local plan file in either supported
 // encoding, reporting which format it was. The Atlas-compatible apply path
 // uses it so Atlas-authored `.plan.hcl` files and Ptah's native `.plan.json`
-// files are both readable; the native command tree keeps [ReadPlanFile].
-func ReadPlanDocument(path string) (PlanFile, PlanFormat, error) {
+// files are both readable; the native command tree keeps [ReadPlanFile]. The
+// runtime's owners judge an Atlas-format plan's statements, which carry no
+// dialect; see [decodePlanHCL].
+func ReadPlanDocument(ctx context.Context, runtime safety.Runtime, path string) (PlanFile, PlanFormat, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return PlanFile{}, "", fmt.Errorf("read plan file: %w", err)
@@ -91,7 +94,7 @@ func ReadPlanDocument(path string) (PlanFile, PlanFormat, error) {
 		plan, err := decodePlanJSON(contents, path)
 		return plan, format, err
 	default:
-		plan, err := decodePlanHCL(contents, path)
+		plan, err := decodePlanHCL(ctx, runtime, contents, path)
 		return plan, format, err
 	}
 }
@@ -139,7 +142,7 @@ func TimestampPlanName(now time.Time) string {
 // prompt, a destructive-change refusal) must recompute it from the
 // dialect-aware statement list that [ApplyStatements] runs, never from these
 // fields.
-func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
+func decodePlanHCL(ctx context.Context, runtime safety.Runtime, contents []byte, path string) (PlanFile, error) {
 	// HCL plan files can acquire CRLF line endings during a Windows checkout.
 	// Normalize document separators before parsing; the writer still rejects
 	// carriage returns embedded in in-memory SQL statements.
@@ -162,11 +165,15 @@ func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
 	if err != nil {
 		return PlanFile{}, fmt.Errorf("invalid plan file %s: %w", path, err)
 	}
+	statements, err := planStatementsFromSQL(ctx, runtime, sqlutil.SplitSQLStatements(attributes["migration"]))
+	if err != nil {
+		return PlanFile{}, fmt.Errorf("assess plan file %s: %w", path, err)
+	}
 	plan := PlanFile{
 		Name:            block.Labels[0],
 		FromFingerprint: attributes["from"],
 		ToFingerprint:   attributes["to"],
-		Statements:      planStatementsFromSQL(sqlutil.SplitSQLStatements(attributes["migration"])),
+		Statements:      statements,
 	}
 	for _, statement := range plan.Statements {
 		plan.Destructive = plan.Destructive || statement.Severity == safety.Destructive
@@ -287,11 +294,13 @@ func MarshalPlanFileAs(plan PlanFile, format PlanFormat) ([]byte, error) {
 }
 
 // planStatementsFromSQL assigns advisory safety metadata while decoding an
-// Atlas plan. Atlas plan files do not record a dialect, so correctness-sensitive
-// callers must reclassify the SQL after resolving the target dialect.
-func planStatementsFromSQL(raw []string) []PlanStatement {
-	statements, _ := classifyPlanStatements(raw, "", nil)
-	return statements
+// Atlas plan. Atlas plan files do not record a dialect, so every owner judges
+// the statements it recognizes over a split that knows none, and
+// correctness-sensitive callers must reclassify the SQL after resolving the
+// target dialect.
+func planStatementsFromSQL(ctx context.Context, runtime safety.Runtime, raw []string) ([]PlanStatement, error) {
+	statements, _, err := classifyPlanStatements(ctx, runtime, raw, "", nil)
+	return statements, err
 }
 
 func singlePlanBlock(body *hclsyntax.Body) (*hclsyntax.Block, error) {

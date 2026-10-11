@@ -56,7 +56,7 @@ func TestSchemaPlanDirectiveRoundTripsThroughThePlanReader(t *testing.T) {
 				fixture.args("--output", planPath, "-d", "atlas:txmode none")...)
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-			plan, _, readErr := atlasschema.ReadPlanDocument(planPath)
+			plan, _, readErr := readPlanDocument(c, planPath)
 
 			c.Assert(readErr, qt.IsNil)
 			mode, modeErr := atlasschema.PlanTxMode(planPath, plan.SQL())

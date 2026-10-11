@@ -104,10 +104,18 @@ type PlanRowSet struct {
 	Columns []string `json:"columns"`
 }
 
+// PlanRuntime is what preparing a plan asks of the engine runtime: the
+// services the plan is computed with, and the owners' judgment of the
+// statements it holds.
+type PlanRuntime interface {
+	engine.SchemaRuntime
+	safety.Runtime
+}
+
 // PlanFileOptions configures PreparePlanFile.
 type PlanFileOptions struct {
 	// Runtime selects feature services and codecs for this operation. It is required.
-	Runtime engine.SchemaRuntime
+	Runtime PlanRuntime
 	// Name is the plan name recorded in the file. When empty, a deterministic
 	// name is derived from the source and target fingerprints.
 	Name string
@@ -260,7 +268,10 @@ func PreparePlanFileReportingUndecided(
 		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
 
-	statements, destructive := classifyPlanStatements(computation.statements, conn.Info().Dialect, computation.owned)
+	statements, destructive, err := classifyPlanStatements(ctx, opts.Runtime, computation.statements, conn.Info().Dialect, computation.owned)
+	if err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("assess plan safety: %w", err)
+	}
 	// The data statements carry their own severity rather than the analyzer's.
 	// A DELETE of a reference row removes no table and tightens no constraint,
 	// so the analyzer calls it safe; the row it removes is gone all the same.
@@ -388,13 +399,27 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 // CREATE POLICY reads as additive whether it widens or narrows access. A
 // statement with an owner verdict takes its access assessment and, when
 // higher, its severity.
-func classifyPlanStatements(raw []string, dialect string, owned []safety.StatementAssessment) (statements []PlanStatement, destructive bool) {
+func classifyPlanStatements(
+	ctx context.Context,
+	runtime safety.Runtime,
+	raw []string,
+	dialect string,
+	owned []safety.StatementAssessment,
+) (statements []PlanStatement, destructive bool, err error) {
+	// Statements can carry comments and MySQL-family executable comments.
+	// Classify the SQL the plan's dialect may execute, including guarded
+	// executable-comment bodies regardless of server version.
+	executable := make([]string, 0, len(raw))
+	for _, statement := range raw {
+		executable = append(executable, strings.TrimSpace(sqlsafety.SQLForAssessment(statement, dialect)))
+	}
+	assessments, err := safety.AssessSQL(ctx, runtime, dialect, executable)
+	if err != nil {
+		return nil, false, err
+	}
 	statements = make([]PlanStatement, 0, len(raw))
 	for i, statement := range raw {
-		// Statements can carry comments and MySQL-family executable comments.
-		// Classify the SQL the plan's dialect may execute, including guarded
-		// executable-comment bodies regardless of server version.
-		assessment := safety.AssessSQL(strings.TrimSpace(sqlsafety.SQLForAssessment(statement, dialect)))
+		assessment := assessments[i]
 		ownerVerdict := i < len(owned) && owned[i].Severity != ""
 		if ownerVerdict {
 			safety.Fold(&assessment, owned[i])
@@ -409,7 +434,7 @@ func classifyPlanStatements(raw []string, dialect string, owned []safety.Stateme
 			AccessReason: assessment.AccessReason,
 		})
 	}
-	return statements, destructive
+	return statements, destructive, nil
 }
 
 // splitPlanStatements splits sqlText into plan statements, keeping each
@@ -478,15 +503,21 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // to converge on `--to` before the target is touched. A native JSON plan
 // carries no such replay, so an edited JSON plan is only as good as the review
 // it received. [MarshalPlanFileAs] callers that accept edits must say so.
-func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
-	statements, destructive := classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil)
+//
+// The runtime's owners judge the statements as they judge a planned one; an
+// error judging them returns no plan.
+func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runtime, sqlText string) (PlanFile, error) {
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil)
+	if err != nil {
+		return PlanFile{}, err
+	}
 	if sameStatementSequence(p.Statements, statements, p.Dialect) {
 		for i := range statements {
 			raisePlanStatement(&statements[i], p.Statements[i])
 			destructive = destructive || statements[i].Severity == safety.Destructive
 		}
 		p.Statements, p.Destructive = statements, destructive
-		return p
+		return p, nil
 	}
 	recorded := make(map[string]PlanStatement, len(p.Statements))
 	carriesOwner := false
@@ -508,7 +539,7 @@ func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
 		destructive = destructive || statements[i].Severity == safety.Destructive
 	}
 	p.Statements, p.Destructive = statements, destructive
-	return p
+	return p, nil
 }
 
 // sameStatementSequence reports whether edited holds the recorded statements
@@ -587,13 +618,14 @@ func (p PlanFile) SQL() string {
 //
 // Re-deriving rather than splicing is what keeps the plan self-consistent: the
 // statements a caller reads are the ones the writer emits, so the file cannot
-// say one thing and the report another.
-func (p PlanFile) WithDirectiveHeader(directives []PlanDirective) PlanFile {
+// say one thing and the report another. The runtime's owners judge the
+// re-derived statements; an error judging them returns no plan.
+func (p PlanFile) WithDirectiveHeader(ctx context.Context, runtime safety.Runtime, directives []PlanDirective) (PlanFile, error) {
 	header := PlanDirectiveHeader(directives)
 	if header == "" {
-		return p
+		return p, nil
 	}
-	return p.WithStatementsFromSQL(header + p.SQL())
+	return p.WithStatementsFromSQL(ctx, runtime, header+p.SQL())
 }
 
 // StatementSQL returns the ordered plan statement SQL texts.

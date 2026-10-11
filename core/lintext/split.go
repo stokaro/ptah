@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
+
+	"ptah.run/core/schemaext"
 )
 
 // Source is one migration file's executable SQL as a host hands it to a
@@ -86,6 +89,15 @@ const (
 	// judged them. A split judges both or neither.
 	FactRebuildDrop   Fact = "rebuild-drop"
 	FactRebuildRename Fact = "rebuild-rename"
+	// FactSafetyEffect is the owner's judgment of what a statement only it
+	// recognizes does to stored data or to running work, which a safety
+	// assessment takes in place of its own reading of the words: a dropped
+	// topic loses its messages, and an async replication dropped without
+	// CASCADE leaves its replica tables read-only. The effect carries the
+	// judgment in [Effect.Impact] and [Effect.Reason]. An owner reports one
+	// effect of this fact for a statement, or none, and none means the
+	// statement is not one the owner judges, not that it is harmless.
+	FactSafetyEffect Fact = "safety-effect"
 )
 
 // Effect is one fact about what a statement does.
@@ -108,6 +120,13 @@ type Effect struct {
 	// Failure is the engine's own words for the error the statement fails
 	// with, for a message, such as "YDB: Duplicate key found".
 	Failure string `json:"failure,omitempty"`
+	// Impact and Reason are the judgment a [FactSafetyEffect] carries, and
+	// no other fact carries them. Impact is [schemaext.Behavioral] or
+	// [schemaext.Destructive]: an owner does not vouch that a statement is
+	// additive, because the assessment takes the owner's judgment in place
+	// of its own. Reason says why, in the words a report shows.
+	Impact schemaext.Impact `json:"impact,omitempty"`
+	Reason string           `json:"reason,omitempty"`
 }
 
 // Routine is what a rule may read of the routine a statement defines.
@@ -148,8 +167,11 @@ type Splitter interface {
 // count per source other than one list per source, a statement whose span
 // falls outside its source, overlaps the one before it, disagrees with its
 // text, or has no line, a judged fact this package does not define, one of
-// the two rebuild facts judged without the other, and an effect of a fact the
-// split does not list as judged. Each failure wraps [ErrInvalid].
+// the two rebuild facts judged without the other, an effect of a fact the
+// split does not list as judged, and effects [ValidateAnnotate] refuses too: an
+// Impact or a Reason on a fact other than [FactSafetyEffect], a safety effect
+// whose Impact is not Behavioral or Destructive or whose Reason is empty, and
+// two safety effects on one statement. Each failure wraps [ErrInvalid].
 func ValidateSplit(request SplitRequest, result SplitResult) error {
 	if len(result.Files) != len(request.Sources) {
 		return fmt.Errorf("%w: a split of %d sources returned %d", ErrInvalid, len(request.Sources), len(result.Files))
@@ -175,6 +197,9 @@ func ValidateSplit(request SplitRequest, result SplitResult) error {
 					return fmt.Errorf("%w: statement %d of %s reports %q, which the split does not judge", ErrInvalid, j, source.Name, effect.Fact)
 				}
 			}
+			if fault := effectsFault(statement.Effects); fault != "" {
+				return fmt.Errorf("%w: statement %d of %s %s", ErrInvalid, j, source.Name, fault)
+			}
 			end = statement.End
 		}
 	}
@@ -182,4 +207,30 @@ func ValidateSplit(request SplitRequest, result SplitResult) error {
 }
 
 // facts are the facts this package defines.
-var facts = []Fact{FactStatefulDrop, FactUniqueIndex, FactRebuildDrop, FactRebuildRename}
+var facts = []Fact{FactStatefulDrop, FactUniqueIndex, FactRebuildDrop, FactRebuildRename, FactSafetyEffect}
+
+// effectsFault says what is wrong with one statement's effects, as the rest of
+// a sentence that names the statement, and is empty when nothing is. A split
+// and an annotation are held to it alike, so an owner's judgment reads the same
+// whichever of them carried it.
+func effectsFault(effects []Effect) string {
+	judged := 0
+	for _, effect := range effects {
+		if effect.Fact != FactSafetyEffect {
+			if effect.Impact != "" || effect.Reason != "" {
+				return fmt.Sprintf("carries an impact or a reason on %q, which only %q carries", effect.Fact, FactSafetyEffect)
+			}
+			continue
+		}
+		judged++
+		switch {
+		case effect.Impact != schemaext.Behavioral && effect.Impact != schemaext.Destructive:
+			return fmt.Sprintf("judges impact %q, which is not %q or %q", effect.Impact, schemaext.Behavioral, schemaext.Destructive)
+		case strings.TrimSpace(effect.Reason) == "":
+			return fmt.Sprintf("judges impact %q without a reason", effect.Impact)
+		case judged > 1:
+			return fmt.Sprintf("reports %q twice", FactSafetyEffect)
+		}
+	}
+	return ""
+}

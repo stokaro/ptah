@@ -115,6 +115,12 @@ func coordinationValue(payload schemaext.Payload) (*CoordinationNode, error) {
 	return value, nil
 }
 
+// DropCoordinationNodeReason is why dropping a coordination node is
+// destructive, in the words the safety report gives a planned drop and a
+// written DROP COORDINATION NODE alike.
+const DropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
+	"resources, even while a session holds a lock on it"
+
 // Effect records consequences established by the complete operands. The same
 // metadata feeds diff reports and the operation produced by the owner planner.
 // Restoring configuration cannot restore runtime semaphores or rate limiters.
@@ -126,7 +132,7 @@ func (v *CoordinationNode) Effect() schemaext.Effect {
 		return schemaext.Effect{Impact: schemaext.Additive, Reason: "creates a coordination node without removing existing state"}
 	}
 	if v.After == nil {
-		return schemaext.Effect{Impact: schemaext.Destructive, Reason: "DROP COORDINATION NODE removes the node with its semaphores and rate limiter resources, even while a session holds a lock on it"}
+		return schemaext.Effect{Impact: schemaext.Destructive, Reason: DropCoordinationNodeReason}
 	}
 	return schemaext.Effect{Impact: schemaext.Behavioral, Reason: "coordination settings change session timing, consistency, or rate limiter counters"}
 }

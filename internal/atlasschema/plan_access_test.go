@@ -76,7 +76,7 @@ func TestPlanFileWithStatementsFromSQLKeepsEveryVerdictWhenTheSequenceIsUnchange
 			c := qt.New(t)
 			plan := atlasschema.PlanFile{Dialect: "postgres", Statements: tc.recorded}
 
-			edited := plan.WithStatementsFromSQL(tc.edited)
+			edited := withStatements(c, plan, tc.edited)
 
 			c.Assert(edited.Statements, qt.DeepEquals, tc.recorded)
 			c.Assert(edited.Destructive, qt.Equals, tc.wantDestructive)
@@ -88,7 +88,7 @@ func TestPlanFileWithStatementsFromSQLKeepsVerdictsAcrossCommentsAndWhitespace(t
 	c := qt.New(t)
 	plan := atlasschema.PlanFile{Dialect: "postgres", Statements: []atlasschema.PlanStatement{wideningPolicy, commonTable}}
 
-	edited := plan.WithStatementsFromSQL("-- reviewed\nCREATE POLICY everyone\n  ON t USING (true);\n" + commonTable.SQL + ";\n")
+	edited := withStatements(c, plan, "-- reviewed\nCREATE POLICY everyone\n  ON t USING (true);\n"+commonTable.SQL+";\n")
 
 	reviewed := wideningPolicy
 	reviewed.SQL = "-- reviewed\nCREATE POLICY everyone\n  ON t USING (true)"
@@ -179,7 +179,7 @@ func TestPlanFileWithStatementsFromSQLFailsClosedWhenAPlanWithAnOwnerVerdictChan
 			c := qt.New(t)
 			plan := atlasschema.PlanFile{Dialect: "postgres", Statements: tc.recorded}
 
-			edited := plan.WithStatementsFromSQL(tc.edited)
+			edited := withStatements(c, plan, tc.edited)
 
 			c.Assert(edited.Statements, qt.DeepEquals, tc.want)
 			c.Assert(edited.Destructive, qt.IsTrue)
@@ -220,7 +220,7 @@ func TestPlanFileWithStatementsFromSQLGivesACopyTheStrongestRecordedVerdict(t *t
 			c := qt.New(t)
 			plan := atlasschema.PlanFile{Dialect: "postgres", Statements: tc.recorded}
 
-			edited := plan.WithStatementsFromSQL(tc.edited)
+			edited := withStatements(c, plan, tc.edited)
 
 			c.Assert(edited.Statements, qt.DeepEquals, tc.want)
 			c.Assert(edited.Destructive, qt.Equals, tc.wantDestructive)

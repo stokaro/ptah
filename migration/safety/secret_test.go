@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
@@ -54,14 +55,18 @@ func TestClassify_Secret(t *testing.T) {
 }
 
 // A DROP SECRET read as text is destructive too, as a migration file a person
-// wrote carries it.
+// wrote carries it, with the ydb target named or no target at all.
 func TestAssessSQL_DroppingASecretIsDestructive(t *testing.T) {
-	c := qt.New(t)
+	for _, target := range []string{platform.YDB, ""} {
+		t.Run(target, func(t *testing.T) {
+			c := qt.New(t)
 
-	got := safety.AssessSQL("DROP SECRET `ext/pw`")
+			got := assessText(c, target, "DROP SECRET `ext/pw`")
 
-	c.Assert(got.Severity, qt.Equals, safety.Destructive)
-	c.Assert(got.Reason, qt.Equals, "DROP SECRET removes a YDB secret whose value nothing can read back")
+			c.Assert(got.Severity, qt.Equals, safety.Destructive)
+			c.Assert(got.Reason, qt.Equals, "DROP SECRET removes a YDB secret whose value nothing can read back")
+		})
+	}
 }
 
 // A diff that drops a secret is destructive, one that rotates one is a

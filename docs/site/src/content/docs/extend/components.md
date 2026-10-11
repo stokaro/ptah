@@ -390,6 +390,9 @@ importing built-in engines.
 Pass the same `context.Context` and selected runtime to `safety.AssessRendered` or
 `AssessRenderedWithCapabilities` as well. Safety renders the assessment units
 in one batch and keeps each statement associated with its source operation.
+The target's owner judges the rendered statements only it recognizes, as
+`lintext.FactSafetyEffect`, in one call more, and `safety.AssessSQL` asks the
+same of statements a caller already holds.
 An extension's unknown effects still require manual review when it produces
 several SQL statements. Migration generation uses the same selected renderer
 for assessment, forward SQL, and rollback SQL.

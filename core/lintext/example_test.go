@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/schemaext"
 )
 
 // ExampleChecks shows an in-process owner publishing one rule as data and
@@ -107,4 +108,27 @@ func ExampleService() {
 	// Output:
 	// first call: 0 findings, subjects [{XY301 0 [0]}]
 	// second call: XY301 0000000002_rename.up.sql the renamed column was bigint
+}
+
+// ExampleValidateSplit shows an owner's split carrying its safety judgment of
+// a statement only the owner recognizes. A host takes the judgment in place
+// of reading the statement's words, so an owner may judge a statement
+// behavioral or destructive but never additive, and validation refuses the
+// reply that tries.
+func ExampleValidateSplit() {
+	request := lintext.SplitRequest{Target: "ydb", Sources: []lintext.Source{{Name: "1.up.sql", SQL: "DROP TOPIC events;"}}}
+	judge := func(impact schemaext.Impact) lintext.SplitResult {
+		return lintext.SplitResult{
+			Judged: []lintext.Fact{lintext.FactSafetyEffect},
+			Files: [][]lintext.Statement{{{Start: 0, End: 17, Line: 1, SQL: "DROP TOPIC events", Effects: []lintext.Effect{{
+				Fact: lintext.FactSafetyEffect, Impact: impact, Reason: "DROP TOPIC removes every message the topic holds",
+			}}}}},
+		}
+	}
+
+	fmt.Println(lintext.ValidateSplit(request, judge(schemaext.Destructive)))
+	fmt.Println(lintext.ValidateSplit(request, judge(schemaext.Additive)))
+	// Output:
+	// <nil>
+	// invalid lint contract value: statement 0 of 1.up.sql judges impact "additive", which is not "behavioral" or "destructive"
 }

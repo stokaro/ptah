@@ -228,14 +228,14 @@ func atlasPlanTestSchemaResolver(dir string, owners yamlext.Set, sql sqlext.Set)
 // catch.
 func atlasPlanTestPlanApplier(
 	dir string,
-	runtime atlasschema.PlanTargetRuntime,
+	runtime atlasschema.PlanRuntime,
 ) func(context.Context, *dbschema.DatabaseConnection, string) error {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error {
 		path, err := atlasPlanTestLocalPath(dir, url, "apply")
 		if err != nil {
 			return err
 		}
-		plan, _, err := atlasschema.ReadPlanDocument(path)
+		plan, _, err := atlasschema.ReadPlanDocument(ctx, runtime, path)
 		if err != nil {
 			return err
 		}

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -58,26 +59,34 @@ func TestClassify_ExternalObjects(t *testing.T) {
 }
 
 // The same statements read as text, as a migration file a person wrote
-// carries them, warn the same way.
+// carries them, warn the same way, with the ydb target named or no target at
+// all: the YDB owner judges them, and a table dropped or replaced the same way
+// stays destructive.
 func TestAssessSQL_ExternalObjects(t *testing.T) {
 	tests := []struct {
 		statement string
+		severity  safety.Severity
 		want      string
 	}{
-		{statement: "DROP EXTERNAL DATA SOURCE `ext/s3`",
+		{statement: "DROP EXTERNAL DATA SOURCE `ext/s3`", severity: safety.Warning,
 			want: "DROP EXTERNAL DATA SOURCE removes what YDB reads another system through; no data YDB stores is lost"},
-		{statement: "drop external table `ext/events`",
+		{statement: "drop external table `ext/events`", severity: safety.Warning,
 			want: "DROP EXTERNAL TABLE removes the columns YDB reads files through; the files stay"},
 		{statement: "CREATE OR REPLACE EXTERNAL TABLE `ext/events` (id Int64) WITH (DATA_SOURCE = 's3', LOCATION = 'e/')",
-			want: "CREATE OR REPLACE changes what queries reading the external object read"},
+			severity: safety.Warning, want: "CREATE OR REPLACE changes what queries reading the external object read"},
+		{statement: "drop table `ext/events`", severity: safety.Destructive, want: "DROP TABLE removes the table and all rows"},
+		{statement: "CREATE OR REPLACE TABLE `ext/events` (id Int64)", severity: safety.Destructive,
+			want: "CREATE OR REPLACE TABLE drops the existing table and all its rows"},
 	}
-	for _, test := range tests {
-		t.Run(test.statement, func(t *testing.T) {
-			c := qt.New(t)
-			got := safety.AssessSQL(test.statement)
-			c.Assert(got.Severity, qt.Equals, safety.Warning)
-			c.Assert(got.Reason, qt.Equals, test.want)
-		})
+	for _, target := range []string{platform.YDB, ""} {
+		for _, test := range tests {
+			t.Run(target+"/"+test.statement, func(t *testing.T) {
+				c := qt.New(t)
+				got := assessText(c, target, test.statement)
+				c.Assert(got.Severity, qt.Equals, test.severity)
+				c.Assert(got.Reason, qt.Equals, test.want)
+			})
+		}
 	}
 }
 

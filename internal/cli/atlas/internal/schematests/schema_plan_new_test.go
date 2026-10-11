@@ -57,7 +57,7 @@ func TestSchemaPlanNewWritesThePlanFileWithoutASaveFlag(t *testing.T) {
 	// the file was a side effect rather than the point.
 	c.Assert(stdout, qt.Not(qt.Contains), "migration = <<-SQL")
 
-	plan, planFormat, readErr := atlasschema.ReadPlanDocument(matches[0])
+	plan, planFormat, readErr := readPlanDocument(c, matches[0])
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(planFormat, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(plan.Statements, qt.HasLen, 1)
@@ -105,7 +105,7 @@ func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 				fixture.args("--output", path)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			_, planFormat, readErr := atlasschema.ReadPlanDocument(path)
+			_, planFormat, readErr := readPlanDocument(c, path)
 			c.Assert(readErr, qt.IsNil)
 			c.Assert(planFormat, qt.Equals, test.wantFormat)
 		})

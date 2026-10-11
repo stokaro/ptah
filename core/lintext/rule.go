@@ -20,6 +20,12 @@
 // lists in [SplitResult.Judged] the facts it judged for every statement, so a
 // host reads the fact instead of naming the dialect.
 //
+// The facts serve hosts other than lint. [FactSafetyEffect] is the owner's
+// judgment of a statement only it recognizes, which ptah.run/migration/safety
+// takes in place of reading the statement's words: the splitter of a plan's
+// target judges the plan's statements, and every annotator judges those of a
+// migration that names no target.
+//
 // A run that names no target is split by the host's dialect-blind scanner, so
 // no owner splits it. The host then asks every owner that registers an
 // [Annotator] for the facts of that split, in one call per run, with the

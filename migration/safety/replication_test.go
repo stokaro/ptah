@@ -112,23 +112,31 @@ func TestAssessRendered_Replications(t *testing.T) {
 }
 
 // A statement read as text is judged the same way, so a hand-written
-// migration is held by the same gate.
+// migration is held by the same gate, with the ydb target named or no target
+// at all: a replication dropped without CASCADE keeps its tables and is a
+// warning, and the same drop with CASCADE is destructive.
 func TestAssessSQL_Replications(t *testing.T) {
 	tests := []struct {
 		statement string
 		severity  safety.Severity
+		reason    string
 	}{
-		{statement: "DROP ASYNC REPLICATION `mirror` CASCADE;", severity: safety.Destructive},
-		{statement: "drop async replication mirror cascade", severity: safety.Destructive},
-		{statement: "DROP ASYNC REPLICATION `mirror`;", severity: safety.Warning},
-		{statement: "DROP TRANSFER `ingest`;", severity: safety.Destructive},
-		{statement: "CREATE TRANSFER ingest FROM tp TO t USING ($m) -> { return []; };", severity: safety.Safe},
+		{statement: "DROP ASYNC REPLICATION `mirror` CASCADE;", severity: safety.Destructive, reason: ydbdiff.DropReplicationReason},
+		{statement: "drop async replication mirror cascade", severity: safety.Destructive, reason: ydbdiff.DropReplicationReason},
+		{statement: "DROP ASYNC REPLICATION `mirror`;", severity: safety.Warning, reason: keptTablesReason},
+		{statement: "DROP TRANSFER `ingest`;", severity: safety.Destructive, reason: droppedTransferReason},
+		{statement: "CREATE TRANSFER ingest FROM tp TO t USING ($m) -> { return []; };", severity: safety.Safe,
+			reason: "does not remove data or tighten constraints"},
 	}
-	for _, test := range tests {
-		t.Run(test.statement, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(safety.AssessSQL(test.statement).Severity, qt.Equals, test.severity)
-		})
+	for _, target := range []string{platform.YDB, ""} {
+		for _, test := range tests {
+			t.Run(target+"/"+test.statement, func(t *testing.T) {
+				c := qt.New(t)
+				got := assessText(c, target, test.statement)
+				c.Assert(got.Severity, qt.Equals, test.severity)
+				c.Assert(got.Reason, qt.Equals, test.reason)
+			})
+		}
 	}
 }
 

@@ -392,7 +392,7 @@ func TestSchemaApplyPtahWrittenHCLPlanRoundTrip(t *testing.T) {
 
 	// The saved .plan.hcl carries Ptah's native sha256 fingerprints, so the
 	// apply verifies them AND rehearses the plan, then applies it.
-	plan, format, err := atlasschema.ReadPlanDocument(planPath)
+	plan, format, err := readPlanDocument(c, planPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(atlasschema.IsNativeFingerprint(plan.FromFingerprint), qt.IsTrue)

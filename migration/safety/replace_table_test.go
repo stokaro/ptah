@@ -36,7 +36,7 @@ func TestAssessSQL_ReplacingATableIsDestructive(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := safety.AssessSQL(test.statement)
+			got := assessText(c, "", test.statement)
 
 			c.Assert(got.Severity, qt.Equals, safety.Destructive)
 			c.Assert(got.Reason, qt.Equals, replaceTableReason)
@@ -65,7 +65,7 @@ func TestAssessSQL_WordsThatReplaceNoTable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := safety.AssessSQL(test.statement)
+			got := assessText(c, "", test.statement)
 
 			c.Assert(got.Severity, qt.Equals, safety.Safe)
 			c.Assert(got.Reason, qt.Equals, safeReason)

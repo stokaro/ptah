@@ -140,7 +140,7 @@ func TestSchemaPlanValidateAcceptsAtlasAuthoredPlan(t *testing.T) {
 // authority; neither foreign fingerprint can serve as an integrity check.
 func TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata(t *testing.T) {
 	c := qt.New(t)
-	oraclePlan, _, err := atlasschema.ReadPlanDocument(oracleFixturePath(c, oracleAtlasPlanFile))
+	oraclePlan, _, err := readPlanDocument(c, oracleFixturePath(c, oracleAtlasPlanFile))
 	c.Assert(err, qt.IsNil)
 	tests := []struct {
 		name   string
@@ -193,7 +193,7 @@ func TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata(t 
 
 func TestSchemaPlanValidateRejectsAtlasAuthoredPlanMutations(t *testing.T) {
 	c := qt.New(t)
-	oraclePlan, _, err := atlasschema.ReadPlanDocument(oracleFixturePath(c, oracleAtlasPlanFile))
+	oraclePlan, _, err := readPlanDocument(c, oracleFixturePath(c, oracleAtlasPlanFile))
 	c.Assert(err, qt.IsNil)
 	tests := []struct {
 		name      string
@@ -506,11 +506,11 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 	idempotentPlan := func(tb testing.TB, fixture validateFixture) {
 		c := qt.New(tb)
 		c.Helper()
-		plan, _, err := atlasschema.ReadPlanDocument(fixture.planPath)
+		plan, _, err := readPlanDocument(c, fixture.planPath)
 		c.Assert(err, qt.IsNil)
 		plan.Dialect = "sqlite"
 		document, err := atlasschema.MarshalPlanFileAs(
-			plan.WithStatementsFromSQL(`CREATE TABLE IF NOT EXISTS "added" ("id" INTEGER PRIMARY KEY);`),
+			withStatements(c, plan, `CREATE TABLE IF NOT EXISTS "added" ("id" INTEGER PRIMARY KEY);`),
 			atlasschema.PlanFormatHCL)
 		c.Assert(err, qt.IsNil)
 		c.Assert(os.WriteFile(fixture.planPath, document, 0o600), qt.IsNil)
@@ -601,12 +601,12 @@ func TestSchemaPlanValidateAcceptsAnEditedPlanThatStillConverges(t *testing.T) {
 	// create the table, then add the column, instead of one CREATE TABLE.
 	original, err := os.ReadFile(fixture.planPath)
 	c.Assert(err, qt.IsNil)
-	plan, planFormat, err := atlasschema.ReadPlanDocument(fixture.planPath)
+	plan, planFormat, err := readPlanDocument(c, fixture.planPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(planFormat, qt.Equals, atlasschema.PlanFormatHCL)
 	plan.Dialect = "sqlite"
-	edited := plan.WithStatementsFromSQL(
-		"CREATE TABLE \"added\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n" +
+	edited := withStatements(c, plan,
+		"CREATE TABLE \"added\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n"+
 			"ALTER TABLE \"added\" ADD COLUMN \"note\" TEXT;\n")
 	document, err := atlasschema.MarshalPlanFileAs(edited, atlasschema.PlanFormatHCL)
 	c.Assert(err, qt.IsNil)

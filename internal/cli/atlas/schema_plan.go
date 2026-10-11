@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/migration/safety"
 )
 
 type atlasSchemaPlanOptions struct {
@@ -228,7 +229,10 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	plan = plan.WithDirectiveHeader(opts.directives)
+	plan, err = plan.WithDirectiveHeader(cmd.Context(), runtime, opts.directives)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if !plan.HasChanges() {
 		// With --format the operator asked for a document to parse, and a
 		// synced schema is one of its answers. Printing the sentence here
@@ -266,7 +270,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		plan.Name = atlasschema.TimestampPlanName(time.Now())
 	}
 	if opts.edit {
-		plan, err = editAtlasSchemaPlan(cmd.Context(), plan)
+		plan, err = editAtlasSchemaPlan(cmd.Context(), runtime, plan)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -334,12 +338,15 @@ func writeAtlasSchemaPlanFormat(cmd *cobra.Command, format string, plan atlassch
 // An edit that leaves no executable statement is refused rather than saved:
 // an empty plan file would apply cleanly and change nothing, which reads as
 // success. Statement text, including comments, round-trips through the editor.
-func editAtlasSchemaPlan(ctx context.Context, plan atlasschema.PlanFile) (atlasschema.PlanFile, error) {
+func editAtlasSchemaPlan(ctx context.Context, runtime safety.Runtime, plan atlasschema.PlanFile) (atlasschema.PlanFile, error) {
 	edited, err := editAtlasSQL(ctx, "schema plan", plan.SQL())
 	if err != nil {
 		return atlasschema.PlanFile{}, err
 	}
-	plan = plan.WithStatementsFromSQL(edited)
+	plan, err = plan.WithStatementsFromSQL(ctx, runtime, edited)
+	if err != nil {
+		return atlasschema.PlanFile{}, err
+	}
 	if !plan.HasChanges() {
 		return atlasschema.PlanFile{}, fmt.Errorf(
 			"the edited plan contains no SQL statement; nothing was saved")

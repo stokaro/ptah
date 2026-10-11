@@ -379,6 +379,11 @@ from another process:
   in the dialect's own spelling, the steps of a table rebuild. A split lists
   the facts it judged in `SplitResult.Judged`; a host takes the owner's
   rebuild steps in place of matching them itself.
+- `FactSafetyEffect` is the owner's judgment of a statement only it
+  recognizes, which a safety assessment takes in place of reading the words.
+  Its `Effect.Impact` is `schemaext.Behavioral` or `schemaext.Destructive`,
+  never additive, and its `Effect.Reason` says why. Only this fact carries an
+  impact or a reason, and a statement carries one judgment at most.
 - `Annotator` judges facts over a split the owner did not make: a run that
   names no target splits with the host's dialect-blind scanner and asks every
   annotator in one call. The answer is best-effort, and a statement the
@@ -743,13 +748,21 @@ a schema or capability sentinel. The runtime checks selected model codecs before
 A missing validator never selects built-in validation implicitly.
 
 `migration/safety.AssessRendered` and `AssessRenderedWithCapabilities` require
-the caller's context and selected `renderer.Service`. Assessment units render
-in one batch. Fragments retain the source operation for each SQL statement,
-including null-fill and narrowing-type checks. An extension's risk applies to
-all statements in its fragment; unknown effects continue to require manual
-review. Generation and checkpoints use the selected renderer for safety,
-forward SQL, and rollback SQL. This changes the Go API; pre-v1, so no
-compatibility is owed.
+the caller's context and a `safety.RenderingRuntime`: the selected
+`renderer.Service`, and the owners' judgment of what it renders. Assessment
+units render in one batch, and the target's owner judges every rendered
+statement in one call more. Fragments retain the source operation for each SQL
+statement, including null-fill and narrowing-type checks. An extension's risk
+applies to all statements in its fragment; unknown effects continue to require
+manual review. Generation and checkpoints use the selected renderer for safety,
+forward SQL, and rollback SQL.
+
+`migration/safety.AssessSQL` classifies a batch of statements with a
+`safety.Runtime`. The target's splitter judges the statements only its owner
+recognizes, as `lintext.FactSafetyEffect`; with no target every annotator
+judges them, the most severe impact wins, and a statement an owner declined is
+`Destructive`. Every other statement is read by its words. This changes the Go
+API; pre-v1, so no compatibility is owed.
 
 All `migration/planner.GenerateSchemaDiff*` functions and `Planner.GenerateMigrationAST`
 require the caller's context and selected runtime. AST planning consumes

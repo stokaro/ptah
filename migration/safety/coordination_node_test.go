@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -39,7 +40,7 @@ func TestClassifySchemaDiff_CoordinationNodes(t *testing.T) {
 
 // The statement that drops a node is destructive whichever classifier reads
 // it: the one over the plan's nodes, and the one over SQL text a migration
-// file holds.
+// file holds, with the ydb target named or no target at all.
 func TestClassify_DropCoordinationNodeIsDestructive(t *testing.T) {
 	c := qt.New(t)
 	const reason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter resources, " +
@@ -50,11 +51,13 @@ func TestClassify_DropCoordinationNodeIsDestructive(t *testing.T) {
 		&ast.ExtensionStatement{Payload: &ydbast.CoordinationNode{Schema: "", Name: "locks", Change: ydbdiff.CoordinationNode{Before: &ydbcoordination.Observed{}, After: &ydbcoordination.Desired{Spec: ydbcoordination.Spec{}}}}},
 		&ast.ExtensionStatement{Payload: &ydbast.CoordinationNode{Schema: "", Name: "gone", Change: ydbdiff.CoordinationNode{Before: &ydbcoordination.Observed{}}}},
 	})
-	text := safety.AssessSQL("DROP COORDINATION NODE `app/gone`")
 
 	c.Assert([]safety.Severity{nodes[0].Severity, nodes[1].Severity, nodes[2].Severity}, qt.DeepEquals,
 		[]safety.Severity{safety.Safe, safety.Warning, safety.Destructive})
 	c.Assert(nodes[2].Reason, qt.Equals, reason)
-	c.Assert(text.Severity, qt.Equals, safety.Destructive)
-	c.Assert(text.Reason, qt.Equals, reason)
+	for _, target := range []string{platform.YDB, ""} {
+		text := assessText(c, target, "DROP COORDINATION NODE `app/gone`")
+		c.Assert(text.Severity, qt.Equals, safety.Destructive)
+		c.Assert(text.Reason, qt.Equals, reason)
+	}
 }

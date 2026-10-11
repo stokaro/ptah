@@ -26,7 +26,7 @@ func TestPlanFileWithStatementsFromSQLReclassifiesStatements(t *testing.T) {
 		},
 	}
 
-	edited := plan.WithStatementsFromSQL("DROP TABLE victim;\nCREATE TABLE fresh (id INTEGER);\n")
+	edited := withStatements(c, plan, "DROP TABLE victim;\nCREATE TABLE fresh (id INTEGER);\n")
 
 	// An edit that introduces a DROP must not be saved carrying the pre-edit
 	// destructive=false verdict; the marker and the per-statement severity are
@@ -65,7 +65,7 @@ func TestPlanFileWithStatementsFromSQLMarksAReplacedTableDestructive(t *testing.
 				Statements: []atlasschema.PlanStatement{{SQL: "CREATE TABLE fresh (id INT)", Severity: safety.Safe}},
 			}
 
-			edited := plan.WithStatementsFromSQL(test.edited)
+			edited := withStatements(c, plan, test.edited)
 
 			c.Assert(edited.Statements, qt.HasLen, 1)
 			c.Assert(edited.Statements[0].Severity, qt.Equals, safety.Destructive)
@@ -86,7 +86,7 @@ func TestPlanFileWithStatementsFromSQLKeepsIdentityAndFingerprints(t *testing.T)
 		Statements:      []atlasschema.PlanStatement{{SQL: `CREATE TABLE additive (id INTEGER)`}},
 	}
 
-	edited := plan.WithStatementsFromSQL("CREATE TABLE replaced (id INTEGER);")
+	edited := withStatements(c, plan, "CREATE TABLE replaced (id INTEGER);")
 
 	// Only the statements change. `from` binds the plan to the live source
 	// database, and re-deriving it here would silently defeat apply-time
@@ -107,7 +107,7 @@ func TestPlanFileWithStatementsFromSQLDoesNotMutateTheReceiver(t *testing.T) {
 		Statements:  []atlasschema.PlanStatement{{SQL: `CREATE TABLE additive (id INTEGER)`, Severity: safety.Safe}},
 	}
 
-	_ = plan.WithStatementsFromSQL("DROP TABLE victim;")
+	_ = withStatements(c, plan, "DROP TABLE victim;")
 
 	// The method returns a copy. A caller that discards the result on a later
 	// validation failure must still hold the plan it started with.
@@ -140,7 +140,7 @@ func TestPlanFileWithStatementsFromSQLSplitsWithThePlansOwnDialect(t *testing.T)
 			c := qt.New(t)
 			plan := atlasschema.PlanFile{Dialect: tt.dialect}
 
-			got := plan.WithStatementsFromSQL(edited)
+			got := withStatements(c, plan, edited)
 
 			c.Assert(got.Statements, qt.HasLen, tt.want)
 		})
@@ -161,7 +161,7 @@ func TestPlanFileWithStatementsFromSQLRoundTripsItsOwnSQLExactly(t *testing.T) {
 		},
 	}
 
-	got := plan.WithStatementsFromSQL(plan.SQL())
+	got := withStatements(c, plan, plan.SQL())
 
 	// Feeding a plan its own SQL back must be the identity. This is what makes
 	// `--edit` safe when the operator quits the editor without typing: the
@@ -179,7 +179,7 @@ func TestPlanFileWithStatementsFromSQLClassifiesPastLeadingComments(t *testing.T
 	c := qt.New(t)
 	plan := atlasschema.PlanFile{Dialect: "sqlite"}
 
-	got := plan.WithStatementsFromSQL("-- this comment mentions CREATE TABLE\nDROP TABLE victim;")
+	got := withStatements(c, plan, "-- this comment mentions CREATE TABLE\nDROP TABLE victim;")
 
 	// The comment is kept in the statement text but must not steer the
 	// classifier: severity comes from the executable body alone.
@@ -202,12 +202,36 @@ func TestPlanFileWithStatementsFromSQLClassifiesExecutableComments(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			plan := atlasschema.PlanFile{Dialect: test.dialect}.WithStatementsFromSQL(test.sql)
+			plan := withStatements(c, atlasschema.PlanFile{Dialect: test.dialect}, test.sql)
 
 			c.Assert(plan.Statements, qt.HasLen, 1)
 			c.Assert(plan.Statements[0].Severity, qt.Equals, safety.Destructive)
 			c.Assert(plan.Statements[0].Reason, qt.Equals, "DROP TABLE removes the table and all rows")
 			c.Assert(plan.Destructive, qt.IsTrue)
+		})
+	}
+}
+
+// An edited plan's statements are judged by the owner of the plan's dialect:
+// a dropped topic is destructive in a YDB plan, and a PostgreSQL plan reads
+// the same words as words, which name no data loss.
+func TestPlanFileWithStatementsFromSQLAsksThePlansOwner(t *testing.T) {
+	tests := []struct {
+		dialect     string
+		severity    safety.Severity
+		destructive bool
+	}{
+		{dialect: "ydb", severity: safety.Destructive, destructive: true},
+		{dialect: "postgres", severity: safety.Safe, destructive: false},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			plan := withStatements(c, atlasschema.PlanFile{Dialect: test.dialect}, "DROP TOPIC `events`;")
+
+			c.Assert(plan.Statements, qt.HasLen, 1)
+			c.Assert(plan.Statements[0].Severity, qt.Equals, test.severity)
+			c.Assert(plan.Destructive, qt.Equals, test.destructive)
 		})
 	}
 }
@@ -219,7 +243,7 @@ func TestPlanFileWithStatementsFromSQLDropsCommentOnlyEdits(t *testing.T) {
 		Statements: []atlasschema.PlanStatement{{SQL: `CREATE TABLE additive (id INTEGER)`}},
 	}
 
-	got := plan.WithStatementsFromSQL("-- the operator removed everything\n\n")
+	got := withStatements(c, plan, "-- the operator removed everything\n\n")
 
 	// Comment-only text carries no statement, so HasChanges goes false and the
 	// caller can refuse to save rather than write a plan that applies cleanly
@@ -255,7 +279,7 @@ func TestPlanFileWithStatementsFromSQL_KeepsADeclaredRowDeletionDestructive(t *t
 	c.Assert(plan.Destructive, qt.IsTrue)
 
 	// The operator quits the editor without changing anything.
-	edited := plan.WithStatementsFromSQL(plan.SQL())
+	edited := withStatements(c, plan, plan.SQL())
 
 	c.Assert(planSQL(edited), qt.Contains, `DELETE FROM "regions"`)
 	c.Assert(planSeverity(edited, "DELETE"), qt.Equals, safety.Destructive)
@@ -276,7 +300,7 @@ func TestPlanFileWithDirectiveHeader_KeepsADeclaredRowDeletionDestructive(t *tes
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
-	decorated := plan.WithDirectiveHeader([]atlasschema.PlanDirective{"atlas:txmode none"})
+	decorated := withDirectives(c, plan, []atlasschema.PlanDirective{"atlas:txmode none"})
 
 	// The header is spliced in front of the first statement, so this asserts on
 	// the statement directly: planSeverity matches a prefix, and the directive

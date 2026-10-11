@@ -13,27 +13,35 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// ExampleAssessSQL classifies raw SQL strings — the zero-dependency entry
-// point for a caller who already holds rendered statements rather than AST
-// nodes. Matching is keyword-based and insensitive to casing and layout; a
-// statement matching no known risky shape is Safe, so an unknown construct
-// never blocks by accident.
+// ExampleAssessSQL classifies raw SQL strings of one target, the entry point
+// for a caller who already holds rendered statements rather than AST nodes.
+// The target's owner judges the statements only it recognizes, here a YDB
+// async replication dropped without CASCADE, which keeps its replica tables.
+// Every other statement is matched by keyword, insensitive to casing and
+// layout, and one matching no known risky shape is Safe, so an unknown
+// construct never blocks by accident.
 func ExampleAssessSQL() {
 	statements := []string{
 		"DROP TABLE users;",
 		"ALTER TABLE users RENAME COLUMN name TO display_name",
 		"CREATE INDEX idx_users_email ON users (email)",
+		"DROP ASYNC REPLICATION mirror",
 	}
 
-	for _, statement := range statements {
-		assessment := safety.AssessSQL(statement)
-		fmt.Printf("%s: %s\n", assessment.Severity, assessment.Reason)
+	assessments, err := safety.AssessSQL(context.Background(), must.Must(builtin.New()), "ydb", statements)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, assessment := range assessments {
+		fmt.Printf("%d %s: %s\n", assessment.Index, assessment.Severity, assessment.Reason)
 	}
 
 	// Output:
-	// destructive: DROP TABLE removes the table and all rows
-	// warning: rename can break deployed readers and writers
-	// safe: does not remove data or tighten constraints
+	// 1 destructive: DROP TABLE removes the table and all rows
+	// 2 warning: rename can break deployed readers and writers
+	// 3 safe: does not remove data or tighten constraints
+	// 4 warning: DROP ASYNC REPLICATION without CASCADE ends the replication and keeps its tables, read-only for good unless it was failed over first
 }
 
 // ExampleClassifySchemaDiff summarizes a schema comparison as per-category

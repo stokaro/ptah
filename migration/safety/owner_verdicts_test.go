@@ -223,7 +223,7 @@ func TestOwnerVerdicts_RaiseFeatureOwnerStatementsTheirTextReadsAsSafe(t *testin
 			c := qt.New(t)
 			statements, verdicts := plannedVerdicts(c, must.Must(builtin.New()), tc.dialect, []ast.Node{tc.node})
 			c.Assert(statements, qt.DeepEquals, []string{tc.wantSQL})
-			textOnly := safety.AssessSQL(statements[0])
+			textOnly := assessText(c, tc.dialect, statements[0])
 			c.Assert(textOnly.Severity, qt.Equals, safety.Safe)
 
 			saved := textOnly
