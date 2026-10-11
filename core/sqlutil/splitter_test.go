@@ -1240,3 +1240,67 @@ INSERT INTO logs (message) VALUES ('Test -- not a comment'); `
 
 	c.Assert(statements, qt.DeepEquals, expectedStatements)
 }
+
+// TestSplitSQLStatementsForDialect_SQLServerProcedureEndsWhereItsBlockEnds is
+// stokaro/ptah#4461.
+//
+// A T-SQL BEGIN opens a block unless the word after it makes it a statement
+// of its own, END CONVERSATION closes nothing, and an END closes its block
+// without a semicolon. Counting every BEGIN, and closing only at "END;", made
+// a transaction or a TRY/CATCH swallow the table after the procedure and made
+// END CONVERSATION cut the procedure in two. Each body is followed by the same
+// CREATE TABLE, which must stay a statement of its own.
+func TestSplitSQLStatementsForDialect_SQLServerProcedureEndsWhereItsBlockEnds(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{name: "TRY and CATCH", body: "BEGIN TRY\n    UPDATE t SET c = 1;\n  END TRY\n  BEGIN CATCH\n    SELECT 1;\n  END CATCH;"},
+		{name: "BEGIN TRAN", body: "BEGIN TRAN;\n  COMMIT;"},
+		{name: "BEGIN TRANSACTION", body: "BEGIN TRANSACTION;\n  COMMIT;"},
+		{name: "BEGIN DISTRIBUTED TRANSACTION", body: "BEGIN DISTRIBUTED TRANSACTION;\n  COMMIT;"},
+		{name: "BEGIN DIALOG", body: "BEGIN DIALOG @h FROM SERVICE a TO SERVICE 'b';"},
+		{name: "END CONVERSATION", body: "END CONVERSATION @h;"},
+		{name: "a block that ends without a semicolon", body: "IF 1 = 1 BEGIN SELECT 1 END"},
+		{name: "an END followed by a statement", body: "BEGIN SELECT 1 END IF 1 = 1 SELECT 2;"},
+		{name: "a CASE expression", body: "SELECT CASE WHEN 1 = 1 THEN 1 END;"},
+		{name: "a BEGIN followed by a semicolon", body: "BEGIN; SELECT 1; END;"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			procedure := "CREATE PROCEDURE p AS\nBEGIN\n  " + test.body + "\nEND"
+
+			result := sqlutil.SplitSQLStatementsForDialect(procedure+";\nCREATE TABLE after_p (id int);\n", "sqlserver")
+
+			c.Assert(result, qt.DeepEquals, []string{procedure, "CREATE TABLE after_p (id int)"})
+		})
+	}
+}
+
+// TestSplitSQLStatementsForDialect_SQLServerBodyOfTryAndCatch covers a body
+// that is a TRY and a CATCH with no block around them. The routine ends at the
+// semicolon after END CATCH, and a semicolon inside the CATCH does not end it.
+func TestSplitSQLStatementsForDialect_SQLServerBodyOfTryAndCatch(t *testing.T) {
+	c := qt.New(t)
+	procedure := "CREATE PROCEDURE p AS\nBEGIN TRY\n  UPDATE t SET c = 1;\nEND TRY\nBEGIN CATCH\n  SELECT 1;\nEND CATCH"
+
+	result := sqlutil.SplitSQLStatementsForDialect(procedure+";\nCREATE TABLE after_p (id int);\n", "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{procedure, "CREATE TABLE after_p (id int)"})
+}
+
+// TestSplitSourceStatements_SQLServerProcedureEndsWhereItsBlockEnds is the
+// same rule through the source splitter, which shares the state.
+func TestSplitSourceStatements_SQLServerProcedureEndsWhereItsBlockEnds(t *testing.T) {
+	c := qt.New(t)
+	procedure := "CREATE PROCEDURE p AS\nBEGIN\n  BEGIN TRY\n    BEGIN TRAN;\n    COMMIT;\n  END TRY\n  BEGIN CATCH\n" +
+		"    END CONVERSATION @h;\n  END CATCH;\nEND;"
+
+	statements := sqlutil.SplitSourceStatements(procedure+"\nCREATE TABLE after_p (id int);\n", "sqlserver")
+
+	texts := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		texts = append(texts, statement.Text)
+	}
+	c.Assert(texts, qt.DeepEquals, []string{procedure, "CREATE TABLE after_p (id int);"})
+}
