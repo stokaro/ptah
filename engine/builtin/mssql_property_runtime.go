@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"ptah.run/core/annotation"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -22,6 +23,7 @@ func mssqlPropertyProvider() engine.Provider {
 	provider := engine.Provider{
 		ID:          mssqlproperty.Owner,
 		Annotations: []annotation.Extension{mssqlproperty.Annotations()},
+		HCL:         []hclext.Extension{mssqlproperty.HCL()},
 		Codecs:      mssqlproperty.Codecs(),
 		Conversions: []engine.Conversion{{Target: target, Kinds: models, Service: mssqlproperty.ConvertService{}}},
 		Comparisons: []engine.ObjectComparison{{Target: target, Kinds: models, ChangeKinds: changes, Service: mssqlproperty.CompareService{}}},

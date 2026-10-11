@@ -19,7 +19,6 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/hcldiag"
@@ -436,7 +435,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"composite":         (*parser).parseComposite,
 	"range":             (*parser).parseRange,
 	"coordination_node": (*parser).parseCoordinationNode,
-	"extended_property": (*parser).parseExtendedProperty,
 	"table":             (*parser).parseTable,
 	"extension":         (*parser).parseExtension,
 	"function":          (*parser).parseFunction,
@@ -2744,23 +2742,16 @@ func targetProperties(overrides map[string]map[string]string, targets []string, 
 	return result
 }
 
-// withBlockCoverage adds the knowledge the format's own blocks give: one for
-// a SQL Server extended property, so a document without one describes a
-// database without one. It adds the claim of the MySQL index block size too,
-// which the format has no spelling for: an index a document declares has
-// none, and applying the document removes a hint the table holds, as the HCL
-// export warns.
+// withBlockCoverage adds the claim of the MySQL index block size, which the
+// format has no spelling for: an index a document declares has none, and
+// applying the document removes a hint the table holds, as the HCL export
+// warns.
 func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
-	complete := schemaext.Knowledge{State: schemaext.Complete}
-	properties, err := mssqlproperty.Coverage(schemaext.Desired, complete, nil)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
 	blockSizes, err := mysqlsource.BlockSizeCoverage()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, claim := range []schemaext.Coverage{properties, blockSizes} {
+	for _, claim := range []schemaext.Coverage{blockSizes} {
 		if known, err = known.Combine(claim); err != nil {
 			return schemaext.Coverage{}, err
 		}

@@ -42,9 +42,10 @@ const AtlasSumFileName = "atlas.sum"
 // against a live database cannot tell apart from "drop everything".
 //
 // It selects no feature owner, so a block only an owner reads is refused as
-// an unsupported top-level block: today a `synonym`, a `hypertable` and a
-// `continuous_aggregate`, and the other owner blocks -- `extended_property`,
-// `coordination_node` and `policy` -- as their owners take them over. Read a
+// an unsupported top-level block: today a `synonym`, a `hypertable`, a
+// `continuous_aggregate` and an `extended_property`, and the other owner
+// blocks -- `coordination_node` and `policy` -- as their owners take them
+// over. Read a
 // document carrying one with [ParseAtlasHCLWithOptions] and the HCL set of a
 // runtime, such as the bundled one engine/builtin.Bundled returns.
 func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {
