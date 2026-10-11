@@ -1,7 +1,8 @@
 // Package pgextensionprovider assembles the PostgreSQL extension owner of
-// package pgextension as one engine provider: its codecs, and its conversion
-// and comparison services on every PostgreSQL-family target. The bundled
-// runtime does not select it yet.
+// package pgextension as one engine provider: its codecs, and its conversion,
+// comparison, planning, declaration and reversal services on every
+// PostgreSQL-family target, and its reports in both representations. The
+// bundled runtime does not select it yet.
 package pgextensionprovider
 
 import (
@@ -15,6 +16,9 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgextension/extensioncompare"
 	"ptah.run/feature/pgextension/extensionconvert"
+	"ptah.run/feature/pgextension/extensionplan"
+	"ptah.run/feature/pgextension/extensionreport"
+	"ptah.run/feature/pgextension/extensionreverse"
 )
 
 // Targets are the targets the services are registered for: every target of
@@ -36,10 +40,21 @@ func Provider() engine.Provider {
 		CoverageLimits: []schemaext.LimitMapping{{Header: coverage.Extension, Model: pgextension.ExtensionKind, Names: extensionNames}},
 	}
 	models := []schemaext.Kind{pgextension.ExtensionKind}
+	changes := []schemaext.Kind{pgextension.ChangeKind}
+	operations := []schemaext.Kind{pgextension.OperationKind, pgextension.CommentOperationKind}
 	for _, target := range Targets() {
 		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: models, Service: extensionconvert.Service{}})
 		provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: target, Kinds: models,
-			ChangeKinds: []schemaext.Kind{pgextension.ChangeKind}, Service: extensioncompare.Service{}})
+			ChangeKinds: changes, Service: extensioncompare.Service{}})
+		provider.Planning = append(provider.Planning, engine.Planning{Target: target, Kinds: changes, OperationKinds: operations,
+			Service: extensionplan.Service{}})
+		provider.Declarations = append(provider.Declarations, engine.DeclarationPlanning{Target: target, Kinds: models, OperationKinds: operations,
+			Service: extensionplan.Service{}})
+		provider.Reversals = append(provider.Reversals, engine.Reversal{Target: target, Kinds: changes, Service: extensionreverse.Service{}})
+	}
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation,
+			Definitions: extensionreport.Definitions(), Service: extensionreport.Service{}})
 	}
 	return provider
 }

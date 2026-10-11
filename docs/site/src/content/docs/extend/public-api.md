@@ -150,7 +150,10 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `feature/pgextension` | PostgreSQL extension models, changes, operations and codecs. |
 | `feature/pgextension/extensioncompare` | Comparison of PostgreSQL extensions. |
 | `feature/pgextension/extensionconvert` | Projection of PostgreSQL extensions between representations. |
+| `feature/pgextension/extensionplan` | Planning of PostgreSQL extension changes into ordered operations. |
 | `feature/pgextension/extensionrender` | Rendering of the PostgreSQL extension operations. |
+| `feature/pgextension/extensionreport` | Inventory counts of PostgreSQL extensions. |
+| `feature/pgextension/extensionreverse` | Reversal of PostgreSQL extension changes. |
 | `feature/pgpolicy` | PostgreSQL row-security policy and table-state models and codecs. |
 | `feature/pgpolicy/policycompare` | Comparison of PostgreSQL row-security policies and table switches. |
 | `feature/pgpolicy/policyconvert` | Projection of PostgreSQL row-security values between representations. |
