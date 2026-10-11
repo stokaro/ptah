@@ -36,11 +36,13 @@ import (
 // The indexes are nondecreasing in the order Creation, Dependent, Removal, so
 // windows at one index nest in that order.
 //
-// Prerequisites holds the windows of [featureplan.PhasePrerequisite], and is
-// nil for a host that has none.
+// Prerequisites holds the windows of [featureplan.PhasePrerequisite], and
+// Types those of [featureplan.PhaseType]; each is nil for a host that has
+// none.
 type Windows struct {
 	Creation, Dependent, Removal int
 	Prerequisites                *PrerequisiteWindows
+	Types                        *TypeWindows
 }
 
 // PrerequisiteWindows are the two windows of [featureplan.PhasePrerequisite],
@@ -54,6 +56,25 @@ type PrerequisiteWindows struct {
 	Creation, Removal int
 }
 
+// TypeWindows are the two windows of [featureplan.PhaseType], for a data type
+// columns, routine signatures and other types may name, such as a PostgreSQL
+// domain. Creation lies after the host creates the enums and the routines
+// whose signatures name no type the plan creates, and before it creates those
+// routines that do and the tables, so it is at or after
+// [PrerequisiteWindows.Creation] and at or before [Windows.Creation]. Removal
+// lies after the host removes tables, routines and roles and before it
+// removes enums, so it is at or after [Windows.Removal] and at or before
+// [PrerequisiteWindows.Removal].
+//
+// A step that drops a type no step of the phase creates again joins Removal.
+// Every other step joins Creation: a creation, a change in place, and both
+// halves of a type dropped and created again, which its owner orders. A
+// rebuilt type is back before the tables, as it must be for a column to name
+// it.
+type TypeWindows struct {
+	Creation, Removal int
+}
+
 // Graph is a host's common sequence as graph units, one per node, with an
 // empty marker pair around each window. Build it with [NewGraph], hand
 // [Graph.CommonSteps] to the owners in the planning request, and join their
@@ -61,20 +82,25 @@ type PrerequisiteWindows struct {
 type Graph struct {
 	contribution  plangraph.Contribution[[]ast.Node]
 	steps         []featureplan.CommonStep
-	windows       [5][2]plangraph.StepID
+	windows       [windowCount][2]plangraph.StepID
 	prerequisites bool
+	types         bool
 }
 
 // The windows in the order their positions must keep.
 const (
 	prerequisiteCreationWindow = iota
+	typeCreationWindow
 	creationWindow
 	dependentWindow
 	removalWindow
+	typeRemovalWindow
 	prerequisiteRemovalWindow
+	windowCount
 )
 
-var windowNames = [5]string{"prerequisite-creations", "feature-creations", "dependent-operations", "feature-removals", "prerequisite-removals"}
+var windowNames = [windowCount]string{"prerequisite-creations", "type-creations", "feature-creations", "dependent-operations",
+	"feature-removals", "type-removals", "prerequisite-removals"}
 
 // NewGraph builds the graph of nodes under owner. effects holds each node's
 // effects, or is nil when the host knows none; a node with an unknown
@@ -86,6 +112,10 @@ func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, wind
 		positions[prerequisiteCreationWindow] = windows.Prerequisites.Creation
 		positions[prerequisiteRemovalWindow] = windows.Prerequisites.Removal
 	}
+	if windows.Types != nil {
+		positions[typeCreationWindow] = windows.Types.Creation
+		positions[typeRemovalWindow] = windows.Types.Removal
+	}
 	ordered := make([]int, 0, len(positions))
 	for _, window := range slices.Sorted(maps.Keys(positions)) {
 		ordered = append(ordered, positions[window])
@@ -96,7 +126,8 @@ func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, wind
 	if effects != nil && len(effects) != len(nodes) {
 		return nil, fmt.Errorf("%w: %d effect lists for %d common nodes", schemaext.ErrInvalidValue, len(effects), len(nodes))
 	}
-	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil}
+	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil,
+		types: windows.Types != nil}
 	for i := 0; i <= len(nodes); i++ {
 		for _, window := range slices.Sorted(maps.Keys(positions)) {
 			if positions[window] == i {
@@ -144,27 +175,36 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 // operation asked for [featureplan.PhaseDependent] joins the dependent
 // window; one that asked for [featureplan.PhasePrerequisite] joins the
 // prerequisite removal window when it drops an object and the prerequisite
-// creation window otherwise, and is refused by a graph without them; and any
-// other joins the removal window when it drops an object and the creation
-// window otherwise. A step that creates an object another step drops
-// is refused unless both are dependent, because the windows would run the
-// creation first. The effects of different contributions are then ordered by
-// [plangraph.LifecycleDependencies], so an owner that creates an object
-// precedes another owner that reads it. The complete graph is validated before
-// any node is returned, so a conflict leaves no prefix, including a dependent
-// replacement its owner left unordered; it is refused with
-// [ptaherr.ErrInvalidSchemaDiff]. g is not changed.
+// creation window otherwise, and is refused by a graph without them; one that
+// asked for [featureplan.PhaseType] joins the type removal window when it
+// drops an object no step of that phase creates again and the type creation
+// window otherwise, and is refused by a graph without them; and any other
+// joins the removal window when it drops an object and the creation window
+// otherwise. A step that creates an object another step drops is refused
+// unless both are dependent or both ask for the type phase, because the
+// windows would run the creation first. The effects of different
+// contributions are then ordered by [plangraph.LifecycleDependencies], so an
+// owner that creates an object precedes another owner that reads it. The
+// complete graph is validated before any node is returned, so a conflict
+// leaves no prefix, including a replacement its owner left unordered; it is
+// refused with [ptaherr.ErrInvalidSchemaDiff]. g is not changed.
 func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, error) {
 	if err := refuseSplitReplacements(features); err != nil {
 		return nil, err
 	}
 	common := plangraph.Contribution[[]ast.Node]{Owner: g.contribution.Owner,
 		Steps: slices.Clone(g.contribution.Steps), Dependencies: slices.Clone(g.contribution.Dependencies)}
+	recreated := createdObjects(features)
 	for _, contribution := range features.Contributions {
 		for _, step := range contribution.Steps {
-			window, err := g.window(features.Phases[step.ID], slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
-				return effect.Action == plangraph.Drop
-			}))
+			drops, rebuilds := false, false
+			for _, effect := range step.Effects {
+				if effect.Action == plangraph.Drop {
+					drops = true
+					rebuilds = rebuilds || recreated[effect.Subject.Key()]
+				}
+			}
+			window, err := g.window(features.Phases[step.ID], drops, rebuilds)
 			if err != nil {
 				return nil, fmt.Errorf("feature step %s/%s: %w", step.ID.Owner, step.ID.Name, err)
 			}
@@ -188,16 +228,23 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 	return nodes, ctx.Err()
 }
 
-func (g *Graph) window(phase featureplan.Phase, drops bool) ([2]plangraph.StepID, error) {
+// window is the window a step of phase joins. drops says the step drops an
+// object, and rebuilds that a step of the type phase creates one of the
+// objects it drops again.
+func (g *Graph) window(phase featureplan.Phase, drops, rebuilds bool) ([2]plangraph.StepID, error) {
 	switch {
 	case phase == featureplan.PhaseDependent:
 		return g.windows[dependentWindow], nil
-	case phase == featureplan.PhasePrerequisite && !g.prerequisites:
+	case phase == featureplan.PhasePrerequisite && !g.prerequisites, phase == featureplan.PhaseType && !g.types:
 		return [2]plangraph.StepID{}, fmt.Errorf("%w: the %q phase has no window in this host", schemaext.ErrInvalidValue, phase)
 	case phase == featureplan.PhasePrerequisite && drops:
 		return g.windows[prerequisiteRemovalWindow], nil
 	case phase == featureplan.PhasePrerequisite:
 		return g.windows[prerequisiteCreationWindow], nil
+	case phase == featureplan.PhaseType && drops && !rebuilds:
+		return g.windows[typeRemovalWindow], nil
+	case phase == featureplan.PhaseType:
+		return g.windows[typeCreationWindow], nil
 	case drops:
 		return g.windows[removalWindow], nil
 	default:
@@ -205,12 +252,32 @@ func (g *Graph) window(phase featureplan.Phase, drops bool) ([2]plangraph.StepID
 	}
 }
 
+// createdObjects is every object a step creates. A step of the type phase
+// that drops one of them rebuilds it rather than removes it. The creating
+// step asks for the type phase too, or is the dropping step itself:
+// [refuseSplitReplacements] has refused a drop and a creation of one object in
+// two steps of any other pair of phases before this is read.
+func createdObjects(features Result) map[objectidentity.Key]bool {
+	created := make(map[objectidentity.Key]bool)
+	for _, contribution := range features.Contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				if effect.Action == plangraph.Create {
+					created[effect.Subject.Key()] = true
+				}
+			}
+		}
+	}
+	return created
+}
+
 // refuseSplitReplacements refuses a step that creates an object another step
-// drops, unless both ask for the dependent phase. The default windows run
-// every creation before every drop, and the dependent window is not ordered
-// against them by object, so the creation would meet the object it replaces.
-// Such a replacement is one step, or both halves ask for the dependent phase,
-// whose owner orders them.
+// drops, unless both ask for the dependent phase or both for the type phase.
+// The default windows run every creation before every drop, and the
+// dependent window is not ordered against them by object, so the creation
+// would meet the object it replaces. Such a replacement is one step, or both
+// halves ask for the dependent phase or for the type phase, whose owner
+// orders them in one window.
 func refuseSplitReplacements(features Result) error {
 	type use struct {
 		step  plangraph.StepID
@@ -233,10 +300,11 @@ func refuseSplitReplacements(features Result) error {
 				if !found || effect.Action != plangraph.Create || other.step == step.ID {
 					continue
 				}
-				if features.Phases[step.ID] == featureplan.PhaseDependent && other.phase == featureplan.PhaseDependent {
+				if phase := features.Phases[step.ID]; phase == other.phase && (phase == featureplan.PhaseDependent || phase == featureplan.PhaseType) {
 					continue
 				}
-				return fmt.Errorf("%w: feature step %s/%s creates %s, which step %s/%s drops; a replacement is one step, or both halves ask for the dependent phase",
+				return fmt.Errorf("%w: feature step %s/%s creates %s, which step %s/%s drops; a replacement is one step, "+
+					"or both halves ask for the dependent or the type phase",
 					ptaherr.ErrInvalidSchemaDiff, step.ID.Owner, step.ID.Name, effect.Subject, other.step.Owner, other.step.Name)
 			}
 		}

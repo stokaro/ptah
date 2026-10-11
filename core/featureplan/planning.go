@@ -135,11 +135,26 @@ const (
 	// runs such a step after its schema statements and before the rest; every
 	// other host refuses it.
 	PhasePrerequisite Phase = "prerequisite"
+	// PhaseType is for an operation on a data type that columns, routine
+	// signatures and other types may name, and that may itself name an enum,
+	// a type an extension supplies, or a routine, such as a PostgreSQL
+	// domain. A host that accepts it places a creation, a change in place,
+	// and both halves of a type dropped and created again after it creates
+	// the enums and the routines whose signatures name no type the plan
+	// creates, and before it creates those routines that do and the tables.
+	// A step that drops a type no step of the phase creates again runs after
+	// the host removes tables, routines and roles, and before it removes
+	// enums. The owner orders its own steps in each window, the drop of a
+	// rebuilt type before its creation among them. The migration planners of
+	// the PostgreSQL family accept it, and a whole-schema render runs such a
+	// step after its enums and before the routines that name a type and the
+	// tables; every other host refuses it.
+	PhaseType Phase = "type"
 )
 
 // Valid reports whether p is a phase this contract defines.
 func (p Phase) Valid() bool {
-	return p == PhaseDefault || p == PhaseDependent || p == PhasePrerequisite
+	return p == PhaseDefault || p == PhaseDependent || p == PhasePrerequisite || p == PhaseType
 }
 
 // ChangePlan accounts for one input change, preserving its subject and kind.

@@ -1905,8 +1905,14 @@ func WalkDatabase(
 	return lowering.Context.Err()
 }
 
+// walkCommonDatabase visits the statements that create database, in creation
+// order. typeWindow, when it is not nil, is called once, where the statements
+// that create a type an owner defines belong: after the enums and the common
+// user types, before the routines whose signatures name a type and the
+// tables.
 func walkCommonDatabase(
 	database schemamodel.Database, targetPlatform string, names grantName, resolves deporder.BodyResolution, visit func(ast.Node) error,
+	typeWindow func(),
 ) error {
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
@@ -1928,7 +1934,7 @@ func walkCommonDatabase(
 	// goes after them, and both precede the tables whose defaults may call
 	// them. One that names a relation waits for it among the view-likes.
 	placements := declaredRoutinePlacements(database, targetPlatform, resolves)
-	if err := appendPreTableStatements(visit, database, targetPlatform, placements); err != nil {
+	if err := appendPreTableStatements(visit, database, targetPlatform, placements, typeWindow); err != nil {
 		return err
 	}
 
@@ -1993,6 +1999,7 @@ func appendPreTableStatements(
 	database schemamodel.Database,
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
+	typeWindow func(),
 ) error {
 	// Schemas come first because tables and extension installation clauses may
 	// reference them.
@@ -2046,6 +2053,11 @@ func appendPreTableStatements(
 	// rather than by kind. Enums are already out and reference nothing.
 	if err := visitDatabaseNodes(visit, orderedUserTypeStatements(database)...); err != nil {
 		return err
+	}
+	// The types an owner defines are created here, where the common ones
+	// are, and the routines that name a type follow them all.
+	if typeWindow != nil {
+		typeWindow()
 	}
 	return appendRoutineStatements(visit, database, placements, deporder.RoutineAfterTypes)
 }
@@ -2559,6 +2571,11 @@ func declaredRoutinePlacements(
 	database schemamodel.Database, targetPlatform string, resolves deporder.BodyResolution,
 ) map[string]deporder.RoutinePlacement {
 	var created deporder.RoutineCreation
+	// A type an owner's object defines is created in the type window, so a
+	// routine naming it waits as it waits for a common one.
+	for _, defined := range schemaext.DefinedTypes(database.FeatureObjects) {
+		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Source, defined.ID.Name.Source))
+	}
 	for _, enum := range database.Enums {
 		created.Types = append(created.Types, enum.QualifiedName())
 	}

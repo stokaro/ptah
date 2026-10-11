@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
@@ -25,28 +26,42 @@ func ResolvesBodyAtCreate(routine schemamodel.Function) bool {
 // routinePlacements says where each routine this plan creates or replaces
 // goes; see [deporder.PlaceRoutines], which is the rule. A replaced routine is
 // placed by its new definition, because that is the one the server resolves.
-func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff) map[string]deporder.RoutinePlacement {
+func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff) (map[string]deporder.RoutinePlacement, error) {
 	routines := diff.FunctionsAdded.Declarations()
 	for _, fnDiff := range diff.FunctionsModified {
 		if fnDiff.Desired.Name != "" {
 			routines = append(routines, fnDiff.Desired)
 		}
 	}
+	created, err := routineCreation(diff)
+	if err != nil {
+		return nil, err
+	}
 	return deporder.PlaceRoutines(
 		routines,
 		diff.DeclaredFunctions.Dependencies,
-		routineCreation(diff),
+		created,
 		p.targetDialect(),
 		ResolvesBodyAtCreate,
-	)
+	), nil
 }
 
 // routineCreation is what this plan creates that a routine's definition can
 // name. A rebuilt user type counts, because it is dropped and created again
 // after the routines placed first. A table gaining a column counts, because a
-// LANGUAGE sql body reading the column is refused until the column exists.
-func routineCreation(diff *difftypes.SchemaDiff) deporder.RoutineCreation {
+// LANGUAGE sql body reading the column is refused until the column exists. A
+// type a feature owner creates, rebuilds or changes counts as a common one
+// does: the owner's statement joins the type window, which the routines
+// naming it follow.
+func routineCreation(diff *difftypes.SchemaDiff) (deporder.RoutineCreation, error) {
 	var created deporder.RoutineCreation
+	owned, err := schemaext.CreatedTypes(diff.FeatureChanges)
+	if err != nil {
+		return deporder.RoutineCreation{}, err
+	}
+	for _, defined := range owned {
+		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Source, defined.ID.Name.Source))
+	}
 	created.Types = append(created.Types, diff.EnumsAdded.Names()...)
 	created.Types = append(created.Types, diff.DomainsAdded.Names()...)
 	created.Types = append(created.Types, diff.CompositeTypesAdded.Names()...)
@@ -68,7 +83,7 @@ func routineCreation(diff *difftypes.SchemaDiff) deporder.RoutineCreation {
 			created.Relations = append(created.Relations, tableDiff.TableName)
 		}
 	}
-	return created
+	return created, nil
 }
 
 // addNewFunctions creates the routines this plan adds that are placed at
