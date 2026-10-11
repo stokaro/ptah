@@ -96,7 +96,7 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if err := validateIndexes(db.Indexes); err != nil {
 		return nil, err
 	}
-	if err := validateMaterializedViewFacets(db.MaterializedViews, db.FeatureCoverage); err != nil {
+	if err := validateMaterializedViewFacets(db.MaterializedViews, opts.Annotations); err != nil {
 		return nil, err
 	}
 	if err := refuseNarrowedDeleteActions(db.Constraints); err != nil {
@@ -267,11 +267,13 @@ type renderContext struct {
 	// externalAnnotations are the declared external data sources, then the
 	// external tables.
 	externalAnnotations [2][]string
-	// owned are the declarations the selected owners are handed, and
+	// owned are the declarations the selected owners are handed,
 	// ownerDirectives the directives they write, as the comments the source
-	// carries, at each place they stand.
+	// carries, at each place they stand, and ownerAttributes the attributes
+	// they add to a declaration of the frontend's own.
 	owned           ownerSlots
 	ownerDirectives map[ownerPlace][]string
+	ownerAttributes map[annotationext.Slot][]attr
 	// extensions are the declared extensions in name order, from the common
 	// model and from the extension owner alike.
 	extensions          []extensionDeclaration
@@ -288,11 +290,10 @@ type renderContext struct {
 	constraintsByTable  map[string][]schemamodel.Constraint
 	rlsByTable          map[string][]schemamodel.RLSPolicy
 	// policyTables names each table by the identity a PostgreSQL row-level
-	// security policy names its table by, and rowPolicyTables by the one a
-	// ClickHouse row policy does; policyAnnotations and switchAnnotations hold
-	// what is written beside each table, by its qualified name.
+	// security policy names its table by; policyAnnotations and
+	// switchAnnotations hold what is written beside each table, by its
+	// qualified name.
 	policyTables      map[objectidentity.Key]string
-	rowPolicyTables   map[objectidentity.Key]string
 	policyAnnotations map[string][]string
 	switchAnnotations map[string]string
 	rlsEnabledByTable map[string][]schemamodel.RLSEnabledTable
@@ -536,15 +537,14 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		))
 	}
 	for _, view := range sortedMaterializedViews(ctx.db.MaterializedViews) {
-		// Render validated every schedule before writing began.
-		refresh, _ := refreshClause(view)
-		w.writeComment(annotation("ptah:schema:matview",
-			attr{name: "name", value: view.Name, set: true},
-			attr{name: "body", value: view.Body, set: true},
-			attr{name: "comment", value: view.Comment, set: view.Comment != ""},
-			attr{name: "refresh", value: refresh, set: refresh != ""},
-			dialectsAttr(view.Dialects),
-		))
+		// The owners' attributes, such as a refresh schedule, come after the
+		// directive's own and before its dialects.
+		attrs := append([]attr{
+			{name: "name", value: view.Name, set: true},
+			{name: "body", value: view.Body, set: true},
+			{name: "comment", value: view.Comment, set: view.Comment != ""},
+		}, ctx.ownerAttributes[annotationext.Slot{Directive: matviewDirective, Name: view.Name}]...)
+		w.writeComment(annotation("ptah:schema:matview", append(attrs, dialectsAttr(view.Dialects))...))
 	}
 	for _, comment := range ctx.topicAnnotations {
 		w.writeComment(comment)
@@ -612,6 +612,10 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, policy := range ctx.rlsByTable[table.StructName] {
 		w.writeComment(rlsPolicyAnnotation(policy))
 	}
+	// The policies of the SQL Server and PostgreSQL owners, which this
+	// package still writes, follow the other owners' policies, as their
+	// names order them.
+	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterPolicies, table: sourceTable(table)})
 	for _, text := range ctx.policyAnnotations[table.QualifiedName()] {
 		w.writeComment(text)
 	}

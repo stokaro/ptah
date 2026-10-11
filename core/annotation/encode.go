@@ -73,6 +73,23 @@ type EncodeResult struct {
 	// Directives are the directives the owner writes. At one placement the
 	// writer writes them in this order.
 	Directives []EncodedDirective
+	// Attributes are what the owner adds to the frontend's own declarations
+	// it was handed, one entry for each declaration.
+	Attributes []SlotAttributes
+}
+
+// SlotAttributes are the attributes an owner adds to one of the frontend's
+// own declarations it was handed, such as a materialized view's refresh
+// schedule. The writer writes them after the directive's own attributes and
+// before its dialects attribute, owner by owner in the order of the owners'
+// names.
+type SlotAttributes struct {
+	// Slot is the declaration.
+	Slot Slot
+	// Attributes are the attributes, in order. Each is one the owner adds to
+	// the declaration's directive (see [DirectiveAttributes]), so reading the
+	// source back hands it to the owner.
+	Attributes []EncodedAttribute
 }
 
 // Placement is where among the writer's own directives an encoded directive
@@ -99,6 +116,11 @@ const (
 	// a setting of the table that has a directive of its own, such as a
 	// hypertable.
 	AfterTable Placement = "after-table"
+	// AfterPolicies places a directive in the comment of the struct of the
+	// table [EncodedDirective.Table] names, after the table's own row-level
+	// security policies: a policy of the owner's own, such as a ClickHouse
+	// row policy.
+	AfterPolicies Placement = "after-policies"
 )
 
 // EncodedDirective is one directive an owner writes.
@@ -142,14 +164,18 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // models -- the objects and facets of its Encodes and the coverage of its
 // Kinds, beside every table -- in one call per extension, also when the
 // schema holds none of them, since an owner may refuse a coverage record it
-// cannot write. It returns every directive they write, owner by owner, in the
-// order of the owners' names.
+// cannot write. It returns every directive they write and every attribute
+// they add to a declaration, owner by owner, in the order of the owners'
+// names.
 //
 // It refuses a directive without a name, one that reading the source back
 // would hand to another owner or to none, one at an unknown placement, at a
 // table the request did not hold, or with a table at a placement that takes
 // none, and an attribute without a name, written twice or spelling the
-// dialects attribute, which Targets write. An encoder's own error is returned
+// dialects attribute, which Targets write. It refuses attributes added to a
+// declaration the extension was not handed or added twice, and an attribute
+// without a name, written twice, or one the extension does not add to the
+// declaration's directive. An encoder's own error is returned
 // as it is: it refuses the export, as a value the owner cannot write would
 // otherwise be written wrong.
 func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, error) {
@@ -176,7 +202,11 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 				return EncodeResult{}, err
 			}
 		}
+		if err := s.checkSlotAttributes(index, request, result.Attributes); err != nil {
+			return EncodeResult{}, err
+		}
 		encoded.Directives = append(encoded.Directives, result.Directives...)
+		encoded.Attributes = append(encoded.Attributes, result.Attributes...)
 	}
 	return encoded, nil
 }
@@ -238,12 +268,12 @@ func (s Set) checkEncodedDirective(index int, request EncodeRequest, directive E
 	return nil
 }
 
-// checkPlacement refuses a directive at an unknown placement, an [AfterTable]
-// directive without a table the request holds, and a table on a directive at
+// checkPlacement refuses a directive at an unknown placement, a directive at
+// a table without a table the request holds, and a table on a directive at
 // any other placement.
 func checkPlacement(owner string, request EncodeRequest, directive EncodedDirective) error {
 	switch directive.Placement {
-	case AfterTable:
+	case AfterTable, AfterPolicies:
 		if directive.Table == nil || !slices.Contains(request.Tables, *directive.Table) {
 			return fmt.Errorf("%w: Go annotation encoder of %s placed directive %q at a table the schema does not declare",
 				schemaext.ErrInvalidValue, owner, directive.Directive)
@@ -258,4 +288,59 @@ func checkPlacement(owner string, request EncodeRequest, directive EncodedDirect
 			schemaext.ErrInvalidValue, owner, directive.Directive, directive.Placement)
 	}
 	return nil
+}
+
+// checkSlotAttributes refuses the attributes the extension at index adds to
+// declarations where the writer cannot write them: to a declaration the
+// extension was not handed, or to one twice, and an attribute without a name,
+// written twice, or one the extension does not add to the declaration's
+// directive.
+func (s Set) checkSlotAttributes(index int, request EncodeRequest, slots []SlotAttributes) error {
+	extension := s.extensions[index]
+	written := make(map[Slot]bool, len(slots))
+	for _, slot := range slots {
+		handed := slices.ContainsFunc(request.Slots, func(entry SlotFacets) bool { return entry.Slot == slot.Slot })
+		if !handed || written[slot.Slot] {
+			return fmt.Errorf("%w: Go annotation encoder of %s wrote attributes of %s, which it was not handed or wrote twice",
+				schemaext.ErrInvalidValue, extension.Owner, slot.Slot)
+		}
+		written[slot.Slot] = true
+		names := make(map[string]bool, len(slot.Attributes))
+		for _, attribute := range slot.Attributes {
+			if strings.TrimSpace(attribute.Name) == "" || names[attribute.Name] || !extension.adds(slot.Slot, attribute.Name) {
+				return fmt.Errorf("%w: Go annotation encoder of %s wrote attribute %q of %s unnamed, twice or as one it does not add",
+					schemaext.ErrInvalidValue, extension.Owner, attribute.Name, slot.Slot)
+			}
+			names[attribute.Name] = true
+		}
+	}
+	return nil
+}
+
+// adds reports whether the extension adds the attribute name to the
+// directive of slot, in a group of the slot's primary key exactly where the
+// slot is one.
+func (e Extension) adds(slot Slot, name string) bool {
+	return slices.ContainsFunc(e.Attributes, func(group DirectiveAttributes) bool {
+		return group.Directive == slot.Directive && group.PrimaryKey == slot.PrimaryKey &&
+			slices.ContainsFunc(group.Attributes, func(attribute Attribute) bool { return attribute.Name == name })
+	})
+}
+
+// String names the declaration in a diagnostic, such as `index "i" of table
+// "app.t"` or `matview "hourly"`. The kind is the last part of the directive's
+// name.
+func (s Slot) String() string {
+	kind := s.Directive[strings.LastIndex(s.Directive, ":")+1:]
+	table := s.Table.QualifiedName()
+	switch {
+	case s.PrimaryKey:
+		return fmt.Sprintf("the primary key of table %q", table)
+	case s.Name == "":
+		return fmt.Sprintf("%s %q", kind, table)
+	case table == "":
+		return fmt.Sprintf("%s %q", kind, s.Name)
+	default:
+		return fmt.Sprintf("%s %q of table %q", kind, s.Name, table)
+	}
 }

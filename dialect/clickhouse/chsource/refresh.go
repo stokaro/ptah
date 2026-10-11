@@ -59,7 +59,8 @@ const MaterializedViewDirective = "ptah:schema:matview"
 // declares a plain view; and the row policy directive [RowPolicyDirective],
 // with the claim [RowPolicyCoverage] makes, so a policy the source leaves out
 // is absent. A parse that does not select the owner refuses the attribute and
-// the directive as ones it does not declare.
+// the directive as ones it does not declare. Its encoder writes both back,
+// for the Go annotation writer.
 //
 // A row policy belongs to ClickHouse alone, so each one the directive
 // declares is bound to the clickhouse target: another target leaves it out
@@ -82,6 +83,8 @@ func Annotations() annotation.Extension {
 			},
 		}},
 		Coverage: annotation.Unlimited(ownedCoverage),
+		Encoder:  annotationEncoder{},
+		Encodes:  []schemaext.Kind{chschema.RefreshKind, chschema.RowPolicyKind},
 	}
 }
 
