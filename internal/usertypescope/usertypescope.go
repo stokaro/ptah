@@ -59,13 +59,12 @@ func ValidateCreations(
 	domains, composites, ranges []string,
 ) error {
 	for _, kind := range []struct {
-		key       capability.Capability
-		statement string
-		names     []string
+		key   capability.Capability
+		names []string
 	}{
-		{capability.DomainTypes, "CREATE DOMAIN", domains},
-		{capability.CompositeTypes, "CREATE TYPE ... AS (...)", composites},
-		{capability.RangeTypes, "CREATE TYPE ... AS RANGE", ranges},
+		{capability.DomainTypes, domains},
+		{capability.CompositeTypes, composites},
+		{capability.RangeTypes, ranges},
 	} {
 		if caps.Has(kind.key) || len(kind.names) == 0 {
 			continue
@@ -74,13 +73,31 @@ func ValidateCreations(
 		// answering the same schema must name the same object, and parse order
 		// moves whenever a declaration is reordered.
 		first := slices.MinFunc(kind.names, cmp.Compare)
-		return fmt.Errorf(
-			"%w: %s: %s %s: this target does not create it, and a column declared with the type "+
-				"would be left naming something the server has no definition of; "+
-				"scope the declaration to the dialects that host it",
-			ptaherr.ErrUnsupportedFeature, dialect, kind.statement, first)
+		return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, Refusal(dialect, kind.key, first))
 	}
 	return nil
+}
+
+// statements name the statement that creates each kind of user type, by the
+// capability key that gates it.
+var statements = map[capability.Capability]string{
+	capability.DomainTypes:    "CREATE DOMAIN",
+	capability.CompositeTypes: "CREATE TYPE ... AS (...)",
+	capability.RangeTypes:     "CREATE TYPE ... AS RANGE",
+}
+
+// Statement names the statement that creates the kind of user type key
+// gates, such as "CREATE DOMAIN", or is empty for another key.
+func Statement(key capability.Capability) string { return statements[key] }
+
+// Refusal is the reason a target refuses to create the user type name of the
+// kind key gates, the one this package's refusals carry. An owner that plans
+// the types refuses with it, so the refusal reads the same whichever path
+// reached it.
+func Refusal(dialect string, key capability.Capability, name string) string {
+	return fmt.Sprintf("%s: %s %s: this target does not create it, and a column declared with the type "+
+		"would be left naming something the server has no definition of; "+
+		"scope the declaration to the dialects that host it", dialect, Statement(key), name)
 }
 
 func domainNames(database *schemamodel.Database) []string {

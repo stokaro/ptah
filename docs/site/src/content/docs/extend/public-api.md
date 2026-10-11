@@ -176,8 +176,11 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `feature/pgtype` | PostgreSQL domain, composite type and range type models, changes, operations and codecs. |
 | `feature/pgtype/typecompare` | Comparison of PostgreSQL domains, composite types and range types. |
 | `feature/pgtype/typeconvert` | Projection of PostgreSQL user types between representations. |
+| `feature/pgtype/typeplan` | Planning of PostgreSQL user-type changes into ordered operations. |
 | `feature/pgtype/typeprobe` | A connected server's spelling of declared PostgreSQL domain CHECK constraints and defaults. |
 | `feature/pgtype/typerender` | Rendering of the PostgreSQL user-type operations. |
+| `feature/pgtype/typereport` | Inventory counts of PostgreSQL user types. |
+| `feature/pgtype/typereverse` | Reversal of PostgreSQL user-type changes. |
 | `feature/synonym` | Synonym model, codecs and every stage's service for SQL Server and Oracle. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
