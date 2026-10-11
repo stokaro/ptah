@@ -1516,6 +1516,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgtype-typeplan",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typeplan",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgtype-typeprobe",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgtype/typeprobe",
@@ -1525,6 +1531,18 @@
       "id": "gopkg-feature-pgtype-typerender",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgtype/typerender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgtype-typereport",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typereport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgtype-typereverse",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typereverse",
       "claimed_by": null
     },
     {

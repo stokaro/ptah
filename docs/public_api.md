@@ -162,8 +162,11 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgtype`
 - `ptah.run/feature/pgtype/typecompare`
 - `ptah.run/feature/pgtype/typeconvert`
+- `ptah.run/feature/pgtype/typeplan`
 - `ptah.run/feature/pgtype/typeprobe`
 - `ptah.run/feature/pgtype/typerender`
+- `ptah.run/feature/pgtype/typereport`
+- `ptah.run/feature/pgtype/typereverse`
 - `ptah.run/feature/synonym`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
@@ -2664,6 +2667,24 @@ comment. A type the read could not establish is reported undecided, and one
 the desired source did not describe or asked to default is not dropped.
 `feature/pgtype/typeconvert` projects a declaration to the observation it
 predicts and an observation to the declaration that keeps it.
+
+`feature/pgtype/typeplan` plans creations, changes in place and rebuilds in
+`featureplan.PhaseType`: the drops of rebuilt types first, ordered by what
+the current definitions name, then every creation and its comment, ordered by
+what the declarations name, then ALTER DOMAIN and ALTER TYPE ... ATTRIBUTE. A
+domain whose only differences are its CHECK, default or NOT NULL changes in
+place, and so does a composite type with an attribute delta
+(`AttributeDelta`); everything else is a non-CASCADE drop and a creation, and
+so is a changed type that names a rebuilt one. A type nothing declares is
+dropped with CASCADE in that phase's removal window, and the comment of a type
+that survives joins `featureplan.PhaseDependent`. A type the target cannot
+create is refused with the scope advice the common refusal gives.
+
+`feature/pgtype/typereverse` drops what the forward plan created, creates
+again what it dropped, and returns a surviving type to its observation; a
+restored domain CHECK carries a limitation, because the server named the one
+the migration added. `feature/pgtype/typereport` counts the three kinds under
+`domains`, `composite_types` and `range_types`.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
 another object. A synonym is one feature object of `Kind`, identified by its

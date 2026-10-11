@@ -160,7 +160,7 @@ func difference(caps capability.Capabilities, pair pair) schemaext.ChangeValue {
 		var removed []string
 		if attributeList(declared.Attributes) != attributeList(held.Attributes) {
 			differs = append(differs, pgtype.DiffAttributes)
-			added, removed = attributeDelta(declared.Attributes, held.Attributes)
+			added, removed = pgtype.AttributeDelta(declared.Attributes, held.Attributes)
 		}
 		differs = commentDifference(differs, caps, capability.TypeComments, declared.Comment, held.Comment)
 		if len(differs) > 0 {
@@ -268,61 +268,6 @@ func attributeList(attributes []pgtype.Attribute) string {
 		parts[i] = strings.ToLower(attribute.Name) + " " + pgtypealias.Canonical(attribute.Type)
 	}
 	return strings.Join(parts, ", ")
-}
-
-// attributeDelta returns the attributes to add and remove, or nothing when
-// ALTER TYPE cannot reach the declared list.
-//
-// PostgreSQL appends: a new attribute always lands last, whatever position
-// the declaration gives it. So the delta is only usable when dropping the
-// removed attributes and appending the added ones produces exactly the
-// declared list; a rebuild then carries the declared order, which is the only
-// way to reach it.
-//
-// An attribute both sides hold with a different type also returns nothing.
-// ALTER TYPE ... ALTER ATTRIBUTE is refused on a composite a column uses,
-// measured on PostgreSQL 18.4 with CASCADE and without:
-// `cannot alter type "addr" because column "uses_addr.a" uses it`
-// (stokaro/ptah#1717).
-func attributeDelta(declared, held []pgtype.Attribute) ([]pgtype.Attribute, []string) {
-	declaredTypes := make(map[string]string, len(declared))
-	declaredOrder := make([]string, 0, len(declared))
-	for _, attribute := range declared {
-		declaredTypes[strings.ToLower(attribute.Name)] = pgtypealias.Canonical(attribute.Type)
-		declaredOrder = append(declaredOrder, strings.ToLower(attribute.Name))
-	}
-	heldTypes := make(map[string]string, len(held))
-	for _, attribute := range held {
-		heldTypes[strings.ToLower(attribute.Name)] = pgtypealias.Canonical(attribute.Type)
-	}
-
-	// The list ALTER TYPE would leave behind: the attributes kept, in
-	// catalog order, then the ones added, in declaration order.
-	var removed []string
-	reached := make([]string, 0, len(declared))
-	for _, attribute := range held {
-		name := strings.ToLower(attribute.Name)
-		declaredType, kept := declaredTypes[name]
-		if !kept {
-			removed = append(removed, attribute.Name)
-			continue
-		}
-		if declaredType != heldTypes[name] {
-			return nil, nil
-		}
-		reached = append(reached, name)
-	}
-	var added []pgtype.Attribute
-	for _, attribute := range declared {
-		if _, kept := heldTypes[strings.ToLower(attribute.Name)]; !kept {
-			added = append(added, attribute)
-			reached = append(reached, strings.ToLower(attribute.Name))
-		}
-	}
-	if !slices.Equal(reached, declaredOrder) {
-		return nil, nil
-	}
-	return added, removed
 }
 
 // unknown reports knowledge that establishes neither presence nor absence.

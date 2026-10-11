@@ -1,6 +1,7 @@
 // Package pgtypeprovider assembles the PostgreSQL user type owner of package
-// pgtype as one engine provider: its codecs, and its conversion, comparison
-// and domain normalization services on every PostgreSQL-family target. The
+// pgtype as one engine provider: its codecs, its conversion, comparison,
+// domain normalization, planning, declaration and reversal services on every
+// PostgreSQL-family target, and its reports in both representations. The
 // bundled runtime does not select it yet.
 package pgtypeprovider
 
@@ -15,7 +16,10 @@ import (
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/pgtype/typecompare"
 	"ptah.run/feature/pgtype/typeconvert"
+	"ptah.run/feature/pgtype/typeplan"
 	"ptah.run/feature/pgtype/typeprobe"
+	"ptah.run/feature/pgtype/typereport"
+	"ptah.run/feature/pgtype/typereverse"
 )
 
 // Targets are the targets the services are registered for: every target of
@@ -48,6 +52,15 @@ func Provider() engine.Provider {
 			ChangeKinds: pgtype.ChangeKinds(), Service: typecompare.Service{}})
 		provider.Normalizations = append(provider.Normalizations, engine.Normalization{Target: target,
 			Kinds: []schemaext.Kind{pgtype.DomainKind}, Service: typeprobe.Service{}})
+		provider.Planning = append(provider.Planning, engine.Planning{Target: target, Kinds: pgtype.ChangeKinds(),
+			OperationKinds: pgtype.OperationKinds(), Service: typeplan.Service{}})
+		provider.Declarations = append(provider.Declarations, engine.DeclarationPlanning{Target: target, Kinds: models,
+			OperationKinds: pgtype.OperationKinds(), Service: typeplan.Service{}})
+		provider.Reversals = append(provider.Reversals, engine.Reversal{Target: target, Kinds: pgtype.ChangeKinds(), Service: typereverse.Service{}})
+	}
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation,
+			Definitions: typereport.Definitions(), Service: typereport.Service{}})
 	}
 	return provider
 }

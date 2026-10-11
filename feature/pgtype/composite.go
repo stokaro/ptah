@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/pgtypealias"
 )
 
 // DesiredComposite declares a composite type: an ordered list of named,
@@ -177,4 +178,57 @@ func validAttributes(attributes []Attribute) error {
 		seen[attribute.Name] = true
 	}
 	return nil
+}
+
+// AttributeDelta returns the attributes to add and the names to drop that
+// take a composite type holding held to declared with ALTER TYPE, or nothing
+// when ALTER TYPE cannot reach the declared list. Names are compared without
+// regard to case and types in the spelling format_type reports.
+//
+// PostgreSQL appends: a new attribute always lands last, whatever position the
+// declaration gives it. So the delta is returned only when dropping the
+// removed attributes and appending the added ones produces exactly the
+// declared order; a rebuild is then the only way to reach that order. An
+// attribute both lists hold with a different type also returns nothing,
+// because ALTER TYPE ... ALTER ATTRIBUTE is refused on a composite a column
+// uses, measured on PostgreSQL 18.4 with CASCADE and without:
+// `cannot alter type "addr" because column "uses_addr.a" uses it`
+// (stokaro/ptah#1717). Lists that agree return nothing as well.
+func AttributeDelta(declared, held []Attribute) (added []Attribute, removed []string) {
+	declaredTypes := make(map[string]string, len(declared))
+	declaredOrder := make([]string, 0, len(declared))
+	for _, attribute := range declared {
+		declaredTypes[strings.ToLower(attribute.Name)] = pgtypealias.Canonical(attribute.Type)
+		declaredOrder = append(declaredOrder, strings.ToLower(attribute.Name))
+	}
+	heldTypes := make(map[string]string, len(held))
+	for _, attribute := range held {
+		heldTypes[strings.ToLower(attribute.Name)] = pgtypealias.Canonical(attribute.Type)
+	}
+
+	// The list ALTER TYPE would leave behind: the attributes kept, in
+	// catalog order, then the ones added, in declaration order.
+	reached := make([]string, 0, len(declared))
+	for _, attribute := range held {
+		name := strings.ToLower(attribute.Name)
+		declaredType, kept := declaredTypes[name]
+		if !kept {
+			removed = append(removed, attribute.Name)
+			continue
+		}
+		if declaredType != heldTypes[name] {
+			return nil, nil
+		}
+		reached = append(reached, name)
+	}
+	for _, attribute := range declared {
+		if _, kept := heldTypes[strings.ToLower(attribute.Name)]; !kept {
+			added = append(added, attribute)
+			reached = append(reached, strings.ToLower(attribute.Name))
+		}
+	}
+	if !slices.Equal(reached, declaredOrder) {
+		return nil, nil
+	}
+	return added, removed
 }
