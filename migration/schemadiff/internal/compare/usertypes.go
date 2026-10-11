@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/pgtypealias"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -138,7 +139,7 @@ func domainChanges(
 	expression config.DomainExpression,
 ) map[string]string {
 	changes := make(map[string]string)
-	if target.BaseType != "" && canonicalizePostgresType(target.BaseType) != canonicalizePostgresType(current.BaseType) {
+	if target.BaseType != "" && pgtypealias.Canonical(target.BaseType) != pgtypealias.Canonical(current.BaseType) {
 		changes["type"] = fmt.Sprintf("%s -> %s", current.BaseType, target.BaseType)
 	}
 	if target.NotNull != current.NotNull {
@@ -187,46 +188,6 @@ func domainCheckConstraintNames(current catalog.Domain) []string {
 		names = append(names, check.Name)
 	}
 	return names
-}
-
-// pgTypeAliases maps accepted type spellings to the canonical form PostgreSQL's
-// format_type reports, so a declared type compares equal to its introspected
-// counterpart.
-var pgTypeAliases = map[string]string{
-	"varchar":     "character varying",
-	"char":        "character",
-	"int":         "integer",
-	"int4":        "integer",
-	"int8":        "bigint",
-	"int2":        "smallint",
-	"serial":      "integer",
-	"serial4":     "integer",
-	"serial8":     "bigint",
-	"bigserial":   "bigint",
-	"smallserial": "smallint",
-	"serial2":     "smallint",
-	"float8":      "double precision",
-	"float4":      "real",
-	"bool":        "boolean",
-	"decimal":     "numeric",
-	"timestamptz": "timestamp with time zone",
-	"timestamp":   "timestamp without time zone",
-	"timetz":      "time with time zone",
-}
-
-// canonicalizePostgresType lower-cases a type, normalizes its parameter list,
-// and maps common aliases to the spelling format_type emits.
-func canonicalizePostgresType(t string) string {
-	t = strings.ToLower(strings.TrimSpace(t))
-	base, params := t, ""
-	if i := strings.IndexByte(t, '('); i >= 0 {
-		base = strings.TrimSpace(t[:i])
-		params = strings.ReplaceAll(t[i:], " ", "")
-	}
-	if canonical, ok := pgTypeAliases[base]; ok {
-		base = canonical
-	}
-	return base + params
 }
 
 // CompositeTypes compares PostgreSQL composite types between the target schema
@@ -334,11 +295,11 @@ func compositeAttributeDelta(
 ) ([]difftypes.CompositeAttribute, []string) {
 	declaredTypes := make(map[string]string, len(target.Fields))
 	for _, field := range target.Fields {
-		declaredTypes[strings.ToLower(field.Name)] = canonicalizePostgresType(field.Type)
+		declaredTypes[strings.ToLower(field.Name)] = pgtypealias.Canonical(field.Type)
 	}
 	currentTypes := make(map[string]string, len(current.Fields))
 	for _, field := range current.Fields {
-		currentTypes[strings.ToLower(field.Name)] = canonicalizePostgresType(field.Type)
+		currentTypes[strings.ToLower(field.Name)] = pgtypealias.Canonical(field.Type)
 	}
 
 	var removed []string
@@ -387,7 +348,7 @@ func compositeAttributeDelta(
 func compositeFieldList(composite schemamodel.CompositeType) string {
 	parts := make([]string, len(composite.Fields))
 	for i, field := range composite.Fields {
-		parts[i] = strings.ToLower(field.Name) + " " + canonicalizePostgresType(field.Type)
+		parts[i] = strings.ToLower(field.Name) + " " + pgtypealias.Canonical(field.Type)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -408,7 +369,7 @@ func dbCompositeFieldTypes(composite catalog.CompositeType) []string {
 func dbCompositeFieldList(composite catalog.CompositeType) string {
 	parts := make([]string, len(composite.Fields))
 	for i, field := range composite.Fields {
-		parts[i] = strings.ToLower(field.Name) + " " + canonicalizePostgresType(field.Type)
+		parts[i] = strings.ToLower(field.Name) + " " + pgtypealias.Canonical(field.Type)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -523,7 +484,7 @@ func rangesWithSemantics(
 // in the database (stokaro/ptah#931 item 2).
 func rangeChanges(target schemamodel.Range, current catalog.Range) map[string]string {
 	changes := make(map[string]string)
-	if target.Subtype != "" && canonicalizePostgresType(target.Subtype) != canonicalizePostgresType(current.Subtype) {
+	if target.Subtype != "" && pgtypealias.Canonical(target.Subtype) != pgtypealias.Canonical(current.Subtype) {
 		changes["subtype"] = fmt.Sprintf("%s -> %s", current.Subtype, target.Subtype)
 	}
 	addDeclaredRangeChange(changes, target, "subtype_opclass", target.SubtypeOpClass, current.SubtypeOpClass)

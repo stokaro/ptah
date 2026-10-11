@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 )
 
 // resolveProbes runs every probe through one rolled-back transaction and
@@ -21,7 +22,7 @@ import (
 // it.
 func resolveProbes[Probe any, Answer any](
 	ctx context.Context,
-	conn Session,
+	conn schemaext.ProbeSession,
 	label string,
 	probes []Probe,
 	key func(Probe) string,

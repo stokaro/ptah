@@ -160,6 +160,9 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/feature/pgpolicy/policyreverse`
 - `ptah.run/feature/pgtype`
+- `ptah.run/feature/pgtype/typecompare`
+- `ptah.run/feature/pgtype/typeconvert`
+- `ptah.run/feature/pgtype/typeprobe`
 - `ptah.run/feature/pgtype/typerender`
 - `ptah.run/feature/synonym`
 - `ptah.run/migration/datadiff`
@@ -2644,6 +2647,19 @@ TYPE. Each creation, alteration and comment names the capability key it needs.
 byte as the common path renders the same statements. The builtin runtime
 registers the change and operation codecs and composes the handlers on every
 PostgreSQL-family target; nothing produces the owner's objects yet.
+
+`feature/pgtype/typecompare` compares types by kind, schema and name. Type
+spellings are compared in the form format_type reports, a composite type's
+attributes in order and by name without regard to case, and a range type's
+optional attributes only where the declaration states or clears them. A
+domain's CHECK and default are compared only in the server's spelling, which
+`feature/pgtype/typeprobe` attaches by creating the declaration in pg_temp
+inside a rolled-back transaction; without it they are written at creation and
+never compared. A comment is compared only where the target stores the kind's
+comment. A type the read could not establish is reported undecided, and one
+the desired source did not describe or asked to default is not dropped.
+`feature/pgtype/typeconvert` projects a declaration to the observation it
+predicts and an observation to the declaration that keeps it.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
 another object. A synonym is one feature object of `Kind`, identified by its

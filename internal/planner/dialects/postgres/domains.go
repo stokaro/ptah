@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/sqlident"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -138,20 +139,7 @@ func declaredDomainDefault(domain schemamodel.Domain) string {
 	if domain.Default == "" {
 		return ""
 	}
-	return quoteDomainDefaultLiteral(domain.Default)
-}
-
-// quoteDomainDefaultLiteral renders a literal default as a SQL string literal.
-func quoteDomainDefaultLiteral(literal string) string {
-	quoted := make([]byte, 0, len(literal)+2)
-	quoted = append(quoted, '\'')
-	for i := 0; i < len(literal); i++ {
-		if literal[i] == '\'' {
-			quoted = append(quoted, '\'')
-		}
-		quoted = append(quoted, literal[i])
-	}
-	return string(append(quoted, '\''))
+	return sqlident.StringLiteral(domain.Default)
 }
 
 // compositeHasAttributeDelta reports whether the comparator found a field-level

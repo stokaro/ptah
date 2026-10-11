@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/core/schemaext"
 )
 
 // DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need the
@@ -69,7 +70,26 @@ func ResolveDomainExpressions(
 	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve domain expressions", probes,
+	return ProbeDomainExpressions(ctx, conn, probes)
+}
+
+// ProbeDomainExpressions is [ResolveDomainExpressions] on a session the
+// caller already knows belongs to the PostgreSQL family, which is all a
+// feature owner's normalization request carries. It asks the session's server
+// whatever the session is, and returns nil where the session could not open
+// its rolled-back transaction.
+func ProbeDomainExpressions(
+	ctx context.Context,
+	session schemaext.ProbeSession,
+	probes []DomainExpressionProbe,
+) (map[string]config.DomainExpression, error) {
+	if session == nil {
+		return nil, fmt.Errorf("resolve domain expressions: probe session is nil")
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	return resolveProbes(ctx, session, "resolve domain expressions", probes,
 		func(probe DomainExpressionProbe) string { return probe.Key },
 		resolveOneDomainExpression)
 }
