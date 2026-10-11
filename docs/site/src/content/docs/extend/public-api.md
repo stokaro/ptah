@@ -36,6 +36,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/plangraph` | Owner-contributed steps, object effects, and validated dependency ordering. |
 | `core/featureplan` | Contextual feature-planning batches, captured parents, and typed graph contributions. |
 | `core/lintext` | The migration lint contract: rules as data, statement splitting per dialect, and the batched check an owner answers. |
+| `core/routineext` | The routine body contract: an owner reads every body of a document in one call and answers each body's statements as data. |
 | `core/goschema` | Go annotation parser. Produces a `schemamodel.Database`. |
 | `core/manageddata` | YAML row-data loading and resolution, separate from captured declarations. |
 | `core/schemamodel` | The desired-schema model every authoring source produces: Go annotations, HCL, YAML, SQL, DBML and live-catalog conversion. |
@@ -62,6 +63,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/mysql/mysqllint` | The MySQL owner's migration lint rules for MySQL and MariaDB, published as data and checked once per run. |
 | `dialect/postgres/pglint` | The PostgreSQL owner's migration lint rules, published as data and checked once per run. |
+| `dialect/postgres/pgroutine` | The PostgreSQL owner's routine body reader for PL/pgSQL and SQL bodies. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chprobe` | Server-normalized row policy filters. |

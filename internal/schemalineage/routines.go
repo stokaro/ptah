@@ -1,12 +1,23 @@
 package schemalineage
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/routineext"
 	"ptah.run/core/schemamodel"
 )
+
+// Bodies reads routine bodies in their engine's language: the engine runtime
+// a caller holds answers it, through the owner of the target's routine body
+// reader (ptah.run/core/routineext).
+type Bodies interface {
+	ReadRoutineBodies(ctx context.Context, request routineext.ReadRequest) (routineext.ReadResult, error)
+}
 
 // RoutineEdge is one column a routine reads, and the routine that reads it.
 //
@@ -55,53 +66,115 @@ type RoutineResult struct {
 // That boundary is the point rather than a limitation. "Nothing depends on this
 // column" and "I could not tell" decide different things, and a confident wrong
 // answer about a drop is worse than no answer (stokaro/ptah#2394).
-func DeriveRoutines(db *schemamodel.Database, dialect string) RoutineResult {
+//
+// A procedural body is read by the owner of the dialect's routine bodies,
+// every body of the schema in one call to bodies. A dialect whose owner reads
+// none says so on each of its procedural routines. A reader's error, and a
+// procedural routine without a reader to ask, return no result.
+func DeriveRoutines(ctx context.Context, bodies Bodies, db *schemamodel.Database, dialect string) (RoutineResult, error) {
 	if db == nil {
-		return RoutineResult{}
+		return RoutineResult{}, nil
 	}
 	columns := columnsByTable(db)
+	var procedural []int
+	for i, routine := range db.Functions {
+		if isProcedural(routine, columns) {
+			procedural = append(procedural, i)
+		}
+	}
+	readings, err := readBodies(ctx, bodies, db.Functions, procedural, dialect)
+	if err != nil {
+		return RoutineResult{}, err
+	}
 	var result RoutineResult
-	for _, routine := range db.Functions {
-		result.absorbRoutine(deriveRoutine(routine, dialect, columns))
+	for i, routine := range db.Functions {
+		var reading *routineext.Reading
+		if read, ok := readings[i]; ok {
+			reading = &read
+		}
+		result.absorbRoutine(deriveRoutine(routine, dialect, columns, reading))
 	}
 	sortRoutineResult(&result)
-	return result
+	return result, nil
+}
+
+// readBodies asks the dialect's owner to read the procedural routines' bodies,
+// all of them in one call, and returns the readings by routine index. A
+// dialect whose owner reads no bodies returns none.
+func readBodies(
+	ctx context.Context, bodies Bodies, routines []schemamodel.Function, procedural []int, dialect string,
+) (map[int]routineext.Reading, error) {
+	if len(procedural) == 0 {
+		return nil, nil
+	}
+	if bodies == nil {
+		return nil, errors.New("routine lineage reads procedural bodies and was given no routine body reader")
+	}
+	request := routineext.ReadRequest{Target: dialect, Bodies: make([]routineext.Body, 0, len(procedural))}
+	for _, index := range procedural {
+		routine := routines[index]
+		request.Bodies = append(request.Bodies, routineext.Body{Kind: routineKind(routine), Language: routine.Language, SQL: routine.Body})
+	}
+	result, err := bodies.ReadRoutineBodies(ctx, request)
+	if errors.Is(err, ptaherr.ErrUnsupportedDialect) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the routine bodies: %w", err)
+	}
+	readings := make(map[int]routineext.Reading, len(procedural))
+	for i, index := range procedural {
+		readings[index] = result.Bodies[i]
+	}
+	return readings, nil
+}
+
+// isProcedural reports whether a routine takes the procedural path rather
+// than the single-SELECT one.
+//
+// A procedural body is resolved for its writes and not for its reads, and the
+// caller is told exactly that. Deriving the writes and staying silent about
+// the reads would let "nothing reads this column" be concluded from a routine
+// whose reads were never looked at.
+//
+// A procedure declaring plain SQL is how a MySQL or T-SQL routine reaches this
+// package: it has no LANGUAGE clause of its own, and the converter records it
+// as SQL. Its body is that dialect's procedural language, so it takes the
+// procedural path rather than being asked to be one SELECT
+// (stokaro/ptah#2435 is what makes these reach here at all).
+func isProcedural(routine schemamodel.Function, columns map[string][]string) bool {
+	if language := strings.ToLower(strings.TrimSpace(routine.Language)); language != "sql" && language != "" {
+		return true
+	}
+	if strings.TrimSpace(routine.Body) == "" {
+		return false
+	}
+	return routineKind(routine) == "procedure" && !isSingleSelectBody(routine.Body, columns)
 }
 
 // deriveRoutine resolves one routine body, or records why it could not.
-func deriveRoutine(routine schemamodel.Function, dialect string, columns map[string][]string) RoutineResult {
+// reading is the owner's reading of a procedural body, nil when the owner read
+// none.
+func deriveRoutine(
+	routine schemamodel.Function, dialect string, columns map[string][]string, reading *routineext.Reading,
+) RoutineResult {
 	kind := routineKind(routine)
-	undecided := func(reason string) RoutineResult {
-		return RoutineResult{Undecided: []UndecidedRoutine{
-			{Routine: routine.Name, Reason: reason, Kind: kind},
-		}}
-	}
-
-	// A procedural body is resolved for its writes and not for its reads, and
-	// the caller is told exactly that. Deriving the writes and staying silent
-	// about the reads would let "nothing reads this column" be concluded from a
-	// routine whose reads were never looked at.
-	if language := strings.ToLower(strings.TrimSpace(routine.Language)); language != "sql" && language != "" {
-		return deriveProceduralRoutine(routine, dialect, kind, language, columns)
+	if isProcedural(routine, columns) {
+		return deriveProceduralRoutine(routine, dialect, kind, columns, reading)
 	}
 	if strings.TrimSpace(routine.Body) == "" {
-		return undecided("the routine declares no body")
-	}
-
-	// A procedure declaring plain SQL is how a MySQL or T-SQL routine reaches
-	// this package: it has no LANGUAGE clause of its own, and the converter
-	// records it as SQL. Its body is that dialect's procedural language, so it
-	// takes the procedural path rather than being asked to be one SELECT
-	// (stokaro/ptah#2435 is what makes these reach here at all).
-	if kind == "procedure" && !isSingleSelectBody(routine.Body, columns) {
-		return deriveProceduralRoutine(routine, dialect, kind, "", columns)
+		return RoutineResult{Undecided: []UndecidedRoutine{
+			{Routine: routine.Name, Reason: "the routine declares no body", Kind: kind},
+		}}
 	}
 
 	// The view path resolves exactly this shape, and asking it is what keeps
 	// one answer rather than two that drift.
 	viewResult := deriveView(routine.Name, routine.Body, false, columns, bodyReading{})
 	if len(viewResult.Undecided) > 0 {
-		return undecided(viewResult.Undecided[0].Reason)
+		return RoutineResult{Undecided: []UndecidedRoutine{
+			{Routine: routine.Name, Reason: viewResult.Undecided[0].Reason, Kind: kind},
+		}}
 	}
 
 	edges := make([]RoutineEdge, 0, len(viewResult.Edges))
@@ -123,8 +196,10 @@ func deriveRoutine(routine schemamodel.Function, dialect string, columns map[str
 // statement went unrecognized, because its reads are not derived at all. The
 // entry says which of the two it is: an incomplete write list and unresolved
 // reads, or a complete write list and unresolved reads.
-func deriveProceduralRoutine(routine schemamodel.Function, dialect, kind, language string, columns map[string][]string) RoutineResult {
-	writes, unresolved, analyzed := proceduralWritesFor(dialect, routine, kind)
+func deriveProceduralRoutine(
+	routine schemamodel.Function, dialect, kind string, columns map[string][]string, reading *routineext.Reading,
+) RoutineResult {
+	analysis, analyzed := analyzeProcedural(routine, dialect, kind, reading)
 	if !analyzed {
 		return RoutineResult{Undecided: []UndecidedRoutine{{
 			Routine: routine.Name,
@@ -132,16 +207,50 @@ func deriveProceduralRoutine(routine schemamodel.Function, dialect, kind, langua
 			Reason:  fmt.Sprintf("no routine-body analysis exists for the %s dialect", dialect),
 		}}}
 	}
-	result := RoutineResult{Writes: writes}
-	if readsAreDerivable(dialect) {
-		result.Reads = deriveProceduralReads(routine, dialect, kind, columns)
+	result := RoutineResult{Writes: analysis.writes}
+	if analysis.columnReads {
+		result.Reads = deriveProceduralReads(routine.Name, kind, columns, analysis.statements)
+	}
+	language := strings.ToLower(strings.TrimSpace(routine.Language))
+	if language == "sql" {
+		language = ""
 	}
 	result.Undecided = []UndecidedRoutine{{
 		Routine: routine.Name,
 		Kind:    kind,
-		Reason:  proceduralReason(bodyLanguage(language, dialect), dialect, unresolved),
+		Reason:  analysis.reason(bodyLanguage(language, dialect)),
 	}}
 	return result
+}
+
+// procedural is what the analysis of one procedural body established.
+type procedural struct {
+	writes     []RoutineWrite
+	unresolved []string
+	// statements are the text of each statement, read for the columns the
+	// body reads when columnReads says a name in it may be attributed.
+	statements  []string
+	columnReads bool
+}
+
+// analyzeProcedural analyzes a procedural body from the owner's reading, or,
+// for a dialect whose owner reads no bodies yet, with this package's own body
+// parser for it. It reports false for a dialect with neither.
+func analyzeProcedural(routine schemamodel.Function, dialect, kind string, reading *routineext.Reading) (procedural, bool) {
+	if reading != nil {
+		writes, unresolved := readingWrites(reading.Statements, routine.Name, kind)
+		return procedural{writes: writes, unresolved: unresolved, statements: readingSQL(reading.Statements),
+			columnReads: reading.ColumnReads}, true
+	}
+	writes, unresolved, analyzed := proceduralWritesFor(dialect, routine, kind)
+	if !analyzed {
+		return procedural{}, false
+	}
+	analysis := procedural{writes: writes, unresolved: unresolved, columnReads: readsAreDerivable(dialect)}
+	if analysis.columnReads {
+		analysis.statements = proceduralStatementSQL(routine)
+	}
+	return analysis, true
 }
 
 // bodyLanguage names the language a body is written in for the reason line.
@@ -162,22 +271,23 @@ func isSingleSelectBody(body string, columns map[string][]string) bool {
 	return len(deriveView("", body, false, columns, bodyReading{}).Undecided) == 0
 }
 
-// proceduralReason states what was resolved and what was not.
+// reason states what was resolved and what was not.
 //
-// The reads clause is per dialect rather than fixed, because whether a read can
-// be answered at all is a property of the engine: see [readsAreDerivable].
-func proceduralReason(language, dialect string, unresolved []string) string {
-	if len(unresolved) == 0 {
+// The reads clause is per engine rather than fixed, because whether a read can
+// be answered at all is a property of the engine: see
+// [routineext.Reading.ColumnReads].
+func (a procedural) reason(language string) string {
+	if len(a.unresolved) == 0 {
 		return fmt.Sprintf("the body is %s: every statement was classified, so the writes are complete; %s",
-			language, readsClause(dialect))
+			language, a.readsClause())
 	}
 	return fmt.Sprintf("the body is %s: %s, so the writes are not complete; %s",
-		language, strings.Join(unresolved, "; "), readsClause(dialect))
+		language, strings.Join(a.unresolved, "; "), a.readsClause())
 }
 
 // readsClause says what was established about the columns a body reads.
-func readsClause(dialect string) string {
-	if !readsAreDerivable(dialect) {
+func (a procedural) readsClause() string {
+	if !a.columnReads {
 		return "the columns it reads are not resolved, because a declared variable takes " +
 			"precedence over a column of the same name on this engine and the body does not " +
 			"distinguish them"

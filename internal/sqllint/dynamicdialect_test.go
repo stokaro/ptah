@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
@@ -13,8 +14,8 @@ import (
 func dynamicCodes(c *qt.C, dialect, sql string) []string {
 	c.Helper()
 
-	findings, err := sqllint.LintSource(sqllint.Source{Name: "x.sql", SQL: sql},
-		sqllint.Options{Dialect: dialect})
+	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "x.sql", SQL: sql},
+		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 	codes := make([]string, 0, len(findings))
 	for _, finding := range findings {

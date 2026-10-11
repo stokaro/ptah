@@ -736,6 +736,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-routineext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/routineext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemacapture",
       "kind": "public-package",
       "surface": "ptah.run/core/schemacapture",
@@ -1099,6 +1105,12 @@
       "id": "gopkg-dialect-postgres-pgproject",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgproject",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-postgres-pgroutine",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/postgres/pgroutine",
       "claimed_by": null
     },
     {

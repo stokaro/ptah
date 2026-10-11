@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
@@ -97,8 +98,8 @@ func TestLintSource_YDB_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(sqllint.Source{Name: "x.sql", SQL: test.sql},
-				sqllint.Options{Dialect: "ydb", Version: test.version})
+			findings, err := sqllint.LintSource(t.Context(), sqllint.Source{Name: "x.sql", SQL: test.sql},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "ydb", Version: test.version})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(yqlFindings(findings), qt.DeepEquals, test.want)
@@ -127,8 +128,8 @@ func TestLintSource_YDB_LeavesWhatTheTargetAccepts(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(sqllint.Source{Name: "x.sql", SQL: test.sql},
-				sqllint.Options{Dialect: "ydbs", Version: test.version, Capabilities: test.caps})
+			findings, err := sqllint.LintSource(t.Context(), sqllint.Source{Name: "x.sql", SQL: test.sql},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "ydbs", Version: test.version, Capabilities: test.caps})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findings, qt.HasLen, 0)
@@ -140,8 +141,8 @@ func TestLintSource_YDB_LeavesWhatTheTargetAccepts(t *testing.T) {
 func TestLintSource_OtherDialectsKeepTheParser(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := sqllint.LintSource(sqllint.Source{Name: "x.sql", SQL: `CREATE TABLE t (id INT, "a;b" TEXT);`},
-		sqllint.Options{Dialect: "postgres"})
+	findings, err := sqllint.LintSource(t.Context(), sqllint.Source{Name: "x.sql", SQL: `CREATE TABLE t (id INT, "a;b" TEXT);`},
+		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(yqlFindings(findings), qt.DeepEquals, []string{`1:14 DDL001 table "t" has no primary key`})
@@ -183,8 +184,8 @@ func TestYQLCatalogIDs_EachIsEmitted(t *testing.T) {
 		t.Run(code, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(sqllint.Source{Name: "x.sql", SQL: emission.sql},
-				sqllint.Options{Dialect: "ydb", Version: emission.version})
+			findings, err := sqllint.LintSource(t.Context(), sqllint.Source{Name: "x.sql", SQL: emission.sql},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "ydb", Version: emission.version})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findings, qt.HasLen, 1)

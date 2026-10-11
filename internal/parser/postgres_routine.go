@@ -238,31 +238,15 @@ func postgresRoutineStatementEnd(sql string, tokens []lexer.Token) int {
 	return len(sql)
 }
 
+// parsePostgresRoutineBody records a body as the routine writes it. What its
+// statements are is the PostgreSQL owner's to read (dialect/postgres/pgroutine),
+// through the runtime's routine body reader.
 func parsePostgresRoutineBody(sql, language, delimiter string) ast.PostgresRoutineBody {
-	body := ast.PostgresRoutineBody{
+	return ast.PostgresRoutineBody{
 		SQL:       sql,
 		Delimiter: delimiter,
 		Language:  strings.ToLower(language),
 	}
-	if strings.EqualFold(language, "plpgsql") {
-		body.Statements = parsePostgresPLpgSQLStatements(sql)
-		return body
-	}
-	if strings.TrimSpace(sql) != "" {
-		body.Statements = []ast.PostgresRoutineStatement{{
-			Kind: ast.PostgresRoutineStatementRaw,
-			SQL:  strings.TrimSpace(sql),
-		}}
-	}
-	return body
-}
-
-func parsePostgresPLpgSQLStatements(sql string) []ast.PostgresRoutineStatement {
-	parser := postgresRoutineBodyParser{
-		input:  sql,
-		tokens: newPostgresRoutineTokenizer(sql).tokens(),
-	}
-	return parser.parseStatements()
 }
 
 // postgresRoutineTokenizer is the PostgreSQL routine sub-language tokenization
@@ -295,291 +279,6 @@ func (t postgresRoutineTokenizer) tokens() []lexer.Token {
 	}
 }
 
-type postgresRoutineBodyParser struct {
-	input  string
-	tokens []lexer.Token
-}
-
-func (p postgresRoutineBodyParser) parseStatements() []ast.PostgresRoutineStatement {
-	startIdx := p.nextSignificant(0)
-	if startIdx == -1 {
-		return nil
-	}
-
-	statements := make([]ast.PostgresRoutineStatement, 0)
-	if p.tokens[startIdx].MatchIdentifierValue("DECLARE") {
-		declareEndIdx := p.findTopLevelKeyword(startIdx+1, "BEGIN")
-		if declareEndIdx == -1 {
-			return []ast.PostgresRoutineStatement{p.statement(startIdx, len(p.tokens)-1)}
-		}
-		statements = append(statements, ast.PostgresRoutineStatement{
-			Kind: ast.PostgresRoutineStatementDeclaration,
-			SQL:  p.rawTokenRange(startIdx, p.tokens[declareEndIdx].Start),
-		})
-		startIdx = declareEndIdx
-	}
-
-	if p.tokens[startIdx].MatchIdentifierValue("BEGIN") {
-		return append(statements, p.parseOuterBlockStatements(startIdx)...)
-	}
-	return append(statements, p.statement(startIdx, len(p.tokens)-1))
-}
-
-func (p postgresRoutineBodyParser) parseOuterBlockStatements(beginIdx int) []ast.PostgresRoutineStatement {
-	endIdx := p.findMatchingBlockEnd(beginIdx)
-	if endIdx == -1 {
-		return []ast.PostgresRoutineStatement{p.statement(beginIdx, len(p.tokens)-1)}
-	}
-	return p.parseStatementRange(beginIdx+1, endIdx)
-}
-
-// parseStatementRange splits the tokens in [fromIdx, toIdx) into statements.
-//
-// It is the block loop, taken out of [parseOuterBlockStatements] so that the
-// statements a control-flow statement carries are split by the same code that
-// splits the body they sit in. A second splitter would answer the same question
-// differently on the first edit (stokaro/ptah#2393).
-func (p postgresRoutineBodyParser) parseStatementRange(fromIdx, toIdx int) []ast.PostgresRoutineStatement {
-	statements := make([]ast.PostgresRoutineStatement, 0)
-	statementStartIdx := -1
-	depth := 0
-	caseDepth := 0
-	pendingEndTrailer := false
-
-	for i := fromIdx; i < toIdx; i++ {
-		tok := p.tokens[i]
-		if statementStartIdx == -1 {
-			if isPostgresRoutineTrivia(tok) {
-				continue
-			}
-			// A branch keyword separates statements rather than starting one.
-			// Without this, `ELSE EXECUTE '...'` is a single raw statement and
-			// what runs in the branch is invisible -- the same blindness one
-			// level down that nesting exists to remove (stokaro/ptah#2393).
-			if resume, branch := p.skipBranchKeyword(i, toIdx); branch {
-				i = resume
-				continue
-			}
-			statementStartIdx = i
-		}
-
-		if tok.MatchIdentifierValue("EXCEPTION") && depth == 0 && caseDepth == 0 {
-			if statementStartIdx != -1 && statementStartIdx != i {
-				statements = append(statements, p.statement(statementStartIdx, i))
-			}
-			statements = append(statements, ast.PostgresRoutineStatement{
-				Kind: ast.PostgresRoutineStatementException,
-				SQL:  p.rawTokenRange(i, p.tokens[toIdx].Start),
-			})
-			return statements
-		}
-
-		if tok.Type == lexer.TokenIdentifier {
-			trackPostgresRoutineKeyword(tok.Value, &depth, &caseDepth, &pendingEndTrailer)
-		}
-
-		if tok.Type == lexer.TokenSemicolon && depth == 0 && caseDepth == 0 && statementStartIdx != -1 {
-			statements = append(statements, p.statement(statementStartIdx, i))
-			statementStartIdx = -1
-			pendingEndTrailer = false
-			continue
-		}
-		if tok.Type == lexer.TokenSemicolon {
-			pendingEndTrailer = false
-		}
-	}
-
-	if statementStartIdx != -1 {
-		statements = append(statements, p.statement(statementStartIdx, toIdx))
-	}
-	return statements
-}
-
-func (p postgresRoutineBodyParser) statement(startIdx, endIdx int) ast.PostgresRoutineStatement {
-	if startIdx < 0 || endIdx >= len(p.tokens) || startIdx > endIdx {
-		return ast.PostgresRoutineStatement{}
-	}
-	end := p.tokens[endIdx].End
-	if p.tokens[endIdx].Type == lexer.TokenEOF {
-		end = p.tokens[endIdx].Start
-	}
-	statement := ast.PostgresRoutineStatement{
-		Kind: p.classifyStatement(startIdx),
-		SQL:  strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end)),
-	}
-	if from, to, ok := p.nestedRange(startIdx, endIdx); ok {
-		statement.Statements = p.parseStatementRange(from, to)
-	}
-	return statement
-}
-
-// skipBranchKeyword reports whether the token at idx opens a branch of the
-// statement being split, and the index to resume from when it does.
-//
-// ELSE opens its branch by itself. ELSIF and WHEN carry a condition first, so
-// their branch opens at the THEN that follows.
-func (p postgresRoutineBodyParser) skipBranchKeyword(idx, toIdx int) (resume int, branch bool) {
-	tok := p.tokens[idx]
-	if tok.Type != lexer.TokenIdentifier {
-		return idx, false
-	}
-	switch strings.ToUpper(tok.Value) {
-	case "ELSE":
-		return idx, true
-	case "ELSIF", "ELSEIF", "WHEN":
-		for i := idx + 1; i < toIdx; i++ {
-			if p.tokens[i].MatchIdentifierValue("THEN") {
-				return i, true
-			}
-		}
-		// A branch whose THEN is missing is not one this can split; leaving it
-		// as a statement keeps the text rather than dropping it.
-		return idx, false
-	default:
-		return idx, false
-	}
-}
-
-// nestedRange locates the tokens a control-flow statement carries: from just
-// after the keyword that opens its body, to the END that closes it.
-//
-// The opener differs by shape and the tracker already knows the shapes. IF and
-// CASE open their body at THEN; LOOP, FOR, WHILE and FOREACH at LOOP itself;
-// a nested block at BEGIN. What closes all of them is the depth returning to
-// where it started (stokaro/ptah#2393).
-func (p postgresRoutineBodyParser) nestedRange(startIdx, endIdx int) (from, to int, ok bool) {
-	if endIdx >= len(p.tokens) {
-		endIdx = len(p.tokens) - 1
-	}
-	depth, caseDepth := 0, 0
-	pendingEndTrailer := false
-	from = -1
-	for i := startIdx; i <= endIdx; i++ {
-		tok := p.tokens[i]
-		if tok.Type != lexer.TokenIdentifier {
-			continue
-		}
-		trackPostgresRoutineKeyword(tok.Value, &depth, &caseDepth, &pendingEndTrailer)
-		if from == -1 {
-			if opensRoutineBody(tok.Value, depth, caseDepth) {
-				from = i + 1
-			}
-			continue
-		}
-		if depth == 0 && caseDepth == 0 {
-			return from, i, from < i
-		}
-	}
-	return 0, 0, false
-}
-
-// opensRoutineBody reports whether a keyword opens the body of the control-flow
-// statement that has just been entered, at the depth it opens it.
-func opensRoutineBody(value string, depth, caseDepth int) bool {
-	switch strings.ToUpper(value) {
-	case "THEN":
-		// IF ... THEN, and CASE ... WHEN ... THEN.
-		return depth == 1 || caseDepth == 1
-	case "LOOP", "BEGIN":
-		// The keyword that opens these IS the one that raised the depth.
-		return depth == 1
-	default:
-		return false
-	}
-}
-
-func (p postgresRoutineBodyParser) classifyStatement(startIdx int) ast.PostgresRoutineStatementKind {
-	if startIdx < 0 || startIdx >= len(p.tokens) || p.tokens[startIdx].Type != lexer.TokenIdentifier {
-		return ast.PostgresRoutineStatementRaw
-	}
-	switch strings.ToUpper(p.tokens[startIdx].Value) {
-	case "BEGIN":
-		return ast.PostgresRoutineStatementBlock
-	case "RETURN", "RETURNING":
-		return ast.PostgresRoutineStatementReturn
-	case "PERFORM":
-		return ast.PostgresRoutineStatementPerform
-	case "EXECUTE":
-		return ast.PostgresRoutineStatementExecute
-	case "RAISE":
-		return ast.PostgresRoutineStatementRaise
-	case "IF":
-		return ast.PostgresRoutineStatementIf
-	case "CASE":
-		return ast.PostgresRoutineStatementCase
-	case "LOOP", "FOR", "WHILE", "FOREACH":
-		return ast.PostgresRoutineStatementLoop
-	default:
-		return ast.PostgresRoutineStatementRaw
-	}
-}
-
-func (p postgresRoutineBodyParser) findMatchingBlockEnd(beginIdx int) int {
-	depth := 0
-	caseDepth := 0
-	pendingEndTrailer := false
-	for i := beginIdx; i < len(p.tokens); i++ {
-		tok := p.tokens[i]
-		if tok.Type == lexer.TokenSemicolon {
-			pendingEndTrailer = false
-			continue
-		}
-		if tok.Type != lexer.TokenIdentifier {
-			continue
-		}
-		trackPostgresRoutineKeyword(tok.Value, &depth, &caseDepth, &pendingEndTrailer)
-		if depth == 0 && tok.MatchIdentifierValue("END") {
-			return i
-		}
-	}
-	return -1
-}
-
-func (p postgresRoutineBodyParser) findTopLevelKeyword(startIdx int, keyword string) int {
-	depth := 0
-	caseDepth := 0
-	pendingEndTrailer := false
-	for i := startIdx; i < len(p.tokens); i++ {
-		tok := p.tokens[i]
-		if tok.Type == lexer.TokenSemicolon {
-			pendingEndTrailer = false
-			continue
-		}
-		if tok.Type != lexer.TokenIdentifier {
-			continue
-		}
-		if depth == 0 && caseDepth == 0 && tok.MatchIdentifierValue(keyword) {
-			return i
-		}
-		trackPostgresRoutineKeyword(tok.Value, &depth, &caseDepth, &pendingEndTrailer)
-	}
-	return -1
-}
-
-func trackPostgresRoutineKeyword(value string, blockDepth, caseDepth *int, pendingEndTrailer *bool) {
-	keyword := strings.ToUpper(value)
-	if *pendingEndTrailer {
-		*pendingEndTrailer = false
-		if isPostgresRoutineEndTrailerKeyword(keyword) {
-			return
-		}
-	}
-
-	switch keyword {
-	case "BEGIN", "IF", "LOOP":
-		(*blockDepth)++
-	case "CASE":
-		(*caseDepth)++
-	case "END":
-		if *caseDepth > 0 {
-			(*caseDepth)--
-		} else if *blockDepth > 0 {
-			(*blockDepth)--
-		}
-		*pendingEndTrailer = true
-	}
-}
-
 func trackPostgresSQLBodyKeyword(value string, blockDepth *int) {
 	switch strings.ToUpper(value) {
 	case "BEGIN":
@@ -588,15 +287,6 @@ func trackPostgresSQLBodyKeyword(value string, blockDepth *int) {
 		if *blockDepth > 0 {
 			(*blockDepth)--
 		}
-	}
-}
-
-func isPostgresRoutineEndTrailerKeyword(keyword string) bool {
-	switch keyword {
-	case "CASE", "IF", "LOOP":
-		return true
-	default:
-		return false
 	}
 }
 
@@ -613,26 +303,8 @@ func nextPostgresRoutineToken(tokens []lexer.Token, startIdx int) int {
 	return -1
 }
 
-func (p postgresRoutineBodyParser) nextSignificant(startIdx int) int {
-	return nextPostgresRoutineToken(p.tokens, startIdx)
-}
-
 func isPostgresRoutineTrivia(tok lexer.Token) bool {
 	return tok.Type == lexer.TokenWhitespace || tok.Type == lexer.TokenComment
-}
-
-func (p postgresRoutineBodyParser) rawTokenRange(startIdx, end int) string {
-	if startIdx < 0 || startIdx >= len(p.tokens) {
-		return ""
-	}
-	return strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end))
-}
-
-func (p postgresRoutineBodyParser) rawFragment(start, end int) string {
-	if start < 0 || start > end || end > len(p.input) {
-		return ""
-	}
-	return p.input[start:end]
 }
 
 func dollarQuoteDelimiter(value string) string {
@@ -644,18 +316,4 @@ func dollarQuoteDelimiter(value string) string {
 		return ""
 	}
 	return value[:end+2]
-}
-
-// ParseRoutineBody splits a routine body into the statements it holds.
-//
-// The whole-statement parser reaches this through a CREATE FUNCTION it just
-// read, and had the only way in. A caller holding a body and its language --
-// which is what a schema model carries -- had to synthesize a CREATE FUNCTION
-// around the text to get it parsed again, and synthesized SQL is a second
-// grammar to keep correct (stokaro/ptah#2394).
-//
-// The delimiter is metadata the body carries rather than something the split
-// consumes, so a caller that no longer has it loses nothing by omitting it.
-func ParseRoutineBody(body, language string) ast.PostgresRoutineBody {
-	return parsePostgresRoutineBody(body, language, "")
 }

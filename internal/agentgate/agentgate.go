@@ -179,6 +179,10 @@ type Options struct {
 	// reads, usually the runtime that validates and renders. The schema gate
 	// refuses a nil Owners.
 	Owners schemaload.Owners
+	// RoutineBodies reads the routine bodies the migrations the SQL gate lints
+	// define, usually the same runtime. Without one the SQL gate refuses a
+	// migration that defines a routine whose body needs reading.
+	RoutineBodies sqllint.Bodies
 	// Dialect is the target every SQL and schema check is run for. It is
 	// required: a lint run without one either guesses or checks nothing, and
 	// both answers are worse than refusing.
@@ -265,7 +269,7 @@ func (r *Runner) runMigrations(ctx context.Context, scope *agentworkspace.Scope)
 	if err != nil {
 		return Report{}, err
 	}
-	sql, err := r.migrationSQL(scope)
+	sql, err := r.migrationSQL(ctx, scope)
 	if err != nil {
 		return Report{}, err
 	}
@@ -326,7 +330,7 @@ func integrityDiagnostics(result migrationvalidate.Result) []Diagnostic {
 }
 
 // migrationSQL parses and lints every SQL file in the directory.
-func (r *Runner) migrationSQL(scope *agentworkspace.Scope) (Result, error) {
+func (r *Runner) migrationSQL(ctx context.Context, scope *agentworkspace.Scope) (Result, error) {
 	entries, err := scope.List()
 	if err != nil {
 		return Result{}, err
@@ -341,11 +345,13 @@ func (r *Runner) migrationSQL(scope *agentworkspace.Scope) (Result, error) {
 			return Result{}, readErr
 		}
 		findings, lintErr := sqllint.LintSource(
+			ctx,
 			sqllint.Source{Name: entry.Path, SQL: string(content)},
 			sqllint.Options{
 				Dialect:      r.opts.Dialect,
 				Version:      r.opts.Version,
 				Capabilities: r.opts.Capabilities,
+				Bodies:       r.opts.RoutineBodies,
 			},
 		)
 		if lintErr != nil {

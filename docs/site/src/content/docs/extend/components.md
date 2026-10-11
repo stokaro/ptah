@@ -710,6 +710,12 @@ in another process. The `core/lintext` package documentation describes the
 requests, including the two calls a rule that reads the schema state a
 version starts from is served in.
 
+A routine body is the engine's own language, so its owner reads it. An
+`engine.Target` carries a `routineext.Reader` in `RoutineBodies`, and a host
+that analyzes bodies, such as `ptah sql lint` or `ptah schema lineage`, asks
+`Runtime.ReadRoutineBodies` once per document and reads each body's statements
+back as data. The PostgreSQL owner's reader is `dialect/postgres/pgroutine`.
+
 Rule codes use uppercase ASCII letters and digits and start with a letter.
 Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`
 directives, and `.ptah-lint.yaml` per-rule severity and path excludes

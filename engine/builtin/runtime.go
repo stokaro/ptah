@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/mysql/mysqlconvert"
 	"ptah.run/dialect/postgres/pglint"
 	"ptah.run/dialect/postgres/pgproject"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
 	"ptah.run/dialect/ydb/ydbconvert"
@@ -83,6 +84,11 @@ func New() (*engine.Runtime, error) {
 				// below.
 				Splitter: lintscan.Splitter{Dialect: name},
 			}},
+		}
+		if platform.IsPostgresFamily(name) {
+			// Every dialect of the PostgreSQL family writes its routine
+			// bodies in PL/pgSQL or SQL, which the PostgreSQL owner reads.
+			provider.Targets[0].RoutineBodies = pgroutine.Reader{}
 		}
 		if name == platform.YDB {
 			// YDB answers nothing it cannot hold with a skip comment, since

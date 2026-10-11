@@ -6,17 +6,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
-// TestDynamicSQL_TheBoundaryIsReportedWhereItIs is the first thing in Ptah that
-// reads a parsed routine body.
+// TestDynamicSQL_TheBoundaryIsReportedWhereItIs pins where a routine body is
+// reported as composing SQL at run time.
 //
 // stokaro/ptah#1270 asks "does dynamic SQL introduce an analysis boundary that
-// should be surfaced?", and the answer needed no new parsing: PL/pgSQL's
-// EXECUTE is already its own statement Kind. What was missing was a consumer --
-// `ast.PostgresRoutineBody.Statements` was produced by internal/parser and read
-// by nothing.
+// should be surfaced?". The PostgreSQL owner reads a PL/pgSQL body and names
+// EXECUTE as a dynamic statement, so the boundary is decidable from what it
+// hands over.
 //
 // The rows that matter are the ones that DO NOT report. A rule that fired on
 // every routine, or on every dialect, would pass a fixture set containing only
@@ -42,7 +42,7 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 			sql:     executes,
 			dialect: platform.Postgres,
 			want:    1,
-			why:     "EXECUTE is its own Kind, so the boundary is decidable from the statement list",
+			why:     "the owner names EXECUTE a dynamic statement, so the boundary is decidable from its reading",
 		},
 		{
 			name: "a procedure that does not",
@@ -63,7 +63,7 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 		{
 			// A function arrives as a DIFFERENT node than a procedure --
 			// CreateFunctionNode rather than PostgresRoutineNode -- and its
-			// body is parsed into RoutineBody by attachPostgresFunctionBody.
+			// body is recorded in RoutineBody by attachPostgresFunctionBody.
 			// Reading only the procedure node left every function unexamined
 			// while looking like a parser limitation, which is what an earlier
 			// version of this row asserted and got wrong.
@@ -72,7 +72,7 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 				"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;",
 			dialect: platform.Postgres,
 			want:    1,
-			why:     "the body is parsed for a function too, on the other node",
+			why:     "the body is read for a function too, on the other node",
 		},
 		{
 			name: "a function that does not",
@@ -95,9 +95,9 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(
+			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "routine.sql", SQL: test.sql},
-				sqllint.Options{Dialect: test.dialect},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: test.dialect},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -119,10 +119,10 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 func TestDynamicSQL_TheFindingPointsAtTheExecute(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := sqllint.LintSource(
+	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "routine.sql", SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 			"    EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"},
-		sqllint.Options{Dialect: platform.Postgres},
+		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -201,12 +201,12 @@ func TestDynamicSQL_TheBoundaryIsFoundAtAnyDepth(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(
+			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{
 					Name: "routine.sql",
 					SQL:  "CREATE PROCEDURE p() AS $$\nBEGIN\n" + test.body + "\nEND;\n$$ LANGUAGE plpgsql;",
 				},
-				sqllint.Options{Dialect: platform.Postgres},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			)
 
 			c.Assert(err, qt.IsNil)

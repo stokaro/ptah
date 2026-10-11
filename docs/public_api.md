@@ -31,6 +31,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/ptaherr`
 - `ptah.run/core/query`
 - `ptah.run/core/renderer`
+- `ptah.run/core/routineext`
 - `ptah.run/core/schemacapture`
 - `ptah.run/core/schemacomparison`
 - `ptah.run/core/schemapreparation`
@@ -94,6 +95,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mysql/mysqlsource`
 - `ptah.run/dialect/postgres/pglint`
 - `ptah.run/dialect/postgres/pgproject`
+- `ptah.run/dialect/postgres/pgroutine`
 - `ptah.run/dialect/spanner/spannerast`
 - `ptah.run/dialect/spanner/spannercompare`
 - `ptah.run/dialect/spanner/spannerconvert`
@@ -363,6 +365,24 @@ owner, `SplitStatements` asks the target's splitter under its canonical name,
 findings and baseline subjects. A code belongs to one rule across every
 provider, and a rule judges targets the runtime registers; registration refuses
 anything else.
+
+`core/routineext` is the contract between the hosts that analyze a routine
+body and the owner that reads it. A body is written in the engine's own
+language, so a host hands the owner every body of one document in one
+`Reader.ReadBodies` call and reads back each body's statements as data: the
+text of each, and whether it runs as written, writes no table, composes SQL at
+run time, or steers others, with the statements a control statement runs. A
+`Reading` also says whether a name in the body that names a column is that
+column. `ValidateRead` refuses a reply that does not answer its request,
+wrapping `ErrInvalid`. `engine.Target.RoutineBodies` registers a target's
+reader, and `engine.Runtime.ReadRoutineBodies` asks it under the target's
+canonical name; a target without one wraps `ptaherr.ErrUnsupportedDialect`.
+
+`dialect/postgres/pgroutine` is the PostgreSQL owner's routine body reader.
+`Reader` splits a PL/pgSQL body into the statements of its outer block, each
+IF, CASE, loop, nested block and EXCEPTION section carrying the statements it
+runs, and reads a body in any other language as one statement. The bundled
+runtime registers it on every target of the PostgreSQL family.
 
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
 publishes the PG and TX families and the online rules ON101 and ON103 as data,

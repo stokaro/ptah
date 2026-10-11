@@ -182,12 +182,13 @@ func build(cmd *cobra.Command, opts *Options, openRecorder auditOpener) (*agenta
 		return nil, noop, err
 	}
 	gates, err := agentgate.New(agentgate.Options{
-		Owners:       runtime,
-		Validation:   runtime,
-		Rendering:    runtime,
-		Dialect:      dialect,
-		Version:      opts.ServerVersion,
-		Capabilities: target.Capabilities,
+		Owners:        runtime,
+		RoutineBodies: runtime,
+		Validation:    runtime,
+		Rendering:     runtime,
+		Dialect:       dialect,
+		Version:       opts.ServerVersion,
+		Capabilities:  target.Capabilities,
 	})
 	if err != nil {
 		closeWorkspace()

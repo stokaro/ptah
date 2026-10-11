@@ -385,3 +385,28 @@ func writeSQLFile(c *qt.C, dir, name, statement string) string {
 	c.Assert(os.WriteFile(path, []byte(statement), 0o600), qt.IsNil)
 	return path
 }
+
+// A PostgreSQL routine that composes SQL at run time is reported where it does,
+// which takes the command handing the linter the runtime that reads the body.
+func TestSQLLint_ReadsAPostgreSQLRoutineBody(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, _, err := executeWithStdin(
+		"CREATE PROCEDURE p() AS $$\nBEGIN\n  EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;",
+		"lint", "--dialect", "postgres", "--stdin", "--format", "json",
+	)
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	var report struct {
+		Findings []sqllint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	rules := make([]string, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		rules = append(rules, finding.Rule+":"+finding.Message)
+	}
+	c.Assert(rules, qt.DeepEquals, []string{
+		"SQL002:ptah sql lint does not model CREATE PROCEDURE statements yet",
+		"SQL003:procedure p builds SQL at run time with EXECUTE",
+	})
+}

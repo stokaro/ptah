@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
@@ -42,9 +43,9 @@ func TestSeverities_APolicyReplacesARuleSeverity(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(
+			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-				sqllint.Options{Dialect: platform.Postgres, Severities: row.severities},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Severities: row.severities},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -89,9 +90,9 @@ func TestSeverities_APolicyThisLinterCannotHonorIsRefused(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := sqllint.LintSource(
+			_, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-				sqllint.Options{Dialect: platform.Postgres, Severities: row.severities},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Severities: row.severities},
 			)
 
 			c.Assert(err, qt.IsNotNil)
@@ -106,9 +107,9 @@ func TestSeverities_APolicyThisLinterCannotHonorIsRefused(t *testing.T) {
 func TestSeverities_AParsePathCodeMayBeSetToWhatItAlreadyIs(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := sqllint.LintSource(
+	_, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-		sqllint.Options{
+		sqllint.Options{Bodies: builtintest.Runtime(),
 			Dialect:    platform.Postgres,
 			Severities: map[string]sqllint.Severity{"SQL001": sqllint.SeverityError},
 		},

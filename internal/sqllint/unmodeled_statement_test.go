@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
@@ -44,9 +45,9 @@ func TestLintSource_AFileOfUnanalyzedStatementsIsNotClean(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(
+			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: row.sql},
-				sqllint.Options{Dialect: "postgres"},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -68,13 +69,13 @@ func TestLintSource_AFileOfUnanalyzedStatementsIsNotClean(t *testing.T) {
 func TestLintSource_TheUnanalyzedFindingIsOnePerFile(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := sqllint.LintSource(sqllint.Source{
+	findings, err := sqllint.LintSource(t.Context(), sqllint.Source{
 		Name: "many.sql",
 		SQL: "CREATE VIEW a AS SELECT 1;\n" +
 			"CREATE VIEW b AS SELECT 2;\n" +
 			"CREATE SEQUENCE s;\n" +
 			"DROP TABLE t;\n",
-	}, sqllint.Options{Dialect: "postgres"})
+	}, sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -102,9 +103,9 @@ func TestLintSource_AnAnalyzedStatementStaysSilent(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(
+			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: row.sql},
-				sqllint.Options{Dialect: "postgres"},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"},
 			)
 
 			c.Assert(err, qt.IsNil)

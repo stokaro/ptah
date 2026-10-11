@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
@@ -23,9 +24,9 @@ import (
 func reportedCodes(tb testing.TB, sql string, disabled []string) []string {
 	c := qt.New(tb)
 
-	findings, err := sqllint.LintSource(
+	findings, err := sqllint.LintSource(c.Context(),
 		sqllint.Source{Name: "probe.sql", SQL: sql},
-		sqllint.Options{Dialect: platform.Postgres, DisabledRules: disabled},
+		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: disabled},
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -112,9 +113,9 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := sqllint.LintSource(
+			_, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "probe.sql", SQL: "CREATE TABLE ;"},
-				sqllint.Options{Dialect: platform.Postgres, DisabledRules: row.disabled},
+				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: row.disabled},
 			)
 
 			c.Assert(err, qt.IsNotNil)

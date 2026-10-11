@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/routineext"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/parser"
 )
 
 // RoutineWrite is one table or column a routine body writes.
@@ -25,83 +23,51 @@ type RoutineWrite struct {
 	Statement string `json:"statement"`
 }
 
-// deriveProceduralWrites resolves the writes a procedural body performs.
+// readingWrites resolves the writes of the statements an owner read out of a
+// procedural body, descending into the ones that carry others.
+//
+// Each statement gets one of three answers: the writes it performs, that it
+// cannot write, or that this analysis cannot tell. The third is the one that
+// has to stay reachable. A statement composed at run time can do anything,
+// which is what #1270 is about; a statement whose leading word is not
+// recognized is treated the same way, because CALL, MERGE and COPY all write
+// and guessing which is worse than saying so.
 //
 // Reads are deliberately not derived here, and the caller says so on every
 // procedural routine: a body whose writes were resolved and whose reads were
 // not must not read as a body that reads nothing, which is the same rule the
 // view half draws its undecided line on (stokaro/ptah#2394).
-func deriveProceduralWrites(routine schemamodel.Function, kind string) (writes []RoutineWrite, unresolved []string) {
-	body := parser.ParseRoutineBody(routine.Body, routine.Language)
-	return walkRoutineStatements(body.Statements, routine.Name, kind)
-}
-
-// walkRoutineStatements classifies each statement, descending into the ones
-// that carry others.
-func walkRoutineStatements(statements []ast.PostgresRoutineStatement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
+func readingWrites(statements []routineext.Statement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
 	for _, statement := range statements {
-		stmtWrites, stmtUnresolved := classifyRoutineStatement(statement, routine, kind)
+		var stmtWrites []RoutineWrite
+		var stmtUnresolved []string
+		switch statement.Kind {
+		case routineext.StatementControl:
+			stmtWrites, stmtUnresolved = descendOrRefuse(statement, routine, kind)
+		case routineext.StatementInert:
+		case routineext.StatementDynamic:
+			stmtUnresolved = []string{fmt.Sprintf("an %s composes its statement at run time", strings.ToUpper(statement.Label))}
+		default:
+			stmtWrites, stmtUnresolved = classifyRawStatement(statement.SQL, routine, kind)
+		}
 		writes = append(writes, stmtWrites...)
 		unresolved = append(unresolved, stmtUnresolved...)
 	}
 	return writes, unresolved
 }
 
-// classifyRoutineStatement gives one of three answers about a statement: the
-// writes it performs, that it cannot write, or that this analysis cannot tell.
+// descendOrRefuse walks a control statement's contents, or refuses when the
+// owner could not split them.
 //
-// The third is the one that has to stay reachable. An EXECUTE composes SQL at
-// run time and can do anything, which is what #1270 is about; a statement whose
-// leading word is not recognized is treated the same way, because CALL, MERGE
-// and COPY all write and guessing which is worse than saying so.
-func classifyRoutineStatement(statement ast.PostgresRoutineStatement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
-	if carriesStatements(statement.Kind) {
-		return descendOrRefuse(statement, routine, kind)
+// An opaque control statement is the owner saying it could not read the
+// branch, and the branch text is still in SQL. Reporting nothing there would
+// credit the routine with writing nothing inside an IF the analysis never
+// opened.
+func descendOrRefuse(statement routineext.Statement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
+	if statement.Opaque {
+		return nil, []string{unreadableContents(statement.Label)}
 	}
-	if nonWritingKind(statement.Kind) {
-		return nil, nil
-	}
-	if statement.Kind == ast.PostgresRoutineStatementExecute {
-		return nil, []string{"an EXECUTE composes its statement at run time"}
-	}
-	return classifyRawStatement(statement.SQL, routine, kind)
-}
-
-// descendOrRefuse walks a control-flow statement's contents, or refuses when
-// the parser could not split them.
-//
-// An empty statement list on a control-flow statement is the parser saying it
-// could not read the branch, and the branch text is still in SQL. Reporting
-// nothing there would credit the routine with writing nothing inside an IF the
-// analysis never opened.
-func descendOrRefuse(statement ast.PostgresRoutineStatement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
-	if len(statement.Statements) == 0 {
-		return nil, []string{fmt.Sprintf("the %s statement's contents could not be read", statement.Kind)}
-	}
-	return walkRoutineStatements(statement.Statements, routine, kind)
-}
-
-// carriesStatements reports whether a kind holds other statements.
-func carriesStatements(kind ast.PostgresRoutineStatementKind) bool {
-	switch kind {
-	case ast.PostgresRoutineStatementBlock, ast.PostgresRoutineStatementException,
-		ast.PostgresRoutineStatementIf, ast.PostgresRoutineStatementCase,
-		ast.PostgresRoutineStatementLoop:
-		return true
-	default:
-		return false
-	}
-}
-
-// nonWritingKind reports whether a kind cannot write to a table on its own.
-func nonWritingKind(kind ast.PostgresRoutineStatementKind) bool {
-	switch kind {
-	case ast.PostgresRoutineStatementDeclaration, ast.PostgresRoutineStatementReturn,
-		ast.PostgresRoutineStatementRaise, ast.PostgresRoutineStatementPerform:
-		return true
-	default:
-		return false
-	}
+	return readingWrites(statement.Statements, routine, kind)
 }
 
 // classifyRawStatement reads a plain statement's leading word.

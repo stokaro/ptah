@@ -4,8 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/routineext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
@@ -27,61 +26,56 @@ type RoutineRead struct {
 	Statement string `json:"statement"`
 }
 
-// readsAreDerivable reports whether a dialect resolves a variable and a column
-// of the same name in a way that lets this analysis tell them apart.
+// readsAreDerivable reports whether a dialect whose owner reads no bodies yet
+// resolves a variable and a column of the same name in a way that lets this
+// analysis tell them apart. An owner that reads bodies says so itself
+// ([routineext.Reading.ColumnReads]).
 //
 // This is the whole of what decides which dialects get a read answer, and it is
-// not about parser strength. PostgreSQL defaults plpgsql.variable_conflict to
-// error, so a body that compiles has no collision. T-SQL variables carry an @
-// prefix and cannot collide at all. MySQL resolves the other way -- a declared
-// variable takes precedence over a column of the same name -- so an identifier
-// in a MySQL body does not say which it is, and reporting it as a column read
-// would be the confident wrong answer this package exists to avoid
-// (stokaro/ptah#2394).
+// not about parser strength. T-SQL variables carry an @ prefix and cannot
+// collide at all. MySQL resolves the other way -- a declared variable takes
+// precedence over a column of the same name -- so an identifier in a MySQL
+// body does not say which it is, and reporting it as a column read would be
+// the confident wrong answer this package exists to avoid (stokaro/ptah#2394).
 func readsAreDerivable(dialect string) bool {
-	if platform.IsPostgresFamily(dialect) {
-		return true
-	}
 	return isSQLServerFamily(dialect)
 }
 
-// deriveProceduralReads resolves the columns a procedural body reads.
+// deriveProceduralReads resolves the columns a procedural body reads from the
+// text of its statements.
 //
 // It answers only for a statement whose source table is unambiguous, which is
 // the same boundary the view half draws: with more than one table in scope an
 // unqualified column cannot be attributed, and attributing it to the wrong one
 // is worse than saying nothing.
-func deriveProceduralReads(routine schemamodel.Function, dialect, kind string, columns map[string][]string) []RoutineRead {
-	statements := proceduralStatementSQL(routine, dialect)
+func deriveProceduralReads(routine, kind string, columns map[string][]string, statements []string) []RoutineRead {
 	reads := make([]RoutineRead, 0)
 	for _, sql := range statements {
-		reads = append(reads, statementReads(sql, routine.Name, kind, columns)...)
+		reads = append(reads, statementReads(sql, routine, kind, columns)...)
 	}
 	sortRoutineReads(reads)
 	return dedupeReads(reads)
 }
 
-// proceduralStatementSQL flattens a body into the text of each statement.
-func proceduralStatementSQL(routine schemamodel.Function, dialect string) []string {
-	if platform.IsPostgresFamily(dialect) {
-		return postgresStatementSQL(parser.ParseRoutineBody(routine.Body, routine.Language).Statements)
-	}
+// readingSQL flattens a reading into the text of each statement, descending
+// into the ones that carry others so a read inside a branch is not missed.
+func readingSQL(statements []routineext.Statement) []string {
 	var sql []string
-	for _, statement := range parser.ParseSQLServerRoutineBody(routine.Body).Statements {
+	for _, statement := range statements {
+		if len(statement.Statements) > 0 {
+			sql = append(sql, readingSQL(statement.Statements)...)
+			continue
+		}
 		sql = append(sql, statement.SQL)
 	}
 	return sql
 }
 
-// postgresStatementSQL walks the PL/pgSQL statements, descending into the ones
-// that carry others so a read inside a branch is not missed.
-func postgresStatementSQL(statements []ast.PostgresRoutineStatement) []string {
+// proceduralStatementSQL flattens a T-SQL body into the text of each
+// statement, for a target whose owner reads no bodies yet.
+func proceduralStatementSQL(routine schemamodel.Function) []string {
 	var sql []string
-	for _, statement := range statements {
-		if len(statement.Statements) > 0 {
-			sql = append(sql, postgresStatementSQL(statement.Statements)...)
-			continue
-		}
+	for _, statement := range parser.ParseSQLServerRoutineBody(routine.Body).Statements {
 		sql = append(sql, statement.SQL)
 	}
 	return sql

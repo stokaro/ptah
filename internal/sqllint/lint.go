@@ -2,6 +2,8 @@
 package sqllint
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -11,6 +13,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/routineext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
@@ -85,6 +89,19 @@ type Options struct {
 	// silence -- the rule runs, resolves nothing, reports less, and the run
 	// exits 0 (stokaro/ptah#1270, criterion 7).
 	Schema *schemamodel.Database
+
+	// Bodies reads the routine bodies the file defines, in their engine's
+	// language: the engine runtime answers it. A file whose routines need
+	// reading is refused without one, because [RuleDynamicSQL] would
+	// otherwise report nothing, and a routine that composes SQL would read as
+	// one that does not.
+	Bodies Bodies
+}
+
+// Bodies reads routine bodies through the owner of the target's routine body
+// reader (ptah.run/core/routineext).
+type Bodies interface {
+	ReadRoutineBodies(ctx context.Context, request routineext.ReadRequest) (routineext.ReadResult, error)
 }
 
 type Finding struct {
@@ -117,6 +134,9 @@ type Context struct {
 	// index usually finds its table without any schema being supplied at all.
 	fileTables map[string]map[string]bool
 	statement  sourceStatement
+	// bodies are the owner's readings of the routine bodies the file
+	// defines, by the node that defines each.
+	bodies map[ast.Node]routineext.Reading
 }
 
 func DefaultRules() []Rule {
@@ -129,7 +149,9 @@ func DefaultRules() []Rule {
 	}
 }
 
-func LintSource(source Source, opts Options) ([]Finding, error) {
+// LintSource lints every statement of one file. The routine bodies the file
+// defines are read in one call to opts.Bodies, before any rule runs.
+func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, error) {
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
 		return nil, err
 	}
@@ -144,22 +166,33 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 		return applySeverities(keepEnabled(lintYQL(source, opts, caps), opts.DisabledRules), opts.Severities), nil
 	}
 
-	var findings []Finding
-	var unanalyzedKinds []string
-	fileTables := declaredTablesIn(source, opts, caps)
+	var items []sourceItem
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)
 		if keyword == "" {
 			continue
 		}
 		if !isSupportedTopLevelKeyword(keyword) {
-			findings = append(findings, unsupportedStatementFinding(source, statement, opts, keyword, keywordOffset))
+			items = append(items, sourceItem{statement: statement,
+				findings: []Finding{unsupportedStatementFinding(source, statement, opts, keyword, keywordOffset)}})
 			continue
 		}
-		statementFindings, unanalyzed, err := lintParsedStatement(source, statement, fileTables, opts, caps)
-		if err != nil {
-			return nil, err
+		items = append(items, parseSourceStatement(source, statement, opts, caps))
+	}
+	bodies, err := readRoutineBodies(ctx, items, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var findings []Finding
+	var unanalyzedKinds []string
+	fileTables := declaredTablesIn(source, opts, caps)
+	for _, item := range items {
+		if item.findings != nil {
+			findings = append(findings, item.findings...)
+			continue
 		}
+		statementFindings, unanalyzed := lintParsedStatement(source, item, fileTables, bodies, opts, caps)
 		findings = append(findings, statementFindings...)
 		unanalyzedKinds = appendUnanalyzed(unanalyzedKinds, unanalyzed)
 	}
@@ -323,30 +356,101 @@ func unsupportedStatementFinding(source Source, statement sourceStatement, opts 
 	}
 }
 
-func lintParsedStatement(
-	source Source,
-	statement sourceStatement,
-	fileTables map[string]map[string]bool,
-	opts Options,
-	caps capability.Capabilities,
-) ([]Finding, []string, error) {
+// sourceItem is one statement of a file: the findings it ends with before any
+// rule runs, or the nodes it parsed into.
+type sourceItem struct {
+	statement sourceStatement
+	findings  []Finding
+	nodes     []ast.Node
+}
+
+// parseSourceStatement parses one statement, or reports why it could not.
+func parseSourceStatement(source Source, statement sourceStatement, opts Options, caps capability.Capabilities) sourceItem {
 	stmtList, err := parser.NewParser(statementParserSQL(statement.sql), parserOptions(opts, caps)...).Parse()
 	if err != nil {
-		return []Finding{parseErrorFinding(source, statement, opts, err)}, nil, nil
+		return sourceItem{statement: statement, findings: []Finding{parseErrorFinding(source, statement, opts, err)}}
 	}
+	return sourceItem{statement: statement, nodes: stmtList.Statements}
+}
 
+// readRoutineBodies asks the owner of the run's dialect to read every routine
+// body the file defines, in one call, and returns each reading by the node that
+// defines the routine. A dialect whose owner reads no bodies returns none.
+func readRoutineBodies(ctx context.Context, items []sourceItem, opts Options) (map[ast.Node]routineext.Reading, error) {
+	var nodes []ast.Node
+	var request routineext.ReadRequest
+	for _, item := range items {
+		for _, node := range item.nodes {
+			if body, ok := routineBodyOf(node); ok {
+				nodes = append(nodes, node)
+				request.Bodies = append(request.Bodies, body)
+			}
+		}
+	}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+	if opts.Bodies == nil {
+		return nil, errors.New("sql lint reads the routine bodies the file defines and was given no routine body reader")
+	}
+	request.Target = opts.Dialect
+	result, err := opts.Bodies.ReadRoutineBodies(ctx, request)
+	if errors.Is(err, ptaherr.ErrUnsupportedDialect) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the routine bodies: %w", err)
+	}
+	readings := make(map[ast.Node]routineext.Reading, len(nodes))
+	for i, node := range nodes {
+		readings[node] = result.Bodies[i]
+	}
+	return readings, nil
+}
+
+// routineBodyOf is the body of a PostgreSQL routine a node defines.
+//
+// There are two node kinds, and the difference is not about what was parsed.
+// A PROCEDURE becomes a PostgresRoutineNode carrying its body; a FUNCTION
+// becomes a CreateFunctionNode, and `Parser.attachPostgresFunctionBody` fills
+// its RoutineBody. Reading only the first node type left every function
+// unexamined while looking like a parser limitation.
+func routineBodyOf(node ast.Node) (routineext.Body, bool) {
+	switch node := node.(type) {
+	case *ast.PostgresRoutineNode:
+		return routineext.Body{Kind: string(node.Kind), Language: node.Language, SQL: node.Body.SQL}, true
+	case *ast.CreateFunctionNode:
+		if node.RoutineBody == nil {
+			return routineext.Body{}, false
+		}
+		return routineext.Body{Kind: node.Kind, Language: node.Language, SQL: node.Body}, true
+	}
+	return routineext.Body{}, false
+}
+
+// lintParsedStatement runs every enabled rule over the nodes one statement
+// parsed into.
+func lintParsedStatement(
+	source Source,
+	item sourceItem,
+	fileTables map[string]map[string]bool,
+	bodies map[ast.Node]routineext.Reading,
+	opts Options,
+	caps capability.Capabilities,
+) ([]Finding, []string) {
 	ctx := Context{
 		Source:       source,
-		statement:    statement,
+		statement:    item.statement,
 		Dialect:      opts.Dialect,
 		Version:      opts.Version,
 		Capabilities: caps,
 		Schema:       opts.Schema,
 		fileTables:   fileTables,
+		bodies:       bodies,
 	}
 	findings := make([]Finding, 0)
 	var unanalyzed []string
-	for _, stmt := range stmtList.Statements {
+	for _, stmt := range item.nodes {
 		for _, rule := range effectiveRules(opts) {
 			if ruleDisabled(rule.ID(), opts.DisabledRules) {
 				continue
@@ -357,7 +461,7 @@ func lintParsedStatement(
 			unanalyzed = append(unanalyzed, label)
 		}
 	}
-	return findings, unanalyzed, nil
+	return findings, unanalyzed
 }
 
 // unanalyzedStatementLabel names a statement no rule looks at, and reports
@@ -680,16 +784,17 @@ func statementLabelForName(name string) string {
 	return strings.ToUpper(strings.Join(words, " "))
 }
 
-// flattenRoutineStatements walks a body and everything its control-flow
+// flattenRoutineStatements walks a body and everything its control
 // statements carry.
 //
-// The boundary this rule reports does not care how deeply the EXECUTE sits: a
-// routine that composes SQL inside a condition is the ordinary shape, since a
-// condition is usually what the composition is for. Before the body model
-// carried nesting, an EXECUTE at the top of a body reported SQL003 and the same
-// EXECUTE inside IF or LOOP reported nothing (stokaro/ptah#2393).
-func flattenRoutineStatements(statements []ast.PostgresRoutineStatement) []ast.PostgresRoutineStatement {
-	flat := make([]ast.PostgresRoutineStatement, 0, len(statements))
+// The boundary this rule reports does not care how deeply the dynamic
+// statement sits: a routine that composes SQL inside a condition is the
+// ordinary shape, since a condition is usually what the composition is for.
+// Before the body model carried nesting, an EXECUTE at the top of a body
+// reported SQL003 and the same EXECUTE inside IF or LOOP reported nothing
+// (stokaro/ptah#2393).
+func flattenRoutineStatements(statements []routineext.Statement) []routineext.Statement {
+	flat := make([]routineext.Statement, 0, len(statements))
 	for _, statement := range statements {
 		flat = append(flat, statement)
 		flat = append(flat, flattenRoutineStatements(statement.Statements)...)
@@ -697,57 +802,25 @@ func flattenRoutineStatements(statements []ast.PostgresRoutineStatement) []ast.P
 	return flat
 }
 
-// postgresRoutineStatements is the parsed body of whichever node a PostgreSQL
-// routine arrived as, with a label naming it for the finding.
-//
-// There are two, and the difference is not about what was parsed. A PROCEDURE
-// becomes a PostgresRoutineNode carrying its body; a FUNCTION becomes a
-// CreateFunctionNode, and `Parser.attachPostgresFunctionBody` fills its
-// RoutineBody with the same parsed statements. Reading only the first node type
-// left every function unexamined while looking like a parser limitation.
-func postgresRoutineStatements(stmt ast.Node) (label string, statements []ast.PostgresRoutineStatement) {
+// postgresRoutineLabel names the PostgreSQL routine a node defines, for a finding.
+func postgresRoutineLabel(stmt ast.Node) string {
 	switch node := stmt.(type) {
 	case *ast.PostgresRoutineNode:
-		return fmt.Sprintf("%s %s", node.Kind, node.Name), node.Body.Statements
+		return fmt.Sprintf("%s %s", node.Kind, node.Name)
 	case *ast.CreateFunctionNode:
-		if node.RoutineBody == nil {
-			return "", nil
-		}
 		kind := node.Kind
 		if kind == "" {
 			kind = "function"
 		}
-		return fmt.Sprintf("%s %s", kind, node.Name), node.RoutineBody.Statements
+		return fmt.Sprintf("%s %s", kind, node.Name)
 	}
-	return "", nil
+	return ""
 }
 
-// dynamicSQLRule reports where a routine builds SQL at run time.
-//
-// This is the first thing in Ptah that READS a parsed routine body. The parser
-// has been producing `ast.PostgresRoutineBody.Statements` -- a statement list
-// with a typed Kind -- and nothing consumed it, which is what made every
-// schema-aware rule in stokaro/ptah#1270 look unreachable. It is not: PL/pgSQL's
-// EXECUTE is already its own Kind, so "analysis stops here" is decidable from
-// what the parser hands over, with no new parsing at all.
-//
-// It is the boundary #1270 asks to surface in its own words -- "does dynamic
-// SQL introduce an analysis boundary that should be surfaced?" -- and it is
-// INFO rather than a warning because a routine that composes SQL is doing
-// something legitimate. What the finding reports is the limit of what any later
-// rule can claim about that routine, not a defect in it.
-//
-// One finding per EXECUTE rather than one per routine: each is a separate place
-// the analysis stops, and each gets its own position.
-//
-// PostgreSQL only, because it is the only frontend with an execute Kind --
-// MySQL and SQL Server routine statements have no such classification, so their
-// dynamic SQL is indistinguishable from any other raw statement here.
 // dialectDynamicFindings reports the dynamic SQL a MySQL or T-SQL body builds.
 //
-// Separate from the PL/pgSQL walk below because the three parsers model a body
-// differently: PL/pgSQL names an execute statement, and the other two leave it
-// in the raw kind for the leading words to identify.
+// Separate from the owner's reading below because the MySQL and T-SQL parsers
+// leave a dynamic statement in the raw kind for the leading words to identify.
 func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
 	label, dynamic := dialectDynamicStatements(stmt)
 	findings := make([]Finding, 0, len(dynamic))
@@ -769,6 +842,23 @@ func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
 	return findings
 }
 
+// dynamicSQLRule reports where a routine builds SQL at run time.
+//
+// The owner of the dialect's routine bodies says which statements compose SQL
+// at run time -- PL/pgSQL's EXECUTE is one -- so "analysis stops here" is
+// decidable from what the owner hands over, with no parsing here.
+//
+// It is the boundary #1270 asks to surface in its own words -- "does dynamic
+// SQL introduce an analysis boundary that should be surfaced?" -- and it is
+// INFO rather than a warning because a routine that composes SQL is doing
+// something legitimate. What the finding reports is the limit of what any later
+// rule can claim about that routine, not a defect in it.
+//
+// One finding per dynamic statement rather than one per routine: each is a
+// separate place the analysis stops, and each gets its own position.
+//
+// A MySQL or T-SQL body is read here by [dialectDynamicFindings] until its
+// owner reads it.
 type dynamicSQLRule struct{}
 
 func (dynamicSQLRule) ID() string {
@@ -779,17 +869,18 @@ func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 	if findings := dialectDynamicFindings(ctx, stmt); len(findings) > 0 {
 		return findings
 	}
-	label, statements := postgresRoutineStatements(stmt)
-	if len(statements) == 0 {
+	reading, read := ctx.bodies[stmt]
+	if !read {
 		return nil
 	}
+	label := postgresRoutineLabel(stmt)
 
 	var findings []Finding
-	for _, statement := range flattenRoutineStatements(statements) {
-		if statement.Kind != ast.PostgresRoutineStatementExecute {
+	for _, statement := range flattenRoutineStatements(reading.Statements) {
+		if statement.Kind != routineext.StatementDynamic {
 			continue
 		}
-		// The statement carries no offset of its own -- it is a Kind and its
+		// The statement carries no offset of its own -- it is a kind and its
 		// raw text -- so the text is what locates it. A body running the same
 		// EXECUTE twice reports the first position twice, which is a worse
 		// position rather than a wrong claim.
@@ -802,7 +893,7 @@ func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 			Line:      line,
 			Column:    column,
 			Dialect:   ctx.Dialect,
-			Message:   fmt.Sprintf("%s builds SQL at run time with EXECUTE", label),
+			Message:   fmt.Sprintf("%s builds SQL at run time with %s", label, strings.ToUpper(statement.Label)),
 			Rationale: "The statement text is not known until the routine runs, so nothing here can resolve what it reads or writes.",
 		})
 	}

@@ -42,7 +42,7 @@ func writeTargets(result schemalineage.RoutineResult) []string {
 func TestDeriveRoutines_ResolvesTheWritesAProceduralBodyPerforms(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   UPDATE customers SET country = 'CZ', email = lower(email) WHERE id = 1;
   INSERT INTO audit (actor, action) VALUES (1, 'touch');
@@ -68,7 +68,7 @@ END;`), "postgres")
 func TestDeriveRoutines_ReachesAWriteInsideControlFlow(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   IF now() > '2020-01-01' THEN
     DELETE FROM audit WHERE actor = 1;
@@ -89,7 +89,7 @@ END;`), "postgres")
 func TestDeriveRoutines_AResolvedBodySaysWhatItsReadsRestOn(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 DECLARE total INT;
 BEGIN
   total := 0;
@@ -112,7 +112,7 @@ END;`), "postgres")
 func TestDeriveRoutines_DynamicSQLMakesTheWriteListIncomplete(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   DELETE FROM audit WHERE actor = 1;
   EXECUTE 'DROP TABLE ' || quote_ident(target);
@@ -132,7 +132,7 @@ END;`), "postgres")
 func TestDeriveRoutines_AnUnrecognizedStatementIsNotTreatedAsHarmless(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   CALL rebuild_everything();
 END;`), "postgres")
@@ -151,7 +151,7 @@ END;`), "postgres")
 func TestDeriveRoutines_AVariableAssignmentIsNotAnUnresolvedStatement(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 DECLARE total INT;
 BEGIN
   total := 0;
@@ -159,6 +159,49 @@ END;`), "postgres")
 
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "every statement was classified")
+}
+
+// TestDeriveRoutines_ABranchNobodyOpenedIsNotEmpty keeps an unread branch
+// from reading as one that writes nothing: a control statement whose contents
+// the owner could not split is reported as unresolved.
+func TestDeriveRoutines_ABranchNobodyOpenedIsNotEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	result := deriveRoutines(c, proceduralRoutine(`
+BEGIN
+  IF a THEN
+  END IF;
+END;`), "postgres")
+
+	c.Assert(result.Writes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "the if statement's contents could not be read")
+}
+
+// TestDeriveRoutines_ALabeledBlockIsReadThrough pins what a label in front of
+// a block or a loop hides. Read by its first word, a labeled block was one
+// statement beginning `<` that nothing recognized, and neither the DELETE nor
+// the EXECUTE inside it was reported.
+func TestDeriveRoutines_ALabeledBlockIsReadThrough(t *testing.T) {
+	c := qt.New(t)
+
+	result := deriveRoutines(c, proceduralRoutine(`
+BEGIN
+  <<outer>>
+  BEGIN
+    EXECUTE 'TRUNCATE customers';
+    DELETE FROM customers WHERE email = 'x';
+  END;
+  <<lp>>
+  LOOP
+    UPDATE customers SET email = 'y';
+    EXIT lp;
+  END LOOP;
+END;`), "postgres")
+
+	c.Assert(writeTargets(result), qt.DeepEquals, []string{"customers:delete", "customers.email:update"})
+	c.Assert(result.Undecided[0].Reason, qt.Equals, "the body is plpgsql: an EXECUTE composes its statement at run time, "+
+		"so the writes are not complete; the reads are those of its statements that name one table")
 }
 
 // TestDeriveRoutines_ATriggerFunctionsFieldAssignmentIsNotAnUnresolvedStatement
@@ -186,7 +229,7 @@ func TestDeriveRoutines_ATriggerFunctionsFieldAssignmentIsNotAnUnresolvedStateme
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := schemalineage.DeriveRoutines(proceduralRoutine(test.body), "postgres")
+			result := deriveRoutines(c, proceduralRoutine(test.body), "postgres")
 
 			c.Assert(result.Writes, qt.HasLen, 0)
 			c.Assert(result.Undecided, qt.HasLen, 1)
@@ -204,7 +247,7 @@ func TestDeriveRoutines_ATriggerFunctionsFieldAssignmentIsNotAnUnresolvedStateme
 func TestDeriveRoutines_ASetClauseDoesNotInventColumnsFromAnExpression(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   UPDATE customers SET email = coalesce(fallback, backup) WHERE id = 1;
 END;`), "postgres")
@@ -220,7 +263,7 @@ END;`), "postgres")
 func TestDeriveRoutines_ATruncateListIsRefusedRatherThanHalfRead(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   TRUNCATE TABLE first_table, second_table;
 END;`), "postgres")
@@ -238,7 +281,7 @@ END;`), "postgres")
 func TestDeriveRoutines_AnInsertWithNoColumnListNamesTheTable(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(proceduralRoutine(`
+	result := deriveRoutines(c, proceduralRoutine(`
 BEGIN
   INSERT INTO audit VALUES (1, 'touch');
 END;`), "postgres")
@@ -256,7 +299,7 @@ END;`), "postgres")
 func TestDeriveRoutines_APlainSQLRoutineReportsNoWrites(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "C", Name: "customers"}},
 		Fields: []schemamodel.Field{{StructName: "C", Name: "email", Type: "TEXT"}},
 		Functions: []schemamodel.Function{
@@ -291,7 +334,7 @@ func TestDeriveRoutines_AProcedureWithNoLanguageIsAnalyzedByItsDialect(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := schemalineage.DeriveRoutines(&schemamodel.Database{
+			result := deriveRoutines(c, &schemamodel.Database{
 				Functions: []schemamodel.Function{
 					{Name: "p", Kind: "procedure", Language: "sql", Body: test.body},
 				},
@@ -313,7 +356,7 @@ func TestDeriveRoutines_AProcedureWithNoLanguageIsAnalyzedByItsDialect(t *testin
 func TestDeriveRoutines_ADialectWithNoRoutineBodyParserSaysSo(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Functions: []schemamodel.Function{
 			{Name: "p", Kind: "procedure", Language: "sql", Body: "UPDATE t SET c = 1;"},
 		},
@@ -332,7 +375,7 @@ func TestDeriveRoutines_ADialectWithNoRoutineBodyParserSaysSo(t *testing.T) {
 func TestDeriveRoutines_AFunctionKeepsTheReadersOwnReason(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Functions: []schemamodel.Function{
 			{Name: "f", Language: "sql", Body: "SELECT a FROM x JOIN y ON y.id = x.id"},
 		},
@@ -363,7 +406,7 @@ func TestDeriveRoutines_ATSQLBodyResolvesTheWritesItsSplitterModels(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := schemalineage.DeriveRoutines(&schemamodel.Database{
+			result := deriveRoutines(c, &schemamodel.Database{
 				Functions: []schemamodel.Function{
 					{Name: "p", Kind: "procedure", Language: "sql", Body: test.body},
 				},
@@ -383,7 +426,7 @@ func TestDeriveRoutines_ATSQLBodyResolvesTheWritesItsSplitterModels(t *testing.T
 func TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Functions: []schemamodel.Function{
 			{Name: "p", Kind: "procedure", Language: "sql", Body: "UPDATE t SET c = 1;"},
 		},
@@ -403,7 +446,7 @@ func TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole(t *testing.T) {
 func TestDeriveRoutines_AMySQLBranchIsUnresolvedRatherThanEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Functions: []schemamodel.Function{
 			{
 				Name: "p", Kind: "procedure", Language: "sql",

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
 )
@@ -18,10 +19,10 @@ import (
 func TestLintSource_RefusesAVersionThatNamesNoServer(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := sqllint.LintSource(sqllint.Source{
+	findings, err := sqllint.LintSource(t.Context(), sqllint.Source{
 		Name: "index.sql",
 		SQL:  "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);",
-	}, sqllint.Options{Dialect: platform.Postgres, Version: "not-a-version"})
+	}, sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Version: "not-a-version"})
 
 	c.Assert(findings, qt.IsNil)
 	var unrecognized *servertarget.UnrecognizedVersionError
@@ -35,10 +36,10 @@ func TestLintSource_RefusesAVersionThatNamesNoServer(t *testing.T) {
 func TestLintSource_ExplicitCapabilitiesOutrankTheVersionString(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := sqllint.LintSource(sqllint.Source{
+	findings, err := sqllint.LintSource(t.Context(), sqllint.Source{
 		Name: "index.sql",
 		SQL:  "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);",
-	}, sqllint.Options{
+	}, sqllint.Options{Bodies: builtintest.Runtime(),
 		Dialect:      platform.Postgres,
 		Version:      "not-a-version",
 		Capabilities: capability.Postgres16(),

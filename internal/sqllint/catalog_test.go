@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqllint"
 )
 
@@ -201,19 +202,19 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 		{
 			name:    "parse error",
 			source:  sqllint.Source{Name: "broken.sql", SQL: "CREATE TABLE ;"},
-			options: sqllint.Options{Dialect: platform.Postgres},
+			options: sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			code:    "SQL001",
 		},
 		{
 			name:    "statement the linter does not model",
 			source:  sqllint.Source{Name: "query.sql", SQL: "SELECT 1;"},
-			options: sqllint.Options{Dialect: platform.Postgres},
+			options: sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			code:    "SQL002",
 		},
 		{
 			name:    "a statement kind no rule analyzes",
 			source:  sqllint.Source{Name: "policy.sql", SQL: "CREATE POLICY p ON users USING (true);"},
-			options: sqllint.Options{Dialect: platform.Postgres},
+			options: sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			code:    "SQL004",
 		},
 		{
@@ -223,19 +224,19 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			name: "index over a column the table does not declare",
 			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
 				"CREATE INDEX idx_users_email ON users (email);"},
-			options: sqllint.Options{Dialect: platform.Postgres},
+			options: sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			code:    "DDL002",
 		},
 		{
 			name:    "table without a primary key",
 			source:  sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-			options: sqllint.Options{Dialect: platform.Postgres},
+			options: sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			code:    "DDL001",
 		},
 		{
 			name:   "capability the target lacks",
 			source: sqllint.Source{Name: "index.sql", SQL: "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);"},
-			options: sqllint.Options{
+			options: sqllint.Options{Bodies: builtintest.Runtime(),
 				Dialect:      platform.CockroachDB,
 				Capabilities: capability.CockroachDB23(),
 			},
@@ -251,7 +252,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			name: "dynamic SQL inside a routine body",
 			source: sqllint.Source{Name: "routine.sql", SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 				"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"},
-			options: sqllint.Options{
+			options: sqllint.Options{Bodies: builtintest.Runtime(),
 				Dialect: platform.Postgres,
 			},
 			code: "SQL003",
@@ -275,7 +276,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := sqllint.LintSource(row.source, row.options)
+			findings, err := sqllint.LintSource(t.Context(), row.source, row.options)
 			c.Assert(err, qt.IsNil)
 			// The fixture has to EMIT the identifier; it need not be the only
 			// one. A routine that composes SQL reports both that the linter

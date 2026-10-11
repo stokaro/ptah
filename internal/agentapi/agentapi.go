@@ -401,8 +401,15 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 	if err != nil {
 		return nil, err
 	}
+	owners, err := builtin.Bundled()
+	if err != nil {
+		return nil, agentdiag.Wrap(agentdiag.CodeSchemaSourceUnreadable, err)
+	}
 	derived := schemalineage.DeriveForDialect(database, dialect)
-	derivedRoutines := schemalineage.DeriveRoutines(database, dialect)
+	derivedRoutines, err := schemalineage.DeriveRoutines(ctx, owners, database, dialect)
+	if err != nil {
+		return nil, agentdiag.Wrap(agentdiag.CodeSchemaSourceUnreadable, err)
+	}
 	// Both lists start non-nil so the encoded answer carries [] rather than
 	// null. A caller reading null as "no lineage" and [] as "no lineage" would
 	// be right by accident; one reading null as an absent field would not.

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/routineext"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
@@ -161,6 +162,10 @@ type Target struct {
 	// splitter reports for its own split. Nil leaves those facts unjudged on
 	// such a run.
 	Annotator lintext.Annotator
+	// RoutineBodies reads the target's routine bodies for the hosts that
+	// analyze them: what a body writes and reads, and where it builds SQL at
+	// run time. Nil leaves the target's bodies unanalyzed.
+	RoutineBodies routineext.Reader
 	// RefusesSkips makes the target refuse an object an owner would skip on
 	// it ([schemaext.OffTargetSkip]), as the owner's refusal does. It is for a
 	// target that answers nothing it cannot hold with a comment, because a
@@ -220,6 +225,7 @@ type target struct {
 	constraints     schemaprojection.ConstraintService
 	splitter        lintext.Splitter
 	annotator       lintext.Annotator
+	routineBodies   routineext.Reader
 	refusesSkips    bool
 }
 
@@ -391,6 +397,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"view comparison", declared.Comparison.Views},
 		{"statement splitter", declared.Splitter},
 		{"statement annotator", declared.Annotator},
+		{"routine body reader", declared.RoutineBodies},
 	} {
 		if service.value != nil && nilService(service.value) {
 			return fmt.Errorf("%w: target %q has a typed-nil %s service", ErrInvalidRegistration, declared.Name, service.name)
@@ -406,7 +413,8 @@ func (r *Runtime) register(owner string, declared Target) error {
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
-			splitter: declared.Splitter, annotator: declared.Annotator, refusesSkips: declared.RefusesSkips,
+			splitter: declared.Splitter, annotator: declared.Annotator, routineBodies: declared.RoutineBodies,
+			refusesSkips: declared.RefusesSkips,
 		}
 	}
 	return nil
