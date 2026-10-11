@@ -135,8 +135,9 @@ func TestPostgreSQLDiffAgainstADescribedScopeStillRemovesWhatItOmitsIntegration(
 	c.Assert(
 		readScopePlan(c, devURL, []string{sourceURL}, []string{documentURL}),
 		qt.DeepEquals,
+		// The removed table's primary key goes with DROP TABLE ... CASCADE
+		// (stokaro/ptah#4359), so no ALTER TABLE drops it first.
 		[]string{
-			`ALTER TABLE "extra"."b" DROP CONSTRAINT IF EXISTS "b_pkey"`,
 			`DROP TABLE IF EXISTS "extra"."b" CASCADE`,
 		},
 	)

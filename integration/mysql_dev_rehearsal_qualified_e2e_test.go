@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // A view or trigger body qualifies its columns with the tables and aliases it
@@ -25,6 +28,10 @@ CREATE TRIGGER users_audit AFTER INSERT ON users FOR EACH ROW INSERT INTO log (v
 // schema with --dev-url to an empty database, inserts a row, and reads back
 // what the view and the trigger did.
 func TestSchemaApplyRehearsesQualifiedColumnsOnTheDevDatabaseE2E(t *testing.T) {
+	// The trigger is a stored body, which the replay guard rehearses only on
+	// a dev server the run owns (stokaro/ptah#4294). The integration job's dev
+	// server is its own, so the test declares it disposable.
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(t)
 	for _, engine := range mysqlDevServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)

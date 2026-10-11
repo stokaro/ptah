@@ -176,7 +176,7 @@ func TestStrictCompatMigrateDiffWritesNoNullBackfill_HappyPath(t *testing.T) {
 			row, runErr := runOnNullRow(c, diff.target, statements)
 
 			c.Assert(statements, qt.Not(qt.HasLen), 0)
-			c.Assert(statements[0], qt.Matches, `(?s)DO \$\$.*UPDATE "t3660" SET "c" = '?9'? WHERE "c" IS NULL.*`)
+			c.Assert(statements[0], qt.Matches, `UPDATE "t3660" SET "c" = '?9'? WHERE "c" IS NULL`)
 			c.Assert(statements, qt.Contains, `ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`)
 			c.Assert(runErr, qt.IsNil)
 			c.Assert(row, qt.Equals, "9")
