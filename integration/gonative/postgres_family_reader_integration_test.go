@@ -325,6 +325,11 @@ func postgresFamilyCatalogHasRLSEnabledTable(schema *catalog.Database, schemaNam
 	return false
 }
 
+// postgresFamilyCatalogHasRLSPolicy reports whether the read holds the named
+// policy as the row-security owner's object. The policy is matched on the
+// schema the catalog wrote: a table in the connection's default schema is
+// recorded with no schema, and its policy's identity marks that schema as
+// defaulted, so the authored part is what compares.
 func postgresFamilyCatalogHasRLSPolicy(
 	schema *catalog.Database,
 	schemaName,
@@ -337,7 +342,7 @@ func postgresFamilyCatalogHasRLSPolicy(
 	}
 	for _, object := range objects {
 		policy, ok := object.Value.(*pgpolicy.ObservedPolicy)
-		if ok && object.Ref.Schema.Source == schemaName && object.Ref.Parent.Source == tableName && object.Ref.Name.Source == policyName &&
+		if ok && object.Ref.Schema.Authored() == schemaName && object.Ref.Parent.Source == tableName && object.Ref.Name.Source == policyName &&
 			slices.Equal(policy.Roles, []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}) {
 			return true
 		}
