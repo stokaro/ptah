@@ -74,7 +74,34 @@ func collectModifiedTableMismatches(table difftypes.TableDiff) []Mismatch {
 		message := fmt.Sprintf("extra constraint %s.%s", table.TableName, constraintName)
 		mismatches = append(mismatches, Mismatch{Kind: "extra_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message})
 	}
+	mismatches = append(mismatches, featureMismatches(table.TableName, table.FeatureChanges)...)
 	return mismatches
+}
+
+// featureMismatches reports each owner change as one mismatch, whichever
+// owner made it: the subject it changes, with the owner's kind, and what
+// changed as the owner describes it. table names the table the changes belong
+// to, and is empty for a standalone object. An owner change no common row
+// names would otherwise reach the operator only as "schema differs".
+func featureMismatches(table string, changes []schemaext.ChangeRecord) []Mismatch {
+	mismatches := make([]Mismatch, 0, len(changes))
+	for _, change := range changes {
+		subject := change.Subject.String()
+		detail := map[string]string{featureKind(change): describeFeatureChange(change)}
+		mismatches = append(mismatches, Mismatch{Kind: "feature_mismatch", Object: subject, Table: table, Changes: detail,
+			Message: fmt.Sprintf("feature mismatch %s: %s", subject, describeChanges(detail))})
+	}
+	sort.SliceStable(mismatches, func(i, j int) bool { return mismatches[i].Object < mismatches[j].Object })
+	return mismatches
+}
+
+// featureKind names the kind of an owner change, or says the value is
+// missing, so a malformed record still reports as a mismatch.
+func featureKind(change schemaext.ChangeRecord) string {
+	if schemaext.ValidatePayload(change.Value) != nil {
+		return "change"
+	}
+	return string(change.Value.Kind())
 }
 
 func collectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
@@ -86,6 +113,7 @@ func collectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	mismatches = append(mismatches, collectTableMismatches(diff)...)
 	mismatches = append(mismatches, collectEnumAndIndexMismatches(diff)...)
 	mismatches = append(mismatches, collectSchemaObjectMismatches(diff)...)
+	mismatches = append(mismatches, featureMismatches("", diff.FeatureChanges)...)
 	mismatches = append(mismatches, collectAccessControlMismatches(diff)...)
 	mismatches = append(mismatches, collectTopLevelConstraintMismatches(diff)...)
 	if len(mismatches) == 0 {
@@ -592,11 +620,9 @@ func describeChanges(changes map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// withFeatureChanges adds each owner change to changes under its kind, as the
-// owner describes it: a change value that is a fmt.Stringer says what changed,
-// such as `EVERY 1 HOUR -> EVERY 2 HOUR` for a refresh schedule, and any other
-// one says why it matters through its effect. A mismatch that is only an
-// owner change would otherwise name the object and nothing it differs in.
+// withFeatureChanges adds each owner change to changes under its kind, as
+// [describeFeatureChange] describes it. A mismatch that is only an owner
+// change would otherwise name the object and nothing it differs in.
 func withFeatureChanges(changes map[string]string, features []schemaext.ChangeRecord) map[string]string {
 	if len(features) == 0 {
 		return changes
@@ -606,14 +632,26 @@ func withFeatureChanges(changes map[string]string, features []schemaext.ChangeRe
 		result = make(map[string]string, len(features))
 	}
 	for _, feature := range features {
-		description := "changed"
-		switch value := feature.Value.(type) {
-		case fmt.Stringer:
-			description = value.String()
-		case schemaext.EffectSource:
-			description = value.Effect().Reason
-		}
-		result[string(feature.Value.Kind())] = description
+		result[featureKind(feature)] = describeFeatureChange(feature)
 	}
 	return result
+}
+
+// describeFeatureChange says what an owner change changed, as the owner
+// describes it: a change value that is a fmt.Stringer says it, such as
+// `EVERY 1 HOUR -> EVERY 2 HOUR` for a refresh schedule, and any other one
+// says why it matters through its effect.
+func describeFeatureChange(feature schemaext.ChangeRecord) string {
+	if schemaext.ValidatePayload(feature.Value) != nil {
+		return "changed"
+	}
+	switch value := feature.Value.(type) {
+	case fmt.Stringer:
+		return value.String()
+	case schemaext.EffectSource:
+		if reason := value.Effect().Reason; reason != "" {
+			return reason
+		}
+	}
+	return "changed"
 }
