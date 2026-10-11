@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/sqllint"
 	"ptah.run/migration/lint"
@@ -843,10 +844,19 @@ func Entries() ([]Entry, error) {
 	return append(migration, sql...), nil
 }
 
-// MigrationEntries returns every rule migration lint registers, in registry
-// order.
+// MigrationEntries returns every rule migration lint applies with the bundled
+// runtime, in the order lint.Rules returns them: the rules migration lint
+// checks itself, then the rules the bundled engine owners publish.
 func MigrationEntries() ([]Entry, error) {
-	return migrationEntriesFrom(lint.Rules())
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
+	rules, err := lint.Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
+	return migrationEntriesFrom(rules)
 }
 
 // migrationEntriesFrom is the join, separated from the registry it normally

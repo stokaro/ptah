@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -28,7 +30,7 @@ type aliasPolicyRow struct {
 // applies clean.
 func aliasedRuleRuns(policyCode, dialect, rule string) bool {
 	enabled := lintPlanEnabledCodes(map[string]lint.RuleConfig{policyCode: {}}, dialect)
-	return !slices.Contains(lintPlanDisabledCodes(enabled), rule)
+	return !slices.Contains(lintPlanDisabledCodes(must.Must(lint.Rules(builtintest.Runtime())), enabled), rule)
 }
 
 func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
@@ -93,7 +95,7 @@ func TestLintPlanEnabledCodesLeavesUnrelatedRulesDisabled(t *testing.T) {
 	// The pass runs exactly the policy's rules; expanding an alias must widen
 	// the enabled set by the aliased rule only, not open the whole catalog.
 	enabled := lintPlanEnabledCodes(map[string]lint.RuleConfig{"BC102": {}}, "postgres")
-	disabled := lintPlanDisabledCodes(enabled)
+	disabled := lintPlanDisabledCodes(must.Must(lint.Rules(builtintest.Runtime())), enabled)
 
 	c.Assert(enabled, qt.DeepEquals, []string{"BC102", "BC101"})
 	c.Assert(disabled, qt.Contains, "DS103")

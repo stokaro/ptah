@@ -46,6 +46,10 @@ func LintPlan(ctx context.Context, runtime lintext.Runtime, statements []string,
 	if len(enabled) == 0 {
 		return nil, nil
 	}
+	rules, err := lint.Rules(runtime)
+	if err != nil {
+		return nil, fmt.Errorf("lint schema apply plan: %w", err)
+	}
 	dir, err := os.MkdirTemp("", "ptah-apply-lint-")
 	if err != nil {
 		return nil, fmt.Errorf("stage schema apply lint input: %w", err)
@@ -58,7 +62,7 @@ func LintPlan(ctx context.Context, runtime lintext.Runtime, statements []string,
 
 	findings, err := lint.LintFS(ctx, runtime, os.DirFS(dir), lint.Options{
 		Dialect:     opts.Dialect,
-		Disabled:    append(lintPlanDisabledCodes(enabled), opts.Disabled...),
+		Disabled:    append(lintPlanDisabledCodes(rules, enabled), opts.Disabled...),
 		RuleConfigs: opts.RuleConfigs,
 	})
 	if err != nil {
@@ -89,21 +93,21 @@ func lintPlanEnabledCodes(configs map[string]lint.RuleConfig, dialect string) []
 	return lint.ExpandAtlasRuleSelectors(enabled, dialect)
 }
 
-// lintPlanDisabledCodes lists every registered rule that no enabled selector
-// covers, so the pass runs exactly the policy's rules.
-func lintPlanDisabledCodes(enabled []string) []string {
+// lintPlanDisabledCodes lists every rule that no enabled selector covers, so
+// the pass runs exactly the policy's rules.
+func lintPlanDisabledCodes(rules []lint.Rule, enabled []string) []string {
 	var disabled []string
-	for _, rule := range lint.Rules() {
-		if !lintPlanRuleEnabled(rule.Code, enabled) {
+	for _, rule := range rules {
+		if !lintPlanRuleEnabled(rules, rule.Code, enabled) {
 			disabled = append(disabled, rule.Code)
 		}
 	}
 	return disabled
 }
 
-func lintPlanRuleEnabled(code string, enabled []string) bool {
+func lintPlanRuleEnabled(rules []lint.Rule, code string, enabled []string) bool {
 	for _, selector := range enabled {
-		if lint.SelectorSelects(selector, code) {
+		if lint.SelectorSelects(rules, selector, code) {
 			return true
 		}
 	}

@@ -95,7 +95,7 @@ func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T
 func TestRuleDisabledGoesThroughTheBuiltInAliases(t *testing.T) {
 	c := qt.New(t)
 
-	registered := registeredCodes(Rules())
+	registered := registeredCodes(builtinRules())
 	c.Assert(ruleDisabled("BC101", []string{"BC102"}, "mysql", registered), qt.IsTrue)
 	c.Assert(ruleDisabled("LT101", []string{"MF104"}, "sqlite", registered), qt.IsTrue)
 	c.Assert(ruleDisabled("DS103", []string{"PG301"}, "postgres", registered), qt.IsFalse)
@@ -116,6 +116,6 @@ func TestExpandAtlasCodeSelectorsValidatesAcrossEveryDialect(t *testing.T) {
 	// Validation is deliberately NOT scoped: a policy shared across engines
 	// names PG301 legitimately even while linting MySQL, and refusing it as
 	// unknown is the failure stokaro/ptah#1631 fixed.
-	c.Assert(selectorMatchesRule("BC102", Rules()), qt.IsTrue)
-	c.Assert(selectorMatchesRule("MF104", Rules()), qt.IsTrue)
+	c.Assert(selectorMatchesRule("BC102", builtinRules()), qt.IsTrue)
+	c.Assert(selectorMatchesRule("MF104", builtinRules()), qt.IsTrue)
 }

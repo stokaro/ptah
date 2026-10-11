@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -22,11 +23,11 @@ func pgFS(alter string) map[string]string {
 
 // pgColumn is one baseline column of orders, spelled the way the report
 // composes it from the PostgreSQL catalog.
-func pgColumn(name, columnType string, notNull bool) lint.BaselineColumn {
-	return lint.BaselineColumn{Version: 2, Table: "orders", Name: name, ColumnType: columnType, NotNull: notNull}
+func pgColumn(name, columnType string, notNull bool) lintext.BaselineColumn {
+	return lintext.BaselineColumn{Version: 2, Table: "orders", Name: name, ColumnType: columnType, NotNull: notNull}
 }
 
-func analyzePG(c *qt.C, alter string, baseline ...lint.BaselineColumn) lint.Analysis {
+func analyzePG(c *qt.C, alter string, baseline ...lintext.BaselineColumn) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(pgFS(alter)), lint.Options{
 		Dialect:   "postgres",
@@ -57,7 +58,7 @@ func TestTypeRewriteRule_ReportsTheChangesPostgreSQLRewritesFor(t *testing.T) {
 	tests := []struct {
 		name   string
 		alter  string
-		column lint.BaselineColumn
+		column lintext.BaselineColumn
 		why    string
 	}{
 		{
@@ -206,7 +207,7 @@ func TestTypeRewriteRule_StaysQuietWhereTheCatalogEditSuffices(t *testing.T) {
 	tests := []struct {
 		name   string
 		alter  string
-		column lint.BaselineColumn
+		column lintext.BaselineColumn
 	}{
 		{
 			name:   "a wider varchar",
@@ -315,13 +316,13 @@ func TestPrimaryKeyScanRule_NamesTheNullableColumns(t *testing.T) {
 	tests := []struct {
 		name     string
 		alter    string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 		want     []string
 	}{
 		{
 			name:     "one nullable column",
 			alter:    "ALTER TABLE orders ADD PRIMARY KEY (id);",
-			baseline: []lint.BaselineColumn{pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("id", "integer", false)},
 			want: []string{
 				"ADD PRIMARY KEY (id) on orders sets id NOT NULL, so besides building the unique index PostgreSQL scans every row to check it",
 				"CHECK (id IS NOT NULL) added NOT VALID and then validated",
@@ -331,19 +332,19 @@ func TestPrimaryKeyScanRule_NamesTheNullableColumns(t *testing.T) {
 		{
 			name:     "a named constraint",
 			alter:    "ALTER TABLE orders ADD CONSTRAINT orders_pk PRIMARY KEY (id);",
-			baseline: []lint.BaselineColumn{pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("id", "integer", false)},
 			want:     []string{"sets id NOT NULL"},
 		},
 		{
 			name:     "only the nullable half of a composite key",
 			alter:    "ALTER TABLE orders ADD PRIMARY KEY (total, id);",
-			baseline: []lint.BaselineColumn{pgColumn("total", "integer", true), pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("total", "integer", true), pgColumn("id", "integer", false)},
 			want:     []string{"ADD PRIMARY KEY (total, id) on orders sets id NOT NULL"},
 		},
 		{
 			name:     "both halves",
 			alter:    "ALTER TABLE orders ADD PRIMARY KEY (total, id);",
-			baseline: []lint.BaselineColumn{pgColumn("total", "integer", false), pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("total", "integer", false), pgColumn("id", "integer", false)},
 			want:     []string{"sets total, id NOT NULL", "scans every row to check them"},
 		},
 	}
@@ -366,27 +367,27 @@ func TestPrimaryKeyScanRule_StaysQuietWhereNothingIsSetNotNull(t *testing.T) {
 	tests := []struct {
 		name     string
 		alter    string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 	}{
 		{
 			name:     "every column already NOT NULL",
 			alter:    "ALTER TABLE orders ADD PRIMARY KEY (id);",
-			baseline: []lint.BaselineColumn{pgColumn("id", "integer", true)},
+			baseline: []lintext.BaselineColumn{pgColumn("id", "integer", true)},
 		},
 		{
 			name:     "USING INDEX names no columns",
 			alter:    "ALTER TABLE orders ADD PRIMARY KEY USING INDEX orders_id_idx;",
-			baseline: []lint.BaselineColumn{pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("id", "integer", false)},
 		},
 		{
 			name:     "a column the baseline does not know",
 			alter:    "ALTER TABLE orders ADD PRIMARY KEY (other);",
-			baseline: []lint.BaselineColumn{pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("id", "integer", false)},
 		},
 		{
 			name:     "a unique constraint is not a primary key",
 			alter:    "ALTER TABLE orders ADD UNIQUE (id);",
-			baseline: []lint.BaselineColumn{pgColumn("id", "integer", false)},
+			baseline: []lintext.BaselineColumn{pgColumn("id", "integer", false)},
 		},
 	}
 
@@ -453,7 +454,7 @@ func TestPostgresCostRules_RunOnlyForPostgreSQL(t *testing.T) {
 		Dialect:   "mysql",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-		Baseline:  []lint.BaselineColumn{pgColumn("id", "int", false)},
+		Baseline:  []lintext.BaselineColumn{pgColumn("id", "int", false)},
 	})
 
 	c.Assert(err, qt.IsNil)

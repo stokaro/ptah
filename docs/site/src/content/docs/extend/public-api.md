@@ -58,6 +58,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/yamlext` | The YAML schema contract: the owner claims a YAML parse selects. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
+| `dialect/postgres/pglint` | The PostgreSQL owner's migration lint rules, published as data and checked once per run. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chprobe` | Server-normalized row policy filters. |

@@ -217,7 +217,7 @@ func TestLoadConfigFS_ServerVersion_HappyPath(t *testing.T) {
 	t.Run("a version beside its dialect", func(t *testing.T) {
 		c := qt.New(t)
 
-		cfg, err := lint.LoadConfigFS(fstest.MapFS{
+		cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fstest.MapFS{
 			".ptah-lint.yaml": {Data: []byte("dialect: postgres\nserver-version: \"16\"\n")},
 		}, ".ptah-lint.yaml")
 
@@ -231,7 +231,7 @@ func TestLoadConfigFS_ServerVersion_HappyPath(t *testing.T) {
 	t.Run("a version with the dialect left to the caller", func(t *testing.T) {
 		c := qt.New(t)
 
-		cfg, err := lint.LoadConfigFS(fstest.MapFS{
+		cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fstest.MapFS{
 			".ptah-lint.yaml": {Data: []byte("server-version: \"16\"\n")},
 		}, ".ptah-lint.yaml")
 
@@ -245,7 +245,7 @@ func TestLoadConfigFS_ServerVersion_FailurePath(t *testing.T) {
 	t.Run("a version that names no server", func(t *testing.T) {
 		c := qt.New(t)
 
-		cfg, err := lint.LoadConfigFS(fstest.MapFS{
+		cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fstest.MapFS{
 			".ptah-lint.yaml": {Data: []byte("dialect: postgres\nserver-version: seventeen\n")},
 		}, ".ptah-lint.yaml")
 
@@ -256,7 +256,7 @@ func TestLoadConfigFS_ServerVersion_FailurePath(t *testing.T) {
 	t.Run("a version naming another product", func(t *testing.T) {
 		c := qt.New(t)
 
-		cfg, err := lint.LoadConfigFS(fstest.MapFS{
+		cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fstest.MapFS{
 			".ptah-lint.yaml": {Data: []byte("dialect: postgres\nserver-version: 10.11.6-MariaDB\n")},
 		}, ".ptah-lint.yaml")
 

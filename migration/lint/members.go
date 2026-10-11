@@ -71,7 +71,7 @@ type memberList struct {
 
 // parseMemberSpelling reads the type as the server prints it in
 // information_schema.COLUMN_TYPE -- enum('a','b','c') or set('x','y') --
-// which is what the dev-database read puts in [BaselineColumn.ColumnType].
+// which is what the dev-database read puts in [lintext.BaselineColumn.ColumnType].
 // Anything else, including an empty spelling, is not a member list.
 func parseMemberSpelling(spelling string) (memberList, bool) {
 	text := strings.TrimSpace(spelling)

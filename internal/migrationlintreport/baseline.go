@@ -8,22 +8,22 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/lintext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
-	"ptah.run/migration/lint"
 )
 
 // baselineState is the schema state one migration version starts from, in
 // the forms the linter looks things up in.
 type baselineState struct {
-	columns     []lint.BaselineColumn
-	indexes     []lint.BaselineIndex
-	dependents  []lint.BaselineDependent
-	hypertables []lint.BaselineHypertable
+	columns     []lintext.BaselineColumn
+	indexes     []lintext.BaselineIndex
+	dependents  []lintext.BaselineDependent
+	hypertables []lintext.BaselineHypertable
 }
 
 // readBaselineState records the schema state one migration version starts
@@ -63,16 +63,16 @@ func readBaselineState(ctx context.Context,
 // the ones the read could only record as hypertables whose dimension it did
 // not see. The reader asks the extension's catalog only where the extension is
 // installed, so a database without it yields none.
-func baselineHypertablesOf(schema *catalog.Database, version int64) []lint.BaselineHypertable {
-	var hypertables []lint.BaselineHypertable
+func baselineHypertablesOf(schema *catalog.Database, version int64) []lintext.BaselineHypertable {
+	var hypertables []lintext.BaselineHypertable
 	for _, table := range schema.Tables {
 		if slices.Contains(table.Facets.Kinds(), tsschema.HypertableKind) {
-			hypertables = append(hypertables, lint.BaselineHypertable{Version: version, Schema: table.Schema, Table: table.Name})
+			hypertables = append(hypertables, lintext.BaselineHypertable{Version: version, Schema: table.Schema, Table: table.Name})
 		}
 	}
 	for _, record := range schema.FeatureCoverage.SubjectRecords() {
 		if record.Kind == tsschema.HypertableKind && record.Subject.Kind == objectidentity.KindTable {
-			hypertables = append(hypertables, lint.BaselineHypertable{Version: version,
+			hypertables = append(hypertables, lintext.BaselineHypertable{Version: version,
 				Schema: tsschema.AuthoredSchema(record.Subject), Table: record.Subject.Name.Source})
 		}
 	}
@@ -81,14 +81,14 @@ func baselineHypertablesOf(schema *catalog.Database, version int64) []lint.Basel
 
 // baselineColumnsOf lists every column of the read schema as the state
 // version starts from.
-func baselineColumnsOf(schema *catalog.Database, version int64) []lint.BaselineColumn {
-	var columns []lint.BaselineColumn
+func baselineColumnsOf(schema *catalog.Database, version int64) []lintext.BaselineColumn {
+	var columns []lintext.BaselineColumn
 	for _, table := range schema.Tables {
 		for _, column := range table.Columns {
 			// The character set is the MySQL owner's observation of the
 			// column; a column whose type carries none has none.
 			settings, _, _ := mysqlschema.Settings(column.Facets)
-			columns = append(columns, lint.BaselineColumn{
+			columns = append(columns, lintext.BaselineColumn{
 				Version:          version,
 				Schema:           table.Schema,
 				Table:            table.Name,
@@ -116,10 +116,10 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lint.BaselineC
 // column list is read through that list, whole columns every one. A part the
 // reader could not name is carried as the incompleteness it is, so no rule
 // reads a partial key as the whole one.
-func baselineIndexesOf(schema *catalog.Database, version int64) []lint.BaselineIndex {
-	var indexes []lint.BaselineIndex
+func baselineIndexesOf(schema *catalog.Database, version int64) []lintext.BaselineIndex {
+	var indexes []lintext.BaselineIndex
 	for _, index := range schema.Indexes {
-		indexes = append(indexes, lint.BaselineIndex{
+		indexes = append(indexes, lintext.BaselineIndex{
 			Version:    version,
 			Schema:     index.Schema,
 			Table:      index.TableName,
@@ -134,22 +134,22 @@ func baselineIndexesOf(schema *catalog.Database, version int64) []lint.BaselineI
 	return indexes
 }
 
-func baselineIndexParts(index catalog.Index) []lint.BaselineIndexPart {
+func baselineIndexParts(index catalog.Index) []lintext.BaselineIndexPart {
 	if len(index.Parts) == 0 {
-		parts := make([]lint.BaselineIndexPart, 0, len(index.Columns))
+		parts := make([]lintext.BaselineIndexPart, 0, len(index.Columns))
 		for _, column := range index.Columns {
-			parts = append(parts, lint.BaselineIndexPart{Column: column})
+			parts = append(parts, lintext.BaselineIndexPart{Column: column})
 		}
 		return parts
 	}
-	parts := make([]lint.BaselineIndexPart, 0, len(index.Parts))
+	parts := make([]lintext.BaselineIndexPart, 0, len(index.Parts))
 	for _, part := range index.Parts {
 		prefix, _ := strconv.Atoi(strings.TrimSpace(part.Prefix))
 		column := part.Name
 		if part.Expr != "" {
 			column = ""
 		}
-		parts = append(parts, lint.BaselineIndexPart{Column: column, Prefix: prefix})
+		parts = append(parts, lintext.BaselineIndexPart{Column: column, Prefix: prefix})
 	}
 	return parts
 }
@@ -257,23 +257,23 @@ func numericDataType(column catalog.Column) string {
 // contributes no dependent, so the rule stays silent about it rather than
 // naming a reader it did not establish -- the rule reports a fact, and the
 // analysis's own undecided list is where the gaps are stated.
-func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime dbschematogo.Runtime) ([]lint.BaselineDependent, error) {
+func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime dbschematogo.Runtime) ([]lintext.BaselineDependent, error) {
 	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, dialect, runtime)
 	if err != nil {
 		return nil, err
 	}
 	tableSchemas := tableSchemasByName(schema)
 
-	dependents := make([]lint.BaselineDependent, 0)
+	dependents := make([]lintext.BaselineDependent, 0)
 	for _, edge := range schemalineage.Derive(desired).Edges {
-		dependents = append(dependents, lint.BaselineDependent{
+		dependents = append(dependents, lintext.BaselineDependent{
 			Version: version, Schema: tableSchemas[edge.FromTable],
 			Table: edge.FromTable, Column: edge.FromColumn,
 			Dependent: edge.ToView, Kind: viewKinds[edge.Materialized],
 		})
 	}
 	for _, read := range schemalineage.DeriveRoutines(desired, dialect).Reads {
-		dependents = append(dependents, lint.BaselineDependent{
+		dependents = append(dependents, lintext.BaselineDependent{
 			Version: version, Schema: tableSchemas[read.Table],
 			Table: read.Table, Column: read.Column,
 			Dependent: read.ByRoutine, Kind: routineKind(read.Kind),

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintscan"
 )
 
@@ -85,8 +86,8 @@ import (
 //
 // The rules read the column's current type, collation and nullability, and
 // the indexes on it, from the schema state the version starts from
-// ([BaselineColumn.ColumnType] as the report composes it from the catalog,
-// [BaselineColumn.Collation], [BaselineColumn.NotNull] and [BaselineIndex]);
+// ([lintext.BaselineColumn.ColumnType] as the report composes it from the catalog,
+// [lintext.BaselineColumn.Collation], [lintext.BaselineColumn.NotNull] and [lintext.BaselineIndex]);
 // without that state PG301 leaves DS103 to report the statement, PG304
 // leaves PG104, and [Analysis.UnmetInputs] names them.
 
@@ -368,7 +369,7 @@ type pgTransition struct {
 // pgCollationTransition judges a collation change on a column whose type
 // change, if any, is in place: with an index on the column the indexes are
 // rebuilt, without one the change is a catalog edit.
-func pgCollationTransition(from, to string, indexes []BaselineIndex) pgTransition {
+func pgCollationTransition(from, to string, indexes []lintext.BaselineIndex) pgTransition {
 	change := fmt.Sprintf("changes the collation from %s to %s", from, to)
 	if len(indexes) == 0 {
 		return pgTransition{outcome: pgInPlace, why: change + " on a column no index reads, which is a catalog edit"}

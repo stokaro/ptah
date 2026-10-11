@@ -14,6 +14,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintdialect"
 )
 
@@ -98,13 +99,18 @@ type GateConfig struct {
 
 // LoadConfig reads an explicit lint configuration file. Missing, unreadable,
 // malformed, and unknown configuration fields are errors, as are unsupported
-// dialects and invalid rule exclusion globs.
-func LoadConfig(configPath string) (*Config, error) {
+// dialects, invalid rule exclusion globs and a gate family no rule of runtime
+// belongs to. A nil runtime is an error.
+func LoadConfig(runtime lintext.Runtime, configPath string) (*Config, error) {
+	rules, err := Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lint config %s: %w", configPath, err)
 	}
-	cfg, err := parseConfig(raw, configPath)
+	cfg, err := parseConfig(raw, configPath, rules)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +120,11 @@ func LoadConfig(configPath string) (*Config, error) {
 // LoadConfigFS reads a conventional lint configuration from fsys. A missing
 // file is not an error; the same strict validation as [LoadConfig] applies to
 // a present file.
-func LoadConfigFS(fsys fs.FS, name string) (*Config, error) {
+func LoadConfigFS(runtime lintext.Runtime, fsys fs.FS, name string) (*Config, error) {
+	rules, err := Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := fs.ReadFile(fsys, name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return &Config{}, nil
@@ -122,10 +132,10 @@ func LoadConfigFS(fsys fs.FS, name string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lint config %s: %w", name, err)
 	}
-	return parseConfig(raw, name)
+	return parseConfig(raw, name, rules)
 }
 
-func parseConfig(raw []byte, name string) (*Config, error) {
+func parseConfig(raw []byte, name string, rules []Rule) (*Config, error) {
 	var cfg Config
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
@@ -143,7 +153,7 @@ func parseConfig(raw []byte, name string) (*Config, error) {
 			return nil, fmt.Errorf("failed to parse lint config %s: multiple YAML documents are not supported", name)
 		}
 	}
-	if err := validateConfig(&cfg); err != nil {
+	if err := validateConfig(&cfg, rules); err != nil {
 		return nil, fmt.Errorf("failed to parse lint config %s: %w", name, err)
 	}
 	return &cfg, nil
@@ -155,7 +165,7 @@ func parseConfig(raw []byte, name string) (*Config, error) {
 // documented alias: everything downstream matches Rule.Dialects and the lexer
 // mode by exact string comparison, so an alias left in place would select no
 // dialect-specific rule at all instead of failing.
-func validateConfig(cfg *Config) error {
+func validateConfig(cfg *Config, rules []Rule) error {
 	canonical, ok := lintdialect.Canonical(cfg.Dialect)
 	if !ok {
 		return fmt.Errorf("unsupported lint dialect %q: expected %s", cfg.Dialect, lintdialect.Expected)
@@ -177,7 +187,7 @@ func validateConfig(cfg *Config) error {
 	if _, err := compileNamingConfig(cfg.Naming); err != nil {
 		return err
 	}
-	if err := validateGateConfig(cfg.Gate); err != nil {
+	if err := validateGateConfig(cfg.Gate, rules); err != nil {
 		return err
 	}
 	if err := validateOnlineConfig(cfg); err != nil {
@@ -260,9 +270,9 @@ func selectorTouchesOnline(selector string) bool {
 	return strings.HasPrefix(selector, OnlineFamily)
 }
 
-// validateGateConfig refuses a gate that names no family and a family no
-// registered rule belongs to, so a typo cannot read as a widened gate.
-func validateGateConfig(gate *GateConfig) error {
+// validateGateConfig refuses a gate that names no family and a family none of
+// rules belongs to, so a typo cannot read as a widened gate.
+func validateGateConfig(gate *GateConfig, rules []Rule) error {
 	if gate == nil {
 		return nil
 	}
@@ -270,7 +280,7 @@ func validateGateConfig(gate *GateConfig) error {
 		return fmt.Errorf("gate: families lists nothing, so the section would widen nothing")
 	}
 	for _, family := range gate.Families {
-		if !isCanonicalRuleCode(family) || !selectorMatchesRule(family, Rules()) {
+		if !isCanonicalRuleCode(family) || !selectorMatchesRule(family, rules) {
 			return fmt.Errorf("gate: family %q matches no registered rule", family)
 		}
 	}

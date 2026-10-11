@@ -477,7 +477,7 @@ func effectiveDialect(opts Options, configDialect, devDialect string) (string, e
 // The replay does double duty. It has always validated that the SQL runs, and it
 // now also reads the schema state the versions the analysis asked about start
 // from, because some diagnostics cannot be reached from SQL text alone -- see
-// [lint.BaselineColumn]. When it read anything, the analysis runs a second time
+// [lintext.BaselineColumn]. When it read anything, the analysis runs a second time
 // with those facts in hand.
 //
 // The analysis stays first so error precedence does not move: a directory that
@@ -791,14 +791,14 @@ type baselineCollector struct {
 	runtime dbschematogo.Runtime
 	wanted  map[int64]bool
 	schemas []string
-	columns []lint.BaselineColumn
+	columns []lintext.BaselineColumn
 	// indexes is what covers those columns, from the same read.
-	indexes []lint.BaselineIndex
+	indexes []lintext.BaselineIndex
 	// dependents is what reads each of those columns, resolved from the same
 	// read rather than a second round trip.
-	dependents []lint.BaselineDependent
+	dependents []lintext.BaselineDependent
 	// hypertables are the TimescaleDB hypertables of the same read.
-	hypertables []lint.BaselineHypertable
+	hypertables []lintext.BaselineHypertable
 }
 
 func newBaselineCollector(versions []int64, devURL string, runtime dbschematogo.Runtime) *baselineCollector {
@@ -860,9 +860,9 @@ func validateDevURLDialect(dialect, devDialect string) error {
 // .ptah-lint.yaml inside the linted directory when present.
 func loadConfig(opts Options, fsys fs.FS) (*lint.Config, error) {
 	if opts.ConfigPath != "" {
-		return lint.LoadConfig(opts.ConfigPath)
+		return lint.LoadConfig(opts.Runtime, opts.ConfigPath)
 	}
-	return lint.LoadConfigFS(fsys, lint.ConfigFileName)
+	return lint.LoadConfigFS(opts.Runtime, fsys, lint.ConfigFileName)
 }
 
 // lintNamingFromProject spells a project file's naming block the way the

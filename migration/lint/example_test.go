@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
@@ -106,7 +107,7 @@ func ExampleLoadConfigFS() {
 			"ALTER TABLE users ADD COLUMN email VARCHAR(255);\n")},
 	}
 
-	cfg := must.Must(lint.LoadConfigFS(fsys, lint.ConfigFileName))
+	cfg := must.Must(lint.LoadConfigFS(builtintest.Runtime(), fsys, lint.ConfigFileName))
 	fmt.Println("dialect:", cfg.Dialect)
 
 	findings := must.Must(lint.LintFS(context.Background(), builtintest.Runtime(), fsys, lint.Options{
@@ -125,8 +126,8 @@ func ExampleLoadConfigFS() {
 }
 
 // ExampleLintFS_extraRules runs a caller-provided rule through
-// Options.ExtraRules, the request-scoped alternative to [lint.Register]. The
-// rule scans [lint.Statement.Words], where bare keywords and identifiers are
+// Options.ExtraRules, an in-process analyzer's way into one run. The rule
+// scans [lint.Statement.Words], where bare keywords and identifiers are
 // uppercased and a string literal stays one opaque verbatim word — so the
 // TIMESTAMP column fires the rule and the literal mentioning TIMESTAMP cannot.
 func ExampleLintFS_extraRules() {
@@ -168,7 +169,7 @@ func ExampleLintFS_extraRules() {
 // naming no registered rule fails the run instead of silently disabling
 // nothing.
 func ExampleValidateOptions() {
-	err := lint.ValidateOptions(lint.Options{
+	err := lint.ValidateOptions(builtintest.Runtime(), lint.Options{
 		Dialect:  "postgres",
 		Disabled: []string{"ZZ999"},
 	})
@@ -210,12 +211,12 @@ func ExampleAnalyzeFS_baseline() {
 		fmt.Printf("unmet: %s needs the %s\n", unmet.Rule, unmet.Input)
 	}
 
-	opts.Baseline = []lint.BaselineColumn{
+	opts.Baseline = []lintext.BaselineColumn{
 		{Version: 2, Table: "orders", Name: "id", ColumnType: "integer"},
 		{Version: 2, Table: "orders", Name: "email", ColumnType: "text"},
 	}
-	opts.BaselineIndexes = []lint.BaselineIndex{
-		{Version: 2, Table: "orders", Name: "orders_email_idx", Parts: []lint.BaselineIndexPart{{Column: "email"}}},
+	opts.BaselineIndexes = []lintext.BaselineIndex{
+		{Version: 2, Table: "orders", Name: "orders_email_idx", Parts: []lintext.BaselineIndexPart{{Column: "email"}}},
 	}
 	refined := must.Must(lint.AnalyzeFS(context.Background(), builtintest.Runtime(), fsys, opts))
 	for _, finding := range refined.Findings() {

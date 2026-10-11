@@ -18,8 +18,9 @@ type Runtime interface {
 	SplitStatements(ctx context.Context, request SplitRequest) (SplitResult, error)
 	// CheckMigrations sends the request's codes to the owners that publish
 	// them, one call per owner, and joins their findings, sorted by file,
-	// statement and code. A code no owner publishes, a rule that does not
-	// judge the request's target, and a reply that does not answer its
-	// request wrap [ErrInvalid].
+	// statement and code, and their baseline subjects, sorted by file and
+	// code. A code no owner publishes, a rule that does not judge the
+	// request's target, a reply that does not answer its request, and
+	// baseline subjects of a rule that reads no baseline wrap [ErrInvalid].
 	CheckMigrations(ctx context.Context, request CheckRequest) (CheckResult, error)
 }

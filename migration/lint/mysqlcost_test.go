@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -24,8 +25,8 @@ func costFS(alter string) map[string]string {
 // costColumn is one baseline column of orders, spelled the way the
 // dev-database read reports it: COLUMN_TYPE, the column's character set, and
 // the table's default.
-func costColumn(name, columnType, charset, tableCharset string) lint.BaselineColumn {
-	return lint.BaselineColumn{
+func costColumn(name, columnType, charset, tableCharset string) lintext.BaselineColumn {
+	return lintext.BaselineColumn{
 		Version:      2,
 		Table:        "orders",
 		Name:         name,
@@ -35,7 +36,7 @@ func costColumn(name, columnType, charset, tableCharset string) lint.BaselineCol
 	}
 }
 
-func costOptions(dialect string, baseline []lint.BaselineColumn) lint.Options {
+func costOptions(dialect string, baseline []lintext.BaselineColumn) lint.Options {
 	return lint.Options{
 		Dialect:   dialect,
 		DirFormat: migrationfile.DirFormatAtlas,
@@ -44,7 +45,7 @@ func costOptions(dialect string, baseline []lint.BaselineColumn) lint.Options {
 	}
 }
 
-func analyzeCost(c *qt.C, dialect, alter string, baseline ...lint.BaselineColumn) lint.Analysis {
+func analyzeCost(c *qt.C, dialect, alter string, baseline ...lintext.BaselineColumn) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(costFS(alter)), costOptions(dialect, baseline))
 	c.Assert(err, qt.IsNil)
@@ -72,7 +73,7 @@ func TestColumnTypeCopyRule_ReportsTheChangesInnoDBCopiesFor(t *testing.T) {
 		name    string
 		dialect string
 		alter   string
-		column  lint.BaselineColumn
+		column  lintext.BaselineColumn
 		why     string
 	}{
 		{
@@ -254,7 +255,7 @@ func TestColumnTypeCopyRule_StaysQuietWhereTheServerDoesNotCopy(t *testing.T) {
 		name    string
 		dialect string
 		alter   string
-		column  lint.BaselineColumn
+		column  lintext.BaselineColumn
 	}{
 		{
 			dialect: "mysql",
@@ -444,14 +445,14 @@ func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T)
 		name     string
 		dialect  string
 		alter    string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 		want     []string
 	}{
 		{
 			dialect: "mysql",
 			name:    "latin1 to utf8mb4 re-encodes every character column",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("total", "int", "", "latin1"),
 				costColumn("note", "varchar(10)", "latin1", "latin1"),
 				costColumn("body", "text", "latin1", "latin1"),
@@ -466,7 +467,7 @@ func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T)
 			dialect: "mysql",
 			name:    "CHARSET is the same clause, and a collation may follow",
 			alter:   "ALTER TABLE orders CONVERT TO CHARSET utf8mb4 COLLATE utf8mb4_bin;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(10)", "latin1", "latin1"),
 			},
 			want: []string{"for 1 column: note ("},
@@ -475,7 +476,7 @@ func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T)
 			dialect: "mysql",
 			name:    "utf8mb3 to utf8mb4 copies for the TEXT and converts the short VARCHAR in place",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(10)", "utf8mb3", "utf8mb3"),
 				costColumn("body", "text", "utf8mb3", "utf8mb3"),
 			},
@@ -488,7 +489,7 @@ func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T)
 			dialect: "mysql",
 			name:    "a column already in the target set is not re-encoded",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(10)", "utf8mb4", "latin1"),
 				costColumn("body", "text", "latin1", "latin1"),
 			},
@@ -498,7 +499,7 @@ func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T)
 			name:    "utf8mb3 to utf8mb4 on MariaDB copies for the ENUM",
 			dialect: "mariadb",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("kind", "enum('a','b')", "utf8mb3", "utf8mb3"),
 			},
 			want: []string{"for 1 column: kind (", "while MariaDB copies the table for an ENUM"},
@@ -523,13 +524,13 @@ func TestCharsetConversionCopyRule_StaysQuietWhereTheServerConvertsInPlace(t *te
 		name     string
 		dialect  string
 		alter    string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 	}{
 		{
 			dialect: "mysql",
 			name:    "no character column",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("total", "int", "", "latin1"),
 				costColumn("note", "varbinary(10)", "", "latin1"),
 			},
@@ -538,7 +539,7 @@ func TestCharsetConversionCopyRule_StaysQuietWhereTheServerConvertsInPlace(t *te
 			dialect: "mysql",
 			name:    "every column already in the target set",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(10)", "utf8mb4", "utf8mb4"),
 			},
 		},
@@ -546,7 +547,7 @@ func TestCharsetConversionCopyRule_StaysQuietWhereTheServerConvertsInPlace(t *te
 			dialect: "mysql",
 			name:    "utf8mb3 to utf8mb4 on short VARCHARs and CHARs",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(63)", "utf8mb3", "utf8mb3"),
 				costColumn("body", "char(10)", "utf8mb3", "utf8mb3"),
 			},
@@ -555,7 +556,7 @@ func TestCharsetConversionCopyRule_StaysQuietWhereTheServerConvertsInPlace(t *te
 			name:    "utf8mb3 to utf8mb4 on an ENUM on MySQL",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("kind", "enum('a','b')", "utf8mb3", "utf8mb3"),
 			},
 		},
@@ -563,7 +564,7 @@ func TestCharsetConversionCopyRule_StaysQuietWhereTheServerConvertsInPlace(t *te
 			dialect: "mysql",
 			name:    "the table default alone",
 			alter:   "ALTER TABLE orders DEFAULT CHARACTER SET = utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(10)", "latin1", "latin1"),
 			},
 		},
@@ -571,7 +572,7 @@ func TestCharsetConversionCopyRule_StaysQuietWhereTheServerConvertsInPlace(t *te
 			dialect: "mysql",
 			name:    "a table the baseline does not know",
 			alter:   "ALTER TABLE customers CONVERT TO CHARACTER SET utf8mb4;",
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				costColumn("note", "varchar(10)", "latin1", "latin1"),
 			},
 		},

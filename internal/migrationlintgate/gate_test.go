@@ -39,7 +39,7 @@ func TestLoadPolicy_FailurePath_DialectMismatch(t *testing.T) {
 		},
 	}
 
-	_, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+	_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
 	c.Assert(err, qt.ErrorMatches, `lint dialect "postgres" does not match database dialect "sqlite"`)
 }
@@ -86,7 +86,7 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 				lint.ConfigFileName: {Data: []byte(test.config)},
 			}
 
-			_, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+			_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
 			c.Assert(err, qt.ErrorMatches, `rule selector "ZZ404" does not match any registered rule`)
 		})
@@ -101,7 +101,7 @@ func TestLoadPolicy_FailurePath_NonNormalizedExclusionGlob(t *testing.T) {
 		},
 	}
 
-	_, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+	_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
 	c.Assert(err, qt.ErrorMatches, `.*rule DS101 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
 }

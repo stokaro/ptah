@@ -37,7 +37,9 @@ type File struct {
 	// NoTransaction reports that the file runs outside a transaction.
 	NoTransaction bool `json:"no_transaction,omitempty"`
 	// Statements are the file's statements, split by the target's owner, or
-	// by the host where the run names no target.
+	// by the host where the run names no target. A statement's Line counts
+	// the lines of the file as written, which differ from the lines of the
+	// split SQL where the host analyzes rendered or extracted text.
 	Statements []Statement `json:"statements"`
 }
 
@@ -52,6 +54,37 @@ type CheckRequest struct {
 	// them, selected or not: a rule may read the files before the one it
 	// judges.
 	Files []File `json:"files"`
+	// Compatibility names the command surface the run reports on: empty for
+	// Ptah's own, "atlas" for the Atlas-compatible one. A rule whose report
+	// differs between the two reads it.
+	Compatibility string `json:"compatibility,omitempty"`
+	// Baseline is the schema state the versions a host read start from, nil
+	// on a call made without one. The package documentation says when a
+	// host reads it.
+	Baseline *Baseline `json:"baseline,omitempty"`
+}
+
+// SubjectKind is the kind of schema object a finding is about.
+type SubjectKind string
+
+const (
+	// SubjectTable is a table.
+	SubjectTable SubjectKind = "table"
+	// SubjectColumn is a column.
+	SubjectColumn SubjectKind = "column"
+)
+
+// Subject is one schema object a finding is about.
+type Subject struct {
+	// Kind is what the object is.
+	Kind SubjectKind `json:"kind"`
+	// Name is the object's name as the statement spells it.
+	Name string `json:"name"`
+	// Parent is the object the subject belongs to, a column's table, empty
+	// where it names none.
+	Parent string `json:"parent,omitempty"`
+	// DataType is a column's type, empty where the rule does not know it.
+	DataType string `json:"data_type,omitempty"`
 }
 
 // Finding is one violation an owner reports.
@@ -65,6 +98,9 @@ type Finding struct {
 	Statement int `json:"statement"`
 	// Message says what was found.
 	Message string `json:"message"`
+	// Subjects are the schema objects the finding is about, in the order a
+	// report lists them. A finding about the file as a whole carries none.
+	Subjects []Subject `json:"subjects,omitempty"`
 }
 
 // CheckResult is an owner's complete answer to one request.
@@ -75,6 +111,11 @@ type CheckResult struct {
 	Complete bool `json:"complete"`
 	// Findings are the violations, in any order.
 	Findings []Finding `json:"findings,omitempty"`
+	// BaselineSubjects are, for each rule whose input reads a baseline, the
+	// statements it would judge further with the schema state their file's
+	// version starts from, in any order. The package documentation says
+	// what a host does with them.
+	BaselineSubjects []BaselineSubject `json:"baseline_subjects,omitempty"`
 }
 
 // Service checks the rules one owner publishes. A host calls it once per
@@ -86,18 +127,45 @@ type Service interface {
 }
 
 // ValidateCheck reports a result that does not answer request: one not
-// marked complete, or a finding naming a rule the request did not enable, a
-// file or statement it did not hold, or no message. Each failure wraps
-// [ErrInvalid].
+// marked complete, a finding naming a rule the request did not enable, a file
+// or statement it did not hold, or no message, a subject without a known kind
+// or a name or on a finding about the file as a whole, and a baseline subject
+// naming a rule the request did not enable, a file or statement it did not
+// hold, or no statement. Each failure wraps [ErrInvalid].
 func ValidateCheck(request CheckRequest, result CheckResult) error {
 	if !result.Complete {
 		return fmt.Errorf("%w: a lint check did not complete", ErrInvalid)
 	}
 	for _, finding := range result.Findings {
-		if !slices.Contains(request.Codes, finding.Code) || finding.File < 0 || finding.File >= len(request.Files) ||
-			finding.Statement < -1 || finding.Statement >= len(request.Files[finding.File].Statements) || finding.Message == "" {
-			return fmt.Errorf("%w: finding %s names a rule, file or statement the request did not hold, or says nothing",
-				ErrInvalid, finding.Code)
+		if err := validateFinding(request, finding); err != nil {
+			return err
+		}
+	}
+	for _, subject := range result.BaselineSubjects {
+		if !slices.Contains(request.Codes, subject.Code) || subject.File < 0 || subject.File >= len(request.Files) ||
+			len(subject.Statements) == 0 || slices.ContainsFunc(subject.Statements, func(statement int) bool {
+			return statement < 0 || statement >= len(request.Files[subject.File].Statements)
+		}) {
+			return fmt.Errorf("%w: baseline subject of %s names a rule, file or statement the request did not hold, or no statement",
+				ErrInvalid, subject.Code)
+		}
+	}
+	return nil
+}
+
+// validateFinding is [ValidateCheck] for one finding.
+func validateFinding(request CheckRequest, finding Finding) error {
+	if !slices.Contains(request.Codes, finding.Code) || finding.File < 0 || finding.File >= len(request.Files) ||
+		finding.Statement < -1 || finding.Statement >= len(request.Files[finding.File].Statements) || finding.Message == "" {
+		return fmt.Errorf("%w: finding %s names a rule, file or statement the request did not hold, or says nothing",
+			ErrInvalid, finding.Code)
+	}
+	if len(finding.Subjects) > 0 && finding.Statement < 0 {
+		return fmt.Errorf("%w: finding %s is about a whole file and names subjects", ErrInvalid, finding.Code)
+	}
+	for _, subject := range finding.Subjects {
+		if (subject.Kind != SubjectTable && subject.Kind != SubjectColumn) || subject.Name == "" {
+			return fmt.Errorf("%w: finding %s names a subject without a known kind or a name", ErrInvalid, finding.Code)
 		}
 	}
 	return nil

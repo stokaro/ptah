@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
@@ -92,7 +93,7 @@ func TestAnalyzeFS_NativeSurfaceAsksForNoBaseline(t *testing.T) {
 func TestAnalyzeFS_UnmetInputsNameTheRuleThatWentWithout(t *testing.T) {
 	tests := []struct {
 		name     string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 		want     []lint.UnmetInput
 	}{
 		{
@@ -165,9 +166,9 @@ func TestRuleInputString(t *testing.T) {
 // A rule that asks for the baseline and names no statements would ask for every
 // version and resolve nothing; a rule that names statements while declaring the
 // text input describes two different needs and leaves a reader to guess which
-// one the analysis honors. Both are refused where the rule is registered, so
+// one the analysis honors. Both are refused when the policy is validated, so
 // neither can reach a run.
-func TestRegisterRefusesAnInconsistentInputDeclaration(t *testing.T) {
+func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 	tests := []struct {
 		name string
 		rule lint.Rule
@@ -214,14 +215,14 @@ func TestRegisterRefusesAnInconsistentInputDeclaration(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(lint.Register(test.rule), qt.ErrorMatches, test.want)
+			c.Assert(lint.ValidateOptions(builtintest.Runtime(), lint.Options{ExtraRules: []lint.Rule{test.rule}}), qt.ErrorMatches, test.want)
 		})
 	}
 }
 
-// TestExtraRulesRefuseAnInconsistentInputDeclaration covers the other door into
-// the registry: a rule handed to one run rather than registered process-wide is
-// held to the same declaration.
+// TestExtraRulesRefuseAnInconsistentInputDeclaration is the same refusal on
+// the analysis itself: a run that skips the policy check still holds the rule
+// to its declaration.
 func TestExtraRulesRefuseAnInconsistentInputDeclaration(t *testing.T) {
 	c := qt.New(t)
 	opts := renameBaselineOptions(nil)

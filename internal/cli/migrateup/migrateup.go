@@ -533,12 +533,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	lintPolicy, err := migrationlintgate.LoadPolicy(migrationsFS, conn.Info().Dialect)
+	// The gate validates its policy against the rules of the engine owners,
+	// and splits and checks the pending migrations with them.
+	lintRuntime, err := builtin.New()
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
-	// The gate splits the pending migrations with the target's owner.
-	lintRuntime, err := builtin.New()
+	lintPolicy, err := migrationlintgate.LoadPolicy(lintRuntime, migrationsFS, conn.Info().Dialect)
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}

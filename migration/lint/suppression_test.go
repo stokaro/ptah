@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/builtintest"
@@ -22,7 +23,7 @@ import (
 // subtests, each named for its rule code and printing "value is not true" with
 // the comment "native rule PG101 prints as PG101, which resolves to []".
 func TestRules_EveryCompatibilityCodeIsSuppressibleByThatCode(t *testing.T) {
-	for _, rule := range lint.Rules() {
+	for _, rule := range must.Must(lint.Rules(builtintest.Runtime())) {
 		t.Run(rule.Code, func(t *testing.T) {
 			c := qt.New(t)
 			printed := atlaslint.RuleForNativeCode(rule.Code).Code

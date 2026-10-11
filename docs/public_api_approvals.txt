@@ -672,5 +672,12 @@ v0.13.0 ptah.run/engine
 # forms are the owner's answers rather than a scanner the lint package keeps
 # for every engine. AnalyzeFS and LintFS therefore take a context and a
 # lintext.Runtime; a caller passes the runtime it already selects, which for
-# the bundled engines is builtin.New. Pre-v1, so no compatibility is owed.
+# the bundled engines is builtin.New.
+#
+# The engine owners then publish their own lint rules through the same runtime
+# and check them once per run, so the process-wide registry goes: Register is
+# removed, Rules, LoadConfig, LoadConfigFS and ValidateOptions take the
+# runtime, SelectorSelects takes the rules it compares against, and the
+# baseline types a run is handed are core/lintext's, because the owners read
+# the same values. Pre-v1, so no compatibility is owed.
 v0.13.0 ptah.run/migration/lint

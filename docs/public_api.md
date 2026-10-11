@@ -89,6 +89,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mysql/mysqlreport`
 - `ptah.run/dialect/mysql/mysqlschema`
 - `ptah.run/dialect/mysql/mysqlsource`
+- `ptah.run/dialect/postgres/pglint`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/spanner/spannerast`
 - `ptah.run/dialect/spanner/spannercompare`
@@ -324,11 +325,18 @@ from another process:
   directives from.
 - `Service` checks the rules an owner publishes over a whole run, one call
   per run with every file. A `CheckResult` must be `Complete`; an error is
-  never a clean run.
+  never a clean run. A finding about a statement may name its `Subject`s.
+- A rule whose `Input` reads a baseline is served in two calls. The first
+  carries no `CheckRequest.Baseline`, and the owner names, in
+  `CheckResult.BaselineSubjects`, the statements it wants the schema state
+  for. The host reads the state those files' versions start from on a dev
+  database and calls again with the `Baseline`; without a dev database it
+  reports the input as unmet. The package documentation is the full account.
 - `ValidateSplit` and `ValidateCheck` refuse a reply that does not answer its
   request, wrapping `ErrInvalid`.
-- `Checks` is the in-process `Service` over Go functions that a built-in owner
-  registers instead of answering requests by hand.
+- `Checks` is the in-process `Service` over Go functions that an owner
+  registers instead of answering requests by hand. It judges text, so it
+  refuses a rule that reads a baseline.
 
 `engine.Provider.Lint` publishes an owner's rules and the service that checks
 them, and `engine.Target.Splitter` registers a target's splitter; the bundled
@@ -336,8 +344,13 @@ runtime registers one for every built-in dialect. `engine.Runtime` answers
 `lintext.Runtime`: `LintRules` reads the published rules without calling an
 owner, `SplitStatements` asks the target's splitter under its canonical name,
 and `CheckMigrations` sends each owner its codes in one call and joins the
-findings. A code belongs to one rule across every provider, and a rule judges
-targets the runtime registers; registration refuses anything else.
+findings and baseline subjects. A code belongs to one rule across every
+provider, and a rule judges targets the runtime registers; registration refuses
+anything else.
+
+`dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
+publishes the transaction family as data and `Service` checks it. The bundled
+runtime registers both on the postgres target.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and
@@ -2762,6 +2775,15 @@ prepared files and findings together with a read-only source snapshot. Capture
 does not apply the lint policy automatically: embedders call `LoadConfigFS`
 and pass its `Dialect`, `DisabledRules`, and `Rules` through `lint.Options`.
 
+`lint.Rules` returns the rules a run with a runtime applies: the package's
+own, then those the engine owners publish, which carry no checker because
+their owner checks them. A run asks the owners for their findings through
+`Runtime.CheckMigrations`, once per run, and applies one policy to every
+finding. `Options.ExtraRules` adds in-process rules to one run; there is no
+process-wide registry. The baseline types a run is handed (`BaselineColumn`,
+`BaselineIndex`, `BaselineHypertable`, `BaselineDependent`) are
+`core/lintext`'s, because the owners read the same values.
+
 `lint.Target` is the server an analysis plans against, and every prepared
 `File` and `Statement` carries it, so a rule whose verdict depends on the
 server reads `Target.Capabilities` rather than comparing version strings of its
@@ -2777,10 +2799,11 @@ a server that was named from a default that was assumed.
 Configuration decoding rejects unknown keys and noncanonical rule selectors,
 including selectors with leading or trailing whitespace. It also rejects
 unsupported dialects and empty, malformed, or non-normalized exclusion globs
-instead of silently weakening the effective policy. `lint.ValidateOptions`
-checks selectors against the active rule registry without reading migration
-files; call it before a no-work return or an execution override that can skip
-`LintFS` or `AnalyzeFS`.
+instead of silently weakening the effective policy. `LoadConfig` and
+`LoadConfigFS` take the runtime, because a `gate` family is checked against its
+rules. `lint.ValidateOptions` checks selectors against the runtime's rules
+without reading migration files; call it before a no-work return or an
+execution override that can skip `LintFS` or `AnalyzeFS`.
 
 Finding contexts identify the exact statement and affected tables or columns;
 column subjects can also carry the parent table and declared data type. Each

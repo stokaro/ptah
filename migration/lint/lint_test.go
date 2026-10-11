@@ -8,7 +8,9 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -1280,7 +1282,7 @@ rules:
       - legacy/**
 `), qt.IsNil)
 
-	cfg, err := lint.LoadConfig(dir + "/.ptah-lint.yaml")
+	cfg, err := lint.LoadConfig(builtintest.Runtime(), dir+"/.ptah-lint.yaml")
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Dialect, qt.Equals, "postgres")
 	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"MF", "BC101"})
@@ -1294,84 +1296,84 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 
 	t.Run("missing explicit file", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/nope.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/nope.yaml")
 		c.Assert(err, qt.ErrorMatches, "failed to read lint config .*nope.yaml.*")
 	})
 
 	c.Assert(writeFile(dir+"/broken.yaml", "dialect: [not, a, string"), qt.IsNil)
 	t.Run("malformed YAML", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/broken.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/broken.yaml")
 		c.Assert(err, qt.ErrorMatches, "failed to parse lint config .*")
 	})
 
 	c.Assert(writeFile(dir+"/bad-severity.yaml", "rules:\n  DS102:\n    severity: fatal\n"), qt.IsNil)
 	t.Run("invalid rule severity", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/bad-severity.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/bad-severity.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
 	})
 
 	c.Assert(writeFile(dir+"/bad-dialect.yaml", "dialect: oracle\n"), qt.IsNil)
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/bad-dialect.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/bad-dialect.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported lint dialect "oracle": expected postgres.*`)
 	})
 
 	c.Assert(writeFile(dir+"/bad-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '[legacy/**'\n"), qt.IsNil)
 	t.Run("malformed exclude glob", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/bad-exclude.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/bad-exclude.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
 	})
 
 	c.Assert(writeFile(dir+"/empty-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '  '\n"), qt.IsNil)
 	t.Run("empty exclude glob", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/empty-exclude.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/empty-exclude.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "  ": pattern must not be empty`)
 	})
 
 	c.Assert(writeFile(dir+"/non-normalized-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '**/../**'\n"), qt.IsNil)
 	t.Run("non-normalized exclude glob", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/non-normalized-exclude.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/non-normalized-exclude.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
 	})
 
 	c.Assert(writeFile(dir+"/unknown-top-level.yaml", "severty: error\n"), qt.IsNil)
 	t.Run("unknown top-level key", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/unknown-top-level.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/unknown-top-level.yaml")
 		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.Config.*`)
 	})
 
 	c.Assert(writeFile(dir+"/unknown-rule-key.yaml", "rules:\n  DS103:\n    severty: error\n"), qt.IsNil)
 	t.Run("unknown nested rule key", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/unknown-rule-key.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/unknown-rule-key.yaml")
 		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.RuleConfig.*`)
 	})
 
 	c.Assert(writeFile(dir+"/lowercase-selector.yaml", "rules:\n  ds103:\n    severity: error\n"), qt.IsNil)
 	t.Run("lowercase rule selector", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/lowercase-selector.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/lowercase-selector.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector "ds103" must start with an uppercase ASCII letter.*`)
 	})
 
 	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' DS103 '\n"), qt.IsNil)
 	t.Run("whitespace-padded rule selector", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/whitespace-selector.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/whitespace-selector.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " DS103 " must start with an uppercase ASCII letter.*`)
 	})
 
 	c.Assert(writeFile(dir+"/multiple-documents.yaml", "dialect: postgres\n---\ndialect: sqlite\n"), qt.IsNil)
 	t.Run("multiple YAML documents", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/multiple-documents.yaml")
+		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/multiple-documents.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*multiple YAML documents are not supported`)
 	})
 }
@@ -1379,7 +1381,7 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 func TestLoadConfigFS_MissingConventionalFileReturnsEmptyConfig(t *testing.T) {
 	c := qt.New(t)
 
-	cfg, err := lint.LoadConfigFS(fstest.MapFS{}, lint.ConfigFileName)
+	cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fstest.MapFS{}, lint.ConfigFileName)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg, qt.DeepEquals, &lint.Config{})
@@ -1433,7 +1435,7 @@ func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := lint.ValidateOptions(lint.Options{
+			err := lint.ValidateOptions(builtintest.Runtime(), lint.Options{
 				RuleConfigs: map[string]lint.RuleConfig{
 					"DS101": {Exclude: []string{test.pattern}},
 				},
@@ -1464,7 +1466,7 @@ func TestLoadConfig_FailurePath_DotSegmentExclusionGlobs(t *testing.T) {
 			contents := fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", test.pattern)
 			c.Assert(writeFile(configPath, contents), qt.IsNil)
 
-			_, err := lint.LoadConfig(configPath)
+			_, err := lint.LoadConfig(builtintest.Runtime(), configPath)
 
 			c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*pattern must not contain \. or \.\. path segments`)
 		})
@@ -1474,14 +1476,18 @@ func TestLoadConfig_FailurePath_DotSegmentExclusionGlobs(t *testing.T) {
 func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
 	c := qt.New(t)
 
+	// A runtime with no owner holds the rules this package checks itself,
+	// and each of them carries its checker; an owner's rule carries none.
+	for _, rule := range must.Must(lint.Rules(must.Must(engine.New()))) {
+		oneChecker := (rule.CheckStatement != nil) != (rule.CheckFile != nil)
+		c.Assert(oneChecker, qt.IsTrue, qt.Commentf("rule %s must set exactly one checker", rule.Code))
+	}
 	seen := make(map[string]bool)
-	for _, rule := range lint.Rules() {
+	for _, rule := range must.Must(lint.Rules(builtintest.Runtime())) {
 		c.Assert(rule.Code, qt.Not(qt.Equals), "")
 		c.Assert(rule.Title, qt.Not(qt.Equals), "")
 		c.Assert(seen[rule.Code], qt.IsFalse, qt.Commentf("duplicate rule code %s", rule.Code))
 		seen[rule.Code] = true
-		oneChecker := (rule.CheckStatement != nil) != (rule.CheckFile != nil)
-		c.Assert(oneChecker, qt.IsTrue, qt.Commentf("rule %s must set exactly one checker", rule.Code))
 		// All three, not two. SeverityInfo is a designed severity -- reported
 		// and never gated on, so a rule can be introduced to a repository that
 		// still violates it (stokaro/ptah#1633) -- and the two-way assertion

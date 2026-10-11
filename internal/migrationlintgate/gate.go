@@ -77,10 +77,10 @@ func (p Policy) BlockingFamilies() []string {
 	return slices.Clone(p.families)
 }
 
-// LoadPolicy loads the conventional lint policy and resolves it against the
-// connected database dialect.
-func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
-	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
+// LoadPolicy loads the conventional lint policy, validated against the rules
+// of runtime, and resolves it against the connected database dialect.
+func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Policy, error) {
+	cfg, err := lint.LoadConfigFS(runtime, fsys, lint.ConfigFileName)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -142,7 +142,7 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 	if err := validateOnlineDialect(cfg, databaseDialect); err != nil {
 		return Policy{}, err
 	}
-	if err := lint.ValidateOptions(policy.options("")); err != nil {
+	if err := lint.ValidateOptions(runtime, policy.options("")); err != nil {
 		return Policy{}, err
 	}
 	return policy, nil
@@ -158,7 +158,7 @@ func Analyze(
 	databaseDialect,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
-	policy, err := LoadPolicy(fsys, databaseDialect)
+	policy, err := LoadPolicy(runtime, fsys, databaseDialect)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -12,7 +13,7 @@ import (
 
 // dropEmailAnalysis lints one migration that drops a column, with the readers
 // the caller resolved from the state that version starts from.
-func dropEmailAnalysis(c *qt.C, dependents []lint.BaselineDependent) lint.Analysis {
+func dropEmailAnalysis(c *qt.C, dependents []lintext.BaselineDependent) lint.Analysis {
 	c.Helper()
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
@@ -44,7 +45,7 @@ func messagesFor(analysis lint.Analysis, code string) []string {
 func TestColumnDroppedWithReaders_NamesWhatBreaks(t *testing.T) {
 	c := qt.New(t)
 
-	analysis := dropEmailAnalysis(c, []lint.BaselineDependent{
+	analysis := dropEmailAnalysis(c, []lintext.BaselineDependent{
 		{Version: 1, Table: "users", Column: "email", Dependent: "active_users", Kind: "view"},
 	})
 
@@ -61,7 +62,7 @@ func TestColumnDroppedWithReaders_NamesWhatBreaks(t *testing.T) {
 func TestColumnDroppedWithReaders_NamesEveryReader(t *testing.T) {
 	c := qt.New(t)
 
-	analysis := dropEmailAnalysis(c, []lint.BaselineDependent{
+	analysis := dropEmailAnalysis(c, []lintext.BaselineDependent{
 		{Version: 1, Table: "users", Column: "email", Dependent: "active_users", Kind: "view"},
 		{Version: 1, Table: "users", Column: "email", Dependent: "notify", Kind: "function"},
 	})
@@ -80,7 +81,7 @@ func TestColumnDroppedWithReaders_NamesEveryReader(t *testing.T) {
 func TestColumnDroppedWithReaders_SaysNothingWhenNothingReadsIt(t *testing.T) {
 	c := qt.New(t)
 
-	analysis := dropEmailAnalysis(c, []lint.BaselineDependent{
+	analysis := dropEmailAnalysis(c, []lintext.BaselineDependent{
 		{Version: 1, Table: "users", Column: "created_at", Dependent: "active_users", Kind: "view"},
 	})
 

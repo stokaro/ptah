@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -19,11 +20,11 @@ func notNullFS(migration string) map[string]string {
 	}
 }
 
-func notNullColumn(name, columnType string, notNull bool) lint.BaselineColumn {
-	return lint.BaselineColumn{Version: 2, Table: "orders", Name: name, ColumnType: columnType, NotNull: notNull}
+func notNullColumn(name, columnType string, notNull bool) lintext.BaselineColumn {
+	return lintext.BaselineColumn{Version: 2, Table: "orders", Name: name, ColumnType: columnType, NotNull: notNull}
 }
 
-func analyzeNotNull(c *qt.C, dialect, migration string, baseline ...lint.BaselineColumn) lint.Analysis {
+func analyzeNotNull(c *qt.C, dialect, migration string, baseline ...lintext.BaselineColumn) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(notNullFS(migration)), lint.Options{
 		Dialect:   dialect,
@@ -102,7 +103,7 @@ func TestNullableMadeNotNullRule_StaysQuietWhereNoRowCanChange(t *testing.T) {
 		name      string
 		dialect   string
 		migration string
-		column    lint.BaselineColumn
+		column    lintext.BaselineColumn
 	}{
 		{
 			name:      "the column is NOT NULL already",
@@ -185,7 +186,7 @@ func TestNullableMadeNotNullRule_AnswersTheAtlasCode(t *testing.T) {
 		Dialect:   "mysql",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-		Baseline:  []lint.BaselineColumn{notNullColumn("total", "int", false)},
+		Baseline:  []lintext.BaselineColumn{notNullColumn("total", "int", false)},
 		Disabled:  []string{"MF104"},
 	})
 

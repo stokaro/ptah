@@ -1,61 +1,81 @@
 package lint
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"unicode"
 	"unicode/utf8"
 
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/txrequire"
 )
 
-var registeredRules = struct {
-	sync.RWMutex
-	rules []Rule
-}{}
-
-// Register appends a process-wide custom lint rule. Prefer Options.ExtraRules
-// for request-scoped analyzers; Register exists for plugin-style integrations
-// that initialize rules once at process startup.
+// Rules returns the rules a lint run with runtime applies: the rules this
+// package checks itself, then every rule an engine owner publishes through
+// runtime, in code order. It runs nothing, so a catalog reads it to enumerate
+// what a run can report.
 //
-// A rule must carry a Code of uppercase ASCII letters and digits beginning
-// with a letter, a non-empty Title, a supported Severity, exactly one of
-// CheckStatement and CheckFile, and a BaselineSubjects predicate if and only
-// if it declares [InputBaselineSchema] or [InputBaselineRefinement]. Its Code
-// must also be free: a code a
-// built-in or an already registered rule holds is refused rather than
-// shadowing that rule. Register reports an invalid or colliding rule as an
-// error and registers nothing, so a failed call leaves the registry as it was.
-//
-// Register is safe for concurrent use, and the registry keeps its own copy of
-// the rule (Dialects included), so mutating the argument afterwards does not
-// reach it.
-func Register(rule Rule) error {
-	if err := validateRule(rule); err != nil {
-		return err
+// An owner's rule carries neither [Rule.CheckStatement] nor [Rule.CheckFile]:
+// the owner checks it once per run, through [lintext.Runtime.CheckMigrations],
+// and an analysis reads its findings from that answer. The slice is rebuilt
+// on every call. A nil runtime, and a runtime that cannot list its rules, is
+// an error.
+func Rules(runtime lintext.Runtime) ([]Rule, error) {
+	if runtime == nil {
+		return nil, errors.New("lint rules require an engine runtime")
 	}
-	registeredRules.Lock()
-	defer registeredRules.Unlock()
-	for _, existing := range append(builtinRules(), registeredRules.rules...) {
-		if existing.Code == rule.Code {
-			return fmt.Errorf("duplicate rule code %s", rule.Code)
-		}
+	owned, err := ownerRules(runtime)
+	if err != nil {
+		return nil, err
 	}
-	registeredRules.rules = append(registeredRules.rules, cloneRule(rule))
-	return nil
+	return append(builtinRules(), owned...), nil
 }
 
-// Rules returns the built-in rule set plus process-wide registered rules. The
-// slice is rebuilt on every call so callers can never corrupt the registry.
-func Rules() []Rule {
-	rules := builtinRules()
-	registeredRules.RLock()
-	defer registeredRules.RUnlock()
-	return append(rules, cloneRules(registeredRules.rules)...)
+// ownerRules are the rules every owner in runtime publishes, as rules of this
+// package that name the targets each judges as its dialects.
+func ownerRules(runtime lintext.Runtime) ([]Rule, error) {
+	published, err := runtime.LintRules("")
+	if err != nil {
+		return nil, fmt.Errorf("read the lint rules the engine owners publish: %w", err)
+	}
+	rules := make([]Rule, 0, len(published))
+	for _, rule := range published {
+		input, err := ruleInputOf(rule.Input)
+		if err != nil {
+			return nil, fmt.Errorf("lint rule %s: %w", rule.Code, err)
+		}
+		rules = append(rules, Rule{
+			Code:          rule.Code,
+			Title:         rule.Title,
+			Severity:      Severity(rule.Severity),
+			Dialects:      slices.Clone(rule.Targets),
+			AppliesToDown: rule.AppliesToDown,
+			Input:         input,
+			Subsumes:      slices.Clone(rule.Subsumes),
+			owned:         true,
+		})
+	}
+	return rules, nil
+}
+
+// ruleInputOf is the input of this package that a published input names.
+func ruleInputOf(input lintext.Input) (RuleInput, error) {
+	switch input {
+	case lintext.InputStatementText:
+		return InputStatementText, nil
+	case lintext.InputRoutineBody:
+		return InputRoutineBody, nil
+	case lintext.InputBaselineSchema:
+		return InputBaselineSchema, nil
+	case lintext.InputBaselineRefinement:
+		return InputBaselineRefinement, nil
+	default:
+		return 0, fmt.Errorf("unknown input %q", input)
+	}
 }
 
 func cloneRule(rule Rule) Rule {
@@ -89,7 +109,6 @@ func builtinRules() []Rule {
 	rules = append(rules, mysqlCostRules()...)
 	rules = append(rules, inPlaceRules()...)
 	rules = append(rules, sqliteRules()...)
-	rules = append(rules, transactionRules()...)
 	rules = append(rules, onlineRules()...)
 	rules = append(rules, atlasGapRules()...)
 	rules = append(rules, ydbRules()...)
@@ -107,6 +126,11 @@ func validateRule(rule Rule) error {
 	case SeverityInfo, SeverityWarning, SeverityError:
 	default:
 		return fmt.Errorf("rule %s has unsupported severity %q", rule.Code, rule.Severity)
+	}
+	if rule.owned {
+		// Its owner checks it and names its baseline subjects in the answer,
+		// so it carries no function for the checks below to require.
+		return nil
 	}
 	if (rule.CheckStatement != nil) == (rule.CheckFile != nil) {
 		return fmt.Errorf("rule %s must set exactly one checker", rule.Code)
@@ -558,7 +582,7 @@ func droppedColumnReaderFindings(file *File, stmt *Statement, index int) []Findi
 
 // describeReaders names the readers in the order the state supplied them,
 // each with what it is.
-func describeReaders(readers []BaselineDependent) string {
+func describeReaders(readers []lintext.BaselineDependent) string {
 	parts := make([]string, 0, len(readers))
 	for _, reader := range readers {
 		parts = append(parts, reader.Kind+" "+reader.Dependent)
@@ -1770,34 +1794,6 @@ func sqliteRules() []Rule {
 	}
 }
 
-func transactionRules() []Rule {
-	return []Rule{
-		{
-			Code:     "TX101",
-			Title:    "transactional and non-transactional statements mixed",
-			Severity: SeverityWarning,
-			Dialects: []string{"postgres"},
-			// Either direction: the migrator wraps a down file in the same
-			// transaction it wraps an up file in, so a rollback that mixes
-			// CREATE INDEX CONCURRENTLY with transactional DDL is refused by
-			// PostgreSQL exactly the same way.
-			CheckFile: checkTransactionMix,
-		},
-		{
-			Code:     "TX201",
-			Title:    "transaction block embedded in migration",
-			Severity: SeverityWarning,
-			Dialects: []string{"postgres"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !hasWordPrefix(stmt.Words, "BEGIN") && !hasWordPrefix(stmt.Words, "START", "TRANSACTION") {
-					return false, ""
-				}
-				return true, "explicit transaction blocks conflict with the migrator's transaction management; remove BEGIN/COMMIT or mark the migration non-transactional"
-			},
-		},
-	}
-}
-
 // dropTargets are the keywords that can follow ALTER TABLE ... DROP when the
 // clause drops something other than a column: constraints, the key family,
 // partitioning, system versioning. A column with one of these names must be
@@ -2565,13 +2561,6 @@ func postgresTypeWidthClass(word string) int {
 	default:
 		return 0
 	}
-}
-
-func isTransactionControlStatement(w []string) bool {
-	return hasWordPrefix(w, "BEGIN") ||
-		hasWordPrefix(w, "START", "TRANSACTION") ||
-		hasWordPrefix(w, "COMMIT") ||
-		hasWordPrefix(w, "ROLLBACK")
 }
 
 // createdTableRef returns the normalized reference of the table a CREATE

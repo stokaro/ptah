@@ -337,7 +337,7 @@ func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
 			path := filepath.Join(dir, ".ptah-lint.yaml")
 			c.Assert(os.WriteFile(path, []byte(test.config), 0o600), qt.IsNil)
 
-			_, err := lint.LoadConfig(path)
+			_, err := lint.LoadConfig(builtintest.Runtime(), path)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

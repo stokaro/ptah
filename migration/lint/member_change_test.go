@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -25,8 +26,8 @@ func memberFS(alter string) map[string]string {
 
 // memberBaseline is the state version 2 starts from, with the column's type
 // spelled the way the dev-database read reports it.
-func memberBaseline(columnType string) []lint.BaselineColumn {
-	return []lint.BaselineColumn{{
+func memberBaseline(columnType string) []lintext.BaselineColumn {
+	return []lintext.BaselineColumn{{
 		Version:    2,
 		Table:      "orders",
 		Name:       "status",
@@ -34,7 +35,7 @@ func memberBaseline(columnType string) []lint.BaselineColumn {
 	}}
 }
 
-func memberOptions(baseline []lint.BaselineColumn) lint.Options {
+func memberOptions(baseline []lintext.BaselineColumn) lint.Options {
 	return lint.Options{
 		Dialect:   "mysql",
 		DirFormat: migrationfile.DirFormatAtlas,
@@ -45,7 +46,7 @@ func memberOptions(baseline []lint.BaselineColumn) lint.Options {
 
 func analyzeMemberChange(c *qt.C, alter, columnType string) lint.Analysis {
 	c.Helper()
-	var baseline []lint.BaselineColumn
+	var baseline []lintext.BaselineColumn
 	if columnType != "" {
 		baseline = memberBaseline(columnType)
 	}

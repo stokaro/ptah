@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -41,17 +42,17 @@ func eventsFS(migration string) map[string]string {
 
 // eventsColumns is the starting state of version 2 for events in each schema
 // named, the way the dev-database read reports it.
-func eventsColumns(schemas ...string) []lint.BaselineColumn {
-	var columns []lint.BaselineColumn
+func eventsColumns(schemas ...string) []lintext.BaselineColumn {
+	var columns []lintext.BaselineColumn
 	for _, schema := range schemas {
 		for _, name := range []string{"id", "happened_at", "kind"} {
-			columns = append(columns, lint.BaselineColumn{Version: 2, Schema: schema, Table: "events", Name: name})
+			columns = append(columns, lintext.BaselineColumn{Version: 2, Schema: schema, Table: "events", Name: name})
 		}
 	}
 	return columns
 }
 
-func analyzeEvents(c *qt.C, migration string, columns []lint.BaselineColumn, hypertables []lint.BaselineHypertable) lint.Analysis {
+func analyzeEvents(c *qt.C, migration string, columns []lintext.BaselineColumn, hypertables []lintext.BaselineHypertable) lint.Analysis {
 	c.Helper()
 	return analyzeEventsWithout(c, migration, columns, hypertables)
 }
@@ -60,8 +61,8 @@ func analyzeEvents(c *qt.C, migration string, columns []lint.BaselineColumn, hyp
 func analyzeEventsWithout(
 	c *qt.C,
 	migration string,
-	columns []lint.BaselineColumn,
-	hypertables []lint.BaselineHypertable,
+	columns []lintext.BaselineColumn,
+	hypertables []lintext.BaselineHypertable,
 	disabled ...string,
 ) lint.Analysis {
 	c.Helper()
@@ -105,8 +106,8 @@ func TestPG101_AdviceFollowsTheStartingState(t *testing.T) {
 	tests := []struct {
 		name        string
 		migration   string
-		columns     []lint.BaselineColumn
-		hypertables []lint.BaselineHypertable
+		columns     []lintext.BaselineColumn
+		hypertables []lintext.BaselineHypertable
 		want        []string
 	}{
 		{
@@ -119,35 +120,35 @@ func TestPG101_AdviceFollowsTheStartingState(t *testing.T) {
 			name:        "a hypertable gets TimescaleDB's remedy instead",
 			migration:   "CREATE INDEX events_kind_idx ON events (kind, happened_at DESC);",
 			columns:     eventsColumns("public"),
-			hypertables: []lint.BaselineHypertable{{Version: 2, Schema: "public", Table: "events"}},
+			hypertables: []lintext.BaselineHypertable{{Version: 2, Schema: "public", Table: "events"}},
 			want:        []string{pg101HypertableAdvice("events")},
 		},
 		{
 			name:        "a qualified reference names the hypertable as written",
 			migration:   "CREATE UNIQUE INDEX events_id_uq ON public.events (id, happened_at);",
 			columns:     eventsColumns("public"),
-			hypertables: []lint.BaselineHypertable{{Version: 2, Schema: "public", Table: "events"}},
+			hypertables: []lintext.BaselineHypertable{{Version: 2, Schema: "public", Table: "events"}},
 			want:        []string{pg101HypertableAdvice("public.events")},
 		},
 		{
 			name:        "a hypertable of the same name in another schema is not this table",
 			migration:   "CREATE INDEX events_kind_idx ON public.events (kind);",
 			columns:     eventsColumns("public", "archive"),
-			hypertables: []lint.BaselineHypertable{{Version: 2, Schema: "archive", Table: "events"}},
+			hypertables: []lintext.BaselineHypertable{{Version: 2, Schema: "archive", Table: "events"}},
 			want:        []string{pg101OrdinaryAdvice},
 		},
 		{
 			name:        "a bare name two schemas carry is placed in neither",
 			migration:   "CREATE INDEX events_kind_idx ON events (kind);",
 			columns:     eventsColumns("public", "archive"),
-			hypertables: []lint.BaselineHypertable{{Version: 2, Schema: "public", Table: "events"}},
+			hypertables: []lintext.BaselineHypertable{{Version: 2, Schema: "public", Table: "events"}},
 			want:        []string{pg101OrdinaryAdvice},
 		},
 		{
 			name:        "the state of another version says nothing about this one",
 			migration:   "CREATE INDEX events_kind_idx ON events (kind);",
 			columns:     eventsColumns("public"),
-			hypertables: []lint.BaselineHypertable{{Version: 3, Schema: "public", Table: "events"}},
+			hypertables: []lintext.BaselineHypertable{{Version: 3, Schema: "public", Table: "events"}},
 			want:        []string{pg101OrdinaryAdvice},
 		},
 	}
@@ -240,7 +241,7 @@ func TestPG101_AsksForTheStateOfWhatItReports(t *testing.T) {
 	tests := []struct {
 		name         string
 		migration    string
-		columns      []lint.BaselineColumn
+		columns      []lintext.BaselineColumn
 		wantVersions []int64
 		wantUnmet    []string
 	}{

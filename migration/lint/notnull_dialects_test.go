@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/migration/lint"
+	"ptah.run/core/lintext"
 )
 
 func pg303Codes(codes []string) []string {
@@ -86,7 +86,7 @@ func TestNullableMadeNotNullRule_StaysQuietOnClickHouseWhereNothingBecomesNotNul
 		name      string
 		dialect   string
 		migration string
-		column    lint.BaselineColumn
+		column    lintext.BaselineColumn
 	}{
 		{
 			name:      "already non-Nullable",
