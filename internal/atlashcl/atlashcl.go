@@ -21,7 +21,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
@@ -295,11 +294,9 @@ func documentCoverage(data string, owned []coverage.Object, objects schemaext.Ob
 		return schemaext.Coverage{}, err
 	}
 	if known.Representation() == "" {
-		if known, err = schemaext.NewCoverage(schemaext.Desired, nil, nil); err != nil {
-			return schemaext.Coverage{}, err
-		}
+		return schemaext.NewCoverage(schemaext.Desired, nil, nil)
 	}
-	return withBlockCoverage(known)
+	return known, nil
 }
 
 // projectFileBlocks names the top-level blocks that mark an HCL file as an Atlas
@@ -2807,21 +2804,4 @@ func targetProperties(overrides map[string]map[string]string, targets []string, 
 		}
 	}
 	return result
-}
-
-// withBlockCoverage adds the claim of the MySQL index block size, which the
-// format has no spelling for: an index a document declares has none, and
-// applying the document removes a hint the table holds, as the HCL export
-// warns.
-func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
-	blockSizes, err := mysqlsource.BlockSizeCoverage()
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	for _, claim := range []schemaext.Coverage{blockSizes} {
-		if known, err = known.Combine(claim); err != nil {
-			return schemaext.Coverage{}, err
-		}
-	}
-	return known, nil
 }

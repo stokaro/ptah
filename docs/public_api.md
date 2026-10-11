@@ -2740,11 +2740,13 @@ and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
 `extended_property` block. `ydbsource.HCL` reads the `coordination_node` block,
 the vector and partitioning attributes of an `index` block, the
 `coordination_node` header entries and the captured header. `pgpolicysource.HCL`
-reads the `policy` block and a table's `row_security` block.
+reads the `policy` block and a table's `row_security` block. `mysqlsource.HCL`
+reads no block: it claims that an index an HCL document declares has no block
+size, since the format cannot spell one.
 
 `atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
-blocks and attributes and the captured header are refused there, and so is
-each owner block whose owner takes it over. `ParseAtlasHCLWithOptions` takes
+blocks and attributes and the captured header are refused there, and no
+owner's claim is made. `ParseAtlasHCLWithOptions` takes
 the owners in `ParseHCLOptions.HCL`, usually a runtime's HCL set. This changes
 behavior; pre-v1, so no compatibility is owed.
 
