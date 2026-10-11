@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintkit/mytype"
 	"ptah.run/internal/lintkit/pgtype"
 )
 
@@ -36,7 +37,7 @@ func typeChangeStatements(file *File) []int {
 		if !lintkit.IsAlterTable(stmt.Words) {
 			continue
 		}
-		if scanModifyChange(stmt.Words) || scanAlterColumnType(stmt.Words) {
+		if lintkit.ScanModifyChange(stmt.Words) || scanAlterColumnType(stmt.Words) {
 			indexes = append(indexes, index)
 		}
 	}
@@ -55,7 +56,7 @@ func typeUnchangedByState(file *File, index int) bool {
 	switch {
 	case file.dialect == "postgres":
 		return pgTypesUnchanged(file, index, clauses)
-	case slices.Contains(mysqlFamily, file.dialect):
+	case slices.Contains(lintkit.MySQLFamily, file.dialect):
 		return mysqlTypesUnchanged(file, index, clauses)
 	default:
 		return false
@@ -118,21 +119,21 @@ func pgTypesUnchanged(file *File, index, clauses int) bool {
 // not compared, because it is not a type.
 func mysqlTypesUnchanged(file *File, index, clauses int) bool {
 	resolved := 0
-	for _, site := range columnChangeSites(file) {
-		if site.statement != index {
+	for _, site := range mytype.ChangeSites(file.contract) {
+		if site.Statement != index {
 			continue
 		}
-		column, ok := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
+		column, ok := file.baseline.Column(site.Table.Normalized, lintkit.NormalizeIdent(site.OldName))
 		if !ok {
 			return false
 		}
-		old, ok := parseMySQLTypeSpelling(column.ColumnType, column.Charset)
+		old, ok := mytype.ParseSpelling(column.ColumnType, column.Charset)
 		if !ok {
 			return false
 		}
-		tableCharset := tableCharsetBefore(file, index, site.table, column.TableCharset)
-		updated, _, ok := parseMySQLTypeAt(file.Statements[index].Words, site.typeStart, tableCharset)
-		if !ok || old.spell() != updated.spell() || old.charset != updated.charset {
+		tableCharset := mytype.TableCharsetBefore(file.contract, index, site.Table, column.TableCharset)
+		updated, _, ok := mytype.ParseAt(file.Statements[index].Words, site.TypeStart, tableCharset)
+		if !ok || old.Spell() != updated.Spell() || old.Charset != updated.Charset {
 			return false
 		}
 		resolved++

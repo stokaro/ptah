@@ -23,7 +23,7 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 	// Nine Atlas codes report under a differently spelled Ptah rule; six of
 	// them are codes Ptah also uses for a rule of its own and are excluded.
 	// Every engine-specific code left this table when it became a Ptah rule
-	// of the same name (members.go, mysqlcost.go, pgcost.go), and MY148 is the
+	// of the same name (the owners' members.go, mysqlcost.go and pgcost.go), and MY148 is the
 	// exception that rejoined it: the hazard it names is one MY130 already
 	// reports, so the code has to reach that rule rather than a new one.
 	c.Assert(aliases, qt.HasLen, 3)

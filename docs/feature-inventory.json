@@ -1048,6 +1048,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mysql-mysqllint",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqllint",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mysql-mysqlplan",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mysql/mysqlplan",

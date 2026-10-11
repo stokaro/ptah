@@ -100,12 +100,7 @@ func builtinRules() []Rule {
 	rules = append(rules, notNullRules()...)
 	rules = append(rules, namingRules()...)
 	rules = append(rules, injectionRules()...)
-	rules = append(rules, mysqlRules()...)
-	rules = append(rules, mysqlMemberRules()...)
-	rules = append(rules, mysqlCostRules()...)
-	rules = append(rules, inPlaceRules()...)
 	rules = append(rules, sqliteRules()...)
-	rules = append(rules, onlineRules()...)
 	rules = append(rules, atlasGapRules()...)
 	rules = append(rules, ydbRules()...)
 	return rules
@@ -1016,7 +1011,7 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 		if !lintkit.IsAlterTable(stmt.Words) {
 			continue
 		}
-		subjects := nonNullableAddedColumnSubjects(stmt.Words, stmt.sourceWords)
+		subjects := reportSubjects(lintkit.NonNullableAddedColumnSubjects(stmt.Words, stmt.sourceWords))
 		if len(subjects) == 0 {
 			continue
 		}
@@ -1238,113 +1233,6 @@ func compatibilityRules() []Rule {
 	}
 }
 
-// mysqlRules covers the MY family: MySQL/MariaDB-specific hazards.
-func mysqlRules() []Rule {
-	return []Rule{
-		{
-			Code:     "MY101",
-			Title:    "lock-heavy ALTER TABLE",
-			Severity: SeverityWarning,
-			Dialects: []string{"mysql", "mariadb"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !lintkit.IsAlterTable(stmt.Words) {
-					return false, ""
-				}
-				heavy := scanModifyChange(stmt.Words) || scanConvertCharset(stmt.Words) ||
-					scanAddColumnNotNullWithoutDefault(stmt.Words)
-				if !heavy || scanPinnedOnlineDDL(stmt.Words) {
-					return false, ""
-				}
-				return true, "this ALTER TABLE form usually rebuilds the table and blocks writes for the duration on MySQL/MariaDB; " +
-					"for large tables use an online-DDL tool (gh-ost, pt-online-schema-change), or pin ALGORITHM=INPLACE/LOCK=NONE " +
-					"so the server refuses a blocking rebuild instead of performing it"
-			},
-		},
-		{
-			Code:     "MY102",
-			Title:    "inline reference ignored on a column",
-			Severity: SeverityWarning,
-			// The family, and the message says why rather than claiming the
-			// clause does nothing everywhere. Measured 2026-09-03, both
-			// spellings: on MySQL 8.4.11 each leaves
-			// information_schema.referential_constraints empty and adds no
-			// index, while on MariaDB 11.8.9 each is ENFORCED and the ADD
-			// COLUMN form builds the foreign key plus a backing index `b`.
-			//
-			// So the finding is a portability hazard rather than a defect on
-			// one engine: the same migration applied to the other server
-			// silently means something else. Naming one dialect would say it
-			// more precisely and would also be the first rule to split the
-			// family, which internal/lintdialect treats as making the two
-			// interchangeable in a policy; the message carries the split
-			// instead (stokaro/ptah#2831).
-			Dialects: []string{"mysql", "mariadb"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !scanInlineColumnReference(stmt.Words) {
-					return false, ""
-				}
-				return true, "an inline REFERENCES clause on a column means different things on the " +
-					"two engines: MySQL ignores it and creates no foreign key, MariaDB enforces it; " +
-					"write an explicit FOREIGN KEY constraint so both build the same relationship"
-			},
-		},
-		{
-			Code:     "MY131",
-			Title:    "foreign key added with blocking DDL",
-			Severity: SeverityWarning,
-			Dialects: []string{"mysql", "mariadb"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !lintkit.IsAlterTable(stmt.Words) || !scanAddForeignKey(stmt.Words) {
-					return false, ""
-				}
-				return true, "adding a foreign key can copy or lock the table and block writes on MySQL/MariaDB; use an online migration plan for populated tables"
-			},
-		},
-		{
-			Code:     "MY132",
-			Title:    "primary key added with table rebuild",
-			Severity: SeverityWarning,
-			Dialects: []string{"mysql", "mariadb"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanAddPrimaryKey(stmt.Words) {
-					return false, ""
-				}
-				// Measured on MySQL 8.4 and MariaDB 11.8.9 (mysqlcost.go): the
-				// rebuild is in place and LOCK=NONE is accepted, so the older
-				// wording that it blocks DML overstated the cost.
-				return true, "adding a primary key rebuilds the table around the new clustered index; " +
-					"both MySQL and MariaDB do it in place with writes allowed (ALGORITHM=INPLACE, LOCK=NONE), " +
-					"but the rebuild reads and rewrites every row and ALGORITHM=INSTANT is refused, " +
-					"so plan it for a quiet period or an online-DDL tool on a large table"
-			},
-		},
-		{
-			Code:     "MY134",
-			Title:    "fulltext index added with blocking DDL",
-			Severity: SeverityWarning,
-			Dialects: []string{"mysql", "mariadb"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !lintkit.IsAlterTable(stmt.Words) || !scanAddIndexKind(stmt.Words, "FULLTEXT") {
-					return false, ""
-				}
-				return true, "adding a FULLTEXT index can rebuild the table and block writes on MySQL/MariaDB; use an online-DDL strategy for populated tables"
-			},
-		},
-		{
-			Code:     "MY135",
-			Title:    "spatial index added with blocking DDL",
-			Severity: SeverityWarning,
-			Dialects: []string{"mysql", "mariadb"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !lintkit.IsAlterTable(stmt.Words) || !scanAddIndexKind(stmt.Words, "SPATIAL") {
-					return false, ""
-				}
-				return true, "adding a SPATIAL index can rebuild the table and block writes on MySQL/MariaDB; use an online-DDL strategy for populated tables"
-			},
-		},
-	}
-}
-
 func sqliteRules() []Rule {
 	return []Rule{
 		{
@@ -1413,25 +1301,6 @@ func droppedColumnSubjects(w, sourceWords []string) []Subject {
 		}
 	}
 	return subjects
-}
-
-// scanModifyChange reports whether an ALTER TABLE statement rewrites a column
-// via the MySQL-family MODIFY/CHANGE clauses (COLUMN keyword optional).
-func scanModifyChange(w []string) bool {
-	for _, i := range lintkit.ClauseStarts(w) {
-		if i >= len(w) || (w[i] != "MODIFY" && w[i] != "CHANGE") {
-			continue
-		}
-		j := i + 1
-		if j < len(w) && w[j] == "COLUMN" {
-			j++
-		}
-		j = lintkit.SkipIfExists(w, j)
-		if j < len(w) && lintkit.IdentLike(w[j]) {
-			return true
-		}
-	}
-	return false
 }
 
 // scanAlterColumnType reports whether an ALTER TABLE statement changes a
@@ -1568,173 +1437,6 @@ func scanPrincipalDrop(w []string, target Target) bool {
 	return w[1] == "USER" || w[1] == "GROUP"
 }
 
-// scanConvertCharset reports whether an ALTER TABLE statement converts the
-// table to another character set (a full-table rewrite on MySQL/MariaDB).
-// CHARSET is the accepted synonym of CHARACTER SET.
-func scanConvertCharset(w []string) bool {
-	for _, i := range lintkit.ClauseStarts(w) {
-		if lintkit.HasWordPrefix(w[i:], "CONVERT", "TO", "CHARACTER", "SET") ||
-			lintkit.HasWordPrefix(w[i:], "CONVERT", "TO", "CHARSET") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanAddColumnNotNullWithoutDefault(w []string) bool {
-	return len(nonNullableAddedColumnSubjects(w, w)) > 0
-}
-
-func nonNullableAddedColumnSubjects(w, sourceWords []string) []Subject {
-	table := lintkit.AlterTableReference(w, sourceWords)
-	var subjects []Subject
-	for _, i := range lintkit.ClauseStarts(w) {
-		start, end, ok := lintkit.AddColumnClause(w, i)
-		if !ok {
-			continue
-		}
-		clause := w[start:end]
-		if lintkit.HasWordSeq(clause, "NOT", "NULL") && !slices.Contains(clause, "DEFAULT") {
-			subjects = append(subjects, Subject{
-				Kind:     SubjectColumn,
-				Name:     lintkit.SourceWordAt(w, sourceWords, start-1),
-				Parent:   table.Name,
-				DataType: columnDataType(clause, sourceWords[start:end]),
-			})
-		}
-	}
-	return subjects
-}
-
-func columnDataType(definition, sourceDefinition []string) string {
-	end := len(definition)
-	depth := 0
-	for i, word := range definition {
-		switch word {
-		case "(", "[":
-			depth++
-		case ")", "]":
-			depth = max(0, depth-1)
-		default:
-			if depth == 0 && columnConstraintWord(word) {
-				end = i
-				return strings.Join(sourceDefinition[:end], " ")
-			}
-		}
-	}
-	return strings.Join(sourceDefinition[:end], " ")
-}
-
-func columnConstraintWord(word string) bool {
-	switch word {
-	case "CHECK", "COLLATE", "COMMENT", "CONSTRAINT", "DEFAULT", "GENERATED",
-		"IDENTITY", "NOT", "NULL", "PRIMARY", "REFERENCES", "UNIQUE":
-		return true
-	default:
-		return false
-	}
-}
-
-// scanInlineColumnReference reports a column-level REFERENCES clause in either
-// statement that can carry one.
-//
-// The ALTER TABLE half is the original rule. The CREATE TABLE half is the same
-// defect in the spelling a schema is usually written in, and it was not
-// reported: measured, a migration body creating a table with an inline
-// REFERENCES passed `ptah migrations lint --dialect mysql` with no finding
-// while the ADD COLUMN form warned (stokaro/ptah#2831).
-func scanInlineColumnReference(w []string) bool {
-	if lintkit.IsAlterTable(w) {
-		return scanAddColumnInlineReference(w)
-	}
-	return isCreateTable(w) && scanCreateTableInlineReference(w)
-}
-
-func isCreateTable(w []string) bool {
-	return lintkit.HasWordPrefix(w, "CREATE", "TABLE")
-}
-
-// scanCreateTableInlineReference reports a REFERENCES clause inside a column
-// definition rather than inside a table constraint.
-//
-// A table-level `FOREIGN KEY (a) REFERENCES p (id)` is enforced and must not be
-// reported, so an element opening with a constraint keyword is skipped --
-// including `CONSTRAINT f REFERENCES p (id)`, which MySQL refuses outright with
-// error 1064 rather than ignoring.
-func scanCreateTableInlineReference(w []string) bool {
-	depth := 0
-	elementStart := -1
-	for i, word := range w {
-		switch word {
-		case "(":
-			depth++
-			if depth == 1 {
-				elementStart = i + 1
-			}
-			continue
-		case ")":
-			depth--
-			if depth == 0 {
-				return inlineReferenceElement(w, elementStart, i)
-			}
-			continue
-		case ",":
-			if depth != 1 {
-				continue
-			}
-			if inlineReferenceElement(w, elementStart, i) {
-				return true
-			}
-			elementStart = i + 1
-			continue
-		}
-	}
-	return false
-}
-
-// inlineReferenceElement reports whether one element of a table body is a
-// column definition carrying REFERENCES.
-func inlineReferenceElement(w []string, start, end int) bool {
-	if start < 0 || start >= end || end > len(w) {
-		return false
-	}
-	if lintkit.AddConstraintTargets[w[start]] {
-		return false
-	}
-	return slices.Contains(w[start:end], "REFERENCES")
-}
-
-func scanAddColumnInlineReference(w []string) bool {
-	for _, i := range lintkit.ClauseStarts(w) {
-		start, end, ok := lintkit.AddColumnClause(w, i)
-		if ok && slices.Contains(w[start:end], "REFERENCES") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanAddCheckConstraint(w []string) bool {
-	return lintkit.AnyAlterClause(w, lintkit.AddsCheckConstraint)
-}
-
-func scanAddForeignKey(w []string) bool {
-	return lintkit.AnyAlterClause(w, lintkit.AddsForeignKey)
-}
-
-func scanAddIndexKind(w []string, kind string) bool {
-	for _, i := range lintkit.ClauseStarts(w) {
-		clause := w[i:lintkit.ClauseEnd(w, i)]
-		if !lintkit.HasWordPrefix(clause, "ADD") || !slices.Contains(clause, kind) {
-			continue
-		}
-		if slices.Contains(clause, "INDEX") || slices.Contains(clause, "KEY") {
-			return true
-		}
-	}
-	return false
-}
-
 // droppedTablesNotCreated returns tables that were not created earlier in the
 // same file and whether every target was parsed. An incomplete parse must remain
 // destructive because treating an unknown target as safe would be fail-open.
@@ -1765,33 +1467,6 @@ func droppedTablesNotCreated(
 		}
 		return unsafe, true
 	}
-}
-
-// scanPinnedOnlineDDL reports whether an ALTER TABLE statement pins a
-// non-blocking online-DDL path: with ALGORITHM=INPLACE/INSTANT or LOCK=NONE
-// the server errors out instead of silently falling back to a locking
-// rebuild, so the lock hazard cannot occur. The = is optional in the MySQL
-// grammar.
-func scanPinnedOnlineDDL(w []string) bool {
-	for _, i := range lintkit.ClauseStarts(w) {
-		if i >= len(w) || (w[i] != "ALGORITHM" && w[i] != "LOCK") {
-			continue
-		}
-		j := i + 1
-		if j < len(w) && w[j] == "=" {
-			j++
-		}
-		if j >= len(w) {
-			continue
-		}
-		if w[i] == "ALGORITHM" && (w[j] == "INPLACE" || w[j] == "INSTANT") {
-			return true
-		}
-		if w[i] == "LOCK" && w[j] == "NONE" {
-			return true
-		}
-	}
-	return false
 }
 
 // Describe renders one finding as a single human-readable line naming the

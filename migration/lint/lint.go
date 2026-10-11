@@ -8,7 +8,7 @@
 //   - MF — migration form (missing down file, empty migration, naming)
 //   - BC — breaking-change safety (renames breaking deployed readers)
 //   - PG — PostgreSQL-specific hazards, which the PostgreSQL owner checks
-//   - MY — MySQL/MariaDB-specific hazards
+//   - MY — MySQL/MariaDB-specific hazards, which the MySQL owner checks
 //   - YD — YDB statements the server refuses, or runs with an effect the
 //     statement does not state
 //
@@ -38,13 +38,14 @@
 // # Rules the engine owners check
 //
 // An engine owner may publish rules of its own through the runtime a run is
-// given, as [ptah.run/core/lintext] data; the PostgreSQL owner publishes the
-// PG and TX families and the online rules ON101 and ON103 that way. [Rules] lists them after this package's own. A run asks
-// the owners for their findings once, over every file, and applies the same
-// policy to them as to every other finding: suppression directives, severity
-// overrides, excluded paths, subsumption and the reviewed-schema filter. A
-// run that names no dialect sends every owner's rules over the dialect-blind
-// split, as it runs every rule of this package.
+// given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes the
+// PG and TX families and the online rules ON101 and ON103 that way, and the
+// MySQL owner the MY family and ON102. [Rules] lists them after this
+// package's own. A run asks the owners for their findings once, over every
+// file, and applies the same policy to them as to every other finding:
+// suppression directives, severity overrides, excluded paths, subsumption and
+// the reviewed-schema filter. A run that names no dialect sends every owner's
+// rules over the dialect-blind split, as it runs every rule of this package.
 package lint
 
 import (

@@ -9,6 +9,7 @@ import (
 	"ptah.run/dialect/mysql/mysqlcompare"
 	"ptah.run/dialect/mysql/mysqlconvert"
 	"ptah.run/dialect/mysql/mysqldiff"
+	"ptah.run/dialect/mysql/mysqllint"
 	"ptah.run/dialect/mysql/mysqlplan"
 	"ptah.run/dialect/mysql/mysqlreport"
 	"ptah.run/dialect/mysql/mysqlschema"
@@ -30,6 +31,9 @@ import (
 // replacement of its index, and reversed by another.
 func registerMySQLServices(provider *engine.Provider) {
 	provider.Targets[0].Creations = mysqlconvert.CreationService{}
+	// The MySQL owner checks its lint rules for both engines of the family;
+	// each rule names the targets it judges.
+	provider.Lint = append(provider.Lint, engine.Lint{Rules: mysqllint.Rules(), Service: mysqllint.Service{}})
 	provider.Annotations = append(provider.Annotations, mysqlsource.Annotations())
 	provider.YAML = append(provider.YAML, mysqlsource.YAML())
 	provider.Codecs = append(provider.Codecs, slices.Concat(

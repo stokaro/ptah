@@ -4,6 +4,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"ptah.run/internal/lintkit"
 )
 
 // atlasCodeAliases maps an Atlas analyzer code onto the Ptah rules that report
@@ -45,16 +47,13 @@ var atlasCodeAliases = map[string]atlasAlias{
 	// type change, so a config naming MY148 would otherwise be refused as an
 	// unknown code. It is scoped to the engines MY130 runs on: an alias for
 	// one engine must not weaken another engine's run (stokaro/ptah#1631).
-	"MY148": {dialects: mysqlFamily, rules: []string{"MY130"}},
-	// No other engine-specific code is here: MY110 through MY123 (members.go),
-	// MY130, MY133 and MY136 (mysqlcost.go), MY137 through MY147
-	// (atlasgaps.go), and PG301, PG304, PG108, PG109, PG312, PG314 and PG320
-	// are each a Ptah rule of the same name, so the code needs no alias to
-	// reach it.
+	"MY148": {dialects: lintkit.MySQLFamily, rules: []string{"MY130"}},
+	// No other engine-specific code is here: MY110 through MY123, MY130, MY133,
+	// MY136 and MY137 through MY147 (the MySQL owner, dialect/mysql/mysqllint),
+	// and PG301, PG304, PG108, PG109, PG312, PG314 and PG320 (the PostgreSQL
+	// owner, dialect/postgres/pglint) are each a Ptah rule of the same name,
+	// so the code needs no alias to reach it.
 }
-
-// mysqlFamily is the pair Ptah's MySQL rules are defined for.
-var mysqlFamily = []string{"mysql", "mariadb"}
 
 // atlasCodesPtahAlsoUses are the Atlas codes that are ALSO Ptah rule codes,
 // meaning something else.
