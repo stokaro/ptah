@@ -1504,6 +1504,24 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgtype-typecompare",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typecompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgtype-typeconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typeconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgtype-typeprobe",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typeprobe",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgtype-typerender",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgtype/typerender",

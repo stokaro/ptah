@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
+	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routineparallel"
 	"ptah.run/internal/routinesetting"
@@ -435,7 +436,7 @@ func canonicalizePostgresRoutineType(typeName string) string {
 		base = strings.TrimSpace(strings.TrimSuffix(base, "[]"))
 		suffix.WriteString("[]")
 	}
-	if canonical, ok := pgTypeAliases[strings.ToLower(base)]; ok {
+	if canonical, ok := pgtypealias.Alias(base); ok {
 		base = canonical
 	}
 	return base + suffix.String()

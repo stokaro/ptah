@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
@@ -621,7 +622,7 @@ func resolveDomainExpressions(
 		}
 		defaultExpression := domain.DefaultExpr
 		if defaultExpression == "" && domain.Default != "" {
-			defaultExpression = quoteDomainDefaultLiteral(domain.Default)
+			defaultExpression = sqlident.StringLiteral(domain.Default)
 		}
 		probes = append(probes, dbexprprobe.DomainExpressionProbe{
 			Key:      domain.QualifiedName(),
@@ -902,16 +903,6 @@ func normalizeFeatureObjects(
 	normalized := *desired
 	normalized.FeatureObjects = result.Desired.Objects
 	return &normalized, nil
-}
-
-// quoteDomainDefaultLiteral renders a declared literal default as SQL.
-//
-// schemamodel.Domain keeps a literal and an expression apart, and only the
-// expression is already SQL. A literal reaches here as the value itself, so
-// `abc` has to become `'abc'` before a server can parse the statement carrying
-// it.
-func quoteDomainDefaultLiteral(literal string) string {
-	return "'" + strings.ReplaceAll(literal, "'", "''") + "'"
 }
 
 func collectIdentifierNames(
