@@ -13,6 +13,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -32,11 +33,19 @@ import (
 // constraint kinds that server enforces with an index the reader also reports;
 // [ptah.run/internal/indexbacking] holds that answer for this converter
 // and for migration/schemadiff alike. The caller must supply a target selected
-// by runtime. Feature conversion runs as a batch and propagates cancellation
-// and service errors without publishing a partial schema.
-func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect string, runtime schemaext.ConversionRuntime) (*schemamodel.Database, error) {
+// by runtime, whose column rules read back the defaults its catalog reports.
+// Feature conversion runs as a batch and propagates cancellation and service
+// errors without publishing a partial schema.
+func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect string, runtime Runtime) (*schemamodel.Database, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
 	if dbSchema == nil {
 		dbSchema = &catalog.Database{}
+	}
+	rules, err := targetRules(dialect, runtime)
+	if err != nil {
+		return nil, err
 	}
 	database := newDatabase()
 	database.Facets = dbSchema.Facets
@@ -53,7 +62,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	tablePrimaryKeys := primaryKeysByTable(dbSchema, dialect)
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
 	tableStructNames := convertTablesAndFields(
-		database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns, dialect,
+		database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns, rules.Columns,
 	)
 
 	// One decision, consulted by both pools below. A unique constraint and its
@@ -89,6 +98,27 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	}
 	database.FeatureObjects, database.FeatureCoverage = objects, coverage
 	return database, nil
+}
+
+// Runtime selects the feature conversion and the comparison rules of the
+// target a catalog was read from. *engine.Runtime satisfies it.
+type Runtime interface {
+	schemaext.ConversionRuntime
+	schemacomparison.Runtime
+}
+
+// targetRules are the comparison rules of the target dialect names, under the
+// spelling the feature conversion selects it by, and none for a catalog read
+// without a dialect.
+func targetRules(dialect string, runtime schemacomparison.Runtime) (schemacomparison.Rules, error) {
+	if dialect == "" {
+		return schemacomparison.Rules{}, nil
+	}
+	target := dialect
+	if normalized := platform.NormalizeDialect(dialect); normalized != "" {
+		target = normalized
+	}
+	return runtime.ComparisonRules(target)
 }
 
 func convertSchemas(database *schemamodel.Database, schemas []catalog.Schema) {
@@ -156,7 +186,7 @@ func convertTablesAndFields(
 	fkByColumn map[tableMemberKey]foreignKeyInfo,
 	tablePrimaryKeys map[string]tablePrimaryKey,
 	tablePKColumns map[string]map[string]bool,
-	dialect string,
+	columnRules schemacomparison.Columns,
 ) map[string]string {
 	tableStructNames := assignTableStructNames(dbSchema.Tables)
 	for _, dbTable := range dbSchema.Tables {
@@ -192,7 +222,7 @@ func convertTablesAndFields(
 		for _, dbColumn := range dbTable.Columns {
 			opts := catalogfield.Options{
 				CoveredByTablePrimaryKey: tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
-				Dialect:                  dialect,
+				Columns:                  columnRules,
 			}
 			// Carry the field-level foreign key (reference + referential actions)
 			// so down migrations can reconstruct it with the prior action.

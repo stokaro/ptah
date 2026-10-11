@@ -25,10 +25,12 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/coverage"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/migrationreplay"
@@ -95,6 +97,7 @@ type Report struct {
 // schema captures.
 type Runtime interface {
 	goschematodb.Runtime
+	schemacomparison.Runtime
 	schemaext.ReportingRuntime
 	renderer.SchemaService
 	yamlext.Runtime
@@ -780,7 +783,7 @@ func replayVersionObserver(
 // A nil observer is handed to the replay when nothing was asked for, so a
 // directory with no renames pays no introspection at all.
 type baselineCollector struct {
-	runtime schemaext.ConversionRuntime
+	runtime dbschematogo.Runtime
 	wanted  map[int64]bool
 	schemas []string
 	columns []lint.BaselineColumn
@@ -793,7 +796,7 @@ type baselineCollector struct {
 	hypertables []lint.BaselineHypertable
 }
 
-func newBaselineCollector(versions []int64, devURL string, runtime schemaext.ConversionRuntime) *baselineCollector {
+func newBaselineCollector(versions []int64, devURL string, runtime dbschematogo.Runtime) *baselineCollector {
 	collector := &baselineCollector{runtime: runtime, wanted: make(map[int64]bool, len(versions))}
 	for _, version := range versions {
 		collector.wanted[version] = true

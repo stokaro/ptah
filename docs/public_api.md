@@ -1598,7 +1598,13 @@ cancellation return no schema.
 
 `Target.Comparison` holds the `schemacomparison.Rules` a target gives the shared
 comparison, where its catalog reports a declaration in a form the shared rules
-cannot read. `Rules.Indexes` compares an index's kind and build settings, and a
+cannot read. `Rules.Columns` compares a column's type and default in place of
+the shared reading, says whether the target creates a column NOT NULL whatever
+it declares, compares a column's sequence start and increment on a target with
+`capability.SerialSequenceOptions`, and reads a default the catalog reports as a
+typed literal back as its value.
+
+`Rules.Indexes` compares an index's kind and build settings, and a
 target that registers it has the whole index definition compared; it also says
 which facet kinds an index rename keeps, and without it an index carrying any
 facet is dropped and built again rather than renamed. `Rules.Views` compares
@@ -1995,8 +2001,11 @@ caller's value. It is empty when the target has none or the caller does not
 know it, as for a declaration rendered without a database, and an owner then
 cannot tell an absolute path of this database from one of another.
 
-`atlascompat.DBSchemaToGoSchema` requires a context, target name, and selected
-feature runtime. It returns a schema and an error. `FacetSlots` on the desired
+`atlascompat.DBSchemaToGoSchema` requires a context, target name, and an
+`atlascompat.ConversionRuntime`, which selects the target's feature conversion
+and its comparison rules; a default the target's column rules read as a literal
+is carried as its value. It returns a schema and an error, and refuses a target
+the runtime did not register. `FacetSlots` on the desired
 and observed database models enumerates the mutable slots holding immutable
 facet collections, so representation converters account for every common scope.
 A desired table carries the settings of the primary key it declares in

@@ -12,7 +12,6 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/builtintest"
-	"ptah.run/internal/convert/goschematodb"
 )
 
 func sourceRuntime(c *qt.C) *engine.Runtime {
@@ -63,7 +62,7 @@ func TestStartingPointConversionFailureReturnsNoPartialState(t *testing.T) {
 }
 
 type failedSourceConversion struct {
-	goschematodb.Runtime
+	*engine.Runtime
 	err error
 }
 

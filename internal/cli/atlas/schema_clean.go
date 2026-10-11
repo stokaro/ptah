@@ -14,7 +14,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
@@ -30,7 +29,7 @@ import (
 )
 
 type atlasSchemaCleanOptions struct {
-	runtime     schemaext.ConversionRuntime
+	runtime     dbschematogo.Runtime
 	url         string
 	dryRun      bool
 	format      string
@@ -324,7 +323,7 @@ func inspectAtlasSchemaCleanPlan(
 	ctx context.Context,
 	policy atlascompatpolicy.Policy,
 	conn *dbschema.DatabaseConnection,
-	runtime schemaext.ConversionRuntime,
+	runtime dbschematogo.Runtime,
 ) (schemaclean.Plan, error) {
 	inspectOpts := schemaclean.InspectOptions{}
 	if policy.IsStrictCE() {

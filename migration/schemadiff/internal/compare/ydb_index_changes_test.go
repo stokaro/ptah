@@ -26,6 +26,12 @@ func compareYDBIndexes(desired []schemamodel.Index, database []catalog.Index, ca
 	return diff
 }
 
+// columnsWithYDBRules is [compare.ColumnsWithDialect] with the column rules
+// the built-in runtime registers for YDB.
+func columnsWithYDBRules(desired schemamodel.Field, current catalog.Column, dialect string) difftypes.ColumnDiff {
+	return compare.ColumnsWithRules(desired, current, dialect, ydbcomparison.Rules().Columns)
+}
+
 // indexesWithYDBRules is [compare.IndexesWithDialect] with the index rules the
 // built-in runtime registers for YDB.
 func indexesWithYDBRules(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {

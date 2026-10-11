@@ -45,7 +45,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
-| `core/schemacomparison` | Target rules the shared comparison reads index options and view queries through. |
+| `core/schemacomparison` | Target rules the shared comparison reads columns, index options and view queries through. |
 | `core/schemapreparation` | Selected column-key and facet resolution with independent source and prepared captures. |
 | `core/schemaext` | Typed feature values, source coverage, explicit codecs, dependency captures, and conservative effects. |
 | `core/schemaprojection` | Target-owned CREATE defaults, constraint effects, and table-state predictions. |
@@ -297,10 +297,11 @@ index the server holds. A nil service leaves the declaration as written; an
 error or a nil result fails the comparison.
 
 `Target.Comparison` holds the `schemacomparison.Rules` the shared comparison
-takes from a target: how an index's options and a view's query read on it.
-YDB registers both, so a declared BTREE compares as the synchronous global
-index its catalog reports, and a view's query compares in the form the server
-stores it. A nil member keeps the shared rule.
+takes from a target: how a column's type, default and sequence, an index's
+options and a view's query read on it. YDB registers all three, so a declared
+BIGINT compares as the Int64 its catalog reports, a declared BTREE as the
+synchronous global index, and a view's query in the form the server stores
+it. A nil member keeps the shared rule.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
 files used as current state. It predicts CREATE defaults and column keys.

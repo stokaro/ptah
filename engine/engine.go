@@ -302,6 +302,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"lowering", declared.Lowering},
 		{"creation projection", declared.Creations},
 		{"constraint projection", declared.Constraints},
+		{"column comparison", declared.Comparison.Columns},
 		{"index comparison", declared.Comparison.Indexes},
 		{"view comparison", declared.Comparison.Views},
 	} {

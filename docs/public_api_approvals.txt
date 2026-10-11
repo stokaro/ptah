@@ -497,6 +497,12 @@ v0.13.0 ptah.run/migration/schemadiff/difftypes
 # SchemaToAST takes a LoweringRuntime, which adds the target's source-property
 # owners to declaration planning, and decodes table and index properties before
 # lowering, so a ClickHouse index's `type` reaches its owner on this path too.
+# DBSchemaToGoSchema takes a ConversionRuntime, which adds the target's
+# comparison rules to feature conversion (#4140): a default YDB reports as a
+# typed literal reads back as its value through the YDB owner's column rules
+# rather than a dialect switch in the shared converter. A runtime without the
+# rules would read the literal as raw text, so the wider type is required
+# rather than asserted. Pre-v1, so no compatibility is owed.
 v0.13.0 ptah.run/atlascompat
 
 # #4140 moves TimescaleDB hypertables and continuous aggregates to the

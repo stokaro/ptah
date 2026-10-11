@@ -6,7 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/ydbcomparison"
 )
 
 // TestField_LeavesTheGoSourceToItsCaller pins the split this package exists for.
@@ -155,6 +158,9 @@ func TestType_PrefersTheServersOwnSpelling(t *testing.T) {
 // renderer writes the same literal back. The same text from another dialect
 // keeps the generic rule.
 func TestField_YDBDefaultIsTheValueItsLiteralWasWrittenFrom(t *testing.T) {
+	// The column rules the built-in runtime registers, by the target that
+	// reported the column; other targets register none.
+	ydbRules := map[string]schemacomparison.Columns{platform.YDB: ydbcomparison.Rules().Columns}
 	tests := []struct {
 		name      string
 		dialect   string
@@ -186,7 +192,7 @@ func TestField_YDBDefaultIsTheValueItsLiteralWasWrittenFrom(t *testing.T) {
 			reported := test.reported
 			field := catalogfield.Field(
 				catalog.Column{Name: "c", DataType: test.dataType, ColumnDefault: &reported},
-				catalogfield.Options{Dialect: test.dialect},
+				catalogfield.Options{Columns: ydbRules[platform.NormalizeDialect(test.dialect)]},
 			)
 
 			c.Assert(field.Default, qt.Equals, test.wantValue)
