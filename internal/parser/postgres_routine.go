@@ -122,6 +122,11 @@ func parsePostgresRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.Po
 	tokens := tokenizePostgresRoutineSQL(sql)
 	routine := ast.NewPostgresRoutine(sql, dialect, kind)
 	routine.Name, routine.Parameters = parsePostgresRoutineHeader(sql, tokens, strings.ToUpper(string(kind)))
+	security, settings, err := parsePostgresRoutineClauses(tokens, strings.ToUpper(string(kind)))
+	if err != nil {
+		return nil, err
+	}
+	routine.Security, routine.Settings = security, settings
 
 	bodyToken, language := parsePostgresRoutineBodyClause(tokens)
 	routine.Language = strings.ToLower(language)
@@ -179,6 +184,105 @@ func parsePostgresRoutineHeader(sql string, tokens []lexer.Token, keyword string
 		return strings.TrimSpace(sql[tokens[nameIdx].Start:tokens[len(tokens)-1].Start]), ""
 	}
 	return "", ""
+}
+
+// parsePostgresRoutineClauses reads the SECURITY and SET clauses of a routine
+// header, between its parameter list and its body, as the CREATE FUNCTION path
+// reads them: the mode upper-cased, and each setting as `name=value` or `name
+// FROM CURRENT` (see [Parser.parseFunctionSetting]). Read nowhere else, a
+// procedure declared SECURITY DEFINER became one that runs with its caller's
+// rights, and its search_path was dropped.
+func parsePostgresRoutineClauses(tokens []lexer.Token, keyword string) (security string, settings []string, err error) {
+	start := postgresRoutineParametersEnd(tokens, keyword)
+	if start == -1 {
+		return "", nil, nil
+	}
+	for i := nextPostgresRoutineToken(tokens, start); i != -1; i = nextPostgresRoutineToken(tokens, i+1) {
+		switch {
+		case tokens[i].MatchIdentifierValue("AS"), tokens[i].MatchIdentifierValue("BEGIN"):
+			return security, settings, nil
+		case tokens[i].MatchIdentifierValue("EXTERNAL"):
+			// The SQL standard's spelling of SECURITY, read as the CREATE
+			// FUNCTION path reads it.
+			if next := nextPostgresRoutineToken(tokens, i+1); next == -1 || !tokens[next].MatchIdentifierValue("SECURITY") {
+				return "", nil, fmt.Errorf("expected SECURITY after EXTERNAL at position %d", tokens[i].Start)
+			}
+		case tokens[i].MatchIdentifierValue("SECURITY"):
+			modeIdx := nextPostgresRoutineToken(tokens, i+1)
+			if modeIdx == -1 || tokens[modeIdx].Type != lexer.TokenIdentifier {
+				return "", nil, fmt.Errorf("expected a security mode after SECURITY at position %d", tokens[i].Start)
+			}
+			security, i = strings.ToUpper(tokens[modeIdx].Value), modeIdx
+		case tokens[i].MatchIdentifierValue("SET"):
+			var setting string
+			if setting, i, err = postgresRoutineSetting(tokens, i); err != nil {
+				return "", nil, err
+			}
+			settings = append(settings, setting)
+		}
+	}
+	return security, settings, nil
+}
+
+// postgresRoutineParametersEnd returns the index after the parameter list that
+// follows keyword, or -1 when there is none.
+func postgresRoutineParametersEnd(tokens []lexer.Token, keyword string) int {
+	keywordIdx := slices.IndexFunc(tokens, func(tok lexer.Token) bool { return tok.MatchIdentifierValue(keyword) })
+	if keywordIdx == -1 {
+		return -1
+	}
+	depth := 0
+	for i := keywordIdx + 1; i < len(tokens); i++ {
+		switch {
+		case tokens[i].MatchOperatorValue("("):
+			depth++
+		case tokens[i].MatchOperatorValue(")"):
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// postgresRoutineSetting reads the SET clause at setIdx and returns it with the
+// index of its last token.
+func postgresRoutineSetting(tokens []lexer.Token, setIdx int) (setting string, lastIdx int, err error) {
+	nameIdx := nextPostgresRoutineToken(tokens, setIdx+1)
+	if nameIdx == -1 || tokens[nameIdx].Type != lexer.TokenIdentifier {
+		return "", -1, fmt.Errorf("expected a routine setting name at position %d", tokens[setIdx].Start)
+	}
+	name := tokens[nameIdx].Value
+	opIdx := nextPostgresRoutineToken(tokens, nameIdx+1)
+	switch {
+	case opIdx != -1 && tokens[opIdx].MatchIdentifierValue("FROM"):
+		currentIdx := nextPostgresRoutineToken(tokens, opIdx+1)
+		if currentIdx == -1 || !tokens[currentIdx].MatchIdentifierValue("CURRENT") {
+			return "", -1, fmt.Errorf("expected CURRENT after FROM in the %s routine setting", name)
+		}
+		return name + " FROM CURRENT", currentIdx, nil
+	case opIdx != -1 && (tokens[opIdx].MatchOperatorValue("=") || tokens[opIdx].MatchIdentifierValue("TO")):
+	default:
+		return "", -1, fmt.Errorf("expected =, TO or FROM CURRENT in the %s routine setting", name)
+	}
+	var value strings.Builder
+	lastIdx = opIdx
+	for i := opIdx + 1; i < len(tokens); i++ {
+		tok := tokens[i]
+		if tok.Type == lexer.TokenEOF || tok.Type == lexer.TokenSemicolon ||
+			tok.Type == lexer.TokenIdentifier && endsRoutineSettingValue(tok.Value) {
+			break
+		}
+		if !isPostgresRoutineTrivia(tok) {
+			value.WriteString(tok.Value)
+			lastIdx = i
+		}
+	}
+	if value.Len() == 0 {
+		return "", -1, fmt.Errorf("expected a value for the %s routine setting", name)
+	}
+	return name + "=" + value.String(), lastIdx, nil
 }
 
 func parsePostgresRoutineParameters(sql string, tokens []lexer.Token, openIdx int) string {

@@ -38,14 +38,17 @@ func newMySQLRoutineParser(sql, dialect string, kind ast.RoutineKind) mysqlRouti
 	trimmed := strings.TrimSpace(sql)
 	return mysqlRoutineParser{
 		input:   trimmed,
-		tokens:  tokenizeMySQLRoutineSQL(trimmed),
+		tokens:  tokenizeMySQLRoutineSQL(trimmed, dialect),
 		dialect: dialect,
 		kind:    kind,
 	}
 }
 
-func tokenizeMySQLRoutineSQL(sql string) []lexer.Token {
-	l := lexer.NewLexer(sql)
+// tokenizeMySQLRoutineSQL reads a routine with the dialect's own string
+// grammar, so a doubled quote inside a literal stays inside it, as it does on
+// the server.
+func tokenizeMySQLRoutineSQL(sql, dialect string) []lexer.Token {
+	l := lexer.NewLexerWithOptions(sql, lexerOptions(dialect))
 	tokens := make([]lexer.Token, 0)
 	for {
 		tok := l.NextToken()
@@ -83,6 +86,9 @@ func (p mysqlRoutineParser) parse() (*ast.MySQLRoutineNode, error) {
 		routine.Returns = p.collectFunctionReturns(afterParamsIdx, bodyIdx)
 	}
 	routine.SetCharacteristics(p.collectRoutineCharacteristics(afterParamsIdx, bodyIdx))
+	if routine.Comment, err = p.collectRoutineComment(afterParamsIdx, bodyIdx); err != nil {
+		return nil, err
+	}
 
 	body, err := p.parseRoutineBody(bodyIdx)
 	if err != nil {
@@ -220,6 +226,34 @@ func (p mysqlRoutineParser) collectRoutineCharacteristics(startIdx, bodyIdx int)
 		}
 	}
 	return characteristics
+}
+
+// collectRoutineComment reads the text of the routine's COMMENT
+// characteristic, unquoted as the server reads it. Where the characteristic is
+// written more than once the last one counts, as on the server: measured on
+// MySQL 26.7.0 and MariaDB 12.3.3, `COMMENT 'a' COMMENT 'b'` reports b. A
+// COMMENT that
+// is not followed by a string is refused, so the routine is kept as text the
+// schema model refuses by name rather than read without its comment.
+func (p mysqlRoutineParser) collectRoutineComment(startIdx, bodyIdx int) (string, error) {
+	comment := ""
+	for i := startIdx; i < bodyIdx; i++ {
+		if !p.tokens[i].MatchIdentifierValue("COMMENT") {
+			continue
+		}
+		valueIdx := p.nextSignificant(i + 1)
+		if valueIdx == -1 {
+			return "", fmt.Errorf("expected a string after COMMENT at position %d", p.tokens[i].Start)
+		}
+		text, ok := lexer.StringValue(p.tokens[valueIdx].Value, lexerOptions(p.dialect))
+		if !ok {
+			return "", fmt.Errorf("%s is not a string constant the server reads, for a routine comment at position %d",
+				abbreviatedToken(p.tokens[valueIdx].Value), p.tokens[valueIdx].Start)
+		}
+		comment = text
+		i = valueIdx
+	}
+	return comment, nil
 }
 
 func (p mysqlRoutineParser) collectRoutineCharacteristic(startIdx, bodyIdx int) (string, int) {

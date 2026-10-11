@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -10,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 )
@@ -500,6 +502,8 @@ func toPostgresRoutine(node *ast.PostgresRoutineNode, sourcePlatform string) sch
 		Kind:       string(node.Kind),
 		Parameters: node.Parameters,
 		Language:   node.Language,
+		Security:   node.Security,
+		Settings:   slices.Clone(node.Settings),
 		Body:       strings.TrimSpace(node.Body.SQL),
 	}
 	function.Canonicalize()
@@ -513,11 +517,7 @@ func toSQLServerRoutine(node *ast.SQLServerRoutineNode, sourcePlatform string) s
 		Kind:       string(node.Kind),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
-		// The body is this dialect's own procedural language, not PL/pgSQL.
-		// A routine reaching the model with no language is defaulted to
-		// plpgsql, and the renderer then skips it saying it "declares language
-		// plpgsql" -- a sentence about a T-SQL body that never said any such
-		// thing (stokaro/ptah#2435).
+		// The body is T-SQL, which the catalog reports as sql.
 		Language: "sql",
 		Body:     strings.TrimSpace(node.Body.SQL),
 	}
@@ -526,19 +526,25 @@ func toSQLServerRoutine(node *ast.SQLServerRoutineNode, sourcePlatform string) s
 }
 
 // toMySQLRoutine converts a routine the MySQL routine parser modelled.
+//
+// The characteristics carry the security mode and the volatility, read as
+// [mysqlroutine.FromCharacteristics] reads them, so a routine written in SQL
+// states what the same routine read back from the server reports. A mode or a
+// volatility the statement does not write stays empty, and the target's own
+// applies.
 func toMySQLRoutine(node *ast.MySQLRoutineNode, sourcePlatform string) schemamodel.Function {
+	security, volatility := mysqlroutine.FromCharacteristics(node.Characteristics)
 	function := schemamodel.Function{
 		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Kind:       string(node.Kind),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
-		// The body is this dialect's own procedural language, not PL/pgSQL.
-		// A routine reaching the model with no language is defaulted to
-		// plpgsql, and the renderer then skips it saying it "declares language
-		// plpgsql" -- a sentence about a T-SQL body that never said any such
-		// thing (stokaro/ptah#2435).
-		Language: "sql",
-		Body:     strings.TrimSpace(node.Body.SQL),
+		// The body is in the MySQL family's one routine language.
+		Language:   mysqlroutine.Language,
+		Security:   security,
+		Volatility: volatility,
+		Body:       strings.TrimSpace(node.Body.SQL),
+		Comment:    node.Comment,
 	}
 	function.Canonicalize()
 	return function

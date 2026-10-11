@@ -33,6 +33,12 @@ type PostgresRoutineNode struct {
 	Parameters string
 	// Language stores the normalized LANGUAGE clause when present.
 	Language string
+	// Security is the mode a SECURITY clause states, DEFINER or INVOKER,
+	// and empty for a routine that writes none.
+	Security string
+	// Settings are the routine's SET clauses, each `name=value` or
+	// `name FROM CURRENT`, in the order the statement writes them.
+	Settings []string
 	// Body is the parsed routine body metadata.
 	Body PostgresRoutineBody
 }
@@ -116,6 +122,9 @@ type MySQLRoutineNode struct {
 	// Characteristics stores raw routine characteristics before the body, such
 	// as DETERMINISTIC, SQL SECURITY INVOKER, or MODIFIES SQL DATA.
 	Characteristics []string
+	// Comment is the text of the routine's COMMENT characteristic, unquoted,
+	// and empty for a routine that has none.
+	Comment string
 	// Body is the routine body as the statement writes it.
 	Body MySQLRoutineBody
 }
