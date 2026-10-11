@@ -73,8 +73,8 @@ const (
 	// otherwise the attribute's source text. It is text the frontend
 	// produced, never an expression for the owner to evaluate.
 	Text Kind = "text"
-	// Bool is a bool. A value that is not a bool reads as if the attribute
-	// were absent, as the frontend's own optional flags read.
+	// Bool is a bool. Null reads as if the attribute were absent, and any
+	// other value is refused, positioned at the attribute.
 	Bool Kind = "bool"
 )
 

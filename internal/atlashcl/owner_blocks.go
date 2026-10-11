@@ -68,8 +68,9 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	return nil
 }
 
-// ownerValue reads one attribute as its kind. A [hclext.Bool] attribute that
-// is not a bool reads as absent, as optionalBool reads one.
+// ownerValue reads one attribute as its kind: a [hclext.String] through
+// stringAttr, a [hclext.Bool] through optionalBoolPtr, and a [hclext.Text]
+// through exprString.
 func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) (hclext.Value, bool, error) {
 	attr := block.Body.Attributes[attribute.Name]
 	switch attribute.Kind {
@@ -77,9 +78,9 @@ func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) 
 		text, err := p.stringAttr(block, attribute.Name, block.Type)
 		return hclext.Value{Kind: attribute.Kind, Text: text}, err == nil, err
 	case hclext.Bool:
-		value := p.optionalBoolPtr(attr)
-		if value == nil {
-			return hclext.Value{}, false, nil
+		value, err := p.optionalBoolPtr(block, attribute.Name, block.Type)
+		if err != nil || value == nil {
+			return hclext.Value{}, false, err
 		}
 		return hclext.Value{Kind: attribute.Kind, Bool: *value}, true, nil
 	default:

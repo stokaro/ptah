@@ -2674,8 +2674,8 @@ names the schema too), and the attributes it takes and of which `Kind`.
   own blocks, including the tolerance for unknown names.
 - The reader evaluates every attribute in its own context. An owner receives
   values, never expressions: a `String` is a string, a `Text` is the text the
-  reader produced, and a `Bool` is a bool, absent when the value is not one,
-  as the reader's own flags read. Variables, locals, functions and the
+  reader produced, and a `Bool` is a bool: null reads as absent and any other
+  value is refused, as the reader refuses one in its own blocks. Variables, locals, functions and the
   confinement of `file()` stay the reader's.
 - Once a document is read, the owner's `Decoder` gets every block of its in one
   call and returns, for each, the objects it declares and a `TableSetting` on
