@@ -93,6 +93,16 @@ func sourceLabel(kind schemaext.Kind) string {
 	return ""
 }
 
+// LimitKinds are the header kinds a YDB source reads as limits on its own
+// claim, which [Limits.Add] records.
+func LimitKinds() []coverage.Kind {
+	kinds := make([]coverage.Kind, 0, len(sourceKinds))
+	for _, family := range sourceKinds {
+		kinds = append(kinds, coverage.Kind(family.token))
+	}
+	return kinds
+}
+
 // RecognizesLimit reports whether this adapter owns a source limit's spelling.
 // Document splitting uses it to preserve owner directives without interpreting
 // them as common coverage or admitting unknown kinds.

@@ -30,7 +30,7 @@ func TestCompare_YQLExternalObjectsDeclaredAndOmitted(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
+			desired, _, err := sqlschema.ReadWith(c.Context(), []byte(test.source), "ydb", nil, yqlOwners())
 			c.Assert(err, qt.IsNil)
 			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), FeatureObjects: must.Must(schemaext.NewObjects(
 				ydbexternal.ObservedSourceObject("", "bucket", bucket), ydbexternal.ObservedTableObject("", "events", events)))}

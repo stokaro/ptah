@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
@@ -44,7 +45,7 @@ func TestWorkloadSourceComparisonAndRankSwapReachRegisteredPlanner(t *testing.T)
 	before := "CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 5); " +
 		"CREATE RESOURCE POOL CLASSIFIER alpha WITH (RESOURCE_POOL = 'batch', RANK = 10); " +
 		"CREATE RESOURCE POOL CLASSIFIER beta WITH (RESOURCE_POOL = 'batch', RANK = 20);"
-	database, _, err := sqlschema.Read([]byte(before), "ydb")
+	database, _, err := sqlschema.ReadWith(c.Context(), []byte(before), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	current, err := goschematodb.ToDBSchema(t.Context(), &database, "ydb", runtime)
 	c.Assert(err, qt.IsNil)
@@ -55,7 +56,7 @@ func TestWorkloadSourceComparisonAndRankSwapReachRegisteredPlanner(t *testing.T)
 	after := strings.ReplaceAll(before, "RANK = 10", "RANK = 30")
 	after = strings.ReplaceAll(after, "RANK = 20", "RANK = 10")
 	after = strings.ReplaceAll(after, "RANK = 30", "RANK = 20")
-	desired, _, err := sqlschema.Read([]byte(after), "ydb")
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte(after), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &desired, current, info, nil, runtime)
 	c.Assert(err, qt.IsNil)
@@ -71,4 +72,11 @@ func TestWorkloadSourceComparisonAndRankSwapReachRegisteredPlanner(t *testing.T)
 	unchanged, err = schemadiff.CompareWithDatabaseInfo(t.Context(), &database, current, info, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(unchanged.HasChanges(), qt.IsFalse)
+}
+
+// yqlOwners selects the SQL owners the built-in runtime registers, whose YDB
+// grammar reads YQL and claims what a YQL document declares, as a production
+// read does.
+func yqlOwners() sqlschema.Options {
+	return sqlschema.Options{Owners: builtintest.Runtime().SQL()}
 }

@@ -54,7 +54,7 @@ func TestGoTopicLimits_RefuseAnAbsolutePath(t *testing.T) {
 // path, as the Go annotation reads it.
 func TestYQLTopicLimitsReadThePath(t *testing.T) {
 	c := qt.New(t)
-	db, _, err := sqlschema.Read([]byte("-- ptah:not-described topic \"events.v1\"\nCREATE TOPIC `other`;\n"), "ydb")
+	db, _, err := sqlschema.ReadWith(c.Context(), []byte("-- ptah:not-described topic \"events.v1\"\nCREATE TOPIC `other`;\n"), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "events.v1")).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("events", "v1")).State, qt.Equals, schemaext.Complete)
@@ -102,4 +102,11 @@ func topicExportSource(c *qt.C, knowledge schemaext.Knowledge) *schemamodel.Data
 		[]schemaext.SubjectCoverage{{Kind: ydbtopic.Kind, Subject: ydbtopic.Ref("app", "legacy.v1"), Knowledge: knowledge}})
 	c.Assert(err, qt.IsNil)
 	return &schemamodel.Database{FeatureCoverage: known}
+}
+
+// yqlOwners selects the SQL owners the built-in runtime registers, whose YDB
+// grammar reads YQL and claims what a YQL document declares, as a production
+// read does.
+func yqlOwners() sqlschema.Options {
+	return sqlschema.Options{Owners: builtintest.Runtime().SQL()}
 }

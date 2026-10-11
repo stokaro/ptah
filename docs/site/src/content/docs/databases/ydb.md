@@ -2559,6 +2559,13 @@ Table paths are database-relative. Primary-key columns must declare `NOT NULL`,
 because Ptah cannot represent a nullable YDB key. Defaults must use the column's YQL
 literal type, such as `42l` for `Int64` and `'active'u` for `Utf8`.
 
+A schema directory of `.sql` files, a file with the files it imports, and the
+`.sql` sources of one schema source list are read together as one script, in
+order. A later file may change what an earlier one declared, for example add a
+changefeed to its table. A YQL file changes only what the YQL files of the same
+load declare. An `ALTER TABLE` of a table that an HCL or YAML source of the
+list declares is refused, and the refusal names that source.
+
 TTL accepts a deletion interval and its column, with an epoch unit for integer
 columns. Column tables also accept ordered eviction and deletion tiers. An
 eviction tier names its external source by an absolute database path, such as

@@ -46,8 +46,8 @@ func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, s
 			"write its argument types to name one",
 			ErrUnmodeledStatement, statement.kind, statement.name)
 	case !found:
-		return fmt.Errorf("%w: COMMENT ON %s %s names an object this schema does not declare",
-			ErrUnmodeledStatement, statement.kind, statement.name)
+		return undeclared(fmt.Errorf("%w: COMMENT ON %s %s names an object this schema does not declare",
+			ErrUnmodeledStatement, statement.kind, statement.name))
 	}
 	*target = statement.comment
 	return nil

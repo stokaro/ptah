@@ -29,7 +29,7 @@ func TestCompare_YQLStreamingQueryOmissionAndReset(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
+			desired, _, err := sqlschema.ReadWith(c.Context(), []byte(test.source), "ydb", nil, yqlOwners())
 			c.Assert(err, qt.IsNil)
 			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), FeatureObjects: must.Must(schemaext.NewObjects(ydbstreaming.ObservedObject("", "copy", ydbstreaming.Spec{Text: "SELECT 1;"})))}
 			diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), &desired, held, catalog.ServerInfo{Dialect: "ydb", Capabilities: capability.YDB262().With(capability.StreamingQueries, true)}, nil, must.Must(builtin.New())))
@@ -45,7 +45,7 @@ func TestCompare_YQLStreamingQueryOmissionAndReset(t *testing.T) {
 
 func TestCompare_YQLStreamingQueryBodyChangeRequiresPermission(t *testing.T) {
 	c := qt.New(t)
-	desired, _, err := sqlschema.Read([]byte("CREATE STREAMING QUERY copy AS DO BEGIN SELECT 2; END DO;"), "ydb")
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte("CREATE STREAMING QUERY copy AS DO BEGIN SELECT 2; END DO;"), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), FeatureObjects: must.Must(schemaext.NewObjects(ydbstreaming.ObservedObject("", "copy", ydbstreaming.Spec{Text: "SELECT 1;"})))}
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), &desired, held, catalog.ServerInfo{Dialect: "ydb", Capabilities: capability.YDB262().With(capability.StreamingQueries, true)}, nil, must.Must(builtin.New())))

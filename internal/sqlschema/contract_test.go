@@ -28,7 +28,14 @@ import (
 // Document a directory's reads share, and NewDocument that starts one, belong
 // to that read: they carry what the earlier files declared beyond the model.
 // OwnRowSecurity finishes that read, once every file is merged, by handing
-// PostgreSQL row-level security to its owner.
+// PostgreSQL row-level security to its owner. ReadLoad is the read of a
+// dialect whose documents an owner's grammar reads, every file of a load in
+// one call to the owner, and ReadsAsLoad says which dialects take it.
+//
+// ReadScript is the exception, and it is plugin debt: the YDB owner's grammar
+// reaches the YQL conversion through it, because that conversion still lives
+// here. A plugin could not reach it. It goes when the conversion moves into
+// the owner (stokaro/ptah#4140).
 //
 // The file list is discovered from git rather than written down, so a package
 // added later is covered by existing.
@@ -38,7 +45,7 @@ func TestPackageContract_OutsideCallersUseReadOnly(t *testing.T) {
 
 	used := referencedSymbolsOutsidePackage(c, root)
 
-	c.Assert(used, qt.DeepEquals, []string{"Document", "NewDocument", "Options", "OwnRowSecurity", "Read", "ReadOnto", "ReadWith"},
+	c.Assert(used, qt.DeepEquals, []string{"Document", "NewDocument", "Options", "OwnRowSecurity", "Read", "ReadLoad", "ReadOnto", "ReadScript", "ReadWith", "ReadsAsLoad"},
 		qt.Commentf("another package reached past Read into the conversion internals; "+
 			"either it wants SQL read into the model, which Read does, or it wants a "+
 			"conversion service, which this package deliberately is not"))

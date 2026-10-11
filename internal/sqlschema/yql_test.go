@@ -94,7 +94,7 @@ func TestReadYQLRefusals(t *testing.T) {
 
 func TestReadYQLSupportedFamilyCoverage(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read(nil, "ydb")
+	database, err := readYQL(c, "")
 	c.Assert(err, qt.IsNil)
 	for _, kind := range []coverage.Kind{coverage.Role, coverage.Grant, ydbschema.CoverageChangefeed, coverage.View, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)

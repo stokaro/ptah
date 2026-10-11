@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/ydbextensions"
 	"ptah.run/internal/ydblowering"
 	"ptah.run/internal/ydbsource"
+	"ptah.run/internal/ydbsql"
 )
 
 // bundled is the runtime the package-level helpers (RenderSQL,
@@ -139,6 +140,7 @@ func New() (*engine.Runtime, error) {
 			registerYDBIndexPartitioningServices(&provider, name)
 			provider.Annotations = append(provider.Annotations, ydbsource.Annotations())
 			provider.YAML = append(provider.YAML, ydbsource.YAML())
+			provider.SQL = append(provider.SQL, ydbsql.SQL())
 			// The YDB state a read records and does not describe, which a
 			// document's header may name.
 			provider.CoverageKinds = append(provider.CoverageKinds, ydbschema.CoverageKinds()...)

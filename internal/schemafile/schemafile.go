@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
@@ -24,7 +23,7 @@ import (
 	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/pathguard"
-	"ptah.run/internal/privilegefold"
+	"ptah.run/internal/schemamerge"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/ydburl"
@@ -558,31 +557,16 @@ const (
 // both surfaces, replayed rather than read, and saying so here keeps the two
 // spellings from disagreeing when this loader is reached directly.
 func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
-	if _, err := os.Stat(filepath.Join(dir, atlasSumFileName)); err == nil {
-		return nil, fmt.Errorf(
-			"%q is a migration directory (it contains %s), not a schema directory",
-			filepath.Base(dir), atlasSumFileName,
-		)
-	}
-	listing, err := listSchemaDir(dir)
+	names, format, err := schemaDirFiles(dir)
 	if err != nil {
 		return nil, err
 	}
-	sqlNames, hclNames, subdirNames := listing.sql, listing.hcl, listing.subdirs
-	if len(sqlNames) > 0 && len(hclNames) > 0 {
-		return nil, fmt.Errorf("ambiguous schema: both SQL and HCL files found: %q, %q", sqlNames[0], hclNames[0])
-	}
-	names := sqlNames
-	format := schemaDirFormatSQL
-	if len(names) == 0 {
-		names = hclNames
-		format = schemaDirFormatHCL
-	}
-	if len(names) == 0 {
-		return nil, fmt.Errorf("%q contains neither SQL nor HCL files", filepath.Base(dir))
-	}
-	if len(subdirNames) > 0 {
-		return nil, isDirectoryError(filepath.Join(dir, subdirNames[0]))
+	if format == schemaDirFormatSQL && readsAsLoad(opts) {
+		var script sqlScript
+		if err := script.addDir(dir, names); err != nil {
+			return nil, err
+		}
+		return script.read(opts)
 	}
 
 	merged := &schemamodel.Database{}
@@ -595,10 +579,10 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := ledger.admit(name, declaredObjects(db, format), guardedObjects(statements), tableStatements(statements)); err != nil {
+		if err := ledger.admit(name, fileDeclarations(name, db, statements, format)); err != nil {
 			return nil, err
 		}
-		if err := appendDatabase(merged, db); err != nil {
+		if err := schemamerge.Append(merged, db); err != nil {
 			return nil, err
 		}
 	}
@@ -612,6 +596,38 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	}
 	schemamodel.Finalize(merged)
 	return merged, nil
+}
+
+// schemaDirFiles returns the files of a schema directory in the order they are
+// read, and their format, refusing a directory [loadSchemaDir] does not read.
+func schemaDirFiles(dir string) ([]string, schemaDirFormat, error) {
+	if _, err := os.Stat(filepath.Join(dir, atlasSumFileName)); err == nil {
+		return nil, 0, fmt.Errorf(
+			"%q is a migration directory (it contains %s), not a schema directory",
+			filepath.Base(dir), atlasSumFileName,
+		)
+	}
+	listing, err := listSchemaDir(dir)
+	if err != nil {
+		return nil, 0, err
+	}
+	sqlNames, hclNames, subdirNames := listing.sql, listing.hcl, listing.subdirs
+	if len(sqlNames) > 0 && len(hclNames) > 0 {
+		return nil, 0, fmt.Errorf("ambiguous schema: both SQL and HCL files found: %q, %q", sqlNames[0], hclNames[0])
+	}
+	names := sqlNames
+	format := schemaDirFormatSQL
+	if len(names) == 0 {
+		names = hclNames
+		format = schemaDirFormatHCL
+	}
+	if len(names) == 0 {
+		return nil, 0, fmt.Errorf("%q contains neither SQL nor HCL files", filepath.Base(dir))
+	}
+	if len(subdirNames) > 0 {
+		return nil, 0, isDirectoryError(filepath.Join(dir, subdirNames[0]))
+	}
+	return names, format, nil
 }
 
 // schemaDirListing is a schema directory's entries, split the way
@@ -719,6 +735,9 @@ func LoadSources(sources []Source, opts Options) (*schemamodel.Database, error) 
 	}
 
 	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
+		if readsAsLoad(opts) {
+			return loadSourcesAsLoad(sources, opts)
+		}
 		merged := &schemamodel.Database{}
 		document := sqlschema.NewDocument(merged)
 		for _, source := range sources {
@@ -754,7 +773,7 @@ func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, d
 	if err != nil {
 		return err
 	}
-	return appendDatabase(merged, db)
+	return schemamerge.Append(merged, db)
 }
 
 // apply narrows opts to this source's variable scope. An unscoped source keeps
@@ -817,12 +836,18 @@ func loadSQLFileWithStatements(
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
 	}
+	return readSQLFile(path, data, opts, earlier)
+}
 
-	if platform.NormalizeDialect(opts.Dialect) == platform.YDB && opts.DatabaseURL != "" {
-		root, parseErr := YDBSourceRoot(opts.DatabaseURL)
-		if parseErr != nil {
-			return nil, nil, fmt.Errorf("YDB source context requires a valid YDB database or Docker dev URL")
-		}
+// readSQLFile is [loadSQLFileWithStatements] over the file's text, data.
+func readSQLFile(
+	path string, data []byte, opts Options, earlier *sqlschema.Document,
+) (*schemamodel.Database, *ast.StatementList, error) {
+	root, err := sourceDatabasePath(opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	if root != "" {
 		if earlier == nil {
 			earlier = sqlschema.NewDocument(nil)
 		}
@@ -838,76 +863,18 @@ func loadSQLFileWithStatements(
 	return &db, statements, nil
 }
 
-// appendDatabase merges one parsed file into the description being built from
-// all of them.
-//
-// EVERY object family of [schemamodel.Database] belongs here. Two did not, and the
-// consequence was not a compile error: `ptah schema apply --to file://x.hcl`
-// silently ignored every declared SQL Server synonym and extended property and
-// reported `Schema is synced, no changes to be made`, while the same file
-// through [Load] planned all of them. Nothing else could see it, because
-// [Load] returns the parsed database directly and every unit test goes that way
-// (stokaro/ptah#1999).
-//
-// [TestAppendDatabase_MergesEveryObjectFamily] is what keeps the next family
-// from being missed the same way: it reflects over the struct rather than
-// trusting this list.
-func appendDatabase(dst, src *schemamodel.Database) error {
-	objects, err := dst.FeatureObjects.Merge(src.FeatureObjects)
+// sourceDatabasePath returns the database root a YDB document's absolute paths
+// are read against: the one opts.DatabaseURL names, or empty without one or
+// for another dialect.
+func sourceDatabasePath(opts Options) (string, error) {
+	if platform.NormalizeDialect(opts.Dialect) != platform.YDB || opts.DatabaseURL == "" {
+		return "", nil
+	}
+	root, err := YDBSourceRoot(opts.DatabaseURL)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("YDB source context requires a valid YDB database or Docker dev URL")
 	}
-	facets, err := dst.Facets.Merge(src.Facets)
-	if err != nil {
-		return err
-	}
-	// This private destination starts as a fresh file accumulator. Capture a
-	// direction even for an unknown first source so a later known source can
-	// never reinterpret that first source as an empty accumulator.
-	sourceCoverage := src.FeatureCoverage
-	if sourceCoverage.Representation() == "" {
-		sourceCoverage, err = schemaext.NewCoverage(schemaext.Desired, nil, nil)
-		if err != nil {
-			return err
-		}
-	}
-	mergedCoverage := sourceCoverage
-	if dst.FeatureCoverage.Representation() != "" {
-		mergedCoverage, err = dst.FeatureCoverage.Merge(sourceCoverage)
-		if err != nil {
-			return err
-		}
-	}
-	dst.FeatureObjects, dst.Facets, dst.FeatureCoverage = objects, facets, mergedCoverage
-	dst.Schemas = append(dst.Schemas, src.Schemas...)
-	dst.Tables = append(dst.Tables, src.Tables...)
-	dst.Fields = append(dst.Fields, src.Fields...)
-	dst.Indexes = append(dst.Indexes, src.Indexes...)
-	dst.Constraints = append(dst.Constraints, src.Constraints...)
-	dst.Enums = append(dst.Enums, src.Enums...)
-	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedFields...)
-	dst.Extensions = append(dst.Extensions, src.Extensions...)
-	dst.Sequences = append(dst.Sequences, src.Sequences...)
-	dst.Domains = append(dst.Domains, src.Domains...)
-	dst.CompositeTypes = append(dst.CompositeTypes, src.CompositeTypes...)
-	dst.Ranges = append(dst.Ranges, src.Ranges...)
-	dst.Functions = append(dst.Functions, src.Functions...)
-	dst.Views = append(dst.Views, src.Views...)
-	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
-	dst.Triggers = append(dst.Triggers, src.Triggers...)
-	dst.RLSPolicies = append(dst.RLSPolicies, src.RLSPolicies...)
-	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
-	dst.Roles = append(dst.Roles, src.Roles...)
-	// Grants and revoked grants compose in file order: a later file's REVOKE
-	// takes back an earlier file's GRANT, as it would in one file.
-	privilegefold.Merge(dst, src)
-	dst.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(dst.DefaultPrivileges, src.DefaultPrivileges)
-	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
-	// Several files loaded together are one description, and it describes only
-	// what all of them together describe. Union, never intersection: a limit
-	// one file declares is a limit of the whole (stokaro/ptah#1276).
-	dst.NotDescribed = dst.NotDescribed.Merge(src.NotDescribed)
-	return nil
+	return root, nil
 }
 
 // ignoredNameReporter turns the writer into the callback the HCL parser takes,

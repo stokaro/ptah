@@ -23,7 +23,7 @@ func applyYQLComment(database, base *schemamodel.Database, text string) error {
 	}
 	target := yqlCommentTarget(databases, query.Statement)
 	if target == nil {
-		return fmt.Errorf("%w: COMMENT ON %s %s names an object this schema does not declare", ErrUnmodeledStatement, query.Object.Keyword(), query.Path)
+		return undeclared(fmt.Errorf("%w: COMMENT ON %s %s names an object this schema does not declare", ErrUnmodeledStatement, query.Object.Keyword(), query.Path))
 	}
 	*target = query.Comment
 	return nil

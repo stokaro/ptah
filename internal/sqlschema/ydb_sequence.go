@@ -26,7 +26,7 @@ func alterYDBSequence(database *schemamodel.Database, document *Document, node *
 	}
 	field := declaredYDBSequence(database, document, relative)
 	if field == nil {
-		return fmt.Errorf("%w: ALTER SEQUENCE must name the sequence of a Serial column declared earlier in this desired schema", ErrUnmodeledStatement)
+		return undeclared(fmt.Errorf("%w: ALTER SEQUENCE must name the sequence of a Serial column declared earlier in this desired schema", ErrUnmodeledStatement))
 	}
 	start, increment := field.IdentityStart, field.IdentityIncrement
 	if node.Start != nil {

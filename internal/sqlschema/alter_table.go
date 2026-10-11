@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlcheck"
 	"ptah.run/internal/mysqlname"
@@ -139,9 +140,25 @@ func findAlterTarget(database, base *schemamodel.Database, written, sourcePlatfo
 }
 
 func undeclaredTableError(written, clause string) error {
-	return fmt.Errorf("%w: ALTER TABLE %s %s names a table this schema does not declare",
-		ErrUnmodeledStatement, written, clause)
+	return undeclared(fmt.Errorf("%w: ALTER TABLE %s %s names a table this schema does not declare",
+		ErrUnmodeledStatement, written, clause))
 }
+
+// undeclared marks err, the refusal of a statement that changes an object the
+// document and what was read before it do not declare, as
+// [sqlext.ErrUndeclared], keeping its text.
+func undeclared(err error) error {
+	return undeclaredError{err: err}
+}
+
+// undeclaredError is a refusal [undeclared] marked.
+type undeclaredError struct {
+	err error
+}
+
+func (e undeclaredError) Error() string { return e.err.Error() }
+
+func (e undeclaredError) Unwrap() []error { return []error{e.err, sqlext.ErrUndeclared} }
 
 // field returns the table's column that name reaches, or nil. See
 // [resolveColumn].

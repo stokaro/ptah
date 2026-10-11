@@ -18,7 +18,7 @@ func TestReadYQLExternalObjects(t *testing.T) {
 	source := "CREATE EXTERNAL DATA SOURCE `a.b` WITH (SOURCE_TYPE = @@ObjectStorage@@, LOCATION = 'https://storage.invalid/root/', AUTH_METHOD = \"NONE\");" +
 		"CREATE EXTERNAL DATA SOURCE `a/b` WITH (SOURCE_TYPE = 'PostgreSQL', LOCATION = 'pg.invalid:5432', AUTH_METHOD = 'BASIC', DATABASE_NAME = 'app', LOGIN = 'reader', PASSWORD_SECRET_PATH = 'secrets/password');" +
 		"CREATE EXTERNAL TABLE `a/t` (id Int64 NOT NULL, amount Decimal(22,9), body Utf8) WITH (DATA_SOURCE = 'a.b', LOCATION = '2026/', FORMAT = 'csv_with_names', CSV_DELIMITER = ';', PARTITIONED_BY = '[\"id\"]');"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	objects, err := database.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)

@@ -18,6 +18,7 @@ import (
 	"errors"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 )
 
@@ -26,6 +27,13 @@ import (
 // is refused rather than read as a decision to leave an owner's syntax
 // unread.
 var ErrUnselected = errors.New("no SQL schema owners were selected")
+
+// ErrUndeclared marks the refusal of a statement that changes an object no
+// document of its load declares, such as an ALTER TABLE of a table nobody
+// created. A reader that loaded sources in another format beside the load
+// tests for it to say that the object may be theirs, which no document of the
+// load can change. The refusal keeps its own text.
+var ErrUndeclared = errors.New("the statement changes an object its load does not declare")
 
 // Site is the place in a shared statement where an owner's syntax may stand.
 // Each site says where a span that opens there ends at the latest; a
@@ -147,11 +155,21 @@ type Extension struct {
 	// Parser reads the spans the patterns claim. It is required with
 	// Patterns.
 	Parser Parser
+	// Grammar reads the whole of every document of Targets, which are then
+	// not written in the shared grammar. It excludes Patterns, and one
+	// target takes one grammar.
+	Grammar Grammar
+	// Header are the kinds a document's `ptah:not-described` header may
+	// name that the owner reads as limits on its own claim, rather than as
+	// the common coverage vocabulary, such as a YDB topic the document
+	// leaves unmanaged.
+	Header []coverage.Kind
 	// Coverage is the knowledge a document of one of Targets holds about the
 	// owner's models, such as the refresh schedule a ClickHouse materialized
-	// view states in its CREATE statement. It is optional; without it the
-	// owner claims nothing.
-	Coverage func() (schemaext.Coverage, error)
+	// view states in its CREATE statement. It is handed the entries of the
+	// document's header whose kind is one of Header. It is optional; without
+	// it the owner claims nothing.
+	Coverage func(limits []coverage.Object) (schemaext.Coverage, error)
 }
 
 // Runtime supplies the SQL extensions of one explicit provider selection, so

@@ -108,7 +108,7 @@ func TestGoSecretLimits_RefuseAnAbsolutePath(t *testing.T) {
 // secret's path, as the Go annotation reads it.
 func TestYQLSecretLimitsReadThePath(t *testing.T) {
 	c := qt.New(t)
-	db, _, err := sqlschema.Read([]byte("-- ptah:not-described secret \"pg.pw\"\nCREATE SECRET `other` WITH (value = $PTAH_SECRET_OTHER);\n"), "ydb")
+	db, _, err := sqlschema.ReadWith(c.Context(), []byte("-- ptah:not-described secret \"pg.pw\"\nCREATE SECRET `other` WITH (value = $PTAH_SECRET_OTHER);\n"), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("pg", "pw")).State, qt.Equals, schemaext.Complete)
@@ -116,10 +116,10 @@ func TestYQLSecretLimitsReadThePath(t *testing.T) {
 
 func TestSQLHeaderWorkloadLimitsRemainScoped(t *testing.T) {
 	c := qt.New(t)
-	db, _, err := sqlschema.Read([]byte(`-- ptah:not-described resource_pool "batch.jobs"
+	db, _, err := sqlschema.ReadWith(c.Context(), []byte(`-- ptah:not-described resource_pool "batch.jobs"
 -- ptah:not-described resource_pool_classifier
 CREATE RESOURCE POOL other WITH (CONCURRENT_QUERY_LIMIT = 0);
-`), "ydb")
+`), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(db.NotDescribed.IsZero(), qt.IsTrue)

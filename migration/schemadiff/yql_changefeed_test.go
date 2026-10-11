@@ -27,7 +27,7 @@ func TestCompare_YQLChangefeedsDeclaredAndOmitted(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
+			desired, _, err := sqlschema.ReadWith(c.Context(), []byte(test.source), "ydb", nil, yqlOwners())
 			c.Assert(err, qt.IsNil)
 			held := changefeedCatalog(ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker"}}})
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
