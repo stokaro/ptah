@@ -102,9 +102,9 @@ func (r *Runtime) scopeOffTarget(target string, objects schemaext.Objects) (offT
 			continue
 		}
 		if policy.Action == schemaext.OffTargetRefuse || selected.refusesSkips {
-			name := schemaext.DisplayName(ref)
+			name := ref.Path()
 			return offTargetScope{refusal: &schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string(kind),
-				Object: name, Feature: policy.Label, Message: fmt.Sprintf("%s %q cannot be planned on %s; scope its declaration to the "+
+				Object: name, Feature: policy.Label, Message: fmt.Sprintf("%s %s cannot be planned on %s; scope its declaration to the "+
 					`targets that host it, as dialects=%q does in a Go annotation`, policy.Label, name, selected.name,
 					strings.Join(r.hosts(kind), ","))}}, nil
 		}

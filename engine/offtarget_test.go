@@ -58,7 +58,7 @@ func TestScopeOffTarget_HappyPath(t *testing.T) {
 	c.Assert(elsewhere.Refs(), qt.DeepEquals, []objectidentity.ID{comparedRef(conversionSecond, "second")})
 	c.Assert(skipped, qt.DeepEquals, []schemaext.SkippedObject{{Subject: comparedRef(conversionFirst, "first"), Label: "first model",
 		Target: "elsewhere"}})
-	c.Assert(skipped[0].Note(), qt.Equals, `first model "orders.first" is not supported by this target; skipped.`)
+	c.Assert(skipped[0].Note(), qt.Equals, `first model public.orders.first is not supported by this target; skipped.`)
 	c.Assert(served.Equal(objects), qt.IsTrue)
 	c.Assert(none, qt.HasLen, 0)
 	c.Assert(objects.Len(), qt.Equals, 2)
@@ -74,10 +74,10 @@ func TestScopeOffTarget_FailurePath(t *testing.T) {
 		want   string
 	}{
 		{name: "an owner that refuses", policy: refuseFirst, target: "elsewhere", is: ptaherr.ErrUnsupportedFeature,
-			want: `unsupported feature: first model "orders.first" cannot be planned on elsewhere; scope its declaration to the targets ` +
+			want: `unsupported feature: first model public.orders.first cannot be planned on elsewhere; scope its declaration to the targets ` +
 				`that host it, as dialects="custom" does in a Go annotation`},
 		{name: "a target that refuses skips", policy: skipFirst, target: "strict", is: ptaherr.ErrUnsupportedFeature,
-			want: `unsupported feature: first model "orders.first" cannot be planned on strict; .*`},
+			want: `unsupported feature: first model public.orders.first cannot be planned on strict; .*`},
 		{name: "an unknown target", policy: skipFirst, target: "unknown", is: ptaherr.ErrUnsupportedDialect, want: `.*"unknown"`},
 	}
 	for _, test := range tests {
@@ -164,10 +164,10 @@ func TestRenderSchema_WritesASkippedObject(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(received.Schema.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{comparedRef(conversionSecond, "second")})
-	c.Assert(result.Statements, qt.DeepEquals, []string{`-- ELSEWHERE: first model "orders.first" is not supported by this target; skipped.`,
+	c.Assert(result.Statements, qt.DeepEquals, []string{`-- ELSEWHERE: first model public.orders.first is not supported by this target; skipped.`,
 		"CREATE TABLE t ();"})
 	c.Assert(result.Omissions, qt.DeepEquals, []renderer.Omission{{Dialect: "elsewhere", Reason: "unsupported", Kind: "first model",
-		Name: "orders.first"}})
+		Name: "public.orders.first"}})
 }
 
 // TestRenderSchema_RefusesARefusedObject pins the render's refusal: a
@@ -183,7 +183,7 @@ func TestRenderSchema_RefusesARefusedObject(t *testing.T) {
 
 	c.Assert(err, qt.ErrorAs, new(*renderer.SchemaRefusalError))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*first model "orders.first" cannot be planned on elsewhere; .* as dialects="custom" does in a Go annotation`)
+	c.Assert(err, qt.ErrorMatches, `.*first model public.orders.first cannot be planned on elsewhere; .* as dialects="custom" does in a Go annotation`)
 	c.Assert(result.Statements, qt.IsNil)
 	c.Assert(received.Schema, qt.IsNil)
 }

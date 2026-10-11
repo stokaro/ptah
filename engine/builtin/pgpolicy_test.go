@@ -124,7 +124,7 @@ func TestSpannerRefusesRowSecurity(t *testing.T) {
 		database *schemamodel.Database
 		want     string
 	}{
-		{name: "a policy", database: policyOnly, want: `PostgreSQL policy "orders.newest" cannot be planned on spanner; ` +
+		{name: "a policy", database: policyOnly, want: `PostgreSQL policy public.orders.newest cannot be planned on spanner; ` +
 			`scope its declaration to the targets that host it, as dialects="cockroachdb,postgres,yugabytedb" does in a Go annotation`},
 		{name: "the switches", database: switchesOnly, want: `unsupported feature: PostgreSQL row-level security on table "orders" cannot be planned on spanner; .*`},
 	}

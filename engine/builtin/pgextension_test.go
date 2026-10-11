@@ -121,7 +121,7 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 		{name: "a schema on Spanner", target: platform.Spanner,
 			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "YDB", target: platform.YDB, want: `PostgreSQL extension "pg_trgm" cannot be planned on ydb; scope its declaration to the ` +
+		{name: "YDB", target: platform.YDB, want: `PostgreSQL extension pg_trgm cannot be planned on ydb; scope its declaration to the ` +
 			`targets that host it, as dialects="cockroachdb,postgres,spanner,yugabytedb" does in a Go annotation`},
 	}
 	for _, test := range tests {
@@ -151,7 +151,7 @@ func TestDeclaredExtensionRefusalsFailValidation(t *testing.T) {
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 		{name: "a schema on Spanner", target: platform.Spanner,
 			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "YDB", target: platform.YDB, want: `(?s).*PostgreSQL extension "pg_trgm" cannot be planned on ydb.*`},
+		{name: "YDB", target: platform.YDB, want: `(?s).*PostgreSQL extension pg_trgm cannot be planned on ydb.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestOffFamilyTargetsSkipADeclaredExtension(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())
 			declared := docsWithTrigrams(pgextension.DesiredExtension{})
-			skipped := "-- " + strings.ToUpper(target) + `: PostgreSQL extension "pg_trgm" is not supported by this target; skipped.`
+			skipped := "-- " + strings.ToUpper(target) + `: PostgreSQL extension pg_trgm is not supported by this target; skipped.`
 
 			rendered, err := builtin.GetOrderedCreateStatements(declared, target)
 			c.Assert(err, qt.IsNil)

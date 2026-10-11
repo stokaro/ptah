@@ -1243,7 +1243,7 @@ outside the PostgreSQL family leaves it out and says so in one line, in a
 render, in a plan and beside a `schema apply` result:
 
 ```sql
--- MYSQL: PostgreSQL extension "pgcrypto" is not supported by this target; skipped.
+-- MYSQL: PostgreSQL extension pgcrypto is not supported by this target; skipped.
 ```
 
 YDB refuses the declaration instead, because a skipped object would let an

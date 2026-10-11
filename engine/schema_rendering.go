@@ -56,7 +56,7 @@ func withSkipped(result renderer.SchemaResult, skipped []schemaext.SkippedObject
 	for _, object := range skipped {
 		statements = append(statements, SkippedComment(object))
 		omissions = append(omissions, renderer.Omission{Dialect: object.Target, Reason: "unsupported", Kind: object.Label,
-			Name: schemaext.DisplayName(object.Subject)})
+			Name: object.Subject.Path()})
 	}
 	result.Statements = append(statements, result.Statements...)
 	result.Omissions = append(omissions, result.Omissions...)
