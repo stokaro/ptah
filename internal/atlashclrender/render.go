@@ -1016,7 +1016,7 @@ func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamode
 	if len(table.PrimaryKeyInclude) > 0 {
 		r.rawAttr(2, "include", columnRefs(table.PrimaryKeyInclude))
 	}
-	if table.PrimaryKeyBlockSize != 0 || table.PrimaryKeyComment != "" {
+	if size, _, _ := mysqlschema.IndexBlockSize(table.PrimaryKeyFacets); size != 0 || table.PrimaryKeyComment != "" {
 		r.warn("tables["+strconv.Quote(table.Name)+"].primary_key", "the primary key COMMENT and KEY_BLOCK_SIZE options cannot be represented in HCL schema output")
 	}
 	renderPrimaryKeyMethod(r, table.PrimaryKeyMethod)
@@ -1112,7 +1112,7 @@ func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool
 }
 
 func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
-	if constraint.KeyBlockSize != 0 {
+	if size, _, _ := mysqlschema.IndexBlockSize(constraint.Facets); size != 0 {
 		r.warn("constraints["+strconv.Quote(constraint.Name)+"]", "the primary key KEY_BLOCK_SIZE option cannot be represented in HCL schema output")
 	}
 	r.linef(`  constraint %s {`, quote(constraint.Name))

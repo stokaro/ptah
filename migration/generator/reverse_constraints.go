@@ -184,7 +184,9 @@ func priorConstraintAddition(removed difftypes.ConstraintRemovalInfo, current ca
 		Name: removed.Name, TableName: removed.TableName,
 		Identity: constraintscope.Identity(semantics, removed.TableName, removed.Name),
 		Type:     removed.Type, Columns: slices.Clone(columns),
-		KeyBlockSize: current.KeyBlockSize, IncludeColumns: slices.Clone(current.IncludeColumns),
+		// The settings owners keep on the constraint are restored as read,
+		// as a rollback restores a column's.
+		Facets: current.Facets, IncludeColumns: slices.Clone(current.IncludeColumns),
 		NullsDistinct: cloneBoolPtr(current.NullsDistinct),
 		Deferrable:    current.Deferrable, Initially: current.Initially,
 		Comment: current.Comment, NotEnforced: current.NotEnforced, NotValid: current.NotValid,

@@ -31,7 +31,6 @@ type unnamedDefinition struct {
 	columns        []string
 	check          string
 	usingMethod    string
-	keyBlockSize   uint64
 	excludes       string
 	where          string
 	foreignTable   string
@@ -48,7 +47,6 @@ func unnamedDeclaredDefinition(constraint schemamodel.Constraint) unnamedDefinit
 		columns:        constraint.Columns,
 		check:          constraint.CheckExpression,
 		usingMethod:    constraint.UsingMethod,
-		keyBlockSize:   constraint.KeyBlockSize,
 		excludes:       constraint.ExcludeElements,
 		where:          constraint.WhereCondition,
 		foreignTable:   constraint.ForeignTable,
@@ -65,7 +63,6 @@ func unnamedCatalogDefinition(constraint catalog.Constraint) unnamedDefinition {
 		columns:        constraint.ColumnNamesOrDefault(),
 		check:          getStringValue(constraint.CheckClause),
 		usingMethod:    getStringValue(constraint.UsingMethod),
-		keyBlockSize:   constraint.KeyBlockSize,
 		excludes:       getStringValue(constraint.ExcludeElements),
 		where:          getStringValue(constraint.WhereCondition),
 		foreignTable:   getStringValue(constraint.ForeignTable),
@@ -94,7 +91,6 @@ func (d unnamedDefinition) member(semantics identifier.Semantics) string {
 		foldNames(d.columns, semantics),
 		normalizeCheckExpression(d.check),
 		strings.ToLower(strings.TrimSpace(d.usingMethod)),
-		strconv.FormatUint(d.keyBlockSize, 10),
 		strings.Join(strings.Fields(d.excludes), " "),
 		normalizeCheckExpression(d.where),
 		semantics.IndexIdentityKey(foreignTable),

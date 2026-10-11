@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlcheck"
@@ -775,7 +776,7 @@ func (t alterTarget) clearPrimaryKey() {
 	t.table.PrimaryKeyDeferrable, t.table.PrimaryKeyInitially = false, ""
 	t.table.PrimaryKeyMethod = ""
 	t.table.PrimaryKeyComment = ""
-	t.table.PrimaryKeyBlockSize = 0
+	t.table.PrimaryKeyFacets = schemaext.Facets{}
 	for _, database := range t.databases {
 		for i := range database.Fields {
 			if database.Fields[i].StructName == t.structName {

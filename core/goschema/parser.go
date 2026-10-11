@@ -398,12 +398,15 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	); err != nil {
 		return err
 	}
-	size, err := s.unsignedAttribute(kv, comment, structName, "constraint", "key_block_size")
+	// The attributes owners add to the directive, such as the MySQL
+	// block-size hint of a primary key, are read by their owners into
+	// settings of the constraint.
+	facets, err := s.annotations.DecodeAttributes("ptah:schema:constraint", kv)
 	if err != nil {
-		return err
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
 	}
 	constraint := parseConstraintComment(s.kv, comment, structName)
-	constraint.KeyBlockSize = size
+	constraint.Facets = facets
 	s.schemaConstraints = append(s.schemaConstraints, constraint)
 	return nil
 }
@@ -581,32 +584,42 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	); err != nil {
 		return err
 	}
-	size, err := s.unsignedAttribute(kv, comment, structName, "table", "primary_key_block_size")
-	if err != nil {
-		return err
-	}
 	// The attributes owners add to the directive, such as a YDB table's
-	// partitioning, are read by their owners into settings of the table.
+	// partitioning, are read by their owners into settings of the table, and
+	// those of its primary key, such as the MySQL block-size hint, into
+	// settings of the key.
+	ctx := s.annotationContext(comment, "//ptah:schema:table", structName)
 	facets, err := s.annotations.DecodeAttributes("ptah:schema:table", kv)
 	if err != nil {
-		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:table", structName), err)
+		return ownerAttributeError(ctx, err)
+	}
+	keyFacets, err := s.annotations.DecodePrimaryKeyAttributes("ptah:schema:table", kv)
+	if err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	primaryKey := splitCSVAttribute(kv["primary_key"])
+	if !keyFacets.IsZero() && len(primaryKey) == 0 {
+		// A setting of the key needs the key written where it can hang:
+		// a field's `primary` renders as a column's PRIMARY KEY, which has
+		// no place for one.
+		return ownerAttributeError(ctx, errors.New("a setting of the primary key needs the key declared with primary_key"))
 	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
-		StructName:          structName,
-		Name:                tableName,
-		APIName:             kv["api_name"],
-		APINames:            targetNames(kv),
-		Schema:              schemaName,
-		Engine:              kv["engine"],
-		Comment:             kv["comment"],
-		PrimaryKey:          splitCSVAttribute(kv["primary_key"]),
-		PrimaryKeyComment:   kv["primary_key_comment"],
-		PrimaryKeyBlockSize: size,
-		Checks:              splitCSVAttribute(kv["checks"]),
-		DependsOn:           splitDependsOn(kv["depends_on"]),
-		CustomSQL:           kv["custom"],
-		Facets:              facets,
-		Overrides:           parseutils.ParsePlatformSpecific(kv),
+		StructName:        structName,
+		Name:              tableName,
+		APIName:           kv["api_name"],
+		APINames:          targetNames(kv),
+		Schema:            schemaName,
+		Engine:            kv["engine"],
+		Comment:           kv["comment"],
+		PrimaryKey:        primaryKey,
+		PrimaryKeyComment: kv["primary_key_comment"],
+		PrimaryKeyFacets:  keyFacets,
+		Checks:            splitCSVAttribute(kv["checks"]),
+		DependsOn:         splitDependsOn(kv["depends_on"]),
+		CustomSQL:         kv["custom"],
+		Facets:            facets,
+		Overrides:         parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
 }
@@ -2222,21 +2235,4 @@ func splitRoutineSettings(value string) []string {
 		return nil
 	}
 	return strings.Split(value, ";")
-}
-
-// unsignedAttribute refuses a malformed hint before it can become the default.
-func (s *schemaParseState) unsignedAttribute(kv map[string]string, comment *ast.Comment, structName, kind, attribute string) (uint64, error) {
-	value, present := kv[attribute]
-	if !present {
-		return 0, nil
-	}
-	size, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return 0, &ptaherr.ParseError{
-			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:"+kind, structName).line,
-			Directive: "ptah:schema:" + kind, Attribute: attribute, Err: ptaherr.ErrInvalidAttributeValue,
-			Message: fmt.Sprintf("invalid %s %q on //ptah:schema:%s at %s (must be a non-negative integer)", attribute, value, kind, structName),
-		}
-	}
-	return size, nil
 }

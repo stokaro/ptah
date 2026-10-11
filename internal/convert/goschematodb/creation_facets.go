@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
@@ -21,7 +22,9 @@ func creationFacetSlots(db *schemamodel.Database, semantics identifier.Semantics
 	slots := make([]creationFacetSlot, 0, len(db.Tables)+len(db.Indexes))
 	for i := range db.Tables {
 		table := &db.Tables[i]
-		slots = append(slots, creationFacetSlot{builder.TableParts(table.Schema, table.Name), &table.Facets})
+		subject := builder.TableParts(table.Schema, table.Name)
+		slots = append(slots, creationFacetSlot{subject, &table.Facets},
+			creationFacetSlot{objectidentity.PrimaryKeyOf(subject), schemacapture.DatabasePrimaryKeyFacets(db, table)})
 	}
 	owners := schemamodel.ResolveIndexOwners(db.Indexes, db.Tables, db.MaterializedViews)
 	for i := range db.Indexes {

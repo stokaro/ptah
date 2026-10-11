@@ -3,6 +3,7 @@ package goschematogo
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
@@ -232,48 +233,89 @@ func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, erro
 
 // refuseUnwrittenFacets refuses a facet no annotation writes, so it cannot
 // disappear from a successful export: a table facet with an annotation of its
-// own, a YDB vector index's settings, which the index annotation writes, and
-// a materialized view's refresh schedule, its `refresh` attribute, are the
-// ones written. Render has refused any other view setting already.
+// own, a YDB vector index's settings, which the index annotation writes, a
+// primary key's MySQL block-size hint, which the directive declaring the key
+// writes, and a materialized view's refresh schedule, its `refresh`
+// attribute, are the ones written. Render has refused any other view setting
+// already.
 func (ctx *renderContext) refuseUnwrittenFacets() error {
-	tables := make(map[*schemaext.Facets]bool, len(ctx.db.Tables))
-	for i := range ctx.db.Tables {
-		tables[&ctx.db.Tables[i].Facets] = true
-	}
-	indexes := make(map[*schemaext.Facets]bool, len(ctx.db.Indexes))
-	for i := range ctx.db.Indexes {
-		indexes[&ctx.db.Indexes[i].Facets] = true
-	}
-	views := make(map[*schemaext.Facets]bool, len(ctx.db.MaterializedViews))
-	for i := range ctx.db.MaterializedViews {
-		views[&ctx.db.MaterializedViews[i].Facets] = true
-	}
-	columns := make(map[*schemaext.Facets]bool, len(ctx.db.Fields))
-	for i := range ctx.db.Fields {
-		columns[&ctx.db.Fields[i].Facets] = true
-	}
+	writers := ctx.facetWriters()
 	for _, facets := range ctx.db.FacetSlots() {
-		if views[facets] {
+		writer, written := writers[facets]
+		if written && writer == nil {
 			continue
 		}
 		for _, kind := range facets.DeclaredKinds() {
-			active := slices.Contains(facets.Kinds(), kind)
-			switch {
-			case tables[facets] && isAnnotatedFacet(kind) && active:
-			case indexes[facets] && isAnnotatedIndexFacet(kind) && active:
-				if err := validateAnnotatedIndexFacets(*facets); err != nil {
-					return err
-				}
-			case columns[facets] && isAnnotatedColumnFacet(kind) && active:
-				if _, _, err := mysqlschema.Settings(*facets); err != nil {
-					return err
-				}
-			default:
+			writes := writer != nil && slices.Contains(facets.Kinds(), kind) && writer.accepts(kind)
+			if !writes {
 				return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, kind)
+			}
+			if writer.validate == nil {
+				continue
+			}
+			if err := writer.validate(*facets); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+// facetWriter is what writes the facets of one slot: the kinds it accepts,
+// and the check of the values it writes, nil for none.
+type facetWriter struct {
+	accepts  func(schemaext.Kind) bool
+	validate func(schemaext.Facets) error
+}
+
+// facetWriters addresses the writer of each slot an annotation writes. A
+// materialized view's slot maps to nil: render has refused any setting of a
+// view the export does not write.
+func (ctx *renderContext) facetWriters() map[*schemaext.Facets]*facetWriter {
+	writers := make(map[*schemaext.Facets]*facetWriter)
+	table := &facetWriter{accepts: isAnnotatedFacet}
+	for i := range ctx.db.Tables {
+		writers[&ctx.db.Tables[i].Facets] = table
+	}
+	index := &facetWriter{accepts: isAnnotatedIndexFacet, validate: validateAnnotatedIndexFacets}
+	for i := range ctx.db.Indexes {
+		writers[&ctx.db.Indexes[i].Facets] = index
+	}
+	for i := range ctx.db.MaterializedViews {
+		writers[&ctx.db.MaterializedViews[i].Facets] = nil
+	}
+	column := &facetWriter{accepts: isAnnotatedColumnFacet, validate: func(facets schemaext.Facets) error {
+		_, _, err := mysqlschema.Settings(facets)
+		return err
+	}}
+	for i := range ctx.db.Fields {
+		writers[&ctx.db.Fields[i].Facets] = column
+	}
+	key := &facetWriter{accepts: func(kind schemaext.Kind) bool { return kind == mysqlschema.IndexBlockSizeKind },
+		validate: func(facets schemaext.Facets) error {
+			_, _, err := mysqlschema.IndexBlockSize(facets)
+			return err
+		}}
+	for slot := range keyFacetSlots(ctx.db) {
+		writers[slot] = key
+	}
+	return writers
+}
+
+// keyFacetSlots addresses the settings of every primary key: a key's
+// block-size hint is written as an attribute of the directive that declares
+// the key, the table's or a PRIMARY KEY constraint's.
+func keyFacetSlots(db *schemamodel.Database) map[*schemaext.Facets]bool {
+	keys := make(map[*schemaext.Facets]bool, len(db.Tables))
+	for i := range db.Tables {
+		keys[&db.Tables[i].PrimaryKeyFacets] = true
+	}
+	for i := range db.Constraints {
+		if strings.EqualFold(strings.TrimSpace(db.Constraints[i].Type), "PRIMARY KEY") {
+			keys[&db.Constraints[i].Facets] = true
+		}
+	}
+	return keys
 }
 
 // validateAnnotatedIndexFacets checks the index values the export writes as

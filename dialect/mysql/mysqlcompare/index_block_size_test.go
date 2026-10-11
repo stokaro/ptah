@@ -136,7 +136,7 @@ func TestIndexBlockSizeService_FailurePath(t *testing.T) {
 		{name: "another kind", edit: func(r *schemaext.FacetComparisonRequest) { r.Kinds = []schemaext.Kind{mysqlschema.IndexKind} },
 			wantIs: schemaext.ErrInvalidValue, wantErr: `.*unsupported MySQL index block size comparison kinds`},
 		{name: "a table owner", edit: func(r *schemaext.FacetComparisonRequest) { r.Owners[0].Subject = table },
-			wantIs: schemaext.ErrInvalidValue, wantErr: `.*a MySQL index block size attaches to a table's index.*`},
+			wantIs: schemaext.ErrInvalidValue, wantErr: `.*a MySQL index block size attaches to a table's index or primary key, not table orders`},
 		{name: "a hint above the limit", edit: func(r *schemaext.FacetComparisonRequest) {
 			r.Desired.Records[0].Values = must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 4294967296}))
 		}, wantIs: schemaext.ErrInvalidValue, wantErr: `.*exceeds the mysql limit.*`},
@@ -154,4 +154,20 @@ func TestIndexBlockSizeService_FailurePath(t *testing.T) {
 			c.Assert(result.Complete, qt.IsFalse)
 		})
 	}
+}
+
+// A table's primary key holds a hint as an index does, and is compared the
+// same way under its own identity.
+func TestIndexBlockSizeService_ComparesAPrimaryKey(t *testing.T) {
+	c := qt.New(t)
+	key := objectidentity.PrimaryKeyOf(objectidentity.NewBuilder(identifier.ForDialect("mysql")).TableParts("", "orders"))
+	request := blockSizeRequest("mysql", must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, 8)), schemaext.Coverage{},
+		&mysqlschema.ObservedIndexBlockSize{KeyBlockSize: 4, Retained: true}, schemaext.Coverage{})
+	request.Owners[0].Subject, request.Desired.Records[0].Subject, request.Current.Records[0].Subject = key, key, key
+
+	result, err := mysqlcompare.IndexBlockSizeService{}.CompareFacets(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.DeepEquals, []schemaext.FacetChange{{Kind: mysqlschema.IndexBlockSizeKind, Change: schemaext.ChangeRecord{Subject: key,
+		Value: &mysqldiff.IndexBlockSize{Before: &mysqlschema.ObservedIndexBlockSize{KeyBlockSize: 4, Retained: true}, After: &mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8}}}}})
 }

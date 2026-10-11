@@ -14,20 +14,21 @@ import (
 )
 
 // IndexBlockSizeService compares the KEY_BLOCK_SIZE hint of MySQL and
-// MariaDB indexes. Its zero value is ready for concurrent use.
+// MariaDB indexes and primary keys. Its zero value is ready for concurrent
+// use.
 type IndexBlockSizeService struct{}
 
-// CompareFacets reports a change for an index both sides hold whose
-// declared hint differs from the one it holds, where the server retains a
-// hint on it: MariaDB on every table, MySQL only on a table with
+// CompareFacets reports a change for an index or a primary key both sides
+// hold whose declared hint differs from the one it holds, where the server
+// retains a hint on it: MariaDB on every table, MySQL only on a table with
 // ROW_FORMAT=COMPRESSED. Elsewhere the server accepts and discards a hint, so
 // a change would be planned on every comparison and never applied.
 //
 // A declaration without the hint declares none when its source claims to
-// describe the hint; a source that makes no claim keeps the hint the index
-// holds. A current index without an observation, which only a declaration
-// converted to an observation can be, holds what a declaration without a hint
-// converts to. An explicit knowledge limit on either side is reported as
+// describe the hint; a source that makes no claim keeps the hint the index or
+// the key holds. A current one without an observation, which a read gives
+// where it says nothing more than its absence, holds what a declaration
+// without a hint converts to. An explicit knowledge limit on either side is reported as
 // undecided. The declarations are returned as they were. Invalid input and
 // cancellation return a zero result.
 func (IndexBlockSizeService) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
@@ -49,8 +50,8 @@ func (IndexBlockSizeService) CompareFacets(ctx context.Context, request schemaex
 		if err := ctx.Err(); err != nil {
 			return schemaext.FacetComparisonResult{}, err
 		}
-		if owner.Subject.Kind != objectidentity.KindIndex || owner.Subject.Name.Empty() || owner.Subject.Parent.Empty() {
-			return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: a MySQL index block size attaches to a table's index, not %s", schemaext.ErrInvalidValue, owner.Subject)
+		if !mysqlschema.HoldsBlockSize(owner.Subject) {
+			return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: a MySQL index block size attaches to a table's index or primary key, not %s", schemaext.ErrInvalidValue, owner.Subject)
 		}
 		change, undecided, err := compareBlockSize(request, owner)
 		if err != nil {

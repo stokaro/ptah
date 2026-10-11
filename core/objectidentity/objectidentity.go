@@ -87,6 +87,10 @@ const (
 	KindComposite Kind = "composite type"
 	KindRange     Kind = "range type"
 	KindMatView   Kind = "materialized view"
+	// KindPrimaryKey is the primary key of a table, which has at most one.
+	// See [PrimaryKeyOf] for why its identity is its table's rather than a
+	// name.
+	KindPrimaryKey Kind = "primary key"
 )
 
 // Part is one component of a qualified name: what the author wrote, and what
@@ -550,6 +554,39 @@ func (b Builder) ConstraintParts(schema, table, constraint string) ID {
 		Parent: owner.Name,
 		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
 	}
+}
+
+// primaryKeyName is the name component of every primary key identity. It is
+// not a name any key carries: the kind already sets the identity apart from
+// every constraint, and the table is the rest of it.
+const primaryKeyName = "PRIMARY KEY"
+
+// PrimaryKeyOf returns the identity of the primary key of table, under the
+// schema and name table's own identity holds, so the key pairs with its table
+// on every target, SQLite's verbatim names included.
+//
+// The key is identified by its table, not by its name. A table has at most one
+// primary key, and the name it carries differs by engine and by source: MySQL
+// calls every one PRIMARY, PostgreSQL makes up `t_pkey`, and a declaration may
+// name none. Keying the key by name would make a declaration and the catalog
+// describing one key two objects, as a name would for a CHECK
+// ([Builder.CheckConstraintParts]). The kind keeps it apart from every
+// constraint, a constraint named PRIMARY KEY included.
+func PrimaryKeyOf(table ID) ID {
+	return ID{
+		Kind:    KindPrimaryKey,
+		Catalog: table.Catalog,
+		Schema:  table.Schema,
+		Parent:  table.Name,
+		Name:    Part{Source: primaryKeyName, Normalized: primaryKeyName},
+	}
+}
+
+// PrimaryKeyParts builds the identity of the primary key of a table from
+// components the caller already has, as [PrimaryKeyOf] of
+// [Builder.TableParts].
+func (b Builder) PrimaryKeyParts(schema, table string) ID {
+	return PrimaryKeyOf(b.TableParts(schema, table))
 }
 
 // CheckConstraintParts builds the identity of a CHECK, which is its condition

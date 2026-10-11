@@ -114,7 +114,18 @@ type DirectiveAttributes struct {
 	// whose attributes spell options the common model already carries. It is
 	// optional, and it is called when Decode is.
 	Parameters func(attributes map[string]string) (map[string]string, error)
+	// PrimaryKey attaches the facets Decode returns to the primary key of
+	// the table the directive declares instead of to the table, for
+	// attributes that are settings of the key, such as an index hint. Only
+	// the table directive, "ptah:schema:table", declares a table, and such a
+	// group takes no Parameters. [Set.DecodePrimaryKeyAttributes] decodes
+	// these groups, and [Set.DecodeAttributes] the others.
+	PrimaryKey bool
 }
+
+// tableDirective is the frontend's directive that declares a table, the one
+// whose primary key [DirectiveAttributes.PrimaryKey] attributes describe.
+const tableDirective = "ptah:schema:table"
 
 // Extension is what one feature owner contributes to the Go annotation
 // frontend.
@@ -254,6 +265,10 @@ func (s *Set) claimAttributes(index int, extension Extension) error {
 		if strings.TrimSpace(group.Directive) == "" || (group.Decode == nil && group.Parameters == nil) {
 			return fmt.Errorf("annotation extension of %s declares attributes without a directive or a decoder", extension.Owner)
 		}
+		if group.PrimaryKey && (group.Directive != tableDirective || group.Decode == nil || group.Parameters != nil) {
+			return fmt.Errorf("annotation extension of %s declares primary key attributes of %q, which needs the table directive and a decoder alone",
+				extension.Owner, group.Directive)
+		}
 		claimed := s.attributes[group.Directive]
 		if claimed == nil {
 			claimed = make(map[string]int)
@@ -316,14 +331,27 @@ func (s Set) AttributedDirectives() []string {
 
 // DecodeAttributes hands each owner the attributes it adds to directive that
 // attributes holds, with the ones of its Reads, and joins the facets they
-// return. An owner that reads none of them is not called. A facet of a model
-// the owner does not declare, and one two owners return, are errors.
+// return: those of the object the directive declares. An owner that reads
+// none of them is not called. A facet of a model the owner does not declare,
+// and one two owners return, are errors.
 func (s Set) DecodeAttributes(directive string, attributes map[string]string) (schemaext.Facets, error) {
+	return s.decodeAttributes(directive, attributes, func(group DirectiveAttributes) bool { return !group.PrimaryKey })
+}
+
+// DecodePrimaryKeyAttributes is [Set.DecodeAttributes] for the attributes of
+// directive that describe the primary key of the table it declares (see
+// [DirectiveAttributes.PrimaryKey]).
+func (s Set) DecodePrimaryKeyAttributes(directive string, attributes map[string]string) (schemaext.Facets, error) {
+	return s.decodeAttributes(directive, attributes, func(group DirectiveAttributes) bool { return group.PrimaryKey })
+}
+
+// decodeAttributes decodes the groups of directive that selects picks.
+func (s Set) decodeAttributes(directive string, attributes map[string]string, selects func(DirectiveAttributes) bool) (schemaext.Facets, error) {
 	var joined schemaext.Facets
 	for _, extension := range s.extensions {
 		for _, group := range extension.Attributes {
 			written := group.written(directive, attributes)
-			if len(written) == 0 || group.Decode == nil {
+			if len(written) == 0 || group.Decode == nil || !selects(group) {
 				continue
 			}
 			facets, err := group.Decode(written)

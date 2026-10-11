@@ -121,3 +121,25 @@ func TestVectorIndexService_PlansARebuild_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestVectorIndexService_RefusesAChangeWithoutACapture pins what an owner
+// that needs the captured table does when a rollback has none. A generator
+// that cannot project the table a forward plan leaves, as on a target
+// without a constraint projector, hands the owner no current capture rather
+// than refusing the whole plan, and the owner refuses the one change it
+// cannot plan without it: a rebuild of the vector index needs the index the
+// table holds.
+func TestVectorIndexService_RefusesAChangeWithoutACapture(t *testing.T) {
+	c := qt.New(t)
+	request := vectorPlanRequest("vector_kmeans_tree", 4)
+	request.Tables[0].Current = schemacapture.TableObservation{}
+
+	result, err := ydbplan.VectorIndexService{}.PlanFeatures(c.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Complete, qt.IsTrue)
+	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.Diagnostics, qt.HasLen, 1)
+	c.Assert(result.Diagnostics[0].Change, qt.DeepEquals, new(0))
+	c.Assert(result.Diagnostics[0].Problem.Message, qt.Matches, `.*a vector index settings change requires both captured table sides.*`)
+}

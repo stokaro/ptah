@@ -3,15 +3,19 @@ package mysqlschema
 import (
 	"fmt"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/mysqlindex"
 )
 
 // IndexBlockSizeKind identifies the KEY_BLOCK_SIZE hint of a MySQL or MariaDB
-// index, `ADD INDEX k (a) KEY_BLOCK_SIZE=8`. Unlike the options of
-// [IndexKind], it is read back and compared: a different hint on an index that
-// exists replaces the index.
+// index, `ADD INDEX k (a) KEY_BLOCK_SIZE=8`, and of a table's primary key,
+// `PRIMARY KEY (a) KEY_BLOCK_SIZE=8`, which is the table's PRIMARY index.
+// Unlike the options of [IndexKind], it is read back and compared: a
+// different hint on an index or a key that exists replaces it. An index holds
+// the hint in its own facets, and a primary key in those of the table's key
+// (see [HoldsBlockSize]).
 //
 // The value is separate from [IndexKind] because the two arrive differently.
 // A Go annotation spells the hint as the index directive's own key_block_size
@@ -19,7 +23,21 @@ import (
 // both.
 const IndexBlockSizeKind schemaext.Kind = "ptah.run/mysql/index-block-size"
 
-// DesiredIndexBlockSize is the hint a declaration states for one index.
+// HoldsBlockSize reports whether subject is one that holds a block-size hint:
+// an index of a table, or a table's primary key.
+func HoldsBlockSize(subject objectidentity.ID) bool {
+	switch subject.Kind {
+	case objectidentity.KindIndex:
+		return !subject.Name.Empty() && !subject.Parent.Empty()
+	case objectidentity.KindPrimaryKey:
+		return !subject.Parent.Empty()
+	default:
+		return false
+	}
+}
+
+// DesiredIndexBlockSize is the hint a declaration states for one index or
+// primary key.
 type DesiredIndexBlockSize struct {
 	// KeyBlockSize is the hint in kilobytes. Zero declares an index without
 	// one, which is what a source that can spell the hint and did not write it
@@ -27,7 +45,8 @@ type DesiredIndexBlockSize struct {
 	KeyBlockSize uint64 `json:"key_block_size,omitempty"`
 }
 
-// ObservedIndexBlockSize is the hint an index holds as a read reports it.
+// ObservedIndexBlockSize is the hint an index or a primary key holds as a read
+// reports it.
 type ObservedIndexBlockSize struct {
 	// KeyBlockSize is the hint in kilobytes, zero for none.
 	KeyBlockSize uint64 `json:"key_block_size,omitempty"`

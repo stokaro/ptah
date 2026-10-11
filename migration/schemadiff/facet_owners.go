@@ -2,11 +2,14 @@ package schemadiff
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
@@ -19,19 +22,23 @@ type facetOwnerSlot struct {
 }
 
 // Inventory, capture, and restoration use the same identity for every slot.
+// A table's primary key owns the settings [schemacapture.PrimaryKeyFacets]
+// reads; a value in the other place, or on a second PRIMARY KEY constraint, has
+// no owner identity, and the capture refuses it rather than let it disappear.
 // Index owners are resolved through the common table/materialized-view rules;
 // the identifier snapshot decides whether their namespace includes the table.
 // A materialized view is named the way the view comparison pairs it: a
 // schema-scoped identity, read from the declaration's possibly qualified name.
 func declaredFacetSlots(db *schemamodel.Database, target string, semantics identifier.Semantics) ([]facetOwnerSlot, error) {
-	slots := make([]facetOwnerSlot, 0, len(db.Tables)+len(db.Fields)+len(db.Indexes)+len(db.MaterializedViews))
+	slots := make([]facetOwnerSlot, 0, 2*len(db.Tables)+len(db.Fields)+len(db.Indexes)+len(db.MaterializedViews))
 	tables := make(map[string]objectidentity.ID, len(db.Tables))
 	for i := range db.Tables {
 		table := &db.Tables[i]
 		subject := tableidentity.Subject(table.Schema, table.Name, target, semantics)
-		slots = append(slots, facetOwnerSlot{subject, &table.Facets})
+		slots = append(slots, facetOwnerSlot{subject, &table.Facets}, facetOwnerSlot{objectidentity.PrimaryKeyOf(subject), schemacapture.DatabasePrimaryKeyFacets(db, table)})
 		tables[table.StructName] = subject
 	}
+	slots = append(slots, unownedPrimaryKeySlots(db, slots, target, semantics)...)
 	// A field is a column of the table its struct declares. A field of a
 	// struct that declares no table has no column identity, and a facet on it
 	// is refused by the caller's capture check.
@@ -56,6 +63,33 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 		slots = append(slots, facetOwnerSlot{declaredMaterializedViewSubject(view.Name, semantics), &view.Facets})
 	}
 	return slots, nil
+}
+
+// unownedPrimaryKeySlots keys a PRIMARY KEY constraint that names a table
+// the declaration does not hold by the table it names, as an index is keyed:
+// the first one for a table, since a table has one key, and none for a table
+// whose key the declared slots already hold. One left without an owner
+// identity is refused by the capture where it carries a value.
+func unownedPrimaryKeySlots(db *schemamodel.Database, declared []facetOwnerSlot, target string, semantics identifier.Semantics) []facetOwnerSlot {
+	var slots []facetOwnerSlot
+	seen := make(map[objectidentity.Key]bool, len(declared))
+	for _, slot := range declared {
+		seen[slot.subject.Key()] = true
+	}
+	for i := range db.Constraints {
+		constraint := &db.Constraints[i]
+		ref, named := tableref.Parse(strings.TrimSpace(constraint.Table))
+		if !named || !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") ||
+			slices.ContainsFunc(db.Tables, func(table schemamodel.Table) bool { return schemacapture.Owns(table, *constraint) }) {
+			continue
+		}
+		subject := objectidentity.PrimaryKeyOf(tableidentity.Subject(ref.Schema, ref.Name, target, semantics))
+		if !seen[subject.Key()] {
+			seen[subject.Key()] = true
+			slots = append(slots, facetOwnerSlot{subject, &constraint.Facets})
+		}
+	}
+	return slots
 }
 
 // tablelessFieldFacets addresses the facets of every field whose struct
@@ -110,6 +144,7 @@ func declaredMaterializedViewSubject(name string, semantics identifier.Semantics
 
 func observedFacetSlots(db *catalog.Database, target string, semantics identifier.Semantics) []facetOwnerSlot {
 	slots := make([]facetOwnerSlot, 0, len(db.Tables)+len(db.Indexes)+len(db.MatViews))
+	keys := make(map[objectidentity.Key]bool)
 	for i := range db.Tables {
 		table := &db.Tables[i]
 		subject := tableidentity.Subject(table.Schema, table.Name, target, semantics)
@@ -117,6 +152,20 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 		for j := range table.Columns {
 			column := &table.Columns[j]
 			slots = append(slots, facetOwnerSlot{columnSubject(subject, column.Name, semantics), &column.Facets})
+		}
+	}
+	// A table's primary key is the PRIMARY KEY constraint the read reports
+	// for it, whatever the server named it. A second one for one table has
+	// no owner identity, so the capture refuses a value on it.
+	for i := range db.Constraints {
+		constraint := &db.Constraints[i]
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+			continue
+		}
+		subject := objectidentity.PrimaryKeyOf(tableidentity.Subject(constraint.Schema, constraint.TableName, target, semantics))
+		if !keys[subject.Key()] {
+			keys[subject.Key()] = true
+			slots = append(slots, facetOwnerSlot{subject, &constraint.Facets})
 		}
 	}
 	builder := objectidentity.NewBuilder(semantics)

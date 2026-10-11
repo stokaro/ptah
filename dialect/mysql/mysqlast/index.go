@@ -11,19 +11,31 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/mysqlindex"
 )
 
 // ReplaceIndexKind identifies the replacement of an index whose block-size
 // hint changes.
 const ReplaceIndexKind schemaext.Kind = "ptah.run/mysql/replace-index"
 
-// Index is an index definition as a MySQL-family ADD INDEX writes it.
+// PrimaryKeyName is the name MySQL and MariaDB give the index of every
+// primary key.
+const PrimaryKeyName = "PRIMARY"
+
+// Index is an index definition as a MySQL-family ADD INDEX writes it, or ADD
+// PRIMARY KEY for the table's primary key.
 type Index struct {
-	// Name is the index name.
+	// Name is the index name, [PrimaryKeyName] for a primary key.
 	Name string `json:"name"`
+	// Primary makes the definition the table's primary key, written PRIMARY
+	// KEY with no name of its own. A primary key is not declared UNIQUE, has
+	// columns for its parts, takes no FULLTEXT or SPATIAL kind and no parser,
+	// and is always visible.
+	Primary bool `json:"primary,omitempty"`
 	// Unique makes the index UNIQUE.
 	Unique bool `json:"unique,omitempty"`
 	// Type is the declared index type: FULLTEXT and SPATIAL are written as a
@@ -80,8 +92,29 @@ func (v Index) Validate() error {
 			return err
 		}
 	}
+	if v.Primary {
+		if err := v.validatePrimary(); err != nil {
+			return err
+		}
+	}
 	if v.KeyBlockSize != 0 {
 		return mysqlschema.ValidateDesiredIndexBlockSize(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: v.KeyBlockSize})
+	}
+	return nil
+}
+
+// validatePrimary refuses what a primary key cannot be: named other than
+// PRIMARY, declared UNIQUE, of a kind other than an access method, with a
+// parser, hidden, or with an expression for a part. MySQL refuses the last
+// with ERROR 3756.
+func (v Index) validatePrimary() error {
+	if v.Name != PrimaryKeyName || v.Unique || v.Parser != "" || v.Invisible || mysqlindex.KindOf(v.Type).Prefix() != "" {
+		return fmt.Errorf("%w: MySQL primary key %q declares what a primary key does not have", schemaext.ErrInvalidValue, v.Name)
+	}
+	for _, part := range v.Parts {
+		if part.Expression != "" {
+			return fmt.Errorf("%w: a MySQL primary key takes no expression for a key part", schemaext.ErrInvalidValue)
+		}
 	}
 	return nil
 }
@@ -122,6 +155,74 @@ func IndexFromNode(node *ast.IndexNode) (Index, error) {
 	return index, nil
 }
 
+// PrimaryKeyFromNode returns the definition the PRIMARY KEY constraint node
+// holds: its key parts, its access method and its comment, and the block-size
+// hint the MySQL owner's facets carry. Another active facet kind, an invalid
+// facet and a node of another constraint type are refused.
+func PrimaryKeyFromNode(node *ast.ConstraintNode) (Index, error) {
+	if node == nil || node.Type != ast.PrimaryKeyConstraint {
+		return Index{}, fmt.Errorf("%w: no primary key to read a MySQL definition from", schemaext.ErrInvalidValue)
+	}
+	for _, kind := range node.Facets.Kinds() {
+		if kind != mysqlschema.IndexBlockSizeKind {
+			return Index{}, fmt.Errorf("%w: MySQL primary key facet %q is not supported", schemaext.ErrInvalidValue, kind)
+		}
+	}
+	key := Index{Name: PrimaryKeyName, Primary: true, Type: node.UsingMethod, Comment: node.Comment}
+	var err error
+	if key.KeyBlockSize, _, err = mysqlschema.IndexBlockSize(node.Facets); err != nil {
+		return Index{}, err
+	}
+	parts := node.ColumnParts
+	if len(parts) == 0 {
+		for _, column := range node.Columns {
+			parts = append(parts, ast.ConstraintColumn{Name: column})
+		}
+	}
+	for _, part := range parts {
+		key.Parts = append(key.Parts, IndexPart{Column: part.Name, Expression: part.Expr, Prefix: part.Prefix, Descending: part.Desc})
+	}
+	return key, nil
+}
+
+// PrimaryKeyFromDeclaration returns the definition the declared table's
+// primary key is created with, as the common planner lowers it and with the
+// settings [schemacapture.PrimaryKeyFacets] reads: the first PRIMARY KEY
+// constraint the declaration holds, or else the key the table declares in its
+// primary key attributes, or else in its fields, in their order. A declaration
+// without a key is refused.
+func PrimaryKeyFromDeclaration(declaration schemacapture.TableDeclaration) (Index, error) {
+	for _, constraint := range declaration.Constraints {
+		if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+			node := ast.NewPrimaryKeyConstraint(constraint.Columns...)
+			node.UsingMethod, node.Comment, node.Facets = constraint.UsingMethod, constraint.Comment, constraint.Facets
+			return PrimaryKeyFromNode(node)
+		}
+	}
+	table := declaration.Table
+	columns := table.PrimaryKey
+	if len(columns) == 0 && len(table.PrimaryKeyParts) == 0 {
+		for _, field := range declaration.Fields {
+			if field.Primary {
+				columns = append(columns, field.Name)
+			}
+		}
+	}
+	node := ast.NewPrimaryKeyConstraint(columns...)
+	if len(table.PrimaryKeyParts) > 0 {
+		node.Columns, node.ColumnParts = nil, nil
+		for _, part := range table.PrimaryKeyParts {
+			node.Columns = append(node.Columns, part.Name)
+			node.ColumnParts = append(node.ColumnParts, ast.ConstraintColumn{Name: part.Name, Prefix: part.Prefix, Desc: part.Desc})
+		}
+	}
+	if len(node.Columns) == 0 {
+		return Index{}, fmt.Errorf("%w: table %q declares no primary key", schemaext.ErrInvalidValue, table.Name)
+	}
+	node.UsingMethod, node.Comment, node.Facets = table.PrimaryKeyMethod, table.PrimaryKeyComment, table.PrimaryKeyFacets
+	return PrimaryKeyFromNode(node)
+}
+
 // IndexFromModel returns the definition a declared index is created with: the
 // one the common planner lowers it to, read as [IndexFromNode] reads a node.
 // Key parts come from the index's parts and, where it has none, from its
@@ -137,9 +238,10 @@ func IndexFromModel(index schemamodel.Index) (Index, error) {
 
 // ReplaceIndex drops the index Index.Name of the ALTER TABLE parent and adds
 // it again with the definition Index, in one statement, so the table is never
-// without it and an index a foreign key needs is not refused. It is how the
-// owner applies a changed block-size hint, which no statement changes in
-// place.
+// without it and an index a foreign key needs is not refused. For a primary
+// key it drops and adds the PRIMARY KEY, which AUTO_INCREMENT and incoming
+// foreign keys need the same way. It is how the owner applies a changed
+// block-size hint, which no statement changes in place.
 type ReplaceIndex struct {
 	// Index is the definition the index is added with.
 	Index Index `json:"index"`
@@ -169,12 +271,16 @@ func (v *ReplaceIndex) Clone() *ReplaceIndex {
 // Effect reports the cost of the rebuild: with TableCopy, the whole table
 // is copied.
 func (v *ReplaceIndex) Effect() schemaext.Effect {
+	noun := "index"
+	if v != nil && v.Index.Primary {
+		noun = "primary key"
+	}
 	if v != nil && v.TableCopy {
 		return schemaext.Effect{Impact: schemaext.Behavioral,
-			Reason: "ALGORITHM=COPY rebuilds the whole table to rebuild the index, which takes time on a large table and blocks writes to it while it runs; its rows are unchanged"}
+			Reason: "ALGORITHM=COPY rebuilds the whole table to rebuild the " + noun + ", which takes time on a large table and blocks writes to it while it runs; its rows are unchanged"}
 	}
 	return schemaext.Effect{Impact: schemaext.Behavioral,
-		Reason: "the index is dropped and built again from every row of the table in one statement; its rows are unchanged"}
+		Reason: "the " + noun + " is dropped and built again from every row of the table in one statement; its rows are unchanged"}
 }
 
 // SchemaChange reports a change to the named index.
@@ -197,9 +303,9 @@ var (
 	replaceIndexShape = schemaext.ObjectShape{Name: "MySQL index replacement",
 		Allowed: []string{"index", "table_copy"}, Required: []string{"index"}, NonEmpty: []string{"table_copy"}}
 	indexShape = schemaext.ObjectShape{Name: "MySQL index definition",
-		Allowed:  []string{"name", "unique", "type", "parts", "parser", "key_block_size", "comment", "invisible"},
+		Allowed:  []string{"name", "primary", "unique", "type", "parts", "parser", "key_block_size", "comment", "invisible"},
 		Required: []string{"name", "parts"},
-		NonEmpty: []string{"unique", "type", "parser", "key_block_size", "comment", "invisible"}}
+		NonEmpty: []string{"primary", "unique", "type", "parser", "key_block_size", "comment", "invisible"}}
 	indexPartShape = schemaext.ObjectShape{Name: "MySQL index key part",
 		Allowed:  []string{"column", "expression", "prefix", "descending"},
 		NonEmpty: []string{"column", "expression", "prefix", "descending"}}
@@ -212,6 +318,7 @@ func Codecs() []schemaext.Codec {
 	return []schemaext.Codec{schemaext.ModelCodec[*ReplaceIndex]{
 		Prototype: &ReplaceIndex{}, Representation: schemaext.Operation, Version: 1,
 		Definition: json.RawMessage(`{"index":{"name":"the index the ALTER TABLE parent drops and adds again",` +
+			`"primary":"true for the table's primary key, which is named PRIMARY",` +
 			`"parts":"its key parts, each a column with an optional prefix length or an expression, and descending when so",` +
 			`"unique":"true for a UNIQUE index","type":"the declared index type","parser":"the FULLTEXT parser",` +
 			`"key_block_size":"the KEY_BLOCK_SIZE hint in kilobytes","comment":"the index comment",` +

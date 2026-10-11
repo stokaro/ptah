@@ -67,3 +67,75 @@ func TestParseSource_IndexBlockSize_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// parseKeySource parses one struct whose table declares the given
+// attributes, with the MySQL owner selected.
+func parseKeySource(c *qt.C, table, constraint string) (schemamodel.Database, error) {
+	c.Helper()
+	owner := must.Must(annotation.NewSet(mysqlsource.Annotations()))
+	source := "package entities\n//ptah:schema:table name=\"t\"" + table + "\ntype T struct {\n" + constraint + "\nA int\n}"
+	return goschema.ParseSource(owner, "entities.go", source)
+}
+
+// TestParseSource_PrimaryKeyBlockSize_HappyPath reads the table directive's
+// primary_key_block_size as the hint of the table's primary key, and a
+// PRIMARY KEY constraint's key_block_size as the constraint's. Neither lands
+// on the table itself.
+func TestParseSource_PrimaryKeyBlockSize_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name, table, constraint string
+		key, constraintSize     uint64
+	}{
+		{"on the table", ` primary_key="a" primary_key_block_size="8"`, ``, 8, 0},
+		{"on a constraint", ``, `//ptah:schema:constraint name="pk" type="PRIMARY KEY" columns="a" key_block_size="4"`, 0, 4},
+		{"zero declares none", ` primary_key="a" primary_key_block_size="0"`, ``, 0, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := parseKeySource(c, test.table, test.constraint)
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].Facets.IsZero(), qt.IsTrue)
+			key, _, err := mysqlschema.IndexBlockSize(db.Tables[0].PrimaryKeyFacets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(key, qt.Equals, test.key)
+			sizes := make([]uint64, 0, len(db.Constraints))
+			for _, constraint := range db.Constraints {
+				sizes = append(sizes, must.Must(blockSizeOf(constraint.Facets)))
+			}
+			c.Assert(sizes, qt.DeepEquals, map[bool][]uint64{true: {test.constraintSize}, false: {}}[test.constraint != ""])
+		})
+	}
+}
+
+// TestParseSource_PrimaryKeyBlockSize_FailurePath refuses a value that is not
+// a whole number of kilobytes MySQL can store, and a hint of a key the table
+// does not declare: a field's own primary key is written as a column's
+// PRIMARY KEY, which has no place for one.
+func TestParseSource_PrimaryKeyBlockSize_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name, table, constraint, wantErr string
+	}{
+		{"not a number", ` primary_key="a" primary_key_block_size="wrong"`, ``,
+			`invalid primary_key_block_size "wrong" \(must be a non-negative integer\) on //ptah:schema:table at T`},
+		{"over the limit", ` primary_key="a" primary_key_block_size="4294967296"`, ``, `.*KEY_BLOCK_SIZE.*`},
+		{"a constraint's, not a number", ``, `//ptah:schema:constraint name="pk" type="PRIMARY KEY" columns="a" key_block_size="-1"`,
+			`invalid key_block_size "-1" \(must be a non-negative integer\) on //ptah:schema:constraint at T`},
+		{"no key on the table", ` primary_key_block_size="8"`, ``,
+			`a setting of the primary key needs the key declared with primary_key on //ptah:schema:table at T`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := parseKeySource(c, test.table, test.constraint)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db.Tables, qt.HasLen, 0)
+		})
+	}
+}
+
+// blockSizeOf is the hint facets hold, zero for none.
+func blockSizeOf(facets schemaext.Facets) (uint64, error) {
+	size, _, err := mysqlschema.IndexBlockSize(facets)
+	return size, err
+}

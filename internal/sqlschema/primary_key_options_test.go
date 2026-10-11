@@ -7,6 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
@@ -23,7 +25,7 @@ func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
 				c := qt.New(t)
 				db, _, err := sqlschema.Read([]byte(sql), dialect)
 				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables[0].PrimaryKeyBlockSize, qt.Equals, uint64(8))
+				c.Assert(primaryKeyBlockSize(c, db.Tables[0]), qt.Equals, uint64(8))
 				c.Assert(db.Tables[0].PrimaryKeyComment, qt.Equals, "lookup")
 				ddl, err := builtin.GetOrderedCreateStatements(&db, dialect)
 				c.Assert(err, qt.IsNil)
@@ -33,9 +35,19 @@ func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
 				c.Assert(files, qt.HasLen, 1)
 				again, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
 				c.Assert(err, qt.IsNil)
-				c.Assert(again.Tables[0].PrimaryKeyBlockSize, qt.Equals, uint64(8))
+				c.Assert(primaryKeyBlockSize(c, again.Tables[0]), qt.Equals, uint64(8))
 				c.Assert(again.Tables[0].PrimaryKeyComment, qt.Equals, "lookup")
 			})
 		}
 	}
+}
+
+// primaryKeyBlockSize is the hint the MySQL owner keeps on table's primary
+// key.
+func primaryKeyBlockSize(c *qt.C, table schemamodel.Table) uint64 {
+	c.Helper()
+	size, found, err := mysqlschema.IndexBlockSize(table.PrimaryKeyFacets)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	return size
 }

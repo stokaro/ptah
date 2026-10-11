@@ -13,7 +13,7 @@ import (
 )
 
 // ReversalService reverses the changes [IndexBlockSizeService] plans: the
-// rollback replaces the index again with the hint it held. Its zero value is
+// rollback replaces the index or the primary key again with the hint it held. Its zero value is
 // ready for concurrent use.
 type ReversalService struct{}
 
@@ -37,8 +37,8 @@ func (ReversalService) ReverseChanges(ctx context.Context, request schemaext.Rev
 			return nil, err
 		}
 		change, ok := record.Value.(*mysqldiff.IndexBlockSize)
-		if !ok || record.Subject.Kind != objectidentity.KindIndex || record.Subject.Name.Empty() || record.Subject.Parent.Empty() {
-			return nil, fmt.Errorf("%w: reversal requires a MySQL block size change on a table's index", schemaext.ErrInvalidValue)
+		if !ok || !mysqlschema.HoldsBlockSize(record.Subject) {
+			return nil, fmt.Errorf("%w: reversal requires a MySQL block size change on a table's index or primary key", schemaext.ErrInvalidValue)
 		}
 		inverse, err := mysqldiff.IndexBlockSizeReversal(change)
 		if err != nil {
@@ -47,7 +47,7 @@ func (ReversalService) ReverseChanges(ctx context.Context, request schemaext.Rev
 		result = append(result, schemaext.Reversal{
 			Change:       schemaext.ChangeRecord{Subject: record.Subject, Value: inverse},
 			ForwardState: []schemaext.ProjectedValue{{Placement: schemaext.FacetPlacement, Kind: mysqlschema.IndexBlockSizeKind, Value: inverse.Before.Clone()}},
-			Strategy:     "replace the index with the block size it held",
+			Strategy:     "replace the " + ownerNoun[record.Subject.Kind == objectidentity.KindPrimaryKey] + " with the block size it held",
 		})
 	}
 	return result, ctx.Err()

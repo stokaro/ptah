@@ -406,17 +406,18 @@ func toDBConstraints(
 			continue
 		}
 		appendConstraint(catalog.Constraint{
-			Name:         tablePrimaryKeyName(table),
-			TableName:    table.Name,
-			Schema:       table.Schema,
-			Type:         "PRIMARY KEY",
-			ColumnNames:  append([]string(nil), table.PrimaryKey...),
-			ColumnName:   first(table.PrimaryKey),
-			Deferrable:   table.PrimaryKeyDeferrable,
-			Initially:    table.PrimaryKeyInitially,
-			UsingMethod:  optionalStringPtr(table.PrimaryKeyMethod),
-			Comment:      table.PrimaryKeyComment,
-			KeyBlockSize: table.PrimaryKeyBlockSize,
+			// The key's settings ride on the constraint the key becomes.
+			Facets:      table.PrimaryKeyFacets,
+			Name:        tablePrimaryKeyName(table),
+			TableName:   table.Name,
+			Schema:      table.Schema,
+			Type:        "PRIMARY KEY",
+			ColumnNames: append([]string(nil), table.PrimaryKey...),
+			ColumnName:  first(table.PrimaryKey),
+			Deferrable:  table.PrimaryKeyDeferrable,
+			Initially:   table.PrimaryKeyInitially,
+			UsingMethod: optionalStringPtr(table.PrimaryKeyMethod),
+			Comment:     table.PrimaryKeyComment,
 		})
 	}
 	for _, constraint := range constraints {
@@ -433,7 +434,6 @@ func toDBConstraints(
 			NullsDistinct:  clonePtr(constraint.NullsDistinct),
 			IncludeColumns: append([]string(nil), constraint.IncludeColumns...),
 			UsingMethod:    optionalStringPtr(constraint.UsingMethod),
-			KeyBlockSize:   constraint.KeyBlockSize,
 			ExcludeElements: optionalStringPtr(
 				constraint.ExcludeElements,
 			),
@@ -497,7 +497,6 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 		strings.Join(constraint.ColumnNamesOrDefault(), "\x01"),
 		deref(constraint.CheckClause),
 		deref(constraint.UsingMethod),
-		strconv.FormatUint(constraint.KeyBlockSize, 10),
 		deref(constraint.ExcludeElements),
 		deref(constraint.WhereCondition),
 		constraint.QualifiedForeignTableName(),

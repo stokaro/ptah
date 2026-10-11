@@ -189,33 +189,59 @@ func TestIndexBlockSizeDiscardedByTheRowFormatE2E(t *testing.T) {
 	c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
 }
 
-// TestPrimaryKeyBlockSizeAloneE2E changes only a primary key's block size on
-// a compressed table. MySQL keeps the old hint through an in-place
-// replacement, so the plan asks for the table copy, and the next plan is
-// empty; without the copy the key was replaced on every run. MariaDB stores
-// the hint in place, so its plan asks for no copy and converges as well.
-func TestPrimaryKeyBlockSizeAloneE2E(t *testing.T) {
-	const tableFormat = "CREATE TABLE pk (id int NOT NULL, a int, PRIMARY KEY (id) KEY_BLOCK_SIZE=%d) ROW_FORMAT=COMPRESSED;"
+// TestPrimaryKeyBlockSizeOwnerPlanE2E drives the MySQL owner's plan of a
+// primary key's block-size change against each engine, the key named PRIMARY
+// by the server and declared on the table or as a named constraint. MySQL
+// keeps the old hint through an in-place replacement that changes nothing
+// else, so a change of the hint alone asks for the table copy, which the
+// safety classification names; without the copy the key was replaced on every
+// run. MariaDB stores the hint in place. On a MySQL row format that discards
+// hints, nothing is planned. Where the comment changes too, the common
+// replacement writes the hint in place and the owner adds no second
+// statement. Each plan converges: the next one is empty.
+func TestPrimaryKeyBlockSizeOwnerPlanE2E(t *testing.T) {
+	const tableFormat = "CREATE TABLE pk (id int NOT NULL, a int, %sPRIMARY KEY (id) KEY_BLOCK_SIZE=%d COMMENT '%s')%s;"
 	for _, test := range []struct {
-		name   string
-		engine dbtarget.Engine
-		plan   string
-		copies int
+		name            string
+		engine          dbtarget.Engine
+		constraint      string
+		options         string
+		comment, wanted string
+		size            int
+		plan            string
+		safety          string
+		copies          int
 	}{
-		{"MySQL", dbtarget.MySQLAdmin, "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;", 1},
-		{"MariaDB", dbtarget.MariaDBAdmin, "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8;", 0},
+		{name: "MySQL, the hint alone", engine: dbtarget.MySQLAdmin, options: " ROW_FORMAT=COMPRESSED", comment: "id", wanted: "id", size: 8,
+			plan:   "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'id', ALGORITHM=COPY;",
+			safety: "ALGORITHM=COPY rebuilds the whole table to rebuild the primary key", copies: 1},
+		{name: "MySQL, the hint removed", engine: dbtarget.MySQLAdmin, options: " ROW_FORMAT=COMPRESSED", comment: "id", wanted: "id", size: 0,
+			plan:   "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) COMMENT 'id', ALGORITHM=COPY;",
+			safety: "ALGORITHM=COPY rebuilds the whole table to rebuild the primary key", copies: 1},
+		{name: "MySQL, a named constraint", engine: dbtarget.MySQLAdmin, constraint: "CONSTRAINT pk_t ", options: " ROW_FORMAT=COMPRESSED",
+			comment: "id", wanted: "id", size: 8,
+			plan:   "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'id', ALGORITHM=COPY;",
+			safety: "ALGORITHM=COPY rebuilds the whole table to rebuild the primary key", copies: 1},
+		{name: "MySQL, the comment changes too", engine: dbtarget.MySQLAdmin, options: " ROW_FORMAT=COMPRESSED", comment: "old", wanted: "new", size: 8,
+			plan:   "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'new';",
+			safety: "DROP CONSTRAINT removes an existing data protection", copies: 0},
+		{name: "MariaDB, the hint alone", engine: dbtarget.MariaDBAdmin, options: " ROW_FORMAT=COMPRESSED", comment: "id", wanted: "id", size: 8,
+			plan:   "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'id';",
+			safety: "the primary key is dropped and built again from every row of the table", copies: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			scratch := newMySQLFamilyScratch(c, test.engine)
-			name, target := scratch.builtFrom(c, fmt.Sprintf(tableFormat, 4))
-			desired := fmt.Sprintf(tableFormat, 8)
+			name, target := scratch.builtFrom(c, fmt.Sprintf(tableFormat, test.constraint, 4, test.comment, test.options))
+			desired := fmt.Sprintf(tableFormat, test.constraint, test.size, test.wanted, test.options)
 			builtName, _ := scratch.builtFrom(c, desired)
 			schema := writeKeyFile(c, desired)
 
 			planned := runPtahNative(c, "migrations", "plan", "--db-url", target, "--schema-file", schema)
 			c.Assert(planned, qt.Contains, test.plan)
-			c.Assert(strings.Count(planned, "ALGORITHM=COPY"), qt.Equals, test.copies)
+			c.Assert(strings.Count(planned, "DROP PRIMARY KEY"), qt.Equals, 1)
+			c.Assert(strings.Count(planned, ", ALGORITHM=COPY;"), qt.Equals, test.copies)
+			c.Assert(planned, qt.Contains, test.safety)
 			runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 
 			c.Assert(showCreateTable(c, mySQLDSNForDatabase(c, scratch.adminDSN, name), "pk"), qt.Equals,
@@ -223,4 +249,16 @@ func TestPrimaryKeyBlockSizeAloneE2E(t *testing.T) {
 			c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
 		})
 	}
+}
+
+// TestPrimaryKeyBlockSizeDiscardedByTheRowFormatE2E declares another hint for
+// the primary key of a MySQL table whose row format discards hints. The server
+// keeps none whatever is declared, so nothing is planned.
+func TestPrimaryKeyBlockSizeDiscardedByTheRowFormatE2E(t *testing.T) {
+	c := qt.New(t)
+	scratch := newMySQLFamilyScratch(c, dbtarget.MySQLAdmin)
+	_, target := scratch.builtFrom(c, "CREATE TABLE pk (id int NOT NULL, PRIMARY KEY (id) KEY_BLOCK_SIZE=4) ROW_FORMAT=DYNAMIC;")
+	schema := writeKeyFile(c, "CREATE TABLE pk (id int NOT NULL, PRIMARY KEY (id) KEY_BLOCK_SIZE=8) ROW_FORMAT=DYNAMIC;")
+
+	c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
 }

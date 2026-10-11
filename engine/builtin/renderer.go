@@ -1062,6 +1062,9 @@ func validateDeclaredFeatures(dialect string, caps capability.Capabilities, data
 			return err
 		}
 	}
+	if err := validateDeclaredKeyBlockSizes(dialect, database); err != nil {
+		return err
+	}
 	if err := validateDeclaredFacets(dialect, database); err != nil {
 		return err
 	}
@@ -1420,7 +1423,12 @@ func prepareConstraintNode(
 	if node == nil {
 		return nil, nilNodeError(dialect, "constraint node")
 	}
-	facets, err := prepareFacets(dialect, node.Facets)
+	// The hint is checked before the facets are prepared, so a target
+	// without it refuses it by name rather than as an unregistered facet.
+	if err := validateConstraintBlockSize(dialect, node.Type.String(), node.Name, indexBlockSize(node.Facets)); err != nil {
+		return nil, err
+	}
+	facets, err := prepareConstraintFacets(dialect, node.Facets)
 	if err != nil {
 		return nil, err
 	}
@@ -1435,9 +1443,6 @@ func prepareConstraintNode(
 		node.Name,
 		node.IncludeColumns,
 	); err != nil {
-		return nil, err
-	}
-	if err := validateConstraintBlockSize(dialect, node.Type.String(), node.Name, node.KeyBlockSize); err != nil {
 		return nil, err
 	}
 	if err := validateConstraintKeyParts(dialect, node); err != nil {
@@ -2123,7 +2128,7 @@ func validateDeclaredAccess(
 // keeps access methods and index hints that other dialects cannot express.
 func validateDeclaredPrimaryKeyOptions(dialect string, database *schemamodel.Database) error {
 	for _, table := range database.Tables {
-		if err := validatePrimaryKeyOptions(dialect, table.QualifiedName(), table.PrimaryKeyComment, table.PrimaryKeyBlockSize); err != nil {
+		if err := validatePrimaryKeyOptions(dialect, table.QualifiedName(), table.PrimaryKeyComment, indexBlockSize(table.PrimaryKeyFacets)); err != nil {
 			return err
 		}
 		if err := primaryKeyMethodError(dialect, table.QualifiedName(), table.PrimaryKeyMethod); err != nil {
@@ -2131,17 +2136,41 @@ func validateDeclaredPrimaryKeyOptions(dialect string, database *schemamodel.Dat
 		}
 	}
 	for _, constraint := range database.Constraints {
-		if constraint.KeyBlockSize != 0 && !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
+		size := indexBlockSize(constraint.Facets)
+		if size != 0 && !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
 			return fmt.Errorf("%w: KEY_BLOCK_SIZE on %s constraint %q is not supported; declare a unique index for a UNIQUE key", ptaherr.ErrUnsupportedFeature, constraint.Type, constraint.Name)
 		}
 		if !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
 			continue
 		}
 		owner := constraintOwnerName(database.Tables, constraint)
-		if err := validateIndexBlockSize(dialect, owner, constraint.KeyBlockSize); err != nil {
+		if err := validateIndexBlockSize(dialect, owner, size); err != nil {
 			return err
 		}
 		if err := primaryKeyMethodError(dialect, owner, constraint.UsingMethod); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateDeclaredKeyBlockSizes refuses a primary key's block-size hint where
+// the target cannot write it, whether the table or a PRIMARY KEY constraint
+// declares the key, and a hint on any other constraint, as an index's hint is
+// refused: before the facet is refused as one the target's owners do not
+// register.
+func validateDeclaredKeyBlockSizes(dialect string, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := validateIndexBlockSize(dialect, table.QualifiedName(), indexBlockSize(table.PrimaryKeyFacets)); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		name := constraint.Name
+		if strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
+			name = constraintOwnerName(database.Tables, constraint)
+		}
+		if err := validateConstraintBlockSize(dialect, strings.ToUpper(strings.TrimSpace(constraint.Type)), name, indexBlockSize(constraint.Facets)); err != nil {
 			return err
 		}
 	}

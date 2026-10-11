@@ -64,6 +64,10 @@ func (r *renderer) reportFacets() {
 	for i := range r.db.Tables {
 		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
 		writes[&r.db.Tables[i].Facets] = WritesTableFacet
+		writes[&r.db.Tables[i].PrimaryKeyFacets] = WritesKeyFacet
+	}
+	for i := range r.db.Constraints {
+		writes[&r.db.Constraints[i].Facets] = WritesKeyFacet
 	}
 	for i := range r.db.Indexes {
 		writes[&r.db.Indexes[i].Facets] = WritesIndexFacet

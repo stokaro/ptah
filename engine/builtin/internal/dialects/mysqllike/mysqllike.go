@@ -1094,9 +1094,13 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
 		// The method follows the parts, the place MariaDB 11.8.9 prints it back
-		// in SHOW CREATE TABLE.
-		return fmt.Sprintf("  PRIMARY KEY (%s)%s", renderMySQLConstraintColumns(constraint),
-			primaryKeyMethodClause(constraint.UsingMethod)+r.primaryKeyOptions(constraint)), nil
+		// in SHOW CREATE TABLE, and the block-size hint the MySQL owner keeps
+		// on the key and the comment follow it, as they do for any index.
+		key, err := mysqlast.PrimaryKeyFromNode(constraint)
+		if err != nil {
+			return "", err
+		}
+		return "  " + strings.Join(mysqlrender.IndexDefinition(r.dialect, key, ""), " "), nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
 			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", escapeIdentifier(constraint.Name), renderMySQLConstraintColumns(constraint)), nil
@@ -1819,26 +1823,6 @@ func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
 // notEnforcedClauses is the clause that follows a CHECK, keyed by whether it is
 // NOT ENFORCED: kept by the server and not checked.
 var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}
-
-// primaryKeyMethodClause spells a primary key's access method after its parts,
-// empty for none. HASH is the one method carried; see [mysqlindex.Method].
-func primaryKeyMethodClause(method string) string {
-	if mysqlindex.Method(method) == "" {
-		return ""
-	}
-	return " USING HASH"
-}
-
-func (r *Renderer) primaryKeyOptions(constraint *ast.ConstraintNode) string {
-	var options string
-	if constraint.KeyBlockSize != 0 {
-		options += fmt.Sprintf(" KEY_BLOCK_SIZE=%d", constraint.KeyBlockSize)
-	}
-	if constraint.Comment != "" {
-		options += " COMMENT " + r.escapeValue(constraint.Comment)
-	}
-	return options
-}
 
 // writePrimaryKeyReplacement keeps the key present throughout a paired drop
 // and add. Splitting these operations makes AUTO_INCREMENT and incoming

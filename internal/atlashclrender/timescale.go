@@ -104,6 +104,11 @@ func WritesIndexFacet(kind schemaext.Kind) bool {
 		kind == mysqlschema.IndexBlockSizeKind
 }
 
+// WritesKeyFacet reports a facet kind of a primary key or a constraint the
+// renderer accounts for itself: a MySQL key's block-size hint, whose loss it
+// reports at the key.
+func WritesKeyFacet(kind schemaext.Kind) bool { return kind == mysqlschema.IndexBlockSizeKind }
+
 // renderHypertables writes the TimescaleDB hypertable blocks.
 //
 // The block exists because nothing else in a description can say a table is

@@ -182,11 +182,13 @@ func synthesizeTablePrimaryKeyConstraints(
 			IncludeColumns: append([]string(nil), table.PrimaryKeyInclude...),
 			// Compared the same way, for the same reason (stokaro/ptah#3824,
 			// stokaro/ptah#3853).
-			Deferrable:   table.PrimaryKeyDeferrable,
-			Initially:    table.PrimaryKeyInitially,
-			UsingMethod:  table.PrimaryKeyMethod,
-			Comment:      table.PrimaryKeyComment,
-			KeyBlockSize: table.PrimaryKeyBlockSize,
+			Deferrable:  table.PrimaryKeyDeferrable,
+			Initially:   table.PrimaryKeyInitially,
+			UsingMethod: table.PrimaryKeyMethod,
+			Comment:     table.PrimaryKeyComment,
+			// So do the settings owners keep on the key, which a common
+			// replacement writes with it.
+			Facets: table.PrimaryKeyFacets,
 		})
 	}
 	return synthesized

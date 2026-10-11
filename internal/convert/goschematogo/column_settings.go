@@ -59,11 +59,11 @@ func mysqlIndexOptionAttrs(facets schemaext.Facets) []attr {
 	return attrs
 }
 
-// blockSizeAttr writes the MySQL owner's block-size hint as the index
-// directive's own key_block_size attribute, which the owner's annotation
-// extension reads back. A facet of another type is
+// blockSizeAttr writes the MySQL owner's block-size hint of an index or a
+// primary key as the attribute name of the directive declaring it, which the
+// owner's annotation extension reads back. A facet of another type is
 // refused before the export writes anything.
-func blockSizeAttr(facets schemaext.Facets) attr {
+func blockSizeAttr(name string, facets schemaext.Facets) attr {
 	size, _, _ := mysqlschema.IndexBlockSize(facets)
-	return attr{name: "key_block_size", value: strconv.FormatUint(size, 10), set: size != 0}
+	return attr{name: name, value: strconv.FormatUint(size, 10), set: size != 0}
 }

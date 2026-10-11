@@ -853,22 +853,22 @@ func (i Index) QualifiedTableName() string {
 // every fixture that happens to use that spelling and silently misses the
 // other.
 type Constraint struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets schemaext.Facets `json:"facets,omitzero"`
-	// KeyBlockSize is the primary index block-size hint reported by SHOW CREATE TABLE.
-	KeyBlockSize   uint64   `json:"key_block_size,omitempty"`
-	Name           string   `json:"name"`
-	TableName      string   `json:"table_name"`
-	Schema         string   `json:"schema,omitempty"`
-	Type           string   `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
-	ColumnName     string   `json:"column_name"`
-	ColumnNames    []string `json:"column_names,omitempty"`
-	ForeignTable   *string  `json:"foreign_table"` // For foreign keys
-	ForeignSchema  string   `json:"foreign_schema,omitempty"`
-	ForeignColumn  *string  `json:"foreign_column"` // For foreign keys
-	ForeignColumns []string `json:"foreign_columns,omitempty"`
-	DeleteRule     *string  `json:"delete_rule"` // CASCADE, RESTRICT, etc.
-	UpdateRule     *string  `json:"update_rule"` // CASCADE, RESTRICT, etc.
+	// Facets carries typed settings owned by feature providers. On a
+	// PRIMARY KEY constraint they are the settings of the table's primary
+	// key, such as the MySQL family's KEY_BLOCK_SIZE hint.
+	Facets         schemaext.Facets `json:"facets,omitzero"`
+	Name           string           `json:"name"`
+	TableName      string           `json:"table_name"`
+	Schema         string           `json:"schema,omitempty"`
+	Type           string           `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
+	ColumnName     string           `json:"column_name"`
+	ColumnNames    []string         `json:"column_names,omitempty"`
+	ForeignTable   *string          `json:"foreign_table"` // For foreign keys
+	ForeignSchema  string           `json:"foreign_schema,omitempty"`
+	ForeignColumn  *string          `json:"foreign_column"` // For foreign keys
+	ForeignColumns []string         `json:"foreign_columns,omitempty"`
+	DeleteRule     *string          `json:"delete_rule"` // CASCADE, RESTRICT, etc.
+	UpdateRule     *string          `json:"update_rule"` // CASCADE, RESTRICT, etc.
 	// Deferrable reports a foreign key whose check may be postponed to the end
 	// of a transaction, read from pg_constraint.condeferrable.
 	Deferrable bool `json:"deferrable,omitempty"`

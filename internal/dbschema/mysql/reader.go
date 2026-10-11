@@ -347,7 +347,9 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 	carryPrimaryKeyMethod(schema)
-	carryPrimaryKeyOptions(schema, primaryBlockSizes)
+	if err := carryPrimaryKeyOptions(schema, primaryBlockSizes); err != nil {
+		return nil, err
+	}
 
 	return schema, nil
 }

@@ -79,7 +79,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		request.Changes = append(request.Changes, table.FeatureChanges...)
 		names[subject.Key()] = table.TableName
 	}
-	graph, err := featurehost.NewGraph(featureOwner, nodes, withIndexReplacements(builder, nodes, pgeffects.Sequence(builder, nodes)), windows)
+	graph, err := featurehost.NewGraph(featureOwner, nodes, withKeyReplacements(builder, nodes, pgeffects.Sequence(builder, nodes)), windows)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,33 +95,55 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	return scheduled, createdOwnedSchemas(features), nil
 }
 
-// withIndexReplacements adds to the common effects the index each one-statement
-// replacement writes, `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`, as an
-// alteration: the index exists before the statement and after it, with the
-// declared definition. An owner whose setting the replacement writes too
-// learns from it that the common plan already applies the declaration. A
+// withKeyReplacements adds to the common effects the keys each statement
+// writes. A one-statement index replacement, `ALTER TABLE t DROP INDEX k, ADD
+// INDEX k (...)`, alters the index: it exists before the statement and after
+// it, with the declared definition. So does the MySQL family's one-statement
+// primary key replacement, `DROP PRIMARY KEY, ADD PRIMARY KEY (...)`, alter
+// the table's primary key; a statement that only adds the key creates it, and
+// one that only drops it drops it. An owner whose setting the statement writes
+// too learns from it that the common plan already applies the declaration. A
 // visibility change in place writes no index effect, since it leaves the rest
 // of the definition as the server holds it. Only the MySQL family plans the
-// replacement; no other target of this planner has a node that adds one.
-func withIndexReplacements(builder objectidentity.Builder, nodes []ast.Node, effects [][]plangraph.Effect) [][]plangraph.Effect {
+// index replacement; no other target of this planner has a node that adds one.
+func withKeyReplacements(builder objectidentity.Builder, nodes []ast.Node, effects [][]plangraph.Effect) [][]plangraph.Effect {
 	for i, node := range nodes {
 		alter, ok := node.(*ast.AlterTableNode)
 		if !ok {
 			continue
 		}
+		table := builder.Table(alter.Name)
+		if ref, valid := tableref.Parse(alter.Name); valid {
+			table = builder.TableParts(ref.Schema, ref.Name)
+		}
+		var droppedKey, addedKey bool
 		for _, operation := range alter.Operations {
-			replace, ok := operation.(*ast.ReplaceIndexOperation)
-			if !ok || replace.Index == nil || replace.Index.Name == "" {
-				continue
+			switch operation := operation.(type) {
+			case *ast.ReplaceIndexOperation:
+				if operation.Index == nil || operation.Index.Name == "" {
+					continue
+				}
+				subject := builder.IndexParts(table.Schema.Source, table.Name.Source, operation.Index.Name)
+				effects[i] = append(effects[i], plangraph.Effect{Subject: subject, Action: plangraph.Alter})
+			case *ast.DropConstraintOperation:
+				droppedKey = droppedKey || operation.PrimaryKey
+			case *ast.AddConstraintOperation:
+				addedKey = addedKey || (operation.Constraint != nil && operation.Constraint.Type == ast.PrimaryKeyConstraint)
 			}
-			subject := builder.Index(alter.Name, replace.Index.Name)
-			if ref, valid := tableref.Parse(alter.Name); valid {
-				subject = builder.IndexParts(ref.Schema, ref.Name, replace.Index.Name)
-			}
-			effects[i] = append(effects[i], plangraph.Effect{Subject: subject, Action: plangraph.Alter})
+		}
+		if action, written := keyAction[[2]bool{droppedKey, addedKey}]; written {
+			effects[i] = append(effects[i], plangraph.Effect{Subject: objectidentity.PrimaryKeyOf(table), Action: action})
 		}
 	}
 	return effects
+}
+
+// keyAction is what a statement does to a table's primary key, by whether it
+// drops one and whether it adds one.
+var keyAction = map[[2]bool]plangraph.Action{
+	{true, true}:  plangraph.Alter,
+	{false, true}: plangraph.Create,
+	{true, false}: plangraph.Drop,
 }
 
 func hasFeatureChanges(diff *difftypes.SchemaDiff) bool {

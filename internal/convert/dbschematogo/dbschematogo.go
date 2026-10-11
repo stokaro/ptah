@@ -179,7 +179,7 @@ func convertTablesAndFields(
 			PrimaryKeyInitially:  primaryKey.initially,
 			PrimaryKeyMethod:     primaryKey.method,
 			PrimaryKeyComment:    primaryKey.comment,
-			PrimaryKeyBlockSize:  primaryKey.blockSize,
+			PrimaryKeyFacets:     primaryKey.facets,
 			Unlogged:             dbTable.Unlogged,
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
@@ -633,7 +633,7 @@ type tablePrimaryKey struct {
 	initially  string
 	method     string
 	comment    string
-	blockSize  uint64
+	facets     schemaext.Facets
 }
 
 // primaryKeyMethod is the access method a PRIMARY KEY the catalog reports asks
@@ -670,7 +670,9 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // `PRIMARY KEY (a, b) INCLUDE (payload)`, and the column-count test alone
 // dropped the first of them before it reached this map at all
 // (stokaro/ptah#2199). A deferral is the same kind of payload
-// (stokaro/ptah#3824), and so is an access method (stokaro/ptah#3853).
+// (stokaro/ptah#3824), and so is an access method (stokaro/ptah#3853), and so
+// are the settings an owner keeps on the key: the key's facets ride on the
+// table, which the column flag has no slot for either.
 func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
@@ -686,7 +688,7 @@ func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]t
 		if dialect == platform.MySQL || dialect == platform.MariaDB {
 			comment = constraint.Comment
 		}
-		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.KeyBlockSize == 0 {
+		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.Facets.IsZero() {
 			continue
 		}
 		result[constraint.QualifiedTableName()] = tablePrimaryKey{
@@ -696,7 +698,7 @@ func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]t
 			initially:  constraint.Initially,
 			method:     method,
 			comment:    comment,
-			blockSize:  constraint.KeyBlockSize,
+			facets:     constraint.Facets,
 		}
 	}
 	return result
@@ -890,7 +892,6 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		Type:            constraintType,
 		Table:           dbConstraint.QualifiedTableName(),
 		UsingMethod:     derefString(dbConstraint.UsingMethod),
-		KeyBlockSize:    dbConstraint.KeyBlockSize,
 		ExcludeElements: derefString(dbConstraint.ExcludeElements),
 		WhereCondition:  derefString(dbConstraint.WhereCondition),
 		CheckExpression: derefString(dbConstraint.CheckClause),

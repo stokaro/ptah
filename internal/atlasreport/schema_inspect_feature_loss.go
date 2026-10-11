@@ -128,7 +128,9 @@ func featureJSONProjection(realm *atlasSchemaInspectJSONRealm, db *schemamodel.D
 			attachFeatureMemberDestinations(projection.facets, source, table, db, writer)
 		}
 		projection.tables = append(projection.tables, destination)
-		projection.facets[&source.Facets] = destination
+		// The document writes a primary key inside its table, so what it
+		// leaves out of the key is reported there.
+		projection.facets[&source.Facets], projection.facets[&source.PrimaryKeyFacets] = destination, destination
 	}
 	return projection
 }

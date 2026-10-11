@@ -12,6 +12,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
@@ -40,7 +42,9 @@ func TestRenderInspectSchema_PreservesPrimaryKeyComment(t *testing.T) {
 					}},
 					Constraints: []catalog.Constraint{{
 						Name: "PRIMARY", TableName: "accounts", Type: "PRIMARY KEY",
-						ColumnNames: test.columns, Comment: "account identity", KeyBlockSize: test.size,
+						ColumnNames: test.columns, Comment: "account identity",
+						Facets: must.Must(mysqlschema.WithObservedIndexBlockSize(schemaext.Facets{},
+							mysqlschema.ObservedIndexBlockSize{KeyBlockSize: test.size, Retained: true})),
 					}},
 				}
 
@@ -51,7 +55,9 @@ func TestRenderInspectSchema_PreservesPrimaryKeyComment(t *testing.T) {
 				c.Assert(result.Schema.Tables, qt.HasLen, 1)
 				c.Assert(result.Schema.Tables[0].PrimaryKey, qt.DeepEquals, test.columns)
 				c.Assert(result.Schema.Tables[0].PrimaryKeyComment, qt.Equals, "account identity")
-				c.Assert(result.Schema.Tables[0].PrimaryKeyBlockSize, qt.Equals, test.size)
+				size, _, err := mysqlschema.IndexBlockSize(result.Schema.Tables[0].PrimaryKeyFacets)
+				c.Assert(err, qt.IsNil)
+				c.Assert(size, qt.Equals, test.size)
 				desired, _, err := sqlschema.Read([]byte(result.Rendered), dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, current, dialect, must.Must(builtin.New()))).HasChanges(), qt.IsFalse)

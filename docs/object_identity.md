@@ -132,6 +132,20 @@ Everything listed as not migrated keeps a private key that is correct for its
 own use today. The remaining work is tracked in
 [#1344](https://github.com/stokaro/ptah/issues/1344).
 
+### Primary key identity
+
+A table has at most one primary key, and the name the key carries says
+nothing about which key it is: MySQL names every one `PRIMARY`, PostgreSQL
+makes up `t_pkey`, SQL Server generates one, and a declaration may name none.
+Keyed by name, a declared key and the catalog's report of it would be two
+objects, which is the CHECK constraint's problem in another form. So the key's
+identity is its table's, under a kind of its own, `KindPrimaryKey`:
+`PrimaryKeyOf` builds it from the table's identity, `Builder.PrimaryKeyParts`
+from the table's components. The kind is what keeps it apart from a constraint
+a quoted name could spell `PRIMARY KEY`, and from the table itself. The
+settings feature owners keep on a key, such as the MySQL family's
+`KEY_BLOCK_SIZE`, are compared under it.
+
 ### Routine overload identity
 
 Comparison used to key a routine by schema and name alone, so two overloads of

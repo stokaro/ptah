@@ -63,7 +63,7 @@ func registerMySQLServices(provider *engine.Provider) {
 				Kinds: indexes, Service: mysqlcompare.IndexService{},
 			},
 			engine.FacetComparison{
-				Target: target, OwnerKinds: []objectidentity.Kind{objectidentity.KindIndex},
+				Target: target, OwnerKinds: []objectidentity.Kind{objectidentity.KindIndex, objectidentity.KindPrimaryKey},
 				Kinds: blockSizes, ChangeKinds: []schemaext.Kind{mysqldiff.IndexBlockSizeKind}, Service: mysqlcompare.IndexBlockSizeService{},
 			},
 			engine.FacetComparison{
