@@ -178,3 +178,21 @@ func TestPushTo_WritesOnlyTheTagItWasGiven(t *testing.T) {
 	_, err = schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNotNil, qt.Commentf("latest must not have been moved onto this push"))
 }
+
+// TestCapture_KeepsAnOwnersLimitInTheHeader captures a description's record
+// of a YDB changefeed it did not describe in the artifact's header, through
+// the runtime's coverage vocabulary, so the published schema does not read as
+// complete.
+func TestCapture_KeepsAnOwnersLimitInTheHeader(t *testing.T) {
+	c := qt.New(t)
+	db := usersDatabase()
+	db.NotDescribed = coverage.Set{}.With(coverage.Object{Kind: "changefeed", Name: "app.users", Reason: coverage.Unsupported,
+		Provenance: coverage.Observed})
+
+	snapshot, err := schemaartifact.Capture(db, nil, builtintest.Runtime().CoverageVocabulary(), builtintest.Runtime().HCL())
+
+	c.Assert(err, qt.IsNil)
+	data, err := fs.ReadFile(snapshot, schemaartifact.FileName)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(data), qt.Contains, `// ptah:not-described changefeed reason=unsupported provenance=observed "app.users"`+"\n")
+}

@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/envbool"
 )
 
@@ -168,7 +167,7 @@ var blockCoverageKinds = map[string]coverage.Kind{
 // document describes everything Ptah models and claims so by carrying no
 // record.
 func (r *renderer) notDescribed() coverage.Set {
-	set := documentedLimits(r.db.NotDescribed)
+	set := r.documented
 	if !r.omitAtlasRefusedBlocks {
 		return set
 	}
@@ -191,18 +190,25 @@ func (r *renderer) notDescribed() coverage.Set {
 // not describe -- a YDB changefeed, a Spanner change stream, a role catalog it
 // was refused -- and an export that left the record out would hand the next
 // plan a document whose silence reads as complete, which is how an object
-// nobody looked at becomes a DROP. A kind an owner consults in process only, a
-// YDB replica table, is left out: no document can name it, and the read the
-// next plan makes records it again.
-func documentedLimits(set coverage.Set) coverage.Set {
+// nobody looked at becomes a DROP. A kind the vocabulary knows as in-process,
+// a YDB replica table, is left out: no document can name it, and the read the
+// next plan makes records it again. A record of a kind the vocabulary does
+// not know at all is refused rather than left out, since leaving it out is
+// that silence: a render given no vocabulary, or the wrong one, fails rather
+// than under-claims.
+func documentedLimits(set coverage.Set, vocabulary coverage.Vocabulary) (coverage.Set, error) {
 	var documented coverage.Set
 	for _, object := range set.Objects {
-		if object.Kind == ydbschema.CoverageReplicaTable {
+		if vocabulary.InProcess(object.Kind) {
 			continue
+		}
+		if _, err := vocabulary.ParseKind(string(object.Kind)); err != nil {
+			return coverage.Set{}, fmt.Errorf("the document records %s as not described, which the coverage vocabulary cannot name: %w",
+				object.Kind, err)
 		}
 		documented.Objects = append(documented.Objects, object)
 	}
-	return documented.Normalize()
+	return documented.Normalize(), nil
 }
 
 // renderCoverageHeader writes the document's coverage record as directive

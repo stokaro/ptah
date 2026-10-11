@@ -2960,6 +2960,15 @@ is the one-method interface a reader of document headers takes it through;
 `engine.SchemaRuntime` includes it, and the annotation set a runtime builds
 carries the same vocabulary for a Go `notdescribed` declaration.
 
+A kind a read records for its owner to consult in the same process, which no
+document names, such as `ydbschema.CoverageReplicaTable`, is registered in
+`engine.Provider.ProcessCoverageKinds`. `Vocabulary.WithProcess` adds such
+kinds and `Vocabulary.InProcess` reports one. `ParseKind` still refuses it, and
+a kind may not be registered both ways. A document writer leaves a record of
+an in-process kind out, and refuses a record of a kind its vocabulary does not
+know at all rather than leave it out. Leaving it out would describe the
+database as complete where the read was not.
+
 `coverage.DecodeHeader` takes the vocabulary and an explicit `HeaderExtension`
 callback, or nil for the vocabulary only. The callback receives validated
 directives outside the vocabulary and records them in the owning feature's
