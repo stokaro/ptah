@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgeffects"
+	pgplanner "ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/ydbacl"
 )
 
@@ -30,6 +31,7 @@ func ForTarget(ctx context.Context, runtime featureplan.DeclarationRuntime, targ
 		result.GrantPath = ydbGrantPath
 	case platform.IsPostgresFamily(target):
 		result.CommonMetadata = postgresMetadata(target)
+		result.ResolvesBodyAtCreate = pgplanner.ResolvesBodyAtCreate
 	}
 	return result
 }

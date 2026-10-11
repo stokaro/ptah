@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
 	"ptah.run/internal/featureops"
 )
 
@@ -36,6 +37,12 @@ type Lowering struct {
 	// grant on the database itself. It is called only where DatabasePath is
 	// known. Nil keeps every grant's name, as every target but YDB does.
 	GrantPath func(objectType, objectName, databasePath string) string
+	// ResolvesBodyAtCreate reports whether the target resolves the names in a
+	// routine's body when the routine is created, which orders the routine
+	// after everything its body reads ([deporder.BodyResolution]). Nil orders
+	// every routine by its signature alone, as every target but the
+	// PostgreSQL family does.
+	ResolvesBodyAtCreate deporder.BodyResolution
 }
 
 // grantName binds GrantPath to the lowering's database path, and is nil where
@@ -66,7 +73,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		return err
 	}
 	if len(objects) == 0 {
-		return walkCommonDatabase(database, target, lowering.grantName(), visit)
+		return walkCommonDatabase(database, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, visit)
 	}
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
@@ -75,7 +82,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	// position before, between, or after them; streaming SQL before scheduling
 	// would make a late conflict leave a successful prefix.
 	var nodes []ast.Node
-	if err := walkCommonDatabase(tables, target, lowering.grantName(), func(node ast.Node) error {
+	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
 		nodes = append(nodes, node)
 		return lowering.Context.Err()
 	}); err != nil {
