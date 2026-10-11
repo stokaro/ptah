@@ -21,4 +21,11 @@
 // and its observable form is that no render creates the same named object
 // twice. It reports what it could not classify beside what it found, because a
 // statement shape it cannot read is a hole a clean report would cover.
+//
+// [MeasureRoundTrip] asks the corpus about the comparison path. A comparison
+// reads one side through a conversion between the declared model and the
+// catalog, and a field a conversion drops makes a schema differ from its own
+// conversion. It requires every fixture compared with its own conversion to
+// plan nothing, and every field the render writes into a statement to change
+// the plan when only the converted side changes it.
 package schemacensus

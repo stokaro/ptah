@@ -26,6 +26,20 @@ func tablePolicyFixture() schemamodel.Database {
 	return db
 }
 
+// tableDeclaredPolicyFixture declares a policy no server has normalized, to a
+// named role only, so a comparison reads the declared roles and clauses
+// rather than a server's spelling of them.
+func tableDeclaredPolicyFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(pgpolicy.PolicyRef("", "t", "tenant_rows"),
+		pgpolicy.DesiredPolicy{
+			Command: pgpolicy.CommandUpdate, Roles: []pgpolicy.RoleSelector{{Name: "reader"}},
+			Using: new("id > 0"), WithCheck: new("id < 100"), Composition: pgpolicy.Restrictive, Comment: "tenant rows", StructName: "T",
+		}))))
+	db.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))
+	return db
+}
+
 // tableRowSecurityFixture enables and forces row security on a table, with the
 // comment written before the statements, so the census measures each switch.
 func tableRowSecurityFixture() schemamodel.Database {
