@@ -17,9 +17,9 @@ var coordinationScopeCases = []struct {
 	name  string
 	scope atlasfilter.Scope
 }{
-	{name: "include", scope: atlasfilter.Scope{Include: []string{"app.*[type=coordination_node]"}}},
-	{name: "exclude", scope: atlasfilter.Scope{Exclude: []string{"other.*[type=coordination_node]"}}},
-	{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"app"}}},
+	{name: "include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.*[type=coordination_node]"}}},
+	{name: "exclude", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"other.*[type=coordination_node]"}}},
+	{name: "schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}}},
 }
 
 func TestScopeDatabasePreservesStandaloneCoordinationKnowledge(t *testing.T) {

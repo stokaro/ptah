@@ -32,10 +32,10 @@ func TestScope_Topics(t *testing.T) {
 		scope atlasfilter.Scope
 		want  []string
 	}{
-		{name: "include", scope: atlasfilter.Scope{Include: []string{"events[type=topic]"}}, want: []string{"events"}},
-		{name: "include in a directory", scope: atlasfilter.Scope{Include: []string{"ext.queue[type=topic]"}}, want: []string{"ext/queue"}},
-		{name: "exclude by name", scope: atlasfilter.Scope{Exclude: []string{"events[type=topic]"}}, want: []string{"ext/queue"}},
-		{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"ext"}}, want: []string{"ext/queue"}},
+		{name: "include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"events[type=topic]"}}, want: []string{"events"}},
+		{name: "include in a directory", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"ext.queue[type=topic]"}}, want: []string{"ext/queue"}},
+		{name: "exclude by name", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"events[type=topic]"}}, want: []string{"ext/queue"}},
+		{name: "schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"ext"}}, want: []string{"ext/queue"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -68,9 +68,9 @@ func TestExclude_Topics(t *testing.T) {
 	held := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		ydbtopic.ObservedObject("", "events", ydbtopic.Spec{}), ydbtopic.ObservedObject("ext", "queue", ydbtopic.Spec{})))}
 
-	generated, err := atlasfilter.ExcludeGenerated(declared, []string{"ext.*[type=topic]"})
+	generated, err := atlasfilter.ExcludeGenerated(ownerSelections(), declared, []string{"ext.*[type=topic]"})
 	c.Assert(err, qt.IsNil)
-	live, err := atlasfilter.ExcludeDatabase(held, []string{"ext.*[type=topic]"})
+	live, err := atlasfilter.ExcludeDatabase(ownerSelections(), held, []string{"ext.*[type=topic]"})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(topicNames(generated.FeatureObjects), qt.DeepEquals, []string{"events"})

@@ -39,6 +39,7 @@ func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {
 	state := diffDatabaseState(database)
 
 	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"active_users"},
 		DefaultSchema: state.DefaultSchema,
 	}, "--to schema", "postgres", must.Must(builtin.New()))
@@ -73,6 +74,7 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 	state := diffDatabaseState(database)
 
 	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"measurements"},
 		DefaultSchema: state.DefaultSchema,
 	}, "--to schema", "postgres", must.Must(builtin.New()))
@@ -103,6 +105,7 @@ func TestScopeDiffStatePreservesQualifiedDatabaseFunctionIdentity(t *testing.T) 
 	state := diffDatabaseState(database)
 
 	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"extra.fn"},
 		DefaultSchema: state.DefaultSchema,
 	}, "--to schema", "postgres", must.Must(builtin.New()))
@@ -125,6 +128,7 @@ func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) 
 	state := diffDatabaseState(database)
 
 	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"app.color"},
 		Exclude:       []string{"app.color"},
 		DefaultSchema: state.DefaultSchema,
@@ -144,7 +148,7 @@ func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) 
 		Schemas: []catalog.Schema{{Name: "Sales"}},
 		Tables:  []catalog.Table{{Schema: "Sales", Name: "orders"}},
 	}
-	scope := atlasfilter.Scope{Exclude: []string{"Sales"}, DefaultSchema: "dbo"}
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"Sales"}, DefaultSchema: "dbo"}
 
 	from, to := scopeDiffStates(
 		t.Context(), diffDatabaseState(current),
@@ -184,6 +188,7 @@ func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 	state := diffDatabaseState(database)
 
 	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"public.users"},
 		DefaultSchema: state.DefaultSchema,
 	}, "--to schema", "postgres", must.Must(builtin.New()))
@@ -207,6 +212,7 @@ func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	state := diffDatabaseState(database)
 
 	matched := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"extensions.pgcrypto"},
 		DefaultSchema: state.DefaultSchema,
 	}, "--from schema", "postgres", must.Must(builtin.New()))
@@ -219,6 +225,7 @@ func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	c.Assert(matched.schema.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence))
 
 	missed := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"extensions.typo"},
 		DefaultSchema: state.DefaultSchema,
 	}, "--from schema", "postgres", must.Must(builtin.New()))
@@ -247,6 +254,7 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 	state := diffDatabaseState(database)
 
 	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"app.users", "other.unrelated"},
 		DefaultSchema: state.DefaultSchema,
@@ -290,7 +298,7 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 		Tables:     []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
 		Extensions: []schemamodel.Extension{{Schema: "extensions", Name: "citext"}},
 	}
-	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
 		t.Context(), diffDatabaseState(current),
@@ -320,7 +328,7 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 		Tables:     []catalog.Table{{Schema: "app", Name: "users"}},
 		Extensions: []catalog.Extension{{Name: "pgcrypto"}},
 	}
-	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
 		t.Context(), diffDatabaseState(current),
@@ -346,7 +354,7 @@ func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 		Tables:     []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
 		Extensions: []schemamodel.Extension{{Schema: "extensions", Name: "citext"}},
 	}
-	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
 		t.Context(), diffDatabaseState(current),
@@ -380,6 +388,7 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 		},
 	}
 	scope := atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"app.users", "extensions.citext"},
 		DefaultSchema: "public",
 	}
@@ -406,7 +415,7 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	c := qt.New(t)
 	current := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto"}}}
 	desired := &schemamodel.Database{}
-	scope := atlasfilter.Scope{Include: []string{"pgcrypto"}, DefaultSchema: "public"}
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"pgcrypto"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
 		t.Context(), diffDatabaseState(current),

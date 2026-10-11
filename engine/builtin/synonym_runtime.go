@@ -5,6 +5,7 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/engine"
 	"ptah.run/feature/synonym"
 )
@@ -20,6 +21,7 @@ func synonymProvider() engine.Provider {
 		ID:          synonym.Owner,
 		Annotations: []annotation.Extension{synonym.Annotations()},
 		HCL:         []hclext.Extension{synonym.HCL()},
+		Selections:  []selectext.Extension{synonym.Selections()},
 		Codecs:      synonym.Codecs(),
 	}
 	for _, target := range synonym.Targets() {

@@ -22,9 +22,9 @@ func TestScope_StreamingQueriesAndTheirPools(t *testing.T) {
 		selected string
 		pools    []string
 	}{
-		{name: "include explicit pool", scope: atlasfilter.Scope{Include: []string{"copy[type=streaming_query]"}}, selected: "copy", pools: []string{"batch"}},
-		{name: "include default pool", scope: atlasfilter.Scope{Include: []string{"other[type=streaming_query]"}}, selected: "other", pools: []string{"default"}},
-		{name: "exclude query", scope: atlasfilter.Scope{Exclude: []string{"copy[type=streaming_query]"}}, selected: "other", pools: []string{"batch", "default", "idle"}},
+		{name: "include explicit pool", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"copy[type=streaming_query]"}}, selected: "copy", pools: []string{"batch"}},
+		{name: "include default pool", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"other[type=streaming_query]"}}, selected: "other", pools: []string{"default"}},
+		{name: "exclude query", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"copy[type=streaming_query]"}}, selected: "other", pools: []string{"batch", "default", "idle"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -77,9 +77,9 @@ func TestScopeStreamingLimitsFollowObjectSelection(t *testing.T) {
 		name  string
 		scope atlasfilter.Scope
 	}{
-		{name: "include", scope: atlasfilter.Scope{Include: []string{"app.*[type=streaming_query]"}}},
-		{name: "exclude", scope: atlasfilter.Scope{Exclude: []string{"other.*[type=streaming_query]"}}},
-		{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"app"}}},
+		{name: "include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.*[type=streaming_query]"}}},
+		{name: "exclude", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"other.*[type=streaming_query]"}}},
+		{name: "schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

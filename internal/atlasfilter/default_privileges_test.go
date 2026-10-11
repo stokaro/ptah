@@ -147,11 +147,11 @@ func TestExcludeSubtractsDefaultPrivilegesOnBothSidesTheSameWay(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			gotDatabase, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			gotDatabase, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				defaultPrivilegeDatabaseFixture(), []string{test.pattern}, "public")
 			c.Assert(err, qt.IsNil)
 
-			gotGenerated, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(
+			gotGenerated, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(),
 				defaultPrivilegeGeneratedFixture(), []string{test.pattern}, "public")
 			c.Assert(err, qt.IsNil)
 
@@ -177,7 +177,7 @@ func TestExcludeGeneratedLeavesTheCallersDefaultPrivilegesAlone(t *testing.T) {
 	schema.DefaultPrivileges[0].Privileges = []schemamodel.PrivilegeGrant{{Privilege: "select"}}
 	before := slices.Clone(schema.DefaultPrivileges)
 
-	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(
+	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(),
 		schema, []string{"nosuch_object"}, "public")
 
 	c.Assert(err, qt.IsNil)
@@ -216,7 +216,7 @@ func TestScopeNarrowsDefaultPrivilegesToTheSchemaUniverse(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			scope := atlasfilter.Scope{Schemas: test.schemas, DefaultSchema: "public"}
+			scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: test.schemas, DefaultSchema: "public"}
 
 			gotDatabase, err := atlasfilter.ScopeDatabase(defaultPrivilegeDatabaseFixture(), scope)
 			c.Assert(err, qt.IsNil)
@@ -245,12 +245,12 @@ func TestScopeKeepsTheGlobalDefaultInEverySchemaUniverse(t *testing.T) {
 	}{
 		{
 			name:  "a schema other than the connected one",
-			scope: atlasfilter.Scope{Schemas: []string{"app"}, DefaultSchema: "public"},
+			scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}, DefaultSchema: "public"},
 			want:  []string{"SCHEMAS"},
 		},
 		{
 			name:  "an include selection",
-			scope: atlasfilter.Scope{Schemas: []string{"public"}, Include: []string{"users"}, DefaultSchema: "public"},
+			scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}, Include: []string{"users"}, DefaultSchema: "public"},
 			want:  make([]string, 0),
 		},
 	}
@@ -302,6 +302,7 @@ func TestScopeKeepsTheGlobalDefaultInEverySchemaUniverse(t *testing.T) {
 func TestScopeKeepsTheRolesADefaultPrivilegeNames(t *testing.T) {
 	c := qt.New(t)
 	scope := atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"public"},
 		Include:       []string{"users"},
 		DefaultSchema: "public",

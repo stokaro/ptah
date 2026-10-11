@@ -18,10 +18,10 @@ func TestDatabaseGrantsFollowPrincipalScope(t *testing.T) {
 		scope atlasfilter.Scope
 		count int
 	}{
-		{"directory", atlasfilter.Scope{Schemas: []string{"shop"}}, 1},
-		{"principal", atlasfilter.Scope{Include: []string{"app[type=role]"}}, 1},
-		{"table", atlasfilter.Scope{Include: []string{"shop.orders[type=table]"}}, 0},
-		{"excluded default schema", atlasfilter.Scope{Exclude: []string{"other[type=schema]"}, DefaultSchema: "other"}, 1},
+		{"directory", atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}}, 1},
+		{"principal", atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app[type=role]"}}, 1},
+		{"table", atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"shop.orders[type=table]"}}, 0},
+		{"excluded default schema", atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"other[type=schema]"}, DefaultSchema: "other"}, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

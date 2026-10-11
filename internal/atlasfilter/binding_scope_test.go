@@ -76,12 +76,12 @@ func TestScopeKeepsAPolicyByTheTablesItBinds(t *testing.T) {
 		scope        atlasfilter.Scope
 		wantPolicies int
 	}{
-		{name: "an include holding every bound table", scope: atlasfilter.Scope{Include: []string{"app.orders", "app.invoices"}}, wantPolicies: 1},
-		{name: "an include holding no bound table", scope: atlasfilter.Scope{Include: []string{"app.audit"}}},
-		{name: "an exclusion of an unbound table", scope: atlasfilter.Scope{Exclude: []string{"app.audit"}}, wantPolicies: 1},
-		{name: "an exclusion of every bound table", scope: atlasfilter.Scope{Exclude: []string{"app.orders", "app.invoices"}}},
-		{name: "the schema of the bound tables", scope: atlasfilter.Scope{Schemas: []string{"app"}}, wantPolicies: 1},
-		{name: "another schema", scope: atlasfilter.Scope{Schemas: []string{"billing"}}},
+		{name: "an include holding every bound table", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.orders", "app.invoices"}}, wantPolicies: 1},
+		{name: "an include holding no bound table", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.audit"}}},
+		{name: "an exclusion of an unbound table", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"app.audit"}}, wantPolicies: 1},
+		{name: "an exclusion of every bound table", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"app.orders", "app.invoices"}}},
+		{name: "the schema of the bound tables", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}}, wantPolicies: 1},
+		{name: "another schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"billing"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -109,8 +109,8 @@ func TestScopeRefusesToSplitAPolicy(t *testing.T) {
 		name  string
 		scope atlasfilter.Scope
 	}{
-		{name: "an include of one bound table", scope: atlasfilter.Scope{Include: []string{"app.orders"}}},
-		{name: "an exclusion of one bound table", scope: atlasfilter.Scope{Exclude: []string{"app.invoices"}}},
+		{name: "an include of one bound table", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.orders"}}},
+		{name: "an exclusion of one bound table", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"app.invoices"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestScopeLeavesANamedAggregateToItsSelector(t *testing.T) {
 				featureselect.Side{Representation: schemaext.Observed, Objects: read.FeatureObjects, Coverage: read.FeatureCoverage})
 			c.Assert(err, qt.IsNil)
 
-			got, err := atlasfilter.ScopeDatabase(read, atlasfilter.Scope{Include: test.include, Bindings: bindings})
+			got, err := atlasfilter.ScopeDatabase(read, atlasfilter.Scope{Selections: ownerSelections(), Include: test.include, Bindings: bindings})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.FeatureObjects.Len(), qt.Equals, test.wantAggregates)

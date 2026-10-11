@@ -713,3 +713,11 @@ v0.13.0 ptah.run/core/ast
 # This changes the Go API; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.
 v0.13.0 ptah.run/core/ast
+
+# #4140 moves the selector types of owners' standalone objects out of the
+# Atlas-compatible filter into their owners, through the new contract
+# ptah.run/core/selectext. engine.Provider gains Selections, engine.Runtime
+# Selections, and engine.SchemaRuntime includes selectext.Runtime, so an
+# implementation of SchemaRuntime adds that method. Pre-v1, so no
+# compatibility is owed.
+v0.13.0 ptah.run/engine

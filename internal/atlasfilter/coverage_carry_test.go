@@ -29,9 +29,9 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 		name  string
 		scope atlasfilter.Scope
 	}{
-		{name: "positive selection", scope: atlasfilter.Scope{Include: []string{"kept"}, DefaultSchema: "public"}},
-		{name: "exclusion only", scope: atlasfilter.Scope{Exclude: []string{"dropped"}, DefaultSchema: "public"}},
-		{name: "schema universe", scope: atlasfilter.Scope{Schemas: []string{"public"}, DefaultSchema: "public"}},
+		{name: "positive selection", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"kept"}, DefaultSchema: "public"}},
+		{name: "exclusion only", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"dropped"}, DefaultSchema: "public"}},
+		{name: "schema universe", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}, DefaultSchema: "public"}},
 	}
 
 	for _, test := range tests {
@@ -61,8 +61,8 @@ func TestScopeGeneratedKeepsCoverage(t *testing.T) {
 		name  string
 		scope atlasfilter.Scope
 	}{
-		{name: "positive selection", scope: atlasfilter.Scope{Include: []string{"kept"}, DefaultSchema: "public"}},
-		{name: "exclusion only", scope: atlasfilter.Scope{Exclude: []string{"dropped"}, DefaultSchema: "public"}},
+		{name: "positive selection", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"kept"}, DefaultSchema: "public"}},
+		{name: "exclusion only", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"dropped"}, DefaultSchema: "public"}},
 	}
 
 	for _, test := range tests {

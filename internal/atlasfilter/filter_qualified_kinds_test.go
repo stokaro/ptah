@@ -203,7 +203,7 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedSelectorsReachEnumsAndFunctio
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				qualifiedKindsFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -224,19 +224,19 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedSelectorsReachEnumsAndFunctio
 func TestExcludeDatabase_EnumsAndFunctionsKeepBareOnlyCandidatesWithoutDefault(t *testing.T) {
 	c := qt.New(t)
 
-	qualified, err := atlasfilter.ExcludeDatabase(qualifiedKindsFixture(), []string{"public.mood", "public.fn_audit"})
+	qualified, err := atlasfilter.ExcludeDatabase(ownerSelections(), qualifiedKindsFixture(), []string{"public.mood", "public.fn_audit"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(qualifiedEnumNames(qualified.Enums), qt.DeepEquals, []string{"mood", "app.color"})
 	c.Assert(qualifiedFunctionNames(qualified.Functions), qt.DeepEquals, []string{"fn_audit", "app.fn_app"})
 
-	bare, err := atlasfilter.ExcludeDatabase(qualifiedKindsFixture(), []string{"mood", "fn_audit"})
+	bare, err := atlasfilter.ExcludeDatabase(ownerSelections(), qualifiedKindsFixture(), []string{"mood", "fn_audit"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(qualifiedEnumNames(bare.Enums), qt.DeepEquals, []string{"app.color"})
 	c.Assert(qualifiedFunctionNames(bare.Functions), qt.DeepEquals, []string{"app.fn_app"})
 
 	// The non-default schema is carried by the object itself, so it stays
 	// addressable with no default in play.
-	nonDefault, err := atlasfilter.ExcludeDatabase(qualifiedKindsFixture(), []string{"app.color", "app.fn_app"})
+	nonDefault, err := atlasfilter.ExcludeDatabase(ownerSelections(), qualifiedKindsFixture(), []string{"app.color", "app.fn_app"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(qualifiedEnumNames(nonDefault.Enums), qt.DeepEquals, []string{"mood"})
 	c.Assert(qualifiedFunctionNames(nonDefault.Functions), qt.DeepEquals, []string{"fn_audit"})
@@ -383,7 +383,7 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(),
 				generatedQualifiedKindsFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -408,7 +408,8 @@ func TestScopeDatabase_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testi
 	}
 
 	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
-		Include: []string{`" Extension Store ".pgcrypto`},
+		Selections: ownerSelections(),
+		Include:    []string{`" Extension Store ".pgcrypto`},
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -432,7 +433,8 @@ func TestScopeGenerated_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *test
 	}
 
 	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
-		Include: []string{`" Extension Store ".pgcrypto`},
+		Selections: ownerSelections(),
+		Include:    []string{`" Extension Store ".pgcrypto`},
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -453,7 +455,8 @@ func TestScopeDatabase_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T
 	}
 
 	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
-		Include: []string{`" ".pgcrypto`},
+		Selections: ownerSelections(),
+		Include:    []string{`" ".pgcrypto`},
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -474,7 +477,8 @@ func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.
 	}
 
 	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
-		Include: []string{`" ".pgcrypto`},
+		Selections: ownerSelections(),
+		Include:    []string{`" ".pgcrypto`},
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -486,7 +490,7 @@ func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.
 
 func TestScopeExtensionSchemasWithInternalWhitespaceUseQuotedCandidates(t *testing.T) {
 	c := qt.New(t)
-	scope := atlasfilter.Scope{Include: []string{`"Extension Store".pgcrypto`}}
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{`"Extension Store".pgcrypto`}}
 	database, err := atlasfilter.ScopeDatabase(&catalog.Database{
 		Schemas:    []catalog.Schema{{Name: "Extension Store"}},
 		Extensions: []catalog.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},

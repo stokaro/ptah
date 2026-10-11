@@ -56,7 +56,7 @@ func includeOutcomeDatabase() *catalog.Database {
 }
 
 func includeOutcomeScope(include []string) atlasfilter.Scope {
-	return atlasfilter.Scope{Include: include, DefaultSchema: "main"}
+	return atlasfilter.Scope{Selections: ownerSelections(), Include: include, DefaultSchema: "main"}
 }
 
 // outcomeGeneratedTableNames tolerates a nil projection so a row that expects
@@ -253,6 +253,7 @@ func TestSchemaScopeAloneNeverReportsEmptySelection(t *testing.T) {
 			name: "generated",
 			project: func(schemas []string) ([]string, error) {
 				got, err := atlasfilter.ScopeGenerated(includeOutcomeGenerated(), atlasfilter.Scope{
+					Selections:    ownerSelections(),
 					Schemas:       schemas,
 					DefaultSchema: "main",
 				})
@@ -263,6 +264,7 @@ func TestSchemaScopeAloneNeverReportsEmptySelection(t *testing.T) {
 			name: "database",
 			project: func(schemas []string) ([]string, error) {
 				got, err := atlasfilter.ScopeDatabase(includeOutcomeDatabase(), atlasfilter.Scope{
+					Selections:    ownerSelections(),
 					Schemas:       schemas,
 					DefaultSchema: "main",
 				})

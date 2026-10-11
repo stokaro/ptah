@@ -29,6 +29,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
@@ -109,6 +110,7 @@ type Runtime interface {
 	yamlext.Runtime
 	sqlext.Runtime
 	hclext.Runtime
+	selectext.Runtime
 	coverage.Runtime
 }
 

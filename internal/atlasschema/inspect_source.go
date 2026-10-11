@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
@@ -143,12 +144,16 @@ func ValidateInspectOptions(opts InspectSourceOptions) error {
 	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
 		return err
 	}
-	if err := atlasfilter.ValidateExcludeSelectors(opts.Exclude); err != nil {
+	var selections selectext.Set
+	if opts.Runtime != nil {
+		selections = opts.Runtime.Selections()
+	}
+	if err := atlasfilter.ValidateExcludeSelectors(opts.Exclude, selections); err != nil {
 		return err
 	}
 	// Malformed or unsupported --include selectors fail before any database is
 	// contacted and before the dev database is reset.
-	return atlasfilter.ValidateIncludeSelectors(opts.Include)
+	return atlasfilter.ValidateIncludeSelectors(opts.Include, selections)
 }
 
 // ValidateNonDatabaseInspectPreconditions is [ValidateInspectOptions] plus the

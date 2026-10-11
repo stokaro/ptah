@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
@@ -43,6 +44,7 @@ type InspectRuntime interface {
 	yamlext.Runtime
 	sqlext.Runtime
 	hclext.Runtime
+	selectext.Runtime
 }
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -529,6 +531,9 @@ func scopeInspectSchema(
 		Exclude:               opts.Exclude,
 		DefaultSchema:         info.Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(info),
+	}
+	if opts.Runtime != nil {
+		scope.Selections = opts.Runtime.Selections()
 	}
 	var err error
 	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, info.Dialect, scope, databaseSide(schema))

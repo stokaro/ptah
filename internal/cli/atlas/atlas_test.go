@@ -19,9 +19,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/schemaclean"
 	"ptah.run/internal/testutils"
@@ -34,6 +36,7 @@ func TestSchemaCleanScopeCarriesAnExplicitSchemaSequenceWithItsDefaultSchemaTabl
 	plan := schemaCleanDefaultSchemaOwnershipPlan()
 
 	got, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users[type=table]"},
 		DefaultSchema: "app",
 	}, "postgres")
@@ -58,6 +61,7 @@ func TestSchemaCleanScopeRefusesAnExplicitSchemaSequenceWithoutItsDefaultSchemaT
 	plan := schemaCleanDefaultSchemaOwnershipPlan()
 
 	_, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users_id_seq[type=sequence]"},
 		DefaultSchema: "app",
 	}, "postgres")
@@ -71,6 +75,7 @@ func TestSchemaCleanScopeRefusesExcludingAnExplicitSchemaSequenceFromItsDefaultS
 	plan := schemaCleanDefaultSchemaOwnershipPlan()
 
 	_, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Exclude:       []string{"users_id_seq[type=sequence]"},
 		DefaultSchema: "app",
 	}, "postgres")
@@ -89,6 +94,7 @@ func TestSchemaCleanScopeUsesRestrictForASelectedPostgresTable(t *testing.T) {
 	}, "postgres")
 
 	got, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users[type=table]"},
 		DefaultSchema: "app",
 	}, "postgres")
@@ -5037,4 +5043,10 @@ func TestCompatCommand_RootRejectsVersionFlag(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 		})
 	}
+}
+
+// ownerSelections are the scope selections of the bundled owners, which a
+// command passes from its runtime.
+func ownerSelections() selectext.Set {
+	return builtintest.Runtime().Selections()
 }

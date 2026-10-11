@@ -57,28 +57,28 @@ var columnSequenceScopes = []struct {
 	scope atlasfilter.Scope
 	want  []string
 }{
-	{name: "no selector", scope: atlasfilter.Scope{}, want: []string{"items_id_seq"}},
-	{name: "include the owning table", scope: atlasfilter.Scope{Include: []string{"items"}}, want: []string{"items_id_seq"}},
-	{name: "include another table", scope: atlasfilter.Scope{Include: []string{"other"}}, want: nil},
-	{name: "include the sequence by name", scope: atlasfilter.Scope{Include: []string{"items_id_seq"}}, want: []string{"items_id_seq"}},
+	{name: "no selector", scope: atlasfilter.Scope{Selections: ownerSelections()}, want: []string{"items_id_seq"}},
+	{name: "include the owning table", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"items"}}, want: []string{"items_id_seq"}},
+	{name: "include another table", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"other"}}, want: nil},
+	{name: "include the sequence by name", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"items_id_seq"}}, want: []string{"items_id_seq"}},
 	{
 		name:  "include the sequence by type",
-		scope: atlasfilter.Scope{Include: []string{"items_id_seq[type=sequence]"}},
+		scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"items_id_seq[type=sequence]"}},
 		want:  []string{"items_id_seq"},
 	},
-	{name: "exclude the owning table", scope: atlasfilter.Scope{Exclude: []string{"items"}}, want: nil},
-	{name: "exclude the owning column", scope: atlasfilter.Scope{Exclude: []string{"items.id"}}, want: nil},
-	{name: "exclude the sequence by name", scope: atlasfilter.Scope{Exclude: []string{"items_id_seq"}}, want: nil},
+	{name: "exclude the owning table", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"items"}}, want: nil},
+	{name: "exclude the owning column", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"items.id"}}, want: nil},
+	{name: "exclude the sequence by name", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"items_id_seq"}}, want: nil},
 	{
 		name:  "exclude the sequence by type",
-		scope: atlasfilter.Scope{Exclude: []string{"items_id_seq[type=sequence]"}},
+		scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"items_id_seq[type=sequence]"}},
 		want:  nil,
 	},
-	{name: "exclude another table", scope: atlasfilter.Scope{Exclude: []string{"other"}}, want: []string{"items_id_seq"}},
-	{name: "exclude the grant", scope: atlasfilter.Scope{Exclude: []string{"items_id_seq[type=grant]"}}, want: nil},
+	{name: "exclude another table", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"other"}}, want: []string{"items_id_seq"}},
+	{name: "exclude the grant", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"items_id_seq[type=grant]"}}, want: nil},
 	{
 		name:  "include the table, exclude its sequence",
-		scope: atlasfilter.Scope{Include: []string{"items"}, Exclude: []string{"items_id_seq"}},
+		scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"items"}, Exclude: []string{"items_id_seq"}},
 		want:  nil,
 	},
 }
@@ -124,9 +124,9 @@ func TestExcludeSelectorNamingAColumnSequenceIsMatched(t *testing.T) {
 	c := qt.New(t)
 
 	selectors := []string{"items_id_seq[type=sequence]"}
-	_, database, err := atlasfilter.ExcludeDatabaseReport(columnSequenceDatabase(), selectors, "public")
+	_, database, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), columnSequenceDatabase(), selectors, "public")
 	c.Assert(err, qt.IsNil)
-	_, desired, err := atlasfilter.ExcludeGeneratedReport(columnSequenceDesired(), selectors, "public")
+	_, desired, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(), columnSequenceDesired(), selectors, "public")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(database.Unmatched, qt.HasLen, 0)
@@ -168,9 +168,9 @@ func TestExclude_StandaloneSequenceLeavesWithItsOwner(t *testing.T) {
 				Grants:    []schemamodel.Grant{{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "lifecycle_seq"}},
 			}
 
-			gotDatabase, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{test.exclude}, "public")
+			gotDatabase, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), database, []string{test.exclude}, "public")
 			c.Assert(err, qt.IsNil)
-			gotDesired, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(desired, []string{test.exclude}, "public")
+			gotDesired, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), desired, []string{test.exclude}, "public")
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(gotDatabase.Sequences, qt.HasLen, 0)

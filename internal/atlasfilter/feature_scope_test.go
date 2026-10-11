@@ -19,9 +19,9 @@ var featureScopeCases = []struct {
 	name  string
 	scope atlasfilter.Scope
 }{
-	{name: "include", scope: atlasfilter.Scope{Include: []string{"app.kept"}}},
-	{name: "exclude", scope: atlasfilter.Scope{Exclude: []string{"other.dropped"}}},
-	{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"app"}}},
+	{name: "include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.kept"}}},
+	{name: "exclude", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"other.dropped"}}},
+	{name: "schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}}},
 }
 
 func TestScopeDatabasePreservesSelectedFeatureChildren(t *testing.T) {
@@ -70,7 +70,7 @@ func TestScopeDatabasePreservesUninspectedFeatureNamespace(t *testing.T) {
 		Tables:          []catalog.Table{{Schema: "app", Name: "kept"}},
 		FeatureCoverage: must.Must(schemaext.NewCoverage(schemaext.Observed, definition, nil)),
 	}
-	got, err := atlasfilter.ScopeDatabase(source, atlasfilter.Scope{Schemas: []string{"app"}})
+	got, err := atlasfilter.ScopeDatabase(source, atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.FeatureCoverage.Representation(), qt.Equals, schemaext.Observed)
 	c.Assert(got.FeatureCoverage.KindRecords(), qt.DeepEquals, definition)

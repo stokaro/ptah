@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
@@ -229,7 +228,7 @@ func atlasPlanTestSchemaResolver(dir string, owners yamlext.Set, sql sqlext.Set)
 // catch.
 func atlasPlanTestPlanApplier(
 	dir string,
-	runtime schemaext.ModelRuntime,
+	runtime atlasschema.PlanTargetRuntime,
 ) func(context.Context, *dbschema.DatabaseConnection, string) error {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error {
 		path, err := atlasPlanTestLocalPath(dir, url, "apply")

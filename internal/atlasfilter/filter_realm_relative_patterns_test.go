@@ -97,6 +97,7 @@ func TestScopeDatabaseReport_CountsPatternPartsAgainstWhatTheRunDescribes(t *tes
 			c := qt.New(t)
 
 			got, _, err := atlasfilter.ScopeDatabaseReport(defaultSchemaFixture(), atlasfilter.Scope{
+				Selections:            ownerSelections(),
 				Exclude:               []string{test.pattern},
 				DefaultSchema:         "public",
 				RealmRelativePatterns: test.realm,

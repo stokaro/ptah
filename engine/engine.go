@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 )
@@ -84,6 +85,11 @@ type Provider struct {
 	// them. Each extension names this provider as its owner, and the
 	// provider owns the desired codec of every model it claims.
 	HCL []hclext.Extension
+	// Selections say how a command's scope names the provider's objects:
+	// the selector type of each kind and what only the owner can compute of
+	// a scope. Each extension names this provider as its owner, and the
+	// provider owns the desired codec of every model it selects.
+	Selections []selectext.Extension
 	// CoverageKinds are the not-described coverage kinds the provider's reader
 	// records for state Ptah does not model, such as a YDB changefeed. A
 	// document's coverage header and a Go notdescribed declaration may name
@@ -211,6 +217,7 @@ type Runtime struct {
 	yaml                yamlext.Set
 	sql                 sqlext.Set
 	hcl                 hclext.Set
+	selections          selectext.Set
 	vocabulary          coverage.Vocabulary
 	limits              []schemaext.LimitMapping
 	lintRules           map[string]ownedLintRule
@@ -316,7 +323,7 @@ func (r *Runtime) registerStatements(provider Provider) error {
 // annotation, YAML and SQL extensions.
 func (r *Runtime) registerSources(providers []Provider) error {
 	for _, register := range []func([]Provider) error{
-		r.registerCoverageKinds, r.registerCoverageLimits, r.registerAnnotations, r.registerYAML, r.registerSQL, r.registerHCL,
+		r.registerCoverageKinds, r.registerCoverageLimits, r.registerAnnotations, r.registerYAML, r.registerSQL, r.registerHCL, r.registerSelections,
 	} {
 		if err := register(providers); err != nil {
 			return err

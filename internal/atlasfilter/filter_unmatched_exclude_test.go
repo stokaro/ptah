@@ -75,7 +75,7 @@ func TestExcludeDatabaseReport_NamesSelectorsThatMatchedNothing(t *testing.T) {
 				{TableName: "users", Name: "users_id_idx", Columns: []string{"id"}},
 			}
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(schema, test.patterns, "public")
+			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), schema, test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Unmatched, qt.DeepEquals, test.want)
@@ -89,7 +89,7 @@ func TestExcludeDatabaseReport_NamesSelectorsThatMatchedNothing(t *testing.T) {
 func TestExcludeGeneratedReport_NamesSelectorsThatMatchedNothing(t *testing.T) {
 	c := qt.New(t)
 
-	_, report, err := atlasfilter.ExcludeGeneratedReport(
+	_, report, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(),
 		generatedQualifiedKindsFixture(), []string{"public.mood", "nosuchobject"}, "public")
 
 	c.Assert(err, qt.IsNil)
@@ -103,7 +103,7 @@ func TestExcludeGeneratedReport_NamesSelectorsThatMatchedNothing(t *testing.T) {
 func TestExcludeGeneratedReport_ReportsEverySelectorForAnAbsentState(t *testing.T) {
 	c := qt.New(t)
 
-	_, report, err := atlasfilter.ExcludeGeneratedReport(nil, []string{"mood", "fn_audit"}, "public")
+	_, report, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(), nil, []string{"mood", "fn_audit"}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Unmatched, qt.DeepEquals, []string{"mood", "fn_audit"})
@@ -120,6 +120,7 @@ func TestScopeDatabaseReport_MeasuresEmptinessBeforeTheIncludeProjection(t *test
 	c := qt.New(t)
 
 	_, report, err := atlasfilter.ScopeDatabaseReport(qualifiedKindsFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users"},
 		Exclude:       []string{"public.mood"},
 		DefaultSchema: "public",
@@ -255,7 +256,7 @@ func TestUnmatchedExcludeError_NamesEverySelector(t *testing.T) {
 func TestExcludeDatabaseReport_TypeSelectorReportsItsWrittenSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	_, report, err := atlasfilter.ExcludeDatabaseReport(
+	_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 		&catalog.Database{Enums: []catalog.Enum{{Name: "mood"}}},
 		[]string{"nosuch*[type=table]"},
 		"public")
@@ -285,14 +286,14 @@ func TestExcludeReport_ChildOfARemovedTableIsAskedOnBothSides(t *testing.T) {
 		Indexes: []schemamodel.Index{{StructName: "User", Name: "users_id_idx", Fields: []string{"id"}}},
 	}
 
-	filteredGenerated, desired, err := atlasfilter.ExcludeGeneratedReport(
+	filteredGenerated, desired, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(),
 		schema, []string{"users", "users.users_id_idx"}, "public")
 	c.Assert(err, qt.IsNil)
 	c.Assert(desired.Unmatched, qt.IsNil)
 	c.Assert(filteredGenerated.Tables, qt.HasLen, 0)
 	c.Assert(filteredGenerated.Indexes, qt.HasLen, 0)
 
-	filteredDatabase, database, err := atlasfilter.ExcludeDatabaseReport(
+	filteredDatabase, database, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 		&catalog.Database{
 			Tables:  []catalog.Table{{Name: "users", Columns: []catalog.Column{{Name: "id"}}}},
 			Indexes: []catalog.Index{{TableName: "users", Name: "users_id_idx", Columns: []string{"id"}}},

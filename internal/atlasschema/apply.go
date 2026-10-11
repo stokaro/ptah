@@ -387,6 +387,7 @@ func computeApplyPlan(
 		Exclude:               opts.Exclude,
 		DefaultSchema:         conn.Info().Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(conn.Info()),
+		Selections:            opts.Runtime.Selections(),
 	}
 	desired, err := loadAndValidateDesiredApplySchema(ctx, conn, opts)
 	if err != nil {

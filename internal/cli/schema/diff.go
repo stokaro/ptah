@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -128,7 +129,11 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	default:
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --%s %q: expected sql or json", diffFormatFlag, opts.format))
 	}
-	if err := validateSchemaDiffSources(opts); err != nil {
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := validateSchemaDiffSources(opts, runtime.Selections()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
@@ -142,10 +147,6 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	runtime, err := builtin.New()
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
 		Runtime:             runtime,
 		FromURLs:            opts.fromURLs,
@@ -172,7 +173,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	return nil
 }
 
-func validateSchemaDiffSources(opts schemaDiffOptions) error {
+func validateSchemaDiffSources(opts schemaDiffOptions, selections selectext.Set) error {
 	if len(opts.fromURLs) == 0 {
 		return fmt.Errorf("--%s is required", diffFromFlag)
 	}
@@ -181,7 +182,7 @@ func validateSchemaDiffSources(opts schemaDiffOptions) error {
 	}
 	// Malformed or unsupported --include selectors fail before any database
 	// is contacted.
-	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include, selections); err != nil {
 		return err
 	}
 	// Classification rejects unsupported schemes and source conflicts, and

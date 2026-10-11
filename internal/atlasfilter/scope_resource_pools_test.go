@@ -22,11 +22,11 @@ func TestScopeWorkloadObjects(t *testing.T) {
 		scope atlasfilter.Scope
 		refs  []objectidentity.ID
 	}{
-		{name: "classifier retains its pool", scope: atlasfilter.Scope{Include: []string{"etl_users[type=resource_pool_classifier]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs"), ydbworkload.ClassifierRef("etl_users")}},
-		{name: "pool does not pull in classifiers", scope: atlasfilter.Scope{Include: []string{"batch.jobs[type=resource_pool]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs")}},
-		{name: "explicit pool exclusion", scope: atlasfilter.Scope{Include: []string{"etl_users[type=resource_pool_classifier]"}, Exclude: []string{"batch.jobs[type=resource_pool]"}}, refs: []objectidentity.ID{ydbworkload.ClassifierRef("etl_users")}},
-		{name: "classifier exclusion", scope: atlasfilter.Scope{Exclude: []string{"*[type=resource_pool_classifier]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs"), ydbworkload.PoolRef("reports")}},
-		{name: "database scope survives schema restriction", scope: atlasfilter.Scope{Schemas: []string{"unrelated"}, Include: []string{"etl_users[type=resource_pool_classifier]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs"), ydbworkload.ClassifierRef("etl_users")}},
+		{name: "classifier retains its pool", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"etl_users[type=resource_pool_classifier]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs"), ydbworkload.ClassifierRef("etl_users")}},
+		{name: "pool does not pull in classifiers", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"batch.jobs[type=resource_pool]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs")}},
+		{name: "explicit pool exclusion", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"etl_users[type=resource_pool_classifier]"}, Exclude: []string{"batch.jobs[type=resource_pool]"}}, refs: []objectidentity.ID{ydbworkload.ClassifierRef("etl_users")}},
+		{name: "classifier exclusion", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"*[type=resource_pool_classifier]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs"), ydbworkload.PoolRef("reports")}},
+		{name: "database scope survives schema restriction", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"unrelated"}, Include: []string{"etl_users[type=resource_pool_classifier]"}}, refs: []objectidentity.ID{ydbworkload.PoolRef("batch.jobs"), ydbworkload.ClassifierRef("etl_users")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -69,8 +69,8 @@ func TestScopeWorkloadObjects(t *testing.T) {
 func TestScopeWorkloadLimitsFollowExactObjectNames(t *testing.T) {
 	for _, kind := range []schemaext.Kind{ydbworkload.PoolKind, ydbworkload.ClassifierKind} {
 		for _, scope := range []atlasfilter.Scope{
-			{Include: []string{"batch.jobs"}},
-			{Exclude: []string{"other"}},
+			{Include: []string{"batch.jobs"}, Selections: ownerSelections()},
+			{Exclude: []string{"other"}, Selections: ownerSelections()},
 		} {
 			c := qt.New(t)
 			identity := map[schemaext.Kind]func(string) objectidentity.ID{ydbworkload.PoolKind: ydbworkload.PoolRef, ydbworkload.ClassifierKind: ydbworkload.ClassifierRef}[kind]

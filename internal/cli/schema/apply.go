@@ -406,7 +406,7 @@ func applySchema(
 			"a desired schema source is required: pass --%s and/or --%s, or --%s",
 			applyRootDirFlag, applySchemaFileFlag, applyToFlag)
 	}
-	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include, opts.runtime.Selections()); err != nil {
 		return "", err
 	}
 	if len(opts.toURLs) > 0 {

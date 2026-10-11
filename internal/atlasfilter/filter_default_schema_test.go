@@ -213,7 +213,7 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema(t 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				defaultSchemaFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -234,11 +234,11 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema(t 
 func TestExcludeDatabase_WithoutDefaultSchemaKeepsBareOnlyCandidates(t *testing.T) {
 	c := qt.New(t)
 
-	qualified, err := atlasfilter.ExcludeDatabase(defaultSchemaFixture(), []string{"public.users"})
+	qualified, err := atlasfilter.ExcludeDatabase(ownerSelections(), defaultSchemaFixture(), []string{"public.users"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(qualified.Tables), qt.DeepEquals, []string{"users", "app.orders"})
 
-	bare, err := atlasfilter.ExcludeDatabase(defaultSchemaFixture(), []string{"users"})
+	bare, err := atlasfilter.ExcludeDatabase(ownerSelections(), defaultSchemaFixture(), []string{"users"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(bare.Tables), qt.DeepEquals, []string{"app.orders"})
 }
@@ -304,7 +304,7 @@ func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
 				},
 			}
 
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(schema, []string{test.pattern}, "public")
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), schema, []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(generatedDefaultSchemaObjectsOf(got), qt.DeepEquals, test.want)

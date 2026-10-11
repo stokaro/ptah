@@ -117,13 +117,13 @@ func TestExclude_TreatsOwnedExtensionsAsCommonOnes(t *testing.T) {
 			commonRead, ownedRead := readBoth(ownedTrio)
 			commonDeclared, ownedDeclared := declareBoth(ownedTrio)
 
-			wantRead, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(commonRead, test.patterns, "public")
+			wantRead, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), commonRead, test.patterns, "public")
 			c.Assert(err, qt.IsNil)
-			gotRead, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownedRead, test.patterns, "public")
+			gotRead, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), ownedRead, test.patterns, "public")
 			c.Assert(err, qt.IsNil)
-			wantDeclared, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(commonDeclared, test.patterns, "public")
+			wantDeclared, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), commonDeclared, test.patterns, "public")
 			c.Assert(err, qt.IsNil)
-			gotDeclared, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownedDeclared, test.patterns, "public")
+			gotDeclared, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), ownedDeclared, test.patterns, "public")
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(readExtensions(gotRead), qt.DeepEquals, test.want)
@@ -148,13 +148,13 @@ func TestScope_TreatsOwnedExtensionsAsCommonOnes(t *testing.T) {
 		want        []string
 		wantSchemas []string
 	}{
-		{name: "a schema universe", scope: atlasfilter.Scope{Schemas: []string{"app"}},
+		{name: "a schema universe", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}},
 			want:        []string{"audit.isn:1.2", "extensions.citext:1.6", "public.pg_trgm:1.6"},
 			wantSchemas: []string{"app"}},
-		{name: "a non-extension include", scope: atlasfilter.Scope{Include: []string{"app.users"}},
+		{name: "a non-extension include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}},
 			want:        []string{"audit.isn:1.2", "extensions.citext:1.6", "public.pg_trgm:1.6"},
 			wantSchemas: []string{"app", "audit", "extensions", "public"}},
-		{name: "an extension-only include", scope: atlasfilter.Scope{Include: []string{"extensions.citext"}},
+		{name: "an extension-only include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"extensions.citext"}},
 			want:        []string{"extensions.citext:1.6"},
 			wantSchemas: []string{"extensions"}},
 	}

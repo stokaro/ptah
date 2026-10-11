@@ -101,7 +101,7 @@ func TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				defaultSchemaFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNotNil)
@@ -133,7 +133,7 @@ func TestExcludeGeneratedWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(schema, []string{"public.users.name"}, "public")
+	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), schema, []string{"public.users.name"}, "public")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Equals, `too many parts in pattern "public.users.name": this connection is bound to schema "public", so a pattern names object or object.child; write "users.name"`)
@@ -153,7 +153,7 @@ func TestExcludeGeneratedWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *
 func TestExcludeDatabase_RealmRelativeDepthStaysAddressable(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(defaultSchemaFixture(), []string{"app.orders.id"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), defaultSchemaFixture(), []string{"app.orders.id"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
@@ -226,7 +226,7 @@ func TestExcludeDatabaseWithDefaultSchema_SchemaRelativeChildrenStayAddressable(
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				defaultSchemaFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -273,7 +273,7 @@ func TestValidateExcludeSelectors_RefusesDepthNoScopeCanAddress(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := atlasfilter.ValidateExcludeSelectors(test.values)
+			err := atlasfilter.ValidateExcludeSelectors(test.values, ownerSelections())
 
 			c.Assert(errorText(err), qt.Equals, test.wantErr)
 		})
@@ -348,12 +348,12 @@ func TestPatternDepthRefusalNamesTheSpellingThatWorks(t *testing.T) {
 // boundRefusal asks the schema-bound filter, where the connection has named a
 // schema and the pattern is counted against it.
 func boundRefusal(pattern string) error {
-	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(defaultSchemaFixture(), []string{pattern}, "public")
+	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), defaultSchemaFixture(), []string{pattern}, "public")
 	return err
 }
 
 // preConnectRefusal asks the pass that runs before any connection, which has no
 // scope to name.
 func preConnectRefusal(pattern string) error {
-	return atlasfilter.ValidateExcludeSelectors([]string{pattern})
+	return atlasfilter.ValidateExcludeSelectors([]string{pattern}, ownerSelections())
 }

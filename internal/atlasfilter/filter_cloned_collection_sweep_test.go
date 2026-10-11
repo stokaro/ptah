@@ -297,7 +297,7 @@ func TestExcludeDatabaseReport_EveryClonedCollectionAnswersItsSelector(t *testin
 		t.Run(row.field, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(
+			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 				sweptCollectionFixture(), []string{row.present}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -318,7 +318,7 @@ func TestExcludeDatabaseReport_EveryClonedCollectionStillReportsAnAbsentSelector
 		t.Run(row.field, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(
+			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 				sweptCollectionFixture(), []string{row.absent}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -405,7 +405,7 @@ func TestExcludeDatabase_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				schemaScopedFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -453,7 +453,7 @@ func TestExcludeDatabase_SelectorsThatNameNoSchemaKeepEverySchema(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				schemaScopedFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -484,7 +484,7 @@ func TestExcludeGenerated_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.
 		Functions: []schemamodel.Function{{Name: "app.fn_app"}},
 	}
 
-	got, report, err := atlasfilter.ExcludeGeneratedReport(schema, []string{"app"}, "public")
+	got, report, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(), schema, []string{"app"}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Unmatched, qt.IsNil)
@@ -505,7 +505,7 @@ func TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole(t *testing.T) {
 		t.Run(selector, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(&catalog.Database{
+			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), &catalog.Database{
 				UndescribedDefaultPrivileges: []catalog.UndescribedDefaultPrivilege{
 					{Schema: "public", ObjectType: "TABLES"},
 				},
