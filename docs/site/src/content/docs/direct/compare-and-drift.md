@@ -554,12 +554,9 @@ the payload trimmed to `ttl`:
 ```json
 {
   "subject": {
-    "Kind": "table",
-    "Catalog": {"Source": "", "Normalized": "", "Quoted": false, "Defaulted": false},
-    "Schema": {"Source": "ptah_test", "Normalized": "ptah_test", "Quoted": false, "Defaulted": true},
-    "Parent": {"Source": "", "Normalized": "", "Quoted": false, "Defaulted": false},
-    "Name": {"Source": "events", "Normalized": "events", "Quoted": false, "Defaulted": false},
-    "Signature": ""
+    "kind": "table",
+    "schema": {"source": "ptah_test", "normalized": "ptah_test", "defaulted": true},
+    "name": {"source": "events", "normalized": "events"}
   },
   "value": {
     "format": 1,
@@ -575,6 +572,13 @@ the payload trimmed to `ttl`:
   }
 }
 ```
+
+`subject` is the object's identity. `kind` names its family. `catalog`,
+`schema`, `parent` and `name` are the components the identity has, each with
+its spelling as written (`source`), its comparison form (`normalized`),
+whether the spelling was `quoted`, and whether the target's default filled it
+in (`defaulted`). A routine adds its `signature`. A component or a field that
+is empty is left out.
 
 `owner` names the provider that wrote `payload`, `kind` names what it holds,
 and `version` says in which form. `definition` is a digest of the codec
