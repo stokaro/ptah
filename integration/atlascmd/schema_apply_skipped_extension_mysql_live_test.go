@@ -44,7 +44,7 @@ table "docs" {
 }
 extension "pg_trgm" {}
 `, database), 0o600), qt.IsNil)
-	skipped := `MYSQL: PostgreSQL extension "pg_trgm" is not supported by this target; skipped.`
+	skipped := `MYSQL: PostgreSQL extension pg_trgm is not supported by this target; skipped.`
 
 	first, err := runCompatSchemaApply(targetURL, devURL, path)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", first))

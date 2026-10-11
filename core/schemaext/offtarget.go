@@ -1,9 +1,6 @@
 package schemaext
 
 import (
-	"strconv"
-	"strings"
-
 	"ptah.run/core/objectidentity"
 )
 
@@ -44,25 +41,10 @@ type SkippedObject struct {
 }
 
 // Note is the sentence a render or a plan writes for the object: its model,
-// its name as the declaration spelled it, and that the target skipped it.
+// its name as [objectidentity.ID.Path] writes it, and that the target skipped
+// it. A comparison report names an owner's object the same way.
 func (s SkippedObject) Note() string {
-	return s.Label + " " + strconv.Quote(DisplayName(s.Subject)) + " is not supported by this target; skipped."
-}
-
-// DisplayName joins the parts of an identity, as the source spelled them, for
-// a reader: the catalog, schema and parent that are set, then the name.
-func DisplayName(ref objectidentity.ID) string {
-	var parts []string
-	for _, part := range []objectidentity.Part{ref.Catalog, ref.Schema, ref.Parent, ref.Name} {
-		if source := part.Authored(); source != "" {
-			parts = append(parts, source)
-		}
-	}
-	name := strings.Join(parts, ".")
-	if ref.Signature != "" {
-		name += "(" + ref.Signature + ")"
-	}
-	return name
+	return s.Label + " " + s.Subject.Path() + " is not supported by this target; skipped."
 }
 
 // OffTargetScoper is a runtime that leaves out, for one target, the objects

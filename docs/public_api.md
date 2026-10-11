@@ -2916,7 +2916,10 @@ one of its objects: the skip line, the undecided report, where
 `Runtime.CompareFeatures` fills `schemaext.UndecidedChange.Label` from it, and
 the note `schema render` writes for an object scoped to other targets, which
 asks `Runtime.Label`. A model whose owner states no policy is named by its
-kind.
+kind. Each of them, and the refusal of an object a target does not host, writes
+the object's name as `objectidentity.ID.Path` writes it: a schema filled in
+from the default is included, and a dotted name is quoted. One object has one
+spelling in every report.
 
 `schemaext.Redeclarable` is an owner's statement that its object is idempotent
 to declare: two packages that each use pg_trgm may each declare it. It is a

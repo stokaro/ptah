@@ -246,5 +246,5 @@ func TestWriteComparisonWritesASkippedObjectBesideNoDifferences(t *testing.T) {
 	writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
-	c.Assert(stderr.String(), qt.Equals, "MYSQL: PostgreSQL extension \"pg_trgm\" is not supported by this target; skipped.\n")
+	c.Assert(stderr.String(), qt.Equals, "MYSQL: PostgreSQL extension pg_trgm is not supported by this target; skipped.\n")
 }
