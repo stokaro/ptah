@@ -56,6 +56,9 @@ var nestedCoverageExempt = map[string]string{
 	// its key beside a unique index c_x_key drops c_x_key1 on the way up, and
 	// the down migration adds c_x_key1 back (stokaro/ptah#3859).
 	"TableDiff.ColumnKeyNames": "the rollback restores the key from the removed constraint, which carries its name",
+
+	"ExtensionDiff.FromVersion": "a version moves one way only: the rollback states the version it leaves (extensionVersionLimits) instead of carrying it",
+	"ExtensionDiff.ToVersion":   "a version moves one way only: the rollback states the version it leaves (extensionVersionLimits) instead of carrying it",
 }
 
 // TestReverseSchemaDiff_NamesEveryFieldOfEveryDiffElement is the half of the
