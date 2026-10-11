@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
@@ -101,6 +102,40 @@ func (r *Runtime) registerYAML(providers []Provider) error {
 // without owners.
 func (r *Runtime) YAML() yamlext.Set {
 	return r.yaml
+}
+
+// registerHCL freezes every provider's HCL extensions into one set, under
+// the same ownership rule as YAML: an extension names its provider as the
+// owner, and the provider owns the desired codec of every model it claims.
+func (r *Runtime) registerHCL(providers []Provider) error {
+	var extensions []hclext.Extension
+	for _, provider := range providers {
+		for _, extension := range provider.HCL {
+			if extension.Owner != provider.ID {
+				return fmt.Errorf("%w: provider %q registers HCL blocks owned by %q", ErrInvalidRegistration, provider.ID, extension.Owner)
+			}
+			for _, kind := range extension.Kinds {
+				if !r.ownsCodec(provider.ID, kind, schemaext.Desired) {
+					return fmt.Errorf("%w: provider %q claims model %q for HCL without owning its desired codec",
+						ErrInvalidRegistration, provider.ID, kind)
+				}
+			}
+			extensions = append(extensions, extension)
+		}
+	}
+	set, err := hclext.NewSet(extensions...)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
+	}
+	r.hcl = set
+	return nil
+}
+
+// HCL returns the HCL extensions of the runtime's providers as one frozen
+// set. A runtime whose providers contribute none returns a selected set
+// without owners.
+func (r *Runtime) HCL() hclext.Set {
+	return r.hcl
 }
 
 // registerSQL freezes every provider's SQL extensions into one set. An

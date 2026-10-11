@@ -56,7 +56,7 @@ type Item struct {
 }
 
 func exportOptions(dir, out string, cleanup bool) goannotationexport.Options {
-	return goannotationexport.Options{Annotations: builtintest.Annotations(), RootDir: dir, OutputPath: out, Cleanup: cleanup}
+	return goannotationexport.Options{HCL: builtintest.Runtime().HCL(), Annotations: builtintest.Annotations(), RootDir: dir, OutputPath: out, Cleanup: cleanup}
 }
 
 func TestExportReportsNonNFCAttributeValue(t *testing.T) {

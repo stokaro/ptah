@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/feature/synonym"
-	"ptah.run/internal/atlashcl"
 )
 
 // TestParseSynonymAndExtendedProperty reads the two blocks stokaro/ptah#1031
@@ -23,7 +22,7 @@ import (
 func TestParseSynonymAndExtendedProperty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "dbo" {
 }
 
@@ -72,7 +71,7 @@ extended_property "MS_Description" {
 func TestParseSynonymAcceptsTheSchemaLabel(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 synonym "reporting" "s_users" {
   target = "other.dbo.users"
 }
@@ -159,7 +158,7 @@ synonym "s_users" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.Parse([]byte(test.document), "schema.hcl")
+			_, err := parseWithOwners([]byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, ".*"+test.want+".*")
 		})

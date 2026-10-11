@@ -29,7 +29,7 @@ func TestYDBDesiredYQL_Principals(t *testing.T) {
 				fmt.Sprintf("CREATE USER %s PASSWORD 'Secret1!'; CREATE USER %s NOLOGIN; CREATE GROUP %s WITH USER %s, %s; ALTER USER %s WITH LOGIN; ALTER GROUP %s DROP USER %s;", names.user, names.blocked, names.group, names.user, names.blocked, names.blocked, names.group, names.user),
 			} {
 				c.Assert(os.WriteFile(file, []byte(source), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "ydb"})
+				desired, err := schemafile.LoadAll([]string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				changes := planAgainst(c, conn, desired, accessSchemas)
 				c.Assert(changes, qt.Not(qt.HasLen), 0)
@@ -37,7 +37,7 @@ func TestYDBDesiredYQL_Principals(t *testing.T) {
 				c.Assert(planAgainst(c, conn, desired, accessSchemas), qt.HasLen, 0)
 			}
 			c.Assert(os.WriteFile(file, nil, 0o600), qt.IsNil)
-			empty, err := schemafile.LoadAll([]string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "ydb"})
+			empty, err := schemafile.LoadAll([]string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(planAgainst(c, conn, empty, accessSchemas), qt.HasLen, 0)
 			roles, memberships, _ := principalsOf(readScoped(c, conn, accessSchemas), names)

@@ -50,6 +50,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 				}}
 			},
 			wantDefaults: map[string]string{"tenant": "acme"},
+			opts:         schemafile.Options{HCL: builtintest.Runtime().HCL()},
 		},
 		{
 			// The control. Same file, same flag, unscoped source.
@@ -57,7 +58,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 			sources: func(dir string) []schemafile.Source {
 				return []schemafile.Source{{URL: filepath.Join(dir, "tenant.hcl")}}
 			},
-			opts:         schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Vars: []string{"tenant=acme"}},
+			opts:         schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Vars: []string{"tenant=acme"}},
 			wantDefaults: map[string]string{"tenant": "acme"},
 		},
 		{
@@ -74,7 +75,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 					{URL: filepath.Join(dir, "region.hcl")},
 				}
 			},
-			opts:         schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Vars: []string{"region=global"}},
+			opts:         schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Vars: []string{"region=global"}},
 			wantDefaults: map[string]string{"tenant": "scoped", "region": "global"},
 		},
 		{
@@ -90,6 +91,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 				}}
 			},
 			wantDefaults: map[string]string{"tenant": "acme,inc"},
+			opts:         schemafile.Options{HCL: builtintest.Runtime().HCL()},
 		},
 	}
 
@@ -134,7 +136,7 @@ func TestLoadSourcesRefusesValuesFromOutsideTheScope(t *testing.T) {
 					VarsScoped: true,
 				}}
 			},
-			opts:    schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Vars: []string{"tenant=acme"}},
+			opts:    schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Vars: []string{"tenant=acme"}},
 			wantErr: `.*missing value for required variable "tenant".*`,
 		},
 		{
@@ -151,6 +153,7 @@ func TestLoadSourcesRefusesValuesFromOutsideTheScope(t *testing.T) {
 				}
 			},
 			wantErr: `.*missing value for required variable "region".*`,
+			opts:    schemafile.Options{HCL: builtintest.Runtime().HCL()},
 		},
 	}
 

@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/annotation"
+	"ptah.run/internal/builtintest"
 )
 
 func TestExport_FailurePath_RevalidatesManagedDataAliasAfterOutputStaging(t *testing.T) {
@@ -36,7 +37,7 @@ type Country struct {
 	c.Assert(os.WriteFile(dataPath, data, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, []byte("previous schema\n"), 0o600), qt.IsNil)
 
-	result, err := export(Options{
+	result, err := export(Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: annotation.None(),
 		RootDir:     root,
 		OutputPath:  output,

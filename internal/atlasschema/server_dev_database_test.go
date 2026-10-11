@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/builtintest"
 )
 
 // wholeMySQLServer is a connection to a whole MySQL server.
@@ -46,15 +47,15 @@ func TestRefuseServerDevDatabase_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	sqlErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
-		classifiedTo(c, "realm.sql", "CREATE DATABASE app;\n"))
+		classifiedTo(c, "realm.sql", "CREATE DATABASE app;\n"), builtintest.Runtime().HCL())
 	dirErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
-		classifiedTo(c, "migrations/", "CREATE DATABASE app;\n"))
+		classifiedTo(c, "migrations/", "CREATE DATABASE app;\n"), builtintest.Runtime().HCL())
 	realmErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
-		classifiedTo(c, "realm.hcl", `schema "app" {}`+"\n"+`schema "more" {}`+"\n"))
+		classifiedTo(c, "realm.hcl", `schema "app" {}`+"\n"+`schema "more" {}`+"\n"), builtintest.Runtime().HCL())
 	oneErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
-		classifiedTo(c, "one.hcl", `schema "app" {}`+"\n"))
+		classifiedTo(c, "one.hcl", `schema "app" {}`+"\n"), builtintest.Runtime().HCL())
 	databaseErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
-		atlassource.Set{Kind: atlassource.KindDatabase})
+		atlassource.Set{Kind: atlassource.KindDatabase}, builtintest.Runtime().HCL())
 
 	c.Assert(sqlErr, qt.ErrorMatches, `cannot diff a schema "dev" with a database connection`)
 	c.Assert(dirErr, qt.ErrorMatches, `cannot diff a schema "dev" with a database connection`)
@@ -95,7 +96,7 @@ func TestRefuseServerDevDatabase_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(atlasschema.RefuseServerDevDatabase(test.info, test.devURL, test.desired), qt.IsNil)
+			c.Assert(atlasschema.RefuseServerDevDatabase(test.info, test.devURL, test.desired, builtintest.Runtime().HCL()), qt.IsNil)
 		})
 	}
 }

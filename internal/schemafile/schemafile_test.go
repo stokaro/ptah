@@ -30,7 +30,7 @@ CREATE TABLE users (
 CREATE INDEX idx_users_name ON users (name);
 `), 0o600), qt.IsNil)
 
-	db, err := schemafile.Load("file://"+path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.SQLite})
+	db, err := schemafile.Load("file://"+path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLite})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -83,7 +83,7 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 	c.Assert(os.WriteFile(path, rendered.Data, 0o600), qt.IsNil)
 
-	got, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
+	got, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.HasLen, 1)
@@ -119,7 +119,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
+	db, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
@@ -190,8 +190,8 @@ func TestLoad_ReportsIgnoredTopLevelBlocks(t *testing.T) {
 	var reported bytes.Buffer
 
 	db, err := schemafile.Load("file://"+path, schemafile.Options{
-		YAML:                  builtintest.Runtime().YAML(),
-		SQL:                   builtintest.Runtime().SQL(),
+		YAML: builtintest.Runtime().YAML(),
+		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
 		IgnoreUnknownHCLNames: true,
 		ReportIgnored:         &reported,
@@ -223,8 +223,8 @@ func TestLoad_RefusesIgnoredTopLevelBlocksWithoutTolerance(t *testing.T) {
 	var reported bytes.Buffer
 
 	_, err := schemafile.Load("file://"+path, schemafile.Options{
-		YAML:          builtintest.Runtime().YAML(),
-		SQL:           builtintest.Runtime().SQL(),
+		YAML: builtintest.Runtime().YAML(),
+		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:       platform.SQLite,
 		ReportIgnored: &reported,
 	})
@@ -243,8 +243,8 @@ func TestLoad_IgnoredBlocksStaySilentWithoutAReporter(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
 
 	db, err := schemafile.Load("file://"+path, schemafile.Options{
-		YAML:                  builtintest.Runtime().YAML(),
-		SQL:                   builtintest.Runtime().SQL(),
+		YAML: builtintest.Runtime().YAML(),
+		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
 		IgnoreUnknownHCLNames: true,
 	})
@@ -315,8 +315,8 @@ func TestLoad_ReportsTheConstructAnIgnoredNameSatIn(t *testing.T) {
 	var reported bytes.Buffer
 
 	db, err := schemafile.Load("file://"+path, schemafile.Options{
-		YAML:                  builtintest.Runtime().YAML(),
-		SQL:                   builtintest.Runtime().SQL(),
+		YAML: builtintest.Runtime().YAML(),
+		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
 		IgnoreUnknownHCLNames: true,
 		ReportIgnored:         &reported,
@@ -348,8 +348,8 @@ func TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails(t *testing.T) {
 	var reported bytes.Buffer
 
 	db, err := schemafile.Load("file://"+path, schemafile.Options{
-		YAML:                  builtintest.Runtime().YAML(),
-		SQL:                   builtintest.Runtime().SQL(),
+		YAML: builtintest.Runtime().YAML(),
+		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
 		IgnoreUnknownHCLNames: true,
 		ReportIgnored:         &reported,

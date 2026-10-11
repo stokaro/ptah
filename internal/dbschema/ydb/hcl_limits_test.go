@@ -14,6 +14,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -42,7 +43,7 @@ func TestReader_HCLExportKeepsWhatTheReadDidNotDescribe(t *testing.T) {
 
 	exported, err := atlashclrender.RenderInspected(described, "ydb", "")
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(exported.Data, "schema.hcl", atlashcl.Options{CoverageVocabulary: runtime.CoverageVocabulary()})
+	parsed, err := atlashcl.ParseWithOptions(exported.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), CoverageVocabulary: runtime.CoverageVocabulary()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.NotDescribed.Directives(), qt.DeepEquals, read.NotDescribed.Directives())

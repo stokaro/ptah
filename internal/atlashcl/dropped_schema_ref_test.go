@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // TestParseIgnoreUnknownNamesResolvesDeclaredSchemaRefs pins that a dropped body
@@ -121,17 +122,17 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, strictErr := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
+			_, strictErr := parseWithOwners([]byte(tt.hcl), "schema.hcl")
 			c.Assert(strictErr, qt.ErrorMatches, tt.strictErr)
 
 			tolerant, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
-				atlashcl.Options{IgnoreUnknownNames: true},
+				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNil)
 
-			without, err := atlashcl.Parse([]byte(tt.equivalent), "schema.hcl")
+			without, err := parseWithOwners([]byte(tt.equivalent), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(tolerant, qt.DeepEquals, without)
 		})
@@ -218,7 +219,7 @@ wibble "p" {
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
-				atlashcl.Options{IgnoreUnknownNames: true},
+				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 		})

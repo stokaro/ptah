@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRecordSchemaBlockReportsBlocksNotSchemas pins the one property the
@@ -65,7 +66,7 @@ schema "main" {}
 			c := qt.New(t)
 			var recorded []atlashcl.SchemaBlock
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{
+			db, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 				RecordSchemaBlock: func(block atlashcl.SchemaBlock) { recorded = append(recorded, block) },
 			})
 
@@ -92,7 +93,7 @@ env "local" {
 `
 	var recorded []atlashcl.SchemaBlock
 
-	_, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{
+	_, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 		RecordSchemaBlock: func(block atlashcl.SchemaBlock) { recorded = append(recorded, block) },
 	})
 

@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
@@ -85,11 +86,11 @@ func pushArtifactLayers(c *qt.C, ctx context.Context, reference, managedDataMedi
 	c.Helper()
 
 	store := memory.New()
-	_, err := schemaartifact.PushTo(ctx, store, futureLayerDatabase(), schemaartifact.PushOptions{
+	_, err := schemaartifact.PushTo(ctx, store, futureLayerDatabase(), schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(),
 		Tags: []string{"source"},
 	})
 	c.Assert(err, qt.IsNil)
-	published, err := schemaartifact.PullFrom(ctx, store, "source", coverage.Vocabulary{})
+	published, err := schemaartifact.PullFrom(ctx, store, "source", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNil)
 	// The annotations come from the publish, so the re-push differs from a
 	// published artifact in the layer's media type and in nothing else.

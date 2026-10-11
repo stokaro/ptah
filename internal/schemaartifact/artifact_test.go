@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaartifact"
 )
 
@@ -36,7 +37,7 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	db.Fields[1].APIType = "string"
 	db.Fields[1].APIExpose = "read"
 
-	pushed, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{
+	pushed, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(),
 		Tags:             []string{"stable"},
 		Latest:           true,
 		GeneratedVersion: true,
@@ -48,7 +49,7 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	c.Assert(pushed.Version, qt.Matches, `v20260728091011-[A-Z2-7]+`)
 	c.Assert(pushed.Tags, qt.DeepEquals, []string{pushed.Version, "stable", "latest"})
 
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNil)
 	c.Assert(pulled.Database.Tables, qt.HasLen, 1)
 	c.Assert(pulled.Database.Tables[0].Name, qt.Equals, "users")
@@ -79,7 +80,7 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 func TestCapture_FailurePath(t *testing.T) {
 	t.Run("nil database", func(t *testing.T) {
 		c := qt.New(t)
-		snapshot, err := schemaartifact.Capture(nil, nil, coverage.Vocabulary{})
+		snapshot, err := schemaartifact.Capture(nil, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
 		c.Assert(err, qt.ErrorMatches, "schema database is required")
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -91,7 +92,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
 		db.ManagedData = []schemamodel.ManagedData{{Table: "users", Keys: []string{"id"}, File: "users.yaml"}}
-		snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{})
+		snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
 		c.Assert(err, qt.ErrorMatches, `managed data for table users was never read from users.yaml`)
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -100,7 +101,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
 		db.Roles = []schemamodel.Role{{Name: "app_user", Password: "secret"}}
-		snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{})
+		snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
 		c.Assert(err, qt.ErrorMatches, `schema artifact cannot contain password for role "app_user"`)
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -109,7 +110,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
 		db.Indexes = []schemamodel.Index{{Name: "missing_idx", TableName: "missing"}}
-		snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{})
+		snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
 		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*index missing_idx.*")
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -121,7 +122,7 @@ func TestCapturePreservesSystemExtensionPlacementWithoutDeclaringIt(t *testing.T
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
-	snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{})
+	snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNil)
 	data, err := fs.ReadFile(snapshot, schemaartifact.FileName)
 	c.Assert(err, qt.IsNil)
@@ -142,6 +143,7 @@ func TestPullToFile_RejectsExistingOutputBeforeNetwork(t *testing.T) {
 		output,
 		false,
 		coverage.Vocabulary{},
+		builtintest.Runtime().HCL(),
 	)
 
 	c.Assert(err, qt.ErrorMatches, "schema artifact output already exists: .*")
@@ -167,12 +169,12 @@ func TestPushTo_WritesOnlyTheTagItWasGiven(t *testing.T) {
 	store := memory.New()
 
 	pushed, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(),
-		schemaartifact.PushOptions{Tags: []string{"release"}})
+		schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(), Tags: []string{"release"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(pushed.Version, qt.Equals, "",
 		qt.Commentf("no version was asked for, so none was invented"))
 	c.Assert(pushed.Tags, qt.DeepEquals, []string{"release"})
-	_, err = schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
+	_, err = schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNotNil, qt.Commentf("latest must not have been moved onto this push"))
 }

@@ -361,6 +361,7 @@ func materializeOCISchemaFiles(
 			filepath.Join(target, inspectOCIMaterializedName),
 			opts.plainHTTP,
 			owners.CoverageVocabulary(),
+			owners.HCL(),
 		)
 		if err != nil {
 			cleanup()

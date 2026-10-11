@@ -144,7 +144,7 @@ func loadChecksFromArtifact(
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := schemaartifact.Pull(ctx, client, reference, owners.CoverageVocabulary())
+	artifact, err := schemaartifact.Pull(ctx, client, reference, owners.CoverageVocabulary(), owners.HCL())
 	if err != nil {
 		return nil, fmt.Errorf("read checks from %s: %w", reference, err)
 	}

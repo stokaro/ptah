@@ -25,7 +25,7 @@ func TestExport_HappyPath_WritesValidatedHCLAndCleansAnnotations(t *testing.T) {
 	c.Assert(os.WriteFile(output, []byte("old schema\n"), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(output, 0o640), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -47,7 +47,7 @@ func TestExport_HappyPath_WritesValidatedHCLAndCleansAnnotations(t *testing.T) {
 	c.Assert(string(sourceData), qt.Equals, "package models\n\ntype User struct {\n\tID int64\n}\n")
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Fields, qt.HasLen, 1)
@@ -76,7 +76,7 @@ func TestExport_HappyPath_UsesOneSourcePolicyForParsingAndCleanup(t *testing.T) 
 	c.Assert(os.WriteFile(testSource, testData, 0o600), qt.IsNil)
 	output := filepath.Join(root, "schema.hcl")
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -115,7 +115,7 @@ func TestExport_HappyPath_TightensPermissionsForRolePasswords(t *testing.T) {
 	c.Assert(os.WriteFile(output, []byte("old schema\n"), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(output, 0o644), qt.IsNil)
 
-	_, err := goannotationexport.Export(goannotationexport.Options{
+	_, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -138,7 +138,7 @@ func TestExport_HappyPath_DiffWritesOutputWithoutChangingSource(t *testing.T) {
 	original, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -165,7 +165,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 	original, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 
-	dryRun, err := goannotationexport.Export(goannotationexport.Options{
+	dryRun, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -175,7 +175,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	assertFileBytes(c, source, original)
 
-	diff, err := goannotationexport.Export(goannotationexport.Options{
+	diff, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -185,7 +185,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	assertFileBytes(c, source, original)
 
-	write, err := goannotationexport.Export(goannotationexport.Options{
+	write, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -211,7 +211,7 @@ func TestExport_HappyPath_IsDeterministicAcrossRepeatedExports(t *testing.T) {
 	writeSimpleModel(c, root)
 	output := filepath.Join(root, "schema.hcl")
 
-	_, err := goannotationexport.Export(goannotationexport.Options{
+	_, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -220,7 +220,7 @@ func TestExport_HappyPath_IsDeterministicAcrossRepeatedExports(t *testing.T) {
 	first, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
 
-	_, err = goannotationexport.Export(goannotationexport.Options{
+	_, err = goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -255,7 +255,7 @@ type Country struct {
 	), qt.IsNil)
 	output := filepath.Join(root, "schema", "schema.hcl")
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -265,7 +265,7 @@ type Country struct {
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.ManagedData, qt.HasLen, 1)
 	c.Assert(parsed.ManagedData[0].File, qt.Equals, "../models/countries.yaml")
@@ -282,7 +282,7 @@ func TestExport_HappyPath_NonDestructiveExportPreservesCustomSQL(t *testing.T) {
 	original, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -295,7 +295,7 @@ func TestExport_HappyPath_NonDestructiveExportPreservesCustomSQL(t *testing.T) {
 	c.Assert(sourceData, qt.DeepEquals, original)
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].CustomSQL, qt.Equals, "WITHOUT OIDS")
@@ -311,7 +311,7 @@ func TestExport_FailurePath_RepeatCleanupPreservesExistingOutput(t *testing.T) {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -334,7 +334,7 @@ func TestExport_FailurePath_NoAnnotationsPreservesExistingOutput(t *testing.T) {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -360,7 +360,7 @@ const placeholder = 0
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -401,7 +401,7 @@ const placeholder = 0
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-			result, err := goannotationexport.Export(goannotationexport.Options{
+			result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: builtintest.Annotations(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -467,7 +467,7 @@ type User struct{}
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-			result, err := goannotationexport.Export(goannotationexport.Options{
+			result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: builtintest.Annotations(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -522,7 +522,7 @@ type User struct{}
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-			result, err := goannotationexport.Export(goannotationexport.Options{
+			result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: builtintest.Annotations(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -582,7 +582,7 @@ type User struct {
 `)
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-			result, err := goannotationexport.Export(goannotationexport.Options{
+			result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: builtintest.Annotations(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -618,7 +618,7 @@ const placeholder = 0
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -652,7 +652,7 @@ const shadowedPolicy = 0
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -688,7 +688,7 @@ type User struct{}
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -716,7 +716,7 @@ type User struct{}
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -747,7 +747,7 @@ const policyMarker = 0
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -776,7 +776,7 @@ type Roles struct{}
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -786,7 +786,7 @@ type Roles struct{}
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Roles, qt.DeepEquals, []schemamodel.Role{
 		{StructName: "", Name: "app", Login: true, Inherit: true},
@@ -807,7 +807,7 @@ type Roles struct{}
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -836,7 +836,7 @@ type User struct {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -864,7 +864,7 @@ type User struct {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -891,7 +891,7 @@ type SchemaObjects struct{}
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -920,7 +920,7 @@ type SchemaObjects struct{}
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -955,7 +955,7 @@ type SchemaObjects struct{}
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -995,7 +995,7 @@ type SchemaObjects struct{}
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -1022,7 +1022,7 @@ func TestExport_HappyPath_CleanupPreservesCustomSQL(t *testing.T) {
 	source := writeCustomModel(c, root)
 	output := filepath.Join(root, "schema.hcl")
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -1036,7 +1036,7 @@ func TestExport_HappyPath_CleanupPreservesCustomSQL(t *testing.T) {
 	c.Assert(string(sourceData), qt.Equals, "package models\n\ntype User struct {\n\tID int64\n}\n")
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Tables[0].CustomSQL, qt.Equals, "WITHOUT OIDS")
 }
@@ -1058,7 +1058,7 @@ type Measurement struct {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -1072,7 +1072,7 @@ type Measurement struct {
 	c.Assert(string(sourceAfter), qt.Equals, "package models\n\ntype Measurement struct {\n\tValue float64\n}\n")
 	outputAfter, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputAfter, output)
+	parsed, err := atlashcl.ParseWithOptions(outputAfter, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Fields, qt.HasLen, 1)
 	c.Assert(parsed.Fields[0].Type, qt.Equals, "DOUBLE PRECISION")
@@ -1085,7 +1085,7 @@ func TestExport_FailurePath_OutputCannotAliasGoSource(t *testing.T) {
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  source,
@@ -1105,7 +1105,7 @@ func TestExport_FailurePath_OutputCannotUseExcludedGoPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	output := filepath.Join(root, ".hidden", "schema.go")
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -1137,7 +1137,7 @@ type Country struct {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(dataPath, data, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  dataPath,
@@ -1158,7 +1158,7 @@ func TestExport_FailurePath_OutputWriteFailurePreservesSource(t *testing.T) {
 	parentFile := filepath.Join(root, "not-a-directory")
 	c.Assert(os.WriteFile(parentFile, []byte("block directory creation"), 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  filepath.Join(parentFile, "schema.hcl"),
@@ -1193,7 +1193,7 @@ type User struct {
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -1205,7 +1205,7 @@ type User struct {
 	c.Assert(result.Cleanup, qt.HasLen, 1)
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, map[string]map[string]string{"clickhouse": {"granularity": "4"}})
@@ -1214,7 +1214,7 @@ type User struct {
 func TestExport_FailurePath_RejectsCleanupModesWithoutCleanup(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{Annotations: builtintest.Annotations(), DryRun: true})
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(), Annotations: builtintest.Annotations(), DryRun: true})
 
 	c.Assert(err, qt.ErrorMatches, "cleanup dry-run and diff require cleanup")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
@@ -1258,7 +1258,7 @@ func TestExport_HappyPath_CleansAGoTreeDeclaringOnlyDefaultPrivileges(t *testing
 			), qt.IsNil)
 			output := filepath.Join(root, "schema.hcl")
 
-			result, err := goannotationexport.Export(goannotationexport.Options{
+			result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: builtintest.Annotations(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -1271,7 +1271,7 @@ func TestExport_HappyPath_CleansAGoTreeDeclaringOnlyDefaultPrivileges(t *testing
 			assertFileBytes(c, source, []byte("package models\n\ntype AccessControl struct{}\n"))
 			outputData, err := os.ReadFile(output)
 			c.Assert(err, qt.IsNil)
-			parsed, err := atlashcl.Parse(outputData, output)
+			parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.DefaultPrivileges, qt.HasLen, 1)
 			c.Assert(parsed.DefaultPrivileges[0].ObjectType, qt.Equals, "TABLES")
@@ -1295,7 +1295,7 @@ func TestExport_HappyPath_ExportsAGoTreeDeclaringOnlyAFeatureObject(t *testing.T
 		0o600), qt.IsNil)
 	output := filepath.Join(root, "schema.hcl")
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -1305,7 +1305,7 @@ func TestExport_HappyPath_ExportsAGoTreeDeclaringOnlyAFeatureObject(t *testing.T
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(outputData, output)
+	parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(string(outputData), qt.Contains, `synonym "current_users" {`)

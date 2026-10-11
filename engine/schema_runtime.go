@@ -4,6 +4,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/hclext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
@@ -20,6 +21,7 @@ type SchemaRuntime interface {
 	annotation.Runtime
 	yamlext.Runtime
 	sqlext.Runtime
+	hclext.Runtime
 	coverage.Runtime
 	schemapreparation.Runtime
 	schemaprojection.TableCreationService

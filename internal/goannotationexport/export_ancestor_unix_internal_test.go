@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/annotation"
+	"ptah.run/internal/builtintest"
 )
 
 func TestExport_FailurePath_AncestorSwapAbortsHCLPublication(t *testing.T) {
@@ -34,7 +35,7 @@ func TestExport_FailurePath_AncestorSwapAbortsHCLPublication(t *testing.T) {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(outsideOutput, outsideData, 0o600), qt.IsNil)
-	result, err := export(Options{
+	result, err := export(Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: annotation.None(),
 		RootDir:     root,
 		OutputPath:  output,

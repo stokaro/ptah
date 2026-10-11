@@ -106,6 +106,7 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		// The snapshot is read back with the vocabulary of the owners that
 		// loaded it, which is what its header may name.
 		CoverageVocabulary: owners.CoverageVocabulary(),
+		HCL:                owners.HCL(),
 	})
 	if err != nil {
 		return err

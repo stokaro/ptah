@@ -894,6 +894,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		desired, err = schemafile.LoadSources(atlasSchemaApplyDesiredSources(opts), schemafile.Options{
 			YAML:                  opts.runtime.YAML(),
 			SQL:                   opts.runtime.SQL(),
+			HCL:                   opts.runtime.HCL(),
 			CoverageVocabulary:    opts.runtime.CoverageVocabulary(),
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
@@ -1412,7 +1413,7 @@ func checkAtlasApplyTarget(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
-	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL, classifiedAtlasApplyTo(opts, projectEnv)); err != nil {
+	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL, classifiedAtlasApplyTo(opts, projectEnv), opts.runtime.HCL()); err != nil {
 		return err
 	}
 	if opts.policy.IsStrictCE() {

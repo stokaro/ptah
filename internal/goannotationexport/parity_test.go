@@ -29,7 +29,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	before, err := goschema.ParseDir(builtintest.Annotations(), root)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,

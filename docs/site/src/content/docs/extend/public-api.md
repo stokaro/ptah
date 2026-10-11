@@ -56,6 +56,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlext` | The YAML schema contract: the owner claims a YAML parse selects. |
+| `core/hclext` | The HCL schema contract: the blocks an owner reads, matched as data, evaluated by the reader, and read in one call per document. |
 | `core/sqlext` | The SQL schema contract: the syntax an owner adds to the shared grammar, matched as data and read in one call per document, or a target's whole grammar, read in one call per load. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |

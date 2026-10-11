@@ -23,7 +23,7 @@ func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteGoSource(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Symlink(source, output), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -48,7 +48,7 @@ func TestExport_FailurePath_OutputHardLinkAliasCannotOverwriteGoSource(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Link(source, output), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -82,7 +82,7 @@ type Country struct {
 	c.Assert(os.WriteFile(dataPath, data, 0o600), qt.IsNil)
 	c.Assert(os.Link(dataPath, output), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -116,7 +116,7 @@ type Country struct {
 	c.Assert(os.WriteFile(dataPath, data, 0o600), qt.IsNil)
 	c.Assert(os.Symlink(dataPath, output), qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,

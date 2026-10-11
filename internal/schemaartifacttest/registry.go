@@ -23,6 +23,7 @@ import (
 	"oras.land/oras-go/v2/errdef"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaartifact"
 )
 
@@ -37,7 +38,7 @@ import (
 func StartSchemaArtifactRegistry(c *qt.C, repository, tag string, db *schemamodel.Database) string {
 	c.Helper()
 	store := newRecordingTarget()
-	_, err := schemaartifact.PushTo(c.TB.Context(), store, db, schemaartifact.PushOptions{Tags: []string{tag}})
+	_, err := schemaartifact.PushTo(c.TB.Context(), store, db, schemaartifact.PushOptions{Tags: []string{tag}, HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	serve := func(writer http.ResponseWriter, wanted digest.Digest) {

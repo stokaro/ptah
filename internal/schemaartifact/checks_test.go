@@ -8,6 +8,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"ptah.run/core/coverage"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaartifact"
 )
 
@@ -22,13 +23,13 @@ func TestPushToPullFrom_CarriesTheChecksLayer(t *testing.T) {
 	c := qt.New(t)
 	store := memory.New()
 
-	_, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{
+	_, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(),
 		Tags:   []string{"v1"},
 		Checks: []byte(publishedChecks),
 	})
 	c.Assert(err, qt.IsNil)
 
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1", coverage.Vocabulary{})
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(pulled.Checks), qt.Equals, publishedChecks)
@@ -41,12 +42,12 @@ func TestPushToPullFrom_CarriesNoChecksLayerWhenNoneWerePublished(t *testing.T) 
 	c := qt.New(t)
 	store := memory.New()
 
-	_, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{
+	_, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(),
 		Tags: []string{"v1"},
 	})
 	c.Assert(err, qt.IsNil)
 
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1", coverage.Vocabulary{})
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(pulled.Checks, qt.IsNil)
@@ -59,13 +60,13 @@ func TestPushTo_ChangingTheChecksChangesTheDigest(t *testing.T) {
 	c := qt.New(t)
 	store := memory.New()
 
-	approved, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{
+	approved, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(),
 		Tags:   []string{"v1"},
 		Checks: []byte(publishedChecks),
 	})
 	c.Assert(err, qt.IsNil)
 
-	replaced, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{
+	replaced, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(), schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(),
 		Tags: []string{"v2"},
 		Checks: []byte(
 			"-- +ptah check name=\"anything\" assert=\"SELECT 1\"\n",

@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -47,6 +48,11 @@ type Options struct {
 	// compares with. Loading a SQL file refuses the zero value; pass
 	// sqlext.None to read the shared grammar only.
 	SQL sqlext.Set
+	// HCL selects the feature owners whose blocks an HCL schema file may
+	// carry, usually the HCL set of the runtime the caller renders and
+	// compares with. Loading an HCL file refuses the zero value; pass
+	// hclext.None to read the HCL reader's own blocks only.
+	HCL hclext.Set
 	// CoverageVocabulary is the coverage kinds an HCL or SQL document's
 	// `ptah:not-described` header may name, usually the vocabulary of the
 	// runtime the caller compares with. The zero value holds the common kinds
@@ -507,6 +513,7 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 			Vars:               opts.Vars,
 			VarValues:          opts.VarValues,
 			CoverageVocabulary: opts.CoverageVocabulary,
+			HCL:                opts.HCL,
 		})
 	case ".yaml", ".yml":
 		return yamlschema.ParseFile(opts.YAML, resolved)

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // TestSchemaReferenceInAFunctionCallNamesTheRealCause is the regression test for
@@ -92,7 +93,7 @@ wibble "p" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{
+			_, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 				IgnoreUnknownNames: test.tolerant,
 			})
 
@@ -123,7 +124,7 @@ table "users" {
 `
 	c := qt.New(t)
 
-	db, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{IgnoreUnknownNames: true})
+	db, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)

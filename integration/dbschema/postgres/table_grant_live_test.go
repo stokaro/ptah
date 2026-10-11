@@ -146,7 +146,7 @@ func TestTableGrant_LiveSchemaFileComparesEqual(t *testing.T) {
 			path := filepath.Join(c.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
 			dialect := f.conn.Info().Dialect
-			desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: dialect})
+			desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: dialect})
 			c.Assert(err, qt.IsNil)
 
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, f.read(c), dialect, must.Must(builtin.New())))

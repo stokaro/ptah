@@ -581,12 +581,13 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 
 // runHCLExport adapts the reusable Go-to-HCL workflow to Cobra streams.
 func runHCLExport(cmd *cobra.Command, opts exportOptions, rootDir string) error {
-	annotations, err := builtin.Annotations()
+	owners, err := builtin.Bundled()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		Annotations: annotations,
+		Annotations: owners.Annotations(),
+		HCL:         owners.HCL(),
 		RootDir:     rootDir,
 		OutputPath:  opts.outPath,
 		Cleanup:     opts.cleanupAnnotations,

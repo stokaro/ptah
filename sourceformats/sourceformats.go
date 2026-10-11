@@ -1,6 +1,6 @@
 // Package sourceformats reads the output of an external schema program in
 // each format ptah.run/core/schemasource accepts, with the bundled readers:
-// YAML with the feature owners a caller selects, and SQL and HCL with the
+// YAML, SQL and HCL with the feature owners a caller selects, through the
 // readers the native and compatibility binaries use. Those readers link the
 // owners whose syntax they still decode themselves, so the neutral
 // core/schemasource takes them from its caller rather than importing them.
@@ -10,6 +10,7 @@ import (
 	"context"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/core/sqlext"
@@ -21,16 +22,19 @@ import (
 
 // New returns the readers with owners selecting the feature owners a YAML
 // document may declare, sql the owners whose syntax a SQL document may carry,
-// and vocabulary the coverage kinds an SQL or HCL document's header may name.
-// SQL and HCL are read by the bundled readers. Reading SQL refuses the zero
-// sql set; pass sqlext.None to read the shared grammar only.
-func New(owners yamlext.Set, sql sqlext.Set, vocabulary coverage.Vocabulary) schemasource.Formats {
-	return readers{owners: owners, sql: sql, vocabulary: vocabulary}
+// hcl the owners whose blocks an HCL document may carry, and vocabulary the
+// coverage kinds an SQL or HCL document's header may name. SQL and HCL are
+// read by the bundled readers. Reading SQL refuses the zero sql set, and
+// reading HCL the zero hcl set; pass sqlext.None or hclext.None to read the
+// reader's own syntax only.
+func New(owners yamlext.Set, sql sqlext.Set, hcl hclext.Set, vocabulary coverage.Vocabulary) schemasource.Formats {
+	return readers{owners: owners, sql: sql, hcl: hcl, vocabulary: vocabulary}
 }
 
 type readers struct {
 	owners     yamlext.Set
 	sql        sqlext.Set
+	hcl        hclext.Set
 	vocabulary coverage.Vocabulary
 }
 
@@ -53,5 +57,5 @@ func (r readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, er
 
 // ReadHCL reads an Atlas HCL document, naming it filename in a refusal.
 func (r readers) ReadHCL(data []byte, filename string) (*schemamodel.Database, error) {
-	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary})
+	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary, HCL: r.hcl})
 }
