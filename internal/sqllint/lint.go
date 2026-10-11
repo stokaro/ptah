@@ -416,10 +416,13 @@ func readRoutineBodies(ctx context.Context, items []sourceItem, opts Options) (m
 // carrying its body; a FUNCTION becomes a CreateFunctionNode, and
 // `Parser.attachPostgresFunctionBody` fills its RoutineBody. Reading only the
 // first node type left every function unexamined while looking like a parser
-// limitation. A MySQL routine is a MySQLRoutineNode.
+// limitation. A MySQL routine is a MySQLRoutineNode, and a SQL Server routine
+// a SQLServerRoutineNode.
 func routineBodyOf(node ast.Node) (routineext.Body, bool) {
 	switch node := node.(type) {
 	case *ast.MySQLRoutineNode:
+		return routineext.Body{Kind: string(node.Kind), SQL: node.Body.SQL}, true
+	case *ast.SQLServerRoutineNode:
 		return routineext.Body{Kind: string(node.Kind), SQL: node.Body.SQL}, true
 	case *ast.PostgresRoutineNode:
 		return routineext.Body{Kind: string(node.Kind), Language: node.Language, SQL: node.Body.SQL}, true
@@ -807,10 +810,12 @@ func flattenRoutineStatements(statements []routineext.Statement) []routineext.St
 }
 
 // readRoutineLabel names the routine a node whose body was read defines, for
-// a finding.
+// a finding: its kind in lowercase, then its name.
 func readRoutineLabel(stmt ast.Node) string {
 	switch node := stmt.(type) {
 	case *ast.MySQLRoutineNode:
+		return routineLabel(string(node.Kind), node.Name)
+	case *ast.SQLServerRoutineNode:
 		return routineLabel(string(node.Kind), node.Name)
 	case *ast.PostgresRoutineNode:
 		return fmt.Sprintf("%s %s", node.Kind, node.Name)
@@ -824,29 +829,9 @@ func readRoutineLabel(stmt ast.Node) string {
 	return ""
 }
 
-// dialectDynamicFindings reports the dynamic SQL a T-SQL body builds.
-//
-// Separate from the owner's reading below because the T-SQL parser leaves a
-// dynamic statement in the raw kind for the leading words to identify.
-func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
-	label, dynamic := dialectDynamicStatements(stmt)
-	findings := make([]Finding, 0, len(dynamic))
-	for _, statement := range dynamic {
-		line, column := ctx.LineColumn(statement)
-		findings = append(findings, Finding{
-			Rule:     RuleDynamicSQL,
-			Title:    "Dynamic SQL limits static analysis",
-			Severity: SeverityInfo,
-			File:     ctx.Source.Name,
-			Line:     line,
-			Column:   column,
-			Dialect:  ctx.Dialect,
-			Message:  fmt.Sprintf("%s builds SQL at run time", label),
-			Rationale: "The statement text is not known until the routine runs, " +
-				"so nothing here can resolve what it reads or writes.",
-		})
-	}
-	return findings
+// routineLabel names a routine by its kind in lowercase and its name.
+func routineLabel(kind, name string) string {
+	return fmt.Sprintf("%s %s", strings.ToLower(kind), name)
 }
 
 // dynamicSQLRule reports where a routine builds SQL at run time.
@@ -863,9 +848,6 @@ func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
 //
 // One finding per dynamic statement rather than one per routine: each is a
 // separate place the analysis stops, and each gets its own position.
-//
-// A T-SQL body is read here by [dialectDynamicFindings] until its owner reads
-// it.
 type dynamicSQLRule struct{}
 
 func (dynamicSQLRule) ID() string {
@@ -873,9 +855,6 @@ func (dynamicSQLRule) ID() string {
 }
 
 func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
-	if findings := dialectDynamicFindings(ctx, stmt); len(findings) > 0 {
-		return findings
-	}
 	reading, read := ctx.bodies[stmt]
 	if !read {
 		return nil

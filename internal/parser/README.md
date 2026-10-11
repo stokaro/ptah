@@ -189,9 +189,14 @@ routine metadata for scalar functions, inline table-valued functions,
 multi-statement table-valued functions, and procedures. `Returns` is the raw
 fragment between `RETURNS` and the body `AS`, so SQL Server routine options
 inside that fragment are preserved even when they are not structurally modeled
-yet. T-SQL scalar expressions remain raw; the body parser classifies
-recoverable top-level declarations, assignments, `BEGIN` blocks, `IF`, `WHILE`,
-`RETURN`, and `INSERT` / `SELECT` statements.
+yet.
+
+The body is kept as its text in `ast.SQLServerRoutineBody`. This package does
+not split it into statements: the SQL Server owner does
+(`dialect/mssql/mssqlroutine`), through the runtime's routine body reader
+(`core/routineext`). Whether a `BEGIN` opens a block and an `END` closes one is
+answered by `internal/sqlcompound` for both, so the routine this package
+collects and the body the owner splits end at the same `END`.
 
 When a dialect-aware routine boundary is known but the body sub-language is not
 structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit its

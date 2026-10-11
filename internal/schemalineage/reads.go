@@ -5,9 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/routineext"
-	"ptah.run/core/schemamodel"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/parser"
 )
 
 // RoutineRead is one column a routine body reads.
@@ -51,16 +49,6 @@ func readingSQL(statements []routineext.Statement) []string {
 			sql = append(sql, readingSQL(statement.Statements)...)
 			continue
 		}
-		sql = append(sql, statement.SQL)
-	}
-	return sql
-}
-
-// proceduralStatementSQL flattens a T-SQL body into the text of each
-// statement, for a target whose owner reads no bodies yet.
-func proceduralStatementSQL(routine schemamodel.Function) []string {
-	var sql []string
-	for _, statement := range parser.ParseSQLServerRoutineBody(routine.Body).Statements {
 		sql = append(sql, statement.SQL)
 	}
 	return sql

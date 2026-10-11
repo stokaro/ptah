@@ -69,7 +69,7 @@ type SQLServerRoutineNode struct {
 	Returns string
 	// Form classifies the SQL Server routine shape.
 	Form SQLServerRoutineForm
-	// Body is parsed routine-body metadata. Expressions remain raw T-SQL.
+	// Body is the routine body text.
 	Body SQLServerRoutineBody
 }
 
@@ -83,36 +83,12 @@ const (
 	SQLServerRoutineFormMultiStatementTableFunction SQLServerRoutineForm = "multi_statement_table_valued_function"
 )
 
-// SQLServerRoutineBody contains parser metadata for a T-SQL routine body.
+// SQLServerRoutineBody is the text of a T-SQL routine body. The SQL Server
+// owner splits it into statements (ptah.run/dialect/mssql/mssqlroutine),
+// through the runtime's routine body reader.
 type SQLServerRoutineBody struct {
 	// SQL is the raw body text after AS.
 	SQL string
-	// Statements are top-level T-SQL routine-body statements when boundaries
-	// are recoverable without parsing scalar expressions.
-	Statements []SQLServerRoutineStatement
-}
-
-// SQLServerRoutineStatementKind identifies a T-SQL routine-body statement
-// class.
-type SQLServerRoutineStatementKind string
-
-const (
-	SQLServerRoutineStatementRaw         SQLServerRoutineStatementKind = "raw"
-	SQLServerRoutineStatementDeclaration SQLServerRoutineStatementKind = "declaration"
-	SQLServerRoutineStatementAssignment  SQLServerRoutineStatementKind = "assignment"
-	SQLServerRoutineStatementBlock       SQLServerRoutineStatementKind = "block"
-	SQLServerRoutineStatementIf          SQLServerRoutineStatementKind = "if"
-	SQLServerRoutineStatementWhile       SQLServerRoutineStatementKind = "while"
-	SQLServerRoutineStatementReturn      SQLServerRoutineStatementKind = "return"
-	SQLServerRoutineStatementInsert      SQLServerRoutineStatementKind = "insert"
-	SQLServerRoutineStatementSelect      SQLServerRoutineStatementKind = "select"
-)
-
-// SQLServerRoutineStatement is one top-level statement inside a T-SQL routine
-// body.
-type SQLServerRoutineStatement struct {
-	Kind SQLServerRoutineStatementKind
-	SQL  string
 }
 
 // MySQLRoutineNode represents a MySQL-family CREATE FUNCTION or CREATE

@@ -70,6 +70,21 @@ func descendOrRefuse(statement routineext.Statement, routine, kind string) (writ
 	return readingWrites(statement.Statements, routine, kind)
 }
 
+// unreadableContents is the sentence a control-flow statement gets when its
+// owner could not split the statements inside it, naming it by its label. The
+// label is optional in the contract, so a statement without one is named only
+// as a control-flow statement.
+//
+// That is the honest answer: crediting a routine with writing nothing inside
+// an IF nobody opened is the confident wrong answer this package exists to
+// avoid.
+func unreadableContents(label string) string {
+	if label == "" {
+		return "a control-flow statement's contents could not be read"
+	}
+	return fmt.Sprintf("the %s statement's contents could not be read", label)
+}
+
 // classifyRawStatement reads a plain statement's leading word.
 func classifyRawStatement(sql, routine, kind string) (writes []RoutineWrite, unresolved []string) {
 	tokens := tokenize(sql, bodyReading{})

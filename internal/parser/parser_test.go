@@ -1547,9 +1547,6 @@ AS RETURN SELECT @a as [a], @b as [b];`
 	c.Assert(routine.Returns, qt.Equals, "TABLE")
 	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormInlineTableValuedFunction)
 	c.Assert(routine.Body.SQL, qt.Contains, "RETURN SELECT @a as [a]")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementReturn,
-	})
 }
 
 func TestParser_ParseSQLServerDialectBracketIdentifiersWithSQLMarkers(t *testing.T) {
@@ -1632,10 +1629,6 @@ END`
 	c.Assert(routine.Returns, qt.Equals, "@t1 TABLE ([c1] int NOT NULL, [double] AS [c1] * 2)")
 	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormMultiStatementTableFunction)
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT @t1")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementInsert,
-		ast.SQLServerRoutineStatementReturn,
-	})
 }
 
 func TestParser_ParseSQLServerDialectReturnTableDefaultWithAS(t *testing.T) {
@@ -1675,10 +1668,6 @@ END`
 	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormMultiStatementTableFunction)
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT @t")
 	c.Assert(routine.Body.SQL, qt.Contains, "SELECT @a AS [AS], @a AS [END]]value]")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementInsert,
-		ast.SQLServerRoutineStatementReturn,
-	})
 }
 
 func TestParser_ParseSQLServerGoDelimitedFunctionsAsRawSQL(t *testing.T) {
@@ -1789,12 +1778,6 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(routine.Returns, qt.Equals, "int")
 	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormScalarFunction)
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "GO")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementDeclaration,
-		ast.SQLServerRoutineStatementAssignment,
-		ast.SQLServerRoutineStatementIf,
-		ast.SQLServerRoutineStatementReturn,
-	})
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1820,9 +1803,6 @@ END`
 	c.Assert(routine.Parameters, qt.Equals, "@returns int")
 	c.Assert(routine.Returns, qt.Equals, "int")
 	c.Assert(routine.SQL, qt.Contains, "CREATE OR ALTER FUNCTION dbo.score")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementReturn,
-	})
 }
 
 func TestParser_ParseCreateOrAlterRequiresSQLServerDialect(t *testing.T) {
@@ -1858,9 +1838,6 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(routine.SQL, qt.Contains, "RETURN @a")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
 	c.Assert(routine.Body.SQL, qt.Contains, "RETURN @a")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementReturn,
-	})
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1884,9 +1861,6 @@ END`
 	c.Assert(routine.Parameters, qt.Equals, "@user_id int, @enabled bit = (1)")
 	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormProcedure)
 	c.Assert(routine.Body.SQL, qt.Contains, "SELECT @user_id")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementSelect,
-	})
 }
 
 func TestParser_ParseSQLServerDialectProcAliasAsRoutine(t *testing.T) {
@@ -1903,12 +1877,9 @@ func TestParser_ParseSQLServerDialectProcAliasAsRoutine(t *testing.T) {
 	c.Assert(routine.Name, qt.Equals, "[dbo].[touch_user]")
 	c.Assert(routine.Parameters, qt.Equals, "@user_id int")
 	c.Assert(routine.Body.SQL, qt.Equals, "SELECT @user_id")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementSelect,
-	})
 }
 
-func TestParser_ParseSQLServerDialectProcedureWithoutBeginSplitsStatements(t *testing.T) {
+func TestParser_ParseSQLServerDialectProcedureWithoutBeginKeepsItsBody(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `CREATE PROCEDURE [dbo].[list_users] AS
@@ -1921,15 +1892,10 @@ SELECT 2 AS [second];`
 	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Name, qt.Equals, "[dbo].[list_users]")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementSelect,
-		ast.SQLServerRoutineStatementSelect,
-	})
-	c.Assert(routine.Body.Statements[0].SQL, qt.Contains, "SELECT 1 AS [first]")
-	c.Assert(routine.Body.Statements[1].SQL, qt.Contains, "SELECT 2 AS [second]")
+	c.Assert(routine.Body.SQL, qt.Equals, "SELECT 1 AS [first];\nSELECT 2 AS [second]")
 }
 
-func TestParser_ParseSQLServerDialectProcedureWithoutSemicolonsSplitsSupportedStatements(t *testing.T) {
+func TestParser_ParseSQLServerDialectProcedureWithoutSemicolonsKeepsItsBody(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `CREATE PROCEDURE [dbo].[score_user] AS
@@ -1943,11 +1909,7 @@ GO`
 
 	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementDeclaration,
-		ast.SQLServerRoutineStatementAssignment,
-		ast.SQLServerRoutineStatementReturn,
-	})
+	c.Assert(routine.Body.SQL, qt.Equals, "DECLARE @score int\nSET @score = 1\nRETURN @score")
 }
 
 func TestParser_ParseProcAliasIsOnlyTypedInSQLServerDialect(t *testing.T) {
@@ -2012,9 +1974,6 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "GO")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
 	c.Assert(routine.Body.SQL, qt.Equals, "SELECT 1")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementSelect,
-	})
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -2059,11 +2018,6 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Body.SQL, qt.Contains, "BEGIN TRANSACTION")
 	c.Assert(routine.Body.SQL, qt.Contains, "END CONVERSATION @handle")
-	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
-		ast.SQLServerRoutineStatementBlock,
-		ast.SQLServerRoutineStatementRaw,
-		ast.SQLServerRoutineStatementSelect,
-	})
 }
 
 func TestParser_ParseCreateProcedureAsRawSQL(t *testing.T) {
@@ -2375,14 +2329,6 @@ END;`
 	c.Assert(deleteTrigger.Event, qt.Equals, "DELETE")
 	c.Assert(deleteTrigger.ForEach, qt.Equals, "ROW")
 	c.Assert(deleteTrigger.Body, qt.Contains, "coalesce(old.a,'NULL')")
-}
-
-func sqlServerRoutineStatementKinds(statements []ast.SQLServerRoutineStatement) []ast.SQLServerRoutineStatementKind {
-	kinds := make([]ast.SQLServerRoutineStatementKind, 0, len(statements))
-	for _, stmt := range statements {
-		kinds = append(kinds, stmt.Kind)
-	}
-	return kinds
 }
 
 func TestParser_ParseCreateOrReplaceTrigger(t *testing.T) {

@@ -1030,6 +1030,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mssql-mssqlroutine",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlroutine",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mssql-mssqlschema",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mssql/mssqlschema",
