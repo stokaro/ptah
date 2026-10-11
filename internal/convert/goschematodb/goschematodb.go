@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/internal/cockroachtype"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/oracletype"
@@ -210,6 +211,17 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 			// through the same mapping, so a declared type kept here compared
 			// unequal to itself and planned a MODIFY for every column.
 			column.DataType = oracletype.Map(field.Type)
+			column.ColumnType = column.DataType
+		}
+		if dialect == platform.CockroachDB {
+			// CockroachDB builds a column declared INT or INTEGER at the
+			// session's integer width, and a read reports that width. The
+			// comparison resolves the declared side the same way, so the
+			// declared spelling kept here planned ALTER COLUMN ... TYPE
+			// INTEGER for every such column. No session is read here, so
+			// the width is CockroachDB's own default, as it is for an offline
+			// comparison.
+			column.DataType = cockroachtype.Resolve(field.Type, 0)
 			column.ColumnType = column.DataType
 		}
 		if platform.IsPostgresFamily(dialect) {
