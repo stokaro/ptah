@@ -834,7 +834,14 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 		return schemamodel.Field{}, err
 	}
 
-	columnType, typeRawSQL := p.columnTypeName(block, typeAttr)
+	columnType, typeRawSQL, err := p.columnTypeName(block, typeAttr)
+	if err != nil {
+		return schemamodel.Field{}, err
+	}
+	flags, err := p.columnFlags(block)
+	if err != nil {
+		return schemamodel.Field{}, err
+	}
 
 	field := schemamodel.Field{
 		StructName:          structName,
@@ -846,12 +853,12 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 		APIExpose:           apiExpose,
 		Type:                columnType,
 		TypeRawSQL:          typeRawSQL,
-		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
-		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false) || identity.generation != "",
+		Nullable:            flags.nullable,
+		AutoInc:             flags.autoIncrement || identity.generation != "",
 		IdentityGeneration:  identity.generation,
 		IdentityStart:       identity.start,
 		IdentityIncrement:   identity.increment,
-		Unique:              p.optionalBool(block.Body.Attributes["unique"], false),
+		Unique:              flags.unique,
 		GeneratedExpression: desired.expression,
 		GeneratedKind:       desired.kind,
 		UniqueExpr:          p.optionalSQLExpression(block.Body.Attributes["unique_expr"]),
@@ -1046,7 +1053,10 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if parserName != "" && !strings.EqualFold(indexType, "FULLTEXT") {
 		return schemamodel.Index{}, p.blockError(block, "index parser requires FULLTEXT type")
 	}
-	unique := p.optionalBool(block.Body.Attributes["unique"], false)
+	unique, err := p.optionalBool(block, "unique", "index", false)
+	if err != nil {
+		return schemamodel.Index{}, err
+	}
 	if nullsDistinct != nil && !unique {
 		return schemamodel.Index{}, p.blockError(block, "index nulls_distinct requires unique = true")
 	}
@@ -1665,10 +1675,14 @@ func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]schemamodel.Pri
 		if err != nil {
 			return nil, err
 		}
+		desc, err := p.optionalBool(nested, "desc", "primary_key on", false)
+		if err != nil {
+			return nil, err
+		}
 		parts = append(parts, schemamodel.PrimaryKeyPart{
 			Name:   name,
 			Prefix: p.optionalRawExpr(nested.Body.Attributes["prefix"]),
-			Desc:   p.optionalBool(nested.Body.Attributes["desc"], false),
+			Desc:   desc,
 		})
 	}
 	// See parsePartitionParts: dropped block names leave no parts behind.
@@ -2322,29 +2336,40 @@ func (p *parser) targetNames(block *hclsyntax.Block, label string) (schemamodel.
 	}, nil
 }
 
-func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
-	if attr == nil {
-		return fallback
+// optionalBool reads an optional bool attribute of block: fallback where the
+// block leaves it out or writes null, its value where it writes a bool. Any
+// other value is refused, positioned at the attribute. The pinned community
+// binary v1.3.0 refuses `null = "true"` with `bool value is required`, and
+// reading such a value as absent, as this reader did, dropped what the author
+// wrote. label names the block in the refusal.
+func (p *parser) optionalBool(block *hclsyntax.Block, name, label string, fallback bool) (bool, error) {
+	written, err := p.optionalBoolPtr(block, name, label)
+	if err != nil || written == nil {
+		return fallback, err
 	}
-	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() || value.Type() != cty.Bool {
-		return fallback
-	}
-	return value.True()
+	return *written, nil
 }
 
-// optionalBoolPtr answers nil for an attribute the document did not write, so
-// a caller can tell "unset" from "set to false".
-func (p *parser) optionalBoolPtr(attr *hclsyntax.Attribute) *bool {
+// optionalBoolPtr is [parser.optionalBool] answering nil for an attribute the
+// block leaves out or writes as null, so a caller can tell "unset" from "set
+// to false".
+func (p *parser) optionalBoolPtr(block *hclsyntax.Block, name, label string) (*bool, error) {
+	attr := block.Body.Attributes[name]
 	if attr == nil {
-		return nil
+		return nil, nil
 	}
 	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() || value.Type() != cty.Bool {
-		return nil
+	if diags.HasErrors() {
+		return nil, p.evaluationFailed(diags)
+	}
+	if value.IsKnown() && value.IsNull() {
+		return nil, nil
+	}
+	if !value.IsKnown() || value.Type() != cty.Bool {
+		return nil, p.attributeError(attr, "%s attribute %q must be a bool", label, name)
 	}
 	written := value.True()
-	return &written
+	return &written, nil
 }
 
 func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback bool) (bool, error) {
@@ -2518,19 +2543,45 @@ func userTypeReferenceName(rawType string) (string, bool) {
 // does not model that the pinned Atlas community binary v1.3.0 accepts, and it
 // refuses the bare identifier Ptah would otherwise write back
 // ("Unknown column.type; There is no type named \"USER_DEFINED\"").
-func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) (string, bool) {
+func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) (string, bool, error) {
 	rawType := p.rawExpr(attr)
 	if typeName, ok := userTypeReferenceName(rawType); ok {
-		return typeName, false
+		return typeName, false, nil
 	}
 	_, rawSQL := p.sqlRawExprValue(attr.Expr)
 	typ := p.exprString(attr)
-	if p.optionalBool(block.Body.Attributes["unsigned"], false) && !strings.Contains(strings.ToLower(typ), "unsigned") {
+	unsigned, err := p.optionalBool(block, "unsigned", "column", false)
+	if err != nil {
+		return "", false, err
+	}
+	if unsigned && !strings.Contains(strings.ToLower(typ), "unsigned") {
 		// `unsigned = true` is a Ptah-side edit to the type, so the source call
 		// no longer spells what the column holds and must not be written back.
-		return typ + " unsigned", false
+		return typ + " unsigned", false, nil
 	}
-	return typ, rawSQL
+	return typ, rawSQL, nil
+}
+
+// columnFlagSet is the bool attributes of a column block.
+type columnFlagSet struct {
+	nullable, autoIncrement, unique bool
+}
+
+// columnFlags reads a column block's bool attributes; see [parser.optionalBool].
+func (p *parser) columnFlags(block *hclsyntax.Block) (columnFlagSet, error) {
+	nullable, err := p.optionalBool(block, "null", "column", false)
+	if err != nil {
+		return columnFlagSet{}, err
+	}
+	autoIncrement, err := p.optionalBool(block, "auto_increment", "column", false)
+	if err != nil {
+		return columnFlagSet{}, err
+	}
+	unique, err := p.optionalBool(block, "unique", "column", false)
+	if err != nil {
+		return columnFlagSet{}, err
+	}
+	return columnFlagSet{nullable: nullable, autoIncrement: autoIncrement, unique: unique}, nil
 }
 
 func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]string, error) {
@@ -2596,6 +2647,11 @@ func (p *parser) rawExpr(attr *hclsyntax.Attribute) string {
 
 func (p *parser) rawExprNode(expr hclsyntax.Expression) string {
 	return strings.TrimSpace(string(expr.Range().SliceBytes(p.src)))
+}
+
+// attributeError is a refusal positioned at an attribute's name.
+func (p *parser) attributeError(attr *hclsyntax.Attribute, format string, args ...any) error {
+	return fmt.Errorf("parse HCL schema at %s: %w", attr.NameRange.String(), fmt.Errorf(format, args...))
 }
 
 func (p *parser) blockError(block *hclsyntax.Block, format string, args ...any) error {

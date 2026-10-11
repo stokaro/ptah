@@ -254,8 +254,7 @@ func dialOwners(requests *[]hclext.Request) hclext.Set {
 
 // TestParseWithOptions_AttachesAnOwnersTableSetting attaches the setting a
 // block declares to the table its labels name, though the table block comes
-// later, and reads a bool attribute that is not a bool as absent, as the
-// reader's own flags read.
+// later, and reads a bool attribute written as null as absent.
 func TestParseWithOptions_AttachesAnOwnersTableSetting(t *testing.T) {
 	c := qt.New(t)
 	var requests []hclext.Request
@@ -264,7 +263,7 @@ func TestParseWithOptions_AttachesAnOwnersTableSetting(t *testing.T) {
 }
 
 dial "app" "second" {
-  on = "yes"
+  on = null
 }
 
 schema "app" {}
@@ -290,6 +289,33 @@ table "second" {
 	c.Assert(requests[0].Claims[0].Attributes, qt.DeepEquals, map[string]hclext.Value{"on": {Kind: hclext.Bool, Bool: true}})
 	c.Assert(requests[0].Claims[1].Attributes, qt.HasLen, 0)
 	c.Assert(tableGadgets(c, db), qt.DeepEquals, map[string]string{"first": "on", "second": "off"})
+}
+
+// TestParseWithOptions_RefusesABoolAttributeThatIsNoBool refuses a value of a
+// bool attribute that is not a bool, positioned at the attribute, rather than
+// dropping what the author wrote. A string spelling a bool is refused too, as
+// the pinned community binary refuses one in its own blocks.
+func TestParseWithOptions_RefusesABoolAttributeThatIsNoBool(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "a word", value: `"yes"`},
+		{name: "a string spelling true", value: `"true"`},
+		{name: "a number", value: `1`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var requests []hclext.Request
+
+			db, err := atlashcl.ParseWithOptions([]byte("dial \"app\" \"t\" {\n  on = "+test.value+"\n}\n"), "schema.hcl",
+				atlashcl.Options{HCL: dialOwners(&requests)})
+
+			c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:2,3-5: dial attribute "on" must be a bool`)
+			c.Assert(db, qt.IsNil)
+		})
+	}
 }
 
 // TestParseWithOptions_RefusesASettingOfAnUndeclaredTable refuses a setting
