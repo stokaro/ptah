@@ -96,7 +96,7 @@ func severities(assessments []safety.StatementAssessment) []safety.Finding {
 
 // TestAssessSQL_Topics judges a statement read as text the same way, so a
 // hand-written migration that drops a topic or a consumer is held by the same
-// gate.
+// gate, with the ydb target named or no target at all.
 func TestAssessSQL_Topics(t *testing.T) {
 	tests := []struct {
 		statement string
@@ -106,12 +106,27 @@ func TestAssessSQL_Topics(t *testing.T) {
 		{statement: "ALTER TOPIC `events` DROP CONSUMER `gone`", severity: safety.Destructive},
 		{statement: "ALTER TOPIC `events` ADD CONSUMER `fresh`", severity: safety.Safe},
 	}
-	for _, test := range tests {
-		t.Run(test.statement, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(safety.AssessSQL(test.statement).Severity, qt.Equals, test.severity)
-		})
+	for _, target := range []string{platform.YDB, ""} {
+		for _, test := range tests {
+			t.Run(target+"/"+test.statement, func(t *testing.T) {
+				c := qt.New(t)
+				c.Assert(assessText(c, target, test.statement).Severity, qt.Equals, test.severity)
+			})
+		}
 	}
+}
+
+// A statement only the YDB owner recognizes is the YDB owner's to judge, so a
+// plan for another target reads it by its words, which name no data loss.
+func TestAssessSQL_AnotherTargetLeavesYDBStatementsToTheirWords(t *testing.T) {
+	c := qt.New(t)
+
+	assessments, err := safety.AssessSQL(c.Context(), must.Must(builtin.New()), platform.Postgres,
+		[]string{"DROP TOPIC `events`", "DROP SECRET `ext/pw`"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert([]safety.Severity{assessments[0].Severity, assessments[1].Severity}, qt.DeepEquals,
+		[]safety.Severity{safety.Safe, safety.Safe})
 }
 
 // TestClassifySchemaDiff_Topics reads a diff's topic changes through the

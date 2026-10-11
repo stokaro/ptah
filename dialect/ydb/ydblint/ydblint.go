@@ -5,8 +5,10 @@
 // Rules publishes the family as data and Service checks it, once per lint
 // run. Splitter splits a run's files and reports each statement's effects, as
 // ptah.run/core/lintext describes: a drop that loses state, YQL's unique
-// index, and the steps of a table rebuild. Annotator judges the first of
-// those over the split of a run that names no dialect. The bundled runtime
+// index, the steps of a table rebuild, and the owner's judgment of a
+// statement only YDB recognizes, which a safety assessment reads. Annotator
+// judges the first and the last of those over the split of a run that names
+// no dialect. The bundled runtime
 // ptah.run/engine/builtin registers all four on the ydb target, and
 // ptah.run/migration/lint applies its policy to the findings: suppression,
 // severity overrides, excluded paths and the gate.

@@ -58,7 +58,7 @@ func TestAssessRendered_SQLServerDefaultChange(t *testing.T) {
 			c.Assert(assessments[0].Reason, qt.Equals, test.wantReason)
 			// The words alone, which is how schema plan reads a statement,
 			// say the same.
-			words := safety.AssessSQL(assessments[0].Statement)
+			words := assessText(c, platform.SQLServer, assessments[0].Statement)
 			c.Assert(words.Severity, qt.Equals, test.wantSeverity)
 			c.Assert(words.Reason, qt.Equals, test.wantReason)
 			c.Assert(safety.Classify(defaultChange(test.operation)), qt.Equals, test.wantSeverity)
@@ -90,7 +90,7 @@ func TestAssessSQL_SQLServerConstraintDropStaysDestructive(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := safety.AssessSQL(test.statement)
+			got := assessText(c, platform.SQLServer, test.statement)
 
 			c.Assert(got.Severity, qt.Equals, safety.Destructive)
 			c.Assert(got.Reason, qt.Equals, "DROP CONSTRAINT removes an existing data protection")

@@ -68,7 +68,7 @@ func verifyAtlasSchemaPlanFile(
 	if err != nil {
 		return verifiedAtlasSchemaPlan{}, err
 	}
-	plan, planFormat, err := atlasschema.ReadPlanDocument(planPath)
+	plan, planFormat, err := atlasschema.ReadPlanDocument(cmd.Context(), runtime, planPath)
 	if err != nil {
 		return verifiedAtlasSchemaPlan{}, err
 	}

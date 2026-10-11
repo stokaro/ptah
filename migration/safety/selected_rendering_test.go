@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -18,6 +19,16 @@ type selectedRendering func(context.Context, renderer.Request) (renderer.Result,
 
 func (f selectedRendering) Render(ctx context.Context, request renderer.Request) (renderer.Result, error) {
 	return f(ctx, request)
+}
+
+// SplitStatements judges no statement: the rendering's owners recognize none.
+func (selectedRendering) SplitStatements(ctx context.Context, request lintext.SplitRequest) (lintext.SplitResult, error) {
+	return unjudged{}.SplitStatements(ctx, request)
+}
+
+// AnnotateStatements judges no statement either.
+func (selectedRendering) AnnotateStatements(ctx context.Context, request lintext.AnnotateRequest) (lintext.AnnotateResult, error) {
+	return unjudged{}.AnnotateStatements(ctx, request)
 }
 
 func TestAssessRenderedUsesOneSelectedBatchAndPreservesNodeRisk(t *testing.T) {

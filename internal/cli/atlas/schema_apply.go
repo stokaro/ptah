@@ -42,7 +42,7 @@ import (
 )
 
 type atlasSchemaApplyOptions struct {
-	runtime     engine.SchemaRuntime
+	runtime     atlasschema.PlanRuntime
 	url         string
 	filePaths   []string
 	toURLs      []string
@@ -847,7 +847,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	plan, planFormat, err := atlasschema.ReadPlanDocument(path)
+	plan, planFormat, err := atlasschema.ReadPlanDocument(cmd.Context(), opts.runtime, path)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

@@ -100,7 +100,7 @@ func TestSchemaPlanSaveUsesDerivedDefaultFileName(t *testing.T) {
 	c.Assert(matches, qt.HasLen, 1)
 	c.Assert(matches[0], qt.Matches, `\d{14}\.plan\.hcl`)
 	c.Assert(out, qt.Contains, "Plan saved to file://"+matches[0])
-	plan, format, err := atlasschema.ReadPlanDocument(matches[0])
+	plan, format, err := readPlanDocument(c, matches[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(plan.Name+atlasschema.PlanFileSuffixHCL, qt.Equals, matches[0])
@@ -124,7 +124,7 @@ func TestSchemaPlanCustomNameIsRecordedAndUsedAsFileName(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Plan saved to file://add_named_users.plan.hcl")
-	plan, format, err := atlasschema.ReadPlanDocument("add_named_users.plan.hcl")
+	plan, format, err := readPlanDocument(c, "add_named_users.plan.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(plan.Name, qt.Equals, "add_named_users")
@@ -190,7 +190,7 @@ func parsePlanDocumentOutput(c *qt.C, out string) atlasschema.PlanFile {
 	c.Helper()
 	path := filepath.Join(c.TB.TempDir(), "stdout.plan.hcl")
 	c.Assert(os.WriteFile(path, []byte(out), 0o600), qt.IsNil)
-	plan, format, err := atlasschema.ReadPlanDocument(path)
+	plan, format, err := readPlanDocument(c, path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	return plan

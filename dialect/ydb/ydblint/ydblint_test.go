@@ -2,13 +2,19 @@ package ydblint_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydblint"
+	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/lintscan"
 )
 
@@ -80,8 +86,8 @@ func TestService_CheckMigrations_ReadsTheHistory(t *testing.T) {
 }
 
 // split splits sources on the ydb target and returns each statement's
-// effects.
-func split(c *qt.C, sources ...lintext.Source) [][]lintext.Effect {
+// effects of facts, nil for a statement without one.
+func split(c *qt.C, facts []lintext.Fact, sources ...lintext.Source) [][]lintext.Effect {
 	c.Helper()
 	request := lintext.SplitRequest{Target: "ydb", Sources: sources}
 	result, err := ydblint.Splitter{}.SplitStatements(c.Context(), request)
@@ -89,11 +95,18 @@ func split(c *qt.C, sources ...lintext.Source) [][]lintext.Effect {
 	c.Assert(lintext.ValidateSplit(request, result), qt.IsNil)
 	c.Assert(result.Judged, qt.DeepEquals, []lintext.Fact{
 		lintext.FactStatefulDrop, lintext.FactUniqueIndex, lintext.FactRebuildDrop, lintext.FactRebuildRename,
+		lintext.FactSafetyEffect,
 	})
 	var effects [][]lintext.Effect
 	for _, statements := range result.Files {
 		for _, statement := range statements {
-			effects = append(effects, statement.Effects)
+			var kept []lintext.Effect
+			for _, effect := range statement.Effects {
+				if slices.Contains(facts, effect.Fact) {
+					kept = append(kept, effect)
+				}
+			}
+			effects = append(effects, kept)
 		}
 	}
 	return effects
@@ -105,7 +118,7 @@ func split(c *qt.C, sources ...lintext.Source) [][]lintext.Effect {
 func TestSplitter_StatefulDrops(t *testing.T) {
 	c := qt.New(t)
 
-	effects := split(c, lintext.Source{Name: "0001_drop.up.sql", Version: 1, Up: true, SQL: "DROP TOPIC IF EXISTS `app/events`;\n" +
+	effects := split(c, []lintext.Fact{lintext.FactStatefulDrop}, lintext.Source{Name: "0001_drop.up.sql", Version: 1, Up: true, SQL: "DROP TOPIC IF EXISTS `app/events`;\n" +
 		"DROP TRANSFER t;\n" +
 		"DROP ASYNC REPLICATION r CASCADE;\n" +
 		"DROP ASYNC REPLICATION r;\n" +
@@ -131,13 +144,71 @@ func TestSplitter_StatefulDrops(t *testing.T) {
 func TestSplitter_UniqueIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	effects := split(c, lintext.Source{Name: "0001_index.up.sql", Version: 1, Up: true,
+	effects := split(c, []lintext.Fact{lintext.FactUniqueIndex}, lintext.Source{Name: "0001_index.up.sql", Version: 1, Up: true,
 		SQL: "ALTER TABLE `shop/users` ADD INDEX by_email GLOBAL UNIQUE SYNC ON (email, tenant);\n" +
 			"ALTER TABLE `shop/users` ADD INDEX by_name GLOBAL SYNC ON (name);\n"})
 
 	c.Assert(effects, qt.DeepEquals, [][]lintext.Effect{
 		{{Fact: lintext.FactUniqueIndex, Object: "by_email", Table: "`shop/users`", Columns: []string{"email", "tenant"},
 			Clause: "ADD INDEX", Failure: "YDB: Duplicate key found"}},
+		nil,
+	})
+}
+
+// A statement whose effect only YDB knows is judged with the reason its
+// planned change reports: a drop that loses what a new object does not get
+// back, or that resets a streaming query, is destructive; one that keeps the
+// replica tables, drops or replaces what YDB reads another system through, or
+// changes a streaming query's execution needs review. A consumer is dropped
+// only by ALTER TOPIC. Every other statement is left to the assessment's own
+// reading.
+func TestSplitter_SafetyEffects(t *testing.T) {
+	c := qt.New(t)
+	destructive := func(reason string) []lintext.Effect {
+		return []lintext.Effect{{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: reason}}
+	}
+	behavioral := func(reason string) []lintext.Effect {
+		return []lintext.Effect{{Fact: lintext.FactSafetyEffect, Impact: schemaext.Behavioral, Reason: reason}}
+	}
+
+	effects := split(c, []lintext.Fact{lintext.FactSafetyEffect}, lintext.Source{Name: "0001_drop.up.sql", Version: 1, Up: true,
+		SQL: "DROP ASYNC REPLICATION r CASCADE;\n" +
+			"DROP ASYNC REPLICATION r;\n" +
+			"drop async replication `cascade`;\n" +
+			"DROP TOPIC IF EXISTS `app/events`;\n" +
+			"ALTER TOPIC `app/events` ADD CONSUMER a, DROP CONSUMER b;\n" +
+			"ALTER TOPIC `app/events` ADD CONSUMER a;\n" +
+			"DROP TRANSFER t;\n" +
+			"DROP COORDINATION NODE `app/locks`;\n" +
+			"DROP SECRET `app/token`;\n" +
+			"DROP STREAMING QUERY q;\n" +
+			"ALTER STREAMING QUERY q SET (RUN = FALSE);\n" +
+			"ALTER STREAMING QUERY q SET (FORCE = TRUE) AS DO BEGIN SELECT 1; END DO;\n" +
+			"DROP EXTERNAL DATA SOURCE s;\n" +
+			"DROP EXTERNAL TABLE e;\n" +
+			"CREATE OR REPLACE EXTERNAL TABLE e (a Int32) WITH (DATA_SOURCE = \"s\", LOCATION = \"/\");\n" +
+			"DROP TABLE t;\n" +
+			"DROP COORDINATION SEMAPHORE `app/locks`;\n" +
+			"ALTER TABLE t DROP CONSUMER;\n"})
+
+	c.Assert(effects, qt.DeepEquals, [][]lintext.Effect{
+		destructive(ydbdiff.DropReplicationReason),
+		behavioral(ydbdiff.KeepReplicaTablesReason),
+		behavioral(ydbdiff.KeepReplicaTablesReason),
+		destructive(ydbdiff.DropTopicReason),
+		destructive(ydbdiff.DropConsumerReason),
+		nil,
+		destructive(ydbdiff.DropTransferReason),
+		destructive(ydbdiff.DropCoordinationNodeReason),
+		destructive(ydbsecret.DropReason),
+		destructive(ydbstreaming.CheckpointLoss),
+		behavioral(ydbstreaming.ExecutionChange),
+		destructive(ydbstreaming.CheckpointLoss),
+		behavioral(ydbexternal.DropSourceReason),
+		behavioral(ydbexternal.DropTableReason),
+		behavioral(ydbexternal.ReplaceReason),
+		nil,
+		nil,
 		nil,
 	})
 }
@@ -166,7 +237,7 @@ func TestSplitter_Rebuilds(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			effects := split(c, itemsTable, lintext.Source{Name: "0002_rebuild.up.sql", Version: 2, Up: true, SQL: create + test.copy + swap})
+			effects := split(c, []lintext.Fact{lintext.FactRebuildDrop, lintext.FactRebuildRename}, itemsTable, lintext.Source{Name: "0002_rebuild.up.sql", Version: 2, Up: true, SQL: create + test.copy + swap})
 			c.Assert(effects, qt.DeepEquals, test.want)
 		})
 	}
@@ -236,6 +307,54 @@ func TestAnnotator_AnnotateStatements(t *testing.T) {
 		{name: "no drop in either reading", facts: asked, sql: "SELECT $$;\nDROP TABLE t;\n$$;\n",
 			want: []lintext.Annotation{{}}},
 		{name: "no drop asked about", facts: []lintext.Fact{lintext.FactUniqueIndex}, sql: "DROP TOPIC t;\n",
+			want: []lintext.Annotation{{}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(annotate(c, test.facts, test.sql), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// The annotator judges a statement's safety effect as it judges a drop: from
+// its YQL reading where YQL splits it as the scanner did, alongside the drop
+// when both are asked, and declined where YQL splits it otherwise. It declines
+// one both readings split alike but judge differently too, here a CASCADE one
+// reading finds inside a string and the other outside it. A source holding no
+// DROP is still read for the statements that alter or replace.
+func TestAnnotator_SafetyEffects(t *testing.T) {
+	safety := []lintext.Fact{lintext.FactSafetyEffect}
+	both := []lintext.Fact{lintext.FactStatefulDrop, lintext.FactSafetyEffect}
+	judged := func(impact schemaext.Impact, reason string) lintext.Annotation {
+		return lintext.Annotation{Effects: []lintext.Effect{{Fact: lintext.FactSafetyEffect, Impact: impact, Reason: reason}}}
+	}
+	declined := lintext.Annotation{Declined: true}
+	for _, test := range []struct {
+		name  string
+		facts []lintext.Fact
+		sql   string
+		want  []lintext.Annotation
+	}{
+		{name: "a judgment both readings split alike", facts: safety, sql: "SELECT 1;\nDROP ASYNC REPLICATION r;\n",
+			want: []lintext.Annotation{{}, judged(schemaext.Behavioral, ydbdiff.KeepReplicaTablesReason)}},
+		{name: "a drop and its judgment", facts: both, sql: "DROP TOPIC t;\n",
+			want: []lintext.Annotation{{Effects: []lintext.Effect{
+				{Fact: lintext.FactStatefulDrop, Object: "t", Kind: "TOPIC"},
+				{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: ydbdiff.DropTopicReason},
+			}}}},
+		{name: "a change of a streaming query", facts: safety, sql: "ALTER STREAMING QUERY q SET (RUN = FALSE);\n",
+			want: []lintext.Annotation{judged(schemaext.Behavioral, ydbstreaming.ExecutionChange)}},
+		{name: "a replaced external table", facts: safety,
+			sql:  "CREATE OR REPLACE EXTERNAL TABLE e (a Int32) WITH (DATA_SOURCE = \"s\", LOCATION = \"/\");\n",
+			want: []lintext.Annotation{judged(schemaext.Behavioral, ydbexternal.ReplaceReason)}},
+		{name: "a judgment YQL reads inside a string", facts: safety,
+			sql:  "SELECT 'a\\';\nALTER STREAMING QUERY q SET (RUN = FALSE);\nSELECT '';\n",
+			want: []lintext.Annotation{{}, declined, {}}},
+		{name: "a CASCADE only the scanner reads", facts: safety, sql: `DROP ASYNC REPLICATION r WITH (x = 'a\' CASCADE ')`,
+			want: []lintext.Annotation{declined}},
+		{name: "a CASCADE only YQL reads", facts: safety, sql: `DROP ASYNC REPLICATION r WITH (x = 'a\', y = ' CASCADE')`,
+			want: []lintext.Annotation{declined}},
+		{name: "no judgment in either reading", facts: safety, sql: "SELECT $$;\nDROP TABLE t;\n$$;\n",
 			want: []lintext.Annotation{{}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

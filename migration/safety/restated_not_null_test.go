@@ -57,7 +57,7 @@ func TestAssessSQL_RestatedNotNull(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := safety.AssessSQL(test.statement)
+			got := assessText(c, "", test.statement)
 
 			c.Assert(got.Severity, qt.Equals, safety.Warning)
 			c.Assert(got.Reason, qt.Equals, test.wantReason)
@@ -89,7 +89,7 @@ func TestAssessSQL_NotNullWordsThatRestateNothing(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := safety.AssessSQL(test.statement)
+			got := assessText(c, "", test.statement)
 
 			c.Assert(got.Severity, qt.Equals, safety.Safe)
 			c.Assert(got.Reason, qt.Equals, safeReason)

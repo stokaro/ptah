@@ -226,6 +226,7 @@ var (
 // receives. terminated false leaves each fragment's last statement without its
 // semicolon, as a defective renderer could.
 type policyRenderer struct {
+	unjudged
 	terminated bool
 	batches    [][]ast.Node
 }
@@ -458,7 +459,7 @@ func TestRenderers_ShowTheAccessAssessment(t *testing.T) {
 
 func TestFold_RaisesSeverityAndKeepsTheStrongestAccess(t *testing.T) {
 	c := qt.New(t)
-	text := safety.AssessSQL("CREATE POLICY p ON t USING (true)")
+	text := assessText(c, "postgres", "CREATE POLICY p ON t USING (true)")
 	c.Assert(text.Severity, qt.Equals, safety.Safe)
 	safety.Fold(&text, safety.StatementAssessment{
 		Statement: "ignored", Severity: safety.Destructive, Reason: "can widen access: admits every row",
@@ -468,7 +469,7 @@ func TestFold_RaisesSeverityAndKeepsTheStrongestAccess(t *testing.T) {
 		Severity: safety.Warning, Reason: "lower", Access: schemaext.AccessNarrows, AccessReason: "weaker",
 	})
 	c.Assert(text, qt.DeepEquals, safety.StatementAssessment{
-		NodeType: "sql", Statement: "CREATE POLICY p ON t USING (true)",
+		Index: 1, NodeType: "sql", Statement: "CREATE POLICY p ON t USING (true)",
 		Severity: safety.Destructive, Reason: "can widen access: admits every row",
 		Access: schemaext.AccessWidens, AccessReason: "admits every row",
 	})

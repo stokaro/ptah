@@ -195,7 +195,7 @@ type generatedMigrationSpecOptions struct {
 	Qualifier atlasmigrate.Qualifier
 }
 
-func buildGeneratedMigrationSpec(ctx context.Context, service renderer.Service, opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
+func buildGeneratedMigrationSpec(ctx context.Context, runtime Runtime, opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
 	if opts.Plan == nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("bidirectional migration plan is nil")
 	}
@@ -204,7 +204,7 @@ func buildGeneratedMigrationSpec(ctx context.Context, service renderer.Service, 
 		return generatedMigrationSpec{}, nil, err
 	}
 	assessments, err := safety.AssessRenderedWithCapabilities(
-		ctx, service,
+		ctx, runtime,
 		upNodes,
 		opts.Plan.Dialect,
 		opts.Plan.Capabilities,
@@ -214,7 +214,7 @@ func buildGeneratedMigrationSpec(ctx context.Context, service renderer.Service, 
 	}
 	upDirectiveOpts := generatedDirectiveOptions{skipTimeouts: opts.Plan.Forward.RequiresNoTransaction}
 	upSQL, err := renderGeneratedMigrationSQL(
-		ctx, service,
+		ctx, runtime,
 		upNodes,
 		opts.Plan.Dialect,
 		opts.Plan.Capabilities,
@@ -231,7 +231,7 @@ func buildGeneratedMigrationSpec(ctx context.Context, service renderer.Service, 
 		upSQL = withNoTransactionDirective(upSQL)
 	}
 
-	downSQL, err := renderGeneratedDownMigrationSQL(ctx, service, opts.Plan, opts.Qualifier)
+	downSQL, err := renderGeneratedDownMigrationSQL(ctx, runtime, opts.Plan, opts.Qualifier)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}

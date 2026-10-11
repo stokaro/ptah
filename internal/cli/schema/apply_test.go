@@ -360,7 +360,7 @@ func writeTxModeDirectivePlan(c *qt.C, dir, dbPath string) string {
 	c.Assert(err, qt.IsNil)
 	directive, err := atlasschema.ParsePlanDirective("atlas:txmode none")
 	c.Assert(err, qt.IsNil)
-	document, err := atlasschema.MarshalPlanFile(plan.WithDirectiveHeader([]atlasschema.PlanDirective{directive}))
+	document, err := atlasschema.MarshalPlanFile(withDirectives(c, plan, []atlasschema.PlanDirective{directive}))
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(planPath, document, 0o600), qt.IsNil)
 	return planPath

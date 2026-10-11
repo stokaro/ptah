@@ -5,6 +5,11 @@
 // which changes remove data, drop objects or tighten constraints. The scale
 // those decisions are reported on belongs to migration/risk, which several
 // other producers share (stokaro/ptah#2246 section 2.2).
+//
+// SQL text is read by the words every dialect shares. A statement only its
+// owner recognizes, such as a dropped YDB topic, is the owner's to judge: the
+// owner reports its judgment as ptah.run/core/lintext's FactSafetyEffect, and
+// the classifier takes it in place of the words.
 package safety
 
 import (
@@ -23,10 +28,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbsecret"
-	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
@@ -54,9 +55,8 @@ type Finding struct {
 }
 
 // StatementAssessment classifies one generated migration statement. Index is
-// 1-based in the slices [Assess], [AssessRendered], and
-// [AssessRenderedWithCapabilities] return; [AssessSQL] classifies one
-// statement and leaves Index zero.
+// 1-based in the slices [Assess], [AssessSQL], [AssessRendered], and
+// [AssessRenderedWithCapabilities] return.
 //
 // Access and AccessReason carry the owner's access assessment for a statement
 // whose owned operation declares one ([schemaext.AccessEffectSource]), and are
@@ -230,8 +230,8 @@ func Assess(nodes []ast.Node) []StatementAssessment {
 // generated AST nodes, using the dialect's default capability preset
 // ([capability.ForDialect]). See [AssessRenderedWithCapabilities] for the
 // assessment and error contract.
-func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
-	return AssessRenderedWithCapabilities(ctx, service, nodes, dialect, capability.ForDialect(dialect))
+func AssessRendered(ctx context.Context, runtime RenderingRuntime, nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
+	return AssessRenderedWithCapabilities(ctx, runtime, nodes, dialect, capability.ForDialect(dialect))
 }
 
 // AssessRenderedWithCapabilities returns per-rendered-SQL-statement risk
@@ -239,16 +239,20 @@ func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.N
 // rendering on live database paths. The dialect accepts any spelling
 // platform.NormalizeDialect resolves.
 //
-// The caller selects the rendering service. All assessment units are rendered
-// in one batch, with node provenance retained in the reply. Missing services,
-// rendering errors, incomplete replies, and cancellation return no assessments.
+// The caller selects the runtime. All assessment units are rendered in one
+// batch, with node provenance retained in the reply, and the dialect's owner
+// judges every rendered statement in one call more, as [AssessSQL] describes.
+// A missing runtime, rendering or judging errors, incomplete replies, and
+// cancellation return no assessments.
 //
 // There is one assessment per rendered statement, not per node, because a node
 // can render into several statements on some dialects, and Index is 1-based
 // over that flattened list. Each statement is classified from its own SQL, and
 // the node-level verdict is folded into the statements it applies to — so a
 // narrowing type change stays destructive where the SQL alone would not say so
-// — never lowering a statement's own classification.
+// — never lowering a statement's own classification. A raw SQL node's verdict
+// is a reading of its words, so it is not folded into a statement its owner
+// judged: the owner's judgment takes the place of that reading.
 //
 // An owner operation's verdict, its access assessment included, applies to
 // every statement its node renders when the node is that one operation
@@ -260,12 +264,12 @@ func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.N
 // established: a known widening stays a widening.
 func AssessRenderedWithCapabilities(
 	ctx context.Context,
-	service renderer.Service,
+	runtime RenderingRuntime,
 	nodes []ast.Node,
 	dialect string,
 	caps capability.Capabilities,
 ) ([]StatementAssessment, error) {
-	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
 	var units []ast.Node
@@ -276,7 +280,21 @@ func AssessRenderedWithCapabilities(
 	if target == "" {
 		target = dialect
 	}
-	result, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
+	result, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
+	if err != nil {
+		return nil, err
+	}
+	rendered := make([][]string, len(units))
+	var all []string
+	for i := range units {
+		statements := sqlutil.SplitSQLStatementsForDialect(result.Fragments[i], dialect)
+		if len(statements) == 0 && strings.TrimSpace(result.Fragments[i]) != "" {
+			statements = []string{strings.TrimSpace(result.Fragments[i])}
+		}
+		rendered[i] = statements
+		all = append(all, statements...)
+	}
+	judgments, err := judgeStatements(ctx, runtime, target, all)
 	if err != nil {
 		return nil, err
 	}
@@ -287,20 +305,18 @@ func AssessRenderedWithCapabilities(
 		if placement == ast.MixedExtension {
 			nodeAssessment = mixedVerdict(node)
 		}
-		rendered := result.Fragments[i]
-		statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
-		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
-			statements = []string{strings.TrimSpace(rendered)}
-		}
 		keepsNull := keepsNullability(node)
 		fills := fillsNullRows(node)
-		for _, statement := range statements {
-			assessment := assessStatement(statement, keepsNull)
+		_, raw := node.(*ast.RawSQLNode)
+		for _, statement := range rendered[i] {
+			judged := judgments[len(assessments)]
+			assessment := assessStatement(statement, keepsNull, judged)
 			assessment.NodeType = nodeAssessment.NodeType
 			if assessment.Subject == "" {
 				assessment.Subject = nodeAssessment.Subject
 			}
-			if placement != ast.NoExtension || len(statements) == 1 || isTypeChangeSQL(statement) {
+			ownedText := raw && judged != nil
+			if !ownedText && (placement != ast.NoExtension || len(rendered[i]) == 1 || isTypeChangeSQL(statement)) {
 				raiseAssessment(&assessment, nodeAssessment)
 			}
 			if fills {
@@ -382,26 +398,81 @@ func judgeNullFillPair(assessment *StatementAssessment, statement string) {
 	}
 }
 
-// AssessSQL returns a best-effort classification for one rendered SQL
-// statement. Matching is keyword-based and insensitive to the statement's
-// casing and layout, so the same statement classifies the same however it is
-// spelled; a statement matching no known destructive or warning shape is
-// reported Safe with the default reason.
-func AssessSQL(statement string) StatementAssessment {
-	return assessStatement(statement, false)
+// AssessSQL returns a best-effort classification of rendered SQL statements
+// for a target, one per statement, in input order with 1-based Index.
+//
+// A statement whose effect only its owner knows is classified by the owner's
+// judgment ([lintext.FactSafetyEffect]), which takes the place of the reading
+// of its words: a behavioral impact is a Warning and a destructive one
+// Destructive. With a target, which accepts any name the runtime registers,
+// the target's splitter judges every statement in one call, and a target whose
+// splitter judges no safety effect leaves every statement to its words. Where
+// the owner's lexing reads one statement as several, each piece is classified
+// on its own, a piece the owner did not judge by its words, and the most
+// severe piece decides. With
+// an empty target, every owner that registers an annotator judges the
+// statements, in one call, over a split that knows no dialect. Where several
+// owners judge one statement, the most severe impact wins and their reasons
+// are joined in target name order. A statement an owner declined to judge,
+// because its own lexing reads the text otherwise, is Destructive, with the
+// decline's reason after the judgments: its effect under that reading is not
+// established.
+//
+// Every other statement is classified by its words, insensitive to its casing
+// and layout, so the same statement classifies the same however it is spelled;
+// one matching no known destructive or warning shape is reported Safe with the
+// default reason.
+//
+// A missing context or runtime wraps [schemaext.ErrInvalidValue]; a target
+// without a splitter wraps [ptah.run/core/ptaherr.ErrUnsupportedDialect]. A
+// runtime error or cancellation returns no assessments.
+func AssessSQL(ctx context.Context, runtime Runtime, target string, statements []string) ([]StatementAssessment, error) {
+	judgments, err := judgeStatements(ctx, runtime, target, statements)
+	if err != nil {
+		return nil, err
+	}
+	assessments := make([]StatementAssessment, 0, len(statements))
+	for i, statement := range statements {
+		assessment := assessStatement(statement, false, judgments[i])
+		assessment.Index = i + 1
+		assessments = append(assessments, assessment)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return assessments, nil
 }
 
-// assessStatement is [AssessSQL] for a statement whose operation is known to
-// leave the column's nullability alone; see [assessRawSQL].
-func assessStatement(statement string, keepsNullability bool) StatementAssessment {
+// assessStatement classifies one statement, knowing whether its operation
+// leaves the column's nullability alone (see [assessRawSQL]). A statement no
+// owner judged is read by its words. One an owner judged a piece of is read
+// piece by piece, as the owner's split reads it: a judged piece by the
+// owner's judgment, and any other by its words, so the judgment of one piece
+// does not hide what another does. The most severe piece decides.
+func assessStatement(statement string, keepsNullability bool, pieces []statementPiece) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType:  "sql",
 		Statement: strings.TrimSpace(statement),
 		Severity:  Safe,
-		Reason:    "does not remove data or tighten constraints",
+		Reason:    safeReason,
 	}
-	return assessRawSQL(statement, assessment, keepsNullability)
+	if pieces == nil {
+		return assessRawSQL(statement, assessment, keepsNullability)
+	}
+	for _, piece := range pieces {
+		verdict := StatementAssessment{Severity: Safe, Reason: safeReason}
+		if piece.judgment != nil {
+			verdict.Severity, verdict.Reason = piece.judgment.severity, piece.judgment.reason
+		} else {
+			verdict = assessRawSQL(piece.sql, verdict, keepsNullability)
+		}
+		raiseAssessment(&assessment, verdict)
+	}
+	return assessment
 }
+
+// safeReason is the reason of a statement nothing marks as risky.
+const safeReason = "does not remove data or tighten constraints"
 
 // HighestAssessment returns the highest severity from statement assessments.
 // Empty or nil assessments answer Safe; severities compare the way [Highest]
@@ -813,25 +884,17 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 	}
 }
 
-// assessRawSQL classifies one statement by its words. keepsNullability says
-// the statement comes from a column modification that states its changes and
-// leaves nullability alone, so a NOT NULL it restates is the column's
-// existing constraint and not a new one.
+// assessRawSQL classifies one statement by its words, which every dialect
+// shares; a statement only its owner recognizes is the owner's to judge (see
+// [AssessSQL]). keepsNullability says the statement comes from a column
+// modification that states its changes and leaves nullability alone, so a NOT
+// NULL it restates is the column's existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
 
-	if hasWordPrefix(words, "DROP", "ASYNC", "REPLICATION") && !slices.Contains(words, "CASCADE") {
-		assessment.Severity = Warning
-		assessment.Reason = keepReplicaTablesReason
-		return assessment
-	}
 	if reason, found := destructivePrefixReason(words); found {
 		assessment.Severity = Destructive
 		assessment.Reason = reason
-		return assessment
-	}
-	if reason, found := runtimeObjectChangeReason(words); found {
-		assessment.Severity, assessment.Reason = Warning, reason
 		return assessment
 	}
 	switch {
@@ -844,9 +907,6 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case hasWordSequence(words, "DROP", "COLUMN"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP COLUMN removes existing column data"
-	case hasWordSequence(words, "DROP", "CONSUMER"):
-		assessment.Severity = Destructive
-		assessment.Reason = ydbdiff.DropConsumerReason
 	case hasWordSequence(words, "DROP", "CONSTRAINT"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP CONSTRAINT removes an existing data protection"
@@ -1086,32 +1146,12 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
-	{words: []string{"DROP", "TOPIC"}, reason: ydbdiff.DropTopicReason},
-	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: ydbdiff.DropReplicationReason},
-	{words: []string{"DROP", "TRANSFER"}, reason: ydbdiff.DropTransferReason},
-	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
-	{words: []string{"DROP", "SECRET"}, reason: ydbsecret.DropReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
-
-// keepReplicaTablesReason is why a statement read as text that drops a YDB
-// async replication without CASCADE is a warning; with CASCADE, and for a
-// transfer, the owner's reasons apply. A statement read as text cannot tell
-// whether the replication was failed over first, which keeps its tables
-// ordinary, and lint rule YD115 reads the migration directory for it.
-const keepReplicaTablesReason = ydbdiff.KeepReplicaTablesReason
-
-// dropCoordinationNodeReason is why dropping a YDB coordination node is
-// destructive, in the words both the AST and the SQL-text classifiers report.
-const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
-	"resources, even while a session holds a lock on it"
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.
 func destructivePrefixReason(words []string) (string, bool) {
-	if ydbstreaming.LosesCheckpoint(words) {
-		return ydbstreaming.CheckpointLoss, true
-	}
 	for _, prefix := range destructivePrefixes {
 		if hasWordPrefix(words, prefix.words...) {
 			return prefix.reason, true
@@ -1134,21 +1174,4 @@ func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int
 		unforced++
 	}
 	return forced, unforced
-}
-
-// runtimeObjectChangeReason covers schema operations that change ongoing
-// execution or external reads without deleting stored table data.
-func runtimeObjectChangeReason(words []string) (string, bool) {
-	switch {
-	case hasWordPrefix(words, "ALTER", "STREAMING", "QUERY"):
-		return ydbstreaming.ExecutionChange, true
-	case hasWordPrefix(words, "DROP", "EXTERNAL", "DATA", "SOURCE"):
-		return ydbexternal.DropSourceReason, true
-	case hasWordPrefix(words, "DROP", "EXTERNAL", "TABLE"):
-		return ydbexternal.DropTableReason, true
-	case hasWordPrefix(words, "CREATE", "OR", "REPLACE", "EXTERNAL"):
-		return ydbexternal.ReplaceReason, true
-	default:
-		return "", false
-	}
 }

@@ -16,14 +16,19 @@ import (
 // judged are the facts [Splitter] reports for every statement it returns.
 var judged = []lintext.Fact{
 	lintext.FactStatefulDrop, lintext.FactUniqueIndex, lintext.FactRebuildDrop, lintext.FactRebuildRename,
+	lintext.FactSafetyEffect,
 }
+
+// annotated are the facts [Annotator] judges, in the order it reports them.
+var annotated = []lintext.Fact{lintext.FactStatefulDrop, lintext.FactSafetyEffect}
 
 // Splitter splits YDB migrations as YQL and reports each statement's effects:
 // a drop that loses state ([lintext.FactStatefulDrop]), YQL's unique index
-// ([lintext.FactUniqueIndex]), and the steps of a table rebuild
+// ([lintext.FactUniqueIndex]), the steps of a table rebuild
 // ([lintext.FactRebuildDrop], [lintext.FactRebuildRename]), whose old table's
 // columns it reads from the directory's own history (see the package
-// documentation). Its zero value is ready to use.
+// documentation), and its judgment of a statement whose effect only this owner
+// knows ([lintext.FactSafetyEffect]). Its zero value is ready to use.
 type Splitter struct{}
 
 // SplitStatements splits every source of a request on the ydb target, in one
@@ -59,6 +64,9 @@ func (Splitter) SplitStatements(ctx context.Context, request lintext.SplitReques
 				stmt.Effects = append(stmt.Effects, effect)
 			}
 			stmt.Effects = append(stmt.Effects, uniqueIndexes(stmt)...)
+			if effect, judged := safetyEffect(stmt); judged {
+				stmt.Effects = append(stmt.Effects, effect)
+			}
 			if steps.Drops[j] {
 				stmt.Effects = append(stmt.Effects, lintext.Effect{Fact: lintext.FactRebuildDrop})
 			}
@@ -71,14 +79,17 @@ func (Splitter) SplitStatements(ctx context.Context, request lintext.SplitReques
 	return result, ctx.Err()
 }
 
-// Annotator judges a drop that loses state ([lintext.FactStatefulDrop]) over
-// the split of a run that names no dialect, so DS107 reports one there as it
-// does on a YDB run. It splits each source again as YQL and judges a
+// Annotator judges a drop that loses state ([lintext.FactStatefulDrop]) and
+// a statement whose effect only this owner knows ([lintext.FactSafetyEffect])
+// over the split of a run that names no dialect, so DS107 reports such a drop
+// there as it does on a YDB run, and a safety assessment with no target reads
+// the owner's judgment. It splits each source again as YQL and judges a
 // statement YQL splits the same way, from its YQL reading. It declines one
-// YQL splits differently where either reading holds such a drop: the
-// dialect-blind scanner ends a string or a comment where YQL does not, and
-// which reading the author meant is not this owner's to guess. It judges
-// nothing else. Its zero value is ready to use.
+// whose two readings disagree about a fact it was asked: YQL splits it
+// differently where either reading holds one, or splits it the same way and
+// reads it otherwise. The dialect-blind scanner ends a string or a comment
+// where YQL does not, and which reading the author meant is not this owner's
+// to guess. It judges nothing else. Its zero value is ready to use.
 type Annotator struct{}
 
 // AnnotateStatements judges every statement of the request for the facts it
@@ -92,53 +103,78 @@ func (Annotator) AnnotateStatements(ctx context.Context, request lintext.Annotat
 	if err := lintext.ValidateAnnotateRequest(request); err != nil {
 		return lintext.AnnotateResult{}, err
 	}
-	asked := slices.Contains(request.Facts, lintext.FactStatefulDrop)
+	asked := slices.DeleteFunc(slices.Clone(annotated), func(fact lintext.Fact) bool { return !slices.Contains(request.Facts, fact) })
 	result := lintext.AnnotateResult{Files: make([][]lintext.Annotation, len(request.Files))}
 	for i, statements := range request.Files {
 		if err := ctx.Err(); err != nil {
 			return lintext.AnnotateResult{}, err
 		}
 		result.Files[i] = make([]lintext.Annotation, len(statements))
-		// A source that holds no DROP in any letter case holds no drop
-		// however it is lexed, which spares reading it again.
-		if !asked || !strings.Contains(strings.ToUpper(request.Sources[i].SQL), "DROP") {
+		if !mayHold(request.Sources[i].SQL, asked) {
 			continue
 		}
 		yql := lintscan.Split(request.Sources[i].SQL, lintscan.ForDialect(platform.YDB))
 		for j := range statements {
-			result.Files[i][j] = annotateStatefulDrop(&statements[j], yql)
+			result.Files[i][j] = annotate(&statements[j], yql, asked)
 		}
 	}
 	return result, ctx.Err()
 }
 
-// annotateStatefulDrop judges one statement the dialect-blind scanner split,
-// against the statements YQL splits its source into.
-func annotateStatefulDrop(stmt *lintext.Statement, yql []lintext.Statement) lintext.Annotation {
+// mayHold reports whether a source may hold a statement with one of the asked
+// facts. Every such statement starts with, or holds, one of the words a fact
+// lists, so a source that holds none of them in any letter case holds no such
+// statement however it is lexed, which spares reading it again.
+func mayHold(sql string, asked []lintext.Fact) bool {
+	upper := strings.ToUpper(sql)
+	for _, fact := range asked {
+		words := []string{"DROP"}
+		if fact == lintext.FactSafetyEffect {
+			words = append(words, "ALTER", "REPLACE")
+		}
+		if slices.ContainsFunc(words, func(word string) bool { return strings.Contains(upper, word) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// annotate judges one statement the dialect-blind scanner split, against the
+// statements YQL splits its source into.
+func annotate(stmt *lintext.Statement, yql []lintext.Statement, asked []lintext.Fact) lintext.Annotation {
 	var overlapping []lintext.Statement
 	for _, piece := range yql {
 		if piece.Start < stmt.End && stmt.Start < piece.End {
 			overlapping = append(overlapping, piece)
 		}
 	}
-	_, dropped := statefulDrop(stmt)
-	same := len(overlapping) == 1 && overlapping[0].Start == stmt.Start && overlapping[0].End == stmt.End
-	switch {
-	case dropped && same && isStatefulDrop(&overlapping[0]):
-		effect, _ := statefulDrop(&overlapping[0])
-		return lintext.Annotation{Effects: []lintext.Effect{effect}}
-	case !dropped && !slices.ContainsFunc(overlapping, func(piece lintext.Statement) bool { return isStatefulDrop(&piece) }):
-		return lintext.Annotation{}
-	default:
-		return lintext.Annotation{Declined: true}
+	blind := read(stmt, asked)
+	if len(overlapping) == 1 && overlapping[0].Start == stmt.Start && overlapping[0].End == stmt.End {
+		own := read(&overlapping[0], asked)
+		if !slices.EqualFunc(blind, own, func(a, b lintext.Effect) bool { return a.Fact == b.Fact && a.Impact == b.Impact }) {
+			return lintext.Annotation{Declined: true}
+		}
+		return lintext.Annotation{Effects: own}
 	}
+	if len(blind) == 0 && !slices.ContainsFunc(overlapping, func(piece lintext.Statement) bool { return len(read(&piece, asked)) > 0 }) {
+		return lintext.Annotation{}
+	}
+	return lintext.Annotation{Declined: true}
 }
 
-// isStatefulDrop reports whether a statement drops an object whose state a
-// new object of the same name does not get back.
-func isStatefulDrop(stmt *lintext.Statement) bool {
-	_, dropped := statefulDrop(stmt)
-	return dropped
+// read returns the statement's effects of the asked facts, in their order.
+func read(stmt *lintext.Statement, asked []lintext.Fact) []lintext.Effect {
+	var effects []lintext.Effect
+	for _, fact := range asked {
+		reader := statefulDrop
+		if fact == lintext.FactSafetyEffect {
+			reader = safetyEffect
+		}
+		if effect, found := reader(stmt); found {
+			effects = append(effects, effect)
+		}
+	}
+	return effects
 }
 
 // statefulDrop reads a drop of a YDB object whose state a new object of the

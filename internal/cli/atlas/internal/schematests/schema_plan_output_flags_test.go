@@ -220,7 +220,7 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	want := "plan_" + templateData.ToHash[start:start+12]
 	c.Assert(out, qt.Contains, "Plan saved to file://"+want+".plan.hcl")
-	plan, format, err := atlasschema.ReadPlanDocument(filepath.Join(dir, want+".plan.hcl"))
+	plan, format, err := readPlanDocument(c, filepath.Join(dir, want+".plan.hcl"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(plan.Name, qt.Equals, want)
@@ -335,7 +335,7 @@ func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T)
 				fixture.args("--output", outputPath, "--name-format", "nested/plan")...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			plan, _, err := atlasschema.ReadPlanDocument(outputPath)
+			plan, _, err := readPlanDocument(c, outputPath)
 			c.Assert(err, qt.IsNil)
 			c.Assert(plan.Name, qt.Equals, "nested/plan")
 		})
@@ -667,7 +667,7 @@ func TestSchemaPlanEditSavesTheEditedSQL(t *testing.T) {
 	matches, globErr := filepath.Glob(filepath.Join(dir, "*.plan.hcl"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
-	plan, _, readErr := atlasschema.ReadPlanDocument(matches[0])
+	plan, _, readErr := readPlanDocument(c, matches[0])
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 1)
 	c.Assert(plan.Statements[0].SQL, qt.Contains, "edited_table")
@@ -954,7 +954,7 @@ func TestSchemaPlanEditCombinesWithNameFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Plan saved to file://edited_plan.plan.hcl")
-	plan, _, readErr := atlasschema.ReadPlanDocument(filepath.Join(dir, "edited_plan.plan.hcl"))
+	plan, _, readErr := readPlanDocument(c, filepath.Join(dir, "edited_plan.plan.hcl"))
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(plan.Statements[0].SQL, qt.Contains, "combined_edit")
 }

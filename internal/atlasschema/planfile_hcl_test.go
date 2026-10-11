@@ -103,7 +103,7 @@ func goldenPlan() atlasschema.PlanFile {
 func TestReadPlanDocumentParsesOracleAtlasPlan(t *testing.T) {
 	c := qt.New(t)
 
-	plan, format, err := atlasschema.ReadPlanDocument(oraclePlanPath)
+	plan, format, err := readPlanDocument(c, oraclePlanPath)
 
 	// Every field of the real Atlas-authored plan file lands in the plan
 	// structure: the timestamp name, both base64 hashes verbatim, and the
@@ -151,9 +151,9 @@ func TestReadPlanDocumentNormalizesCRLFDocumentLineEndings(t *testing.T) {
 	path := file.Name()
 	c.Assert(file.Close(), qt.IsNil)
 
-	want, _, err := atlasschema.ReadPlanDocument(oraclePlanPath)
+	want, _, err := readPlanDocument(c, oraclePlanPath)
 	c.Assert(err, qt.IsNil)
-	got, format, err := atlasschema.ReadPlanDocument(path)
+	got, format, err := readPlanDocument(c, path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(got, qt.DeepEquals, want)
@@ -167,12 +167,29 @@ func TestReadPlanDocumentReadsNativeJSONPlan(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
 
-	plan, format, err := atlasschema.ReadPlanDocument(path)
+	plan, format, err := readPlanDocument(c, path)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatJSON)
 	c.Assert(plan, qt.DeepEquals, goldenPlan())
 	c.Assert(atlasschema.IsNativeFingerprint(plan.FromFingerprint), qt.IsTrue)
+}
+
+// An Atlas plan file records no dialect, so every owner judges the
+// statements it recognizes: a dropped topic marks the plan destructive.
+func TestReadPlanDocumentAsksEveryOwnerOfAnAtlasPlan(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "topic.plan.hcl")
+	document := "plan \"drop_topic\" {\n  from      = \"sha256:2ef81def17f625ec4fc7927e136e516022e244ab587bb702b5b71d38b05cbe27\"\n  to        = \"sha256:c4fc6302f3cc08997acbb8b8d6ae52eabcbd9c6604a9835305035b1522e03b23\"\n  migration = <<-SQL\n    DROP TOPIC `events`;\n  SQL\n}\n"
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+
+	plan, format, err := readPlanDocument(c, path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
+	c.Assert(plan.Statements, qt.HasLen, 1)
+	c.Assert(plan.Statements[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(plan.Destructive, qt.IsTrue)
 }
 
 func TestDetectPlanFormat(t *testing.T) {
@@ -259,7 +276,7 @@ func TestMarshalPlanFileHCLRoundTrips(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
 
-	plan, format, err := atlasschema.ReadPlanDocument(path)
+	plan, format, err := readPlanDocument(c, path)
 
 	// Reading back what the writer produced preserves the name, both
 	// fingerprints, and every statement with its re-derived safety
@@ -297,7 +314,7 @@ func TestMarshalPlanFileHCLEndsANoteWithoutASemicolon(t *testing.T) {
 	c.Assert(string(document), qt.Not(qt.Contains), note+";")
 
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
-	read, _, err := atlasschema.ReadPlanDocument(path)
+	read, _, err := readPlanDocument(c, path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(read.Statements, qt.DeepEquals, plan.Statements)
 }
@@ -421,7 +438,7 @@ func TestMarshalPlanFileHCLRoundTripPropertyOverAdversarialSQL(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "property.plan.hcl")
 			c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
 
-			readBack, format, readErr := atlasschema.ReadPlanDocument(path)
+			readBack, format, readErr := readPlanDocument(c, path)
 
 			// The statement survives the heredoc verbatim, modulo the
 			// trailing semicolon the writer normalizes onto every statement.
@@ -600,7 +617,7 @@ func TestReadPlanDocumentRejectsMalformedHCL(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "bad.plan.hcl")
 			c.Assert(os.WriteFile(path, []byte(tt.contents), 0o600), qt.IsNil)
 
-			_, _, err := atlasschema.ReadPlanDocument(path)
+			_, _, err := readPlanDocument(c, path)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})

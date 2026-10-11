@@ -10,7 +10,8 @@ import (
 
 // ExampleSplitter shows the YDB owner splitting one lint run's files as YQL:
 // each statement carries the facts the rules every dialect shares read, here
-// a dropped topic for DS107 and a unique index for MF101 and MF102.
+// a dropped topic for DS107 and a unique index for MF101 and MF102, and the
+// owner's judgment a safety assessment reads, here of the dropped topic.
 func ExampleSplitter() {
 	request := lintext.SplitRequest{Target: "ydb", Sources: []lintext.Source{{
 		Name: "0000000002_events.up.sql", Version: 2, Up: true,
@@ -23,11 +24,16 @@ func ExampleSplitter() {
 	}
 	for _, statement := range result.Files[0] {
 		for _, effect := range statement.Effects {
+			if effect.Fact == lintext.FactSafetyEffect {
+				fmt.Printf("%d %s %s: %s\n", statement.Line, effect.Fact, effect.Impact, effect.Reason)
+				continue
+			}
 			fmt.Printf("%d %s %s %q\n", statement.Line, effect.Fact, effect.Object, effect.Failure)
 		}
 	}
 	// Output:
 	// 1 stateful-drop `app/events` ""
+	// 1 safety-effect destructive: DROP TOPIC removes the topic, every message it holds and every consumer's position in it
 	// 2 unique-index by_email "YDB: Duplicate key found"
 }
 

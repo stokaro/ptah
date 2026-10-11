@@ -57,7 +57,10 @@ func TestPlanLive_RecordsTheOwnersVerdictForOwnedOperations(t *testing.T) {
 	c.Assert(string(statement.Access), qt.Equals, "", qt.Commentf("row-level TTL makes no access claim"))
 	// The control: the statement's text alone earns a lower verdict, so the
 	// recorded one came from the owner.
-	c.Assert(safety.AssessSQL(statement.SQL).Severity, qt.Equals, safety.Safe)
+	text, err := safety.AssessSQL(ctx, must.Must(builtin.New()), conn.Info().Dialect, []string{statement.SQL})
+	c.Assert(err, qt.IsNil)
+	c.Assert(text, qt.HasLen, 1)
+	c.Assert(text[0].Severity, qt.Equals, safety.Safe)
 }
 
 // newCockroachPlanConnection connects to a database of the test's own on the
