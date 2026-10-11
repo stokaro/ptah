@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -639,4 +640,24 @@ func TestParseWithOptions_RefusesAReferenceToNoSchema(t *testing.T) {
 			c.Assert(requests, qt.HasLen, 0)
 		})
 	}
+}
+
+// TestParseWithOptions_EvaluatesTheNamingsSchemaOnce pins that the `schema`
+// a block's naming reads as a reference is evaluated once: a print() call in
+// it prints one line, and the claim still carries the reference.
+func TestParseWithOptions_EvaluatesTheNamingsSchemaOnce(t *testing.T) {
+	c := qt.New(t)
+	var printed strings.Builder
+	atlashcl.SetPrintDestinationForTest(c, &printed)
+	var requests []hclext.Request
+
+	_, err := atlashcl.ParseWithOptions([]byte("probe \"p\" {\n  schema = \"${print(\"app\")}\"\n}\n"), "schema.hcl",
+		atlashcl.Options{HCL: probeOwners(&requests)})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(printed.String(), qt.Equals, "app\n")
+	c.Assert(requests[0].Claims[0].Schema, qt.Equals, "app")
+	c.Assert(requests[0].Claims[0].Attributes, qt.DeepEquals, map[string]hclext.Value{
+		"schema": {Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "schema", Name: "app"}},
+	})
 }

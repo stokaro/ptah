@@ -68,6 +68,11 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	if err != nil {
 		return err
 	}
+	if _, written := block.Body.Attributes["schema"]; written && listsSchemaReference(shape) {
+		// The naming read the reference already, and an attribute is
+		// evaluated once: a print() call in it prints once.
+		values["schema"] = hclext.Value{Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "schema", Name: schema}}
+	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: -1, references: references,
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values,
 			At: blockAt(block)}}})
@@ -98,9 +103,17 @@ func (p *parser) ownerName(block *hclsyntax.Block, shape hclext.Shape) (schema, 
 	return schema, name, nil
 }
 
+// readsSchema reports whether a naming reads a `schema` attribute of its own.
+func readsSchema(naming hclext.Naming) bool {
+	return naming == hclext.SchemaAndName || naming == hclext.SchemaAndQualifiedName
+}
+
 // listsSchemaReference reports whether a shape lists its naming's `schema`
 // as a reference to a schema.
 func listsSchemaReference(shape hclext.Shape) bool {
+	if !readsSchema(shape.Block.Naming) {
+		return false
+	}
 	for _, attribute := range shape.Block.Attributes {
 		if attribute.Name == "schema" && hclext.NamesSchema(attribute) {
 			return true
@@ -124,6 +137,9 @@ func (p *parser) referencedSchemaAndName(block *hclsyntax.Block) (schema, name s
 	case 1:
 		return schema, block.Labels[0], nil
 	case 2:
+		// A written `schema = ""` conflicts with a schema label too, as the
+		// extension block always read it, where objectSchemaAndName ignores
+		// an empty attribute.
 		if written && schema != block.Labels[0] {
 			return "", "", p.blockError(block, "%s %q schema label conflicts with schema attribute %q", block.Type, block.Labels[1], schema)
 		}
@@ -229,6 +245,10 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 	for _, attribute := range shape.Block.Attributes {
 		attr, written := block.Body.Attributes[attribute.Name]
 		if attribute.Kind == hclext.Ref && attribute.Optional && !written {
+			continue
+		}
+		if attribute.Name == "schema" && hclext.NamesSchema(attribute) && readsSchema(shape.Block.Naming) {
+			// The naming's own schema, which [parser.ownerName] read.
 			continue
 		}
 		if hclext.NamesSchema(attribute) && written {
@@ -462,14 +482,10 @@ func (p *parser) decodeOwnerClaims() (declarations []hclext.Declaration, documen
 // one declaration and one that differs is refused; see
 // [schemaext.Objects.Declare].
 func (p *parser) addOwnerDeclarations(declarations []hclext.Declaration) error {
-	policy, err := resolveRedeclarationPolicy()
-	if err != nil {
-		return err
-	}
 	for i, declaration := range declarations {
 		claim := p.ownerClaims[i]
 		for _, object := range declaration.Objects {
-			if err := p.addOwnerObject(claim, object, policy); err != nil {
+			if err := p.addOwnerObject(claim, object, p.redeclarations); err != nil {
 				return err
 			}
 		}
@@ -486,9 +502,8 @@ func (p *parser) addOwnerDeclarations(declarations []hclext.Declaration) error {
 
 // addOwnerObject adds one object a claim declares, refusing a second
 // declaration of its identity, or combining it as a declaration where policy
-// merges repeats.
-// The refusal of an object its owner states is idempotent to declare says how
-// to combine repeats.
+// merges repeats. For an object its owner states is idempotent to declare,
+// the refusal names the variable that merges repeats.
 func (p *parser) addOwnerObject(claim ownerClaim, object schemaext.Object, policy redeclarationPolicy) error {
 	add := p.db.FeatureObjects.With
 	if policy.merge {

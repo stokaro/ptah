@@ -235,10 +235,7 @@ type declaration struct {
 // It runs after the body walk and before [schemamodel.Finalize], because Finalize
 // is what makes the second declaration invisible.
 func (p *parser) rejectRedeclarations() error {
-	policy, err := resolveRedeclarationPolicy()
-	if err != nil {
-		return err
-	}
+	policy := p.redeclarations
 	if policy.merge {
 		return nil
 	}

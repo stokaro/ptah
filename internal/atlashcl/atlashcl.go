@@ -201,6 +201,11 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	if err := p.rejectUnresolvedExprs(body); err != nil {
 		return nil, err
 	}
+	// Read once, for the two readers of a repeat: this package's ledger and
+	// the owners' objects the walk adds.
+	if p.redeclarations, err = resolveRedeclarationPolicy(); err != nil {
+		return nil, err
+	}
 	// The walk is the one pass whose evaluations are the document's own. The two
 	// guards above evaluate every expression as well, to refuse a malformed
 	// sql() call and an unresolved var. reference before either can reach DDL,
@@ -351,11 +356,14 @@ func projectFileError(filename string, block *hclsyntax.Block) error {
 }
 
 type parser struct {
-	src        []byte
-	filename   string
-	sourceDir  string
-	db         *schemamodel.Database
-	vocabulary coverage.Vocabulary
+	// redeclarations is how the document treats an object it declares
+	// twice; see [resolveRedeclarationPolicy].
+	redeclarations redeclarationPolicy
+	src            []byte
+	filename       string
+	sourceDir      string
+	db             *schemamodel.Database
+	vocabulary     coverage.Vocabulary
 
 	// ctx carries the var. and local. namespaces and the function set every
 	// attribute is evaluated against. It is never nil once Parse has built it.
