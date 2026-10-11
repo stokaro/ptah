@@ -132,6 +132,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
+- `ptah.run/feature/pgextension`
+- `ptah.run/feature/pgextension/extensionrender`
 - `ptah.run/feature/pgpolicy`
 - `ptah.run/feature/pgpolicy/policycompare`
 - `ptah.run/feature/pgpolicy/policyconvert`
@@ -2209,6 +2211,32 @@ of a value. `DeclaredObject` binds a declaration to SQL Server. The package
 holds every stage's service: `CompareService`, `PlanService`, which joins the
 host's dependent window and reads the table or column a property is on,
 `ReverseService`, `ConvertService`, `ReportService` and the render `Handlers`.
+
+`feature/pgextension` owns the PostgreSQL extension model. An extension is a
+database-wide feature object of `ExtensionKind`, identified by its exact name
+through `Ref`; no folding makes two spellings one extension. `DesiredExtension`
+declares an installation schema, a version, a comment and IF NOT EXISTS, and an
+empty field leaves its choice to the server. `ObservedExtension` holds what
+`pg_extension` reports, whether the extension may move to another schema, and
+`Provides`, the catalog names the extension supplies that do not resolve
+without it. `Subject` names an extension in a plan step's effects under the
+common `objectidentity.KindExtension`, so another owner can order its steps
+after the extension without importing this package.
+
+`Change` holds both operands and what the comparison established: the schema a
+surviving extension moves to, resolved under the target's default, and whether
+its comment changes. A version update needs no record of its own. `Operation`
+is the payload of CREATE EXTENSION, ALTER EXTENSION ... UPDATE TO, ALTER
+EXTENSION ... SET SCHEMA and DROP EXTENSION IF EXISTS. `CommentOperation` is
+gated by `capability.ExtensionComments`. The codecs refuse unknown, null, empty
+and case-variant keys, and a refused value is a `schemaext.InvalidModelError`.
+
+`feature/pgextension/extensionrender` renders the payloads for the PostgreSQL
+family. CockroachDB and Spanner create an extension and do nothing else with
+one, so an installation schema and every alteration are refused there. The
+builtin runtime registers the change and operation codecs and composes the
+handlers on every PostgreSQL-family target. No source or planner produces
+these payloads yet.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
 another object. A synonym is one feature object of `Kind`, identified by its

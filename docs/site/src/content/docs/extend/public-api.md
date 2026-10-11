@@ -146,6 +146,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
+| `feature/pgextension` | PostgreSQL extension models, changes, operations and codecs. |
+| `feature/pgextension/extensionrender` | Rendering of the PostgreSQL extension operations. |
 | `feature/pgpolicy` | PostgreSQL row-security policy and table-state models and codecs. |
 | `feature/pgpolicy/policycompare` | Comparison of PostgreSQL row-security policies and table switches. |
 | `feature/pgpolicy/policyconvert` | Projection of PostgreSQL row-security values between representations. |
