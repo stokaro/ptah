@@ -72,6 +72,15 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 	if err != nil {
 		return nil, err
 	}
+	// A target without standalone enums builds an enum column inline, and a
+	// read reports what it built: enum('a','b') on MySQL and MariaDB, a text
+	// column with a CHECK on SQLite, SQL Server and Oracle. The comparison
+	// lowers the declared side by the same function.
+	if schemaprep.InlineEnumDialect(dialect) {
+		lowered := *db
+		lowered.Fields = schemaprep.LowerInlineEnums(db.Fields, db.Enums, dialect)
+		db = &lowered
+	}
 
 	tableByStruct := make(map[string]schemamodel.Table, len(db.Tables))
 	for _, table := range db.Tables {
