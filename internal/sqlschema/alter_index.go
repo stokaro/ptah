@@ -5,6 +5,8 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/pgname"
@@ -93,6 +95,14 @@ func relationHeld(databases []*schemamodel.Database, document *Document, schema,
 	for _, database := range databases {
 		if slices.ContainsFunc(database.CompositeTypes, func(composite schemamodel.CompositeType) bool {
 			return sameSchema(sourcePlatform, schema, composite.Schema) && composite.Name == name
+		}) {
+			return true
+		}
+		// A composite type a feature owner's object defines holds its name
+		// among the relations as a common one does.
+		if slices.ContainsFunc(schemaext.DefinedTypes(database.FeatureObjects), func(defined schemaext.DefinedType) bool {
+			return defined.ID.Kind == objectidentity.KindComposite &&
+				sameSchema(sourcePlatform, schema, defined.ID.Schema.Authored()) && defined.ID.Name.Source == name
 		}) {
 			return true
 		}

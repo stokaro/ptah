@@ -2574,7 +2574,7 @@ func declaredRoutinePlacements(
 	// A type an owner's object defines is created in the type window, so a
 	// routine naming it waits as it waits for a common one.
 	for _, defined := range schemaext.DefinedTypes(database.FeatureObjects) {
-		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Source, defined.ID.Name.Source))
+		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Authored(), defined.ID.Name.Source))
 	}
 	for _, enum := range database.Enums {
 		created.Types = append(created.Types, enum.QualifiedName())

@@ -554,6 +554,12 @@ refuses such a change, each with `ErrInvalidValue`. A migration plan and a whole
 render create a routine whose signature names such a type after the type, as
 they do for an enum.
 
+`difftypes.UserTypeVocabulary.Defined` carries the types the declaration's
+owner objects define, and `UserTypeVocabularyOf` fills it, so a created
+table's column that names one is qualified with its schema as a column naming
+a common domain is. A comparison reads an owner's domain as a domain when it
+compares a column typed by one.
+
 `schemaext.SchemaPlacement` is a value or a change that puts its object into a
 named schema; a host that creates the schemas a plan or a render puts objects
 into creates that one too, unless it is the connection's default.

@@ -14,7 +14,9 @@ type DefinedType struct {
 	// ID is the type's identity under a common kind:
 	// [objectidentity.KindDomain], [objectidentity.KindComposite] or
 	// [objectidentity.KindRange]. Its parts keep the spelling the
-	// declaration or the catalog gave the type.
+	// declaration or the catalog gave the type. A schema the declaration left
+	// to the connection's default is a defaulted part, and
+	// [objectidentity.Part.Authored] is the schema the declaration wrote.
 	ID objectidentity.ID
 	// References are the types the definition names, each spelled as the
 	// definition writes it: a domain's base type, a composite type's

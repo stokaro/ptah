@@ -9,11 +9,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemacomparison"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chtype"
@@ -906,12 +908,12 @@ func desiredDomainIdentities(
 	}
 	identities := make(map[string]domainIdentity, len(desired.Domains))
 	ambiguous := make(map[string]struct{})
-	for _, domain := range desired.Domains {
-		name := foldDomainPart(domain.Name)
+	declare := func(declaredSchema, declaredName string) {
+		name := foldDomainPart(declaredName)
 		if name == "" {
-			continue
+			return
 		}
-		schema := foldDomainPart(domain.Schema)
+		schema := foldDomainPart(declaredSchema)
 		if schema == "" {
 			schema = foldDomainPart(semantics.DefaultSchema)
 		}
@@ -919,6 +921,16 @@ func desiredDomainIdentities(
 			ambiguous[name] = struct{}{}
 		}
 		identities[name] = domainIdentity{schema: schema, name: name}
+	}
+	for _, domain := range desired.Domains {
+		declare(domain.Schema, domain.Name)
+	}
+	// A domain a feature owner's object defines is a domain to a column all
+	// the same: the column is compared by the domain it names.
+	for _, defined := range schemaext.DefinedTypes(desired.FeatureObjects) {
+		if defined.ID.Kind == objectidentity.KindDomain {
+			declare(defined.ID.Schema.Authored(), defined.ID.Name.Source)
+		}
 	}
 	for name := range ambiguous {
 		identities[name] = domainIdentity{name: name}

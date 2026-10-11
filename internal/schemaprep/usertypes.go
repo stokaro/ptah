@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -15,6 +16,9 @@ type DeclaredUserTypes struct {
 	CompositeTypes []schemamodel.CompositeType
 	Ranges         []schemamodel.Range
 	Enums          []schemamodel.Enum
+	// Defined are the types feature owners' objects define, which a column
+	// names as it names a common domain, composite type or range type.
+	Defined []schemaext.DefinedType
 }
 
 // QualifyDeclaredUserTypes returns a shallow database clone whose fields name
@@ -35,6 +39,7 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 		CompositeTypes: database.CompositeTypes,
 		Ranges:         database.Ranges,
 		Enums:          database.Enums,
+		Defined:        schemaext.DefinedTypes(database.FeatureObjects),
 	}, targetPlatform)
 	return &clone
 }
@@ -87,6 +92,10 @@ func declaredUserTypeQualifiers(
 	}
 	for _, rangeType := range declared.Ranges {
 		declare(base, rangeType.Name, rangeType.Schema, rangeType.QualifiedName())
+	}
+	for _, defined := range declared.Defined {
+		schema, name := defined.ID.Schema.Authored(), defined.ID.Name.Source
+		declare(base, name, schema, schemamodel.QualifyTableName(schema, name))
 	}
 
 	scalars = make(map[string]string, len(base))

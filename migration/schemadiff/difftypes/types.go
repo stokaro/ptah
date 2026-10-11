@@ -2761,13 +2761,15 @@ type TableCreation struct {
 // `positive_int` to `app.positive_int` has to know the domain exists at all
 // (stokaro/ptah#2315).
 //
-// It is the four lists [schemaprep.QualifyDeclaredUserTypes] reads, and no
-// more: what a caller must supply is exactly what the qualification consults.
+// It is the lists [schemaprep.QualifyDeclaredUserTypes] reads, and no more:
+// what a caller must supply is exactly what the qualification consults.
+// Defined holds the types feature owners' objects define.
 type UserTypeVocabulary struct {
 	Domains        []schemamodel.Domain
 	CompositeTypes []schemamodel.CompositeType
 	Ranges         []schemamodel.Range
 	Enums          []schemamodel.Enum
+	Defined        []schemaext.DefinedType
 }
 
 // UserTypeVocabularyOf reads the vocabulary off a declaration.
@@ -2790,6 +2792,7 @@ func UserTypeVocabularyOf(desired *schemamodel.Database) UserTypeVocabulary {
 		CompositeTypes: nilWhenEmpty(desired.CompositeTypes),
 		Ranges:         nilWhenEmpty(desired.Ranges),
 		Enums:          nilWhenEmpty(desired.Enums),
+		Defined:        schemaext.DefinedTypes(desired.FeatureObjects),
 	}
 }
 
@@ -3216,14 +3219,15 @@ func nilWhenEmpty[T any](values []T) []T {
 }
 
 // declared is the vocabulary in the shape the qualifier reads it, and is the
-// whole of what this hands over: the four lists, and no schema description
-// built around them.
+// whole of what this hands over: the lists, and no schema description built
+// around them.
 func (v UserTypeVocabulary) declared() schemaprep.DeclaredUserTypes {
 	return schemaprep.DeclaredUserTypes{
 		Domains:        v.Domains,
 		CompositeTypes: v.CompositeTypes,
 		Ranges:         v.Ranges,
 		Enums:          v.Enums,
+		Defined:        v.Defined,
 	}
 }
 

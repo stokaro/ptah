@@ -60,7 +60,7 @@ func routineCreation(diff *difftypes.SchemaDiff) (deporder.RoutineCreation, erro
 		return deporder.RoutineCreation{}, err
 	}
 	for _, defined := range owned {
-		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Source, defined.ID.Name.Source))
+		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Authored(), defined.ID.Name.Source))
 	}
 	created.Types = append(created.Types, diff.EnumsAdded.Names()...)
 	created.Types = append(created.Types, diff.DomainsAdded.Names()...)
