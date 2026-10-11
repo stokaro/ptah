@@ -1645,10 +1645,14 @@ provider identity `Owner`.
 `spannersource.Service` decodes and encodes the `platform.spanner` table
 properties `row_deletion_column` and `row_deletion_interval`, and claims every
 key that begins with `row_deletion`, so an unknown one is refused by name.
-`spannersource.Coverage` is the knowledge Spanner SQL enrolls, and Go
-annotations and YAML through `spannersource.Annotations` and
-`spannersource.YAML` when the parse selects the owner. HCL, hand-built schemas
-and a parse without the owner do not, and leave a live policy unmanaged.
+`spannersource.SQL` reads a Spanner document's `TTL INTERVAL '<interval>' ON
+<column>` as the table's policy, at the `TableOption` site and only in a
+Spanner document, where a document of another target or of none reads TTL as
+ClickHouse's clause. `spannersource.Coverage` is the knowledge Spanner SQL
+enrolls through it, and Go annotations and YAML through
+`spannersource.Annotations` and `spannersource.YAML` when the parse selects
+the owner. HCL, hand-built schemas and a parse without the owner do not, and
+leave a live policy unmanaged.
 
 `spannercompare.Service` compares the facet with the same undecided cases as
 the CockroachDB owner, and `spannerdiff.RowDeletion` carries the change.
@@ -2864,7 +2868,9 @@ end it, and whether a document that names no target consults it too.
 Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index a table element or an ALTER TABLE
-operation declares, the owner's operation payload, or facets of a view.
+operation declares, the owner's operation payload, or facets of a view or of
+a table, which a `ViewClause` or a `TableOption` after a CREATE TABLE's column
+list carries and which take no index or operation.
 
 A `Statement` pattern claims a whole top-level statement. Its value carries
 the owner's statement payload, which the parse places where the statement

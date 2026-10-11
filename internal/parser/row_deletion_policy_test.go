@@ -4,13 +4,22 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
 	"ptah.run/dialect/spanner/spannerschema"
+	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/internal/parser"
 )
+
+// withSpannerOwner is the parse option that selects the Spanner owner, whose
+// row deletion policy a Spanner document carries beside the shared grammar.
+func withSpannerOwner() parser.Option {
+	return parser.WithSQL(must.Must(sqlext.NewSet(spannersource.SQL())))
+}
 
 // TestParse_ARowDeletionPolicyIsReadBack pins that `db read` output can be read
 // back.
@@ -59,7 +68,7 @@ func TestParse_ARowDeletionPolicyIsReadBack(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := parser.NewParser(test.sql,
-				parser.WithDialect(platform.Spanner)).Parse()
+				parser.WithDialect(platform.Spanner), withSpannerOwner()).Parse()
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
@@ -74,26 +83,31 @@ func TestParse_ARowDeletionPolicyIsReadBack(t *testing.T) {
 }
 
 // TestParse_TTLStaysClickHousesOnEveryOtherDialect is the control for the
-// keyword the two clauses share.
+// keyword the two clauses share, in a ClickHouse document and in one that
+// names no target, with the Spanner owner selected.
 //
 // ClickHouse's TTL takes a date expression; a row deletion policy takes an
 // interval and names its column separately, and neither statement is readable
 // as the other. Without this row the dialect split could be dropped and every
 // row above would still pass.
 func TestParse_TTLStaysClickHousesOnEveryOtherDialect(t *testing.T) {
-	c := qt.New(t)
+	for _, dialect := range []string{platform.ClickHouse, ""} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 
-	statements, err := parser.NewParser(
-		"CREATE TABLE events (id Int64, created_at DateTime) ENGINE = MergeTree "+
-			"ORDER BY id TTL created_at + INTERVAL 1 MONTH;",
-		parser.WithDialect(platform.ClickHouse)).Parse()
+			statements, err := parser.NewParser(
+				"CREATE TABLE events (id Int64, created_at DateTime) ENGINE = MergeTree "+
+					"ORDER BY id TTL created_at + INTERVAL 1 MONTH;",
+				parser.WithDialect(dialect), withSpannerOwner()).Parse()
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(statements.Statements, qt.HasLen, 1)
-	table, isTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(isTable, qt.IsTrue)
-	c.Assert(table.Facets.Len(), qt.Equals, 0)
-	c.Assert(table.Options["TTL"], qt.Contains, "created_at")
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			table, isTable := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(isTable, qt.IsTrue)
+			c.Assert(table.Facets.Len(), qt.Equals, 0)
+			c.Assert(table.Options["TTL"], qt.Contains, "created_at")
+		})
+	}
 }
 
 // TestParse_ARowDeletionPolicyTheServerRefusesIsRefused pins that a clause is
@@ -103,7 +117,7 @@ func TestParse_ARowDeletionPolicyTheServerRefusesIsRefused(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := parser.NewParser(`CREATE TABLE ttl_d (id bigint PRIMARY KEY, ts timestamptz) TTL INTERVAL '36 hours' ON ts;`,
-		parser.WithDialect(platform.Spanner)).Parse()
+		parser.WithDialect(platform.Spanner), withSpannerOwner()).Parse()
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*TTL at position \d+: .*interval "36 hours" is not a whole number of days, which Spanner refuses.*`)
 }

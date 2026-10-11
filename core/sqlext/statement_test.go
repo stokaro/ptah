@@ -106,7 +106,8 @@ func TestSet_Parse_ReturnsATableAStatementDeclares(t *testing.T) {
 // TestSet_Parse_RefusesAValueItsSiteDoesNotTake refuses a statement answered
 // without the owner's statement or a table, or with both, a table without a
 // name or with objects beside it, a value of another site that declares
-// objects or a table, and an object of a kind the extension does not declare.
+// objects or a table, an index or an operation at a site that takes facets
+// alone, and an object of a kind the extension does not declare.
 func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -130,6 +131,14 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 		{name: "a table at another site", site: sqlext.TableElement,
 			value:   sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}, Table: &sqlext.TableDeclaration{Name: "t"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-element claim "gadget" with a statement's value`},
+		{name: "an index at a table option", site: sqlext.TableOption, value: sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with an index or an operation, which the site does not take`},
+		{name: "an operation at a table option", site: sqlext.TableOption, value: sqlext.Value{Operation: &gadgetStatement{}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with an index or an operation, which the site does not take`},
+		{name: "an index at a view clause", site: sqlext.ViewClause, value: sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its view-clause claim "gadget" with an index or an operation, which the site does not take`},
+		{name: "a table at a table option", site: sqlext.TableOption, value: sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with a statement's value`},
 		{name: "objects at another site", site: sqlext.AlterOperation,
 			value:   sqlext.Value{Operation: &gadgetStatement{}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "new")}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its alter-operation claim "gadget" with a statement's value`},

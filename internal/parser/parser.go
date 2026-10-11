@@ -19,7 +19,6 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/mysql/mysqlschema"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -5342,7 +5341,7 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		if isCreateTableOptionBoundary(option) {
 			return nil
 		}
-		if handled, clauseErr := p.handleClickHouseTableClause(table, option); handled {
+		if handled, clauseErr := p.handleTableClause(table, option); handled {
 			if clauseErr != nil {
 				return clauseErr
 			}
@@ -5386,67 +5385,6 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		}
 	}
 
-	return nil
-}
-
-// readsRowDeletionPolicy reports whether TTL introduces a row deletion policy
-// on this target.
-//
-// It asks the dialect rather than the capability set because a parser is often
-// built with a dialect alone, and reading a statement is not the same decision
-// as being allowed to emit one: a schema file naming Spanner has to be read the
-// way Spanner writes it whatever this process may then do with it.
-func (p *Parser) readsRowDeletionPolicy() bool {
-	return platform.NormalizeDialect(p.dialect) == platform.Spanner
-}
-
-// handleRowDeletionPolicy reads `TTL INTERVAL '<literal>' ON <column>`, the
-// clause an engine deletes rows on a schedule by.
-//
-// It has to be read, not merely rendered. This parser refuses an option it does
-// not know, so a renderer that emits the clause without this leaves Ptah unable
-// to read its OWN `db read` output for a table that has one -- and reading that
-// output back is exactly what the policy being modeled is for
-// (stokaro/ptah#2236).
-func (p *Parser) handleRowDeletionPolicy(table *ast.CreateTableNode) error {
-	p.advance()
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "INTERVAL") {
-		return fmt.Errorf("expected INTERVAL after TTL at position %d", p.current.Start)
-	}
-	p.advance()
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenString {
-		return fmt.Errorf("expected a quoted interval after TTL INTERVAL at position %d", p.current.Start)
-	}
-	interval := unquoteLiteral(p.current.Value, '\'')
-	p.advance()
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "ON") {
-		return fmt.Errorf("expected ON after the TTL interval at position %d", p.current.Start)
-	}
-	p.advance()
-	p.skipWhitespace()
-	// A quoted column arrives as a String token: this lexer does not separate a
-	// double-quoted identifier from a string literal, and `db read` quotes
-	// every identifier it writes.
-	if p.current.Type != lexer.TokenIdentifier && p.current.Type != lexer.TokenString {
-		return fmt.Errorf("expected a column name after TTL ... ON at position %d", p.current.Start)
-	}
-	// The policy is the Spanner owner's, so it travels as its declaration.
-	policy := &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{
-		Column:   unquoteLiteral(p.current.Value, '"'),
-		Interval: interval,
-	}}
-	if err := spannerschema.ValidateDesired(policy); err != nil {
-		return fmt.Errorf("TTL at position %d: %w", p.current.Start, err)
-	}
-	facets, err := table.Facets.With(policy)
-	if err != nil {
-		return err
-	}
-	table.Facets = facets
-	p.advance()
 	return nil
 }
 
@@ -5506,6 +5444,17 @@ var clickHouseTableClauses = map[string]string{
 	"TTL":          "TTL",
 }
 
+// handleTableClause reads an owner's option at the cursor, or else one of the
+// ClickHouse clauses, and reports whether it read one. An owner's option comes
+// first, so the Spanner owner's TTL is read as its row deletion policy in a
+// Spanner document.
+func (p *Parser) handleTableClause(table *ast.CreateTableNode, option string) (bool, error) {
+	if p.claimOwnerTableOption(table) {
+		return true, nil
+	}
+	return p.handleClickHouseTableClause(table, option)
+}
+
 // handleClickHouseTableClause reads the MergeTree clauses that sit among the
 // table options, and reports whether option named one. They are dispatched here
 // rather than as five more arms of [Parser.parseTableOptions] because that
@@ -5524,14 +5473,10 @@ func (p *Parser) handleClickHouseTableClause(table *ast.CreateTableNode, option 
 	case "TTL":
 		// Two clauses spell this keyword and neither is readable as the other.
 		// ClickHouse's takes a date expression -- `TTL created_at + INTERVAL 1
-		// MONTH` -- while a row deletion policy is `TTL INTERVAL '30 days' ON
-		// created_at` and names its column separately. Before the split the
-		// policy was swallowed into the ClickHouse raw option on every dialect,
-		// which is how it survived being rendered and still never reached the
-		// model (stokaro/ptah#2236).
-		if p.readsRowDeletionPolicy() {
-			return true, p.handleRowDeletionPolicy(table)
-		}
+		// MONTH` -- while a Spanner row deletion policy is `TTL INTERVAL '30
+		// days' ON created_at` and names its column separately. The Spanner
+		// owner claims its clause in a Spanner document before this is
+		// reached (stokaro/ptah#2236), so here TTL is ClickHouse's.
 		return true, p.handleClickHouseRawClause(table, "TTL")
 	default:
 		return false, nil
