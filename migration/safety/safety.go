@@ -29,6 +29,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/htmlstyle"
+	"ptah.run/internal/lintscan"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/risk"
@@ -904,7 +905,7 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case hasWordSequence(words, "NO", "FORCE", "ROW", "LEVEL", "SECURITY"):
 		assessment.Severity = Destructive
 		assessment.Reason = noForceReason
-	case hasWordSequence(words, "DROP", "COLUMN"):
+	case hasWordSequence(words, "DROP", "COLUMN"), dropsColumnWithoutKeyword(sql):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP COLUMN removes existing column data"
 	case hasWordSequence(words, "DROP", "CONSTRAINT"):
@@ -933,6 +934,59 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		assessment.Reason = dropDefaultReason
 	}
 	return assessment
+}
+
+// notColumnDrops are the words that follow an ALTER TABLE's DROP when it
+// drops something other than a column, in a dialect Ptah reads: an index, a
+// key, a constraint, a partition or a projection, a YDB changefeed, a Spanner
+// row deletion policy (`DROP ROW DELETION POLICY`, and `DROP TTL` in its
+// PostgreSQL dialect), Oracle's unused columns, MariaDB's system versioning,
+// and the property an ALTER COLUMN clause drops, such as its default. The
+// list holds for every dialect, so a column named by one of these words and
+// dropped without COLUMN is read as the other object.
+var notColumnDrops = []string{
+	"CHANGEFEED", "CHECK", "COLUMN", "CONSTRAINT", "DEFAULT", "DETACHED", "EXPRESSION", "FAMILY",
+	"FOREIGN", "HIDDEN", "IDENTITY", "INDEX", "KEY", "MASKED", "NOT", "PART", "PARTITION", "PERIOD",
+	"PERSISTED", "PRIMARY", "PROJECTION", "ROW", "ROWGUIDCOL", "SPARSE", "STATISTICS", "SUBPARTITION",
+	"SYSTEM", "TTL", "UNIQUE", "UNUSED",
+}
+
+// dropsColumnWithoutKeyword reports whether an ALTER TABLE statement drops a
+// column without the COLUMN keyword, which PostgreSQL, CockroachDB, MySQL,
+// MariaDB and SQLite take as `DROP name` and `DROP IF EXISTS name`, and Oracle
+// as `DROP (name, ...)`. Any word but those of [notColumnDrops] after DROP is
+// the column's name. On SQL Server the same spelling drops the constraint it
+// names, which is destructive as well.
+//
+// The statement is read as lint reads one with no dialect, so a DROP inside a
+// string literal or a comment is not a DROP, and keywords are compared in
+// ASCII alone: a column named with a letter that only uppercases to ASCII,
+// such as U+017F, is no keyword.
+func dropsColumnWithoutKeyword(sql string) bool {
+	for _, statement := range lintscan.Split(sql, lintscan.ForDialect("")) {
+		words := statement.SourceWords
+		if len(words) < 2 || asciiUpper(words[0]) != "ALTER" || asciiUpper(words[1]) != "TABLE" {
+			continue
+		}
+		for i := 2; i+1 < len(words); i++ {
+			if asciiUpper(words[i]) == "DROP" && !slices.Contains(notColumnDrops, asciiUpper(words[i+1])) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// asciiUpper upper-cases the ASCII letters of word and leaves every other
+// rune as it is, so a keyword comparison cannot match a name that only
+// Unicode case mapping turns into the keyword.
+func asciiUpper(word string) string {
+	return strings.Map(func(r rune) rune {
+		if 'a' <= r && r <= 'z' {
+			return r - ('a' - 'A')
+		}
+		return r
+	}, word)
 }
 
 // defaultConstraintDrop is the DROP CONSTRAINT with which a SQL Server
