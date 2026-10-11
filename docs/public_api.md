@@ -356,7 +356,23 @@ Every host accepts `PhaseDefault`. The migration planners of the PostgreSQL
 family and of SQL Server accept `PhaseDependent`: each places the operation
 after its creations and changes and before its removals, in one window whose
 creations and drops the owner orders. Every other host, and a whole-schema
-render, refuses it. The runtime refuses a phase the contract does not define.
+render, refuses it.
+
+`PhasePrerequisite` is for an object every other object may use, such as a
+PostgreSQL extension. The migration planners of the PostgreSQL
+family place its creations and changes after the schema preconditions and
+before every other creation, and its drops after the last removal; a
+whole-schema render runs it after its schema statements and before the rest.
+Every other host refuses it. The runtime refuses a phase the contract does not
+define.
+
+`schemaext.SchemaPlacement` is a value or a change that puts its object into a
+named schema; a host that creates the schemas a plan or a render puts objects
+into creates that one too, unless it is the connection's default.
+`schemaext.CapabilityProvider` is a value or a change whose object, once
+created, provides capabilities; `schemaext.ProvidedCapabilities` widens a set
+with them, and a rendered plan widens its target's capabilities with what the
+changes it creates provide.
 
 `core/featureplan.DeclarationService` plans authored standalone objects, and
 the named children of a declared table, for schema creation.
@@ -1957,6 +1973,16 @@ hold their names as relations; tables are in `Parents`. The runtime refuses an
 entry that is not a named view or materialized view with
 `schemaext.ErrInvalidValue`, sends the owner a copy in identity order, and
 leaves the caller's slice unchanged. A nil list declares none.
+
+`schemaext.ComparisonRequest.Exclusions` and `DeclaredColumns`, and the same
+fields of `schemaext.ObjectComparisonRequest`, give an owner the run's context.
+An `Exclusion` is a subject the configuration leaves out, by a kind of the
+common not-described vocabulary and a name spelled exactly as configured: the
+owner plans nothing for it and reports nothing undecided about it. The runtime
+refuses an exclusion of a kind it does not read. `config.CompareOptions.Exclusions`
+turns the extension ignore list into exclusions. A `DeclaredColumn` is a
+column the desired schema declares, with its table and its type as spelled,
+for an owner whose objects a column may depend on.
 
 `schemaext.ComparisonRequest.DatabasePath`,
 `schemaext.ObjectComparisonRequest.DatabasePath` and

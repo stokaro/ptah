@@ -50,7 +50,9 @@ func TestPhaseValid(t *testing.T) {
 	}{
 		{phase: featureplan.PhaseDefault, want: true},
 		{phase: featureplan.PhaseDependent, want: true},
+		{phase: featureplan.PhasePrerequisite, want: true},
 		{phase: "late", want: false},
+		{phase: "Prerequisite", want: false},
 		{phase: "Dependent", want: false},
 	}
 	for _, test := range tests {

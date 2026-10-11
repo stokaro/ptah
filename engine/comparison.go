@@ -173,6 +173,8 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
+	request.Exclusions = slices.Clone(request.Exclusions)
+	request.DeclaredColumns = slices.Clone(request.DeclaredColumns)
 	if err := comparisonInputSubjects(request); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}

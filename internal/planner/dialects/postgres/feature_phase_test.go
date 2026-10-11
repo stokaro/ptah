@@ -101,6 +101,8 @@ func phaseOrder(nodes []ast.Node) []string {
 	var order []string
 	for _, node := range nodes {
 		switch typed := node.(type) {
+		case *ast.CreateSchemaNode:
+			order = append(order, "create schema")
 		case *ast.CreateTableNode:
 			order = append(order, "create table")
 		case *ast.CreateViewNode:
@@ -185,6 +187,99 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 			runtime := phaseRuntime{Runtime: must.Must(builtin.New()), phase: test.phase}
 
 			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), runtime, test.diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(phaseOrder(nodes), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestPlanner_PlacesPrerequisiteFeatureOperations pins the prerequisite
+// windows. An object every other object may use, such as an extension, is
+// created after the schemas the plan creates and before every other object,
+// and dropped after every other object is.
+func TestPlanner_PlacesPrerequisiteFeatureOperations(t *testing.T) {
+	created := &difftypes.SchemaDiff{
+		FeatureChanges: []schemaext.ChangeRecord{{Subject: phaseSubject("supplier"), Value: &phaseChange{}}},
+		TablesAdded: difftypes.TableChanges{{Name: "app.orders", Table: schemamodel.Table{StructName: "Order", Name: "orders", Schema: "app"},
+			Fields: []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true}}}},
+		ViewsAdded:        difftypes.ViewChanges{{Name: "recent", Body: "SELECT 1"}},
+		DeclaredViewLikes: difftypes.ViewLikeVocabulary{Views: []schemamodel.View{{Name: "recent", Body: "SELECT 1"}}},
+	}
+	dropped := &difftypes.SchemaDiff{
+		FeatureChanges:   []schemaext.ChangeRecord{{Subject: phaseSubject("supplier"), Value: &phaseChange{Action: plangraph.Drop}}},
+		ViewsRemoved:     difftypes.ViewChanges{{Name: "recent"}},
+		FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "tenant_of"}, Signature: new("")}},
+		RolesRemoved:     difftypes.RoleChanges{{Name: "reader"}},
+	}
+	tests := []struct {
+		name  string
+		phase featureplan.Phase
+		diff  *difftypes.SchemaDiff
+		want  []string
+	}{
+		{name: "a prerequisite creation", phase: featureplan.PhasePrerequisite, diff: created,
+			want: []string{"create schema", "owner creates", "create table", "create view"}},
+		{name: "control: a default creation", phase: featureplan.PhaseDefault, diff: created,
+			want: []string{"create schema", "create table", "owner creates", "create view"}},
+		{name: "a prerequisite removal", phase: featureplan.PhasePrerequisite, diff: dropped,
+			want: []string{"drop view", "drop function", "drop role", "owner drops"}},
+		{name: "control: a default removal", phase: featureplan.PhaseDefault, diff: dropped,
+			want: []string{"drop view", "owner drops", "drop function", "drop role"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := phaseRuntime{Runtime: must.Must(builtin.New()), phase: test.phase}
+
+			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), runtime, test.diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(phaseOrder(nodes), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// placedChange is an owner's change that puts its object into Schema.
+type placedChange struct{ Schema string }
+
+func (*placedChange) Kind() schemaext.Kind { return phaseOwner + "/placed" }
+func (v *placedChange) CloneChange() schemaext.ChangeValue {
+	return &placedChange{Schema: v.Schema}
+}
+func (v *placedChange) PlacementSchema() string { return v.Schema }
+
+// acceptingRuntime accounts for every change without contributing an
+// operation.
+type acceptingRuntime struct{ *engine.Runtime }
+
+func (acceptingRuntime) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
+	result := featureplan.Result{Complete: true}
+	for _, change := range request.Changes {
+		result.Changes = append(result.Changes, featureplan.ChangePlan{Subject: change.Subject, Kind: change.Value.Kind(), Strategy: "test"})
+	}
+	return result, nil
+}
+
+// TestPlanner_CreatesTheSchemaAnOwnersChangePlacesItsObjectIn pins that an
+// owner's change naming a schema gets the schema precondition an extension
+// addition gets, and that the connection's default schema needs none.
+func TestPlanner_CreatesTheSchemaAnOwnersChangePlacesItsObjectIn(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		want   []string
+	}{
+		{name: "a named schema", schema: "ext", want: []string{"create schema"}},
+		{name: "the default schema", schema: "public", want: nil},
+		{name: "no schema", want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: phaseSubject("placed"), Value: &placedChange{Schema: test.schema}}}}
+
+			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), acceptingRuntime{Runtime: must.Must(builtin.New())}, diff)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(phaseOrder(nodes), qt.DeepEquals, test.want)

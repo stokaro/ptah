@@ -1,0 +1,42 @@
+package schemaext
+
+import (
+	"ptah.run/core/platform/capability"
+)
+
+// CapabilityProvider is a feature value or change whose object, once
+// created, makes capabilities available to the statements after it, such as
+// a PostgreSQL extension that installs TimescaleDB. A host that renders the
+// statements of a plan or a render widens the target's capabilities with
+// what the objects it creates provide: a capability set read from a
+// connection opened before the object existed answers about the past, and
+// would skip the statements that need the object.
+//
+// ProvidedCapabilities returns caps widened by what the object provides, and
+// caps unchanged where it provides nothing, as a change that drops its object
+// does. It must not change caps.
+type CapabilityProvider interface {
+	ProvidedCapabilities(caps capability.Capabilities) capability.Capabilities
+}
+
+// SchemaPlacement is a feature value or change that puts its object into a
+// named schema, as an extension's installation schema does. A host that
+// creates the schemas a plan or a render puts objects into creates this one
+// first. An empty answer names no schema: the object goes where the
+// connection's default puts it, and no schema has to be created for it.
+type SchemaPlacement interface {
+	PlacementSchema() string
+}
+
+// ProvidedCapabilities returns caps widened by every value of values that is
+// a [CapabilityProvider], in order; any other value provides nothing. caps is
+// not changed.
+func ProvidedCapabilities(caps capability.Capabilities, values ...any) capability.Capabilities {
+	caps = caps.Clone()
+	for _, value := range values {
+		if provider, ok := value.(CapabilityProvider); ok {
+			caps = provider.ProvidedCapabilities(caps)
+		}
+	}
+	return caps
+}

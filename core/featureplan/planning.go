@@ -125,10 +125,22 @@ const (
 	// of the PostgreSQL family and of SQL Server accept it; every other host
 	// refuses it, a whole-schema render included.
 	PhaseDependent Phase = "dependent"
+	// PhasePrerequisite is for an operation on an object that common objects
+	// of any family may depend on and that itself depends on schemas alone,
+	// such as a PostgreSQL extension, which supplies types, routines and
+	// operator classes. A host that accepts it places a creation or a change
+	// after it creates schemas and before it creates or changes any other
+	// object, and a drop after it removes every other object. The migration
+	// planners of the PostgreSQL family accept it, and a whole-schema render
+	// runs such a step after its schema statements and before the rest; every
+	// other host refuses it.
+	PhasePrerequisite Phase = "prerequisite"
 )
 
 // Valid reports whether p is a phase this contract defines.
-func (p Phase) Valid() bool { return p == PhaseDefault || p == PhaseDependent }
+func (p Phase) Valid() bool {
+	return p == PhaseDefault || p == PhaseDependent || p == PhasePrerequisite
+}
 
 // ChangePlan accounts for one input change, preserving its subject and kind.
 // Steps names the operations that implement it. An empty list is an explicit

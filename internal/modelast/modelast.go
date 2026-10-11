@@ -1999,7 +1999,11 @@ func appendPreTableStatements(
 ) error {
 	// Schemas come first because tables and extension installation clauses may
 	// reference them.
-	if err := appendSchemaStatements(visit, schemasForRender(database, targetPlatform)); err != nil {
+	schemas, err := schemasForRender(database, targetPlatform)
+	if err != nil {
+		return err
+	}
+	if err := appendSchemaStatements(visit, schemas); err != nil {
 		return err
 	}
 
@@ -2612,22 +2616,27 @@ func appendSchemaStatements(visit func(ast.Node) error, schemas []schemamodel.Sc
 // that does not exist. The planner already emits the precondition for both, and
 // a render that did not would disagree with the plan about the same document --
 // which internal/modelast's render-and-plan agreement test is what measures.
-func schemasForRender(database schemamodel.Database, targetPlatform string) []schemamodel.Schema {
+// An owner's object that names its schema, as an extension the owner holds
+// does, contributes it too, unless it is the target's default schema; see
+// [schemaext.SchemaPlacement].
+func schemasForRender(database schemamodel.Database, targetPlatform string) ([]schemamodel.Schema, error) {
 	schemas := slices.Clone(database.Schemas)
-	if !supportsExtensionInstallationSchema(targetPlatform) {
-		return schemas
+	named, err := placedSchemas(database, targetPlatform)
+	if err != nil {
+		return nil, err
+	}
+	if supportsExtensionInstallationSchema(targetPlatform) {
+		for _, extension := range database.Extensions {
+			named = append(named, extension.Schema)
+		}
+		for _, privilege := range database.DefaultPrivileges {
+			named = append(named, privilege.Schema)
+		}
 	}
 
 	seen := make(map[string]struct{}, len(schemas))
 	for _, schema := range schemas {
 		seen[schema.Name] = struct{}{}
-	}
-	named := make([]string, 0, len(database.Extensions)+len(database.DefaultPrivileges))
-	for _, extension := range database.Extensions {
-		named = append(named, extension.Schema)
-	}
-	for _, privilege := range database.DefaultPrivileges {
-		named = append(named, privilege.Schema)
 	}
 	for _, name := range named {
 		if name == "" || systemschema.IsPostgresSystemSchema(name) {
@@ -2639,7 +2648,26 @@ func schemasForRender(database schemamodel.Database, targetPlatform string) []sc
 		seen[name] = struct{}{}
 		schemas = append(schemas, schemamodel.Schema{Name: name})
 	}
-	return schemas
+	return schemas, nil
+}
+
+// placedSchemas are the schemas the feature objects a document declares are
+// put into, other than the target's default schema.
+func placedSchemas(database schemamodel.Database, targetPlatform string) ([]string, error) {
+	objects, err := database.FeatureObjects.All()
+	if err != nil {
+		return nil, err
+	}
+	defaultSchema := identifier.ForDialect(targetPlatform).DefaultSchema
+	var named []string
+	for _, object := range objects {
+		if placed, ok := object.Value.(schemaext.SchemaPlacement); ok {
+			if schema := placed.PlacementSchema(); schema != defaultSchema {
+				named = append(named, schema)
+			}
+		}
+	}
+	return named, nil
 }
 
 // createStructToTableMap creates a mapping from struct names to table names.
