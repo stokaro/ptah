@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 func TestModeledColumnTypeCapabilities(t *testing.T) {
@@ -120,7 +121,7 @@ func TestRenderForDialectWritesTypesTheBinaryCanRead(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderForDialect(inspectedColumn(test.columnType), test.dialect)
+			result, err := atlashclrender.Render(inspectedColumn(test.columnType), atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -152,7 +153,7 @@ func TestRenderForDialectKeepsAnAuthoredSQLCall(t *testing.T) {
 			db := inspectedColumn("integer")
 			db.Fields[0].TypeRawSQL = true
 
-			result, err := atlashclrender.RenderForDialect(db, test.dialect)
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, `    type = sql("integer")`+"\n")
@@ -232,7 +233,7 @@ func TestRenderForDialectWrapsEveryArrayColumnType(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderForDialect(inspectedColumn(test.columnType), platform.Postgres)
+			result, err := atlashclrender.Render(inspectedColumn(test.columnType), atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -245,7 +246,7 @@ func TestRenderForDialectWrapsEveryArrayColumnType(t *testing.T) {
 func TestRenderIgnoresTheDialect(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.Render(inspectedColumn("NUMERIC(10,2)"))
+	result, err := atlashclrender.Render(inspectedColumn("NUMERIC(10,2)"), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "    type = NUMERIC(10,2)\n")

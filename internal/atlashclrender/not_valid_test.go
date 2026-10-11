@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // unvalidatedCheckDatabase is a table with a CHECK it holds NOT VALID or not.
@@ -31,7 +32,7 @@ func unvalidatedCheckDatabase(notValid bool) *schemamodel.Database {
 func TestRender_NotValidConstraint_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspected(unvalidatedCheckDatabase(true), "postgres", "public")
+	result, err := atlashclrender.RenderInspected(unvalidatedCheckDatabase(true), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches, `CHECK "slots_pos_positive" is NOT VALID, which Atlas HCL cannot represent`)
 	c.Assert(result, qt.DeepEquals, atlashclrender.Result{})
@@ -42,7 +43,7 @@ func TestRender_NotValidConstraint_FailurePath(t *testing.T) {
 func TestRender_NotValidConstraint_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspected(unvalidatedCheckDatabase(false), "postgres", "public")
+	result, err := atlashclrender.RenderInspected(unvalidatedCheckDatabase(false), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, `slots_pos_positive`)

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_IndexInvisible writes an index hidden from the optimizer, and
@@ -31,7 +32,7 @@ func TestRender_IndexInvisible(t *testing.T) {
 		}},
 	}
 
-	result, err := atlashclrender.RenderInspected(db, "mysql", "app")
+	result, err := atlashclrender.RenderInspected(db, "app", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "mysql"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, `index "k_total"`)

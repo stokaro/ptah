@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderedRevokeRoundTrips is the loop an operator runs: `schema inspect
@@ -39,7 +40,7 @@ func TestRenderedRevokeRoundTrips(t *testing.T) {
 			db := inspectedTable("public")
 			db.RevokedGrants = []schemamodel.Grant{test.revoked}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.HasLen, 0)
 

@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderWritesTheSQLServerBlocksHCLHadNoWordFor pins the shape of the two
@@ -32,7 +33,7 @@ func TestRenderWritesTheSQLServerBlocksHCLHadNoWordFor(t *testing.T) {
 
 	db := sqlServerObjects()
 
-	result, err := atlashclrender.RenderInspected(db, platform.SQLServer, "dbo")
+	result, err := atlashclrender.RenderInspected(db, "dbo", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
 
 	c.Assert(err, qt.IsNil)
 	document := string(result.Data)
@@ -61,7 +62,7 @@ func TestRenderInspectedKeepsADatabaseScopedPropertyAtDatabaseScope(t *testing.T
 		Property: mssqlproperty.Property{Name: "ptah_flag", Value: "database scope"},
 	})))
 
-	result, err := atlashclrender.RenderInspected(db, platform.SQLServer, "dbo")
+	result, err := atlashclrender.RenderInspected(db, "dbo", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains,

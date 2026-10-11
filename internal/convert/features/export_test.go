@@ -110,7 +110,7 @@ func TestHCLExport_ReportsOpaqueFeatureLoss(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	facets, err := schemaext.NewFacets(value)
 	c.Assert(err, qt.IsNil)
-	result, err := atlashclrender.Render(&schemamodel.Database{FeatureObjects: objects, Facets: facets})
+	result, err := atlashclrender.Render(&schemamodel.Database{FeatureObjects: objects, Facets: facets}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 2)
 	c.Assert(result.Diagnostics[0].Message, qt.Contains, "is not represented in HCL")

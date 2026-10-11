@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 )
@@ -74,8 +75,7 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	c.Assert(recorded, qt.IsTrue)
 	c.Assert(unwritable, qt.DeepEquals, mssqlproperty.UnrepresentableValue("int"))
 
-	rendered, err := atlashclrender.RenderInspected(
-		must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "sqlserver", must.Must(builtin.New()))), platform.SQLServer, schemaName)
+	rendered, err := atlashclrender.RenderInspected(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "sqlserver", must.Must(builtin.New()))), schemaName, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
 	c.Assert(err, qt.IsNil)
 	document := string(rendered.Data)
 

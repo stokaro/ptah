@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/pgindexstorage"
 )
 
@@ -56,7 +57,7 @@ func TestIndexStorageParams_SurviveTheHCLRoundTrip(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(pgindexstorage.EnvVar, "true")
 
-			rendered, err := atlashclrender.Render(indexedSchema(test.params))
+			rendered, err := atlashclrender.Render(indexedSchema(test.params), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 
 			parsed, err := atlashcl.Parse([]byte(string(rendered.Data)), "round-trip.hcl")
@@ -79,7 +80,7 @@ func TestIndexStorageParams_TheDefaultOmissionIsAnnounced(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "false")
 
-	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32", "fillfactor": "70"}))
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32", "fillfactor": "70"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "storage_params")
@@ -97,7 +98,7 @@ func TestIndexStorageParams_TheCompatibleOneIsNotAnnouncedAsLost(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "false")
 
-	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"pages_per_range": "32"}))
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"pages_per_range": "32"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, "page_per_range")
@@ -120,7 +121,7 @@ func TestIndexStorageParams_TheCompatibleOneIsNotAnnouncedAsLost(t *testing.T) {
 func TestIndexStorageParams_ADocumentIsRefusedWhenTheSwitchIsOff(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "true")
-	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}))
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, "storage_params")
 
@@ -136,7 +137,7 @@ func TestIndexStorageParams_ADocumentIsRefusedWhenTheSwitchIsOff(t *testing.T) {
 func TestIndexStorageParams_TheSameDocumentLoadsWithTheSwitchOn(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "true")
-	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}))
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	parsed, err := atlashcl.Parse(rendered.Data, "round-trip.hcl")
@@ -152,7 +153,7 @@ func TestIndexStorageParams_TheSameDocumentLoadsWithTheSwitchOn(t *testing.T) {
 func TestIndexStorageParams_ADocumentWithoutTheAttributeIsUnaffected(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "false")
-	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"pages_per_range": "32"}))
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"pages_per_range": "32"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "storage_params")
 

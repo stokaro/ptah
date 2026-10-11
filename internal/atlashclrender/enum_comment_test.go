@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // An enum's comment survives an export to HCL and back, so a schema inspected
@@ -20,7 +21,7 @@ func TestRender_EnumCommentRoundTrip(t *testing.T) {
 		{Name: "plain", Schema: "public", Values: []string{"a"}},
 	}}
 
-	result, err := atlashclrender.RenderForDialect(database, "postgres")
+	result, err := atlashclrender.Render(database, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.Parse(result.Data, "schema.hcl")
 

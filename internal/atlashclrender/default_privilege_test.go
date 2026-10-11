@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderedDefaultPrivilegeRoundTrips is the loop an operator runs:
@@ -60,7 +61,7 @@ func TestRenderedDefaultPrivilegeRoundTrips(t *testing.T) {
 				Comment: "reader sees new tables",
 			}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
 			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
@@ -101,7 +102,7 @@ func TestRenderDefaultPrivilegeReportsNoLoss(t *testing.T) {
 			Grantee:    "app_reader",
 			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		}},
-	})
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
@@ -158,7 +159,7 @@ func TestRenderDefaultPrivilegeDropsAnIncompleteDeclaration(t *testing.T) {
 			rendered, err := atlashclrender.Render(&schemamodel.Database{
 				Schemas:           []schemamodel.Schema{{Name: "public"}},
 				DefaultPrivileges: []schemamodel.DefaultPrivilege{test.privilege},
-			})
+			}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(rendered.Data), qt.Not(qt.Contains), "default_privilege {")
@@ -182,7 +183,7 @@ func TestRenderDefaultPrivilegeWritesTheGlobalFormWithoutASchema(t *testing.T) {
 	rendered, err := atlashclrender.Render(&schemamodel.Database{
 		Roles:             []schemamodel.Role{{Name: "app_owner"}},
 		DefaultPrivileges: []schemamodel.DefaultPrivilege{declared},
-	})
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `default_privilege {
@@ -223,7 +224,7 @@ func renderDefaultPrivileges(c *qt.C, grantors ...string) string {
 			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		})
 	}
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	return string(rendered.Data)
 }

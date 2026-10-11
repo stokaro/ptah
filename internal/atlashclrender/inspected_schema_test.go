@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderInspectedDeclaresTheSchemaEveryObjectReferences pins that a schema
@@ -64,9 +65,7 @@ func TestRenderInspectedDeclaresTheSchemaEveryObjectReferences(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(
-				inspectedTable(test.tableSchema), platform.Postgres, test.defaultSchema,
-			)
+			result, err := atlashclrender.RenderInspected(inspectedTable(test.tableSchema), test.defaultSchema, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.wantBlock)
@@ -84,7 +83,7 @@ func TestRenderInspectedDoesNotDuplicateADeclaredSchema(t *testing.T) {
 	db := inspectedTable("public")
 	db.Schemas = []schemamodel.Schema{{Name: "public", Comment: "standard public schema"}}
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "schema \"public\" {\n  comment = \"standard public schema\"\n}\n")
@@ -99,19 +98,11 @@ func TestRenderInspectedDoesNotDuplicateADeclaredSchema(t *testing.T) {
 // silently change a file they control.
 func TestRenderForDialectSynthesizesNoSchema(t *testing.T) {
 	tests := []struct {
-		name   string
-		render func(*schemamodel.Database) (atlashclrender.Result, error)
+		name    string
+		dialect string
 	}{
-		{
-			name: "the dialect-aware entry point",
-			render: func(db *schemamodel.Database) (atlashclrender.Result, error) {
-				return atlashclrender.RenderForDialect(db, platform.Postgres)
-			},
-		},
-		{
-			name:   "the plain one",
-			render: atlashclrender.Render,
-		},
+		{name: "with a dialect", dialect: platform.Postgres},
+		{name: "without one"},
 	}
 
 	for _, test := range tests {
@@ -119,7 +110,7 @@ func TestRenderForDialectSynthesizesNoSchema(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := test.render(inspectedTable(""))
+			result, err := atlashclrender.Render(inspectedTable(""), atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Not(qt.Contains), "schema \"")
@@ -199,7 +190,7 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 				Privileges: []string{"USAGE"},
 			}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -289,7 +280,7 @@ func TestRenderInspectedDeclaresTheSchemaAGrantReferences(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(test.db(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			for _, want := range test.wantPresent {
@@ -336,7 +327,7 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 				Privileges: []string{"USAGE", "CREATE"},
 			}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
 			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
@@ -557,7 +548,7 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(test.db(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			for _, want := range test.want {
@@ -623,7 +614,7 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(test.db(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
 			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
@@ -651,7 +642,7 @@ func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 		ForEach: "ROW", Body: "RETURN NEW;",
 	}}
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "  on = view.v\n")
 
@@ -716,7 +707,7 @@ func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
 			})
 			db.Views = []schemamodel.View{{Name: test.viewName, Body: "SELECT id FROM t"}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, "  for = view.v\n")
 
@@ -759,7 +750,7 @@ func TestRenderedDuplicateRelationLabelRoundTrips(t *testing.T) {
 		ForEach: "ROW", Body: "RETURN NEW;",
 	}}
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	rendered := string(result.Data)
 	c.Assert(rendered, qt.Contains, "  for = \"other.v\"\n", qt.Commentf("rendered HCL:\n%s", rendered))
@@ -822,7 +813,7 @@ func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
 			})
 			db.Sequences = []schemamodel.Sequence{{Name: "order_seq", Schema: test.sequenceSchema}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, "  for = sequence.order_seq\n")
 

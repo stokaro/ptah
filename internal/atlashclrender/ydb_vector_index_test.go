@@ -68,7 +68,7 @@ func TestRenderInspectedForAtlasCLIWritesAYDBVectorIndex(t *testing.T) {
 					Type: "GLOBAL USING vector_kmeans_tree", Facets: must.Must(schemaext.NewFacets(test.vector))}},
 			}
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.YDB, "")
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 			c.Assert(err, qt.IsNil)
 			parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 

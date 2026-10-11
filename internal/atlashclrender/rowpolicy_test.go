@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderInspected_ReportsAClickHouseRowPolicyItCannotWrite reports a
@@ -28,7 +29,7 @@ func TestRenderInspected_ReportsAClickHouseRowPolicyItCannotWrite(t *testing.T) 
 		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
 
-	rendered, err := atlashclrender.RenderInspectedForAtlasCLI(db, "clickhouse", "")
+	rendered, err := atlashclrender.RenderInspectedForAtlasCLI(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "clickhouse"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "policy")
@@ -52,7 +53,7 @@ func TestRender_SharedRowSecurityWritesRestrictiveAndEnforced(t *testing.T) {
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "Order", Table: "orders", Forced: true}},
 	}
 
-	rendered, err := atlashclrender.RenderForDialect(db, "mysql")
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "mysql"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `as = "RESTRICTIVE"`)

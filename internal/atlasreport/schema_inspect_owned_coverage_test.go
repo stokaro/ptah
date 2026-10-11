@@ -79,11 +79,11 @@ func TestSplitPreservesExplicitHCLModelsInEveryFile(t *testing.T) {
 	for _, mode := range []string{"object", "schema", "type"} {
 		t.Run(mode, func(t *testing.T) {
 			c := qt.New(t)
-			source, err := atlashclrender.RenderForDialect(&schemamodel.Database{
+			source, err := atlashclrender.Render(&schemamodel.Database{
 				FeatureCoverage: known, Schemas: []schemamodel.Schema{{Name: "app"}},
 				Tables: []schemamodel.Table{{Name: "events", Schema: "app", StructName: "Events"}},
 				Fields: []schemamodel.Field{{StructName: "Events", Name: "id", Type: "Int64"}},
-			}, "ydb")
+			}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			output, err := atlasreport.RenderSchemaInspect(fmt.Sprintf(`{{ %q | split %q | write "out" }}`, source.Data, mode), sampleSchemaInspectReport(c))
 			c.Assert(err, qt.IsNil)

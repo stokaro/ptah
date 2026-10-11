@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // deferrableKeyDatabase is a table whose primary key or UNIQUE defers its
@@ -45,7 +46,7 @@ func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(deferrableKeyDatabase(test.primaryKey, test.unique), "postgres", "public")
+			result, err := atlashclrender.RenderInspected(deferrableKeyDatabase(test.primaryKey, test.unique), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(result, qt.DeepEquals, atlashclrender.Result{})
@@ -58,7 +59,7 @@ func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 func TestRender_DeferrableKey_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspected(deferrableKeyDatabase(false, false), "postgres", "public")
+	result, err := atlashclrender.RenderInspected(deferrableKeyDatabase(false, false), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, `table "slots"`)
@@ -74,7 +75,7 @@ func TestRender_DeferrableForeignKey_HappyPath(t *testing.T) {
 		Columns: []string{"pos"}, ForeignTable: "slots", ForeignColumns: []string{"id"}, Deferrable: true,
 	})
 
-	result, err := atlashclrender.RenderInspected(database, "postgres", "public")
+	result, err := atlashclrender.RenderInspected(database, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "deferrable")

@@ -40,7 +40,7 @@ func TestAnHCLDocumentKeepsTheTableTTL(t *testing.T) {
 			{StructName: "Events", Name: "ts", Type: "Timestamp", Nullable: true},
 		},
 	}
-	rendered, err := atlashclrender.RenderInspectedForAtlasCLI(inspected, platform.YDB, "")
+	rendered, err := atlashclrender.RenderInspectedForAtlasCLI(inspected, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 	c.Assert(err, qt.IsNil)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, rendered.Data, 0o600), qt.IsNil)

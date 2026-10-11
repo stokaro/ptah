@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // declaredBoth returns base twice: once with extension in the common model,
@@ -65,7 +66,7 @@ func TestRenderInspected_WritesAnOwnedExtensionAsTheCommonOne(t *testing.T) {
 	atlas := atlashclrender.RenderInspectedForAtlasCLI
 	tests := []struct {
 		name      string
-		render    func(*schemamodel.Database, string, string) (atlashclrender.Result, error)
+		render    func(*schemamodel.Database, string, atlashclrender.Options) (atlashclrender.Result, error)
 		base      func() *schemamodel.Database
 		extension schemamodel.Extension
 	}{
@@ -83,9 +84,9 @@ func TestRenderInspected_WritesAnOwnedExtensionAsTheCommonOne(t *testing.T) {
 			c := qt.New(t)
 			common, owned := declaredBoth(test.base, test.extension)
 
-			want, err := test.render(common, platform.Postgres, "public")
+			want, err := test.render(common, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
-			got, err := test.render(owned, platform.Postgres, "public")
+			got, err := test.render(owned, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(got.Data), qt.Equals, string(want.Data))
@@ -101,7 +102,7 @@ func TestRenderInspected_WritesTheOwnedExtensionBlock(t *testing.T) {
 	c := qt.New(t)
 	_, owned := declaredBoth(books, schemamodel.Extension{Name: "pg_trgm", Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true})
 
-	result, err := atlashclrender.RenderInspected(owned, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(owned, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
@@ -129,7 +130,7 @@ func TestRenderInspected_RefusesAnExtensionItCannotWrite(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(test.db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.ErrorIs, test.is)
 			c.Assert(err, qt.ErrorMatches, test.want)

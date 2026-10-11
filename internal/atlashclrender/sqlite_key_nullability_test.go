@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape pins what this
@@ -81,7 +82,7 @@ func TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape(t *testing.T) {
 			}
 			schemamodel.Finalize(db)
 
-			rendered, err := atlashclrender.RenderInspected(db, "sqlite", "main")
+			rendered, err := atlashclrender.RenderInspected(db, "main", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "sqlite"})
 			c.Assert(err, qt.IsNil)
 
 			// Every fixture declares exactly its key columns as nullable, and

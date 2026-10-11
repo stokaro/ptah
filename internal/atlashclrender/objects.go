@@ -2,17 +2,12 @@ package atlashclrender
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
-	"ptah.run/core/objectidentity"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/feature/synonym"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
@@ -1243,129 +1238,27 @@ func containsFold(values []string, target string) bool {
 	return false
 }
 
-// renderSynonyms writes the synonym blocks.
-//
-// The block exists because HCL had no way to say one, and a document that
-// cannot name an object cannot ask for it to be kept: `schema inspect` into a
-// file and `schema apply --to` that file planned DROP SYNONYM for every synonym
-// on the server, through Ptah's own output (stokaro/ptah#1031).
-//
-// It is emitted on the compatibility surface too. The pinned Atlas community
-// binary v1.3.0 answers `unknown driver "sqlserver"`, so there is no document
-// of its it could have read and no refusal to mirror; and on a dialect it does
-// speak, a top-level block it does not model is dropped at exit 0 exactly like
-// the `wibble "x" {}` control in [atlasRefusedBlockTypes]'s own measurement.
-func (r *renderer) renderSynonyms() {
-	synonyms := slices.Clone(r.synonyms)
-	slices.SortFunc(synonyms, func(a, b synonym.DesiredSynonym) int {
-		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
-	})
-	for _, declared := range synonyms {
-		r.linef(`synonym %s {`, quote(declared.Name))
-		if schema := r.schemaFor(declared.Schema); schema != "" {
-			r.rawAttr(1, "schema", r.schemaRef(schema))
-		}
-		r.stringAttr(1, "target", declared.Target)
-		r.stringAttr(1, "comment", declared.Comment)
-		r.line("}")
-		r.line("")
-	}
-}
-
-// captureSynonyms validates every synonym before rendering, so a malformed
-// value fails the export rather than becoming a warning.
-func (r *renderer) captureSynonyms() error {
-	objects, err := r.db.FeatureObjects.All()
-	if err != nil {
-		return err
-	}
-	for _, object := range objects {
-		if object.Ref.Kind != objectidentity.Kind(synonym.Kind) {
-			continue
-		}
-		declared, ok := object.Value.(*synonym.DesiredSynonym)
-		if !ok {
-			return fmt.Errorf("%w: HCL requires desired synonym values", schemaext.ErrInvalidValue)
-		}
-		if err := synonym.ValidateDesired(declared); err != nil {
-			return err
-		}
-		r.synonyms = append(r.synonyms, *declared)
-	}
-	return nil
-}
-
-// renderCoordinationNodes writes the YDB coordination node blocks, a Ptah
-// extension for the reason [renderer.renderSynonyms] gives: a document that
-// cannot name a node cannot ask for it to be kept. A setting the declaration
-// leaves unset is left out, and the reader takes it as YDB's default.
-func (r *renderer) renderCoordinationNodes() {
+// coordinationNodeBlocks writes the YDB coordination node blocks, which
+// [renderer.renderAfterTables] places. The block is a Ptah extension because
+// a document that cannot name a node cannot ask for it to be kept. A setting
+// the declaration leaves unset is left out, and the reader takes it as YDB's
+// default.
+func (r *renderer) coordinationNodeBlocks() []slotBlock {
+	blocks := make([]slotBlock, 0, len(r.coordinationNodes))
 	for _, node := range r.coordinationNodes {
-		r.linef(`coordination_node %s {`, quote(node.ref.Name.Source))
-		if schema := r.schemaFor(node.ref.Schema.Source); schema != "" {
-			r.rawAttr(1, "schema", r.schemaRef(schema))
-		}
-		for _, setting := range ydbcoordination.Attributes(node.spec) {
-			r.stringAttr(1, setting[0], setting[1])
-		}
-		r.line("}")
-		r.line("")
+		schema := r.schemaFor(node.ref.Schema.Source)
+		text := r.capture(func() {
+			r.linef(`coordination_node %s {`, quote(node.ref.Name.Source))
+			if schema != "" {
+				r.rawAttr(1, "schema", r.schemaRef(schema))
+			}
+			for _, setting := range ydbcoordination.Attributes(node.spec) {
+				r.stringAttr(1, setting[0], setting[1])
+			}
+			r.line("}")
+			r.line("")
+		})
+		blocks = append(blocks, slotBlock{blockType: "coordination_node", schema: schema, name: node.ref.Name.Source, text: text})
 	}
-}
-
-// renderExtendedProperties writes the SQL Server extended property blocks.
-//
-// The owner is written as PLAIN STRINGS rather than as `table.users` and
-// `column.title` references, and that is a decision rather than an omission.
-// SQL Server addresses a property by name -- `@level1name = N'users'` -- so the
-// string is what the statement carries; and a reference would resolve to
-// nothing the moment selection removed the table, leaving a document that names
-// a block it does not contain. That is the same class of failure this block
-// exists to close.
-//
-// The schema is written VERBATIM rather than through [renderer.schemaFor]: an
-// empty Schema is the DATABASE scope, a fourth address alongside schema, table
-// and column, and substituting the connection default for it would move a
-// database property onto a schema. [ptah.run/dialect/mssql/mssqlproperty.Property.Label]
-// spells that address `(database)`, and the SQL Server renderer emits it by
-// passing no `@level0type` at all.
-func (r *renderer) renderExtendedProperties() {
-	properties := slices.Clone(r.extendedProperties)
-	slices.SortFunc(properties, func(a, b mssqlproperty.DesiredProperty) int { return cmp.Compare(a.Label(), b.Label()) })
-	for _, property := range properties {
-		r.linef(`extended_property %s {`, quote(property.Name))
-		if strings.TrimSpace(property.Schema) != "" {
-			r.rawAttr(1, "schema", r.schemaRef(property.Schema))
-		}
-		r.stringAttr(1, "table", property.Table)
-		r.stringAttr(1, "column", property.Column)
-		r.stringAttr(1, "value", property.Value)
-		r.stringAttr(1, "comment", property.Comment)
-		r.line("}")
-		r.line("")
-	}
-}
-
-// captureExtendedProperties validates every SQL Server extended property
-// before rendering, so a malformed value fails the export rather than
-// becoming a warning.
-func (r *renderer) captureExtendedProperties() error {
-	objects, err := r.db.FeatureObjects.All()
-	if err != nil {
-		return err
-	}
-	for _, object := range objects {
-		if object.Ref.Kind != objectidentity.Kind(mssqlproperty.Kind) {
-			continue
-		}
-		property, ok := object.Value.(*mssqlproperty.DesiredProperty)
-		if !ok {
-			return fmt.Errorf("%w: HCL requires desired extended property values", schemaext.ErrInvalidValue)
-		}
-		if err := mssqlproperty.ValidateDesired(property); err != nil {
-			return err
-		}
-		r.extendedProperties = append(r.extendedProperties, *property)
-	}
-	return nil
+	return blocks
 }

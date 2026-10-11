@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestReferenceKeepsTheIndexStorageParameterPtahRenders measures the one thing an
@@ -36,7 +37,7 @@ func TestReferenceKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
 	devURL := requireDevURL(t, platform.Postgres)
 	schema := schemaNameByDialect[platform.Postgres]
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(brinStorageParamDocument(schema), platform.Postgres, schema)
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(brinStorageParamDocument(schema), schema, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c := qt.New(t)
 	c.Assert(err, qt.IsNil)
 	rendered := string(result.Data)

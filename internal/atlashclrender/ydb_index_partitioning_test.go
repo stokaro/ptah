@@ -66,7 +66,7 @@ func TestYDBIndexPartitioning_HCLRoundTrip(t *testing.T) {
 				Indexes: []schemamodel.Index{{StructName: "Item", TableName: "items", Name: "by_kind", Type: "GLOBAL SYNC", Fields: []string{"kind"},
 					Facets: declaredIndexFacets(c, test.spec)}},
 			}
-			rendered, err := atlashclrender.RenderInspectedForAtlasCLI(original, "ydb", "")
+			rendered, err := atlashclrender.RenderInspectedForAtlasCLI(original, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			// The block writes the settings, so nothing reports them lost.
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderDisclosesAGrantorItCannotRepresent is what makes
@@ -41,7 +42,7 @@ func TestRenderDisclosesAGrantorItCannotRepresent(t *testing.T) {
 			OnSchema:   "public",
 			GrantedBy:  "owner_role",
 		}},
-	})
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(diagnosticMessages(rendered.Diagnostics), qt.Contains,
@@ -67,7 +68,7 @@ func TestRenderIsSilentAboutAGrantWithNoGrantor(t *testing.T) {
 			Privileges: []string{"SELECT"},
 			OnSchema:   "public",
 		}},
-	})
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(diagnosticMessages(rendered.Diagnostics), qt.Not(qt.Contains),

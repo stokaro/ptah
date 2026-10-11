@@ -17,8 +17,12 @@
 // stay the frontend's. Once a document is read, the frontend hands each owner
 // every block of its in one call, and adds the objects the owner returns.
 //
-// A [Set] freezes the owners one parse selects; the frontend imports no
-// owner.
+// Writing is the mirror. An owner's [Encoder] returns its objects as
+// [EncodedBlock] values, data the HCL writer, internal/atlashclrender,
+// quotes, references and places, so the owner never writes HCL text.
+//
+// A [Set] freezes the owners one parse or render selects; neither the
+// frontend nor the writer imports an owner.
 package hclext
 
 import (
@@ -302,6 +306,10 @@ type Extension struct {
 	// set, and the objects the document declares. It is optional; without
 	// it the owner claims nothing.
 	Coverage func(request CoverageRequest) (schemaext.Coverage, error)
+	// Encoder writes the objects of Kinds a document holds as blocks, for
+	// the HCL writer; see [Set.Encode]. It is optional; without it the
+	// writer reports an object of Kinds as one HCL does not represent.
+	Encoder Encoder
 }
 
 // CoverageRequest is what a document says to one owner's claim.
@@ -350,8 +358,8 @@ func None() Set {
 // NewSet validates and freezes extensions. It refuses an extension without an
 // owner, a model two extensions claim, a block without a known site, a type, a
 // known naming or a decoder, an attribute without a name or a known kind, an
-// attribute named twice or named as the naming's own, and a block type two
-// extensions read at one site.
+// attribute named twice or named as the naming's own, a block type two
+// extensions read at one site, and an encoder without a model to encode.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, blocks: make(map[blockKey]shape)}
 	kinds := make(map[schemaext.Kind]string)
@@ -367,6 +375,9 @@ func NewSet(extensions ...Extension) (Set, error) {
 		}
 		if len(extension.Blocks) > 0 && extension.Decoder == nil {
 			return Set{}, fmt.Errorf("HCL extension of %s declares blocks without a decoder", extension.Owner)
+		}
+		if extension.Encoder != nil && len(extension.Kinds) == 0 {
+			return Set{}, fmt.Errorf("HCL extension of %s declares an encoder without a model to encode", extension.Owner)
 		}
 		blocks := make([]Block, 0, len(extension.Blocks))
 		for _, block := range extension.Blocks {

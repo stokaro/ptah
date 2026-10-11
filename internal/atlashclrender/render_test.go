@@ -38,7 +38,7 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Contains, `options = "START WITH 100 INCREMENT BY 5"`)
@@ -56,7 +56,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
-	neutral, err := atlashclrender.Render(db)
+	neutral, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(neutral.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
 	c.Assert(string(neutral.Data), qt.Not(qt.Contains), `schema = schema.pg_catalog`)
@@ -66,7 +66,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c.Assert(parsedNeutral.Schemas, qt.HasLen, 0)
 	c.Assert(parsedNeutral.Extensions, qt.DeepEquals, db.Extensions)
 
-	inspected, err := atlashclrender.RenderInspected(db, "postgres", "public")
+	inspected, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(inspected.Data), qt.Contains, `extension "plpgsql"`)
 	c.Assert(string(inspected.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
@@ -77,7 +77,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c.Assert(parsedInspected.Schemas, qt.HasLen, 0)
 	c.Assert(parsedInspected.Extensions, qt.DeepEquals, db.Extensions)
 
-	authored, err := atlashclrender.RenderForDialect(db, "postgres")
+	authored, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(authored.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
 	c.Assert(string(authored.Data), qt.Contains, `schema = "pg_catalog"`)
@@ -99,7 +99,7 @@ func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `schema "Extension Store" {`)
 	c.Assert(string(rendered.Data), qt.Contains, `schema = schema["Extension Store"]`)
@@ -115,7 +115,7 @@ func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) 
 		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `schema " " {`)
 	c.Assert(string(rendered.Data), qt.Contains, `schema = schema[" "]`)
@@ -141,7 +141,7 @@ func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "null = true")
@@ -189,9 +189,9 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	first, err := atlashclrender.Render(db)
+	first, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
-	second, err := atlashclrender.Render(db)
+	second, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(first.Data), qt.Equals, string(second.Data))
 	c.Assert(string(first.Data), qt.Contains, `schema "auth"`)
@@ -306,7 +306,7 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 		},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
@@ -347,7 +347,7 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	db, err := goschema.ParseDir(builtintest.Annotations(), "../../integration/internal/fixtures/entities/023-go-annotations-objects")
 	c.Assert(err, qt.IsNil)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)
@@ -436,7 +436,7 @@ func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t 
 		Grants: []schemamodel.Grant{{Role: "app_user", Privileges: []string{"SELECT"}}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
@@ -478,7 +478,7 @@ func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testin
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
@@ -519,7 +519,7 @@ func TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
@@ -541,7 +541,7 @@ func TestRenderMaterializedViewOmitsTheRetiredAttribute(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
@@ -563,7 +563,7 @@ func TestRenderIndexCommentRoundTrip(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
@@ -592,7 +592,7 @@ func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
@@ -620,7 +620,7 @@ func TestRenderIndexZeroGranularityOmitsAttribute(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
@@ -662,7 +662,7 @@ func TestRenderColumnParityExtensionsRoundTrip(t *testing.T) {
 		},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
@@ -701,7 +701,7 @@ func TestRenderStringTemplateIntroducersRoundTrip(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
@@ -737,7 +737,7 @@ func TestRenderQuotedIdentifiersRoundTrip(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
@@ -784,7 +784,7 @@ func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)
@@ -820,7 +820,7 @@ func TestRenderSkipsIncompleteObjectsWithDiagnostics(t *testing.T) {
 		RLSPolicies:       []schemamodel.RLSPolicy{{Name: "missing_table"}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
@@ -845,7 +845,7 @@ func TestRenderCollapsesEmbeddedFieldsToConcreteColumns(t *testing.T) {
 		EmbeddedFields: []schemamodel.EmbeddedField{{StructName: "User", Mode: "inline", EmbeddedTypeName: "Timestamps"}},
 	}
 
-	result, err := atlashclrender.Render(db)
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	hcl := string(result.Data)
@@ -913,7 +913,7 @@ func TestRenderKeepsTheDeclaredColumnOrder(t *testing.T) {
 		},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(columnOrder(string(rendered.Data)), qt.DeepEquals, []string{"id", "name", "active"})

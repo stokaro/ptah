@@ -21,6 +21,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/ydburl"
 )
@@ -190,7 +191,7 @@ func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
 				Schemas:         []schemamodel.Schema{{Name: coordinationSchema}},
 				FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 			}
-			exported, err := atlashclrender.RenderForDialect(declared, "ydb")
+			exported, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			complete, err := atlashcl.ParseWithOptions(exported.Data, "complete.hcl", owners)
 			c.Assert(err, qt.IsNil)

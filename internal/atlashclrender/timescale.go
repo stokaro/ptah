@@ -1,9 +1,7 @@
 package atlashclrender
 
 import (
-	"cmp"
 	"fmt"
-	"slices"
 	"strconv"
 
 	"ptah.run/core/objectidentity"
@@ -109,7 +107,8 @@ func WritesIndexFacet(kind schemaext.Kind) bool {
 // reports at the key.
 func WritesKeyFacet(kind schemaext.Kind) bool { return kind == mysqlschema.IndexBlockSizeKind }
 
-// renderHypertables writes the TimescaleDB hypertable blocks.
+// hypertableBlocks writes the TimescaleDB hypertable blocks, which
+// [renderer.renderAfterTables] places.
 //
 // The block exists because nothing else in a description can say a table is
 // partitioned. Measured on TimescaleDB 2.29.2 / PostgreSQL 17.11, a hypertable
@@ -119,29 +118,31 @@ func WritesKeyFacet(kind schemaext.Kind) bool { return kind == mysqlschema.Index
 // and a diff between the two reports no difference (stokaro/ptah#1026).
 //
 // The label is the table, because a hypertable has no name of its own.
-func (r *renderer) renderHypertables() {
-	blocks := slices.Clone(r.hypertables)
-	slices.SortFunc(blocks, func(a, b hypertableBlock) int {
-		return cmp.Or(cmp.Compare(a.table.Schema, b.table.Schema), cmp.Compare(a.table.Name, b.table.Name))
-	})
-	for _, block := range blocks {
-		r.linef(`hypertable %s {`, quote(block.table.Name))
-		if resolved := r.schemaFor(block.table.Schema); resolved != "" {
-			r.rawAttr(1, "schema", r.schemaRef(resolved))
-		}
-		r.stringAttr(1, "column", block.value.Column)
-		r.stringAttr(1, "chunk_interval", block.value.ChunkInterval)
-		if block.value.IfNotExists {
-			r.rawAttr(1, "if_not_exists", "true")
-		}
-		r.stringAttr(1, "comment", block.value.Comment)
-		r.line("}")
-		r.line("")
+func (r *renderer) hypertableBlocks() []slotBlock {
+	blocks := make([]slotBlock, 0, len(r.hypertables))
+	for _, block := range r.hypertables {
+		schema := r.schemaFor(block.table.Schema)
+		text := r.capture(func() {
+			r.linef(`hypertable %s {`, quote(block.table.Name))
+			if schema != "" {
+				r.rawAttr(1, "schema", r.schemaRef(schema))
+			}
+			r.stringAttr(1, "column", block.value.Column)
+			r.stringAttr(1, "chunk_interval", block.value.ChunkInterval)
+			if block.value.IfNotExists {
+				r.rawAttr(1, "if_not_exists", "true")
+			}
+			r.stringAttr(1, "comment", block.value.Comment)
+			r.line("}")
+			r.line("")
+		})
+		blocks = append(blocks, slotBlock{blockType: "hypertable", schema: schema, name: block.table.Name, text: text})
 	}
+	return blocks
 }
 
-// renderContinuousAggregates writes the TimescaleDB continuous aggregate
-// blocks.
+// continuousAggregateBlocks writes the TimescaleDB continuous aggregate
+// blocks, which [renderer.renderAfterTables] places.
 //
 // The block exists because the alternative is worse than silence. To PostgreSQL
 // a continuous aggregate is a view -- pg_class reports relkind 'v' -- so a
@@ -152,18 +153,24 @@ func (r *renderer) renderHypertables() {
 //
 // It is a name of its own, unlike a hypertable, so the label is that name and
 // the schema is a reference like every other block's.
-func (r *renderer) renderContinuousAggregates() {
+func (r *renderer) continuousAggregateBlocks() []slotBlock {
+	blocks := make([]slotBlock, 0, len(r.aggregates))
 	for _, block := range r.aggregates {
-		r.linef(`continuous_aggregate %s {`, quote(block.ref.Name.Source))
-		if resolved := r.schemaFor(tsschema.AuthoredSchema(block.ref)); resolved != "" {
-			r.rawAttr(1, "schema", r.schemaRef(resolved))
-		}
-		r.stringAttr(1, "as", block.value.Body)
-		if block.value.MaterializedOnly != nil {
-			r.rawAttr(1, "materialized_only", strconv.FormatBool(*block.value.MaterializedOnly))
-		}
-		r.stringAttr(1, "comment", block.value.Comment)
-		r.line("}")
-		r.line("")
+		schema := r.schemaFor(tsschema.AuthoredSchema(block.ref))
+		text := r.capture(func() {
+			r.linef(`continuous_aggregate %s {`, quote(block.ref.Name.Source))
+			if schema != "" {
+				r.rawAttr(1, "schema", r.schemaRef(schema))
+			}
+			r.stringAttr(1, "as", block.value.Body)
+			if block.value.MaterializedOnly != nil {
+				r.rawAttr(1, "materialized_only", strconv.FormatBool(*block.value.MaterializedOnly))
+			}
+			r.stringAttr(1, "comment", block.value.Comment)
+			r.line("}")
+			r.line("")
+		})
+		blocks = append(blocks, slotBlock{blockType: "continuous_aggregate", schema: schema, name: block.ref.Name.Source, text: text})
 	}
+	return blocks
 }

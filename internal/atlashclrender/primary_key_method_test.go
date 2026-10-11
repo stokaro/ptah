@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_PrimaryKeyMethod writes a primary key's access method as the
@@ -20,7 +21,7 @@ func TestRender_PrimaryKeyMethod(t *testing.T) {
 		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
 	}
 
-	result, err := atlashclrender.RenderInspected(database, "mariadb", "app")
+	result, err := atlashclrender.RenderInspected(database, "app", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "mariadb"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Matches, `(?s).*primary_key \{\n    columns = \[column\.id\]\n    type\s+= HASH\n  \}.*`)

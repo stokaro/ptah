@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderInspected_ARoutineIsWrittenAsWhatItIs pins the block a routine is
@@ -79,7 +80,7 @@ func TestRenderInspected_ARoutineIsWrittenAsWhatItIs(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{Functions: []schemamodel.Function{test.routine}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -115,7 +116,7 @@ func TestRenderInspected_AProcedureSurvivesItsOwnDescription(t *testing.T) {
 				Body:       "BEGIN END;",
 			}}}
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
 			reparsed, err := atlashcl.Parse(result.Data, "schema.hcl")

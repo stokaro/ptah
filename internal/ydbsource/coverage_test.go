@@ -99,7 +99,7 @@ func TestExportsDoNotTurnCoordinationLimitsIntoAbsence(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, test.namespace, test.subjects))}
 			files, goErr := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
-			hcl, hclErr := atlashclrender.RenderForDialect(db, "ydb")
+			hcl, hclErr := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 			c.Assert(goErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(hclErr, qt.IsNil)
 			c.Assert(files, qt.IsNil)
@@ -168,7 +168,7 @@ func TestHCLExportRefusesDifferentSourceModel(t *testing.T) {
 	records := known.KindRecords()
 	records[0].Model.Version++
 	captured := must.Must(schemaext.NewCoverage(schemaext.Desired, records, nil))
-	result, err := atlashclrender.RenderForDialect(&schemamodel.Database{FeatureCoverage: captured}, "ydb")
+	result, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: captured}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(result, qt.DeepEquals, atlashclrender.Result{})
 }
@@ -212,7 +212,7 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 	withNode := must.Must(schemaext.NewCoverage(schemaext.Desired, known.KindRecords(), []schemaext.SubjectCoverage{{
 		Kind: ydbcoordination.Kind, Subject: ydbcoordination.Ref("", "locks"), Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 	}}))
-	result, err := atlashclrender.RenderForDialect(&schemamodel.Database{FeatureCoverage: withNode}, "ydb")
+	result, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: withNode}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(result.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)

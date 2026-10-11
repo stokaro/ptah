@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -26,14 +27,15 @@ import (
 	"ptah.run/internal/schemaviz"
 )
 
-// InspectRuntime provides feature reporting, source-property export, and
-// whole-schema SQL rendering from one explicit selection. Format adapters do
-// not choose built-in targets.
+// InspectRuntime provides feature reporting, source-property export,
+// whole-schema SQL rendering and the HCL owners that write their objects from
+// one explicit selection. Format adapters do not choose built-in targets.
 type InspectRuntime interface {
 	schemaext.ReportingRuntime
 	renderer.SchemaService
 	schemaproperties.Runtime
 	coverage.Runtime
+	hclext.Runtime
 }
 
 type SchemaInspectReport struct {
@@ -413,9 +415,9 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 		return atlashclrender.Result{}, err
 	}
 	if r.omitAtlasRefusedBlocks {
-		return atlashclrender.RenderInspectedForAtlasCLI(db, r.info.Dialect, r.defaultSchemaName())
+		return atlashclrender.RenderInspectedForAtlasCLI(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), Dialect: r.info.Dialect})
 	}
-	return atlashclrender.RenderInspected(db, r.info.Dialect, r.defaultSchemaName())
+	return atlashclrender.RenderInspected(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), Dialect: r.info.Dialect})
 }
 
 // hclSource exports typed table and index settings as the platform properties

@@ -75,9 +75,7 @@ func TestRenderInspectedKeepsEveryBlockTypeOnTheNativeSurface(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(
-				inspectedRichDatabase(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspected(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, block,
@@ -104,9 +102,7 @@ func TestRenderInspectedForAtlasCLIOmitsTheBlocksTheBinaryRefuses(t *testing.T) 
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				inspectedRichDatabase(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Not(qt.Contains), block)
@@ -143,9 +139,7 @@ func TestRenderInspectedForAtlasCLIKeepsEverythingElse(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				inspectedRichDatabase(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, block)
@@ -165,9 +159,7 @@ func TestRenderInspectedForAtlasCLIKeepsEverythingElse(t *testing.T) {
 func TestRenderInspectedForAtlasCLIReportsEveryOmission(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(
-		inspectedRichDatabase(), platform.Postgres, "public",
-	)
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
@@ -201,9 +193,7 @@ func TestRenderInspectedForAtlasCLIReportsEveryOmission(t *testing.T) {
 func TestRenderInspectedNativeReportsNoOmission(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspected(
-		inspectedRichDatabase(), platform.Postgres, "public",
-	)
+	result, err := atlashclrender.RenderInspected(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
@@ -225,9 +215,7 @@ func TestRenderInspectedForAtlasCLIOmitsNothingOnSQLite(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				inspectedRichDatabase(), platform.SQLite, "main",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "main", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLite})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, block)
@@ -383,9 +371,7 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				test.database(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(test.database(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want,
@@ -405,9 +391,7 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 func TestRenderInspectedForAtlasCLIOmitsAnUnreferencedSequence(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(
-		standaloneSequenceDatabase(), platform.Postgres, "public",
-	)
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(standaloneSequenceDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Not(qt.Contains), "sequence \"order_seq\"")
@@ -435,7 +419,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T
 		StructName: "Order", Name: "label", Type: "text",
 	})
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Not(qt.Contains), "extension \"isn\"",
@@ -500,9 +484,7 @@ func TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames(t *testin
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				test.database(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(test.database(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want,
@@ -561,9 +543,7 @@ func TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName(t *testin
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				test.database(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(test.database(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.wantSpelt,
@@ -607,7 +587,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNoIndexResolvesTo(t *testing.
 	db.Fields[1].Type = "jsonb"
 	db.Indexes[0].RequiresExtensions = nil
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "type = \"gin\"",
@@ -677,9 +657,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo(
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				test.database(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(test.database(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Not(qt.Contains), test.absentName,
@@ -720,9 +698,7 @@ func TestRenderInspectedForAtlasCLIOutputIsSelfConsistent(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				test.database(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(test.database(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
 			parsed, err := atlashcl.ParseWithOptions(result.Data, "compat.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
@@ -1057,9 +1033,7 @@ func TestRenderInspectedForAtlasCLIKeepsTheSQLServerBlocks(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				sqlServerObjects(), platform.SQLServer, "dbo",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(sqlServerObjects(), "dbo", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, block)

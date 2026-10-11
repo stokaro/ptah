@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderWritesUserTypeBasesAsSQLCalls pins how the type a user-defined type
@@ -69,7 +70,7 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.Render(test.db)
+			result, err := atlashclrender.Render(test.db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -92,7 +93,7 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 		Ranges:         []schemamodel.Range{{Name: "r", Schema: "public", Subtype: "int4"}},
 	}
 
-	result, err := atlashclrender.Render(db)
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
@@ -115,7 +116,7 @@ func TestRenderKeepsAnEmptyUserTypeBaseUnwrapped(t *testing.T) {
 
 	result, err := atlashclrender.Render(&schemamodel.Database{
 		Domains: []schemamodel.Domain{{Name: "d", BaseType: ""}},
-	})
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Not(qt.Contains), `sql("")`)

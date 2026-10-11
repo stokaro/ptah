@@ -43,6 +43,9 @@ func timescaleDocument(c *qt.C, hypertable tsschema.DesiredHypertable, aggregate
 // aggregate IS a view, and describing it as one replays the rewritten body
 // TimescaleDB stores (stokaro/ptah#1026).
 //
+// The blocks after the tables are ordered by type, schema and name, so the
+// aggregate comes first.
+//
 // The interval row keeps a round trip converging: an omitted interval takes
 // TimescaleDB's own default, and writing the default back would turn "whatever
 // the server chooses" into a fixed value the next comparison holds the server
@@ -58,17 +61,17 @@ func TestRenderWritesTheTimescaleBlocks(t *testing.T) {
 			name:       "every setting",
 			hypertable: tsschema.DesiredHypertable{Column: "time", ChunkInterval: "1 day", IfNotExists: true, Comment: "by time"},
 			aggregate:  tsschema.DesiredContinuousAggregate{Body: "SELECT 1", MaterializedOnly: new(true), Comment: "hourly"},
-			want: "hypertable \"readings\" {\n  schema = schema.public\n  column = \"time\"\n  chunk_interval = \"1 day\"\n" +
-				"  if_not_exists = true\n  comment = \"by time\"\n}\n\n" +
-				"continuous_aggregate \"hourly\" {\n  schema = schema.public\n  as = \"SELECT 1\"\n" +
-				"  materialized_only = true\n  comment = \"hourly\"\n}\n",
+			want: "continuous_aggregate \"hourly\" {\n  schema = schema.public\n  as = \"SELECT 1\"\n" +
+				"  materialized_only = true\n  comment = \"hourly\"\n}\n\n" +
+				"hypertable \"readings\" {\n  schema = schema.public\n  column = \"time\"\n  chunk_interval = \"1 day\"\n" +
+				"  if_not_exists = true\n  comment = \"by time\"\n}\n",
 		},
 		{
 			name:       "the server's defaults",
 			hypertable: tsschema.DesiredHypertable{Column: "time"},
 			aggregate:  tsschema.DesiredContinuousAggregate{Body: "SELECT 1"},
-			want: "hypertable \"readings\" {\n  schema = schema.public\n  column = \"time\"\n}\n\n" +
-				"continuous_aggregate \"hourly\" {\n  schema = schema.public\n  as = \"SELECT 1\"\n}\n",
+			want: "continuous_aggregate \"hourly\" {\n  schema = schema.public\n  as = \"SELECT 1\"\n}\n\n" +
+				"hypertable \"readings\" {\n  schema = schema.public\n  column = \"time\"\n}\n",
 		},
 	}
 
@@ -76,7 +79,7 @@ func TestRenderWritesTheTimescaleBlocks(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(timescaleDocument(c, test.hypertable, test.aggregate), platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(timescaleDocument(c, test.hypertable, test.aggregate), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -95,7 +98,7 @@ func TestRenderTheTimescaleStateSurvivesItsOwnDocument(t *testing.T) {
 			MaterializedOnly: new(false),
 		})
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	reread, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
@@ -117,7 +120,7 @@ func TestRenderRefusesATimescaleLimitItCannotWrite(t *testing.T) {
 		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the definition could not be read"},
 	}}))
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*daily.*cannot be exported without losing its coverage record.*`)

@@ -13,6 +13,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/modelast"
 )
 
@@ -83,7 +84,7 @@ table "t" {
 			parsed, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 
-			rendered, err := atlashclrender.Render(parsed)
+			rendered, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 			c.Assert(string(rendered.Data), qt.Contains, test.wantType)
@@ -126,7 +127,7 @@ table "t" {
 	c.Assert(sql, qt.Contains, "USER_DEFINED")
 	c.Assert(sql, qt.Not(qt.Contains), "sql(")
 
-	rendered, err := atlashclrender.Render(parsed)
+	rendered, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `type = sql("USER_DEFINED")`)
 }
@@ -147,7 +148,7 @@ func TestRenderKeepsOrdinaryColumnTypesBare(t *testing.T) {
 		},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestReferenceReadsTheInspectedDocumentPtahRenders puts a WHOLE inspected
@@ -63,7 +64,7 @@ func TestReferenceReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 				t.Run(document.name, func(t *testing.T) {
 					c := qt.New(t)
 
-					result, err := atlashclrender.RenderInspectedForAtlasCLI(document.db(schema), dialect, schema)
+					result, err := atlashclrender.RenderInspectedForAtlasCLI(document.db(schema), schema, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: dialect})
 					c.Assert(err, qt.IsNil)
 					rendered := string(result.Data)
 					for _, want := range document.wantContains(schema) {
@@ -147,8 +148,7 @@ func TestReferenceReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
 	devURL := requireRealmDevURL(t)
 	schema := schemaNameByDialect[platform.Postgres]
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(
-		inspectedReferenceTwoSchemaDocument(schema), platform.Postgres, schema)
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedReferenceTwoSchemaDocument(schema), schema, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c := qt.New(t)
 	c.Assert(err, qt.IsNil)
 	rendered := string(result.Data)
