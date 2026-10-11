@@ -14,41 +14,9 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/routineargs"
-	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 )
-
-func (r *renderer) renderExtensions() {
-	extensions := append([]schemamodel.Extension(nil), r.db.Extensions...)
-	slices.SortFunc(extensions, func(a, b schemamodel.Extension) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-	for _, extension := range extensions {
-		if r.omitRefusedExtension("extensions."+extension.Name, extension) {
-			continue
-		}
-		r.linef(`extension %s {`, quote(extension.Name))
-		if schema := r.extensionSchemaFor(extension); schema != "" {
-			// The common PostgreSQL namespaces are recognized even when dialect is
-			// empty, which keeps dialect-neutral artifacts from turning placement
-			// into a schema declaration. Target-specific namespaces such as
-			// CockroachDB's crdb_internal still require a concrete dialect.
-			if systemschema.IsPostgresFamilySystemSchema(r.dialect, schema) {
-				r.stringAttr(1, "schema", schema)
-			} else {
-				r.rawAttr(1, "schema", r.schemaRef(schema))
-			}
-		}
-		if extension.IfNotExists {
-			r.trueAttr(1, "if_not_exists")
-		}
-		r.stringAttr(1, "version", extension.Version)
-		r.stringAttr(1, "comment", extension.Comment)
-		r.line("}")
-		r.line("")
-	}
-}
 
 func (r *renderer) renderSequences() {
 	sequences := append([]schemamodel.Sequence(nil), r.db.Sequences...)

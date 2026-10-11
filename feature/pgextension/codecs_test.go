@@ -26,6 +26,11 @@ func TestCodecs_HappyPath(t *testing.T) {
 			wire:  `{"schema":"ext","version":"1.6","comment":"trigrams","if_not_exists":true}`,
 		},
 		{
+			name: "a declaration a read carried members into", codec: desired,
+			value: &pgextension.DesiredExtension{Schema: "public", IfNotExists: true, Provides: []string{"isbn", "ean13", "isbn"}},
+			wire:  `{"schema":"public","if_not_exists":true,"provides":["ean13","isbn"]}`,
+		},
+		{
 			name: "an observation without a comment", codec: observed,
 			value: &pgextension.ObservedExtension{Schema: "public", Version: "1.0"},
 			wire:  `{"schema":"public","version":"1.0","relocatable":false}`,
@@ -65,8 +70,11 @@ func TestCodecs_FailurePath(t *testing.T) {
 		{name: "IF NOT EXISTS spelled false", codec: desired, wire: `{"if_not_exists":false}`},
 		{name: "a key in another case", codec: desired, wire: `{"Schema":"ext"}`},
 		{name: "an unknown key", codec: desired, wire: `{"cascade":true}`},
+		{name: "an empty declared member list spelled out", codec: desired, wire: `{"provides":[]}`},
+		{name: "an empty declared member", codec: desired, wire: `{"provides":[""]}`},
 		{name: "an observation without its version", codec: observed, wire: `{"schema":"public","relocatable":false}`},
 		{name: "an empty member list spelled out", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"provides":[]}`},
+		{name: "an empty member", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"provides":[""]}`},
 		{name: "a null comment", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"comment":null}`},
 	}
 	for _, test := range tests {

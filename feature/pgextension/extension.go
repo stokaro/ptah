@@ -24,6 +24,12 @@ type DesiredExtension struct {
 	// statement, not the extension: two declarations that differ only in it
 	// declare the same extension.
 	IfNotExists bool `json:"if_not_exists,omitempty"`
+	// Provides is what a read reported the extension supplies, carried from
+	// [ObservedExtension.Provides] when a read becomes a declaration. No
+	// statement writes it and no comparison reads it: an export reads it to
+	// tell an extension a document still depends on from one nothing uses.
+	// An authored declaration leaves it empty.
+	Provides []string `json:"provides,omitempty"`
 }
 
 // ObservedExtension is an installed extension as the catalog reports it.
@@ -62,13 +68,14 @@ func (*ObservedExtension) Kind() schemaext.Kind { return ExtensionKind }
 // Clone returns an independent declaration.
 func (v *DesiredExtension) Clone() schemaext.Value { return v.Copy() }
 
-// Copy is [DesiredExtension.Clone] without the interface. A nil receiver
-// returns nil.
+// Copy is [DesiredExtension.Clone] without the interface. It shares no
+// member list with v, and a nil receiver returns nil.
 func (v *DesiredExtension) Copy() *DesiredExtension {
 	if v == nil {
 		return nil
 	}
 	copied := *v
+	copied.Provides = slices.Clone(v.Provides)
 	return &copied
 }
 
@@ -90,13 +97,15 @@ func (v *ObservedExtension) Copy() *ObservedExtension {
 }
 
 // Equal reports whether other declares the same extension in the same
-// words, IfNotExists included. Two nil declarations are equal.
+// words, IfNotExists included, and carries the same members as a set. Two
+// nil declarations are equal.
 func (v *DesiredExtension) Equal(other schemaext.Value) bool {
 	w, ok := other.(*DesiredExtension)
 	if !ok || v == nil || w == nil {
 		return ok && v == nil && w == nil
 	}
-	return *v == *w
+	return v.Schema == w.Schema && v.Version == w.Version && v.Comment == w.Comment && v.IfNotExists == w.IfNotExists &&
+		slices.Equal(sortedMembers(v.Provides), sortedMembers(w.Provides))
 }
 
 // Equal reports whether other observes the same extension in the same
@@ -127,14 +136,14 @@ func equalComment(a, b *string) bool {
 }
 
 // Desired is the declaration that keeps the observed extension as it is: in
-// its schema, at its version, with its comment. It writes IF NOT EXISTS, so a
-// rollback that creates the extension again does not fail on one that
-// survived.
+// its schema, at its version, with its comment, and with the members the read
+// reported. It writes IF NOT EXISTS, so a rollback that creates the extension
+// again does not fail on one that survived.
 func (v *ObservedExtension) Desired() *DesiredExtension {
 	if v == nil {
 		return nil
 	}
-	declared := &DesiredExtension{Schema: v.Schema, Version: v.Version, IfNotExists: true}
+	declared := &DesiredExtension{Schema: v.Schema, Version: v.Version, IfNotExists: true, Provides: slices.Clone(v.Provides)}
 	if v.Comment != nil {
 		declared.Comment = *v.Comment
 	}
@@ -142,14 +151,14 @@ func (v *ObservedExtension) Desired() *DesiredExtension {
 }
 
 // Observed is the observation a declaration predicts: the schema and the
-// version it names, empty where it leaves them to the server, and its
-// comment. Whether the extension may move is a fact of its control file that
-// no declaration states, so the prediction says it may not.
+// version it names, empty where it leaves them to the server, its comment, and
+// the members it carries. Whether the extension may move is a fact of its
+// control file that no declaration states, so the prediction says it may not.
 func (v *DesiredExtension) Observed() *ObservedExtension {
 	if v == nil {
 		return nil
 	}
-	observed := &ObservedExtension{Schema: v.Schema, Version: v.Version}
+	observed := &ObservedExtension{Schema: v.Schema, Version: v.Version, Provides: slices.Clone(v.Provides)}
 	if v.Comment != "" {
 		observed.Comment = new(v.Comment)
 	}
@@ -180,13 +189,16 @@ func ObservedObject(ref objectidentity.ID, extension ObservedExtension) (schemae
 	return schemaext.Object{Ref: ref, Value: extension.Copy()}, nil
 }
 
-// ValidateDesired refuses a nil declaration and text a statement cannot
-// carry.
+// ValidateDesired refuses a nil declaration and text a statement or a
+// catalog cannot carry.
 func ValidateDesired(v *DesiredExtension) error {
 	if v == nil {
 		return modelError(ExtensionKind, schemaext.Desired, fmt.Errorf("%w: nil extension declaration", schemaext.ErrInvalidValue))
 	}
 	if err := validTexts("schema", v.Schema, "version", v.Version, "comment", v.Comment); err != nil {
+		return modelError(ExtensionKind, schemaext.Desired, err)
+	}
+	if err := validMembers(v.Provides); err != nil {
 		return modelError(ExtensionKind, schemaext.Desired, err)
 	}
 	return nil
@@ -206,9 +218,21 @@ func ValidateObserved(v *ObservedExtension) error {
 	if err := validTexts("schema", v.Schema, "version", v.Version, "comment", comment); err != nil {
 		return modelError(ExtensionKind, schemaext.Observed, err)
 	}
-	for _, member := range v.Provides {
+	if err := validMembers(v.Provides); err != nil {
+		return modelError(ExtensionKind, schemaext.Observed, err)
+	}
+	return nil
+}
+
+// validMembers refuses a member a catalog cannot name: an empty one, and text
+// no statement can carry.
+func validMembers(members []string) error {
+	for _, member := range members {
+		if member == "" {
+			return fmt.Errorf("%w: empty extension member", schemaext.ErrInvalidValue)
+		}
 		if err := validTexts("member", member); err != nil {
-			return modelError(ExtensionKind, schemaext.Observed, err)
+			return err
 		}
 	}
 	return nil

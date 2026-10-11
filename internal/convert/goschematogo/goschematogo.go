@@ -259,19 +259,22 @@ type renderContext struct {
 	// external tables.
 	externalAnnotations  [2][]string
 	aggregateAnnotations []string
-	hypertablesByTable   map[string]*tsschema.DesiredHypertable
-	familiesByTable      map[string][]ydbschema.ColumnFamily
-	partitioningByTable  map[string]*ydbschema.TablePartitioning
-	storesByTable        map[string]*ydbschema.DesiredColumnStore
-	partitioningByIndex  map[indexKey]*ydbschema.IndexPartitioning
-	changefeedsByTable   map[objectidentity.Key][]ydbschema.ChangefeedSpec
-	db                   *schemamodel.Database
-	opts                 Options
-	enumsByName          map[string]schemamodel.Enum
-	fieldsByTable        map[string][]schemamodel.Field
-	indexesByTable       map[string][]schemamodel.Index
-	constraintsByTable   map[string][]schemamodel.Constraint
-	rlsByTable           map[string][]schemamodel.RLSPolicy
+	// extensions are the declared extensions in name order, from the common
+	// model and from the extension owner alike.
+	extensions          []extensionDeclaration
+	hypertablesByTable  map[string]*tsschema.DesiredHypertable
+	familiesByTable     map[string][]ydbschema.ColumnFamily
+	partitioningByTable map[string]*ydbschema.TablePartitioning
+	storesByTable       map[string]*ydbschema.DesiredColumnStore
+	partitioningByIndex map[indexKey]*ydbschema.IndexPartitioning
+	changefeedsByTable  map[objectidentity.Key][]ydbschema.ChangefeedSpec
+	db                  *schemamodel.Database
+	opts                Options
+	enumsByName         map[string]schemamodel.Enum
+	fieldsByTable       map[string][]schemamodel.Field
+	indexesByTable      map[string][]schemamodel.Index
+	constraintsByTable  map[string][]schemamodel.Constraint
+	rlsByTable          map[string][]schemamodel.RLSPolicy
 	// policyTables names each table by the identity a PostgreSQL row-level
 	// security policy names its table by, and rowPolicyTables by the one a
 	// ClickHouse row policy does; policyAnnotations and switchAnnotations hold
@@ -416,7 +419,7 @@ func (ctx *renderContext) renderFile(writeBody func(*sourceWriter)) ([]byte, err
 // is silently not read, and the export loses the object with every gate green.
 func (ctx *renderContext) hasGlobalObjects() bool {
 	return len(ctx.db.Schemas) > 0 ||
-		len(ctx.db.Extensions) > 0 ||
+		len(ctx.extensions) > 0 ||
 		len(ctx.db.Functions) > 0 ||
 		len(ctx.db.Views) > 0 ||
 		len(ctx.db.MaterializedViews) > 0 ||
@@ -504,15 +507,8 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, sequence := range sortedSequences(ctx.db.Sequences) {
 		w.writeComment(sequenceAnnotation(sequence))
 	}
-	for _, extension := range sortedExtensions(ctx.db.Extensions) {
-		w.writeComment(annotation("ptah:schema:extension",
-			attr{name: "name", value: extension.Name, set: true},
-			attr{name: "schema", value: extension.Schema, set: extension.Schema != ""},
-			attr{name: "if_not_exists", value: strconv.FormatBool(extension.IfNotExists), set: extension.IfNotExists},
-			attr{name: "version", value: extension.Version, set: extension.Version != ""},
-			attr{name: "comment", value: extension.Comment, set: extension.Comment != ""},
-			dialectsAttr(extension.Dialects),
-		))
+	for _, extension := range ctx.extensions {
+		w.writeComment(extension.annotation())
 	}
 	for _, function := range sortedFunctions(ctx.db.Functions) {
 		w.writeComment(functionAnnotation(function))
@@ -1558,12 +1554,6 @@ func sortedEnums(values []schemamodel.Enum) []schemamodel.Enum {
 
 func sortedSchemas(values []schemamodel.Schema) []schemamodel.Schema {
 	result := append([]schemamodel.Schema(nil), values...)
-	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-	return result
-}
-
-func sortedExtensions(values []schemamodel.Extension) []schemamodel.Extension {
-	result := append([]schemamodel.Extension(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
