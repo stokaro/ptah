@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // timescaleDocument is a partitioned table and one aggregate over it.
@@ -96,7 +97,7 @@ func TestRenderTheTimescaleStateSurvivesItsOwnDocument(t *testing.T) {
 
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 	c.Assert(err, qt.IsNil)
-	reread, err := atlashcl.Parse(result.Data, "schema.hcl")
+	reread, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(reread.Tables, qt.HasLen, 1)

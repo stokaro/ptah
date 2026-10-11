@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"ptah.run/core/annotation"
+	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -35,6 +36,7 @@ func timescaleProvider() engine.Provider {
 		ID:          tsschema.Owner,
 		Codecs:      append(append(tsschema.Codecs(), tsdiff.Codecs()...), tsast.Codecs()...),
 		Annotations: []annotation.Extension{tssource.Annotations()},
+		HCL:         []hclext.Extension{tssource.HCL()},
 	}
 	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
 		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: models, Service: tsconvert.Service{}})

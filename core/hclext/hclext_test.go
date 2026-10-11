@@ -122,6 +122,19 @@ func TestNewSet_FailurePath(t *testing.T) {
 	}
 }
 
+// TestNewSet_HappyPath accepts every naming and every attribute kind.
+func TestNewSet_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	set, err := hclext.NewSet(extension("example.org/a", "example.org/a/x", answeringDecoder{},
+		hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
+			Attributes: []hclext.Attribute{{Name: "size", Kind: hclext.String}, {Name: "note", Kind: hclext.Text}, {Name: "on", Kind: hclext.Bool}}},
+		hclext.Block{Site: hclext.TopLevel, Type: "widget", Naming: hclext.SchemaAndQualifiedName}))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(set.Selected(), qt.IsTrue)
+}
+
 // TestSet_Lookup finds the shape an extension registered for a block type at
 // its site, and none for another type.
 func TestSet_Lookup(t *testing.T) {
@@ -177,9 +190,12 @@ func TestSet_Decode_FailurePath(t *testing.T) {
 			wantErr: `invalid feature value: HCL decoder of example.org/b answered 2 claims with 0 declarations`},
 		{name: "an object of another kind", decoder: answeringDecoder{result: hclext.Result{Declarations: []hclext.Declaration{
 			{Objects: []schemaext.Object{object("example.org/a/x", "g")}}, {}}}},
-			wantErr: `invalid feature value: HCL decoder of example.org/b answered an object of kind "example.org/a/x", which its extension does not declare`},
+			wantErr: `invalid feature value: HCL decoder of example.org/b answered a model of kind "example.org/a/x", which its extension does not declare`},
 		{name: "a refused claim", decoder: answeringDecoder{err: &hclext.ClaimError{Claim: 1, Err: refused}},
 			wantErr: `claim 2: refused`},
+		{name: "a table setting of another kind", decoder: answeringDecoder{result: hclext.Result{Declarations: []hclext.Declaration{
+			{TableSetting: &widget{kind: "example.org/a/x"}}, {}}}},
+			wantErr: `invalid feature value: HCL decoder of example.org/b answered a model of kind "example.org/a/x", which its extension does not declare`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

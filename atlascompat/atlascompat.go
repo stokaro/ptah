@@ -41,16 +41,20 @@ const AtlasSumFileName = "atlas.sum"
 // Parsing one as a schema would yield an empty IR, which a caller diffing
 // against a live database cannot tell apart from "drop everything".
 //
-// It selects no feature owner, so a block only an owner reads, such as a
-// synonym, is refused as an unsupported block; [ParseAtlasHCLWithOptions]
-// takes the owners.
+// It selects no feature owner, so a block only an owner reads is refused as
+// an unsupported top-level block: today a `synonym`, a `hypertable` and a
+// `continuous_aggregate`, and the other owner blocks -- `extended_property`,
+// `coordination_node` and `policy` -- as their owners take them over. Read a
+// document carrying one with [ParseAtlasHCLWithOptions] and the HCL set of a
+// runtime, such as the bundled one engine/builtin.Bundled returns.
 func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {
 	return atlashcl.Parse(data, filename)
 }
 
 // ParseAtlasHCLFile parses an Atlas schema HCL file into Ptah's Go schema IR.
 // It refuses project files, and selects no owner, on the same terms as
-// [ParseAtlasHCL].
+// [ParseAtlasHCL]: a file carrying an owner's block, such as a `synonym` or a
+// `hypertable`, needs [ParseAtlasHCLWithOptions] with a runtime's HCL set.
 func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
 	return atlashcl.ParseFile(path)
 }

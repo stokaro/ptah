@@ -21,7 +21,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
-	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/matviewrefresh"
@@ -2056,53 +2055,6 @@ func (p *parser) rejectUnsupportedExtendedPropertyAttrs(block *hclsyntax.Block) 
 	}, "extended_property")
 }
 
-// parseHypertable parses a top-level hypertable block into the hypertable
-// settings of the table it names.
-//
-// The block's label is the TABLE it partitions, not a name of its own: a
-// hypertable has no name, and `timescaledb_information.hypertables` is keyed by
-// the relation. The settings attach to that table's declaration once the whole
-// document is read, because the table block may come later in the file.
-// `column` is required for the same reason `target` is required on a synonym:
-// a hypertable with no dimension is not one, and the server has no default to
-// fall back on.
-//
-// `chunk_interval` is optional and is kept as the string it was written as. An
-// omitted interval takes TimescaleDB's own default, which the catalog then
-// reports; converting the declaration to compare would differ from the server's
-// spelling on every run.
-func (p *parser) parseHypertable(block *hclsyntax.Block) error {
-	schema, table, err := p.objectSchemaAndName(block, "hypertable")
-	if err != nil {
-		return err
-	}
-	if err := p.rejectNestedBlocks(block, "hypertable"); err != nil {
-		return err
-	}
-	if err := p.rejectUnsupportedHypertableAttrs(block); err != nil {
-		return err
-	}
-	column, err := p.stringAttr(block, "column", "hypertable")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(column) == "" {
-		return p.blockError(block, "hypertable %q requires a column to partition on", table)
-	}
-	chunkInterval, err := p.stringAttr(block, "chunk_interval", "hypertable")
-	if err != nil {
-		return err
-	}
-	p.tableSettings = append(p.tableSettings, TableSetting{Schema: schema, Table: table, Block: "hypertable", Position: block.TypeRange.String(),
-		Value: &tsschema.DesiredHypertable{
-			Column:        column,
-			ChunkInterval: chunkInterval,
-			IfNotExists:   p.optionalBool(block.Body.Attributes["if_not_exists"], false),
-			Comment:       p.optionalString(block.Body.Attributes["comment"]),
-		}})
-	return nil
-}
-
 // TableSetting is a table setting a document declares in a block of its own,
 // such as `hypertable`, waiting for the table it names. Schema is the schema
 // the block named, empty when it named none. Block is the block's type and
@@ -2189,70 +2141,6 @@ func qualifyHypertableName(schema, table string) string {
 		return table
 	}
 	return schema + "." + table
-}
-
-func (p *parser) rejectUnsupportedHypertableAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema":         true,
-		"column":         true,
-		"chunk_interval": true,
-		"if_not_exists":  true,
-		"comment":        true,
-	}, "hypertable")
-}
-
-// parseContinuousAggregate parses a top-level continuous_aggregate block into a
-// continuous aggregate the TimescaleDB model owns.
-//
-// Unlike a hypertable this object has a name of its own, so the block's label
-// is that name and `schema` says where it lives -- the same shape a view block
-// has, which is what a reader familiar with one will expect of the other.
-//
-// `as` is required. A continuous aggregate is its SELECT; there is no default
-// body and nothing to create without one.
-func (p *parser) parseContinuousAggregate(block *hclsyntax.Block) error {
-	schema, name, err := p.objectSchemaAndName(block, "continuous_aggregate")
-	if err != nil {
-		return err
-	}
-	// A dotted label without a schema names the schema too: `app.hourly` is
-	// hourly in app, not a relation whose name holds a dot.
-	if ref, ok := tableref.Parse(name); ok && ref.Qualified && strings.TrimSpace(schema) == "" {
-		schema, name = ref.Schema, ref.Name
-	}
-	if err := p.rejectNestedBlocks(block, "continuous_aggregate"); err != nil {
-		return err
-	}
-	if err := p.rejectUnsupportedContinuousAggregateAttrs(block); err != nil {
-		return err
-	}
-	body, err := p.stringAttr(block, "as", "continuous_aggregate")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(body) == "" {
-		return p.blockError(block,
-			"continuous_aggregate %q requires an `as` body; a continuous aggregate is its SELECT", name)
-	}
-	object := tsschema.DesiredContinuousAggregateObject(schema, name, tsschema.DesiredContinuousAggregate{
-		Body:             body,
-		MaterializedOnly: p.optionalBoolPtr(block.Body.Attributes["materialized_only"]),
-		Comment:          p.optionalString(block.Body.Attributes["comment"]),
-	})
-	p.db.FeatureObjects, err = p.db.FeatureObjects.With(object)
-	if err != nil {
-		return p.blockError(block, "continuous_aggregate %q: %v", name, err)
-	}
-	return nil
-}
-
-func (p *parser) rejectUnsupportedContinuousAggregateAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema":            true,
-		"as":                true,
-		"materialized_only": true,
-		"comment":           true,
-	}, "continuous_aggregate")
 }
 
 // sequenceOwnedBy reads `owned_by` in either spelling a schema author reaches

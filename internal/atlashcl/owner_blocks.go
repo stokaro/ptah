@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 
 	"ptah.run/core/hclext"
+	"ptah.run/internal/tableref"
 )
 
 // ownerClaim is a block an owner's shape matched, waiting for the owner's
@@ -32,6 +33,10 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	if err != nil {
 		return err
 	}
+	if ref, ok := tableref.Parse(name); ok && ref.Qualified && shape.Block.Naming == hclext.SchemaAndQualifiedName &&
+		strings.TrimSpace(schema) == "" {
+		schema, name = ref.Schema, ref.Name
+	}
 	if err := p.rejectNestedBlocks(block, block.Type); err != nil {
 		return err
 	}
@@ -50,20 +55,36 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 		}
 		// Each attribute is evaluated once: a print() call in it prints
 		// once, as it does in a block of this package's own.
-		var text string
-		switch attribute.Kind {
-		case hclext.String:
-			if text, err = p.stringAttr(block, attribute.Name, block.Type); err != nil {
-				return err
-			}
-		default:
-			text = p.exprString(attr)
+		value, present, err := p.ownerValue(block, attribute)
+		if err != nil {
+			return err
 		}
-		values[attribute.Name] = hclext.Value{Kind: attribute.Kind, Text: text}
+		if present {
+			values[attribute.Name] = value
+		}
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, match: hclext.Match{Shape: shape,
 		Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values}}})
 	return nil
+}
+
+// ownerValue reads one attribute as its kind. A [hclext.Bool] attribute that
+// is not a bool reads as absent, as optionalBool reads one.
+func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) (hclext.Value, bool, error) {
+	attr := block.Body.Attributes[attribute.Name]
+	switch attribute.Kind {
+	case hclext.String:
+		text, err := p.stringAttr(block, attribute.Name, block.Type)
+		return hclext.Value{Kind: attribute.Kind, Text: text}, err == nil, err
+	case hclext.Bool:
+		value := p.optionalBoolPtr(attr)
+		if value == nil {
+			return hclext.Value{}, false, nil
+		}
+		return hclext.Value{Kind: attribute.Kind, Bool: *value}, true, nil
+	default:
+		return hclext.Value{Kind: attribute.Kind, Text: p.exprString(attr)}, true, nil
+	}
 }
 
 // readOwnerClaims hands every claimed block to its owner, one call per owner,
@@ -95,6 +116,10 @@ func (p *parser) readOwnerClaims() error {
 				return p.blockError(claim.block, "%s %s is declared twice: %v", claim.block.Type, qualifiedName(claim.match.Claim), err)
 			}
 			p.db.FeatureObjects = objects
+		}
+		if declaration.TableSetting != nil {
+			p.tableSettings = append(p.tableSettings, TableSetting{Schema: claim.match.Claim.Schema, Table: claim.match.Claim.Name,
+				Block: claim.block.Type, Position: claim.block.TypeRange.String(), Value: declaration.TableSetting})
 		}
 	}
 	return nil

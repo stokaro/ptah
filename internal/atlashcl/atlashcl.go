@@ -21,7 +21,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
-	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/mysqlindex"
@@ -430,29 +429,27 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 // each carry a measurement of the pinned Atlas community binary, and eighteen
 // two-line arms above them buried it.
 var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
-	"schema":               (*parser).parseSchema,
-	"enum":                 (*parser).parseEnum,
-	"sequence":             (*parser).parseSequence,
-	"domain":               (*parser).parseDomain,
-	"composite":            (*parser).parseComposite,
-	"range":                (*parser).parseRange,
-	"hypertable":           (*parser).parseHypertable,
-	"continuous_aggregate": (*parser).parseContinuousAggregate,
-	"coordination_node":    (*parser).parseCoordinationNode,
-	"extended_property":    (*parser).parseExtendedProperty,
-	"table":                (*parser).parseTable,
-	"extension":            (*parser).parseExtension,
-	"function":             (*parser).parseFunction,
-	"procedure":            (*parser).parseProcedure,
-	"view":                 (*parser).parseView,
-	"materialized":         (*parser).parseMaterializedView,
-	"trigger":              (*parser).parseTrigger,
-	"policy":               (*parser).parsePolicy,
-	"role":                 (*parser).parseRole,
-	"permission":           (*parser).parsePermission,
-	"revoke":               (*parser).parseRevoke,
-	"default_privilege":    (*parser).parseDefaultPrivilege,
-	"data":                 (*parser).parseManagedData,
+	"schema":            (*parser).parseSchema,
+	"enum":              (*parser).parseEnum,
+	"sequence":          (*parser).parseSequence,
+	"domain":            (*parser).parseDomain,
+	"composite":         (*parser).parseComposite,
+	"range":             (*parser).parseRange,
+	"coordination_node": (*parser).parseCoordinationNode,
+	"extended_property": (*parser).parseExtendedProperty,
+	"table":             (*parser).parseTable,
+	"extension":         (*parser).parseExtension,
+	"function":          (*parser).parseFunction,
+	"procedure":         (*parser).parseProcedure,
+	"view":              (*parser).parseView,
+	"materialized":      (*parser).parseMaterializedView,
+	"trigger":           (*parser).parseTrigger,
+	"policy":            (*parser).parsePolicy,
+	"role":              (*parser).parseRole,
+	"permission":        (*parser).parsePermission,
+	"revoke":            (*parser).parseRevoke,
+	"default_privilege": (*parser).parseDefaultPrivilege,
+	"data":              (*parser).parseManagedData,
 }
 
 func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
@@ -2692,16 +2689,12 @@ func targetProperties(overrides map[string]map[string]string, targets []string, 
 }
 
 // withBlockCoverage adds the knowledge the format's own blocks give: one for
-// each TimescaleDB model and one for a SQL Server extended property, so a
-// document without one describes a database without one. It
-// adds the claim of the MySQL index block size too, which the format has no
-// spelling for: an index a document declares has none, and applying the
-// document removes a hint the table holds, as the HCL export warns.
+// a SQL Server extended property, so a document without one describes a
+// database without one. It adds the claim of the MySQL index block size too,
+// which the format has no spelling for: an index a document declares has
+// none, and applying the document removes a hint the table holds, as the HCL
+// export warns.
 func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
-	timescale, err := tsschema.CompleteCoverage(schemaext.Desired)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
 	complete := schemaext.Knowledge{State: schemaext.Complete}
 	properties, err := mssqlproperty.Coverage(schemaext.Desired, complete, nil)
 	if err != nil {
@@ -2711,7 +2704,7 @@ func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, claim := range []schemaext.Coverage{timescale, properties, blockSizes} {
+	for _, claim := range []schemaext.Coverage{properties, blockSizes} {
 		if known, err = known.Combine(claim); err != nil {
 			return schemaext.Coverage{}, err
 		}
