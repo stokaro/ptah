@@ -106,7 +106,7 @@ func constraintTable(tables []schemamodel.Table, constraint schemamodel.Constrai
 func lowersToIndex(constraint schemamodel.Constraint) bool {
 	return !constraint.Deferrable && constraint.Initially == "" && !constraint.NotEnforced && !constraint.NotValid &&
 		strings.TrimSpace(constraint.WhereCondition) == "" && constraint.UsingMethod == "" &&
-		constraint.KeyBlockSize == 0
+		constraint.Facets.IsZero()
 }
 
 // tableKey is a table's key columns, as the renderer reads them: its PRIMARY

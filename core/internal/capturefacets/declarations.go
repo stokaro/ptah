@@ -1,6 +1,7 @@
-// Package capturefacets inventories declared table and index facet owners for
-// preparation and CREATE projection. Both boundaries must recognize the same
-// owner set without granting a provider authority over unrelated objects.
+// Package capturefacets inventories declared table, index and primary key
+// facet owners for preparation and CREATE projection. Both boundaries must
+// recognize the same owner set without granting a provider authority over
+// unrelated objects.
 package capturefacets
 
 import (
@@ -10,14 +11,23 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 )
 
-// Declared captures facet records by owner identity, including empty facet sets.
+// Declared captures facet records by owner identity, including empty facet
+// sets: the table's, each index's and the primary key's, whose settings are
+// the ones [schemacapture.PrimaryKeyFacets] reads.
 // The caller supplies the already resolved parent and identifier semantics.
 // Duplicate owners wrap schemaext.ErrInvalidValue and return no inventory.
 func Declared(table schemacapture.TableDeclaration, parent objectidentity.ID, semantics identifier.Semantics) (map[objectidentity.Key]schemaext.FacetRecord, error) {
+	owned := make([]*schemamodel.Constraint, 0, len(table.Constraints))
+	for i := range table.Constraints {
+		owned = append(owned, &table.Constraints[i])
+	}
+	key := objectidentity.PrimaryKeyOf(parent)
 	declared := map[objectidentity.Key]schemaext.FacetRecord{
 		parent.Key(): {Subject: parent, Values: table.Table.Facets},
+		key.Key():    {Subject: key, Values: *schemacapture.PrimaryKeyFacets(&table.Table, owned)},
 	}
 	builder := objectidentity.NewBuilder(semantics)
 	for _, index := range table.Indexes {

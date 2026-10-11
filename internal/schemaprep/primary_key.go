@@ -22,7 +22,8 @@ func NeedsPrimaryKeyConstraint(table schemamodel.Table, fields []schemamodel.Fie
 		return true
 	}
 	// So is an access method: `PRIMARY KEY USING HASH` has no column spelling.
-	if (table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" || table.PrimaryKeyBlockSize != 0) &&
+	// Nor have a comment and the settings an owner keeps on the key.
+	if (table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" || !table.PrimaryKeyFacets.IsZero()) &&
 		(len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}

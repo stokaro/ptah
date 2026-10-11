@@ -64,8 +64,6 @@ func uniqueConstraintIndex(table string, constraint *ast.ConstraintNode) (*ast.I
 		return nil, refuseFact(subject, "YDB has no partial index")
 	case constraint.UsingMethod != "":
 		return nil, refuseFact(subject, fmt.Sprintf("it names the index method %q, and a YDB unique index is a global one", constraint.UsingMethod))
-	case constraint.KeyBlockSize != 0:
-		return nil, refuseFact(subject, "KEY_BLOCK_SIZE is the MySQL family's")
 	}
 	for _, part := range constraint.ColumnParts {
 		if part.Expr != "" || part.Desc || part.Prefix != "" {

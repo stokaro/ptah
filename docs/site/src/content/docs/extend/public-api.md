@@ -106,7 +106,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/mssql/mssqlconvert` | Conversion between security policy declarations and observations. |
 | `dialect/mysql/mysqlschema` | Desired and observed MySQL-family table options, index options and block sizes, and column settings with versioned codecs. |
 | `dialect/mysql/mysqlsource` | Table, index and column platform property decoding and encoding, and the Go index block-size attribute. |
-| `dialect/mysql/mysqlast` | Typed index replacement operation with an explicit codec. |
+| `dialect/mysql/mysqlast` | Typed replacement of an index or a primary key, with an explicit codec. |
 | `dialect/mysql/mysqlcompare` | Table option and column setting comparison that keeps declared values, and index block-size comparison. |
 | `dialect/mysql/mysqldiff` | Table option and index block-size change models that a planner and a reversal read. |
 | `dialect/mysql/mysqlplan` | Index block-size replacement and reversal, and option and setting accounting through table creation, rebuild and removal. |

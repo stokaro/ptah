@@ -13,9 +13,10 @@ import (
 )
 
 // RequireFacetPreservation refuses a conversion whose common-object lowering
-// omitted or duplicated attached feature state. For example, a primary-key
-// constraint folded into table fields has no constraint envelope to retain its
-// facets. Such a representation change needs explicit owner support.
+// omitted or duplicated attached feature state. For example, a primary key
+// that names no column becomes no key of the description, and its facets would
+// have nowhere to go. Such a representation change needs explicit owner
+// support.
 func RequireFacetPreservation(source, destination []*schemaext.Facets) error {
 	count := func(groups []*schemaext.Facets) map[schemaext.Kind]int {
 		result := make(map[schemaext.Kind]int)

@@ -9,8 +9,8 @@ import (
 )
 
 // IndexBlockSizeKind identifies a change to the KEY_BLOCK_SIZE hint of an
-// index that survives. The server keeps no other way to change it, so the
-// owner's plan replaces the index.
+// index or a primary key that survives. The server keeps no other way to
+// change it, so the owner's plan replaces the index or the key.
 const IndexBlockSizeKind schemaext.Kind = "ptah.run/mysql/index-block-size-change"
 
 // IndexBlockSize retains the hint an index holds and the hint a declaration
@@ -27,11 +27,13 @@ func (*IndexBlockSize) Kind() schemaext.Kind { return IndexBlockSizeKind }
 // CloneChange returns independent operands. A nil receiver remains typed nil.
 func (v *IndexBlockSize) CloneChange() schemaext.ChangeValue { return v.Copy() }
 
-// Effect reports the cost of applying the change: the index is replaced to
-// store the new hint, and on MySQL the replacement copies the whole table.
+// Effect reports the cost of applying the change: the index or the primary
+// key is replaced to store the new hint, and on MySQL the replacement copies
+// the whole table.
 func (*IndexBlockSize) Effect() schemaext.Effect {
 	return schemaext.Effect{Impact: schemaext.Behavioral,
-		Reason: "the index is dropped and built again to store its new KEY_BLOCK_SIZE; on MySQL the statement asks for ALGORITHM=COPY, which rebuilds the whole table and blocks writes to it while it runs; its rows are unchanged"}
+		Reason: "the index or the primary key is dropped and built again to store its new KEY_BLOCK_SIZE; " +
+			"on MySQL the statement asks for ALGORITHM=COPY, which rebuilds the whole table and blocks writes to it while it runs; its rows are unchanged"}
 }
 
 // Copy is [IndexBlockSize.CloneChange] without the interface. A nil receiver

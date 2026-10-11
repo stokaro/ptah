@@ -636,10 +636,10 @@ type ConstraintColumn struct {
 // from column definitions. This is different from column-level constraints
 // which are defined as part of the column specification.
 type ConstraintNode struct {
-	// Facets carries inline settings interpreted by the selected feature owner.
+	// Facets carries inline settings interpreted by the selected feature
+	// owner. On a PRIMARY KEY they are the key's, such as the MySQL family's
+	// KEY_BLOCK_SIZE hint.
 	Facets schemaext.Facets
-	// KeyBlockSize is a MySQL-family primary key block-size hint; zero omits it.
-	KeyBlockSize uint64
 	// Type specifies the constraint type (PRIMARY KEY, UNIQUE, etc.)
 	Type ConstraintType
 	// Name is the constraint name (optional for some constraint types)

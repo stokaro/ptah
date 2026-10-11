@@ -522,14 +522,15 @@ type Index struct {
 //   - PRIMARY KEY: Composite primary key constraints
 //   - FOREIGN KEY: Table-level foreign key constraints
 type Constraint struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets schemaext.Facets `json:"facets,omitzero"`
-	// KeyBlockSize is a MySQL-family primary key block-size hint; zero uses the engine default.
-	KeyBlockSize uint64
-	StructName   string // Name of the Go struct this constraint belongs to
-	Name         string // Constraint name (e.g., "no_overlapping_bookings")
-	Type         string // Constraint type: EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
-	Table        string // Table name (if different from struct name)
+	// Facets carries typed settings owned by feature providers. On a
+	// PRIMARY KEY constraint they are the settings of the table's primary
+	// key, which [Table.PrimaryKeyFacets] carries for a key declared on the
+	// table.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this constraint belongs to
+	Name       string           // Constraint name (e.g., "no_overlapping_bookings")
+	Type       string           // Constraint type: EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
+	Table      string           // Table name (if different from struct name)
 
 	// EXCLUDE constraint specific fields
 	UsingMethod     string // Index method for EXCLUDE constraints (e.g., "gist", "btree")
@@ -766,8 +767,13 @@ type Table struct {
 	// on InnoDB. The key renders as a table constraint, because the column
 	// spelling has no place for the clause.
 	PrimaryKeyMethod string
-	// PrimaryKeyBlockSize is the MySQL-family primary key block-size hint. Zero uses the engine default.
-	PrimaryKeyBlockSize uint64
+	// PrimaryKeyFacets carries the typed settings feature providers own of
+	// the primary key the table declares in [Table.PrimaryKey] or
+	// [Table.PrimaryKeyParts], such as the MySQL family's KEY_BLOCK_SIZE
+	// hint. A setting needs a key to hang on, so a renderer writes the key as
+	// a table constraint when the table carries one. A PRIMARY KEY
+	// [Constraint] carries its own in [Constraint.Facets].
+	PrimaryKeyFacets schemaext.Facets `json:"primary_key_facets,omitzero"`
 	// PrimaryKeyComment is the MySQL-family primary index comment.
 	PrimaryKeyComment string
 	// PrimaryKeyDeferrable marks a primary key whose uniqueness check may be

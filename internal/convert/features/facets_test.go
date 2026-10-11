@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -70,7 +71,7 @@ func facetRuntime(c *qt.C, service *facetService) *engine.Runtime {
 func facetedSchema(c *qt.C) *schemamodel.Database {
 	db := &schemamodel.Database{
 		Schemas:           []schemamodel.Schema{{Name: "public"}},
-		Tables:            []schemamodel.Table{{Name: "items", StructName: "Item"}},
+		Tables:            []schemamodel.Table{{Name: "items", StructName: "Item", PrimaryKey: []string{"id"}}},
 		Fields:            []schemamodel.Field{{Name: "id", StructName: "Item", Type: "bigint"}},
 		Indexes:           []schemamodel.Index{{Name: "items_id", StructName: "Item", Fields: []string{"id"}}},
 		Constraints:       []schemamodel.Constraint{{Name: "positive", StructName: "Item", Type: "CHECK", CheckExpression: "id > 0"}},
@@ -98,17 +99,23 @@ func TestSchemaConversion_AllFacetScopesUseOneBatch(t *testing.T) {
 	service := &facetService{}
 	runtime := facetRuntime(c, service)
 	desired := facetedSchema(c)
-	c.Assert(desired.FacetSlots(), qt.HasLen, 16)
+	c.Assert(desired.FacetSlots(), qt.HasLen, 17)
 	observed, err := goschematodb.ToDBSchema(t.Context(), desired, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(service.calls, qt.Equals, 1)
-	c.Assert(observed.FacetSlots(), qt.HasLen, 16)
-	for i, facets := range observed.FacetSlots() {
+	c.Assert(observed.FacetSlots(), qt.HasLen, 17)
+	// A catalog holds the table's primary key among its constraints, so its
+	// slots come in another order: each value is still converted once.
+	numbers := make([]int, 0, 17)
+	for _, facets := range observed.FacetSlots() {
 		value, found, err := schemaext.FacetAs[*facetValue](*facets, facetKind)
 		c.Assert(err, qt.IsNil)
 		c.Assert(found, qt.IsTrue)
-		c.Assert(*value, qt.Equals, facetValue{Number: i + 1, Representation: schemaext.Observed})
+		c.Assert(value.Representation, qt.Equals, schemaext.Observed)
+		numbers = append(numbers, value.Number)
 	}
+	slices.Sort(numbers)
+	c.Assert(numbers, qt.DeepEquals, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17})
 	restored, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observed, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(service.calls, qt.Equals, 2)
@@ -136,7 +143,10 @@ func TestSchemaConversion_ProviderFailureReturnsNoSchema(t *testing.T) {
 	c.Assert(value.Representation, qt.Equals, schemaext.Desired)
 }
 
-func TestSchemaConversion_RefusesFacetsOnFoldedPrimaryKey(t *testing.T) {
+// TestSchemaConversion_CarriesFacetsOfAFoldedPrimaryKey pins that a primary
+// key folded into its table keeps its settings: the table carries them for
+// its key, converted with the rest.
+func TestSchemaConversion_CarriesFacetsOfAFoldedPrimaryKey(t *testing.T) {
 	c := qt.New(t)
 	service := &facetService{}
 	runtime := facetRuntime(c, service)
@@ -144,6 +154,27 @@ func TestSchemaConversion_RefusesFacetsOnFoldedPrimaryKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	observed := &catalog.Database{Tables: []catalog.Table{{Name: "items"}}, Constraints: []catalog.Constraint{{
 		Name: "items_pk", TableName: "items", Type: "PRIMARY KEY", ColumnNames: []string{"id"}, Facets: facets,
+	}}}
+	result, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observed, "postgres", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(service.calls, qt.Equals, 1)
+	c.Assert(result.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+	value, found, err := schemaext.FacetAs[*facetValue](result.Tables[0].PrimaryKeyFacets, facetKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*value, qt.Equals, facetValue{Number: 1, Representation: schemaext.Desired})
+}
+
+// TestSchemaConversion_RefusesFacetsOnAKeyWithoutColumns refuses a primary
+// key no declaration can write, which would lose its settings.
+func TestSchemaConversion_RefusesFacetsOnAKeyWithoutColumns(t *testing.T) {
+	c := qt.New(t)
+	service := &facetService{}
+	runtime := facetRuntime(c, service)
+	facets, err := schemaext.NewFacets(&facetValue{Number: 1, Representation: schemaext.Observed})
+	c.Assert(err, qt.IsNil)
+	observed := &catalog.Database{Tables: []catalog.Table{{Name: "items"}}, Constraints: []catalog.Constraint{{
+		Name: "items_pk", TableName: "items", Type: "PRIMARY KEY", Facets: facets,
 	}}}
 	result, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observed, "postgres", runtime)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)

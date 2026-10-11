@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
-	"ptah.run/internal/indexscope"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -119,8 +118,7 @@ func ConstraintsWithSemantics(
 	// Find modified constraints (constraints that exist in both but have different definitions)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts,
-				indexTableRowFormat(database.Tables, catalog.Index{TableName: dbConstraint.TableName, Schema: dbConstraint.Schema}, semantics)) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
@@ -321,7 +319,7 @@ func appendConstraintAddition(
 		Comment:         genConstraint.Comment,
 		CheckExpression: genConstraint.CheckExpression,
 		UsingMethod:     genConstraint.UsingMethod,
-		KeyBlockSize:    genConstraint.KeyBlockSize,
+		Facets:          genConstraint.Facets,
 		ExcludeElements: genConstraint.ExcludeElements,
 		WhereCondition:  genConstraint.WhereCondition,
 		ForeignTable:    genConstraint.ForeignTable,
@@ -355,7 +353,6 @@ func constraintDefinitionsChanged(
 	dialect string,
 	semantics identifier.Semantics,
 	opts *config.CompareOptions,
-	rowFormat string,
 ) bool {
 	// Basic constraint type comparison
 	if genConstraint.Type != dbConstraint.Type {
@@ -371,7 +368,7 @@ func constraintDefinitionsChanged(
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
-		return primaryKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics, rowFormat)
+		return primaryKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	case "FOREIGN KEY":
 		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	default:
@@ -384,19 +381,17 @@ func constraintDefinitionsChanged(
 // the dialect resolves names: Oracle reports an unquoted `id` as ID, and
 // compared as text, a key read back from Oracle 23 was dropped and added on
 // every plan. The access method compares as any MySQL-family index's does,
-// where the server keeps it; see [mysqlindex.MethodSatisfiedBy].
+// where the server keeps it; see [mysqlindex.MethodSatisfiedBy]. The settings
+// owners keep on the key are theirs to compare.
 func primaryKeyConstraintChanged(
 	genConstraint schemamodel.Constraint,
 	dbConstraint catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
-	rowFormat string,
 ) bool {
-	if platform.NormalizeDialect(dialect) == platform.MySQL || platform.NormalizeDialect(dialect) == platform.MariaDB {
-		if genConstraint.Comment != dbConstraint.Comment ||
-			(mysqlindex.KeepsBlockSize(dialect, rowFormat) && genConstraint.KeyBlockSize != dbConstraint.KeyBlockSize) {
-			return true
-		}
+	if (platform.NormalizeDialect(dialect) == platform.MySQL || platform.NormalizeDialect(dialect) == platform.MariaDB) &&
+		genConstraint.Comment != dbConstraint.Comment {
+		return true
 	}
 	return !sameColumnNames(semantics, genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
@@ -654,16 +649,4 @@ func uniqueConstraintChanged(
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		!nullsDistinctEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct) ||
 		deferralChanged(genConstraint, dbConstraint)
-}
-
-// indexTableRowFormat resolves the index owner using the comparison's name semantics.
-func indexTableRowFormat(tables []catalog.Table, index catalog.Index, semantics identifier.Semantics) string {
-	ref := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{TableName: index.QualifiedTableName(), Name: index.Name})
-	for _, table := range tables {
-		owner := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{TableName: table.QualifiedName(), Name: index.Name})
-		if owner == ref {
-			return table.RowFormat
-		}
-	}
-	return ""
 }

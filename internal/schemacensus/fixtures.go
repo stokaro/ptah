@@ -1939,13 +1939,15 @@ func indexKeyBlockSizeFixture() schemamodel.Database {
 func primaryKeyOptionsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Tables[0].PrimaryKey = []string{"id"}
-	db.Tables[0].PrimaryKeyComment, db.Tables[0].PrimaryKeyBlockSize = "lookup", 8
+	db.Tables[0].PrimaryKeyComment = "lookup"
+	db.Tables[0].PrimaryKeyFacets = must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8}))
 	return db
 }
 
 func primaryKeyConstraintOptionsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Constraints = []schemamodel.Constraint{{StructName: "T", Table: "t", Name: "PRIMARY", Type: "PRIMARY KEY", Columns: []string{"id"}, Comment: "lookup", KeyBlockSize: 8}}
+	db.Constraints = []schemamodel.Constraint{{StructName: "T", Table: "t", Name: "PRIMARY", Type: "PRIMARY KEY", Columns: []string{"id"}, Comment: "lookup",
+		Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8}))}}
 	return db
 }
 

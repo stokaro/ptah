@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -13,16 +14,48 @@ import (
 // An explicit table reference takes precedence over a struct name. Empty input
 // returns nil. No identity normalization or target policy is applied.
 func ConstraintsFor(constraints []schemamodel.Constraint, table schemamodel.Table) []schemamodel.Constraint {
-	qualified := table.QualifiedName()
 	owned := make([]schemamodel.Constraint, 0, len(constraints))
 	for _, constraint := range constraints {
-		named := strings.TrimSpace(constraint.Table)
-		if named == qualified || named == table.Name ||
-			(named == "" && constraint.StructName != "" && constraint.StructName == table.StructName) {
+		if Owns(table, constraint) {
 			owned = append(owned, constraint.Clone())
 		}
 	}
 	return nilWhenEmpty(owned)
+}
+
+// Owns reports whether table owns constraint, by the rule [ConstraintsFor]
+// captures a table's constraints with: an explicit table reference, bare or
+// qualified, or else the owning struct.
+func Owns(table schemamodel.Table, constraint schemamodel.Constraint) bool {
+	named := strings.TrimSpace(constraint.Table)
+	return named == table.QualifiedName() || named == table.Name ||
+		(named == "" && constraint.StructName != "" && constraint.StructName == table.StructName)
+}
+
+// DatabasePrimaryKeyFacets is [PrimaryKeyFacets] for a table of db, with the
+// constraints [Owns] gives it there. Both pointers address db.
+func DatabasePrimaryKeyFacets(db *schemamodel.Database, table *schemamodel.Table) *schemaext.Facets {
+	var owned []*schemamodel.Constraint
+	for i := range db.Constraints {
+		if Owns(*table, db.Constraints[i]) {
+			owned = append(owned, &db.Constraints[i])
+		}
+	}
+	return PrimaryKeyFacets(table, owned)
+}
+
+// PrimaryKeyFacets addresses the settings of the primary key of table, given
+// the constraints it owns: those of the first PRIMARY KEY constraint, where the
+// declaration declares its key as one, and [schemamodel.Table.PrimaryKeyFacets]
+// otherwise. A key has one place its settings are read from, so the
+// comparison and an owner planning the key read the same one.
+func PrimaryKeyFacets(table *schemamodel.Table, owned []*schemamodel.Constraint) *schemaext.Facets {
+	for _, constraint := range owned {
+		if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+			return &constraint.Facets
+		}
+	}
+	return &table.PrimaryKeyFacets
 }
 
 // DeclareTable captures one table and its declared children without mutating

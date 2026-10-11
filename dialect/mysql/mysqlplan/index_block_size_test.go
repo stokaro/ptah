@@ -85,7 +85,7 @@ func TestIndexBlockSizeService_PlansTheReplacement(t *testing.T) {
 			c.Assert(result.Changes, qt.DeepEquals, []featureplan.ChangePlan{{Subject: blockSizeSubject, Kind: mysqldiff.IndexBlockSizeKind,
 				Strategy: test.strategy, Steps: []plangraph.StepID{id}}})
 			c.Assert(result.Parents, qt.DeepEquals, []featureplan.ParentPlan{{Subject: blockSizeTable, Kind: mysqlschema.IndexBlockSizeKind,
-				Action: featureplan.AlterTable, Strategy: "an index keeps the block size it holds unless a planned change, or the common plan's replacement of the index, writes the declared one"}})
+				Action: featureplan.AlterTable, Strategy: "an index or the primary key keeps the block size it holds unless a planned change, or the common plan's replacement of it, writes the declared one"}})
 		})
 	}
 }

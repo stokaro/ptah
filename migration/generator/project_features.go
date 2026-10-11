@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
@@ -16,8 +18,9 @@ import (
 func projectTableFeatures(ctx context.Context, current schemacapture.TableObservation, recovery []schemaext.Reversal, semantics identifier.Semantics, codecs schemaext.Registry) (schemacapture.TableObservation, error) {
 	builder := objectidentity.NewBuilder(semantics)
 	parent := builder.TableParts(current.Table.Schema, current.Table.Name)
-	// The table and each captured index own a facet record. An index facet is
-	// projected onto the index it names, never onto the table or a new record.
+	// The table, each captured index and the primary key own a facet record.
+	// An index facet is projected onto the index it names, never onto the
+	// table or a new record, and a key's onto the key.
 	records := []schemaext.FacetRecord{{Subject: parent, Values: current.Table.Facets}}
 	owners := map[objectidentity.Key]bool{parent.Key(): true}
 	indexes := make([]objectidentity.ID, len(current.Indexes))
@@ -25,6 +28,15 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 		indexes[i] = builder.IndexParts(index.Schema, index.TableName, index.Name)
 		records = append(records, schemaext.FacetRecord{Subject: indexes[i], Values: index.Facets})
 		owners[indexes[i].Key()] = true
+	}
+	// So does the table's primary key, whose PRIMARY KEY constraint holds
+	// its settings whatever the server named it.
+	key, primary := objectidentity.PrimaryKeyOf(parent), slices.IndexFunc(current.Constraints, func(constraint catalog.Constraint) bool {
+		return strings.EqualFold(constraint.Type, "PRIMARY KEY")
+	})
+	if primary >= 0 {
+		records = append(records, schemaext.FacetRecord{Subject: key, Values: current.Constraints[primary].Facets})
+		owners[key.Key()] = true
 	}
 	var objects []schemaext.ObjectProjection
 	var facets []schemaext.FacetProjection
@@ -67,6 +79,10 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 	current.Indexes = slices.Clone(current.Indexes)
 	for i, subject := range indexes {
 		current.Indexes[i].Facets = projected[subject.Key()]
+	}
+	if primary >= 0 {
+		current.Constraints = slices.Clone(current.Constraints)
+		current.Constraints[primary].Facets = projected[key.Key()]
 	}
 	return current, nil
 }

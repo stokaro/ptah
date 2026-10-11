@@ -92,6 +92,25 @@ func TestIdentity_DefectFixtures(t *testing.T) {
 			left:  builder.Function("public.f", "int"),
 			right: builder.Function("public.f", "text"),
 		},
+		{
+			// A primary key is its table's, so two tables have two keys.
+			name:  "the primary keys of two tables",
+			left:  builder.PrimaryKeyParts("public", "orders"),
+			right: builder.PrimaryKeyParts("public", "invoices"),
+		},
+		{
+			// The kind keeps a primary key apart from a constraint whose name
+			// spells the role, which a quoted name can.
+			name:  "a primary key is not a constraint named PRIMARY KEY",
+			left:  builder.PrimaryKeyParts("public", "orders"),
+			right: builder.ConstraintParts("public", "orders", `"PRIMARY KEY"`),
+		},
+		{
+			// Nor is it its table, whose identity it is built from.
+			name:  "a primary key is not its table",
+			left:  builder.PrimaryKeyParts("public", "orders"),
+			right: builder.TableParts("public", "orders"),
+		},
 	}
 
 	for _, test := range tests {
@@ -149,6 +168,14 @@ func TestIdentity_EqualityHoldsWhereItShould(t *testing.T) {
 			name:  "a wrapped list and the bare one ending in a type modifier",
 			left:  builder.Function("public.f", "(varchar(20))"),
 			right: builder.Function("public.f", "varchar(20)"),
+		},
+		{
+			// A primary key carries no name of its own, so the key a
+			// declaration describes and the one a catalog reports under any
+			// name are one key: the table decides.
+			name:  "the primary key of one table, spelled two ways",
+			left:  builder.PrimaryKeyParts("", "Orders"),
+			right: objectidentity.PrimaryKeyOf(builder.Table("public.orders")),
 		},
 	}
 

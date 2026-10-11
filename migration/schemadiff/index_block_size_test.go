@@ -7,6 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqldiff"
@@ -74,34 +77,100 @@ func featureChangeKinds(diff *difftypes.SchemaDiff) []schemaext.Kind {
 	return kinds
 }
 
+// TestCompare_PrimaryKeyOptions compares a primary key's comment and its
+// block-size hint. The comment is the common key's, and a different one
+// replaces the key. The hint is the MySQL owner's, compared as an index's is
+// under the table's primary key, whatever the server named the key: a
+// different hint is the owner's change, attached to the table, and never a
+// common replacement. Where the server discards the hint, nothing is
+// compared.
 func TestCompare_PrimaryKeyOptions(t *testing.T) {
 	for _, test := range []struct {
-		name, dialect, format, comment string
-		size                           uint64
-		changes                        bool
+		name, dialect, comment string
+		retained               bool
+		size                   uint64
+		replaced               bool
+		want                   []schemaext.Kind
 	}{
-		{"MariaDB size", "mariadb", "Dynamic", "old", 8, true},
-		{"MariaDB comment", "mariadb", "Dynamic", "new", 4, true},
-		{"MariaDB synced", "mariadb", "Dynamic", "old", 4, false},
-		{"MySQL compressed size", "mysql", "Compressed", "old", 8, true},
-		{"MySQL drops size", "mysql", "Dynamic", "old", 8, false},
-		{"MySQL comment", "mysql", "Dynamic", "new", 8, true},
+		{"MariaDB size", "mariadb", "old", true, 8, false, []schemaext.Kind{mysqldiff.IndexBlockSizeKind}},
+		{"MariaDB comment", "mariadb", "new", true, 4, true, nil},
+		{"MariaDB synced", "mariadb", "old", true, 4, false, nil},
+		{"MySQL compressed size", "mysql", "old", true, 8, false, []schemaext.Kind{mysqldiff.IndexBlockSizeKind}},
+		{"MySQL compressed size removed", "mysql", "old", true, 0, false, []schemaext.Kind{mysqldiff.IndexBlockSizeKind}},
+		{"MySQL drops size", "mysql", "old", false, 8, false, nil},
+		{"MySQL comment", "mysql", "new", false, 8, true, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			desired := methodDesired("")
 			live := methodCurrent(nil)
-			desired.Tables[0].PrimaryKeyBlockSize = test.size
+			desired.Tables[0].PrimaryKeyFacets = must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, test.size))
 			desired.Tables[0].PrimaryKeyComment = test.comment
-			live.Tables[0].RowFormat = test.format
-			live.Constraints[0].KeyBlockSize = 4
+			desired.FeatureCoverage = coverageOf(true)
+			live.Constraints[0].Facets = must.Must(mysqlschema.WithObservedIndexBlockSize(schemaext.Facets{},
+				mysqlschema.ObservedIndexBlockSize{KeyBlockSize: 4, Retained: test.retained}))
 			live.Constraints[0].Comment = "old"
 			diff := compareForDialect(test.dialect, desired, live)
-			c.Assert(diff.HasChanges(), qt.Equals, test.changes)
-			c.Assert(len(diff.ConstraintsAdded) > 0, qt.Equals, test.changes)
-			c.Assert(len(diff.ConstraintsRemoved) > 0, qt.Equals, test.changes)
+			c.Assert(diff.HasChanges(), qt.Equals, test.replaced || test.want != nil)
+			c.Assert(len(diff.ConstraintsAdded) > 0, qt.Equals, test.replaced)
+			c.Assert(len(diff.ConstraintsRemoved) > 0, qt.Equals, test.replaced)
+			c.Assert(featureChangeKinds(diff), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestCompare_PrimaryKeyBlockSizeNamesNoKey pins that the hint of a key pairs
+// by its table, not by a name: the key a declaration names pk_t is the one
+// MySQL names PRIMARY, and the key a PRIMARY KEY constraint declares is the
+// table's key as much as one declared on the table.
+func TestCompare_PrimaryKeyBlockSizeNamesNoKey(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		desired *schemamodel.Database
+	}{
+		{"a key named on the table", namedKeyDesired(false)},
+		{"a PRIMARY KEY constraint", namedKeyDesired(true)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			live := methodCurrent(nil)
+			live.Constraints[0].Facets = must.Must(mysqlschema.WithObservedIndexBlockSize(schemaext.Facets{},
+				mysqlschema.ObservedIndexBlockSize{KeyBlockSize: 4, Retained: true}))
+			diff := compareForDialect("mariadb", test.desired, live)
+			c.Assert(featureChangeKinds(diff), qt.DeepEquals, []schemaext.Kind{mysqldiff.IndexBlockSizeKind})
+			c.Assert(diff.TablesModified[0].FeatureChanges[0].Subject.Kind, qt.Equals, objectidentity.KindPrimaryKey)
+		})
+	}
+}
+
+// namedKeyDesired declares table t's primary key pk_t with a hint of 8, as a
+// PRIMARY KEY constraint or on the table.
+func namedKeyDesired(constraint bool) *schemamodel.Database {
+	desired := methodDesired("")
+	desired.FeatureCoverage = coverageOf(true)
+	hint := must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, 8))
+	desired.Tables[0].PrimaryKeyName = "pk_t"
+	desired.Tables[0].PrimaryKeyFacets = map[bool]schemaext.Facets{false: hint}[constraint]
+	desired.Constraints = map[bool][]schemamodel.Constraint{true: {{StructName: "T", Name: "pk_t", Type: "PRIMARY KEY",
+		Columns: []string{"id"}, Facets: hint}}}[constraint]
+	desired.Tables[0].PrimaryKey = map[bool][]string{false: {"id"}}[constraint]
+	return desired
+}
+
+// TestCompare_PrimaryKeyBlockSizeInTwoPlaces_FailurePath refuses a hint
+// declared on the table beside a PRIMARY KEY constraint, which is where the
+// key's settings are read from: the table's own would disappear.
+func TestCompare_PrimaryKeyBlockSizeInTwoPlaces_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	desired := methodDesired("")
+	desired.Tables[0].PrimaryKey = nil
+	desired.Tables[0].PrimaryKeyFacets = must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, 8))
+	desired.Constraints = []schemamodel.Constraint{{StructName: "T", Name: "pk_t", Type: "PRIMARY KEY", Columns: []string{"id"}}}
+	opts := config.DefaultCompareOptions()
+	opts.Dialect = "mariadb"
+	diff, err := schemadiff.CompareWithOptions(c.Context(), desired, methodCurrent(nil), opts, builtintest.Runtime())
+	c.Assert(err, qt.ErrorMatches, `.*no comparison identity capture for attached facets \[ptah.run/mysql/index-block-size\]`)
+	c.Assert(diff, qt.IsNil)
 }
 
 // TestCompareSchemas_IndexBlockSize compares two declarations, the second
@@ -142,4 +211,21 @@ func readDeclaration(c *qt.C, sql, dialect string) schemamodel.Database {
 	db, _, err := sqlschema.Read([]byte(sql), dialect)
 	c.Assert(err, qt.IsNil)
 	return db
+}
+
+// TestCompare_KeysAConstraintOfAnUndeclaredTableByItsTable pins that a
+// PRIMARY KEY constraint naming a table the declaration does not hold is
+// keyed by the table it names, as an index naming one is, rather than refused
+// as settings with no owner.
+func TestCompare_KeysAConstraintOfAnUndeclaredTableByItsTable(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{Constraints: []schemamodel.Constraint{{StructName: "T", Table: "t", Name: "pk_t", Type: "PRIMARY KEY",
+		Columns: []string{"id"}, Facets: must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, 8))}}}
+	opts := config.DefaultCompareOptions()
+	opts.Dialect = "mysql"
+
+	diff, err := schemadiff.CompareWithOptions(c.Context(), desired, &catalog.Database{}, opts, builtintest.Runtime())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(featureChangeKinds(diff), qt.HasLen, 0)
 }

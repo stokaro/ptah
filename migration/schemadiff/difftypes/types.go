@@ -534,7 +534,7 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			NullsDistinct:   clonedBool(declared.NullsDistinct),
 			CheckExpression: declared.CheckExpression,
 			UsingMethod:     declared.UsingMethod,
-			KeyBlockSize:    declared.KeyBlockSize,
+			Facets:          declared.Facets,
 			ExcludeElements: declared.ExcludeElements,
 			WhereCondition:  declared.WhereCondition,
 			ForeignTable:    declared.ForeignTable,
@@ -720,8 +720,11 @@ type ForeignKeyRemovalInfo struct {
 // name (issue #197). Carrying the concrete table (and the full FK definition)
 // here lets the planner emit one correct ALTER TABLE per real host table.
 type ConstraintAdditionInfo struct {
-	// KeyBlockSize carries a MySQL-family primary key hint into its creation.
-	KeyBlockSize uint64 `json:"key_block_size,omitempty"`
+	// Facets carries the settings feature owners keep on the constraint
+	// into its creation, such as the MySQL family's block-size hint of a
+	// primary key. A planner writes the ones the target's owner renders and
+	// refuses the others.
+	Facets schemaext.Facets `json:"facets,omitzero"`
 	// Name is the name of the constraint to be added.
 	Name string `json:"name"`
 

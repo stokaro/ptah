@@ -223,7 +223,11 @@ identity. Custom feature kinds use the same contract as common objects. A
 component the target's default filled in is marked `Defaulted`, and its
 `Source` holds that default; `Part.Authored` returns what the source wrote,
 the empty string for a defaulted component, for a consumer that resolves an
-unqualified name under a default of its own.
+unqualified name under a default of its own. A table's primary key has an
+identity of its own, `KindPrimaryKey`, built by `PrimaryKeyOf` or
+`Builder.PrimaryKeyParts` from its table's: a table has at most one key, and
+the name the key carries differs by engine and by source, so the key a
+declaration describes pairs with the one a catalog reports under any name.
 
 `core/manageddata.LoadRowValues` reads a managed-data YAML file while retaining
 scalar spelling and tags in `schemamodel.ManagedRow`. `LoadRows` reads resolved Go
@@ -239,7 +243,9 @@ do not import a parser to carry a declaration.
 - the attributes it adds to the frontend's own directives, the directive's
   own attributes it reads beside them, such as an index's type, and the
   decoders that turn them into facets and into options the common model
-  carries, such as an index's WITH options;
+  carries, such as an index's WITH options; attributes marked `PrimaryKey`
+  are settings of the primary key the table directive declares, which
+  `Set.DecodePrimaryKeyAttributes` decodes apart from the table's own;
 - the models it produces;
 - the frontend directives whose target-scoped declarations it reads;
 - the `ptah:schema:notdescribed` kinds it reads;
@@ -288,8 +294,14 @@ retain immutable ownership. The zero value means no table was captured. Neither
 an empty child list nor a projected observation proves absence or execution.
 These data contracts import no migration pipeline or concrete provider package.
 `schemacapture.DeclareTable` assembles declarations for comparison and document
-projection. `ConstraintsFor` and `EnumsFor` select independent child definitions.
+projection. `ConstraintsFor` and `EnumsFor` select independent child definitions;
+`Owns` is the rule `ConstraintsFor` selects by.
 `difftypes.TableObservationFor` assembles comparison-time observations.
+
+`schemacapture.PrimaryKeyFacets` and `DatabasePrimaryKeyFacets` address the
+settings of a table's primary key: those of the first PRIMARY KEY constraint
+the table owns, or the table's `PrimaryKeyFacets`, so a comparison and an owner
+planning the key read the same place.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and
@@ -1201,38 +1213,48 @@ services of `mysqlcompare`, `mysqlconvert`, `mysqlplan` and `mysqlreport`
 share one shape. The index comparison registers no change kinds: it reports
 no change, as the column settings comparison does.
 
-`mysqlschema` owns an index's `KEY_BLOCK_SIZE` hint under its own kind,
-`IndexBlockSizeKind`, because it is compared and planned where the options of
-`IndexKind` are not. `DesiredIndexBlockSize` holds a declared hint, zero for
-none; `ObservedIndexBlockSize` holds the hint a read reports and whether the
-server keeps one on the index at all, which MariaDB does on every table and
-MySQL only with `ROW_FORMAT=COMPRESSED`. The reader describes every index's
-hint and gives an index the observation where `ObservationNeeded` says it says
-more than its absence. `mysqlconvert.CreationService` gives a converted
-declaration the same observations through `TableCreation.Observed`, from the
-row format its table declares.
+`mysqlschema` owns the `KEY_BLOCK_SIZE` hint of an index and of a primary key
+under its own kind, `IndexBlockSizeKind`, because it is compared and planned
+where the options of `IndexKind` are not. An index holds it in its facets; a
+primary key in the facets `schemacapture.PrimaryKeyFacets` reads, under the
+key's identity; `HoldsBlockSize` names the two. `DesiredIndexBlockSize` holds
+a declared hint, zero for none; `ObservedIndexBlockSize` holds the hint a read
+reports and whether the server keeps one at all, which MariaDB does on every
+table and MySQL only with `ROW_FORMAT=COMPRESSED`. The reader describes the
+hint of every index and primary key and gives each the observation where
+`ObservationNeeded` says it says more than its absence.
+`mysqlconvert.CreationService` gives a converted declaration the same
+observations through `TableCreation.Observed`, from the row format its table
+declares.
 
 `IndexBlockSizeCoverage` builds the claim a source makes;
 `mysqlsource.BlockSizeCoverage` is the one the Go, SQL, YAML and HCL sources
 make, so an index they declare without a hint requests none.
-`mysqlsource.Annotations` reads the Go index directive's `key_block_size`
-attribute, and `mysqlsource.YAML` makes the YAML claim.
+`mysqlsource.Annotations` reads the `key_block_size` attribute of the Go index
+and constraint directives and the `primary_key_block_size` attribute of the
+table directive, a primary key attribute in the sense of
+`annotation.DirectiveAttributes.PrimaryKey`, and `mysqlsource.YAML` makes the
+YAML claim.
 
 `mysqlcompare.IndexBlockSizeService` reports a `mysqldiff.IndexBlockSize`
 change where a retained hint differs from the declared one.
 `mysqlplan.IndexBlockSizeService` plans it as one
-`mysqlast.ReplaceIndex` operation that drops and adds the index with its
-declared definition, asking MySQL for `ALGORITHM=COPY`; where a common step
-already writes the index, it plans nothing, since that rebuild writes the
-declared hint. `mysqlplan.ReversalService` reverses the change.
+`mysqlast.ReplaceIndex` operation that drops and adds the index, or the
+primary key (`mysqlast.Index.Primary`), with its declared definition, asking
+MySQL for `ALGORITHM=COPY`; where a common step already writes the index or
+the key, it plans nothing, since that rebuild writes the declared hint.
+`mysqlast.PrimaryKeyFromDeclaration` reads a declared key as the common
+planner lowers it. `mysqlplan.ReversalService` reverses the change.
 `mysqlrender.IndexDefinition` is the one writer of a MySQL-family index
-definition, used by the common renderer and by the operation's handler in
-`mysqlrender.Handlers`.
+definition, the primary key's included, used by the common renderer and by
+the operation's handler in `mysqlrender.Handlers`.
 
 The former `ast.IndexNode.KeyBlockSize`, `schemamodel.Index.KeyBlockSize`,
 `catalog.Index.KeyBlockSize` and `difftypes.IndexChange.RequiresTableCopy`
-fields are removed without aliases. A primary key's hint stays on the common
-constraint model.
+fields are removed without aliases, and so are the primary key's
+`ast.ConstraintNode.KeyBlockSize`, `schemamodel.Constraint.KeyBlockSize`,
+`schemamodel.Table.PrimaryKeyBlockSize`, `catalog.Constraint.KeyBlockSize` and
+`difftypes.ConstraintAdditionInfo.KeyBlockSize`.
 
 The former `ast.IndexNode.Parser`, `ast.IndexNode.ForeignKeyIndex` and
 `schemamodel.Index.Parser` fields are removed without aliases. A SQL schema
@@ -1581,8 +1603,9 @@ return no prediction. `IdentityCreations` explicitly selects no additional effec
 
 `TableCreation.Observed` holds what a CREATE of the declaration leaves that its
 declared values do not convert to, because it depends on the table rather than
-on one value: a conversion sees each value alone. Its records name the table or
-a declared index and hold values in the observed representation. Document
+on one value: a conversion sees each value alone. Its records name the table,
+a declared index or the table's primary key, and hold values in the observed
+representation. Document
 projection applies them after conversion, so each replaces the converted value
 of its kind on that owner, or adds one where the declaration holds none, bound
 to the selected target. The runtime refuses the same malformed records it
@@ -1950,6 +1973,10 @@ cannot tell an absolute path of this database from one of another.
 feature runtime. It returns a schema and an error. `FacetSlots` on the desired
 and observed database models enumerates the mutable slots holding immutable
 facet collections, so representation converters account for every common scope.
+A desired table carries the settings of the primary key it declares in
+`schemamodel.Table.PrimaryKeyFacets`, a PRIMARY KEY constraint in its own
+`Facets`; the catalog holds them on the PRIMARY KEY constraint. A key folded
+into its table keeps them, and one written as a constraint does too.
 
 `core/renderer.Extensions` freezes local handlers by kind, payload type, and
 statement role. It refuses unknown kinds, incorrect types, and unsupported

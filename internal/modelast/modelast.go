@@ -767,7 +767,7 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		constraint.Initially = table.PrimaryKeyInitially
 		constraint.UsingMethod = table.PrimaryKeyMethod
 		constraint.Comment = table.PrimaryKeyComment
-		constraint.KeyBlockSize = table.PrimaryKeyBlockSize
+		constraint.Facets = table.PrimaryKeyFacets
 		return constraint
 	}
 	columns := make([]string, 0, len(table.PrimaryKeyParts))
@@ -790,7 +790,7 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		Initially:      table.PrimaryKeyInitially,
 		UsingMethod:    table.PrimaryKeyMethod,
 		Comment:        table.PrimaryKeyComment,
-		KeyBlockSize:   table.PrimaryKeyBlockSize,
+		Facets:         table.PrimaryKeyFacets,
 	}
 }
 
@@ -807,7 +807,6 @@ func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	}
 	node.Facets = constraint.Facets
 	node.Comment = constraint.Comment
-	node.KeyBlockSize = constraint.KeyBlockSize
 	// Only a CHECK or a foreign key can stay unvalidated, and the renderer
 	// writes the clause only where a constraint is added to a table.
 	node.NotValid = constraint.NotValid && (node.Type == ast.CheckConstraint || node.Type == ast.ForeignKeyConstraint)

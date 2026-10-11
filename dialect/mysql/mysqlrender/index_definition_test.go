@@ -11,8 +11,10 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlast"
 	"ptah.run/dialect/mysql/mysqlrender"
+	"ptah.run/dialect/mysql/mysqlschema"
 )
 
 // IndexDefinition writes every element a MySQL-family index can carry, in
@@ -33,6 +35,13 @@ func TestIndexDefinition(t *testing.T) {
 			"UNIQUE INDEX `k``s` (`name` (7) DESC, (lower(email)), `app`.`id`) USING HASH KEY_BLOCK_SIZE=8 COMMENT 'it''s' IGNORED"},
 		{"a FULLTEXT parser", "mysql", "", mysqlast.Index{Name: "ft", Type: "FULLTEXT", Parser: "ngram", Parts: []mysqlast.IndexPart{{Column: "body"}}},
 			"FULLTEXT INDEX `ft` (`body`) /*!50100 WITH PARSER `ngram` */"},
+		// A primary key is written as its constraint always was: no name,
+		// each column quoted whole, the method after the parts.
+		{"a primary key", "mysql", "", mysqlast.Index{Name: "PRIMARY", Primary: true, Type: "HASH", Comment: "id", KeyBlockSize: 4,
+			Parts: []mysqlast.IndexPart{{Column: "a.b"}, {Column: "name", Prefix: "7", Descending: true}}},
+			"PRIMARY KEY (`a.b`, `name` (7) DESC) USING HASH KEY_BLOCK_SIZE=4 COMMENT 'id'"},
+		{"a BTREE primary key", "mariadb", "", mysqlast.Index{Name: "PRIMARY", Primary: true, Type: "BTREE", Parts: []mysqlast.IndexPart{{Column: "id"}}},
+			"PRIMARY KEY (`id`)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -45,8 +54,13 @@ func replaceIndex(tableCopy bool) *mysqlast.ReplaceIndex {
 	return &mysqlast.ReplaceIndex{Index: mysqlast.Index{Name: "k", Parts: []mysqlast.IndexPart{{Column: "a"}}, KeyBlockSize: 8}, TableCopy: tableCopy}
 }
 
-// The replacement drops and adds the index in one statement of its ALTER
-// TABLE parent, with the table copy it asks for, or the online clause the
+func replacePrimaryKey(tableCopy bool) *mysqlast.ReplaceIndex {
+	return &mysqlast.ReplaceIndex{Index: mysqlast.Index{Name: mysqlast.PrimaryKeyName, Primary: true, Parts: []mysqlast.IndexPart{{Column: "id"}},
+		KeyBlockSize: 8}, TableCopy: tableCopy}
+}
+
+// The replacement drops and adds the index, or the primary key, in one
+// statement of its ALTER TABLE parent, with the table copy it asks for, or the online clause the
 // parent asks for when it asks for none. A required copy survives an online
 // request, so the server refuses the blocking rebuild rather than keeping
 // the old hint.
@@ -66,6 +80,10 @@ func TestHandlers_RenderTheReplacement(t *testing.T) {
 			"ALTER TABLE `t` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8;"},
 		{"MariaDB, online", "mariadb", ast.AlterTableNode{Name: "t", Algorithm: "INPLACE", Lock: "NONE"}, replaceIndex(false),
 			"ALTER TABLE `t` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=INPLACE, LOCK=NONE;"},
+		{"MySQL, a primary key", "mysql", ast.AlterTableNode{Name: "t"}, replacePrimaryKey(true),
+			"ALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;"},
+		{"MariaDB, a primary key", "mariadb", ast.AlterTableNode{Name: "t"}, replacePrimaryKey(false),
+			"ALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8;"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -111,4 +129,18 @@ func TestHandlers_RenderTheReplacement_FailurePath(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// A constraint carries a primary key's block-size hint for the MySQL family,
+// and no other setting.
+func TestValidateConstraintFacets(t *testing.T) {
+	c := qt.New(t)
+	hint := must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8}))
+	observed := must.Must(schemaext.NewFacets(&mysqlschema.ObservedIndexBlockSize{KeyBlockSize: 8, Retained: true}))
+	table := must.Must(schemaext.NewFacets(&mysqlschema.DesiredTable{Engine: "InnoDB"}))
+
+	c.Assert(mysqlrender.ValidateConstraintFacets(schemaext.Facets{}), qt.IsNil)
+	c.Assert(mysqlrender.ValidateConstraintFacets(hint), qt.IsNil)
+	c.Assert(mysqlrender.ValidateConstraintFacets(observed), qt.IsNil)
+	c.Assert(mysqlrender.ValidateConstraintFacets(table), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 }

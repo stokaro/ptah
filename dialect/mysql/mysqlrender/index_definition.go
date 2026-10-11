@@ -75,9 +75,11 @@ func unquote(identifier string) string {
 // IndexDefinition is index from its kind to its options, as CREATE INDEX and
 // ALTER TABLE ... ADD INDEX both write it on dialect, one token group per
 // element. placement is what stands between the name and the key parts: `ON
-// table` for CREATE INDEX, and empty for ADD INDEX. It is the one writer of a
-// MySQL-family index definition: the common renderer and the owner's index
-// replacement both use it.
+// table` for CREATE INDEX, and empty for ADD INDEX. A primary key is written
+// `PRIMARY KEY` with its parts, as CREATE TABLE and ADD PRIMARY KEY write it,
+// and takes no placement. It is the one writer of a MySQL-family index
+// definition, the primary key's included: the common renderer and the owner's
+// index replacement both use it.
 func IndexDefinition(dialect string, index mysqlast.Index, placement string) []string {
 	var parts []string
 	if index.Unique {
@@ -86,13 +88,20 @@ func IndexDefinition(dialect string, index mysqlast.Index, placement string) []s
 	if prefix := mysqlindex.KindOf(index.Type).Prefix(); prefix != "" {
 		parts = append(parts, prefix)
 	}
-	parts = append(parts, "INDEX", QuoteIdentifier(index.Name))
+	// A primary key's column parts are quoted as the plain names they are,
+	// as its constraint always wrote them.
+	quoteColumn := QuoteQualifiedIdentifier
+	if index.Primary {
+		parts, quoteColumn = append(parts, "PRIMARY", "KEY"), QuoteIdentifier
+	} else {
+		parts = append(parts, "INDEX", QuoteIdentifier(index.Name))
+	}
 	if placement != "" {
 		parts = append(parts, placement)
 	}
 	keys := make([]string, 0, len(index.Parts))
 	for _, part := range index.Parts {
-		keys = append(keys, keyPart(part))
+		keys = append(keys, keyPart(part, quoteColumn))
 	}
 	columns := "(" + strings.Join(keys, ", ") + ")"
 	if index.Parser != "" {
@@ -122,7 +131,7 @@ func IndexDefinition(dialect string, index mysqlast.Index, placement string) []s
 	return parts
 }
 
-func keyPart(part mysqlast.IndexPart) string {
+func keyPart(part mysqlast.IndexPart, quoteColumn func(string) string) string {
 	if part.Expression != "" {
 		spec := "(" + part.Expression + ")"
 		if part.Descending {
@@ -130,7 +139,7 @@ func keyPart(part mysqlast.IndexPart) string {
 		}
 		return spec
 	}
-	spec := QuoteQualifiedIdentifier(part.Column)
+	spec := quoteColumn(part.Column)
 	if part.Prefix != "" {
 		spec += " (" + part.Prefix + ")"
 	}
@@ -147,8 +156,9 @@ var Registry = sync.OnceValues(func() (renderer.Extensions, error) {
 })
 
 // Handlers returns the handler of [mysqlast.ReplaceIndex] in an ALTER TABLE:
-// `ALTER TABLE t DROP INDEX k, ADD <definition>`, with ALGORITHM=COPY when the
-// payload asks for it and the online clause the parent asks for otherwise.
+// `ALTER TABLE t DROP INDEX k, ADD <definition>`, or `DROP PRIMARY KEY, ADD
+// PRIMARY KEY ...` for a primary key, with ALGORITHM=COPY when the payload asks
+// for it and the online clause the parent asks for otherwise.
 func Handlers() []renderer.ExtensionHandler {
 	return []renderer.ExtensionHandler{
 		renderer.TypedHandler(&mysqlast.ReplaceIndex{}, ast.AlterExtension, validateReplaceIndex, renderReplaceIndex),
@@ -179,8 +189,12 @@ func renderReplaceIndex(ctx renderer.ExtensionContext, op *mysqlast.ReplaceIndex
 	if op.TableCopy {
 		algorithm = "COPY"
 	}
-	statement := fmt.Sprintf("ALTER TABLE %s DROP INDEX %s, ADD %s", QuoteQualifiedIdentifier(ctx.Parent.Name),
-		QuoteIdentifier(op.Index.Name), strings.Join(IndexDefinition(ctx.Target, op.Index, ""), " "))
+	drop := "INDEX " + QuoteIdentifier(op.Index.Name)
+	if op.Index.Primary {
+		drop = "PRIMARY KEY"
+	}
+	statement := fmt.Sprintf("ALTER TABLE %s DROP %s, ADD %s", QuoteQualifiedIdentifier(ctx.Parent.Name),
+		drop, strings.Join(IndexDefinition(ctx.Target, op.Index, ""), " "))
 	if algorithm != "" && ctx.Capabilities.Has(capability.AlterTableAlgorithmLock) {
 		statement += ", ALGORITHM=" + strings.ToUpper(algorithm)
 	}

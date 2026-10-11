@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/lexer"
 )
 
@@ -60,7 +61,8 @@ func (p *Parser) cockroachVisibilityAt() (read bool, err error) {
 
 // readTableElementOptions reads the options after the parts of a CREATE TABLE
 // element: the MySQL family's (see [Parser.readKeyOptions]), whose access
-// method a primary key keeps on its constraint, and the visibility clause that
+// method, comment and block-size hint a primary key keeps on its constraint,
+// and the visibility clause that
 // may end a CockroachDB index. Any other dialect, and
 // any other element, reads no visibility here; the table element reports what
 // it cannot read.
@@ -77,7 +79,13 @@ func (p *Parser) readTableElementOptions(constraint *ast.ConstraintNode, kind, p
 			constraint.UsingMethod = p.keyOptions.primaryKeyMethod
 		}
 		constraint.Comment = p.keyOptions.comment
-		constraint.KeyBlockSize = p.keyOptions.keyBlockSize
+		// The hint is the MySQL owner's setting of the key, as it is of an
+		// index (see [Parser.withIndexBlockSize]).
+		facets, err := mysqlschema.WithIndexBlockSize(constraint.Facets, p.keyOptions.keyBlockSize)
+		if err != nil {
+			return fmt.Errorf("primary key: %w", err)
+		}
+		constraint.Facets = facets
 	}
 	if p.dialect != platform.CockroachDB || kind != indexElement {
 		return nil

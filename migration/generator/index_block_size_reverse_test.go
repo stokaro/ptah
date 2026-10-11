@@ -2,6 +2,7 @@ package generator_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -53,6 +54,24 @@ func TestPlanBidirectionalSchemaDiff_PrimaryKeyBlockSize(t *testing.T) {
 	sql, err := builtin.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'old'")
+}
+
+// A primary key whose hint alone changes is the MySQL owner's both ways: the
+// forward plan replaces the key with the table copy MySQL needs to store the
+// new hint, and the rollback replaces it again with the old one the same way.
+func TestPlanBidirectionalSchemaDiff_PrimaryKeyBlockSizeAlone(t *testing.T) {
+	c := qt.New(t)
+	plan, _ := blockSizePlan(c,
+		"CREATE TABLE t (id int NOT NULL, a int, PRIMARY KEY(id) KEY_BLOCK_SIZE=8) ROW_FORMAT=COMPRESSED",
+		"CREATE TABLE t (id int NOT NULL, a int, PRIMARY KEY(id) KEY_BLOCK_SIZE=4) ROW_FORMAT=COMPRESSED")
+	forward, err := builtin.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Forward.Nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(forward, qt.Contains, "ALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=4, ALGORITHM=COPY;")
+	c.Assert(strings.Count(forward, "DROP PRIMARY KEY"), qt.Equals, 1)
+	reverse, err := builtin.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Reverse.Nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(reverse, qt.Contains, "ALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;")
+	c.Assert(strings.Count(reverse, "DROP PRIMARY KEY"), qt.Equals, 1)
 }
 
 // A table whose plan changes a key constraint beside an index's block size

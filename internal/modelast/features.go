@@ -2,11 +2,13 @@ package modelast
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
@@ -15,8 +17,10 @@ import (
 
 // validateFeatureLowering accounts for feature state before the first node is
 // visited. Table facets and named children travel on their CREATE TABLE, index
-// facets on their index node, and materialized view facets on their CREATE
-// MATERIALIZED VIEW, where the selected renderer consumes or refuses them. Other placements need a selected owner lowering service;
+// facets on their index node, the facets of a constraint and of a primary key
+// declared on its table on their constraint node, and materialized view facets
+// on their CREATE MATERIALIZED VIEW, where the selected renderer consumes or
+// refuses them. Other placements need a selected owner lowering service;
 // dropping them would leave a successful AST that no downstream renderer can
 // refuse.
 //
@@ -71,6 +75,7 @@ func validateFacetLowering(database *schemamodel.Database, dialect string) error
 			owners[&field.Facets] = builder.ColumnParts(table.Schema, table.Name, field.Name)
 		}
 	}
+	addKeyOwners(owners, database, builder)
 	for _, facets := range database.FacetSlots() {
 		if facets.IsZero() {
 			continue
@@ -86,6 +91,29 @@ func validateFacetLowering(database *schemamodel.Database, dialect string) error
 		}
 	}
 	return nil
+}
+
+// addKeyOwners adds the facet owners that travel on constraint nodes. A
+// primary key's settings travel on the table constraint the key is lowered
+// to, which a key needs a table-level spelling for: the column spelling has
+// nowhere to carry them. A constraint's travel on its node.
+func addKeyOwners(owners map[*schemaext.Facets]objectidentity.ID, database *schemamodel.Database, builder objectidentity.Builder) {
+	for i := range database.Tables {
+		table := &database.Tables[i]
+		if len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0 {
+			owners[&table.PrimaryKeyFacets] = builder.PrimaryKeyParts(table.Schema, table.Name)
+		}
+		for j := range database.Constraints {
+			constraint := &database.Constraints[j]
+			if !schemacapture.Owns(*table, *constraint) {
+				continue
+			}
+			owners[&constraint.Facets] = builder.ConstraintParts(table.Schema, table.Name, constraint.Name)
+			if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+				owners[&constraint.Facets] = builder.PrimaryKeyParts(table.Schema, table.Name)
+			}
+		}
+	}
 }
 
 func validateLoweringCoverage(coverage schemaext.Coverage) ([]ast.Node, error) {

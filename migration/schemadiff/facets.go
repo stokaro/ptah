@@ -60,6 +60,7 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 	effective.Tables = slices.Clone(desired.Tables)
 	effective.Fields = slices.Clone(desired.Fields)
 	effective.Indexes = slices.Clone(desired.Indexes)
+	effective.Constraints = slices.Clone(desired.Constraints)
 	effective.MaterializedViews = slices.Clone(desired.MaterializedViews)
 	declared, err := declaredFacetSlots(&effective, target, semantics)
 	if err != nil {
@@ -87,11 +88,12 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 }
 
 // followOwners drops the knowledge a side holds about the attached settings
-// of an owner that side no longer has: a table, column, index or materialized
-// view a dialect scope, an exclusion or a schema selection took out of the
-// comparison. Knowledge of an object that is not there describes nothing, and
-// kept, it refused the comparison the selection was meant to narrow
-// (stokaro/ptah#4278). Knowledge of named feature objects is the objects' own.
+// of an owner that side no longer has: a table, column, index, primary key or
+// materialized view a dialect scope, an exclusion or a schema selection took
+// out of the comparison. Knowledge of an object that is not there describes
+// nothing, and kept, it refused the comparison the selection was meant to
+// narrow (stokaro/ptah#4278). Knowledge of named feature objects is the
+// objects' own.
 func followOwners(coverage schemaext.Coverage, slots []facetOwnerSlot) schemaext.Coverage {
 	owners := make(map[objectidentity.Key]bool, len(slots))
 	for _, slot := range slots {
@@ -99,7 +101,7 @@ func followOwners(coverage schemaext.Coverage, slots []facetOwnerSlot) schemaext
 	}
 	return coverage.SelectSubjects(func(subject objectidentity.ID) bool {
 		switch subject.Kind {
-		case objectidentity.KindTable, objectidentity.KindColumn, objectidentity.KindIndex, objectidentity.KindMatView:
+		case objectidentity.KindTable, objectidentity.KindColumn, objectidentity.KindIndex, objectidentity.KindPrimaryKey, objectidentity.KindMatView:
 			return owners[subject.Key()]
 		default:
 			return true

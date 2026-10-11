@@ -298,7 +298,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			tableSchema.PrimaryKeyInitially = constraint.Initially
 			tableSchema.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
 			tableSchema.PrimaryKeyComment = constraint.Comment
-			tableSchema.PrimaryKeyBlockSize = constraint.KeyBlockSize
+			tableSchema.PrimaryKeyFacets = constraint.Facets
 			break // Only one primary key constraint per table
 		}
 	}
@@ -1382,7 +1382,7 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	target.table.PrimaryKeyInitially = constraint.Initially
 	target.table.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
 	target.table.PrimaryKeyComment = constraint.Comment
-	target.table.PrimaryKeyBlockSize = constraint.KeyBlockSize
+	target.table.PrimaryKeyFacets = constraint.Facets
 	for _, database := range target.databases {
 		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
 	}

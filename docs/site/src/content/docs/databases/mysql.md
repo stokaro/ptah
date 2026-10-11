@@ -142,13 +142,19 @@ SQL:
   in-place rebuild that changes the definition stores it. MariaDB 11.8.9
   stores a new hint in place in every case. A primary key behaves the same
   way: replacing it for its hint alone asks MySQL for `ALGORITHM=COPY`, and a
-  replacement that also changes the columns or the comment does not. An index
-  a YAML or HCL source declares has no hint, so applying one removes a stored
-  hint. Other dialects refuse the hint.
+  replacement that also changes the columns or the comment does not. The key
+  is compared by its table, so a key declared as `CONSTRAINT pk_t PRIMARY
+  KEY` matches the one MySQL names `PRIMARY`. An index or a key a YAML or HCL
+  source declares has no hint, so applying one removes a stored hint. Other
+  dialects refuse the hint.
 - Go index annotations use `key_block_size="8"`. A table annotation can use
   `primary_key="id" primary_key_block_size="8" primary_key_comment="lookup"`;
-  a `PRIMARY KEY` constraint annotation uses `key_block_size` and `comment`.
-  Atlas HCL output reports the block-size hint it cannot represent.
+  the hint needs the key declared with `primary_key`, since a field's
+  `primary` writes a column key with no place for it, and is refused without
+  one. A `PRIMARY KEY` constraint annotation uses `key_block_size` and
+  `comment`. These attributes belong to the MySQL owner: a parse that does
+  not select it refuses them as unknown. Atlas HCL output reports the
+  block-size hint it cannot represent.
 - An index the optimizer does not use is `INVISIBLE` on MySQL and `IGNORED` on
   MariaDB, and each engine answers `ERROR 1064` to the other's word. Ptah reads
   it from `STATISTICS.IS_VISIBLE` or `STATISTICS.IGNORED`, writes it in the

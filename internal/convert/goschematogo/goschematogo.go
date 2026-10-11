@@ -719,7 +719,7 @@ func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TableParti
 		{name: "engine", value: table.Engine, set: table.Engine != ""},
 		{name: "collate", value: table.Collate, set: table.Collate != ""},
 		{name: "primary_key_comment", value: table.PrimaryKeyComment, set: table.PrimaryKeyComment != ""},
-		{name: "primary_key_block_size", value: strconv.FormatUint(table.PrimaryKeyBlockSize, 10), set: table.PrimaryKeyBlockSize != 0},
+		blockSizeAttr("primary_key_block_size", table.PrimaryKeyFacets),
 		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
 		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
@@ -892,7 +892,7 @@ func indexDefinitionAttrs(index schemamodel.Index) []attr {
 		{name: "table", value: index.TableName, set: index.TableName != ""},
 		{name: "comment", value: index.Comment, set: index.Comment != ""},
 		{name: "invisible", value: strconv.FormatBool(index.Invisible), set: index.Invisible},
-		blockSizeAttr(index.Facets),
+		blockSizeAttr("key_block_size", index.Facets),
 	}
 }
 
@@ -903,7 +903,7 @@ func constraintAnnotation(constraint schemamodel.Constraint) string {
 		attr{name: "table", value: constraint.Table, set: constraint.Table != ""},
 		attr{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
 		attr{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
-		attr{name: "key_block_size", value: strconv.FormatUint(constraint.KeyBlockSize, 10), set: constraint.KeyBlockSize != 0},
+		blockSizeAttr("key_block_size", constraint.Facets),
 		attr{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
 		attr{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
 		attr{name: "condition", value: constraint.WhereCondition, set: constraint.WhereCondition != ""},

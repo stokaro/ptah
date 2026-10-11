@@ -117,7 +117,10 @@ func projectedConstraintDefinition(change difftypes.ConstraintAdditionInfo, tabl
 	constraint := catalog.Constraint{
 		Name: change.Name, TableName: table.Name, Schema: table.Schema, Type: change.Type,
 		ColumnNames: slices.Clone(change.Columns), IncludeColumns: slices.Clone(change.IncludeColumns),
-		NullsDistinct: cloneBoolPtr(change.NullsDistinct), KeyBlockSize: change.KeyBlockSize,
+		NullsDistinct: cloneBoolPtr(change.NullsDistinct),
+		// The settings owners keep on the constraint go with it, so the
+		// target's projector sees them and refuses what it cannot project.
+		Facets:   change.Facets,
 		NotValid: change.NotValid, NotEnforced: change.NotEnforced, Comment: change.Comment,
 		Deferrable: change.Deferrable, Initially: change.Initially, Match: change.Match,
 		OnDeleteColumns: slices.Clone(change.OnDeleteColumns),

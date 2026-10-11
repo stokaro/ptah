@@ -8,9 +8,9 @@ import (
 	"ptah.run/dialect/mysql/mysqlschema"
 )
 
-// IndexBlockSizeMetric counts the indexes with a KEY_BLOCK_SIZE hint. A read
-// observes every index, so the observed count is of hints held, not of
-// observations.
+// IndexBlockSizeMetric counts the indexes with a KEY_BLOCK_SIZE hint, a
+// table's primary index included. A read observes every index, so the
+// observed count is of hints held, not of observations.
 const IndexBlockSizeMetric = "mysql_index_block_sizes"
 
 // IndexBlockSizeService reports [mysqlschema.IndexBlockSizeKind] values. Its

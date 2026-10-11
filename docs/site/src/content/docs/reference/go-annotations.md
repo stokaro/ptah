@@ -199,7 +199,7 @@ Maps a Go struct to a database table.
 | `engine` | No | MySQL/MariaDB table engine shortcut; see the note below the table. |
 | `name` | No | Table name. |
 | `primary_key` | No | Comma-separated primary key columns. |
-| `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. |
+| `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. Needs `primary_key`; a field's `primary` key has no place for it. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |
 | `schema` | No | Database schema name. |
 

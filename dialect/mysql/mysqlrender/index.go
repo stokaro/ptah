@@ -22,6 +22,20 @@ func ValidateIndexFacets(facets schemaext.Facets) error {
 	return err
 }
 
+// ValidateConstraintFacets checks the settings a table constraint carries for
+// a MySQL-family target: the block-size hint of a primary key, which its
+// definition writes (see [mysqlast.PrimaryKeyFromNode]). Any other kind is
+// refused, and so is an invalid hint.
+func ValidateConstraintFacets(facets schemaext.Facets) error {
+	for _, kind := range facets.Kinds() {
+		if kind != mysqlschema.IndexBlockSizeKind {
+			return fmt.Errorf("%w: feature facet %q is not registered for MySQL-family constraints", ptaherr.ErrUnsupportedFeature, kind)
+		}
+	}
+	_, _, err := mysqlschema.IndexBlockSize(facets)
+	return err
+}
+
 // IndexOptions returns the options an index declares, or nil for an index
 // that declares none. A kind other than the options and the block-size hint
 // is refused.
