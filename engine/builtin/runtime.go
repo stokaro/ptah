@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
+	"ptah.run/dialect/mssql/mssqllint"
 	"ptah.run/dialect/mssql/mssqlroutine"
 	"ptah.run/dialect/mysql/mysqlconvert"
 	"ptah.run/dialect/mysql/mysqlroutine"
@@ -86,14 +87,19 @@ func New() (*engine.Runtime, error) {
 				Preparation: schemapreparation.Identity{},
 				Creations:   schemaprojection.IdentityCreations{},
 				// Every built-in dialect splits its migrations with the
-				// lint scanner in the dialect's mode; YDB's owner replaces it
-				// below.
+				// lint scanner in the dialect's mode; the SQL Server and YDB
+				// owners replace it below.
 				Splitter: lintscan.Splitter{Dialect: name},
 				// A routine body is the engine's own language, so its owner
 				// reads it, and a routine that declares no language is in it.
 				RoutineBodies: routineBodyReader(name),
 				Comparison:    schemacomparison.Rules{Routines: routineDefaults(name)},
 			}},
+		}
+		if name == platform.SQLServer {
+			// The SQL Server owner judges PolyBase's drops, which a safety
+			// assessment reads in place of their words.
+			provider.Targets[0].Splitter = mssqllint.Splitter{}
 		}
 		if name == platform.YDB {
 			// YDB answers nothing it cannot hold with a skip comment, since

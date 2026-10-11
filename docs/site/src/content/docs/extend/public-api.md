@@ -102,6 +102,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/spanner/spannerconvert` | Conversion between row deletion policy declarations and observations. |
 | `dialect/spanner/spannerreport` | Captured row deletion policy counts and export omission labels. |
 | `dialect/sqlite/sqlitetable` | SQLite STRICT and WITHOUT ROWID table options and virtual table declarations, with codecs, platform properties and every stage's service. |
+| `dialect/mssql/mssqllint` | The SQL Server owner's statement splitter, which judges PolyBase drops for safety assessments. |
 | `dialect/mssql/mssqlroutine` | The SQL Server owner's routine body reader for T-SQL bodies. |
 | `dialect/mssql/mssqlproperty` | SQL Server extended property model, codecs and every stage's service. |
 | `dialect/mssql/mssqlschema` | SQL Server security policy model, with every predicate binding, and codecs. |
