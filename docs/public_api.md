@@ -3127,7 +3127,8 @@ The policy's `Label` is the owner's name for its model wherever a user meets
 one of its objects: the skip line, the undecided report, where
 `Runtime.CompareFeatures` fills `schemaext.UndecidedChange.Label` from it, and
 the note `schema render` writes for an object scoped to other targets, which
-asks `Runtime.Label`. A model whose owner states no policy is named by its
+asks `Runtime.Label`, and the rollback note a generated down migration carries
+for an owner's change. A model whose owner states no policy is named by its
 kind. Each of them, and the refusal of an object a target does not host, writes
 the object's name as `objectidentity.ID.Path` writes it: a schema filled in
 from the default is included, and a dotted name is quoted. One object has one

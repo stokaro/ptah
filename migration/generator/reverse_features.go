@@ -90,17 +90,42 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 	return recovery, nil
 }
 
-func recoveryNotes(recovery []schemaext.Reversal) []ast.Node {
+// modelLabeler is a runtime that names an owner's model the way the owner's
+// off-target policy does, such as "PostgreSQL extension"; *engine.Runtime is
+// one.
+type modelLabeler interface {
+	Label(kind schemaext.Kind) (string, bool)
+}
+
+// recoveryNotes writes what the rollback of each owner change does and cannot
+// undo. A subject is named as every other report names an owner's object:
+// the owner's label, or the kind where the owner declares none, then
+// [objectidentity.ID.Path]. A runtime that cannot answer for labels names
+// every subject by its kind.
+func recoveryNotes(runtime Runtime, recovery []schemaext.Reversal) []ast.Node {
+	labeler, _ := runtime.(modelLabeler)
 	var notes []ast.Node
 	for _, result := range recovery {
 		// Quote every external string: even a multiline subject must stay on
 		// one SQL comment line on renderers that write CommentNode verbatim.
-		notes = append(notes, ast.NewComment("Rollback of "+strconv.Quote(result.Change.Subject.String())+": "+strconv.Quote(result.Strategy)+"."))
+		subject := result.Change.Subject
+		notes = append(notes, ast.NewComment("Rollback of "+strconv.Quote(modelName(labeler, subject.Kind)+" "+subject.Path())+": "+
+			strconv.Quote(result.Strategy)+"."))
 		for _, limitation := range result.Limitations {
 			notes = append(notes, ast.NewComment("Recovery limit: "+strconv.Quote(limitation)))
 		}
 	}
 	return notes
+}
+
+// modelName is the label the owner of kind declares, or the kind itself.
+func modelName(labeler modelLabeler, kind objectidentity.Kind) string {
+	if labeler != nil {
+		if label, ok := labeler.Label(schemaext.Kind(kind)); ok {
+			return label
+		}
+	}
+	return string(kind)
 }
 
 // reversedRecords keeps the reverse changes that run a statement. A reversal
