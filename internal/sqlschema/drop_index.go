@@ -69,7 +69,7 @@ func applyDropIndex(database, base *schemamodel.Database, document *Document, no
 func dropIndexOfTable(database *schemamodel.Database, document *Document, node *ast.DropIndexNode, sourcePlatform string) error {
 	target, declared := findAlterTarget(database, document.base, node.Table, sourcePlatform)
 	if !declared {
-		return fmt.Errorf("DROP INDEX %s ON %s names a table this schema does not declare", node.Name, node.Table)
+		return undeclared(fmt.Errorf("DROP INDEX %s ON %s names a table this schema does not declare", node.Name, node.Table))
 	}
 	if isMySQLFamily(sourcePlatform) {
 		alter := &ast.AlterTableNode{

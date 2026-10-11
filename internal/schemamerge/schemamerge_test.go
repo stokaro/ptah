@@ -1,7 +1,4 @@
-package schemafile
-
-// White-box testing required: the merge is unexported, and the exported loader
-// returns the same shape whether a family was merged or silently dropped.
+package schemamerge_test
 
 import (
 	"reflect"
@@ -11,12 +8,13 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemamerge"
 )
 
-// TestAppendDatabase_MergesEveryObjectFamily is the guard the two families
+// TestAppend_MergesEveryObjectFamily is the guard the two families
 // stokaro/ptah#1999 lost would have needed.
 //
-// [appendDatabase] is one assignment per family, and a family added to
+// [schemamerge.Append] is one assignment per family, and a family added to
 // [schemamodel.Database] joins it only if somebody remembers. Two did not, and the
 // failure was silent in the direction that matters: the objects were dropped
 // from the DESIRED side, so `schema apply` answered "no changes" for a
@@ -24,7 +22,7 @@ import (
 //
 // So the expectation is derived from the struct, not written out. A field is
 // merged, or it is named below as one that must not be.
-func TestAppendDatabase_MergesEveryObjectFamily(t *testing.T) {
+func TestAppend_MergesEveryObjectFamily(t *testing.T) {
 	for _, field := range mergeableDatabaseFields() {
 		t.Run(field, func(t *testing.T) {
 			c := qt.New(t)
@@ -32,21 +30,21 @@ func TestAppendDatabase_MergesEveryObjectFamily(t *testing.T) {
 			seedSliceField(c, source, field)
 
 			merged := &schemamodel.Database{}
-			appendDatabase(merged, source)
+			schemamerge.Append(merged, source)
 
 			c.Assert(sliceFieldLen(merged, field), qt.Equals, 1,
-				qt.Commentf("appendDatabase drops %s, so a document declaring one is read as declaring none", field))
+				qt.Commentf("Append drops %s, so a document declaring one is read as declaring none", field))
 		})
 	}
 }
 
-// TestAppendDatabase_UnionsTheCoverageRecord pins the one field that is not a
+// TestAppend_UnionsTheCoverageRecord pins the one field that is not a
 // slice of objects and is not appended either.
 //
 // Several files loaded together are one description, and it describes only what
 // all of them together describe. Union, never intersection: a limit one file
 // declares is a limit of the whole (stokaro/ptah#1276).
-func TestAppendDatabase_UnionsTheCoverageRecord(t *testing.T) {
+func TestAppend_UnionsTheCoverageRecord(t *testing.T) {
 	c := qt.New(t)
 	merged := &schemamodel.Database{}
 
@@ -56,13 +54,13 @@ func TestAppendDatabase_UnionsTheCoverageRecord(t *testing.T) {
 		Provenance: coverage.DerivedFromFact,
 	})
 
-	appendDatabase(merged, &schemamodel.Database{NotDescribed: limited})
-	appendDatabase(merged, &schemamodel.Database{})
+	schemamerge.Append(merged, &schemamodel.Database{NotDescribed: limited})
+	schemamerge.Append(merged, &schemamodel.Database{})
 
 	c.Assert(merged.NotDescribed.Describes(coverage.Domain), qt.IsFalse)
 }
 
-// nonMergeableDatabaseFields are the slice fields [appendDatabase] must NOT
+// nonMergeableDatabaseFields are the slice fields [schemamerge.Append] must NOT
 // append, with the reason each one is exempt.
 //
 // It is empty, and that is the claim: every object family a document can

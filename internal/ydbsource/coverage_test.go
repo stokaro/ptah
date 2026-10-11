@@ -49,7 +49,10 @@ func TestEmptySourcesRecordSupportedFeatureNamespaces(t *testing.T) {
 		{name: "YAML", parse: func() (*schemamodel.Database, error) {
 			return yamlschema.Parse(builtintest.Runtime().YAML(), []byte("{}"))
 		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
-		{name: "YQL", parse: func() (*schemamodel.Database, error) { db, _, err := sqlschema.Read(nil, "ydb"); return &db, err }, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
+		{name: "YQL", parse: func() (*schemamodel.Database, error) {
+			db, _, err := sqlschema.ReadWith(t.Context(), nil, "ydb", nil, yqlOwners())
+			return &db, err
+		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "HCL", parse: func() (*schemamodel.Database, error) { return atlashcl.Parse(nil, "empty.hcl") }, changefeeds: schemaext.Uninspected},
 	}
 	for _, test := range tests {

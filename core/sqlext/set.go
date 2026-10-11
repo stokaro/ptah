@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 )
 
@@ -35,6 +36,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 			return Set{}, err
 		}
 		extension.Targets = slices.Clone(extension.Targets)
+		extension.Header = slices.Clone(extension.Header)
 		patterns := make([]Pattern, 0, len(extension.Patterns))
 		for _, pattern := range extension.Patterns {
 			pattern.Words = slices.Clone(pattern.Words)
@@ -49,7 +51,75 @@ func NewSet(extensions ...Extension) (Set, error) {
 	if err := set.refuseOverlaps(); err != nil {
 		return Set{}, err
 	}
+	if err := set.refuseSecondGrammar(); err != nil {
+		return Set{}, err
+	}
 	return set, nil
+}
+
+// refuseSecondGrammar refuses two grammars for one target, and owner patterns
+// for a target whose documents a grammar reads: the shared grammar the
+// patterns extend never reads them.
+func (s Set) refuseSecondGrammar() error {
+	grammars := make(map[string]string)
+	for _, extension := range s.extensions {
+		if extension.Grammar == nil {
+			continue
+		}
+		for _, target := range extension.Targets {
+			if owner, found := grammars[target]; found {
+				return fmt.Errorf("%w: SQL grammar of target %q is registered by %s and %s",
+					schemaext.ErrDuplicate, target, owner, extension.Owner)
+			}
+			grammars[target] = extension.Owner
+		}
+	}
+	for _, extension := range s.extensions {
+		for _, target := range extension.Targets {
+			if owner, found := grammars[target]; found && len(extension.Patterns) > 0 {
+				return fmt.Errorf("SQL extension of %s declares patterns for target %q, whose documents the grammar of %s reads",
+					extension.Owner, target, owner)
+			}
+		}
+	}
+	return nil
+}
+
+// Grammar returns the grammar that reads documents of target, and false for a
+// target written in the shared grammar.
+func (s Set) Grammar(target string) (Grammar, bool) {
+	if target == "" {
+		return nil, false
+	}
+	for _, extension := range s.extensions {
+		if extension.Grammar != nil && slices.Contains(extension.Targets, target) {
+			return extension.Grammar, true
+		}
+	}
+	return nil, false
+}
+
+// ReadsHeader reports whether an owner of target reads a header entry of kind
+// as a limit on its own claim; see [Extension.Header]. A document that names
+// no target has no owner header.
+func (s Set) ReadsHeader(target string, kind coverage.Kind) bool {
+	if target == "" {
+		return false
+	}
+	return slices.ContainsFunc(s.extensions, func(extension Extension) bool {
+		return slices.Contains(extension.Targets, target) && containsKind(extension.Header, kind)
+	})
+}
+
+// containsKind compares kinds as a header spells them, ignoring case and
+// surrounding space. It lowers both rather than fold them: [strings.EqualFold]
+// also matches U+017F to "s", which would read a kind no owner records as one
+// of its own and drop it.
+func containsKind(kinds []coverage.Kind, kind coverage.Kind) bool {
+	want := strings.ToLower(strings.TrimSpace(string(kind)))
+	return slices.ContainsFunc(kinds, func(candidate coverage.Kind) bool {
+		return strings.ToLower(strings.TrimSpace(string(candidate))) == want
+	})
 }
 
 func validateExtension(extension Extension) error {
@@ -61,6 +131,9 @@ func validateExtension(extension Extension) error {
 	}
 	if len(extension.Patterns) > 0 && extension.Parser == nil {
 		return fmt.Errorf("SQL extension of %s declares patterns without a parser", extension.Owner)
+	}
+	if extension.Grammar != nil && len(extension.Patterns) > 0 {
+		return fmt.Errorf("SQL extension of %s declares patterns beside a grammar", extension.Owner)
 	}
 	names := make(map[string]bool, len(extension.Patterns))
 	for _, pattern := range extension.Patterns {
@@ -266,9 +339,10 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match) ([]Value
 }
 
 // Coverage combines the claims of the extensions that read documents of
-// target, and reports whether any of them claims something. A document that
-// names no target claims nothing.
-func (s Set) Coverage(target string) (schemaext.Coverage, bool, error) {
+// target, each handed the entries of header whose kind it reads, and reports
+// whether any of them claims something. A document that names no target
+// claims nothing.
+func (s Set) Coverage(target string, header []coverage.Object) (schemaext.Coverage, bool, error) {
 	var combined schemaext.Coverage
 	claimed := false
 	if target == "" {
@@ -278,7 +352,13 @@ func (s Set) Coverage(target string) (schemaext.Coverage, bool, error) {
 		if !slices.Contains(extension.Targets, target) || extension.Coverage == nil {
 			continue
 		}
-		claim, err := extension.Coverage()
+		var limits []coverage.Object
+		for _, entry := range header {
+			if containsKind(extension.Header, entry.Kind) {
+				limits = append(limits, entry)
+			}
+		}
+		claim, err := extension.Coverage(limits)
 		if err != nil {
 			return schemaext.Coverage{}, false, fmt.Errorf("coverage of %s: %w", extension.Owner, err)
 		}

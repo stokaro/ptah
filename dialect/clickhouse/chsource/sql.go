@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -55,8 +56,14 @@ func SQL() sqlext.Extension {
 			{Name: sqlStorage, Site: sqlext.ViewClause, Words: []string{"ENGINE"}, Targeted: true},
 		},
 		Parser:   sqlParser{},
-		Coverage: RefreshCoverage,
+		Coverage: sqlCoverage,
 	}
+}
+
+// sqlCoverage is the owner's claim for a ClickHouse document. The owner reads
+// no header entry, so it is handed none.
+func sqlCoverage([]coverage.Object) (schemaext.Coverage, error) {
+	return RefreshCoverage()
 }
 
 // sqlParser reads the spans the owner's patterns claim.

@@ -40,7 +40,7 @@ const yqlTransfer = "CREATE TRANSFER `archive/ingest` FROM `archive/events` TO `
 func TestReadYQLReplication(t *testing.T) {
 	c := qt.New(t)
 	source := "CREATE ASYNC REPLICATION `archive/mirror` FOR `/remote/source` AS `archive/copy`, other AS `archive/other` WITH (ENDPOINT='grpcs://source:2135', DATABASE='/remote', CONSISTENCY_LEVEL='GLOBAL', COMMIT_INTERVAL=Interval('PT0.5S'), TOKEN_SECRET_NAME='token');"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	c.Assert(declared(c, database, ydbreplication.ReplicationKind), qt.DeepEquals, []schemaext.Object{
 		ydbreplication.DesiredReplicationObject("archive", "mirror", "", ydbreplication.ReplicationSpec{
@@ -53,7 +53,7 @@ func TestReadYQLReplication(t *testing.T) {
 func TestReadYQLTransfer(t *testing.T) {
 	c := qt.New(t)
 	source := "CREATE TRANSFER `archive/ingest` FROM `archive/events` TO `archive/rows` USING " + yqlTransferLambda + " WITH (BATCH_SIZE_BYTES=4096,FLUSH_INTERVAL=Interval('PT2S'),CONSUMER='events_reader');"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	c.Assert(declared(c, database, ydbreplication.TransferKind), qt.DeepEquals, []schemaext.Object{
 		ydbreplication.DesiredTransferObject("archive", "ingest", "", ydbreplication.TransferSpec{

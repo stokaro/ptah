@@ -16,7 +16,7 @@ import (
 func TestReadYQLSecrets(t *testing.T) {
 	c := qt.New(t)
 	source := "CREATE SECRET `a.b` WITH (value = $PTAH_SECRET_ROOT); CREATE SECRET `a/b` WITH (VALUE = $PTAH_SECRET_NESTED);"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	objects, err := database.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)

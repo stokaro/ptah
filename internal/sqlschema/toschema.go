@@ -1251,9 +1251,9 @@ func applyAlterTableAddColumn(
 	declares := func(table schemamodel.Table) bool { return table.StructName == structName }
 	if !slices.ContainsFunc(database.Tables, declares) &&
 		(base == nil || !slices.ContainsFunc(base.Tables, declares)) {
-		return fmt.Errorf(
+		return undeclared(fmt.Errorf(
 			"%w: ALTER TABLE %s ADD COLUMN %s names a table this schema does not declare",
-			ErrUnmodeledStatement, tableName, operation.Column.Name)
+			ErrUnmodeledStatement, tableName, operation.Column.Name))
 	}
 	field := fieldFromColumn(operation.Column, structName, sourcePlatform)
 	known := database.Fields

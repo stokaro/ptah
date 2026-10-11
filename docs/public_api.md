@@ -2599,11 +2599,28 @@ the frozen set. An extension reads only targets its provider registers, and
 two patterns one document could consult at one site that can match the same
 syntax are refused at registration. The zero set is refused with
 `sqlext.ErrUnselected`, and `sqlext.None` reads the shared grammar alone.
-`Extension.Coverage` is the claim a document of the owner's targets makes.
+`Extension.Coverage` is the claim a document of the owner's targets makes. It
+is handed the entries of the document's `ptah:not-described` header whose kind
+is one of `Extension.Header`, such as a YDB topic the document leaves
+unmanaged.
+
+An owner whose target is not written in the shared grammar registers a
+`Grammar` instead of patterns, and one target takes one grammar. The reader
+hands it every document of one load in one call, in the order the load runs
+them as one script, and the owner returns what the whole script declares and
+what each file declares, as data, for the schema directory check the reader
+keeps. The reader adds each document's header. A refusal of one document is a
+`FileError` naming it. An owner reports a statement that changes an object no
+document of the load declares with an error wrapping `sqlext.ErrUndeclared`,
+so a reader that loaded sources in another format beside the load can say the
+object may be theirs: a document of the load changes only what the load
+declares.
 
 `chsource.SQL` reads ClickHouse's data-skipping index inside a column list and
 in ALTER TABLE ... ADD INDEX, and a materialized view's refresh schedule and
-storage clause, and claims refresh coverage for a ClickHouse document.
+storage clause, and claims refresh coverage for a ClickHouse document. The
+YDB owner registers a grammar that reads YQL, and claims what a YQL document
+declares less the objects its header leaves unmanaged.
 `atlascompat.ParseSQLOptions.SQL` selects the owners a parse reads with; its
 zero value reads the shared grammar alone. A lint run reads statements with the
 SQL owners of its `lint.Runtime`.

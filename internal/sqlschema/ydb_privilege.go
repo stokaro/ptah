@@ -97,7 +97,7 @@ func ydbPrivilegeTarget(database *schemamodel.Database, document *Document, kind
 			return schemamodel.Grant{OnSchema: relative}, nil
 		}
 	}
-	return schemamodel.Grant{}, fmt.Errorf("%w: YDB permission path %q must name a table or directory declared earlier in this desired schema", ErrUnmodeledStatement, name)
+	return schemamodel.Grant{}, undeclared(fmt.Errorf("%w: YDB permission path %q must name a table or directory declared earlier in this desired schema", ErrUnmodeledStatement, name))
 }
 
 // An absolute source path is meaningful only with an explicit database root.

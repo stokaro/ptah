@@ -53,7 +53,7 @@ func applyDropTable(database, base *schemamodel.Database, document *Document, no
 			if node.IfExists {
 				continue
 			}
-			return fmt.Errorf("DROP TABLE %s names a table this schema does not declare", name)
+			return undeclared(fmt.Errorf("DROP TABLE %s names a table this schema does not declare", name))
 		}
 		if !slices.ContainsFunc(targets, func(other alterTarget) bool { return other.structName == target.structName }) {
 			targets = append(targets, target)

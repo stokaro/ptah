@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
 )
@@ -21,7 +22,7 @@ import (
 // Once a family has desired YQL syntax, an empty document manages its absence.
 func TestCompare_YQLOmittedReplicationRequestsRemoval(t *testing.T) {
 	c := qt.New(t)
-	desired, _, err := sqlschema.Read(nil, "ydb")
+	desired, _, err := sqlschema.ReadWith(c.Context(), nil, "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
 		FeatureCoverage: completeYDBFixtureCoverage(),
@@ -35,7 +36,7 @@ func TestCompare_YQLOmittedReplicationRequestsRemoval(t *testing.T) {
 
 func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {
 	c := qt.New(t)
-	desired, _, err := sqlschema.Read([]byte("CREATE TABLE events (id Int64 NOT NULL, ts Timestamp64, expires Uint64, PRIMARY KEY (id));"), "ydb")
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte("CREATE TABLE events (id Int64 NOT NULL, ts Timestamp64, expires Uint64, PRIMARY KEY (id));"), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	held := ydbTTLCatalog(&ydbschema.TTL{Column: "ts", Interval: "PT1H"})
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
@@ -44,7 +45,7 @@ func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {
 
 func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	c := qt.New(t)
-	desired, _, err := sqlschema.Read(nil, "ydb")
+	desired, _, err := sqlschema.ReadWith(c.Context(), nil, "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), Views: []catalog.View{{Name: "summary"}},
 		FeatureObjects: must.Must(schemaext.NewObjects(ydbtopic.ObservedObject("app", "events", readTopicSpec())))}
@@ -66,7 +67,7 @@ func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
+			desired, _, err := sqlschema.ReadWith(c.Context(), []byte(test.source), "ydb", nil, yqlOwners())
 			c.Assert(err, qt.IsNil)
 			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(),
 				FeatureObjects: must.Must(schemaext.NewObjects(ydbsecret.ObservedObject("", "credential")))}
@@ -80,19 +81,19 @@ func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
 // Database-wide principals remain when omitted, including from an empty file.
 func TestCompare_YQLPrincipals(t *testing.T) {
 	c := qt.New(t)
-	desired, _, err := sqlschema.Read([]byte("CREATE USER app PASSWORD 'Secret1!'; CREATE GROUP readers WITH USER app; ALTER GROUP `DATA-READERS` ADD USER app;"), "ydb")
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte("CREATE USER app PASSWORD 'Secret1!'; CREATE GROUP readers WITH USER app; ALTER GROUP `DATA-READERS` ADD USER app;"), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	held := ydbAccessCatalog()
 	held.Tables, held.Constraints, held.Grants = nil, nil, nil
 	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
-	changed, _, err := sqlschema.Read([]byte("CREATE USER app NOLOGIN; CREATE GROUP readers;"), "ydb")
+	changed, _, err := sqlschema.ReadWith(c.Context(), []byte("CREATE USER app NOLOGIN; CREATE GROUP readers;"), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &changed, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.RolesModified, qt.HasLen, 1)
 	c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app")
 	c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 1)
 	c.Assert(diff.RoleMembershipsRemoved[0].Role, qt.Equals, "readers")
-	empty, _, err := sqlschema.Read(nil, "ydb")
+	empty, _, err := sqlschema.ReadWith(c.Context(), nil, "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &empty, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 }
@@ -107,9 +108,16 @@ func TestCompare_YQLPrivileges(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	held := ydbAccessCatalog()
 	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
-	omitted, _, err := sqlschema.Read([]byte(objects), "ydb")
+	omitted, _, err := sqlschema.ReadWith(c.Context(), []byte(objects), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &omitted, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 4)
 	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+}
+
+// yqlOwners selects the SQL owners the built-in runtime registers, whose YDB
+// grammar reads YQL and claims what a YQL document declares, as a production
+// read does.
+func yqlOwners() sqlschema.Options {
+	return sqlschema.Options{Owners: builtintest.Runtime().SQL()}
 }

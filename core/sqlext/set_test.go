@@ -8,7 +8,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 )
 
@@ -87,6 +86,17 @@ func TestNewSet_FailurePath(t *testing.T) {
 			extension("example.org/a", "a", parser, sqlext.Pattern{Name: "ttl", Site: sqlext.AlterOperation, Words: []string{"TTL"}, Next: []string{"INTERVAL", "ON"}}),
 			extension("example.org/b", "a", parser, sqlext.Pattern{Name: "ttl", Site: sqlext.AlterOperation, Words: []string{"TTL"}, NotNext: []string{"ON"}})},
 			wantErr: `duplicate.*can match the same alter-operation syntax`},
+		{name: "patterns beside a grammar", extensions: []sqlext.Extension{
+			{Owner: "example.org/a", Targets: []string{"a"}, Patterns: []sqlext.Pattern{index}, Parser: parser, Grammar: emptyGrammar{}}},
+			wantErr: `SQL extension of example.org/a declares patterns beside a grammar`},
+		{name: "two grammars of one target", extensions: []sqlext.Extension{
+			{Owner: "example.org/a", Targets: []string{"a"}, Grammar: emptyGrammar{}},
+			{Owner: "example.org/b", Targets: []string{"b", "a"}, Grammar: emptyGrammar{}}},
+			wantErr: `duplicate.*: SQL grammar of target "a" is registered by example.org/a and example.org/b`},
+		{name: "patterns for a grammar's target", extensions: []sqlext.Extension{
+			{Owner: "example.org/a", Targets: []string{"a"}, Grammar: emptyGrammar{}},
+			extension("example.org/b", "a", parser, index)},
+			wantErr: `SQL extension of example.org/b declares patterns for target "a", whose documents the grammar of example.org/a reads`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -120,6 +130,12 @@ func TestNewSet_HappyPath(t *testing.T) {
 		{name: "different opening words", extensions: []sqlext.Extension{
 			extension("example.org/a", "a", parser, sqlext.Pattern{Name: "a", Site: sqlext.ViewClause, Words: []string{"REFRESH"}}),
 			extension("example.org/b", "a", parser, sqlext.Pattern{Name: "b", Site: sqlext.ViewClause, Words: []string{"ENGINE"}})}},
+		{name: "a grammar beside patterns of another target", extensions: []sqlext.Extension{
+			{Owner: "example.org/a", Targets: []string{"a"}, Grammar: emptyGrammar{}},
+			extension("example.org/b", "b", parser, index)}},
+		{name: "a grammar beside an owner of its target that claims coverage", extensions: []sqlext.Extension{
+			{Owner: "example.org/a", Targets: []string{"a"}, Grammar: emptyGrammar{}},
+			{Owner: "example.org/b", Targets: []string{"a"}, Coverage: noClaim}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -273,9 +289,7 @@ func TestSet_Parse_FailurePath(t *testing.T) {
 // TestSet_Coverage claims for a document of a target what its extensions
 // claim, and nothing for a document of another target or of none.
 func TestSet_Coverage(t *testing.T) {
-	claim := must.Must(schemaext.NewCoverage(schemaext.Desired, nil, nil))
-	set := must.Must(sqlext.NewSet(sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"},
-		Coverage: func() (schemaext.Coverage, error) { return claim, nil }}))
+	set := must.Must(sqlext.NewSet(sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"}, Coverage: noClaim}))
 	tests := []struct {
 		name        string
 		target      string
@@ -289,7 +303,7 @@ func TestSet_Coverage(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, claimed, err := set.Coverage(test.target)
+			_, claimed, err := set.Coverage(test.target, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(claimed, qt.Equals, test.wantClaimed)

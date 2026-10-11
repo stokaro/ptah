@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/ydbsource"
 )
@@ -41,7 +42,7 @@ CREATE TABLE archive (id Int64 NOT NULL, PRIMARY KEY (id));
 				c.Assert(err, qt.IsNil)
 				c.Assert(common.IsZero(), qt.IsTrue)
 				c.Assert(owned, qt.Contains, coverage.Object{Kind: "resource_pool", Name: "batch.jobs", Reason: coverage.NotInspected, Provenance: coverage.Observed})
-				db, _, err := sqlschema.Read([]byte(file.Data), "ydb")
+				db, _, err := sqlschema.ReadWith(c.Context(), []byte(file.Data), "ydb", nil, yqlOwners())
 				c.Assert(err, qt.IsNil)
 				c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch.jobs")).State, qt.Equals, schemaext.Uninspected)
 				c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("other")).State, qt.Equals, schemaext.Complete)
@@ -94,4 +95,11 @@ func TestSplitPreservesExplicitHCLModelsInEveryFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+// yqlOwners selects the SQL owners the built-in runtime registers, whose YDB
+// grammar reads YQL and claims what a YQL document declares, as a production
+// read does.
+func yqlOwners() sqlschema.Options {
+	return sqlschema.Options{Owners: builtintest.Runtime().SQL()}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemamerge"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -117,9 +118,8 @@ func hasDriveLetter(value string) bool {
 // loadSQLWithImports reads a SQL schema file and merges everything it imports.
 //
 // The entry point's own statements are merged first, then each import in the
-// order written, so a reader sees the document in the order the file lists it.
-// visited holds the absolute paths already on this branch of the chain, which is
-// what makes a cycle an error rather than a hang.
+// order written, so a reader sees the document in the order the file lists it;
+// see [walkSQLImports].
 //
 // document is everything the chain declared before this file. The whole chain
 // is one script, so each file is read against it -- a file may add a column to
@@ -130,6 +130,24 @@ func hasDriveLetter(value string) bool {
 func loadSQLWithImports(
 	root, path string, opts Options, visited map[string]struct{}, depth int,
 	document *schemamodel.Database, reads *sqlschema.Document,
+) error {
+	return walkSQLImports(root, path, visited, depth, func(path string, data []byte) error {
+		own, _, err := readSQLFile(path, data, opts, reads)
+		if err != nil {
+			return err
+		}
+		return schemamerge.Append(document, own)
+	})
+}
+
+// walkSQLImports hands visit a SQL schema file and then everything it imports,
+// each import in the order written and before the next one, so the files reach
+// visit in the order the chain runs them.
+//
+// visited holds the absolute paths already on this branch of the chain, which
+// is what makes a cycle an error rather than a hang.
+func walkSQLImports(
+	root, path string, visited map[string]struct{}, depth int, visit func(path string, data []byte) error,
 ) error {
 	if depth > maxSQLImportDepth {
 		return fmt.Errorf("%s chain is deeper than %d files", sqlImportMarker, maxSQLImportDepth)
@@ -148,12 +166,7 @@ func loadSQLWithImports(
 	if err != nil {
 		return fmt.Errorf("parse SQL schema file %s: %w", path, err)
 	}
-
-	own, _, err := loadSQLFileWithStatements(path, opts, reads)
-	if err != nil {
-		return err
-	}
-	if err := appendDatabase(document, own); err != nil {
+	if err := visit(path, data); err != nil {
 		return err
 	}
 	for _, value := range imports {
@@ -175,7 +188,7 @@ func loadSQLWithImports(
 			return fmt.Errorf(
 				"%s %q: only %s files can be imported", sqlImportMarker, value, dirSQLExtension)
 		}
-		if err := loadSQLWithImports(root, resolved, opts, visited, depth+1, document, reads); err != nil {
+		if err := walkSQLImports(root, resolved, visited, depth+1, visit); err != nil {
 			return err
 		}
 	}
@@ -193,6 +206,13 @@ func loadSQLWithImports(
 // needs the merge pass, and running it unconditionally would change what a
 // single file means.
 func loadSQLFileTree(resolved string, opts Options) (*schemamodel.Database, error) {
+	if readsAsLoad(opts) {
+		var script sqlScript
+		if err := script.addTree(resolved); err != nil {
+			return nil, err
+		}
+		return script.read(opts)
+	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("read SQL schema file: %w", err)

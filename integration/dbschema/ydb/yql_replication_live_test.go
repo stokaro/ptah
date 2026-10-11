@@ -14,12 +14,13 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
 func desiredReplicationYQL(c *qt.C, source string) *schemamodel.Database {
 	c.Helper()
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, _, err := sqlschema.ReadWith(c.Context(), []byte(source), "ydb", nil, yqlOwners())
 	c.Assert(err, qt.IsNil)
 	return &database
 }
@@ -106,4 +107,11 @@ func TestYDBDesiredYQL_TransferRefusedOn251(t *testing.T) {
 	dropReplications(c, conn)
 	c.Cleanup(func() { dropReplications(c, conn) })
 	c.Assert(planError(c, conn, desiredReplicationYQL(c, yqlTransferSource)), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+}
+
+// yqlOwners selects the SQL owners the built-in runtime registers, whose YDB
+// grammar reads YQL and claims what a YQL document declares, as a production
+// read does.
+func yqlOwners() sqlschema.Options {
+	return sqlschema.Options{Owners: builtintest.Runtime().SQL()}
 }
