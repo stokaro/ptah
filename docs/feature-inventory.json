@@ -796,6 +796,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-selectext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/selectext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-sqlext",
       "kind": "public-package",
       "surface": "ptah.run/core/sqlext",
