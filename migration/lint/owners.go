@@ -31,7 +31,6 @@ func checkOwnedRules(
 	ctx context.Context,
 	runtime lintext.Runtime,
 	files []File,
-	split [][]lintext.Statement,
 	rules []Rule,
 	opts Options,
 	target Target,
@@ -52,7 +51,7 @@ func checkOwnedRules(
 	request := lintext.CheckRequest{
 		Target:        lintext.Target{Name: opts.Dialect, Version: target.Version, Capabilities: target.clone().Capabilities},
 		Codes:         codes,
-		Files:         checkFiles(files, split),
+		Files:         checkFiles(files),
 		Compatibility: string(opts.Compatibility),
 		Baseline:      requestBaseline(opts),
 	}
@@ -114,28 +113,19 @@ func (a ownerAnswer) bind(rules []Rule) []Rule {
 // checkFiles is every file of the run as the owners read it, in run order,
 // with the statements the run split. A statement's line counts the lines of
 // the file as written, the line every finding reports.
-func checkFiles(files []File, split [][]lintext.Statement) []lintext.File {
+func checkFiles(files []File) []lintext.File {
 	checked := make([]lintext.File, 0, len(files))
-	next := 0
 	for i := range files {
 		file := &files[i]
-		entry := lintext.File{
+		checked = append(checked, lintext.File{
 			Name:          file.Name,
 			Version:       file.Version,
 			Up:            file.IsUp,
 			Down:          file.IsDown,
 			HasPair:       file.HasPair,
 			NoTransaction: file.NoTransaction,
-		}
-		if file.split {
-			entry.Statements = make([]lintext.Statement, 0, len(split[next]))
-			for _, statement := range split[next] {
-				statement.Line += file.lineOffset
-				entry.Statements = append(entry.Statements, statement)
-			}
-			next++
-		}
-		checked = append(checked, entry)
+			Statements:    slices.Clone(file.contract),
+		})
 	}
 	return checked
 }
@@ -147,9 +137,9 @@ func requestBaseline(opts Options) *lintext.Baseline {
 		return nil
 	}
 	return &lintext.Baseline{
-		Columns:     normalizeBaselineColumns(opts.Baseline),
-		Indexes:     normalizeBaselineIndexes(opts.BaselineIndexes),
-		Hypertables: normalizeBaselineHypertables(opts.BaselineHypertables),
+		Columns:     slices.Clone(opts.Baseline),
+		Indexes:     slices.Clone(opts.BaselineIndexes),
+		Hypertables: slices.Clone(opts.BaselineHypertables),
 		Dependents:  slices.Clone(opts.BaselineDependents),
 	}
 }

@@ -7,7 +7,7 @@
 //   - DS — data safety (dropping tables/columns, lossy type changes)
 //   - MF — migration form (missing down file, empty migration, naming)
 //   - BC — breaking-change safety (renames breaking deployed readers)
-//   - PG — PostgreSQL-specific hazards
+//   - PG — PostgreSQL-specific hazards, which the PostgreSQL owner checks
 //   - MY — MySQL/MariaDB-specific hazards
 //   - YD — YDB statements the server refuses, or runs with an effect the
 //     statement does not state
@@ -39,7 +39,7 @@
 //
 // An engine owner may publish rules of its own through the runtime a run is
 // given, as [ptah.run/core/lintext] data; the PostgreSQL owner publishes the
-// TX family that way. [Rules] lists them after this package's own. A run asks
+// PG and TX families and the online rules ON101 and ON103 that way. [Rules] lists them after this package's own. A run asks
 // the owners for their findings once, over every file, and applies the same
 // policy to them as to every other finding: suppression directives, severity
 // overrides, excluded paths, subsumption and the reviewed-schema filter. A

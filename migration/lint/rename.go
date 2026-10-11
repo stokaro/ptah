@@ -1,5 +1,7 @@
 package lint
 
+import "ptah.run/internal/lintkit"
+
 // A rename retires one logical name and introduces another. That is a single
 // event, and the two command surfaces describe it at different altitudes:
 //
@@ -66,10 +68,10 @@ type renamedName struct {
 // reports nothing for them either (measured on `ALTER INDEX ... RENAME TO` and
 // `ALTER TABLE ... RENAME CONSTRAINT`, both silent on both sides).
 func renamedNames(w, sourceWords []string) []renamedName {
-	if hasWordPrefix(w, "RENAME", "TABLE") {
+	if lintkit.HasWordPrefix(w, "RENAME", "TABLE") {
 		return renamedTableList(w, sourceWords)
 	}
-	if !isAlterTable(w) {
+	if !lintkit.IsAlterTable(w) {
 		return nil
 	}
 	return alterRenamedNames(w, sourceWords)
@@ -82,18 +84,18 @@ func renamedTableList(w, sourceWords []string) []renamedName {
 	var names []renamedName
 	j := 2
 	for {
-		source, next := tableRefAt(w, sourceWords, j)
-		if source.normalized == "" || next >= len(w) || (w[next] != "TO" && w[next] != "AS") {
+		source, next := lintkit.TableRefAt(w, sourceWords, j)
+		if source.Normalized == "" || next >= len(w) || (w[next] != "TO" && w[next] != "AS") {
 			return append(names, renamedName{kind: SubjectTable})
 		}
-		target, afterTarget := tableRefAt(w, sourceWords, next+1)
-		if target.normalized == "" {
+		target, afterTarget := lintkit.TableRefAt(w, sourceWords, next+1)
+		if target.Normalized == "" {
 			return append(names, renamedName{kind: SubjectTable})
 		}
 		names = append(names, renamedName{
 			kind:  SubjectTable,
-			name:  source.name,
-			owner: source.normalized,
+			name:  source.Name,
+			owner: source.Normalized,
 		})
 		if afterTarget < len(w) && w[afterTarget] == "," {
 			j = afterTarget + 1
@@ -105,10 +107,10 @@ func renamedTableList(w, sourceWords []string) []renamedName {
 
 // alterRenamedNames reads the RENAME clauses of an ALTER TABLE statement.
 func alterRenamedNames(w, sourceWords []string) []renamedName {
-	table := alterTableReference(w, sourceWords)
-	renamedTable := renamedName{kind: SubjectTable, name: table.name, owner: table.normalized}
+	table := lintkit.AlterTableReference(w, sourceWords)
+	renamedTable := renamedName{kind: SubjectTable, name: table.Name, owner: table.Normalized}
 	var names []renamedName
-	for _, i := range clauseStarts(w) {
+	for _, i := range lintkit.ClauseStarts(w) {
 		if i >= len(w) || w[i] != "RENAME" || i+1 >= len(w) {
 			continue
 		}
@@ -124,20 +126,20 @@ func alterRenamedNames(w, sourceWords []string) []renamedName {
 			explicitColumn = true
 			j++
 		}
-		identifier, next, ok := identifierAt(w, sourceWords, j)
+		identifier, next, ok := lintkit.IdentifierAt(w, sourceWords, j)
 		if !ok {
 			names = append(names, renamedName{kind: SubjectColumn})
 			continue
 		}
 		if next < len(w) && (w[next] == "TO" || w[next] == "AS") {
-			introduced, _, _ := identifierAt(w, sourceWords, next+1)
+			introduced, _, _ := lintkit.IdentifierAt(w, sourceWords, next+1)
 			names = append(names, renamedName{
 				kind:       SubjectColumn,
-				name:       identifier.name,
-				normalized: identifier.normalized,
-				introduced: introduced.name,
-				parent:     table.name,
-				owner:      table.normalized,
+				name:       identifier.Name,
+				normalized: identifier.Normalized,
+				introduced: introduced.Name,
+				parent:     table.Name,
+				owner:      table.Normalized,
 			})
 			continue
 		}
@@ -182,7 +184,7 @@ func fileRenames(file *File) []statementRename {
 	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
-		if ref := createdTableRef(stmt.Words); ref != "" {
+		if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
 			created[ref] = true
 			continue
 		}
@@ -193,7 +195,7 @@ func fileRenames(file *File) []statementRename {
 		}
 		var kept []renamedName
 		for _, name := range renamedNames(stmt.Words, stmt.sourceWords) {
-			if refersToCreated(created, name.owner) {
+			if lintkit.RefersToCreated(created, name.owner) {
 				continue
 			}
 			kept = append(kept, name)

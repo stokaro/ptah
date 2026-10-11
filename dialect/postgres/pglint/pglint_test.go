@@ -27,12 +27,28 @@ func check(c *qt.C, files ...lintext.File) []lintext.Finding {
 	return result.Findings
 }
 
+// Rules publishes the owner's families in code order, each rule valid as
+// data, and a call's rules share nothing with the next call's.
 func TestRules(t *testing.T) {
 	c := qt.New(t)
 	rules := pglint.Rules()
 	rules[0].Targets[0] = "mysql"
 
-	c.Assert(pglint.Rules(), qt.DeepEquals, []lintext.Rule{
+	again := pglint.Rules()
+	codes := make([]string, 0, len(again))
+	for _, rule := range again {
+		c.Assert(rule.Validate(), qt.IsNil)
+		codes = append(codes, rule.Code)
+	}
+	c.Assert(codes, qt.DeepEquals, []string{
+		"ON101", "ON103",
+		"PG101", "PG102", "PG103", "PG103P", "PG104", "PG105", "PG106", "PG108", "PG109", "PG110",
+		"PG301", "PG301P", "PG302", "PG303", "PG304", "PG305", "PG306", "PG307", "PG308", "PG309", "PG310", "PG311",
+		"PG312", "PG312P", "PG314", "PG320",
+		"TX101", "TX201",
+	})
+	c.Assert(again[0].Targets, qt.DeepEquals, []string{"postgres"})
+	c.Assert(again[len(again)-2:], qt.DeepEquals, []lintext.Rule{
 		{Code: "TX101", Title: "transactional and non-transactional statements mixed", Severity: lintext.Warning, Targets: []string{"postgres"}},
 		{Code: "TX201", Title: "transaction block embedded in migration", Severity: lintext.Warning, Targets: []string{"postgres"}},
 	})
@@ -103,7 +119,7 @@ func TestService_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code the owner does not publish", context.Background(), []string{"MY101"}, `.*no check of rule MY101`},
+		{"a code the owner does not publish", context.Background(), []string{"MY101"}, `.*no rule of code MY101`},
 		{"cancellation", canceled, []string{"TX201"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

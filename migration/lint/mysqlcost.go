@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintscan"
 )
 
@@ -218,7 +219,7 @@ func keyCoverageOf(indexes []lintext.BaselineIndex, columnName string) keyCovera
 	coverage := keyNone
 	for _, idx := range indexes {
 		for _, part := range idx.Parts {
-			if normalizeIdent(part.Column) != columnName {
+			if lintkit.NormalizeIdent(part.Column) != columnName {
 				continue
 			}
 			if part.Prefix > 0 {
@@ -241,7 +242,7 @@ func parseMySQLTypeAt(words []string, i int, defaultCharset string) (mysqlType, 
 	if !ok {
 		return mysqlType{}, i, false
 	}
-	params, next, ok := parseTypeParams(words, j)
+	params, next, ok := lintkit.ParseTypeParams(words, j)
 	if !ok {
 		return mysqlType{}, i, false
 	}
@@ -277,7 +278,7 @@ func parseTypeBase(words []string, i int) (t mysqlType, next int, ok bool) {
 	default:
 		if base, known := mysqlBaseSynonyms[words[j]]; known {
 			t.base = base
-		} else if identLike(words[j]) && !strings.HasPrefix(words[j], "`") {
+		} else if lintkit.IdentLike(words[j]) && !strings.HasPrefix(words[j], "`") {
 			t.base = strings.ToLower(words[j])
 		}
 		j++
@@ -409,31 +410,6 @@ func (t *mysqlType) finishParams() {
 			t.params = nil
 		}
 	}
-}
-
-// parseTypeParams reads an optional ( n [, m] ) after a type keyword.
-func parseTypeParams(words []string, j int) ([]int, int, bool) {
-	if j >= len(words) || words[j] != "(" {
-		return nil, j, true
-	}
-	var params []int
-	k := j + 1
-	for k < len(words) {
-		switch words[k] {
-		case ")":
-			return params, k + 1, true
-		case ",":
-			k++
-			continue
-		}
-		n, err := strconv.Atoi(words[k])
-		if err != nil {
-			return nil, j, false
-		}
-		params = append(params, n)
-		k++
-	}
-	return nil, j, false
 }
 
 // parseMySQLTypeSpelling reads the type as information_schema.COLUMN_TYPE
@@ -678,7 +654,7 @@ const tableCopyConsequence = "both MySQL and MariaDB refuse ALGORITHM=INSTANT an
 // columnChangeSite is one MODIFY or CHANGE clause with its new type.
 type columnChangeSite struct {
 	statement int
-	table     tableReference
+	table     lintkit.TableReference
 	oldName   string
 	newName   string
 	// typeStart is the word index of the new type.
@@ -691,11 +667,11 @@ func columnChangeSites(file *File) []columnChangeSite {
 	for index := range file.Statements {
 		stmt := &file.Statements[index]
 		w := stmt.Words
-		if !isAlterTable(w) {
+		if !lintkit.IsAlterTable(w) {
 			continue
 		}
-		table := alterTableReference(w, stmt.sourceWords)
-		for _, i := range clauseStarts(w) {
+		table := lintkit.AlterTableReference(w, stmt.sourceWords)
+		for _, i := range lintkit.ClauseStarts(w) {
 			if i >= len(w) || (w[i] != "MODIFY" && w[i] != "CHANGE") {
 				continue
 			}
@@ -704,18 +680,18 @@ func columnChangeSites(file *File) []columnChangeSite {
 			if j < len(w) && w[j] == "COLUMN" {
 				j++
 			}
-			j = skipIfExists(w, j)
-			if j >= len(w) || !identLike(w[j]) {
+			j = lintkit.SkipIfExists(w, j)
+			if j >= len(w) || !lintkit.IdentLike(w[j]) {
 				continue
 			}
-			oldName := sourceWordAt(w, stmt.sourceWords, j)
+			oldName := lintkit.SourceWordAt(w, stmt.sourceWords, j)
 			newName := oldName
 			j++
 			if change {
-				if j >= len(w) || !identLike(w[j]) {
+				if j >= len(w) || !lintkit.IdentLike(w[j]) {
 					continue
 				}
-				newName = sourceWordAt(w, stmt.sourceWords, j)
+				newName = lintkit.SourceWordAt(w, stmt.sourceWords, j)
 				j++
 			}
 			if _, _, ok := parseMySQLTypeAt(w, j, ""); !ok {
@@ -749,15 +725,15 @@ func columnChangeStatements(file *File) []int {
 // tableCharsetBefore is the default character set a table has when the
 // statement at index runs: the baseline's answer, unless an earlier
 // statement of the same file changed it.
-func tableCharsetBefore(file *File, index int, table tableReference, baseline string) string {
+func tableCharsetBefore(file *File, index int, table lintkit.TableReference, baseline string) string {
 	charset := baseline
 	for i := range index {
 		stmt := &file.Statements[i]
 		w := stmt.Words
-		if !isAlterTable(w) || alterTableReference(w, stmt.sourceWords).normalized != table.normalized {
+		if !lintkit.IsAlterTable(w) || lintkit.AlterTableReference(w, stmt.sourceWords).Normalized != table.Normalized {
 			continue
 		}
-		for _, j := range clauseStarts(w) {
+		for _, j := range lintkit.ClauseStarts(w) {
 			if target, ok := tableCharsetClause(w, j); ok {
 				charset = target
 			}
@@ -790,7 +766,7 @@ func tableCharsetClause(w []string, j int) (string, bool) {
 	if k < len(w) && w[k] == "=" {
 		k++
 	}
-	if k >= len(w) || w[k] == "DEFAULT" || !identLike(w[k]) {
+	if k >= len(w) || w[k] == "DEFAULT" || !lintkit.IdentLike(w[k]) {
 		return "", false
 	}
 	return normalizeCharset(w[k]), true
@@ -810,7 +786,7 @@ func resolveColumnChanges(file *File) []resolvedColumnChange {
 	}
 	var resolved []resolvedColumnChange
 	for _, site := range columnChangeSites(file) {
-		column, ok := file.baseline.column(site.table.normalized, normalizeIdent(site.oldName))
+		column, ok := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
 		if !ok {
 			continue
 		}
@@ -826,7 +802,7 @@ func resolveColumnChanges(file *File) []resolvedColumnChange {
 		}
 		old.collate = normalizeCollation(column.Collation)
 		updated.collate = resolvedCollation(updated, column, tableCharset)
-		keys := keyCoverageOf(file.baseline.columnIndexes(site.table.normalized, normalizeIdent(site.oldName)), normalizeIdent(site.oldName))
+		keys := keyCoverageOf(file.baseline.ColumnIndexes(site.table.Normalized, lintkit.NormalizeIdent(site.oldName)), lintkit.NormalizeIdent(site.oldName))
 		resolved = append(resolved, resolvedColumnChange{
 			site:       site,
 			old:        old,
@@ -890,9 +866,9 @@ func columnTypeCopyRule() Rule {
 					"both servers default to, and is clamped or truncated when strict mode is off. "+
 					"Verify the old-to-new value mapping on production data first, and run the change through an online-DDL tool "+
 					"such as gh-ost or pt-online-schema-change for a populated table",
-					change.clause(), change.site.table.name, change.site.newName, change.transition.why, tableCopyConsequence)
+					change.clause(), change.site.table.Name, change.site.newName, change.transition.why, tableCopyConsequence)
 				findings = append(findings, costFinding(file, change.site.statement, "MY130", "column type change copies the table", message,
-					Subject{Kind: SubjectColumn, Name: change.site.newName, Parent: change.site.table.name, DataType: change.updated.base}))
+					Subject{Kind: SubjectColumn, Name: change.site.newName, Parent: change.site.table.Name, DataType: change.updated.base}))
 			}
 			return findings
 		},
@@ -906,7 +882,7 @@ func primaryKeyDropCopyRule() Rule {
 		Severity: SeverityWarning,
 		Dialects: mysqlFamily,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !scanDropPrimaryKey(stmt.Words) || scanAddPrimaryKey(stmt.Words) {
+			if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanDropPrimaryKey(stmt.Words) || lintkit.ScanAddPrimaryKey(stmt.Words) {
 				return false, ""
 			}
 			return true, "DROP PRIMARY KEY with no replacement key in the same statement: MySQL refuses ALGORITHM=INSTANT and INPLACE for it " +
@@ -921,7 +897,7 @@ func primaryKeyDropCopyRule() Rule {
 // charsetConversionSite is one CONVERT TO CHARACTER SET clause.
 type charsetConversionSite struct {
 	statement int
-	table     tableReference
+	table     lintkit.TableReference
 	target    string
 }
 
@@ -930,11 +906,11 @@ func charsetConversionSites(file *File) []charsetConversionSite {
 	for index := range file.Statements {
 		stmt := &file.Statements[index]
 		w := stmt.Words
-		if !isAlterTable(w) {
+		if !lintkit.IsAlterTable(w) {
 			continue
 		}
-		table := alterTableReference(w, stmt.sourceWords)
-		for _, i := range clauseStarts(w) {
+		table := lintkit.AlterTableReference(w, stmt.sourceWords)
+		for _, i := range lintkit.ClauseStarts(w) {
 			if i >= len(w) || w[i] != "CONVERT" {
 				continue
 			}
@@ -975,7 +951,7 @@ func resolveCharsetConversions(file *File) []resolvedCharsetConversion {
 	}
 	var resolved []resolvedCharsetConversion
 	for _, site := range charsetConversionSites(file) {
-		columns := file.baseline.tableColumns(site.table.normalized)
+		columns := file.baseline.TableColumns(site.table.Normalized)
 		if len(columns) == 0 {
 			continue
 		}
@@ -987,7 +963,7 @@ func resolveCharsetConversions(file *File) []resolvedCharsetConversion {
 			}
 			updated := old
 			updated.charset = site.target
-			keys := keyCoverageOf(file.baseline.columnIndexes(site.table.normalized, normalizeIdent(column.Name)), normalizeIdent(column.Name))
+			keys := keyCoverageOf(file.baseline.ColumnIndexes(site.table.Normalized, lintkit.NormalizeIdent(column.Name)), lintkit.NormalizeIdent(column.Name))
 			conversion.columns = append(conversion.columns, convertedColumn{
 				name:       column.Name,
 				transition: compareCharsets(old, updated, file.dialect, keys),
@@ -1045,15 +1021,15 @@ func charsetConversionCopyRule() Rule {
 					reasons = append(reasons, column.name+" ("+column.transition.why+")")
 				}
 				message := fmt.Sprintf("CONVERT TO CHARACTER SET %s on %s cannot be applied in place for %d column%s: %s; %s",
-					conversion.site.target, conversion.site.table.name, len(copied), plural(len(copied)),
+					conversion.site.target, conversion.site.table.Name, len(copied), lintkit.Plural(len(copied)),
 					strings.Join(reasons, "; "), tableCopyConsequence)
 				if n := conversion.inPlace(); n > 0 {
-					message += fmt.Sprintf(". The other %d character column%s of the table would have converted in place", n, plural(n))
+					message += fmt.Sprintf(". The other %d character column%s of the table would have converted in place", n, lintkit.Plural(n))
 				}
 				message += ". Convert the columns that need it one at a time through an online-DDL tool such as gh-ost or pt-online-schema-change, " +
 					"or change only the table default (DEFAULT CHARACTER SET) if new columns are all that should change"
 				findings = append(findings, costFinding(file, conversion.site.statement, "MY136", "character set conversion copies the table", message,
-					Subject{Kind: SubjectTable, Name: conversion.site.table.name}))
+					Subject{Kind: SubjectTable, Name: conversion.site.table.Name}))
 			}
 			return findings
 		},

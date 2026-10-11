@@ -3,6 +3,8 @@ package lint
 import (
 	"fmt"
 	"strings"
+
+	"ptah.run/internal/lintkit"
 )
 
 // A MySQL ENUM or SET column is defined by an ordered list of members, and
@@ -311,7 +313,7 @@ func storageBytes(kind memberKind, members int) int {
 // column's current definition.
 type memberChangeSite struct {
 	statement int
-	table     tableReference
+	table     lintkit.TableReference
 	// oldName is the column the clause changes; newName is what CHANGE
 	// renames it to, or oldName again for MODIFY.
 	oldName string
@@ -327,11 +329,11 @@ func memberChangeSites(file *File) []memberChangeSite {
 	for index := range file.Statements {
 		stmt := &file.Statements[index]
 		w := stmt.Words
-		if !isAlterTable(w) {
+		if !lintkit.IsAlterTable(w) {
 			continue
 		}
-		table := alterTableReference(w, stmt.sourceWords)
-		for _, i := range clauseStarts(w) {
+		table := lintkit.AlterTableReference(w, stmt.sourceWords)
+		for _, i := range lintkit.ClauseStarts(w) {
 			if i >= len(w) || (w[i] != "MODIFY" && w[i] != "CHANGE") {
 				continue
 			}
@@ -340,18 +342,18 @@ func memberChangeSites(file *File) []memberChangeSite {
 			if j < len(w) && w[j] == "COLUMN" {
 				j++
 			}
-			j = skipIfExists(w, j)
-			if j >= len(w) || !identLike(w[j]) {
+			j = lintkit.SkipIfExists(w, j)
+			if j >= len(w) || !lintkit.IdentLike(w[j]) {
 				continue
 			}
-			oldName := sourceWordAt(w, stmt.sourceWords, j)
+			oldName := lintkit.SourceWordAt(w, stmt.sourceWords, j)
 			newName := oldName
 			j++
 			if change {
-				if j >= len(w) || !identLike(w[j]) {
+				if j >= len(w) || !lintkit.IdentLike(w[j]) {
 					continue
 				}
-				newName = sourceWordAt(w, stmt.sourceWords, j)
+				newName = lintkit.SourceWordAt(w, stmt.sourceWords, j)
 				j++
 			}
 			updated, _, ok := memberListAt(w, j)
@@ -402,7 +404,7 @@ func resolveMemberChanges(file *File) []resolvedMemberChange {
 	}
 	var resolved []resolvedMemberChange
 	for _, site := range memberChangeSites(file) {
-		column, ok := file.baseline.column(site.table.normalized, normalizeIdent(site.oldName))
+		column, ok := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
 		if !ok {
 			continue
 		}
@@ -425,7 +427,7 @@ func memberFinding(file *File, change resolvedMemberChange, code, title, message
 	subject := Subject{
 		Kind:     SubjectColumn,
 		Name:     change.site.newName,
-		Parent:   change.site.table.name,
+		Parent:   change.site.table.Name,
 		DataType: strings.ToLower(change.site.updated.kind.String()),
 	}
 	return Finding{
@@ -449,7 +451,7 @@ func quoteMembers(members []string) string {
 }
 
 func (c resolvedMemberChange) column() string {
-	return c.site.table.name + "." + c.site.newName
+	return c.site.table.Name + "." + c.site.newName
 }
 
 func (c resolvedMemberChange) clause() string {
@@ -531,7 +533,7 @@ func memberRemovedRule(kind memberKind) Rule {
 				"SQL mode both servers default to, and is stored as the empty value when strict mode is off. "+
 				"Keep the member and stop writing it, or move those rows to a surviving member first and run "+
 				"the change through an online-DDL tool such as gh-ost or pt-online-schema-change",
-			c.clause(), kind, plural(len(c.transition.removed)), quoteMembers(c.transition.removed),
+			c.clause(), kind, lintkit.Plural(len(c.transition.removed)), quoteMembers(c.transition.removed),
 			c.column(), c.transition.newCount-len(c.transition.appended)-len(c.transition.inserted),
 			c.transition.oldCount, memberCopyConsequence,
 		)
@@ -561,7 +563,7 @@ func memberInsertedRule(kind memberKind) Rule {
 			"%s inserts %s member%s %s into %s ahead of existing members; the server stores each value by its "+
 				"position in the list, so every member after the insertion is renumbered and %s. "+
 				"Append new members at the end instead, which both servers apply in place",
-			c.clause(), kind, plural(len(c.transition.inserted)), quoteMembers(c.transition.inserted), c.column(),
+			c.clause(), kind, lintkit.Plural(len(c.transition.inserted)), quoteMembers(c.transition.inserted), c.column(),
 			memberCopyConsequence,
 		)
 	})
@@ -587,14 +589,7 @@ func memberStorageRule(kind memberKind) Rule {
 				"so even an append at the end is not applied in place and %s. "+
 				"Stay under the boundary, or plan the copy with an online-DDL tool",
 			c.clause(), c.column(), c.transition.oldCount, c.transition.newCount, boundary,
-			before, after, plural(after), memberCopyConsequence,
+			before, after, lintkit.Plural(after), memberCopyConsequence,
 		)
 	})
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }

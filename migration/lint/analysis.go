@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/migration/migrationfile"
@@ -251,7 +252,7 @@ type File struct {
 	naming *namingPolicy
 	// baseline is the schema state this file's version starts from, when the
 	// caller supplied one. Rules read it for facts the statement cannot carry.
-	baseline baselineColumns
+	baseline lintkit.State
 	// dependents is what reads each column in that same starting state.
 	dependents baselineDependents
 	// ydbBefore is the YDB schema the directory's own up migrations leave
@@ -263,6 +264,10 @@ type File struct {
 	// statement's line in the SQL is moved by.
 	split      bool
 	lineOffset int
+	// contract holds the statements in the forms the owners read them, each
+	// line moved by lineOffset: what a check request carries, and what the
+	// recognizers this package shares with the owners take.
+	contract []lintext.Statement
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -364,6 +369,7 @@ func cloneFile(file File) File {
 	file.suppressedRules = slices.Clone(file.suppressedRules)
 	file.Changes = slices.Clone(file.Changes)
 	file.scopeExcluded = maps.Clone(file.scopeExcluded)
+	file.contract = slices.Clone(file.contract)
 	statements := file.Statements
 	file.Statements = make([]Statement, len(statements))
 	for i := range statements {
@@ -474,11 +480,11 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return Analysis{}, err
 	}
 	scope := newSchemaScope(opts.SchemaScope)
-	baseline := newBaselineIndex(
-		normalizeBaselineColumns(opts.Baseline),
-		normalizeBaselineIndexes(opts.BaselineIndexes),
-		normalizeBaselineHypertables(opts.BaselineHypertables),
-	)
+	baseline := lintkit.NewStates(lintext.Baseline{
+		Columns:     opts.Baseline,
+		Indexes:     opts.BaselineIndexes,
+		Hypertables: opts.BaselineHypertables,
+	})
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	registered := registeredCodes(rules)
 	// Validated above, so a second compile cannot fail here.
@@ -518,7 +524,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	if opts.Dialect == platform.YDB {
 		ydbHistory(files)
 	}
-	owners, err := checkOwnedRules(ctx, runtime, files, split, rules, opts, target, registered)
+	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
 		return Analysis{}, err
 	}
@@ -678,7 +684,7 @@ func prepareFile(
 	dirFormat migrationfile.DirFormat,
 	selection VersionSelection,
 	compatibility CompatibilityProfile,
-	baseline map[int64]baselineColumns,
+	baseline map[int64]lintkit.State,
 	dependents map[int64]baselineDependents,
 	registered map[string]struct{},
 	naming *namingPolicy,
@@ -811,6 +817,8 @@ func attachStatements(
 			continue
 		}
 		for index, statement := range split[next] {
+			statement.Line += file.lineOffset
+			file.contract = append(file.contract, statement)
 			var suppressed []atlaslint.Target
 			for _, comment := range statement.Comments {
 				suppressed = append(suppressed, parseNoLintDirective(comment, compatibility, registered)...)
@@ -827,7 +835,7 @@ func attachStatements(
 				Canonical:       statement.Canonical,
 				Words:           statement.Words,
 				Routine:         routine,
-				Line:            statement.Line + file.lineOffset,
+				Line:            statement.Line,
 				sourceWords:     statement.SourceWords,
 				suppressedRules: suppressed,
 			})

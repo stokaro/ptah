@@ -3,13 +3,16 @@ package lint
 import (
 	"fmt"
 	"strings"
+
+	"ptah.run/internal/lintkit"
 )
 
 // Making a nullable column NOT NULL is a change whose outcome the rows
 // decide: a row holding NULL either aborts the statement or is rewritten to
 // something the author never wrote. The SET NOT NULL spelling is reported by
-// PG303 from the statement text, on PostgreSQL and on the three engines that
-// speak its wire protocol, and SQLite's staged rebuild by LT101. DD103
+// the PostgreSQL owner's PG303 from the statement text, on PostgreSQL and on
+// the three engines that speak its wire protocol, and SQLite's staged rebuild
+// by LT101. DD103
 // covers the engines whose spelling restates the whole column -- MySQL and
 // MariaDB's MODIFY and CHANGE, SQL Server's ALTER COLUMN, and ClickHouse's
 // MODIFY COLUMN, where the nullability is in the type itself -- where the
@@ -61,7 +64,7 @@ import (
 // notNullSite is one clause that restates a column as NOT NULL.
 type notNullSite struct {
 	statement int
-	table     tableReference
+	table     lintkit.TableReference
 	column    string
 	clause    string
 }
@@ -89,18 +92,18 @@ func notNullSites(file *File) []notNullSite {
 			}
 			continue
 		}
-		if hasWordSeq(w[after:clauseEndFrom(w, site.typeStart)], "NOT", "NULL") {
+		if lintkit.HasWordSeq(w[after:clauseEndFrom(w, site.typeStart)], "NOT", "NULL") {
 			sites = append(sites, notNullSite{statement: site.statement, table: site.table, column: site.oldName, clause: clause})
 		}
 	}
 	for index := range file.Statements {
 		stmt := &file.Statements[index]
 		w := stmt.Words
-		if !isAlterTable(w) {
+		if !lintkit.IsAlterTable(w) {
 			continue
 		}
-		table := alterTableReference(w, stmt.sourceWords)
-		for _, i := range clauseStarts(w) {
+		table := lintkit.AlterTableReference(w, stmt.sourceWords)
+		for _, i := range lintkit.ClauseStarts(w) {
 			column, ok := sqlServerNotNullClause(w, stmt.sourceWords, i)
 			if !ok {
 				continue
@@ -114,7 +117,7 @@ func notNullSites(file *File) []notNullSite {
 // clauseEndFrom is the end of the clause a word index sits in.
 func clauseEndFrom(w []string, index int) int {
 	end := len(w)
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start > index {
 			end = min(end, start-1)
 		}
@@ -125,15 +128,15 @@ func clauseEndFrom(w []string, index int) int {
 // sqlServerNotNullClause reads ALTER COLUMN name type ... NOT NULL, the SQL
 // Server spelling, which names the type again and never says SET.
 func sqlServerNotNullClause(w, sourceWords []string, i int) (string, bool) {
-	end := clauseEnd(w, i)
-	if i+2 >= end || w[i] != "ALTER" || w[i+1] != "COLUMN" || !identLike(w[i+2]) {
+	end := lintkit.ClauseEnd(w, i)
+	if i+2 >= end || w[i] != "ALTER" || w[i+1] != "COLUMN" || !lintkit.IdentLike(w[i+2]) {
 		return "", false
 	}
 	rest := w[i+3 : end]
-	if len(rest) == 0 || rest[0] == "SET" || rest[0] == "DROP" || rest[0] == "TYPE" || !hasWordSeq(rest, "NOT", "NULL") {
+	if len(rest) == 0 || rest[0] == "SET" || rest[0] == "DROP" || rest[0] == "TYPE" || !lintkit.HasWordSeq(rest, "NOT", "NULL") {
 		return "", false
 	}
-	return sourceWordAt(w, sourceWords, i+2), true
+	return lintkit.SourceWordAt(w, sourceWords, i+2), true
 }
 
 func notNullStatements(file *File) []int {
@@ -173,66 +176,11 @@ func notNullConsequence(dialect string) string {
 	}
 }
 
-// pgWireFamily is the set of engines the SET NOT NULL spelling was measured
-// on: PostgreSQL and the three that speak its wire protocol. PG303 names
-// each of them deliberately, one measurement per engine, where every other
-// PG rule names postgres alone.
-var pgWireFamily = []string{"postgres", "cockroachdb", "yugabytedb", "spanner"}
-
-// setNotNullConsequence says what each engine does with SET NOT NULL, as
-// measured; the PostgreSQL sentence also answers a run with no dialect.
-func setNotNullConsequence(dialect string) string {
-	switch dialect {
-	case "cockroachdb":
-		return "SET NOT NULL validates every existing row in a schema-change job, and a row holding NULL fails it " +
-			"(validation of column NOT NULL failed on row, SQLSTATE 23502); backfill first so the validation meets no NULL"
-	case "yugabytedb":
-		return "SET NOT NULL checks every existing row, and a row holding NULL aborts it (column contains null values); " +
-			"backfill first so the check meets no NULL"
-	case "spanner":
-		return "SET NOT NULL runs as a schema change that validates every existing row, and a row holding NULL fails it " +
-			"(FAILED_PRECONDITION: Cannot specify a null value for column) and leaves the column nullable; backfill first"
-	default:
-		return "SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it " +
-			"(column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, " +
-			"and SET NOT NULL afterwards, which then scans nothing"
-	}
-}
-
-// notNullRules is the family: the SET NOT NULL rule for the PostgreSQL
-// wire family, and the restating-spelling rule for the rest.
+// notNullRules is the part of the family this package checks: the
+// restating-spelling rule. The SET NOT NULL rule for the PostgreSQL wire
+// family, PG303, is the PostgreSQL owner's.
 func notNullRules() []Rule {
-	return []Rule{setNotNullRule(), nullableMadeNotNullRule()}
-}
-
-// setNotNullRule (PG303) reads the statement text: SET NOT NULL says what
-// it does, and the row that decides the outcome is not in the schema.
-func setNotNullRule() Rule {
-	return Rule{
-		Code:     "PG303",
-		Title:    "not-null validation scans existing rows",
-		Severity: SeverityWarning,
-		Dialects: pgWireFamily,
-		CheckFile: func(file *File) []Finding {
-			var findings []Finding
-			for index := range file.Statements {
-				stmt := &file.Statements[index]
-				if !isAlterTable(stmt.Words) || !scanSetNotNull(stmt.Words) {
-					continue
-				}
-				findings = append(findings, Finding{
-					Rule:     "PG303",
-					Title:    "not-null validation scans existing rows",
-					Severity: SeverityWarning,
-					File:     file.Path,
-					Line:     stmt.Line,
-					Message:  setNotNullConsequence(file.dialect),
-					Context:  statementFindingContext(index),
-				})
-			}
-			return findings
-		},
-	}
+	return []Rule{nullableMadeNotNullRule()}
 }
 
 func nullableMadeNotNullRule() Rule {
@@ -249,16 +197,16 @@ func nullableMadeNotNullRule() Rule {
 			}
 			var findings []Finding
 			for _, site := range notNullSites(file) {
-				column, ok := file.baseline.column(site.table.normalized, normalizeIdent(site.column))
+				column, ok := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.column))
 				if !ok || column.NotNull {
 					continue
 				}
 				message := fmt.Sprintf("%s %s.%s makes a nullable column NOT NULL: %s. Backfill first (UPDATE %s SET %s = ... WHERE %s IS NULL) "+
 					"so the change meets no NULL, and only then restate the column",
-					site.clause, site.table.name, site.column, notNullConsequence(file.dialect),
-					site.table.name, site.column, site.column)
+					site.clause, site.table.Name, site.column, notNullConsequence(file.dialect),
+					site.table.Name, site.column, site.column)
 				findings = append(findings, costFinding(file, site.statement, "DD103", "nullable column made NOT NULL", message,
-					Subject{Kind: SubjectColumn, Name: site.column, Parent: site.table.name, DataType: strings.ToLower(column.ColumnType)}))
+					Subject{Kind: SubjectColumn, Name: site.column, Parent: site.table.Name, DataType: strings.ToLower(column.ColumnType)}))
 			}
 			return findings
 		},
