@@ -1488,7 +1488,14 @@ DROP INDEX IF EXISTS "i";
 CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
 ```
 
-which drops the parameter. `include` is outside this loss class: a model can
+which drops the parameter.
+
+`ptah introspect` therefore refuses an index whose storage parameters the
+directive cannot write, and names them, rather than writing a declaration that
+would drop them when applied. The options of a YDB full-text or local index are
+the exception: the YDB owner adds attributes for them to the directive.
+
+`include` is outside this loss class: a model can
 declare `include="b"`, and PostgreSQL, YugabyteDB, CockroachDB, the Spanner
 PostgreSQL dialect, and SQL Server preserve it as an `INCLUDE` clause, while YDB
 writes it as `COVER`. Validation refuses the other dialects rather than dropping

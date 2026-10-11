@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	annotationext "ptah.run/core/annotation"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -91,10 +93,7 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if err := validatePackageName(opts.PackageName); err != nil {
 		return nil, err
 	}
-	if err := validateFullTextIndexes(db.Indexes); err != nil {
-		return nil, err
-	}
-	if err := validateIndexIncludeColumns(db.Indexes); err != nil {
+	if err := validateIndexes(db.Indexes); err != nil {
 		return nil, err
 	}
 	if err := validateMaterializedViewFacets(db.MaterializedViews, db.FeatureCoverage); err != nil {
@@ -1740,6 +1739,38 @@ func fullTextAttrs(index schemamodel.Index) []attr {
 		attrs = append(attrs, attr{name: name, value: value, set: present})
 	}
 	return attrs
+}
+
+// validateIndexes refuses an index whose settings the index directive cannot
+// carry: invalid YDB full-text or local options, WITH options it has no
+// attribute for, and an INCLUDE column it cannot spell.
+func validateIndexes(indexes []schemamodel.Index) error {
+	if err := validateFullTextIndexes(indexes); err != nil {
+		return err
+	}
+	if err := refuseIndexOptions(indexes); err != nil {
+		return err
+	}
+	return validateIndexIncludeColumns(indexes)
+}
+
+// refuseIndexOptions refuses an index's WITH options the index directive has
+// no attribute for. It writes the options of a YDB full-text or local index,
+// which validateFullTextIndexes checks. Any other, such as PostgreSQL's
+// fillfactor, would be left out, and the comparator plans a rebuild without
+// it wherever the source is applied.
+func refuseIndexOptions(indexes []schemamodel.Index) error {
+	for _, index := range indexes {
+		if len(index.StorageParams) == 0 {
+			continue
+		}
+		if kind, err := ydbindex.KindOf(index.Type); err == nil && (kind.IsFullText() || kind.IsLocal()) {
+			continue
+		}
+		return fmt.Errorf("%w: index %q has WITH options %s, which a Go annotation cannot represent",
+			ptaherr.ErrUnsupportedFeature, index.Name, strings.Join(slices.Sorted(maps.Keys(index.StorageParams)), ", "))
+	}
+	return nil
 }
 
 // validateFullTextIndexes refuses settings an annotation cannot carry before
