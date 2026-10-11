@@ -20,6 +20,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -160,7 +161,10 @@ func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
 	}
 }
 
-// hypertableSchema declares one table and asks for it to be partitioned.
+// hypertableSchema declares one table and asks for it to be partitioned. It
+// declares the timescaledb extension the way a schema does, as the extension
+// owner's object; the declaration claims no extension coverage, so an
+// extension it does not name is neither created nor dropped.
 func hypertableSchema(schemaName, table, column, interval string) *schemamodel.Database {
 	schema := &schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: schemaName}},
@@ -170,7 +174,9 @@ func hypertableSchema(schemaName, table, column, interval string) *schemamodel.D
 			{StructName: "T", Name: "device", Type: "INTEGER"},
 			{StructName: "T", Name: "value", Type: "INTEGER"},
 		},
-		Extensions:      []schemamodel.Extension{{Name: "timescaledb", IfNotExists: true}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(
+			pgextension.Ref("timescaledb"), pgextension.DesiredExtension{IfNotExists: true},
+		)))),
 		FeatureCoverage: must.Must(tsschema.CompleteCoverage(schemaext.Desired)),
 	}
 	schema.Tables[0].Facets = must.Must(schemaext.NewFacets(&tsschema.DesiredHypertable{Column: column, ChunkInterval: interval, IfNotExists: true}))

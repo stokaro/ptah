@@ -14,7 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/schemaext"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -54,7 +54,7 @@ func applyTimescale(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnect
 // continuous aggregate over it, and a view that reads the aggregate.
 func readingsWithAggregateAndView(schemaName string) *schemamodel.Database {
 	declared := hypertableSchema(schemaName, "readings", "time", "")
-	declared.FeatureObjects = must.Must(schemaext.NewObjects(tsschema.DesiredContinuousAggregateObject(schemaName, "hourly",
+	declared.FeatureObjects = must.Must(declared.FeatureObjects.With(tsschema.DesiredContinuousAggregateObject(schemaName, "hourly",
 		tsschema.DesiredContinuousAggregate{Body: fmt.Sprintf(
 			`SELECT time_bucket('1 hour', "time") AS bucket, avg(value) AS avg_value FROM %s.readings GROUP BY 1`, schemaName)}),
 	))
@@ -128,19 +128,24 @@ func TestTimescaleQualifiedAggregateAnnotationE2E(t *testing.T) {
 		"\t//ptah:schema:field name=\"value\" type=\"INTEGER\" not_null=\"true\"\n\tValue int\n}\n\n"+
 		"//ptah:schema:hypertable table=\"%s.readings\" column=\"time\"\ntype ReadingsHypertable struct{}\n\n"+
 		"//ptah:schema:continuousaggregate name=\"%s.hourly\" body=\"SELECT time_bucket('1 hour', time) AS bucket, avg(value) AS v FROM %s.readings GROUP BY 1\"\n"+
-		"type Hourly struct{}\n", schemaName, schemaName, schemaName, schemaName)
+		"type Hourly struct{}\n\n"+
+		"//ptah:schema:extension name=\"timescaledb\" if_not_exists=\"true\"\ntype Extensions struct{}\n", schemaName, schemaName, schemaName, schemaName)
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), "readings.go", source)
 	c.Assert(err, qt.IsNil)
 	declared := &parsed
 	declared.Schemas = []schemamodel.Schema{{Name: schemaName}}
-	declared.Extensions = []schemamodel.Extension{{Name: "timescaledb", IfNotExists: true}}
 
 	applyTimescale(ctx, c, conn, declared, schemaName)
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
+	// The read carries every owner's objects, the server's extensions among
+	// them; the claim is about the aggregates.
+	aggregates := live.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind)
+	})
 	var names []string
-	for _, ref := range live.FeatureObjects.Refs() {
+	for _, ref := range aggregates.Refs() {
 		names = append(names, tsschema.QualifiedName(ref))
 	}
 	c.Assert(names, qt.DeepEquals, []string{schemaName + ".hourly"})
