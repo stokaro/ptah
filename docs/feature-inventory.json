@@ -1078,6 +1078,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-postgres-pglint",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/postgres/pglint",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-postgres-pgproject",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgproject",
