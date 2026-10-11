@@ -14,6 +14,7 @@
 package undecidednote
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
@@ -109,13 +110,15 @@ func Entries(undecided schemadiff.Diagnostics, currentDescription string) []Entr
 		entries = append(entries, Entry{Kind: string(object.Kind), Name: object.Name, Reason: Cause(object, currentDescription)})
 	}
 	for _, diagnostic := range undecided.Features {
+		// The owner's label where it states one, and the identity as
+		// [objectidentity.ID.String] writes it, quoted where a component
+		// holds a dot.
 		ref := diagnostic.Subject
-		name := fmt.Sprintf("(catalog %q, schema %q, parent %q, %s %q, signature %q)",
-			ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Kind, ref.Name.Source, ref.Signature)
+		name := ref.Path()
 		if ref == (objectidentity.ID{}) {
 			name = "namespace"
 		}
-		entries = append(entries, Entry{Kind: string(diagnostic.Kind), Name: name, Reason: diagnostic.Reason})
+		entries = append(entries, Entry{Kind: cmp.Or(diagnostic.Label, string(diagnostic.Kind)), Name: name, Reason: diagnostic.Reason})
 	}
 	slices.SortFunc(entries, func(a, b Entry) int {
 		if compared := strings.Compare(a.Kind, b.Kind); compared != 0 {

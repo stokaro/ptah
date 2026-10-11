@@ -184,7 +184,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		if err != nil {
 			return err
 		}
-		if err := reportDialectScopeOmissions(stderr, result, selected); err != nil {
+		if err := reportDialectScopeOmissions(stderr, result, selected, runtime); err != nil {
 			return err
 		}
 		schemaSQL, err := renderer.RenderSchema(cmd.Context(), runtime, renderer.SchemaRequest{
@@ -218,16 +218,28 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 // function that was never going to appear. The report goes to stderr rather
 // than into the statement list because stdout is DDL somebody pipes into a
 // database, and a note about a declaration is not a statement.
-func reportDialectScopeOmissions(stderr io.Writer, db *schemamodel.Database, target schemaext.TargetSelection) error {
+//
+// An owner's object is named by the label its owner states for its model and
+// by its identity, as an undecided object is: `PostgreSQL extension pg_trgm`.
+func reportDialectScopeOmissions(stderr io.Writer, db *schemamodel.Database, target schemaext.TargetSelection, labels labeler) error {
 	omissions, err := schemamodel.OmissionsForTarget(db, target)
 	if err != nil {
 		return err
 	}
 	for _, omitted := range omissions {
+		kind, name := omitted.Kind, omitted.Name
+		if label, stated := labels.Label(schemaext.Kind(omitted.Ref.Kind)); stated && omitted.Ref.Kind != "" {
+			kind, name = label, omitted.Ref.Path()
+		}
 		fmt.Fprintf(stderr, "note: %s: %s %s is declared for %s and is not part of this target's schema\n",
-			target.Name(), omitted.Kind, omitted.Name, strings.Join(omitted.Dialects, ", "))
+			target.Name(), kind, name, strings.Join(omitted.Dialects, ", "))
 	}
 	return nil
+}
+
+// labeler returns the label an owner states for its model.
+type labeler interface {
+	Label(kind schemaext.Kind) (string, bool)
 }
 
 // resolveServerTarget maps --server-version onto the capability preset the

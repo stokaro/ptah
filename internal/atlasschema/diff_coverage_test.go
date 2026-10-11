@@ -47,7 +47,7 @@ extension "citext" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)
 	c.Assert(diagnostics.String(), qt.Matches,
-		`Warning: ptah.run/pgextension/extension .*"citext".* could not be compared between --from and --to: `+
+		`Warning: PostgreSQL extension citext could not be compared between --from and --to: `+
 			"whether the extension is installed was not established: the description does not describe extension\\.\n")
 }
 

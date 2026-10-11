@@ -220,6 +220,13 @@ func (id ID) Equal(other ID) bool {
 // `ext` is `ext.pw`, and the name `ext.pw` with no schema is `"ext.pw"`
 // (stokaro/ptah#4276). String is for people; [ID.Key] is the comparison form.
 func (id ID) String() string {
+	return string(id.Kind) + " " + id.Path()
+}
+
+// Path renders the identity as [ID.String] does, without the kind, for a
+// reader who names the kind in words of their own: `ext.pw`, or `"ext.pw"`
+// for a name holding a dot, then the signature where there is one.
+func (id ID) Path() string {
 	parts := make([]string, 0, 4)
 	for _, part := range []Part{id.Catalog, id.Schema, id.Parent} {
 		if !part.Empty() {
@@ -227,7 +234,7 @@ func (id ID) String() string {
 		}
 	}
 	parts = append(parts, displayComponent(id.Name.Source))
-	rendered := string(id.Kind) + " " + strings.Join(parts, ".")
+	rendered := strings.Join(parts, ".")
 	if id.Signature != "" {
 		rendered += "(" + id.Signature + ")"
 	}

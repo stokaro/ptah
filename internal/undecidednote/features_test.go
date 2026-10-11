@@ -27,8 +27,8 @@ func TestFeatureLimitsRetainNamespaceAndSubjectInEveryReport(t *testing.T) {
 	c.Assert(entries[0].Name, qt.Not(qt.Equals), entries[1].Name)
 	var output strings.Builder
 	undecidednote.Report(&output, limits, "--from", "--to")
-	c.Assert(output.String(), qt.Contains, `schema "", parent "", table "audit.events"`)
-	c.Assert(output.String(), qt.Contains, `schema "audit", parent "", table "events"`)
+	c.Assert(output.String(), qt.Contains, `Warning: test/changefeed "audit.events" could not be compared`)
+	c.Assert(output.String(), qt.Contains, `Warning: test/changefeed audit.events could not be compared`)
 	c.Assert(output.String(), qt.Contains, "current children were not inspected")
 	c.Assert(output.String(), qt.Contains, "desired children were not described")
 	c.Assert(output.String(), qt.Contains, "between --from and --to")
@@ -72,4 +72,38 @@ func TestStandaloneNamespaceLimitHasNoInventedObject(t *testing.T) {
 	undecidednote.Report(&output, limits, "database", "declaration")
 	c.Assert(output.String(), qt.Contains, "namespace was not inspected")
 	c.Assert(undecidednote.Summary(limits), qt.Equals, "1 comparison limit remains unresolved")
+}
+
+// TestFeatureLimitsNameTheModelByItsLabel pins how a report names an owner's
+// object: by the label its owner states for the model, where there is one,
+// and otherwise by the model's kind, then by its identity with a dotted
+// component quoted.
+func TestFeatureLimitsNameTheModelByItsLabel(t *testing.T) {
+	builder := objectidentity.NewBuilder(identifier.ForDialect("postgres"))
+	tests := []struct {
+		name       string
+		diagnostic schemaext.UndecidedChange
+		want       string
+	}{
+		{name: "a labeled model", diagnostic: schemaext.UndecidedChange{Kind: "test/extension", Label: "PostgreSQL extension",
+			Subject: objectidentity.ID{Kind: "test/extension", Name: objectidentity.Part{Source: "citext", Normalized: "citext"}},
+			Reason:  "it was not read"},
+			want: "Warning: PostgreSQL extension citext could not be compared between --from and --to: it was not read.\n"},
+		{name: "a model without a label", diagnostic: schemaext.UndecidedChange{Kind: "test/changefeed",
+			Subject: builder.TableParts("audit", "events"), Reason: "it was not read"},
+			want: "Warning: test/changefeed audit.events could not be compared between --from and --to: it was not read.\n"},
+		{name: "a dotted name", diagnostic: schemaext.UndecidedChange{Kind: "test/changefeed", Label: "changefeed",
+			Subject: builder.TableParts("", "audit.events"), Reason: "it was not read"},
+			want: "Warning: changefeed public.\"audit.events\" could not be compared between --from and --to: it was not read.\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var output strings.Builder
+
+			undecidednote.Report(&output, schemadiff.Diagnostics{Features: []schemaext.UndecidedChange{test.diagnostic}}, "--from", "--to")
+
+			c.Assert(output.String(), qt.Equals, test.want)
+		})
+	}
 }

@@ -92,6 +92,10 @@ type UndecidedChange struct {
 	// This does not invent an object or an owning table for standalone models.
 	Subject objectidentity.ID `json:"subject"`
 	Reason  string            `json:"reason"`
+	// Label names the model for a reader, such as "PostgreSQL extension": the
+	// label its owner states for it. The engine fills it from the owner's
+	// off-target answer, and it is empty where the owner states none.
+	Label string `json:"label,omitempty"`
 }
 
 // ObjectComparisonResult carries independently named changes and the effective
