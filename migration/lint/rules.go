@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/txrequire"
 )
 
 // Rules returns the rules a lint run with runtime applies: the rules this
@@ -102,8 +100,6 @@ func builtinRules() []Rule {
 	rules = append(rules, notNullRules()...)
 	rules = append(rules, namingRules()...)
 	rules = append(rules, injectionRules()...)
-	rules = append(rules, postgresRules()...)
-	rules = append(rules, postgresCostRules()...)
 	rules = append(rules, mysqlRules()...)
 	rules = append(rules, mysqlMemberRules()...)
 	rules = append(rules, mysqlCostRules()...)
@@ -220,7 +216,6 @@ func dataSafetyRules() []Rule {
 		enumValueRemovedRule(),
 		databaseObjectDroppedRule(),
 		routineBodyNotAnalyzedRule(),
-		definerRoutineWithoutSearchPathRule(),
 		immutableRoutineReadsTheClockRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
@@ -273,7 +268,7 @@ func tableDroppedRule() Rule {
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if ref := createdTableRef(stmt.Words); ref != "" {
+				if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
 					created[ref] = true
 					continue
 				}
@@ -281,13 +276,13 @@ func tableDroppedRule() Rule {
 					continue
 				}
 				if ref, isReplace := replacedTableRef(stmt.Words, stmt.sourceWords); isReplace {
-					if ref.normalized != "" && refersToCreated(created, ref.normalized) {
+					if ref.Normalized != "" && lintkit.RefersToCreated(created, ref.Normalized) {
 						continue
 					}
 					findings = append(findings, tableReplacedFinding(file.Path, stmt.Line, i, ref))
 					continue
 				}
-				if !hasWordPrefix(stmt.Words, "DROP", "TABLE") {
+				if !lintkit.HasWordPrefix(stmt.Words, "DROP", "TABLE") {
 					continue
 				}
 				unsafeTables, complete := droppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
@@ -371,15 +366,15 @@ func tableRenamedFindings(file *File) []Finding {
 // order carries no meaning, so both reports have to derive the same sequence
 // from it -- two sorts would agree until one of them was changed, and the
 // symptom would be one statement reporting its tables in two different orders.
-func orderedDropTargets(tables []tableReference) []tableReference {
+func orderedDropTargets(tables []lintkit.TableReference) []lintkit.TableReference {
 	ordered := slices.Clone(tables)
-	slices.SortStableFunc(ordered, func(a, b tableReference) int {
-		return strings.Compare(logicalObjectName(a.name), logicalObjectName(b.name))
+	slices.SortStableFunc(ordered, func(a, b lintkit.TableReference) int {
+		return strings.Compare(logicalObjectName(a.Name), logicalObjectName(b.Name))
 	})
 	return ordered
 }
 
-func tableDroppedFindings(filePath string, line, statementIndex int, tables []tableReference) []Finding {
+func tableDroppedFindings(filePath string, line, statementIndex int, tables []lintkit.TableReference) []Finding {
 	finding := func(message string, subjects ...Subject) Finding {
 		return Finding{
 			Rule:     "DS101",
@@ -399,8 +394,8 @@ func tableDroppedFindings(filePath string, line, statementIndex int, tables []ta
 	findings := make([]Finding, 0, len(ordered))
 	for _, table := range ordered {
 		findings = append(findings, finding(
-			fmt.Sprintf("DROP TABLE permanently deletes table %s and every row in it; %s", table.name, tableDroppedAdvice),
-			Subject{Kind: SubjectTable, Name: table.name},
+			fmt.Sprintf("DROP TABLE permanently deletes table %s and every row in it; %s", table.Name, tableDroppedAdvice),
+			Subject{Kind: SubjectTable, Name: table.Name},
 		))
 	}
 	return findings
@@ -416,23 +411,23 @@ func tableDroppedFindings(filePath string, line, statementIndex int, tables []ta
 // parsed to the end. That is reported as an unnamed finding rather than
 // treated as safe, the same fail-closed contract [droppedTablesNotCreated]
 // documents for DROP TABLE.
-func replacedTableRef(w, sourceWords []string) (ref tableReference, isReplace bool) {
-	if !hasWordPrefix(w, "CREATE", "OR", "REPLACE", "TABLE") {
-		return tableReference{}, false
+func replacedTableRef(w, sourceWords []string) (ref lintkit.TableReference, isReplace bool) {
+	if !lintkit.HasWordPrefix(w, "CREATE", "OR", "REPLACE", "TABLE") {
+		return lintkit.TableReference{}, false
 	}
-	ref, _ = tableRefAt(w, sourceWords, 4)
+	ref, _ = lintkit.TableRefAt(w, sourceWords, 4)
 	return ref, true
 }
 
 // tableReplacedFinding reports the table a CREATE OR REPLACE TABLE statement
 // destroys, in [tableDroppedRule]'s DS101.
-func tableReplacedFinding(filePath string, line, statementIndex int, table tableReference) Finding {
+func tableReplacedFinding(filePath string, line, statementIndex int, table lintkit.TableReference) Finding {
 	message := "CREATE OR REPLACE TABLE permanently deletes the table and every row in it; " + tableDroppedAdvice
 	var subjects []Subject
-	if table.name != "" {
+	if table.Name != "" {
 		message = fmt.Sprintf("CREATE OR REPLACE TABLE permanently deletes table %s and every row in it; %s",
-			table.name, tableDroppedAdvice)
-		subjects = []Subject{{Kind: SubjectTable, Name: table.name}}
+			table.Name, tableDroppedAdvice)
+		subjects = []Subject{{Kind: SubjectTable, Name: table.Name}}
 	}
 	return Finding{
 		Rule:     "DS101",
@@ -485,7 +480,7 @@ func columnDroppedRule() Rule {
 			var findings []Finding
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if !isAlterTable(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) {
 					continue
 				}
 				subjects := droppedColumnSubjects(stmt.Words, stmt.sourceWords)
@@ -531,7 +526,7 @@ func columnDroppedWithReadersRule() Rule {
 			var findings []Finding
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if !isAlterTable(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) {
 					continue
 				}
 				findings = append(findings, droppedColumnReaderFindings(file, stmt, i)...)
@@ -549,7 +544,7 @@ func droppedColumnStatements(file *File) []int {
 	var indexes []int
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
-		if isAlterTable(stmt.Words) && len(droppedColumnSubjects(stmt.Words, stmt.sourceWords)) > 0 {
+		if lintkit.IsAlterTable(stmt.Words) && len(droppedColumnSubjects(stmt.Words, stmt.sourceWords)) > 0 {
 			indexes = append(indexes, i)
 		}
 	}
@@ -561,7 +556,7 @@ func droppedColumnStatements(file *File) []int {
 func droppedColumnReaderFindings(file *File, stmt *Statement, index int) []Finding {
 	var findings []Finding
 	for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
-		readers := file.dependents.readers(normalizeIdent(subject.Parent), normalizeIdent(subject.Name))
+		readers := file.dependents.readers(lintkit.NormalizeIdent(subject.Parent), lintkit.NormalizeIdent(subject.Name))
 		if len(readers) == 0 {
 			continue
 		}
@@ -697,7 +692,7 @@ func notNullDroppedRule() Rule {
 		Title:    "not-null constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !scanDropNotNull(stmt.Words) {
+			if !lintkit.IsAlterTable(stmt.Words) || !scanDropNotNull(stmt.Words) {
 				return false, ""
 			}
 			return true, "DROP NOT NULL removes a column-level data protection; verify nullable values are accepted by every deployed reader and writer first"
@@ -715,7 +710,7 @@ func constraintDroppedRule() Rule {
 		Title:    "constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !scanDropNamedConstraint(stmt.Words) {
+			if !lintkit.IsAlterTable(stmt.Words) || !scanDropNamedConstraint(stmt.Words) {
 				return false, ""
 			}
 			return true, "dropping a constraint removes an existing data protection; verify the replacement safety invariant before applying"
@@ -732,7 +727,7 @@ func alterTableDropRule(code, title string, scan func([]string) bool, message st
 		Title:    title,
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !scan(stmt.Words) {
+			if !lintkit.IsAlterTable(stmt.Words) || !scan(stmt.Words) {
 				return false, ""
 			}
 			return true, message
@@ -751,7 +746,7 @@ func checkConstraintDroppedRule() Rule {
 }
 
 func primaryKeyDroppedRule() Rule {
-	return alterTableDropRule("CD103", "primary key dropped", scanDropPrimaryKey,
+	return alterTableDropRule("CD103", "primary key dropped", lintkit.ScanDropPrimaryKey,
 		"dropping a primary key removes row-uniqueness and identity enforcement and can break replication; verify a replacement key exists before applying")
 }
 
@@ -867,11 +862,11 @@ func immutableRoutineReadsTheClockRule() Rule {
 // Read from the header for the reason the definer rule is: a body is words, and
 // one mentioning IMMUTABLE would otherwise answer for a header that does not.
 func declaresImmutability(w []string) bool {
-	header, ok := routineHeaderWords(w)
+	header, ok := lintkit.RoutineHeaderWords(w)
 	if !ok {
 		return false
 	}
-	if containsWord(header, "IMMUTABLE") {
+	if lintkit.ContainsWord(header, "IMMUTABLE") {
 		return true
 	}
 	// MySQL and MariaDB spell it DETERMINISTIC, and NOT DETERMINISTIC is the
@@ -902,55 +897,13 @@ func firstNonDeterministicCall(bodyWords []string) (string, bool) {
 	return "", false
 }
 
-func definerRoutineWithoutSearchPathRule() Rule {
-	return Rule{
-		Code:     "PG312P",
-		Title:    "SECURITY DEFINER routine does not pin search_path",
-		Severity: SeverityWarning,
-		Dialects: []string{"postgres"},
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			header, ok := routineHeaderWords(stmt.Words)
-			if !ok || !containsWord(header, "DEFINER") || containsWord(header, "SET") {
-				return false, ""
-			}
-			return true, "a SECURITY DEFINER routine resolves unqualified names through the caller's search_path; " +
-				"add SET search_path = pg_catalog, pg_temp so the caller cannot decide what it reads"
-		},
-		AppliesToDown: true,
-	}
-}
-
-// routineHeaderWords returns the words of a routine definition's header, and
-// reports whether the statement is one.
-//
-// The header ends where the body begins, which is AS, BEGIN or RETURN. Reading
-// past it is what a scan of the whole statement does, and a body is words: one
-// carrying `SET` would satisfy the rule for a header that pins nothing.
-func routineHeaderWords(w []string) ([]string, bool) {
-	if _, ok := routineDefinitionKind(w); !ok {
-		return nil, false
-	}
-	for i, word := range w {
-		switch word {
-		case "AS", "BEGIN", "RETURN":
-			return w[:i], true
-		}
-	}
-	return w, true
-}
-
-// containsWord reports whether a word list holds one.
-func containsWord(w []string, want string) bool {
-	return slices.Contains(w, want)
-}
-
 func routineBodyNotAnalyzedRule() Rule {
 	return Rule{
 		Code:     "AC101",
 		Title:    "routine body not analyzed",
 		Severity: SeverityInfo,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			kind, ok := routineDefinitionKind(stmt.Words)
+			kind, ok := lintkit.RoutineDefinitionKind(stmt.Words)
 			if !ok {
 				return false, ""
 			}
@@ -958,34 +911,6 @@ func routineBodyNotAnalyzedRule() Rule {
 				"; its body is not analyzed, so a clean result here says nothing about what the body does"
 		},
 		AppliesToDown: true,
-	}
-}
-
-// routineDefinitionKind names the routine a statement defines, and reports
-// whether it defines one.
-//
-// Anchored on the statement, for the reason DS106 is: a routine body is words,
-// and a scan that walked them would answer for the body rather than about it.
-func routineDefinitionKind(w []string) (string, bool) {
-	var rest []string
-	switch {
-	case hasWordPrefix(w, "CREATE", "OR", "REPLACE"):
-		rest = w[3:]
-	case hasWordPrefix(w, "CREATE"):
-		rest = w[1:]
-	default:
-		return "", false
-	}
-	if len(rest) == 0 {
-		return "", false
-	}
-	switch rest[0] {
-	case "FUNCTION":
-		return "function", true
-	case "PROCEDURE":
-		return "procedure", true
-	default:
-		return "", false
 	}
 }
 
@@ -1009,7 +934,7 @@ func tableTruncatedRule() Rule {
 		Title:    "table truncated",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !hasWordPrefix(stmt.Words, "TRUNCATE") {
+			if !lintkit.HasWordPrefix(stmt.Words, "TRUNCATE") {
 				return false, ""
 			}
 			return true, "TRUNCATE deletes all rows from the table; take a verified backup first and require an explicit destructive apply"
@@ -1023,7 +948,7 @@ func rlsDisabledRule() Rule {
 		Title:    "row-level security disabled",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !hasWordSeq(stmt.Words, "DISABLE", "ROW", "LEVEL", "SECURITY") {
+			if !lintkit.IsAlterTable(stmt.Words) || !lintkit.HasWordSeq(stmt.Words, "DISABLE", "ROW", "LEVEL", "SECURITY") {
 				return false, ""
 			}
 			return true, "DISABLE ROW LEVEL SECURITY removes an access-control protection; verify replacement authorization before applying"
@@ -1042,7 +967,7 @@ func rlsForceRemovedRule() Rule {
 		Title:    "row-level security no longer forced",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !hasWordSeq(stmt.Words, "NO", "FORCE", "ROW", "LEVEL", "SECURITY") {
+			if !lintkit.IsAlterTable(stmt.Words) || !lintkit.HasWordSeq(stmt.Words, "NO", "FORCE", "ROW", "LEVEL", "SECURITY") {
 				return false, ""
 			}
 			return true, "NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table; verify the owner is not a role the policies must hold before applying"
@@ -1084,18 +1009,18 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
-		if ref := createdTableRef(stmt.Words); ref != "" {
+		if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
 			created[ref] = true
 			continue
 		}
-		if !isAlterTable(stmt.Words) {
+		if !lintkit.IsAlterTable(stmt.Words) {
 			continue
 		}
 		subjects := nonNullableAddedColumnSubjects(stmt.Words, stmt.sourceWords)
 		if len(subjects) == 0 {
 			continue
 		}
-		if refersToCreated(created, alterTableReference(stmt.Words, stmt.sourceWords).normalized) {
+		if lintkit.RefersToCreated(created, lintkit.AlterTableReference(stmt.Words, stmt.sourceWords).Normalized) {
 			continue
 		}
 		findings = append(findings, notNullWithoutDefaultFindingsFor(file.Path, stmt.Line, i, subjects)...)
@@ -1166,7 +1091,7 @@ func renamedColumnAddSubject(file *File, name renamedName) (Subject, bool) {
 	if name.introduced == "" || name.normalized == "" {
 		return Subject{}, false
 	}
-	column, ok := file.baseline.column(name.owner, name.normalized)
+	column, ok := file.baseline.Column(name.owner, name.normalized)
 	if !ok || !column.NotNull || column.HasDefault {
 		return Subject{}, false
 	}
@@ -1313,363 +1238,6 @@ func compatibilityRules() []Rule {
 	}
 }
 
-// postgresRules covers the PG family: PostgreSQL-specific hazards.
-func postgresRules() []Rule {
-	return []Rule{
-		postgresCreateIndexRule(),
-		postgresEnumAddValueRule(),
-		postgresConcurrentIndexRule(),
-		postgresPerChunkIndexInTransactionRule(),
-		postgresAddPrimaryKeyRule(),
-		postgresAddUniqueConstraintRule(),
-		postgresDropIndexRule(),
-		postgresColumnAlignmentRule(),
-		postgresVolatileDefaultRule(),
-		postgresAddCheckRule(),
-		postgresAddForeignKeyRule(),
-		postgresSetPersistenceRule(),
-		postgresCreateTriggerRule(),
-		postgresAddStoredGeneratedRule(),
-		postgresAddIdentityRule(),
-		postgresSetAccessMethodRule(),
-	}
-}
-
-func postgresCreateIndexRule() Rule {
-	return Rule{
-		Code:     "PG101",
-		Title:    "index built with a table lock",
-		Severity: SeverityWarning,
-		Dialects: []string{"postgres"},
-		// The text says the build blocks writes. Only the starting state can
-		// say the table is a TimescaleDB hypertable, where the remedy the
-		// ordinary message names is refused, so the state refines the advice
-		// and a run without it keeps the ordinary one.
-		Input:            InputBaselineRefinement,
-		BaselineSubjects: postgresLockingIndexBuilds,
-		CheckFile: func(file *File) []Finding {
-			var findings []Finding
-			for _, i := range postgresLockingIndexBuilds(file) {
-				stmt := &file.Statements[i]
-				findings = append(findings, Finding{
-					Rule:     "PG101",
-					Title:    "index built with a table lock",
-					Severity: SeverityWarning,
-					File:     file.Path,
-					Line:     stmt.Line,
-					Message:  postgresLockingIndexAdvice(file, stmt),
-					Context:  statementFindingContext(i),
-				})
-			}
-			return findings
-		},
-	}
-}
-
-// postgresLockingIndexBuilds returns the CREATE INDEX statements PG101
-// reports, and it is also the rule's answer to which statements want the
-// starting state. One predicate for both, because a statement requested but
-// never reported costs a dev-database read for nothing, and one reported but
-// never requested is refined on no run at all.
-//
-// File-level: an index on a table this same migration created is built on an
-// empty table, so there is no lock hazard. A CONCURRENTLY build takes no lock
-// that blocks writes, and neither does a TimescaleDB per-chunk build on the
-// table as a whole; see [txrequire.PerChunkIndexBuild]. Both are refused inside
-// a transaction, which PG103 and PG103P report.
-func postgresLockingIndexBuilds(file *File) []int {
-	if !file.IsUp {
-		return nil
-	}
-	var indexes []int
-	created := make(map[string]bool)
-	for i := range file.Statements {
-		stmt := &file.Statements[i]
-		if ref := createdTableRef(stmt.Words); ref != "" {
-			created[ref] = true
-			continue
-		}
-		if !isCreateIndex(stmt.Words) || slices.Contains(stmt.Words, "CONCURRENTLY") || txrequire.PerChunkIndexBuild(stmt.Words) {
-			continue
-		}
-		target, only := createIndexTarget(stmt.Words, stmt.sourceWords)
-		if refersToCreated(created, target.normalized) {
-			continue
-		}
-		// ON ONLY on a partitioned table creates the parent's index alone,
-		// invalid until each partition's index is attached, and reads no row:
-		// measured on PostgreSQL 18.6, 11 ms beside a 5.3 s full build, with an
-		// INSERT during it taking 8 ms. It is the first step of the remedy PG108
-		// names, so reporting it would flag the advice.
-		if only && file.baseline.partitioned(target.normalized) {
-			continue
-		}
-		indexes = append(indexes, i)
-	}
-	return indexes
-}
-
-// postgresLockingIndexAdvice is PG101's message for one statement: the
-// ordinary advice, or the hypertable advice when the starting state says the
-// table is one.
-//
-// Measured on TimescaleDB 2.30.1 over PostgreSQL 18.6, on a hypertable of three
-// populated chunks:
-//
-//	CREATE INDEX CONCURRENTLY                refused: hypertables do not support
-//	                                         concurrent index creation
-//	CREATE INDEX                             SHARE on the hypertable and on every
-//	                                         chunk for the whole build; an INSERT
-//	                                         waits
-//	CREATE INDEX ... WITH                    SHARE on one chunk at a time; an
-//	  (timescaledb.transaction_per_chunk)    INSERT into another chunk, or into a
-//	                                         new one, proceeds; refused inside a
-//	                                         transaction block
-//	the per-chunk build, canceled            the hypertable's index stays with
-//	                                         indisvalid = false and the chunks
-//	                                         not yet built have none; a rerun
-//	                                         with IF NOT EXISTS skips it
-func postgresLockingIndexAdvice(file *File, stmt *Statement) string {
-	target, _ := createIndexTarget(stmt.Words, stmt.sourceWords)
-	if !file.baseline.hypertable(target.normalized) {
-		return "CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; " +
-			"on a populated table use CREATE INDEX CONCURRENTLY outside a transaction"
-	}
-	return "CREATE INDEX on the hypertable " + target.name + " blocks writes to it and to every chunk for the whole " +
-		"build, and TimescaleDB refuses CONCURRENTLY on a hypertable; " +
-		"WITH (timescaledb.transaction_per_chunk) in a no_transaction migration builds one chunk at a time, so only " +
-		"writes to the chunk being indexed wait. A per-chunk build that is interrupted leaves the index invalid, and " +
-		"IF NOT EXISTS then skips it, so drop the index before you retry"
-}
-
-// createIndexTarget is the table a CREATE INDEX statement builds on, in the
-// source spelling and the normalized one, and whether the statement names it
-// ON ONLY, which on a partitioned table builds the parent's index alone.
-//
-// PG101 and PG108 both read the target, and they must place it the same way:
-// a statement one of them resolved and the other did not is reported twice, or
-// not at all. The word after ON is not the table in either of these spellings:
-// it is `ONLY` in `ON ONLY m` and `PUBLIC` in `ON public.m`.
-func createIndexTarget(w, sourceWords []string) (tableReference, bool) {
-	for k := range w {
-		if w[k] != "ON" {
-			continue
-		}
-		start := k + 1
-		only := start < len(w) && w[start] == "ONLY"
-		if only {
-			start++
-		}
-		ref, _ := tableRefAt(w, sourceWords, start)
-		return ref, only
-	}
-	return tableReference{}, false
-}
-
-func postgresEnumAddValueRule() Rule {
-	return postgresStatementRule("PG102", "enum value added inside a transaction", func(stmt *Statement) (bool, string) {
-		if !hasWordPrefix(stmt.Words, "ALTER", "TYPE") || !hasWordSeq(stmt.Words, "ADD", "VALUE") {
-			return false, ""
-		}
-		return true, "ALTER TYPE ... ADD VALUE cannot run inside a transaction block before PostgreSQL 12, and the new value stays unusable within the same transaction on newer versions; run it in its own non-transactional migration"
-	})
-}
-
-func postgresConcurrentIndexRule() Rule {
-	return Rule{
-		Code:     "PG103",
-		Title:    "concurrent index operation in a transactional migration",
-		Severity: SeverityWarning,
-		Dialects: []string{"postgres"},
-		// Either direction: a down file carrying DROP INDEX CONCURRENTLY without
-		// the no_transaction marker cannot execute at all, and the rollback half
-		// of a concurrent build is exactly where that statement appears.
-		CheckFile: func(file *File) []Finding {
-			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
-				return nil
-			}
-			var findings []Finding
-			for i := range file.Statements {
-				stmt := &file.Statements[i]
-				if !scanConcurrentIndexOperation(stmt.Words) {
-					continue
-				}
-				findings = append(findings, Finding{
-					Rule:     "PG103",
-					Title:    "concurrent index operation in a transactional migration",
-					Severity: SeverityWarning,
-					File:     file.Path,
-					Line:     stmt.Line,
-					Message:  "CONCURRENTLY cannot run inside PostgreSQL's normal migration transaction; mark the migration non-transactional before applying",
-					Context:  statementFindingContext(i),
-				})
-			}
-			return findings
-		},
-	}
-}
-
-// postgresPerChunkIndexInTransactionRule is PG103 for TimescaleDB's per-chunk
-// index build: WITH (timescaledb.transaction_per_chunk) commits one transaction
-// per chunk, so TimescaleDB refuses it inside a transaction block, the same way
-// PostgreSQL refuses CONCURRENTLY (SQLSTATE 25001, measured on TimescaleDB
-// 2.30.1 over PostgreSQL 18.6).
-//
-// It is a rule of its own rather than a wider PG103 because PG103 reports the
-// Atlas check for a concurrent operation without the txmode header, and a
-// per-chunk build is not a concurrent operation. Folding it in would put a
-// TimescaleDB statement under an Atlas identifier that does not describe it,
-// and `atlas:nolint PG103` would silence both.
-//
-// The recognition is [txrequire.PerChunkIndexBuild], the predicate the
-// migrator's transaction preflight uses, so a file this reports is the file
-// `migrations up` refuses, and a statement PG101 leaves alone as the per-chunk
-// remedy is the statement this reports when it sits in a transaction.
-func postgresPerChunkIndexInTransactionRule() Rule {
-	return Rule{
-		Code:     "PG103P",
-		Title:    "per-chunk index build in a transactional migration",
-		Severity: SeverityWarning,
-		Dialects: []string{"postgres"},
-		// Either direction, as PG103: the migrator wraps a down file in the
-		// same transaction it wraps an up file in.
-		CheckFile: func(file *File) []Finding {
-			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
-				return nil
-			}
-			var findings []Finding
-			for i := range file.Statements {
-				stmt := &file.Statements[i]
-				if !txrequire.PerChunkIndexBuild(stmt.Words) {
-					continue
-				}
-				findings = append(findings, Finding{
-					Rule:     "PG103P",
-					Title:    "per-chunk index build in a transactional migration",
-					Severity: SeverityWarning,
-					File:     file.Path,
-					Line:     stmt.Line,
-					Message: "WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk, so TimescaleDB " +
-						"refuses it inside the migration's transaction; mark the migration non-transactional before applying",
-					Context: statementFindingContext(i),
-				})
-			}
-			return findings
-		},
-	}
-}
-
-func postgresAddPrimaryKeyRule() Rule {
-	return postgresAlterRule("PG104", "primary key added with an access-exclusive lock", scanAddPrimaryKey,
-		"adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows; build a supporting unique index concurrently first, then attach it")
-}
-
-func postgresAddUniqueConstraintRule() Rule {
-	return postgresAlterRule("PG105", "unique constraint added with an access-exclusive lock", scanAddUniqueConstraint,
-		"adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates existing rows; build a unique index concurrently first when the table is populated")
-}
-
-// postgresDropIndexRule reports a blocking index drop in either direction.
-//
-// The down half is where this rule earns its keep: the statement that removes
-// an index is what a rollback file is normally made of, and PostgreSQL takes
-// the same ACCESS EXCLUSIVE lock whichever direction asked for it. Confining
-// statement rules to up files left a rollback that blocks writes on a populated
-// table reported as clean -- including one Ptah generates itself, whenever the
-// forward statement was not a concurrent build.
-func postgresDropIndexRule() Rule {
-	rule := postgresStatementRule("PG106", "index dropped with a table lock", func(stmt *Statement) (bool, string) {
-		if !hasWordPrefix(stmt.Words, "DROP", "INDEX") || slices.Contains(stmt.Words, "CONCURRENTLY") {
-			return false, ""
-		}
-		return true, "DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables"
-	})
-	rule.AppliesToDown = true
-	return rule
-}
-
-func postgresColumnAlignmentRule() Rule {
-	return postgresStatementRule("PG110", "non-optimal column alignment", func(stmt *Statement) (bool, string) {
-		if !scanCreateTableMixedAlignment(stmt.Words) {
-			return false, ""
-		}
-		return true, "this PostgreSQL column order can waste tuple padding; place wider fixed-size columns before narrow columns when creating large tables"
-	})
-}
-
-func postgresVolatileDefaultRule() Rule {
-	return postgresAlterRule("PG302", "volatile default rewrites existing rows", scanAddColumnWithVolatileDefault,
-		"adding a column with a volatile DEFAULT rewrites or evaluates every existing row; add the column first, backfill in batches, then set the default")
-}
-
-// PG305 and PG306 advise adding the constraint NOT VALID and validating it
-// separately, so the form they recommend is not a finding: each reports only
-// a clause that validates the existing rows as it adds the constraint
-// (stokaro/ptah#3502). Measured on PostgreSQL 18.6 and 13.23 over a table with
-// one violating row: ADD CONSTRAINT ... NOT VALID accepts it, leaves
-// convalidated false and rewrites nothing, and VALIDATE CONSTRAINT then takes
-// SHARE UPDATE EXCLUSIVE on the table (and ROW SHARE on a foreign key's
-// referenced table) and lets writes to both through, where the same ADD
-// without NOT VALID refuses the violating row and blocks writes to the table,
-// and for a foreign key to the referenced table as well.
-func postgresAddCheckRule() Rule {
-	return postgresAlterRule("PG305", "check constraint validates existing rows", scanAddValidatedCheck,
-		"adding a CHECK constraint validates existing rows and can hold locks; add it NOT VALID first, then validate separately")
-}
-
-func postgresAddForeignKeyRule() Rule {
-	return postgresAlterRule("PG306", "foreign key validates existing rows", scanAddValidatedForeignKey,
-		"adding a foreign key validates existing rows and can block writes on both tables; add it NOT VALID first, then validate separately")
-}
-
-func postgresSetPersistenceRule() Rule {
-	return postgresAlterRule("PG307", "table persistence changed", scanSetTablePersistence,
-		"changing LOGGED/UNLOGGED rewrites the table and takes heavyweight locks; schedule it as a maintenance operation")
-}
-
-func postgresCreateTriggerRule() Rule {
-	return postgresStatementRule("PG308", "trigger added with a write-blocking lock", func(stmt *Statement) (bool, string) {
-		if !hasWordPrefix(stmt.Words, "CREATE", "TRIGGER") {
-			return false, ""
-		}
-		return true, "CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock and can block concurrent writes; deploy during a quiet window on hot tables"
-	})
-}
-
-func postgresAddStoredGeneratedRule() Rule {
-	return postgresAlterRule("PG309", "stored generated column rewrites rows", scanAddStoredGeneratedColumn,
-		"adding a STORED generated column computes and stores a value for every existing row; plan the rewrite and lock impact")
-}
-
-func postgresAddIdentityRule() Rule {
-	return postgresAlterRule("PG310", "identity column rewrites rows", scanAddIdentityColumn,
-		"adding an identity column can rewrite existing rows and requires sequence ownership changes; use a staged nullable column path on populated tables")
-}
-
-func postgresSetAccessMethodRule() Rule {
-	return postgresAlterRule("PG311", "table access method changed", scanSetAccessMethod,
-		"changing a table's access method rewrites the table; schedule it as a maintenance operation")
-}
-
-func postgresAlterRule(code, title string, scan func([]string) bool, message string) Rule {
-	return postgresStatementRule(code, title, func(stmt *Statement) (bool, string) {
-		if !isAlterTable(stmt.Words) || !scan(stmt.Words) {
-			return false, ""
-		}
-		return true, message
-	})
-}
-
-func postgresStatementRule(code, title string, check func(*Statement) (bool, string)) Rule {
-	return Rule{
-		Code:           code,
-		Title:          title,
-		Severity:       SeverityWarning,
-		Dialects:       []string{"postgres"},
-		CheckStatement: check,
-	}
-}
-
 // mysqlRules covers the MY family: MySQL/MariaDB-specific hazards.
 func mysqlRules() []Rule {
 	return []Rule{
@@ -1679,7 +1247,7 @@ func mysqlRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) {
 					return false, ""
 				}
 				heavy := scanModifyChange(stmt.Words) || scanConvertCharset(stmt.Words) ||
@@ -1726,7 +1294,7 @@ func mysqlRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddForeignKey(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) || !scanAddForeignKey(stmt.Words) {
 					return false, ""
 				}
 				return true, "adding a foreign key can copy or lock the table and block writes on MySQL/MariaDB; use an online migration plan for populated tables"
@@ -1738,7 +1306,7 @@ func mysqlRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddPrimaryKey(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanAddPrimaryKey(stmt.Words) {
 					return false, ""
 				}
 				// Measured on MySQL 8.4 and MariaDB 11.8.9 (mysqlcost.go): the
@@ -1756,7 +1324,7 @@ func mysqlRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddIndexKind(stmt.Words, "FULLTEXT") {
+				if !lintkit.IsAlterTable(stmt.Words) || !scanAddIndexKind(stmt.Words, "FULLTEXT") {
 					return false, ""
 				}
 				return true, "adding a FULLTEXT index can rebuild the table and block writes on MySQL/MariaDB; use an online-DDL strategy for populated tables"
@@ -1768,7 +1336,7 @@ func mysqlRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddIndexKind(stmt.Words, "SPATIAL") {
+				if !lintkit.IsAlterTable(stmt.Words) || !scanAddIndexKind(stmt.Words, "SPATIAL") {
 					return false, ""
 				}
 				return true, "adding a SPATIAL index can rebuild the table and block writes on MySQL/MariaDB; use an online-DDL strategy for populated tables"
@@ -1785,7 +1353,7 @@ func sqliteRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"sqlite"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanSetNotNull(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanSetNotNull(stmt.Words) {
 					return false, ""
 				}
 				return true, "SQLite cannot safely enforce NOT NULL on existing nullable data without a staged rebuild and backfill"
@@ -1812,150 +1380,14 @@ var dropTargets = map[string]bool{
 	"SYSTEM":       true,
 }
 
-// isAlterTable reports whether the statement's words begin with ALTER TABLE.
-func isAlterTable(w []string) bool {
-	return hasWordPrefix(w, "ALTER", "TABLE")
-}
-
-// isCreateIndex reports whether the statement's words begin with
-// CREATE [UNIQUE] INDEX.
-func isCreateIndex(w []string) bool {
-	if len(w) == 0 || w[0] != "CREATE" {
-		return false
-	}
-	j := 1
-	if j < len(w) && w[j] == "UNIQUE" {
-		j++
-	}
-	return j < len(w) && w[j] == "INDEX"
-}
-
-// hasWordPrefix reports whether the word sequence starts with the given words.
-func hasWordPrefix(w []string, prefix ...string) bool {
-	if len(w) < len(prefix) {
-		return false
-	}
-	for i, p := range prefix {
-		if w[i] != p {
-			return false
-		}
-	}
-	return true
-}
-
-// hasWordSeq reports whether the given words appear consecutively anywhere in
-// the sequence.
-func hasWordSeq(w []string, seq ...string) bool {
-	for i := 0; i+len(seq) <= len(w); i++ {
-		if hasWordPrefix(w[i:], seq...) {
-			return true
-		}
-	}
-	return false
-}
-
-// hasTopLevelWordSeq is hasWordSeq outside every pair of parentheses. A
-// clause's own keywords sit at the top level; the same words inside a
-// parenthesized expression are the expression's, as in CHECK (NOT valid) over
-// a boolean column named valid.
-func hasTopLevelWordSeq(w []string, seq ...string) bool {
-	depth := 0
-	for i, word := range w {
-		switch word {
-		case "(":
-			depth++
-		case ")":
-			if depth > 0 {
-				depth--
-			}
-		default:
-			if depth == 0 && hasWordPrefix(w[i:], seq...) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// identLike reports whether a word can name a column or table: a quoted
-// identifier, or a bare word starting with a letter, underscore, or digit.
-// Single-quoted string literals are values, never identifiers.
-func identLike(word string) bool {
-	if word == "" {
-		return false
-	}
-	switch word[0] {
-	case '`', '"':
-		return true
-	case '\'':
-		return false
-	}
-	r, _ := utf8.DecodeRuneInString(word)
-	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
-}
-
-// skipIfExists advances past an optional IF EXISTS at w[j].
-func skipIfExists(w []string, j int) int {
-	if j+1 < len(w) && w[j] == "IF" && w[j+1] == "EXISTS" {
-		return j + 2
-	}
-	return j
-}
-
-// clauseStarts returns the word indices where the clauses of an ALTER TABLE
-// statement begin: the first word after the table reference and each word
-// after a top-level comma. Commas inside parentheses (type parameters,
-// expressions) do not start a clause. Anchoring scans to clause heads keeps
-// clause keywords (DROP, MODIFY, RENAME, ...) from being confused with
-// column names appearing mid-clause, e.g. ADD COLUMN modify TEXT.
-func clauseStarts(w []string) []int {
-	j := 2
-	// PostgreSQL grammar: ALTER TABLE [ IF EXISTS ] [ ONLY ] name [ * ].
-	// Skip the modifiers in any order to stay robust.
-	for j < len(w) {
-		if w[j] == "ONLY" {
-			j++
-			continue
-		}
-		if next := skipIfExists(w, j); next != j {
-			j = next
-			continue
-		}
-		break
-	}
-	if ref, next := tableRefAt(w, w, j); ref.normalized != "" {
-		j = next
-		if j < len(w) && w[j] == "*" {
-			j++ // postgres: name * (include descendant tables)
-		}
-	}
-	starts := []int{j}
-	depth := 0
-	for k := j; k < len(w); k++ {
-		switch w[k] {
-		case "(":
-			depth++
-		case ")":
-			if depth > 0 {
-				depth--
-			}
-		case ",":
-			if depth == 0 {
-				starts = append(starts, k+1)
-			}
-		}
-	}
-	return starts
-}
-
 // droppedColumnSubjects returns the columns an ALTER TABLE statement drops.
 // The COLUMN keyword is optional in PostgreSQL and the MySQL family, so a
 // clause-head DROP followed by an identifier counts unless the identifier is
 // a known non-column DROP target (DROP CONSTRAINT, DROP PRIMARY KEY, ...).
 func droppedColumnSubjects(w, sourceWords []string) []Subject {
-	table := alterTableReference(w, sourceWords)
+	table := lintkit.AlterTableReference(w, sourceWords)
 	var subjects []Subject
-	for _, i := range clauseStarts(w) {
+	for _, i := range lintkit.ClauseStarts(w) {
 		if i >= len(w) || w[i] != "DROP" {
 			continue
 		}
@@ -1965,18 +1397,18 @@ func droppedColumnSubjects(w, sourceWords []string) []Subject {
 			explicit = true
 			j++
 		}
-		j = skipIfExists(w, j)
+		j = lintkit.SkipIfExists(w, j)
 		if j >= len(w) {
 			continue
 		}
 		if !explicit && dropTargets[w[j]] {
 			continue
 		}
-		if identLike(w[j]) {
+		if lintkit.IdentLike(w[j]) {
 			subjects = append(subjects, Subject{
 				Kind:   SubjectColumn,
-				Name:   sourceWordAt(w, sourceWords, j),
-				Parent: table.name,
+				Name:   lintkit.SourceWordAt(w, sourceWords, j),
+				Parent: table.Name,
 			})
 		}
 	}
@@ -1986,7 +1418,7 @@ func droppedColumnSubjects(w, sourceWords []string) []Subject {
 // scanModifyChange reports whether an ALTER TABLE statement rewrites a column
 // via the MySQL-family MODIFY/CHANGE clauses (COLUMN keyword optional).
 func scanModifyChange(w []string) bool {
-	for _, i := range clauseStarts(w) {
+	for _, i := range lintkit.ClauseStarts(w) {
 		if i >= len(w) || (w[i] != "MODIFY" && w[i] != "CHANGE") {
 			continue
 		}
@@ -1994,8 +1426,8 @@ func scanModifyChange(w []string) bool {
 		if j < len(w) && w[j] == "COLUMN" {
 			j++
 		}
-		j = skipIfExists(w, j)
-		if j < len(w) && identLike(w[j]) {
+		j = lintkit.SkipIfExists(w, j)
+		if j < len(w) && lintkit.IdentLike(w[j]) {
 			return true
 		}
 	}
@@ -2007,7 +1439,7 @@ func scanModifyChange(w []string) bool {
 // keeps a column merely named "type" (e.g. ALTER COLUMN type SET NOT NULL)
 // from matching.
 func scanAlterColumnType(w []string) bool {
-	for _, i := range clauseStarts(w) {
+	for _, i := range lintkit.ClauseStarts(w) {
 		if i >= len(w) || w[i] != "ALTER" {
 			continue
 		}
@@ -2015,8 +1447,8 @@ func scanAlterColumnType(w []string) bool {
 		if j < len(w) && w[j] == "COLUMN" {
 			j++
 		}
-		j = skipIfExists(w, j)
-		if j >= len(w) || !identLike(w[j]) {
+		j = lintkit.SkipIfExists(w, j)
+		if j >= len(w) || !lintkit.IdentLike(w[j]) {
 			continue
 		}
 		k := j + 1
@@ -2033,7 +1465,7 @@ func scanAlterColumnType(w []string) bool {
 // scanDropNotNull reports whether an ALTER TABLE statement removes a column's
 // NOT NULL attribute via ALTER [COLUMN] name DROP NOT NULL.
 func scanDropNotNull(w []string) bool {
-	for _, i := range clauseStarts(w) {
+	for _, i := range lintkit.ClauseStarts(w) {
 		if i >= len(w) || w[i] != "ALTER" {
 			continue
 		}
@@ -2041,23 +1473,11 @@ func scanDropNotNull(w []string) bool {
 		if j < len(w) && w[j] == "COLUMN" {
 			j++
 		}
-		j = skipIfExists(w, j)
-		if j >= len(w) || !identLike(w[j]) {
+		j = lintkit.SkipIfExists(w, j)
+		if j >= len(w) || !lintkit.IdentLike(w[j]) {
 			continue
 		}
-		if hasWordPrefix(w[j+1:], "DROP", "NOT", "NULL") {
-			return true
-		}
-	}
-	return false
-}
-
-// scanDropClause reports whether any clause of an ALTER TABLE statement begins
-// with the given word sequence, anchoring on the clause heads so that only a
-// top-level DROP form matches. It backs the typed constraint-drop predicates.
-func scanDropClause(w []string, prefix ...string) bool {
-	for _, i := range clauseStarts(w) {
-		if hasWordPrefix(w[i:], prefix...) {
+		if lintkit.HasWordPrefix(w[j+1:], "DROP", "NOT", "NULL") {
 			return true
 		}
 	}
@@ -2067,21 +1487,17 @@ func scanDropClause(w []string, prefix ...string) bool {
 // scanDropForeignKey reports whether an ALTER TABLE statement drops a foreign
 // key via the MySQL-family DROP FOREIGN KEY form. The ANSI DROP CONSTRAINT
 // <name> form does not encode the constraint type, so it is not matched here.
-func scanDropForeignKey(w []string) bool { return scanDropClause(w, "DROP", "FOREIGN", "KEY") }
+func scanDropForeignKey(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "FOREIGN", "KEY") }
 
 // scanDropCheck reports whether an ALTER TABLE statement drops a check
 // constraint via the DROP CHECK form.
-func scanDropCheck(w []string) bool { return scanDropClause(w, "DROP", "CHECK") }
-
-// scanDropPrimaryKey reports whether an ALTER TABLE statement drops a primary
-// key via the DROP PRIMARY KEY form.
-func scanDropPrimaryKey(w []string) bool { return scanDropClause(w, "DROP", "PRIMARY", "KEY") }
+func scanDropCheck(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "CHECK") }
 
 // scanDropNamedConstraint reports whether an ALTER TABLE statement drops a
 // constraint by name via the ANSI DROP CONSTRAINT <name> form, whose constraint
 // type is not recoverable from the SQL. This is the untyped fallback (DS105);
 // the typed forms above are reported by the CD family.
-func scanDropNamedConstraint(w []string) bool { return scanDropClause(w, "DROP", "CONSTRAINT") }
+func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "CONSTRAINT") }
 
 // scanEnumValueRemoval reports whether a statement removes an enum value.
 //
@@ -2099,11 +1515,11 @@ func scanDropNamedConstraint(w []string) bool { return scanDropClause(w, "DROP",
 // time (migration/lint/compound_routine_body_test.go). DS101 and DS103 were
 // anchored and held it; this scan was the one that was not.
 func scanEnumValueRemoval(w []string) bool {
-	if hasWordPrefix(w, "DELETE", "FROM", "PG_ENUM") {
+	if lintkit.HasWordPrefix(w, "DELETE", "FROM", "PG_ENUM") {
 		return true
 	}
 	// DROP VALUE is a clause of ALTER TYPE, so it is read only there.
-	return hasWordPrefix(w, "ALTER", "TYPE") && hasWordSeq(w, "DROP", "VALUE")
+	return lintkit.HasWordPrefix(w, "ALTER", "TYPE") && lintkit.HasWordSeq(w, "DROP", "VALUE")
 }
 
 func scanDestructiveObjectDrop(w []string) bool {
@@ -2156,9 +1572,9 @@ func scanPrincipalDrop(w []string, target Target) bool {
 // table to another character set (a full-table rewrite on MySQL/MariaDB).
 // CHARSET is the accepted synonym of CHARACTER SET.
 func scanConvertCharset(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		if hasWordPrefix(w[i:], "CONVERT", "TO", "CHARACTER", "SET") ||
-			hasWordPrefix(w[i:], "CONVERT", "TO", "CHARSET") {
+	for _, i := range lintkit.ClauseStarts(w) {
+		if lintkit.HasWordPrefix(w[i:], "CONVERT", "TO", "CHARACTER", "SET") ||
+			lintkit.HasWordPrefix(w[i:], "CONVERT", "TO", "CHARSET") {
 			return true
 		}
 	}
@@ -2170,19 +1586,19 @@ func scanAddColumnNotNullWithoutDefault(w []string) bool {
 }
 
 func nonNullableAddedColumnSubjects(w, sourceWords []string) []Subject {
-	table := alterTableReference(w, sourceWords)
+	table := lintkit.AlterTableReference(w, sourceWords)
 	var subjects []Subject
-	for _, i := range clauseStarts(w) {
-		start, end, ok := addColumnClause(w, i)
+	for _, i := range lintkit.ClauseStarts(w) {
+		start, end, ok := lintkit.AddColumnClause(w, i)
 		if !ok {
 			continue
 		}
 		clause := w[start:end]
-		if hasWordSeq(clause, "NOT", "NULL") && !slices.Contains(clause, "DEFAULT") {
+		if lintkit.HasWordSeq(clause, "NOT", "NULL") && !slices.Contains(clause, "DEFAULT") {
 			subjects = append(subjects, Subject{
 				Kind:     SubjectColumn,
-				Name:     sourceWordAt(w, sourceWords, start-1),
-				Parent:   table.name,
+				Name:     lintkit.SourceWordAt(w, sourceWords, start-1),
+				Parent:   table.Name,
 				DataType: columnDataType(clause, sourceWords[start:end]),
 			})
 		}
@@ -2219,22 +1635,6 @@ func columnConstraintWord(word string) bool {
 	}
 }
 
-func scanAddColumnWithVolatileDefault(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		start, end, ok := addColumnClause(w, i)
-		if !ok {
-			continue
-		}
-		clause := w[start:end]
-		for j := range clause {
-			if clause[j] == "DEFAULT" && j+1 < len(clause) && isVolatilePostgresDefault(clause[j+1]) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // scanInlineColumnReference reports a column-level REFERENCES clause in either
 // statement that can carry one.
 //
@@ -2244,14 +1644,14 @@ func scanAddColumnWithVolatileDefault(w []string) bool {
 // REFERENCES passed `ptah migrations lint --dialect mysql` with no finding
 // while the ADD COLUMN form warned (stokaro/ptah#2831).
 func scanInlineColumnReference(w []string) bool {
-	if isAlterTable(w) {
+	if lintkit.IsAlterTable(w) {
 		return scanAddColumnInlineReference(w)
 	}
 	return isCreateTable(w) && scanCreateTableInlineReference(w)
 }
 
 func isCreateTable(w []string) bool {
-	return hasWordPrefix(w, "CREATE", "TABLE")
+	return lintkit.HasWordPrefix(w, "CREATE", "TABLE")
 }
 
 // scanCreateTableInlineReference reports a REFERENCES clause inside a column
@@ -2298,15 +1698,15 @@ func inlineReferenceElement(w []string, start, end int) bool {
 	if start < 0 || start >= end || end > len(w) {
 		return false
 	}
-	if addConstraintTargets[w[start]] {
+	if lintkit.AddConstraintTargets[w[start]] {
 		return false
 	}
 	return slices.Contains(w[start:end], "REFERENCES")
 }
 
 func scanAddColumnInlineReference(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		start, end, ok := addColumnClause(w, i)
+	for _, i := range lintkit.ClauseStarts(w) {
+		start, end, ok := lintkit.AddColumnClause(w, i)
 		if ok && slices.Contains(w[start:end], "REFERENCES") {
 			return true
 		}
@@ -2314,386 +1714,21 @@ func scanAddColumnInlineReference(w []string) bool {
 	return false
 }
 
-func scanAddStoredGeneratedColumn(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		start, end, ok := addColumnClause(w, i)
-		if ok && hasWordSeq(w[start:end], "GENERATED", "ALWAYS", "AS") && slices.Contains(w[start:end], "STORED") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanAddIdentityColumn(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		start, end, ok := addColumnClause(w, i)
-		if ok && hasWordSeq(w[start:end], "GENERATED", "ALWAYS", "AS", "IDENTITY") {
-			return true
-		}
-	}
-	return false
-}
-
-func addColumnClause(w []string, i int) (start, end int, ok bool) {
-	if i >= len(w) || w[i] != "ADD" {
-		return 0, 0, false
-	}
-	j := i + 1
-	if j < len(w) && w[j] == "COLUMN" {
-		j++
-	}
-	if j < len(w) && addConstraintTargets[w[j]] {
-		return 0, 0, false
-	}
-	j = skipIfNotExists(w, j)
-	if j >= len(w) || !identLike(w[j]) {
-		return 0, 0, false
-	}
-	return j + 1, clauseEnd(w, i), true
-}
-
-var addConstraintTargets = map[string]bool{
-	"CHECK":      true,
-	"CONSTRAINT": true,
-	"FOREIGN":    true,
-	"FULLTEXT":   true,
-	"INDEX":      true,
-	"KEY":        true,
-	"PRIMARY":    true,
-	"SPATIAL":    true,
-	"UNIQUE":     true,
-}
-
-func skipIfNotExists(w []string, j int) int {
-	if j+2 < len(w) && w[j] == "IF" && w[j+1] == "NOT" && w[j+2] == "EXISTS" {
-		return j + 3
-	}
-	return j
-}
-
-func clauseEnd(w []string, start int) int {
-	depth := 0
-	for i := start; i < len(w); i++ {
-		switch w[i] {
-		case "(":
-			depth++
-		case ")":
-			if depth > 0 {
-				depth--
-			}
-		case ",":
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return len(w)
-}
-
-func isVolatilePostgresDefault(word string) bool {
-	switch strings.Trim(word, "\"`") {
-	case "GEN_RANDOM_UUID", "UUID_GENERATE_V4", "NOW", "CLOCK_TIMESTAMP", "RANDOM":
-		return true
-	default:
-		return false
-	}
-}
-
-func scanConcurrentIndexOperation(w []string) bool {
-	if isCreateIndex(w) {
-		return slices.Contains(w, "CONCURRENTLY")
-	}
-	return hasWordPrefix(w, "DROP", "INDEX") && slices.Contains(w, "CONCURRENTLY")
-}
-
-func scanAddPrimaryKey(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		if hasWordPrefix(w[i:], "ADD", "PRIMARY", "KEY") ||
-			hasWordPrefix(w[i:], "ADD", "CONSTRAINT") && slices.Contains(w[i:clauseEnd(w, i)], "PRIMARY") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanAddUniqueConstraint(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		clause := w[i:clauseEnd(w, i)]
-		if hasWordPrefix(clause, "ADD", "UNIQUE") ||
-			hasWordPrefix(clause, "ADD", "CONSTRAINT") && slices.Contains(clause, "UNIQUE") {
-			return true
-		}
-	}
-	return false
-}
-
 func scanAddCheckConstraint(w []string) bool {
-	return anyAlterClause(w, addsCheckConstraint)
+	return lintkit.AnyAlterClause(w, lintkit.AddsCheckConstraint)
 }
 
 func scanAddForeignKey(w []string) bool {
-	return anyAlterClause(w, addsForeignKey)
-}
-
-// scanAddValidatedCheck is scanAddCheckConstraint for PostgreSQL, where a
-// constraint added NOT VALID does not read the existing rows. A statement
-// adding two checks, one of them NOT VALID, still validates the other.
-func scanAddValidatedCheck(w []string) bool {
-	return anyAlterClause(w, func(clause []string) bool {
-		return addsCheckConstraint(clause) && !postgresConstraintDeclinesItsScan(clause)
-	})
-}
-
-// scanAddValidatedForeignKey is scanAddValidatedCheck for a foreign key.
-func scanAddValidatedForeignKey(w []string) bool {
-	return anyAlterClause(w, func(clause []string) bool {
-		return addsForeignKey(clause) && !postgresConstraintDeclinesItsScan(clause)
-	})
-}
-
-// anyAlterClause reports whether any clause of an ALTER TABLE satisfies match.
-func anyAlterClause(w []string, match func(clause []string) bool) bool {
-	for _, i := range clauseStarts(w) {
-		if match(w[i:clauseEnd(w, i)]) {
-			return true
-		}
-	}
-	return false
-}
-
-// addsCheckConstraint reports whether one ALTER TABLE clause adds a CHECK
-// constraint.
-func addsCheckConstraint(clause []string) bool {
-	return hasWordPrefix(clause, "ADD", "CHECK") ||
-		hasWordPrefix(clause, "ADD", "CONSTRAINT") && slices.Contains(clause, "CHECK")
-}
-
-// addsForeignKey reports whether one ALTER TABLE clause adds a foreign key.
-func addsForeignKey(clause []string) bool {
-	return hasWordPrefix(clause, "ADD", "FOREIGN", "KEY") ||
-		hasWordPrefix(clause, "ADD", "CONSTRAINT") && hasWordSeq(clause, "FOREIGN", "KEY")
-}
-
-func scanSetTablePersistence(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		if hasWordPrefix(w[i:], "SET", "LOGGED") || hasWordPrefix(w[i:], "SET", "UNLOGGED") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanSetAccessMethod(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		if hasWordPrefix(w[i:], "SET", "ACCESS", "METHOD") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanSetNotNull(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		if hasWordPrefix(w[i:], "ALTER", "COLUMN") && hasWordSeq(w[i:], "SET", "NOT", "NULL") {
-			return true
-		}
-		if hasWordPrefix(w[i:], "ALTER") && len(w[i:]) > 1 && identLike(w[i+1]) && hasWordSeq(w[i:], "SET", "NOT", "NULL") {
-			return true
-		}
-	}
-	return false
+	return lintkit.AnyAlterClause(w, lintkit.AddsForeignKey)
 }
 
 func scanAddIndexKind(w []string, kind string) bool {
-	for _, i := range clauseStarts(w) {
-		clause := w[i:clauseEnd(w, i)]
-		if !hasWordPrefix(clause, "ADD") || !slices.Contains(clause, kind) {
+	for _, i := range lintkit.ClauseStarts(w) {
+		clause := w[i:lintkit.ClauseEnd(w, i)]
+		if !lintkit.HasWordPrefix(clause, "ADD") || !slices.Contains(clause, kind) {
 			continue
 		}
 		if slices.Contains(clause, "INDEX") || slices.Contains(clause, "KEY") {
-			return true
-		}
-	}
-	return false
-}
-
-func scanCreateTableMixedAlignment(w []string) bool {
-	if !hasWordPrefix(w, "CREATE", "TABLE") {
-		return false
-	}
-	open := slices.Index(w, "(")
-	closeIndex := len(w) - 1
-	for closeIndex > open && w[closeIndex] != ")" {
-		closeIndex--
-	}
-	if open < 0 || closeIndex <= open {
-		return false
-	}
-	seenNarrow := false
-	for i := open + 1; i < closeIndex; i++ {
-		if w[i] == "," {
-			continue
-		}
-		if !identLike(w[i]) || i+1 >= closeIndex {
-			continue
-		}
-		width := postgresTypeWidthClass(w[i+1])
-		if width == 0 {
-			continue
-		}
-		if width == 1 {
-			seenNarrow = true
-			continue
-		}
-		if seenNarrow && width > 1 {
-			return true
-		}
-	}
-	return false
-}
-
-func postgresTypeWidthClass(word string) int {
-	switch strings.Trim(word, "\"`") {
-	case "BOOL", "BOOLEAN", "CHAR", "SMALLINT", "INT2":
-		return 1
-	case "BIGINT", "INT8", "BIGSERIAL", "DOUBLE", "TIMESTAMP", "TIMESTAMPTZ", "UUID":
-		return 2
-	default:
-		return 0
-	}
-}
-
-// createdTableRef returns the normalized reference of the table a CREATE
-// TABLE statement creates, or "" for any other statement. Temporary-table
-// modifiers and IF NOT EXISTS are skipped.
-func createdTableRef(w []string) string {
-	if len(w) == 0 || w[0] != "CREATE" {
-		return ""
-	}
-	j := 1
-	for j < len(w) {
-		switch w[j] {
-		case "GLOBAL", "LOCAL", "TEMPORARY", "TEMP", "UNLOGGED":
-			j++
-			continue
-		}
-		break
-	}
-	if j >= len(w) || w[j] != "TABLE" {
-		return ""
-	}
-	j++
-	if j+2 < len(w) && w[j] == "IF" && w[j+1] == "NOT" && w[j+2] == "EXISTS" {
-		j += 3
-	}
-	ref, _ := tableRefAt(w, w, j)
-	return ref.normalized
-}
-
-// tableRefAt reads a possibly schema-qualified table reference at w[j] and
-// returns separate display and comparison forms plus the index past its end.
-func tableRefAt(w, sourceWords []string, j int) (tableReference, int) {
-	identifier, next, ok := identifierAt(w, sourceWords, j)
-	if !ok {
-		return tableReference{}, j
-	}
-	displayParts := []string{identifier.name}
-	normalizedParts := []string{identifier.normalized}
-	j = next
-	for j < len(w) && w[j] == "." {
-		identifier, next, ok = identifierAt(w, sourceWords, j+1)
-		if !ok {
-			break
-		}
-		displayParts = append(displayParts, identifier.name)
-		normalizedParts = append(normalizedParts, identifier.normalized)
-		j = next
-	}
-	return tableReference{
-		name:       strings.Join(displayParts, "."),
-		normalized: strings.Join(normalizedParts, "."),
-	}, j
-}
-
-func identifierAt(w, sourceWords []string, index int) (tableReference, int, bool) {
-	if index >= len(w) {
-		return tableReference{}, index, false
-	}
-	if identLike(w[index]) {
-		return tableReference{
-			name:       sourceWordAt(w, sourceWords, index),
-			normalized: normalizeIdent(w[index]),
-		}, index + 1, true
-	}
-	if w[index] != "[" {
-		return tableReference{}, index, false
-	}
-	end := index + 1
-	for end < len(w) && w[end] != "]" {
-		end++
-	}
-	if end == index+1 || end >= len(w) {
-		return tableReference{}, index, false
-	}
-	return tableReference{
-		name:       "[" + strings.Join(sourceWords[index+1:end], " ") + "]",
-		normalized: strings.ToUpper(strings.Join(w[index+1:end], " ")),
-	}, end + 1, true
-}
-
-type tableReference struct {
-	name       string
-	normalized string
-}
-
-func alterTableReference(w, sourceWords []string) tableReference {
-	if !hasWordPrefix(w, "ALTER", "TABLE") {
-		return tableReference{}
-	}
-	j := 2
-	for j < len(w) {
-		if w[j] == "ONLY" {
-			j++
-			continue
-		}
-		if next := skipIfExists(w, j); next != j {
-			j = next
-			continue
-		}
-		break
-	}
-	ref, _ := tableRefAt(w, sourceWords, j)
-	return ref
-}
-
-func sourceWordAt(words, sourceWords []string, index int) string {
-	if index < len(sourceWords) {
-		return sourceWords[index]
-	}
-	return words[index]
-}
-
-// normalizeIdent strips identifier quoting and uppercases for comparison.
-func normalizeIdent(word string) string {
-	return strings.ToUpper(strings.Trim(word, "`\""))
-}
-
-// refersToCreated reports whether ref names one of the created tables,
-// comparing full references when both sides are schema-qualified and last
-// components otherwise.
-func refersToCreated(created map[string]bool, ref string) bool {
-	if ref == "" {
-		return false
-	}
-	if created[ref] {
-		return true
-	}
-	last := ref[strings.LastIndex(ref, ".")+1:]
-	for c := range created {
-		if c[strings.LastIndex(c, ".")+1:] != last {
-			continue
-		}
-		if !strings.Contains(ref, ".") || !strings.Contains(c, ".") {
 			return true
 		}
 	}
@@ -2707,18 +1742,18 @@ func droppedTablesNotCreated(
 	w,
 	sourceWords []string,
 	created map[string]bool,
-) ([]tableReference, bool) {
-	var unsafe []tableReference
-	j := skipIfExists(w, 2)
+) ([]lintkit.TableReference, bool) {
+	var unsafe []lintkit.TableReference
+	j := lintkit.SkipIfExists(w, 2)
 	for {
 		if j < len(w) && w[j] == "ONLY" {
 			j++
 		}
-		ref, next := tableRefAt(w, sourceWords, j)
-		if ref.normalized == "" {
+		ref, next := lintkit.TableRefAt(w, sourceWords, j)
+		if ref.Normalized == "" {
 			return unsafe, false
 		}
-		if !refersToCreated(created, ref.normalized) {
+		if !lintkit.RefersToCreated(created, ref.Normalized) {
 			unsafe = append(unsafe, ref)
 		}
 		if next < len(w) && w[next] == "*" {
@@ -2738,7 +1773,7 @@ func droppedTablesNotCreated(
 // rebuild, so the lock hazard cannot occur. The = is optional in the MySQL
 // grammar.
 func scanPinnedOnlineDDL(w []string) bool {
-	for _, i := range clauseStarts(w) {
+	for _, i := range lintkit.ClauseStarts(w) {
 		if i >= len(w) || (w[i] != "ALGORITHM" && w[i] != "LOCK") {
 			continue
 		}

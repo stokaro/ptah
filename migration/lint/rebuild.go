@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/yqlddl"
 )
 
@@ -87,7 +88,7 @@ func matchRebuild(file *File, index int, ydbState *ydbSchema) (rebuildMatch, boo
 	if index+3 >= len(statements) {
 		return rebuildMatch{}, false
 	}
-	scratch := createdTableRef(statements[index].Words)
+	scratch := lintkit.CreatedTableRef(statements[index].Words)
 	copied, ok := tableCopyOf(&statements[index+1])
 	if scratch == "" || !ok || !sameTableRef(copied.into, scratch) || sameTableRef(copied.from, scratch) {
 		return rebuildMatch{}, false
@@ -138,14 +139,14 @@ type tableCopy struct {
 // DISTINCT folds two rows into one.
 func tableCopyOf(stmt *Statement) (tableCopy, bool) {
 	w := stmt.Words
-	if !hasWordPrefix(w, "INSERT", "INTO") {
+	if !lintkit.HasWordPrefix(w, "INSERT", "INTO") {
 		return tableCopy{}, false
 	}
-	into, j := tableRefAt(w, stmt.sourceWords, 2)
-	if into.normalized == "" {
+	into, j := lintkit.TableRefAt(w, stmt.sourceWords, 2)
+	if into.Normalized == "" {
 		return tableCopy{}, false
 	}
-	copied := tableCopy{into: into.normalized}
+	copied := tableCopy{into: into.Normalized}
 	copied.columns, j = copyColumns(w, j)
 	if j >= len(w) || w[j] != "SELECT" || (j+1 < len(w) && (w[j+1] == "DISTINCT" || w[j+1] == "ALL")) {
 		return tableCopy{}, false
@@ -168,7 +169,7 @@ func copyColumns(w []string, j int) ([]string, int) {
 	var columns []string
 	for j++; j < len(w) && w[j] != ")"; j++ {
 		if w[j] != "," {
-			columns = append(columns, normalizeIdent(w[j]))
+			columns = append(columns, lintkit.NormalizeIdent(w[j]))
 		}
 	}
 	return columns, j + 1
@@ -186,8 +187,8 @@ func copiedTable(stmt *Statement, j int) (string, bool) {
 		case w[j] == ")":
 			depth--
 		case depth == 0 && w[j] == "FROM":
-			from, next := tableRefAt(w, stmt.sourceWords, j+1)
-			return from.normalized, from.normalized != "" && next == len(w)
+			from, next := lintkit.TableRefAt(w, stmt.sourceWords, j+1)
+			return from.Normalized, from.Normalized != "" && next == len(w)
 		}
 	}
 	return "", false
@@ -195,39 +196,39 @@ func copiedTable(stmt *Statement, j int) (string, bool) {
 
 // singleDroppedTable reads a DROP TABLE of one table.
 func singleDroppedTable(stmt *Statement) (string, bool) {
-	if !hasWordPrefix(stmt.Words, "DROP", "TABLE") {
+	if !lintkit.HasWordPrefix(stmt.Words, "DROP", "TABLE") {
 		return "", false
 	}
 	tables, complete := droppedTablesNotCreated(stmt.Words, stmt.sourceWords, nil)
 	if !complete || len(tables) != 1 {
 		return "", false
 	}
-	return tables[0].normalized, true
+	return tables[0].Normalized, true
 }
 
 // tableRenameOf reads `ALTER TABLE from RENAME TO to`, the one clause of its
 // statement.
 func tableRenameOf(stmt *Statement) (from, to string, ok bool) {
 	w := stmt.Words
-	if !hasWordPrefix(w, "ALTER", "TABLE") {
+	if !lintkit.HasWordPrefix(w, "ALTER", "TABLE") {
 		return "", "", false
 	}
-	table, j := tableRefAt(w, stmt.sourceWords, skipIfExists(w, 2))
-	if table.normalized == "" || j+1 >= len(w) || w[j] != "RENAME" || w[j+1] != "TO" {
+	table, j := lintkit.TableRefAt(w, stmt.sourceWords, lintkit.SkipIfExists(w, 2))
+	if table.Normalized == "" || j+1 >= len(w) || w[j] != "RENAME" || w[j+1] != "TO" {
 		return "", "", false
 	}
-	target, next := tableRefAt(w, stmt.sourceWords, j+2)
-	if target.normalized == "" || next != len(w) {
+	target, next := lintkit.TableRefAt(w, stmt.sourceWords, j+2)
+	if target.Normalized == "" || next != len(w) {
 		return "", "", false
 	}
-	return table.normalized, target.normalized, true
+	return table.Normalized, target.Normalized, true
 }
 
 // sameTableRef reports whether two folded references name one table: equal,
 // or equal in their last component when one of them names no schema, the
 // comparison DS101's own exemption makes.
 func sameTableRef(a, b string) bool {
-	return refersToCreated(map[string]bool{b: true}, a)
+	return lintkit.RefersToCreated(map[string]bool{b: true}, a)
 }
 
 // lostColumns returns the columns of the copied table that the copy leaves
@@ -239,7 +240,7 @@ func lostColumns(file *File, old string, copied tableCopy, ydbState *ydbSchema) 
 	}
 	var lost []string
 	for _, column := range known {
-		if !slices.Contains(copied.columns, normalizeIdent(column)) {
+		if !slices.Contains(copied.columns, lintkit.NormalizeIdent(column)) {
 			lost = append(lost, column)
 		}
 	}
@@ -258,7 +259,7 @@ func knownColumns(file *File, table string, ydbState *ydbSchema) ([]string, bool
 		}
 		return nil, false
 	}
-	columns := file.baseline.tableColumns(table)
+	columns := file.baseline.TableColumns(table)
 	if len(columns) == 0 {
 		return nil, false
 	}

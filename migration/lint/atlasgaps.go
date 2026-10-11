@@ -2,9 +2,8 @@ package lint
 
 import (
 	"slices"
-	"strings"
 
-	"ptah.run/internal/txrequire"
+	"ptah.run/internal/lintkit"
 )
 
 // The rules in this file close the gaps a refresh of the Atlas analyzer
@@ -21,8 +20,8 @@ import (
 //   - whether writes continue while it runs.
 //
 // They are independent. MY141 rebuilds in place AND blocks writes; MY147
-// rebuilds in place and lets them through; PG320 takes a light lock and is
-// still a hazard, for a reason that is not cost at all.
+// rebuilds in place and lets them through; the PostgreSQL owner's PG320 takes
+// a light lock and is still a hazard, for a reason that is not cost at all.
 //
 // The comparison these rules close was made against Ptah at
 // 48c3b61b5bd183218ea6527f87113d0a4fae65df. Which existing rule already
@@ -74,31 +73,8 @@ import (
 // tests, so the catalog records the check as not implemented with that
 // measurement rather than carrying a warning nobody should act on.
 //
-// POSTGRESQL, MEASURED
-//
-// Every PostgreSQL claim below was measured on PostgreSQL 18.6 by running the
-// statement inside a transaction and reading pg_locks for the relation while
-// the transaction still held it. A committed statement has released its locks,
-// so asking afterwards reports nothing and reads exactly like a lock-free
-// operation.
-//
-//	CREATE INDEX on a partitioned parent   ShareLock on the parent AND on every
-//	                                       partition                      PG108
-//	ADD CONSTRAINT … EXCLUDE               AccessExclusiveLock            PG109
-//	DROP CONSTRAINT pkey, ADD PRIMARY KEY  AccessExclusiveLock            PG312
-//	REPLICA IDENTITY FULL                  AccessExclusiveLock            PG314
-//	SET (autovacuum_enabled = false)       ShareUpdateExclusiveLock       PG320
-//
-// PG108 carries one more measurement, and it is the reason the rule exists
-// beside PG101 rather than being folded into it: `CREATE INDEX CONCURRENTLY`
-// on a partitioned table is refused outright -- `ERROR: cannot create index on
-// partitioned table "p" concurrently`. PG101's remedy is to add CONCURRENTLY,
-// which cannot be done here, so a reader who follows it writes a statement the
-// server rejects.
-//
-// PG320 is the one rule here whose hazard is not a lock or a rewrite. The
-// statement is cheap; what it costs is paid later, by the rows nothing
-// reclaims.
+// The PostgreSQL rules of the same comparison, PG108, PG109, PG312, PG314 and
+// PG320, are the PostgreSQL owner's, with their measurements.
 
 // atlasGapGeneratedStored reports a STORED generated column in a MySQL MODIFY
 // or CHANGE clause.
@@ -108,16 +84,16 @@ import (
 // statements with the same cost, and MY143 must not fire on the ADD that MY140
 // already reports.
 func atlasGapGeneratedStored(w []string) bool {
-	if !isAlterTable(w) {
+	if !lintkit.IsAlterTable(w) {
 		return false
 	}
-	if !hasWordSeq(w, "GENERATED", "ALWAYS", "AS") && !hasWordSeq(w, "AS") {
+	if !lintkit.HasWordSeq(w, "GENERATED", "ALWAYS", "AS") && !lintkit.HasWordSeq(w, "AS") {
 		return false
 	}
-	if !hasWordSeq(w, "STORED") {
+	if !lintkit.HasWordSeq(w, "STORED") {
 		return false
 	}
-	return hasWordSeq(w, "MODIFY") || hasWordSeq(w, "CHANGE")
+	return lintkit.HasWordSeq(w, "MODIFY") || lintkit.HasWordSeq(w, "CHANGE")
 }
 
 // atlasGapAutoIncrementColumn reports an ADD COLUMN carrying AUTO_INCREMENT.
@@ -128,10 +104,10 @@ func atlasGapGeneratedStored(w []string) bool {
 // the keyword, and reporting a rebuild for it is a false claim about a cheap
 // statement.
 func atlasGapAutoIncrementColumn(w []string) bool {
-	if !isAlterTable(w) {
+	if !lintkit.IsAlterTable(w) {
 		return false
 	}
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		j := start
 		if j >= len(w) || w[j] != "ADD" {
 			continue
@@ -140,8 +116,8 @@ func atlasGapAutoIncrementColumn(w []string) bool {
 		if j < len(w) && w[j] == "COLUMN" {
 			j++
 		}
-		j = skipIfExists(w, j)
-		if j >= len(w) || !identLike(w[j]) {
+		j = lintkit.SkipIfExists(w, j)
+		if j >= len(w) || !lintkit.IdentLike(w[j]) {
 			continue
 		}
 		if clauseHasWord(w, j+1, "AUTO_INCREMENT") {
@@ -158,7 +134,7 @@ func atlasGapAutoIncrementColumn(w []string) bool {
 // as belonging to another: `ADD COLUMN engine VARCHAR(10), DROP COLUMN note`
 // has no table option in it at all.
 func clauseHasWord(w []string, from int, word string) bool {
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start > from && start <= len(w) {
 			return slices.Contains(w[from:start], word)
 		}
@@ -176,7 +152,7 @@ func clauseHasWord(w []string, from int, word string) bool {
 // changes: the cost is the same, and the statement alone cannot tell the two
 // apart without the current engine from schema state.
 func atlasGapStorageEngine(w []string) bool {
-	return isAlterTable(w) && clauseHeadIs(w, "ENGINE")
+	return lintkit.IsAlterTable(w) && clauseHeadIs(w, "ENGINE")
 }
 
 // clauseHeadIs reports whether any top-level clause of an ALTER TABLE begins
@@ -186,7 +162,7 @@ func atlasGapStorageEngine(w []string) bool {
 // from a column that carries the same name: `ADD COLUMN engine VARCHAR(10)` is
 // a clause headed by ADD.
 func clauseHeadIs(w []string, word string) bool {
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start < len(w) && w[start] == word {
 			return true
 		}
@@ -196,10 +172,10 @@ func clauseHeadIs(w []string, word string) bool {
 
 // atlasGapPartitioning reports a partitioning change.
 func atlasGapPartitioning(w []string) bool {
-	if !isAlterTable(w) {
+	if !lintkit.IsAlterTable(w) {
 		return false
 	}
-	return hasWordSeq(w, "PARTITION", "BY") || hasWordSeq(w, "REMOVE", "PARTITIONING")
+	return lintkit.HasWordSeq(w, "PARTITION", "BY") || lintkit.HasWordSeq(w, "REMOVE", "PARTITIONING")
 }
 
 // atlasGapCheckEnforcement reports a CHECK constraint being enforced or
@@ -209,10 +185,10 @@ func atlasGapPartitioning(w []string) bool {
 // reserved word, so `ADD COLUMN enforced BOOLEAN` is an ordinary column add and
 // the keyword there says nothing about any constraint.
 func atlasGapCheckEnforcement(w []string) bool {
-	if !isAlterTable(w) {
+	if !lintkit.IsAlterTable(w) {
 		return false
 	}
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		// ALTER only. An ADD that spells ENFORCED is stating the default for
 		// a constraint being created, and the validation it costs is the one
 		// MY144 already reports; the transition this rule is about is turning
@@ -242,7 +218,7 @@ func atlasGapCheckEnforcement(w []string) bool {
 // last word.
 func clauseEndsWith(w []string, from int, word string) bool {
 	end := len(w)
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start > from {
 			end = start
 			break
@@ -253,57 +229,7 @@ func clauseEndsWith(w []string, from int, word string) bool {
 
 // atlasGapDropSystemVersioning reports MariaDB's DROP SYSTEM VERSIONING.
 func atlasGapDropSystemVersioning(w []string) bool {
-	return isAlterTable(w) && hasWordSeq(w, "DROP", "SYSTEM", "VERSIONING")
-}
-
-// atlasGapRedefinesPrimaryKey reports one statement that drops a primary key
-// and adds another.
-//
-// Both halves in one statement is the point: dropping alone is MY133 and
-// CD103's subject, adding alone is MY132's and PG104's, and the redefinition
-// costs what neither of those reports on its own.
-func atlasGapRedefinesPrimaryKey(w []string) bool {
-	if !isAlterTable(w) {
-		return false
-	}
-	dropped := scanDropPrimaryKey(w) || scanDropClause(w, "DROP", "CONSTRAINT")
-	return dropped && scanAddPrimaryKey(w)
-}
-
-// atlasGapExcludeConstraint reports an EXCLUDE constraint being added.
-func atlasGapExcludeConstraint(w []string) bool {
-	return isAlterTable(w) && hasWordSeq(w, "EXCLUDE", "USING")
-}
-
-// atlasGapReplicaIdentity reports REPLICA IDENTITY being set to FULL or
-// NOTHING.
-//
-// DEFAULT and USING INDEX are not reported: they keep a row identity logical
-// replication can use, which is the property the hazard is about.
-func atlasGapReplicaIdentity(w []string) bool {
-	if !isAlterTable(w) || !hasWordSeq(w, "REPLICA", "IDENTITY") {
-		return false
-	}
-	return hasWordSeq(w, "REPLICA", "IDENTITY", "FULL") ||
-		hasWordSeq(w, "REPLICA", "IDENTITY", "NOTHING")
-}
-
-// atlasGapDisablesAutovacuum reports autovacuum being turned off for a table.
-//
-// It reads the joined statement rather than the word list because
-// `autovacuum_enabled=false`, `autovacuum_enabled = false` and
-// `autovacuum_enabled =false` tokenize differently and mean the same thing.
-func atlasGapDisablesAutovacuum(canonical string) bool {
-	text := strings.ToUpper(canonical)
-	if !strings.Contains(text, "AUTOVACUUM_ENABLED") {
-		return false
-	}
-	compact := strings.NewReplacer(" ", "", "\t", "").Replace(text)
-	return strings.Contains(compact, "AUTOVACUUM_ENABLED=FALSE") ||
-		strings.Contains(compact, "AUTOVACUUM_ENABLED=OFF") ||
-		strings.Contains(compact, "AUTOVACUUM_ENABLED='FALSE'") ||
-		strings.Contains(compact, "AUTOVACUUM_ENABLED='OFF'") ||
-		strings.Contains(compact, "AUTOVACUUM_ENABLED=0")
+	return lintkit.IsAlterTable(w) && lintkit.HasWordSeq(w, "DROP", "SYSTEM", "VERSIONING")
 }
 
 // atlasGapNullabilityTransitions finds every MODIFY or CHANGE that takes a
@@ -325,7 +251,7 @@ func atlasGapNullabilityTransitions(file *File) []columnChangeSite {
 		if !clauseDeclaresNotNull(stmt.Words, site.typeStart) {
 			continue
 		}
-		before, found := file.baseline.column(site.table.normalized, normalizeIdent(site.oldName))
+		before, found := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
 		if !found || before.NotNull {
 			continue
 		}
@@ -342,7 +268,7 @@ func atlasGapNullabilityTransitions(file *File) []columnChangeSite {
 // the whole word list would answer for both.
 func clauseDeclaresNotNull(w []string, typeStart int) bool {
 	end := len(w)
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start > typeStart && start < end {
 			end = start
 		}
@@ -363,7 +289,7 @@ func atlasGapNullabilityStatements(file *File) []int {
 
 // atlasGapRules returns the rules that close the comparison gaps.
 func atlasGapRules() []Rule {
-	return append(atlasGapCompatibilityRules(), append(atlasGapPostgresRules(), atlasGapMySQLRules()...)...)
+	return append(atlasGapCompatibilityRules(), atlasGapMySQLRules()...)
 }
 
 // atlasGapCompatibilityRules holds BC103 and BC104.
@@ -414,7 +340,7 @@ func atlasGapDroppedTableRule() Rule {
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if ref := createdTableRef(stmt.Words); ref != "" {
+				if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
 					created[ref] = true
 					continue
 				}
@@ -440,7 +366,7 @@ func atlasGapDroppedTableRule() Rule {
 // statements for different consequences, so a statement one of them recognizes
 // and the other does not would be a silent hole in whichever ran second.
 func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, created map[string]bool) []Finding {
-	if !hasWordPrefix(stmt.Words, "DROP", "TABLE") {
+	if !lintkit.HasWordPrefix(stmt.Words, "DROP", "TABLE") {
 		return nil
 	}
 	tables, complete := droppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
@@ -465,8 +391,8 @@ func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, create
 	findings := make([]Finding, 0, len(ordered))
 	for _, table := range ordered {
 		findings = append(findings, finding(
-			"dropping table "+table.name+" retires a name "+atlasGapDroppedTableAdvice,
-			Subject{Kind: SubjectTable, Name: table.name},
+			"dropping table "+table.Name+" retires a name "+atlasGapDroppedTableAdvice,
+			Subject{Kind: SubjectTable, Name: table.Name},
 		))
 	}
 	return findings
@@ -505,11 +431,11 @@ func atlasGapDroppedColumnRule() Rule {
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if ref := createdTableRef(stmt.Words); ref != "" {
+				if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
 					created[ref] = true
 					continue
 				}
-				if !isAlterTable(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) {
 					continue
 				}
 				// The recognizer is DS102's, so every spelling that rule
@@ -520,8 +446,8 @@ func atlasGapDroppedColumnRule() Rule {
 				if len(subjects) == 0 {
 					continue
 				}
-				owner := alterTableReference(stmt.Words, stmt.sourceWords)
-				if owner.normalized != "" && refersToCreated(created, owner.normalized) {
+				owner := lintkit.AlterTableReference(stmt.Words, stmt.sourceWords)
+				if owner.Normalized != "" && lintkit.RefersToCreated(created, owner.Normalized) {
 					continue
 				}
 				findings = append(findings, Finding{
@@ -541,132 +467,6 @@ func atlasGapDroppedColumnRule() Rule {
 	}
 }
 
-// atlasGapPostgresRules holds PG108, PG109, PG312, PG314 and PG320.
-//
-// PG312 is the Atlas identifier. Ptah's own PG312P, a different rule about a
-// SECURITY DEFINER routine that does not pin search_path, keeps its code: the
-// trailing P is what marks a rule of ours inside an Atlas family, and the two
-// stay separately selectable, suppressible and reportable.
-func atlasGapPostgresRules() []Rule {
-	return []Rule{
-		{
-			Code:     "PG108",
-			Title:    "index on a partitioned table locks every partition",
-			Severity: SeverityWarning,
-			// PostgreSQL alone. The lock behavior above was measured on
-			// PostgreSQL 18.6 and on nothing else, and a wire-compatible
-			// engine's partitioning is its own implementation: naming
-			// CockroachDB or YugabyteDB here would be a cost claim about a
-			// server this rule has never been run against.
-			Dialects: []string{"postgres"},
-			// PG101's remedy is CONCURRENTLY, which PostgreSQL refuses on a
-			// partitioned table, so where this rule fires PG101 has nothing
-			// right to add.
-			Subsumes: []string{"PG101"},
-			// The statement alone cannot say the table is partitioned. A
-			// CREATE TABLE … PARTITION BY earlier in the same file says so
-			// from the text; for a table an earlier migration created, the
-			// starting state says so. Without either the rule is silent
-			// rather than guessing, and PG101 reports the ordinary build.
-			Input:            InputBaselineRefinement,
-			BaselineSubjects: partitionedIndexStateRequests,
-			CheckFile: func(file *File) []Finding {
-				var findings []Finding
-				for _, site := range partitionedIndexSites(file) {
-					if !site.partitionedInFile && (!site.earlier || !file.baseline.partitioned(site.target.normalized)) {
-						continue
-					}
-					stmt := &file.Statements[site.index]
-					findings = append(findings, Finding{
-						Rule:     "PG108",
-						Title:    "index on a partitioned table locks every partition",
-						Severity: SeverityWarning,
-						File:     file.Path,
-						Line:     stmt.Line,
-						Message:  partitionedIndexMessage(stmt, site.target.name),
-						Context:  statementFindingContext(site.index),
-					})
-				}
-				return findings
-			},
-		},
-		{
-			Code:     "PG109",
-			Title:    "exclusion constraint added under an exclusive lock",
-			Severity: SeverityWarning,
-			Dialects: []string{"postgres"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !atlasGapExcludeConstraint(stmt.Words) {
-					return false, ""
-				}
-				return true, "adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the " +
-					"backing index and checks every existing row against it, so reads and writes both stop for the " +
-					"whole scan; there is no CONCURRENTLY form for it, so build the index separately with " +
-					"CREATE INDEX CONCURRENTLY and add the constraint USING that index"
-			},
-		},
-		{
-			Code:     "PG312",
-			Title:    "primary key redefined under an exclusive lock",
-			Severity: SeverityWarning,
-			Dialects: []string{"postgres"},
-			// PG104 reports the lock an added primary key takes; on a
-			// redefinition this says the same thing and adds what is built
-			// under it. CD103 and DS105 are left alone: losing row identity is
-			// a separate hazard from what the rebuild costs.
-			Subsumes: []string{"PG104"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !atlasGapRedefinesPrimaryKey(stmt.Words) {
-					return false, ""
-				}
-				if hasWordSeq(stmt.Words, "USING", "INDEX") {
-					// The index already exists, so nothing is built under the
-					// lock; the statement is a catalog edit and the expensive
-					// half was the CREATE INDEX CONCURRENTLY before it.
-					return false, ""
-				}
-				return true, "replacing the primary key builds the new unique index while holding an ACCESS " +
-					"EXCLUSIVE lock, so reads and writes both stop for the whole build rather than for a catalog " +
-					"edit; build the index first with CREATE INDEX CONCURRENTLY and add the constraint USING INDEX"
-			},
-		},
-		{
-			Code:     "PG314",
-			Title:    "replica identity weakened for logical replication",
-			Severity: SeverityWarning,
-			Dialects: []string{"postgres"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !atlasGapReplicaIdentity(stmt.Words) {
-					return false, ""
-				}
-				if hasWordSeq(stmt.Words, "REPLICA", "IDENTITY", "NOTHING") {
-					return true, "REPLICA IDENTITY NOTHING stops the table publishing any row identity, so a " +
-						"logical replication subscriber cannot apply an UPDATE or DELETE from it and the change " +
-						"is silently lost downstream; the statement itself takes an ACCESS EXCLUSIVE lock"
-				}
-				return true, "REPLICA IDENTITY FULL makes every UPDATE and DELETE write every column of the old " +
-					"row into the WAL, so replication volume grows with the row width and a subscriber matches " +
-					"rows by a full scan rather than by key; the statement itself takes an ACCESS EXCLUSIVE lock"
-			},
-		},
-		{
-			Code:     "PG320",
-			Title:    "autovacuum disabled for a table",
-			Severity: SeverityWarning,
-			Dialects: []string{"postgres"},
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !atlasGapDisablesAutovacuum(stmt.Canonical) {
-					return false, ""
-				}
-				return true, "disabling autovacuum leaves dead rows for nothing to reclaim, so the table and its " +
-					"indexes keep growing, planner statistics stop being refreshed, and the transaction id horizon " +
-					"stops advancing for it; the statement is cheap -- it takes only a SHARE UPDATE EXCLUSIVE " +
-					"lock -- and the cost is paid later, so pair it with the vacuum schedule that replaces it"
-			},
-		},
-	}
-}
-
 // atlasGapMySQLRules holds MY137 through MY148 except MY142, which the header
 // records as measured absent on every release line this repository declares.
 func atlasGapMySQLRules() []Rule {
@@ -681,7 +481,7 @@ func atlasGapMySQLRules() []Rule {
 			// separate hazard from the rebuild.
 			Subsumes: []string{"MY132"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !atlasGapRedefinesPrimaryKey(stmt.Words) {
+				if !lintkit.RedefinesPrimaryKey(stmt.Words) {
 					return false, ""
 				}
 				return true, "replacing the primary key rebuilds the table around the new clustered index and " +
@@ -727,7 +527,7 @@ func atlasGapMySQLRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddStoredGeneratedColumn(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanAddStoredGeneratedColumn(stmt.Words) {
 					return false, ""
 				}
 				return true, "adding a STORED generated column computes and stores a value for every existing row, " +
@@ -781,7 +581,7 @@ func atlasGapMySQLRules() []Rule {
 			Severity: SeverityWarning,
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddCheckConstraint(stmt.Words) {
+				if !lintkit.IsAlterTable(stmt.Words) || !scanAddCheckConstraint(stmt.Words) {
 					return false, ""
 				}
 				// A constraint added NOT ENFORCED is recorded and never
@@ -810,7 +610,7 @@ func atlasGapMySQLRules() []Rule {
 				if !atlasGapCheckEnforcement(stmt.Words) {
 					return false, ""
 				}
-				if hasWordSeq(stmt.Words, "NOT", "ENFORCED") {
+				if lintkit.HasWordSeq(stmt.Words, "NOT", "ENFORCED") {
 					return true, "unenforcing a CHECK constraint stops the server validating new rows against it, " +
 						"so values the constraint was there to refuse start being accepted; the constraint stays " +
 						"in the schema, which makes the change invisible to a reader comparing column definitions"
@@ -876,91 +676,6 @@ func atlasGapMySQLRules() []Rule {
 	}
 }
 
-// partitionedIndexSite is one CREATE INDEX that PG108 judges.
-type partitionedIndexSite struct {
-	index  int
-	target tableReference
-	// partitionedInFile reports a target this file creates PARTITION BY.
-	partitionedInFile bool
-	// earlier reports a target this file does not create, so only the state
-	// the version starts from can say whether it is partitioned.
-	earlier bool
-}
-
-// partitionedIndexSites lists the index builds of an up file that PG108 can
-// judge: every CREATE INDEX except the ON ONLY form, which builds the parent's
-// index alone and is the first step of the remedy this rule names, and a
-// TimescaleDB per-chunk build, which a partitioned table refuses outright
-// (`unrecognized parameter namespace "timescaledb"`, measured on PostgreSQL
-// 18.6 with TimescaleDB 2.30.1 installed). It is the
-// one walk both halves of the rule read, the state request and the report, so
-// the two cannot disagree about which statements are candidates.
-func partitionedIndexSites(file *File) []partitionedIndexSite {
-	if !file.IsUp {
-		return nil
-	}
-	created := make(map[string]bool)
-	partitioned := make(map[string]bool)
-	var sites []partitionedIndexSite
-	for i := range file.Statements {
-		stmt := &file.Statements[i]
-		if ref := createdTableRef(stmt.Words); ref != "" {
-			created[ref] = true
-			if hasWordSeq(stmt.Words, "PARTITION", "BY") {
-				partitioned[ref] = true
-			}
-			continue
-		}
-		if !isCreateIndex(stmt.Words) {
-			continue
-		}
-		target, only := createIndexTarget(stmt.Words, stmt.sourceWords)
-		if only || target.normalized == "" || txrequire.PerChunkIndexBuild(stmt.Words) {
-			continue
-		}
-		sites = append(sites, partitionedIndexSite{
-			index:             i,
-			target:            target,
-			partitionedInFile: refersToCreated(partitioned, target.normalized),
-			earlier:           !refersToCreated(created, target.normalized),
-		})
-	}
-	return sites
-}
-
-// partitionedIndexStateRequests is PG108's answer to which statements want the
-// starting state: the index builds on a table an earlier migration created.
-func partitionedIndexStateRequests(file *File) []int {
-	var indexes []int
-	for _, site := range partitionedIndexSites(file) {
-		if site.earlier {
-			indexes = append(indexes, site.index)
-		}
-	}
-	return indexes
-}
-
-// partitionedIndexMessage is PG108's message, spelling the table the way the
-// migration does.
-//
-// Measured on PostgreSQL 18.6, on a parent with a partition that is itself
-// partitioned: a plain build takes SHARE on the parent and on every partition
-// at every level for the whole build, and an INSERT into any of them waits;
-// CONCURRENTLY is refused on the parent, on the partitioned partition and with
-// ON ONLY (`cannot create index on partitioned table ... concurrently`); the
-// parent index created ON ONLY, each leaf built concurrently and attached,
-// and the partitioned partition's own ON ONLY index attached in turn, leave
-// every index valid.
-func partitionedIndexMessage(stmt *Statement, table string) string {
-	remedy := "build the index on each partition concurrently and attach it to a parent index created with ON ONLY"
-	if slices.Contains(stmt.Words, "CONCURRENTLY") {
-		return "PostgreSQL refuses CREATE INDEX CONCURRENTLY on the partitioned table " + table + "; " + remedy
-	}
-	return "building this index takes a SHARE lock on " + table + " and on every one of its partitions at once, " +
-		"so writes stop across the whole set rather than one partition at a time; CONCURRENTLY is refused on a " +
-		"partitioned table, so the way to keep writes going is to " + remedy
-}
-
 // atlasGapAddsEnforcedCheck reports an ADD clause whose CHECK will be
 // validated.
 //
@@ -970,7 +685,7 @@ func partitionedIndexMessage(stmt *Statement, table string) string {
 // CONSTRAINT b CHECK (…) NOT ENFORCED` still validates every row for a -- and a
 // statement-wide answer would silence the scan that actually runs.
 func atlasGapAddsEnforcedCheck(w []string) bool {
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start >= len(w) || w[start] != "ADD" {
 			continue
 		}
@@ -988,7 +703,7 @@ func atlasGapAddsEnforcedCheck(w []string) bool {
 // given words in order.
 func clauseEndsWithPair(w []string, from int, first, second string) bool {
 	end := len(w)
-	for _, start := range clauseStarts(w) {
+	for _, start := range lintkit.ClauseStarts(w) {
 		if start > from {
 			end = start
 			break

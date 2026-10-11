@@ -4,21 +4,24 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"ptah.run/internal/lintkit"
 )
 
 // The cost rules in this package fire where a copy or a rewrite is
 // established, and stay quiet where the server applies the change in place.
 // Quiet is correct, but from the report it reads the same as "the rule did
 // not look", and DS103 and MY101 still describe the statement as one that may
-// truncate values or rebuild the table. The two rules in this file are the
-// other half of the measurement: an info-severity finding that says the
-// clause was judged and applied in place, and how, for a statement whose
-// every clause the comparison could judge (stokaro/ptah#2956).
+// truncate values or rebuild the table. MY130P in this file is the other half
+// of the measurement for the MySQL family: an info-severity finding that says
+// the clause was judged and applied in place, and how, for a statement whose
+// every clause the comparison could judge (stokaro/ptah#2956). The PostgreSQL
+// owner reports the same for PostgreSQL as PG301P.
 //
-// The type half is the measurement in mysqlcost.go and pgcost.go. The
-// attribute half was measured on MySQL 8.4.11 and MariaDB 11.8.9 by asking
-// for ALGORITHM=INSTANT and then INPLACE with LOCK=NONE, on a latin1
-// VARCHAR(10) column of a table with a row:
+// The type half is the measurement in mysqlcost.go. The attribute half was
+// measured on MySQL 8.4.11 and MariaDB 11.8.9 by asking for ALGORITHM=INSTANT
+// and then INPLACE with LOCK=NONE, on a latin1 VARCHAR(10) column of a table
+// with a row:
 //
 //	MODIFY / CHANGE clause                    MySQL              MariaDB
 //	VARCHAR(10) -> VARCHAR(20)                INPLACE, LOCK=NONE  INSTANT
@@ -29,13 +32,6 @@ import (
 //	  CHANGE that renames                     INSTANT             INSTANT
 //	AUTO_INCREMENT added                      copy                copy
 //
-// and on PostgreSQL 18.6 by relfilenode and the heap-scan counter, beside a
-// varchar(10) -> varchar(20) that is itself a catalog edit:
-//
-//	ALTER COLUMN clause                       table      indexes    scans
-//	SET DEFAULT, DROP DEFAULT, DROP NOT NULL  kept       kept       0
-//	SET NOT NULL                              kept       kept       1
-//
 // An INPLACE change of nullability rebuilds the table in place, online, and
 // the finding says so rather than folding it into "in place"; a NOT NULL
 // added on a nullable column still fails on a NULL row, which DD103 reports
@@ -43,12 +39,13 @@ import (
 // AUTO_INCREMENT, a generated expression, ON UPDATE, a key -- or a statement
 // with a clause of another kind is not judged and gets no finding, so the
 // finding never says "in place" of a statement the measurement did not
-// cover. Both rules read the schema state the version starts from and stay
+// cover. The rule reads the schema state the version starts from and stays
 // silent without it, named as unmet.
 
-// inPlaceRules is the family: one info-severity finding per engine family.
+// inPlaceRules is the MySQL-family half of the in-place family; the
+// PostgreSQL half, PG301P, is the PostgreSQL owner's.
 func inPlaceRules() []Rule {
-	return []Rule{mysqlInPlaceRule(), postgresInPlaceRule()}
+	return []Rule{mysqlInPlaceRule()}
 }
 
 // mysqlInPlaceStatements lists the statements MY130P judges: every MODIFY
@@ -85,32 +82,6 @@ func mysqlInPlaceRule() Rule {
 	}
 }
 
-func postgresInPlaceRule() Rule {
-	return Rule{
-		Code:             "PG301P",
-		Title:            "column type change applied as a catalog edit",
-		Severity:         SeverityInfo,
-		Dialects:         []string{"postgres"},
-		Subsumes:         []string{"DS103"},
-		Input:            InputBaselineSchema,
-		BaselineSubjects: pgTypeChangeStatements,
-		CheckFile: func(file *File) []Finding {
-			if !file.IsUp {
-				return nil
-			}
-			var findings []Finding
-			for _, index := range pgTypeChangeStatements(file) {
-				message, ok := pgInPlaceMessage(file, index)
-				if !ok {
-					continue
-				}
-				findings = append(findings, inPlaceFinding(file, index, "PG301P", "column type change applied as a catalog edit", message))
-			}
-			return findings
-		},
-	}
-}
-
 func inPlaceFinding(file *File, index int, code, title, message string) Finding {
 	stmt := &file.Statements[index]
 	return Finding{
@@ -131,7 +102,7 @@ func inPlaceFinding(file *File, index int, code, title, message string) Finding 
 func mysqlInPlaceMessage(file *File, index int) (string, bool) {
 	stmt := &file.Statements[index]
 	w := stmt.Words
-	clauses := clauseStarts(w)
+	clauses := lintkit.ClauseStarts(w)
 	if conversion, ok := mysqlInPlaceConversion(file, index); ok && len(clauses) == 1 {
 		return conversion, true
 	}
@@ -166,12 +137,12 @@ func mysqlInPlaceConversion(file *File, index int) (string, bool) {
 			}
 			reasons = append(reasons, column.name+" ("+column.transition.why+")")
 		}
-		head := fmt.Sprintf("CONVERT TO CHARACTER SET %s on %s ", conversion.site.target, conversion.site.table.name)
+		head := fmt.Sprintf("CONVERT TO CHARACTER SET %s on %s ", conversion.site.target, conversion.site.table.Name)
 		if len(reasons) == 0 {
 			return head + "re-encodes no column, so both servers apply it as a metadata change (ALGORITHM=INSTANT)", true
 		}
 		return head + fmt.Sprintf("converts %d column%s in place, with writes allowed (INPLACE with LOCK=NONE on MySQL, INSTANT on MariaDB): %s",
-			len(reasons), plural(len(reasons)), strings.Join(reasons, "; ")), true
+			len(reasons), lintkit.Plural(len(reasons)), strings.Join(reasons, "; ")), true
 	}
 	return "", false
 }
@@ -261,7 +232,7 @@ func mysqlInPlaceClause(file *File, change resolvedColumnChange) (string, bool) 
 	if attrs.unknown {
 		return "", false
 	}
-	column, ok := file.baseline.column(change.site.table.normalized, normalizeIdent(change.site.oldName))
+	column, ok := file.baseline.Column(change.site.table.Normalized, lintkit.NormalizeIdent(change.site.oldName))
 	if !ok {
 		return "", false
 	}
@@ -284,68 +255,5 @@ func mysqlInPlaceClause(file *File, change resolvedColumnChange) (string, bool) 
 	if len(parts) == 0 {
 		return "", false
 	}
-	return fmt.Sprintf("%s %s.%s %s", change.clause(), change.site.table.name, change.site.newName, strings.Join(parts, "; ")), true
-}
-
-// pgInPlaceMessage judges one ALTER TABLE statement as a whole: every ALTER
-// COLUMN ... TYPE must be a catalog edit, and every other clause must be a
-// SET DEFAULT, DROP DEFAULT or DROP NOT NULL, which are catalog edits too.
-func pgInPlaceMessage(file *File, index int) (string, bool) {
-	stmt := &file.Statements[index]
-	w := stmt.Words
-	changes := 0
-	var sentences []string
-	for _, change := range resolvePGTypeChanges(file) {
-		if change.site.statement != index {
-			continue
-		}
-		if change.transition.outcome != pgInPlace && change.transition.outcome != pgUnchanged {
-			return "", false
-		}
-		changes++
-		if change.transition.outcome == pgInPlace {
-			sentences = append(sentences, fmt.Sprintf("ALTER COLUMN %s.%s TYPE %s %s", change.site.table.name, change.site.column, change.updated.spell(), change.transition.why))
-		}
-	}
-	others := 0
-	for _, i := range clauseStarts(w) {
-		switch {
-		case alterColumnTypeClause(w, i):
-		case pgCatalogEditClause(w, i):
-			others++
-		default:
-			return "", false
-		}
-	}
-	if changes == 0 || changes+others != len(clauseStarts(w)) {
-		return "", false
-	}
-	message := "PostgreSQL applies the statement as a catalog edit: no table rewrite, no index rebuild, and no scan of the rows"
-	if len(sentences) > 0 {
-		message = strings.Join(sentences, "; ") + "; " + message
-	} else {
-		message = fmt.Sprintf("ALTER TABLE %s restates its column types; ", alterTableReference(w, stmt.sourceWords).name) + message
-	}
-	if others > 0 {
-		message += fmt.Sprintf(", the %d SET DEFAULT, DROP DEFAULT or DROP NOT NULL clause%s in the same statement included", others, plural(others))
-	}
-	return message, true
-}
-
-// pgCatalogEditClause recognizes ALTER [COLUMN] name SET DEFAULT ..., DROP
-// DEFAULT and DROP NOT NULL.
-func pgCatalogEditClause(w []string, i int) bool {
-	if i >= len(w) || w[i] != "ALTER" {
-		return false
-	}
-	j := i + 1
-	if j < len(w) && w[j] == "COLUMN" {
-		j++
-	}
-	j = skipIfExists(w, j)
-	if j >= len(w) || !identLike(w[j]) {
-		return false
-	}
-	rest := w[j+1 : clauseEnd(w, i)]
-	return hasWordPrefix(rest, "SET", "DEFAULT") || hasWordPrefix(rest, "DROP", "DEFAULT") || hasWordPrefix(rest, "DROP", "NOT", "NULL")
+	return fmt.Sprintf("%s %s.%s %s", change.clause(), change.site.table.Name, change.site.newName, strings.Join(parts, "; ")), true
 }

@@ -350,8 +350,9 @@ provider, and a rule judges targets the runtime registers; registration refuses
 anything else.
 
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
-publishes the transaction family as data and `Service` checks it. The bundled
-runtime registers both on the postgres target.
+publishes the PG and TX families and the online rules ON101 and ON103 as data,
+and `Service` checks them, rules that read the starting schema state included.
+The bundled runtime registers both on the postgres target.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and

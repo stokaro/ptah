@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/internal/lintkit"
 )
 
 // A unique index is built over the rows a table already holds, and the
@@ -50,218 +50,19 @@ import (
 // [InputBaselineRefinement]: the rules report from the text alone and the
 // state refines the report, and a run without it is named as unmet.
 
-// uniqueIndexSite is one unique index or constraint a statement builds.
-type uniqueIndexSite struct {
-	statement int
-	// name is the index or constraint name as written, empty when the
-	// server picks one.
-	name string
-	// table is the indexed table and columns its key columns, as written.
-	table   tableReference
-	columns []string
-	// concurrently and nullsNotDistinct are the PostgreSQL modifiers that
-	// change what a failure leaves behind and what counts as a duplicate.
-	concurrently     bool
-	nullsNotDistinct bool
-	// spelled is the clause head for the message: CREATE UNIQUE INDEX,
-	// ADD UNIQUE, or YQL's ADD INDEX.
-	spelled string
-	// yql records YQL's spelling, whose failure YDB words its own way.
-	yql bool
-}
-
 // uniqueIndexStatements lists the statements that build a unique index, for
 // the baseline request.
 func uniqueIndexStatements(file *File) []int {
 	var indexes []int
 	seen := -1
-	for _, site := range uniqueIndexSites(file) {
-		if site.statement == seen {
+	for _, site := range lintkit.UniqueIndexSites(file.contract, file.dialect) {
+		if site.Statement == seen {
 			continue
 		}
-		seen = site.statement
-		indexes = append(indexes, site.statement)
+		seen = site.Statement
+		indexes = append(indexes, site.Statement)
 	}
 	return indexes
-}
-
-// uniqueIndexSites finds every unique index a file builds, in file order.
-func uniqueIndexSites(file *File) []uniqueIndexSite {
-	var sites []uniqueIndexSite
-	for index := range file.Statements {
-		stmt := &file.Statements[index]
-		w := stmt.Words
-		switch {
-		case isCreateIndex(w) && len(w) > 1 && w[1] == "UNIQUE":
-			if site, ok := createUniqueIndexSite(w, stmt.sourceWords); ok {
-				site.statement = index
-				sites = append(sites, site)
-			}
-		case isAlterTable(w):
-			table := alterTableReference(w, stmt.sourceWords)
-			for _, i := range clauseStarts(w) {
-				site, ok := addUniqueSite(w, stmt.sourceWords, i)
-				if !ok && file.dialect == platform.YDB {
-					site, ok = yqlUniqueIndexSite(w, stmt.sourceWords, i)
-				}
-				if !ok {
-					continue
-				}
-				site.statement = index
-				site.table = table
-				sites = append(sites, site)
-			}
-		}
-	}
-	return sites
-}
-
-// createUniqueIndexSite reads CREATE UNIQUE INDEX [CONCURRENTLY] [IF NOT
-// EXISTS] [name] ON [ONLY] table [USING method] (columns) [NULLS NOT DISTINCT].
-func createUniqueIndexSite(w, sourceWords []string) (uniqueIndexSite, bool) {
-	site := uniqueIndexSite{spelled: "CREATE UNIQUE INDEX"}
-	j := 3
-	if j < len(w) && w[j] == "CONCURRENTLY" {
-		site.concurrently = true
-		j++
-	}
-	j = skipIfNotExists(w, j)
-	if j < len(w) && w[j] != "ON" && identLike(w[j]) {
-		site.name = sourceWordAt(w, sourceWords, j)
-		j++
-	}
-	if j >= len(w) || w[j] != "ON" {
-		return site, false
-	}
-	j++
-	if j < len(w) && w[j] == "ONLY" {
-		j++
-	}
-	table, next := tableRefAt(w, sourceWords, j)
-	if table.normalized == "" {
-		return site, false
-	}
-	site.table = table
-	j = next
-	if j+1 < len(w) && w[j] == "USING" {
-		j += 2
-	}
-	columns, next, ok := keyColumnList(w, sourceWords, j)
-	if !ok {
-		return site, false
-	}
-	site.columns = columns
-	site.nullsNotDistinct = hasWordSeq(w[next:], "NULLS", "NOT", "DISTINCT")
-	return site, true
-}
-
-// addUniqueSite reads ADD [CONSTRAINT name] UNIQUE [INDEX|KEY] [name]
-// [USING method] (columns) at a clause start.
-func addUniqueSite(w, sourceWords []string, i int) (uniqueIndexSite, bool) {
-	end := clauseEnd(w, i)
-	site := uniqueIndexSite{spelled: "ADD UNIQUE"}
-	j := i
-	if j >= end || w[j] != "ADD" {
-		return site, false
-	}
-	j++
-	if j+1 < end && w[j] == "CONSTRAINT" && identLike(w[j+1]) {
-		site.name = sourceWordAt(w, sourceWords, j+1)
-		j += 2
-	}
-	if j >= end || w[j] != "UNIQUE" {
-		return site, false
-	}
-	j++
-	if j < end && (w[j] == "INDEX" || w[j] == "KEY") {
-		j++
-	}
-	name, j := uniqueNameAndMethod(w[:end], sourceWords, j)
-	if name != "" {
-		site.name = name
-	}
-	columns, next, ok := keyColumnList(w[:end], sourceWords, j)
-	if !ok {
-		return site, false
-	}
-	site.columns = columns
-	site.nullsNotDistinct = hasWordSeq(w[next:end], "NULLS", "NOT", "DISTINCT")
-	return site, true
-}
-
-// yqlUniqueIndexSite reads YQL's ADD INDEX name [GLOBAL] UNIQUE [SYNC] [USING
-// kind] ON (columns) at a clause start. YQL is the only dialect that writes
-// UNIQUE after the index name, and it is read only on a YDB run, where the
-// statement is lexed as YQL.
-func yqlUniqueIndexSite(w, sourceWords []string, i int) (uniqueIndexSite, bool) {
-	end := clauseEnd(w, i)
-	site := uniqueIndexSite{spelled: "ADD INDEX", yql: true}
-	if i+2 >= end || w[i] != "ADD" || w[i+1] != "INDEX" || !identLike(w[i+2]) {
-		return site, false
-	}
-	site.name = sourceWordAt(w, sourceWords, i+2)
-	unique := false
-	for j := i + 3; j < end; j++ {
-		switch w[j] {
-		case "UNIQUE":
-			unique = true
-		case "ON":
-			columns, _, ok := keyColumnList(w[:end], sourceWords, j+1)
-			site.columns = columns
-			return site, ok && unique
-		}
-	}
-	return site, false
-}
-
-// uniqueNameAndMethod reads the optional index name and USING method between
-// UNIQUE [INDEX|KEY] and the column list. The PostgreSQL USING INDEX form
-// attaches an index that already exists: it names no column list, so the
-// caller's column-list requirement is what keeps it from being a site.
-func uniqueNameAndMethod(w, sourceWords []string, j int) (name string, next int) {
-	if j < len(w) && w[j] != "(" && w[j] != "USING" && identLike(w[j]) {
-		name = sourceWordAt(w, sourceWords, j)
-		j++
-	}
-	if j+1 < len(w) && w[j] == "USING" {
-		j += 2
-	}
-	return name, j
-}
-
-// keyColumnList reads ( a, b (10), c DESC, (expr) ) and returns the column
-// names it names, in order, and the index after the closing parenthesis.
-// A key part that is an expression contributes no name.
-func keyColumnList(w, sourceWords []string, j int) ([]string, int, bool) {
-	if j >= len(w) || w[j] != "(" {
-		return nil, j, false
-	}
-	var columns []string
-	depth := 0
-	partStart := true
-	for k := j; k < len(w); k++ {
-		switch w[k] {
-		case "(":
-			depth++
-			partStart = depth == 1
-			continue
-		case ")":
-			depth--
-			if depth == 0 {
-				return columns, k + 1, len(columns) > 0
-			}
-		case ",":
-			if depth == 1 {
-				partStart = true
-			}
-		default:
-			if depth == 1 && partStart && identLike(w[k]) {
-				columns = append(columns, sourceWordAt(w, sourceWords, k))
-			}
-			partStart = false
-		}
-	}
-	return nil, j, false
 }
 
 // droppedIndexNames lists the indexes and constraints the statements before
@@ -272,33 +73,29 @@ func droppedIndexNames(file *File, index int) map[string]bool {
 	for i := 0; i <= index && i < len(file.Statements); i++ {
 		w := file.Statements[i].Words
 		switch {
-		case hasWordPrefix(w, "DROP", "INDEX"):
+		case lintkit.HasWordPrefix(w, "DROP", "INDEX"):
 			j := 2
 			if j < len(w) && w[j] == "CONCURRENTLY" {
 				j++
 			}
-			j = skipIfExists(w, j)
+			j = lintkit.SkipIfExists(w, j)
 			for ; j < len(w); j++ {
-				if identLike(w[j]) {
-					dropped[normalizeIdent(lastComponent(w[j]))] = true
+				if lintkit.IdentLike(w[j]) {
+					dropped[lintkit.NormalizeIdent(lintkit.LastComponent(w[j]))] = true
 				}
 			}
-		case isAlterTable(w):
-			for _, j := range clauseStarts(w) {
-				if hasWordPrefix(w[j:], "DROP", "INDEX") || hasWordPrefix(w[j:], "DROP", "KEY") || hasWordPrefix(w[j:], "DROP", "CONSTRAINT") {
-					k := skipIfExists(w, j+2)
-					if k < len(w) && identLike(w[k]) {
-						dropped[normalizeIdent(w[k])] = true
+		case lintkit.IsAlterTable(w):
+			for _, j := range lintkit.ClauseStarts(w) {
+				if lintkit.HasWordPrefix(w[j:], "DROP", "INDEX") || lintkit.HasWordPrefix(w[j:], "DROP", "KEY") || lintkit.HasWordPrefix(w[j:], "DROP", "CONSTRAINT") {
+					k := lintkit.SkipIfExists(w, j+2)
+					if k < len(w) && lintkit.IdentLike(w[k]) {
+						dropped[lintkit.NormalizeIdent(w[k])] = true
 					}
 				}
 			}
 		}
 	}
 	return dropped
-}
-
-func lastComponent(word string) string {
-	return word[strings.LastIndex(word, ".")+1:]
 }
 
 // addedColumn is a column an earlier statement of the file added, with
@@ -309,21 +106,21 @@ type addedColumn struct {
 
 // columnsAddedBefore lists the columns added to table by the statements
 // before index, keyed by normalized name.
-func columnsAddedBefore(file *File, index int, table tableReference) map[string]addedColumn {
+func columnsAddedBefore(file *File, index int, table lintkit.TableReference) map[string]addedColumn {
 	added := make(map[string]addedColumn)
 	for i := 0; i < index && i < len(file.Statements); i++ {
 		stmt := &file.Statements[i]
 		w := stmt.Words
-		if !isAlterTable(w) || alterTableReference(w, stmt.sourceWords).normalized != table.normalized {
+		if !lintkit.IsAlterTable(w) || lintkit.AlterTableReference(w, stmt.sourceWords).Normalized != table.Normalized {
 			continue
 		}
-		for _, j := range clauseStarts(w) {
-			start, end, ok := addColumnClause(w, j)
+		for _, j := range lintkit.ClauseStarts(w) {
+			start, end, ok := lintkit.AddColumnClause(w, j)
 			if !ok {
 				continue
 			}
 			clause := w[start:end]
-			added[normalizeIdent(w[start-1])] = addedColumn{
+			added[lintkit.NormalizeIdent(w[start-1])] = addedColumn{
 				hasDefault: slices.Contains(clause, "DEFAULT") || slices.Contains(clause, "GENERATED"),
 			}
 		}
@@ -335,7 +132,7 @@ func columnsAddedBefore(file *File, index int, table tableReference) map[string]
 func tablesCreatedBefore(file *File, index int) map[string]bool {
 	created := make(map[string]bool)
 	for i := 0; i < index && i < len(file.Statements); i++ {
-		if ref := createdTableRef(file.Statements[i].Words); ref != "" {
+		if ref := lintkit.CreatedTableRef(file.Statements[i].Words); ref != "" {
 			created[ref] = true
 		}
 	}
@@ -363,17 +160,17 @@ const (
 	uniqueProven
 )
 
-func classifyUniqueRisk(file *File, site uniqueIndexSite) uniqueRisk {
-	if refersToCreated(tablesCreatedBefore(file, site.statement), site.table.normalized) {
+func classifyUniqueRisk(file *File, site lintkit.UniqueIndexSite) uniqueRisk {
+	if lintkit.RefersToCreated(tablesCreatedBefore(file, site.Statement), site.Table.Normalized) {
 		return uniqueNoRows
 	}
 	if provenUnique(file, site) {
 		return uniqueProven
 	}
-	added := columnsAddedBefore(file, site.statement, site.table)
-	allNull := !site.nullsNotDistinct
-	for _, column := range site.columns {
-		entry, ok := added[normalizeIdent(column)]
+	added := columnsAddedBefore(file, site.Statement, site.Table)
+	allNull := !site.NullsNotDistinct
+	for _, column := range site.Columns {
+		entry, ok := added[lintkit.NormalizeIdent(column)]
 		switch {
 		case !ok:
 			allNull = false
@@ -381,7 +178,7 @@ func classifyUniqueRisk(file *File, site uniqueIndexSite) uniqueRisk {
 			return uniqueSameDefault
 		}
 	}
-	if allNull && len(site.columns) > 0 {
+	if allNull && len(site.Columns) > 0 {
 		return uniqueAllNull
 	}
 	return uniqueUnknown
@@ -392,20 +189,20 @@ func classifyUniqueRisk(file *File, site uniqueIndexSite) uniqueRisk {
 // new key cannot meet a duplicate. Under NULLS NOT DISTINCT two NULLs
 // collide where the existing index let them pass, so the proof then needs
 // every covering column NOT NULL as well.
-func provenUnique(file *File, site uniqueIndexSite) bool {
-	columns := make([]string, 0, len(site.columns))
-	for _, column := range site.columns {
-		columns = append(columns, normalizeIdent(column))
+func provenUnique(file *File, site lintkit.UniqueIndexSite) bool {
+	columns := make([]string, 0, len(site.Columns))
+	for _, column := range site.Columns {
+		columns = append(columns, lintkit.NormalizeIdent(column))
 	}
-	covering, ok := file.baseline.uniqueCovering(site.table.normalized, columns)
+	covering, ok := file.baseline.UniqueCovering(site.Table.Normalized, columns)
 	if !ok {
 		return false
 	}
-	if !site.nullsNotDistinct {
+	if !site.NullsNotDistinct {
 		return true
 	}
-	for _, name := range wholeKeyColumns(covering) {
-		column, known := file.baseline.column(site.table.normalized, name)
+	for _, name := range lintkit.WholeKeyColumns(covering) {
+		column, known := file.baseline.Column(site.Table.Normalized, name)
 		if !known || !column.NotNull {
 			return false
 		}
@@ -417,18 +214,18 @@ func provenUnique(file *File, site uniqueIndexSite) bool {
 // dropped earlier under the same name, or one it dropped whose columns, as
 // the baseline records them, are exactly the new key's. The second result
 // reports the new-name form, for the message.
-func replacedIndex(file *File, site uniqueIndexSite) (name string, renamed, ok bool) {
-	dropped := droppedIndexNames(file, site.statement)
-	if site.name != "" && dropped[normalizeIdent(lastComponent(site.name))] {
-		return site.name, false, true
+func replacedIndex(file *File, site lintkit.UniqueIndexSite) (name string, renamed, ok bool) {
+	dropped := droppedIndexNames(file, site.Statement)
+	if site.Name != "" && dropped[lintkit.NormalizeIdent(lintkit.LastComponent(site.Name))] {
+		return site.Name, false, true
 	}
-	columns := make([]string, 0, len(site.columns))
-	for _, column := range site.columns {
-		columns = append(columns, normalizeIdent(column))
+	columns := make([]string, 0, len(site.Columns))
+	for _, column := range site.Columns {
+		columns = append(columns, lintkit.NormalizeIdent(column))
 	}
 	for _, droppedName := range slices.Sorted(maps.Keys(dropped)) {
-		idx, found := file.baseline.indexNamed(site.table.normalized, droppedName)
-		if !found || !sameColumnSet(wholeKeyColumns(idx), columns) {
+		idx, found := file.baseline.IndexNamed(site.Table.Normalized, droppedName)
+		if !found || !lintkit.SameColumnSet(lintkit.WholeKeyColumns(idx), columns) {
 			continue
 		}
 		return idx.Name, true, true
@@ -437,16 +234,9 @@ func replacedIndex(file *File, site uniqueIndexSite) (name string, renamed, ok b
 }
 
 // duplicateQuery is the statement that proves or clears the risk.
-func duplicateQuery(site uniqueIndexSite) string {
-	columns := strings.Join(site.columns, ", ")
-	return fmt.Sprintf("SELECT %s, COUNT(*) FROM %s GROUP BY %s HAVING COUNT(*) > 1", columns, site.table.name, columns)
-}
-
-func (s uniqueIndexSite) label() string {
-	if s.name != "" {
-		return s.spelled + " " + s.name
-	}
-	return s.spelled
+func duplicateQuery(site lintkit.UniqueIndexSite) string {
+	columns := strings.Join(site.Columns, ", ")
+	return fmt.Sprintf("SELECT %s, COUNT(*) FROM %s GROUP BY %s HAVING COUNT(*) > 1", columns, site.Table.Name, columns)
 }
 
 // uniqueFailure is the failure both families report, and what it leaves.
@@ -454,28 +244,28 @@ func (s uniqueIndexSite) label() string {
 // YDB words it its own way: measured on 26.2.1.14 with EnableAddUniqueIndex
 // on, ADD INDEX ... GLOBAL UNIQUE SYNC over two rows holding the same value
 // answers `Duplicate key found: (v=a)`.
-func uniqueFailure(site uniqueIndexSite) string {
-	if site.yql {
+func uniqueFailure(site lintkit.UniqueIndexSite) string {
+	if site.YQL {
 		return "fails on the first duplicate it meets (YDB: Duplicate key found), leaving the migration half applied"
 	}
 	message := "fails on the first duplicate it meets (PostgreSQL: could not create unique index; MySQL and MariaDB: Duplicate entry for key), " +
 		"leaving the migration half applied"
-	if site.concurrently {
+	if site.Concurrently {
 		message += ", and a CONCURRENTLY build that fails leaves an invalid index of that name behind, which must be dropped before the retry"
 	}
 	return message
 }
 
 // uniqueAdvice says what to do about it, given what the file knows.
-func uniqueAdvice(site uniqueIndexSite, risk uniqueRisk) string {
+func uniqueAdvice(site lintkit.UniqueIndexSite, risk uniqueRisk) string {
 	switch risk {
 	case uniqueSameDefault:
 		return fmt.Sprintf("Every existing row holds the DEFAULT this migration gives the column, so the build fails as soon as two rows exist. "+
 			"Add the column without a DEFAULT, backfill distinct values, then build the index; %s shows what is left", duplicateQuery(site))
 	default:
 		advice := fmt.Sprintf("Nothing in the migration says whether %s is unique today. Check first with %s and deduplicate before this version runs",
-			strings.Join(site.columns, ", "), duplicateQuery(site))
-		if !site.nullsNotDistinct {
+			strings.Join(site.Columns, ", "), duplicateQuery(site))
+		if !site.NullsNotDistinct {
 			advice += "; rows where every key column is NULL do not collide"
 		}
 		return advice
@@ -505,13 +295,13 @@ func uniqueIndexAddedRule() Rule {
 				return nil
 			}
 			var findings []Finding
-			for _, site := range uniqueIndexSites(file) {
+			for _, site := range lintkit.UniqueIndexSites(file.contract, file.dialect) {
 				risk := classifyUniqueRisk(file, site)
 				if riskIsSettled(risk) {
 					continue
 				}
 				message := fmt.Sprintf("%s builds over the rows %s already holds and %s. %s",
-					site.label(), site.table.name, uniqueFailure(site), uniqueAdvice(site, risk))
+					site.Label(), site.Table.Name, uniqueFailure(site), uniqueAdvice(site, risk))
 				findings = append(findings, uniqueFinding(file, site, "MF101", "unique index over existing rows may fail", message))
 			}
 			return findings
@@ -532,7 +322,7 @@ func indexMadeUniqueRule() Rule {
 				return nil
 			}
 			var findings []Finding
-			for _, site := range uniqueIndexSites(file) {
+			for _, site := range lintkit.UniqueIndexSites(file.contract, file.dialect) {
 				replaced, renamed, ok := replacedIndex(file, site)
 				if !ok {
 					continue
@@ -548,7 +338,7 @@ func indexMadeUniqueRule() Rule {
 				message := fmt.Sprintf("%s replaces the index %s dropped earlier%s over the rows %s already holds: the drop succeeds and the unique build then %s, "+
 					"which also leaves the table without the index it had. %s. On PostgreSQL build the unique index CONCURRENTLY under a new name first "+
 					"and drop the old one only once it exists, so a failure leaves the old index in place",
-					site.label(), replaced, replacement, site.table.name, uniqueFailure(site), uniqueAdvice(site, risk))
+					site.Label(), replaced, replacement, site.Table.Name, uniqueFailure(site), uniqueAdvice(site, risk))
 				findings = append(findings, uniqueFinding(file, site, "MF102", "index rebuilt as unique may fail", message))
 			}
 			return findings
@@ -556,11 +346,11 @@ func indexMadeUniqueRule() Rule {
 	}
 }
 
-func uniqueFinding(file *File, site uniqueIndexSite, code, title, message string) Finding {
-	stmt := &file.Statements[site.statement]
-	subjects := make([]Subject, 0, len(site.columns))
-	for _, column := range site.columns {
-		subjects = append(subjects, Subject{Kind: SubjectColumn, Name: column, Parent: site.table.name})
+func uniqueFinding(file *File, site lintkit.UniqueIndexSite, code, title, message string) Finding {
+	stmt := &file.Statements[site.Statement]
+	subjects := make([]Subject, 0, len(site.Columns))
+	for _, column := range site.Columns {
+		subjects = append(subjects, Subject{Kind: SubjectColumn, Name: column, Parent: site.Table.Name})
 	}
 	return Finding{
 		Rule:     code,
@@ -569,6 +359,6 @@ func uniqueFinding(file *File, site uniqueIndexSite, code, title, message string
 		File:     file.Path,
 		Line:     stmt.Line,
 		Message:  message,
-		Context:  statementFindingContext(site.statement, subjects...),
+		Context:  statementFindingContext(site.Statement, subjects...),
 	}
 }

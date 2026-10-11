@@ -1,6 +1,11 @@
 package lint
 
-import "slices"
+import (
+	"slices"
+
+	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintkit/pgtype"
+)
 
 // DS103 reads the statement text: every MODIFY, CHANGE and ALTER COLUMN ...
 // TYPE is a column type change to it, and the finding says the change can
@@ -28,7 +33,7 @@ func typeChangeStatements(file *File) []int {
 	var indexes []int
 	for index := range file.Statements {
 		stmt := &file.Statements[index]
-		if !isAlterTable(stmt.Words) {
+		if !lintkit.IsAlterTable(stmt.Words) {
 			continue
 		}
 		if scanModifyChange(stmt.Words) || scanAlterColumnType(stmt.Words) {
@@ -42,7 +47,7 @@ func typeChangeStatements(file *File) []int {
 // establishes every type clause of the statement as a restatement of the
 // column's current type.
 func typeUnchangedByState(file *File, index int) bool {
-	if file.baseline.empty() {
+	if file.baseline.Empty() {
 		return false
 	}
 	stmt := &file.Statements[index]
@@ -62,8 +67,8 @@ func typeUnchangedByState(file *File, index int) bool {
 // noticed rather than silently taken as unchanged.
 func typeChangeClauses(w []string) int {
 	count := 0
-	for _, i := range clauseStarts(w) {
-		if modifyChangeClause(w, i) || alterColumnTypeClause(w, i) {
+	for _, i := range lintkit.ClauseStarts(w) {
+		if modifyChangeClause(w, i) || lintkit.AlterColumnTypeClause(w, i) {
 			count++
 		}
 	}
@@ -78,47 +83,28 @@ func modifyChangeClause(w []string, i int) bool {
 	if j < len(w) && w[j] == "COLUMN" {
 		j++
 	}
-	j = skipIfExists(w, j)
-	return j < len(w) && identLike(w[j])
-}
-
-func alterColumnTypeClause(w []string, i int) bool {
-	if i >= len(w) || w[i] != "ALTER" {
-		return false
-	}
-	j := i + 1
-	if j < len(w) && w[j] == "COLUMN" {
-		j++
-	}
-	j = skipIfExists(w, j)
-	if j >= len(w) || !identLike(w[j]) {
-		return false
-	}
-	k := j + 1
-	if k+1 < len(w) && w[k] == "SET" && w[k+1] == "DATA" {
-		k += 2
-	}
-	return k < len(w) && w[k] == "TYPE"
+	j = lintkit.SkipIfExists(w, j)
+	return j < len(w) && lintkit.IdentLike(w[j])
 }
 
 // pgTypesUnchanged judges every ALTER COLUMN ... TYPE clause of one
 // statement against the column's current type, the way PG301 does.
 func pgTypesUnchanged(file *File, index, clauses int) bool {
 	resolved := 0
-	for _, site := range pgTypeChangeSites(file) {
-		if site.statement != index {
+	for _, site := range pgtype.ChangeSites(file.contract) {
+		if site.Statement != index {
 			continue
 		}
-		column, ok := file.baseline.column(site.table.normalized, normalizeIdent(site.column))
+		column, ok := file.baseline.Column(site.Table.Normalized, lintkit.NormalizeIdent(site.Column))
 		if !ok {
 			return false
 		}
-		old, ok := parsePGTypeSpelling(column.ColumnType)
+		old, ok := pgtype.ParseSpelling(column.ColumnType)
 		if !ok {
 			return false
 		}
-		updated, ok := parsePGTypeAt(file.Statements[index].Words, site.typeStart, site.typeEnd)
-		if !ok || comparePGTypes(old, updated).outcome != pgUnchanged {
+		updated, ok := pgtype.ParseAt(file.Statements[index].Words, site.TypeStart, site.TypeEnd)
+		if !ok || pgtype.Compare(old, updated).Outcome != pgtype.Unchanged {
 			return false
 		}
 		resolved++
@@ -136,7 +122,7 @@ func mysqlTypesUnchanged(file *File, index, clauses int) bool {
 		if site.statement != index {
 			continue
 		}
-		column, ok := file.baseline.column(site.table.normalized, normalizeIdent(site.oldName))
+		column, ok := file.baseline.Column(site.table.Normalized, lintkit.NormalizeIdent(site.oldName))
 		if !ok {
 			return false
 		}

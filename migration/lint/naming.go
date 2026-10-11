@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"ptah.run/internal/lintkit"
 )
 
 // A naming convention is a project's, not the engine's, so the six rules in
@@ -202,33 +204,33 @@ func namedObjects(file *File) []namedObject {
 		stmt := &file.Statements[index]
 		w := stmt.Words
 		collect := func(kind nameKind, wordIndex int, owner string) {
-			spelled := sourceWordAt(w, stmt.sourceWords, wordIndex)
+			spelled := lintkit.SourceWordAt(w, stmt.sourceWords, wordIndex)
 			objects = append(objects, namedObject{
 				statement: index,
 				kind:      kind,
-				name:      bareIdent(lastComponent(spelled)),
+				name:      bareIdent(lintkit.LastComponent(spelled)),
 				spelled:   spelled,
 				owner:     owner,
 			})
 		}
 		switch {
-		case hasWordPrefix(w, "CREATE", "SCHEMA"):
-			if j := skipIfNotExists(w, 2); j < len(w) && w[j] != "AUTHORIZATION" && identLike(w[j]) {
+		case lintkit.HasWordPrefix(w, "CREATE", "SCHEMA"):
+			if j := lintkit.SkipIfNotExists(w, 2); j < len(w) && w[j] != "AUTHORIZATION" && lintkit.IdentLike(w[j]) {
 				collect(nameSchema, j, "")
 			}
-		case hasWordPrefix(w, "ALTER", "SCHEMA"):
+		case lintkit.HasWordPrefix(w, "ALTER", "SCHEMA"):
 			if j := renameTarget(w, 3); j >= 0 {
 				collect(nameSchema, j, "")
 			}
-		case createdTableRef(w) != "":
+		case lintkit.CreatedTableRef(w) != "":
 			collectCreateTable(w, stmt.sourceWords, collect)
-		case isCreateIndex(w):
+		case lintkit.IsCreateIndex(w):
 			collectCreateIndex(w, stmt.sourceWords, collect)
-		case hasWordPrefix(w, "ALTER", "INDEX"):
+		case lintkit.HasWordPrefix(w, "ALTER", "INDEX"):
 			if j := renameTarget(w, 3); j >= 0 {
 				collect(nameIndex, j, "")
 			}
-		case isAlterTable(w):
+		case lintkit.IsAlterTable(w):
 			collectAlterTable(w, stmt.sourceWords, collect)
 		}
 	}
@@ -244,7 +246,7 @@ func bareIdent(word string) string {
 // start, or -1.
 func renameTarget(w []string, start int) int {
 	for j := start; j+2 < len(w); j++ {
-		if w[j] == "RENAME" && w[j+1] == "TO" && identLike(w[j+2]) {
+		if w[j] == "RENAME" && w[j+1] == "TO" && lintkit.IdentLike(w[j+2]) {
 			return j + 2
 		}
 	}
@@ -254,7 +256,7 @@ func renameTarget(w []string, start int) int {
 // renamedTo returns the index of the new name in `old TO new` starting at
 // w[from], bounded by end, or -1.
 func renamedTo(w []string, from, end int) int {
-	if from+2 < end && identLike(w[from]) && w[from+1] == "TO" && identLike(w[from+2]) {
+	if from+2 < end && lintkit.IdentLike(w[from]) && w[from+1] == "TO" && lintkit.IdentLike(w[from+2]) {
 		return from + 2
 	}
 	return -1
@@ -263,7 +265,7 @@ func renamedTo(w []string, from, end int) int {
 // lastIdentOf advances over the `.name` components of a qualified name that
 // starts at w[j] and returns the index of its last component.
 func lastIdentOf(w []string, j int) int {
-	for j+2 < len(w) && w[j+1] == "." && identLike(w[j+2]) {
+	for j+2 < len(w) && w[j+1] == "." && lintkit.IdentLike(w[j+2]) {
 		j += 2
 	}
 	return j
@@ -275,13 +277,13 @@ func collectCreateTable(w, sourceWords []string, collect func(nameKind, int, str
 	for j < len(w) && (w[j] == "TEMP" || w[j] == "TEMPORARY" || w[j] == "UNLOGGED" || w[j] == "TABLE") {
 		j++
 	}
-	j = skipIfNotExists(w, j)
-	if j >= len(w) || !identLike(w[j]) {
+	j = lintkit.SkipIfNotExists(w, j)
+	if j >= len(w) || !lintkit.IdentLike(w[j]) {
 		return
 	}
 	tableIndex := lastIdentOf(w, j)
 	collect(nameTable, tableIndex, "")
-	owner := bareIdent(sourceWordAt(w, sourceWords, tableIndex))
+	owner := bareIdent(lintkit.SourceWordAt(w, sourceWords, tableIndex))
 	j = tableIndex + 1
 	if j >= len(w) || w[j] != "(" {
 		return
@@ -324,7 +326,7 @@ func collectTableElement(w []string, start int, owner string, collect func(nameK
 	}
 	switch w[start] {
 	case "CONSTRAINT":
-		if start+2 < len(w) && identLike(w[start+1]) {
+		if start+2 < len(w) && lintkit.IdentLike(w[start+1]) {
 			if kind, ok := constraintKind(w, start+2); ok {
 				collect(kind, start+1, owner)
 			}
@@ -335,7 +337,7 @@ func collectTableElement(w []string, start int, owner string, collect func(nameK
 			collect(nameIndex, j, owner)
 		}
 	default:
-		if identLike(w[start]) {
+		if lintkit.IdentLike(w[start]) {
 			collect(nameColumn, start, owner)
 		}
 	}
@@ -364,7 +366,7 @@ func indexNameAfter(w []string, start int) int {
 	if j < len(w) && (w[j] == "INDEX" || w[j] == "KEY") {
 		j++
 	}
-	if j < len(w) && w[j] != "(" && w[j] != "USING" && identLike(w[j]) {
+	if j < len(w) && w[j] != "(" && w[j] != "USING" && lintkit.IdentLike(w[j]) {
 		return j
 	}
 	return -1
@@ -380,14 +382,14 @@ func collectCreateIndex(w, sourceWords []string, collect func(nameKind, int, str
 	if j < len(w) && w[j] == "CONCURRENTLY" {
 		j++
 	}
-	j = skipIfNotExists(w, j)
-	if j >= len(w) || w[j] == "ON" || !identLike(w[j]) {
+	j = lintkit.SkipIfNotExists(w, j)
+	if j >= len(w) || w[j] == "ON" || !lintkit.IdentLike(w[j]) {
 		return
 	}
 	owner := ""
 	for k := j; k+1 < len(w); k++ {
-		if w[k] == "ON" && identLike(w[k+1]) {
-			owner = bareIdent(sourceWordAt(w, sourceWords, lastIdentOf(w, k+1)))
+		if w[k] == "ON" && lintkit.IdentLike(w[k+1]) {
+			owner = bareIdent(lintkit.SourceWordAt(w, sourceWords, lastIdentOf(w, k+1)))
 			break
 		}
 	}
@@ -397,9 +399,9 @@ func collectCreateIndex(w, sourceWords []string, collect func(nameKind, int, str
 // collectAlterTable reads the names an ALTER TABLE introduces: added
 // columns, constraints and indexes, and the targets of its renames.
 func collectAlterTable(w, sourceWords []string, collect func(nameKind, int, string)) {
-	owner := bareIdent(lastComponent(alterTableReference(w, sourceWords).name))
-	for _, i := range clauseStarts(w) {
-		end := clauseEnd(w, i)
+	owner := bareIdent(lintkit.LastComponent(lintkit.AlterTableReference(w, sourceWords).Name))
+	for _, i := range lintkit.ClauseStarts(w) {
+		end := lintkit.ClauseEnd(w, i)
 		switch w[i] {
 		case "RENAME":
 			collectRenameClause(w, i, end, owner, collect)
@@ -416,19 +418,19 @@ func collectAlterTable(w, sourceWords []string, collect func(nameKind, int, stri
 func collectRenameClause(w []string, i, end int, owner string, collect func(nameKind, int, string)) {
 	clause := w[i:end]
 	switch {
-	case hasWordPrefix(clause, "RENAME", "TO") || hasWordPrefix(clause, "RENAME", "AS"):
-		if i+2 < end && identLike(w[i+2]) {
+	case lintkit.HasWordPrefix(clause, "RENAME", "TO") || lintkit.HasWordPrefix(clause, "RENAME", "AS"):
+		if i+2 < end && lintkit.IdentLike(w[i+2]) {
 			collect(nameTable, i+2, "")
 		}
-	case hasWordPrefix(clause, "RENAME", "COLUMN"):
+	case lintkit.HasWordPrefix(clause, "RENAME", "COLUMN"):
 		if j := renamedTo(w, i+2, end); j >= 0 {
 			collect(nameColumn, j, owner)
 		}
-	case hasWordPrefix(clause, "RENAME", "INDEX") || hasWordPrefix(clause, "RENAME", "KEY"):
+	case lintkit.HasWordPrefix(clause, "RENAME", "INDEX") || lintkit.HasWordPrefix(clause, "RENAME", "KEY"):
 		if j := renamedTo(w, i+2, end); j >= 0 {
 			collect(nameIndex, j, owner)
 		}
-	case i+1 < end && identLike(w[i+1]) && !slices.Contains(clause, "TO"):
+	case i+1 < end && lintkit.IdentLike(w[i+1]) && !slices.Contains(clause, "TO"):
 		collect(nameTable, i+1, "")
 	}
 }
@@ -440,8 +442,8 @@ func collectChangeClause(w, sourceWords []string, i, end int, owner string, coll
 	if j < end && w[j] == "COLUMN" {
 		j++
 	}
-	if j+1 < end && identLike(w[j]) && identLike(w[j+1]) &&
-		bareIdent(sourceWordAt(w, sourceWords, j)) != bareIdent(sourceWordAt(w, sourceWords, j+1)) {
+	if j+1 < end && lintkit.IdentLike(w[j]) && lintkit.IdentLike(w[j+1]) &&
+		bareIdent(lintkit.SourceWordAt(w, sourceWords, j)) != bareIdent(lintkit.SourceWordAt(w, sourceWords, j+1)) {
 		collect(nameColumn, j+1, owner)
 	}
 }
@@ -451,19 +453,19 @@ func collectChangeClause(w, sourceWords []string, i, end int, owner string, coll
 func collectAddClause(w []string, i, end int, owner string, collect func(nameKind, int, string)) {
 	clause := w[i:end]
 	switch {
-	case hasWordPrefix(clause, "ADD", "CONSTRAINT"):
-		if i+3 < end && identLike(w[i+2]) {
+	case lintkit.HasWordPrefix(clause, "ADD", "CONSTRAINT"):
+		if i+3 < end && lintkit.IdentLike(w[i+2]) {
 			if kind, ok := constraintKind(w, i+3); ok {
 				collect(kind, i+2, owner)
 			}
 		}
-	case hasWordPrefix(clause, "ADD", "UNIQUE") || hasWordPrefix(clause, "ADD", "INDEX") || hasWordPrefix(clause, "ADD", "KEY") ||
-		hasWordPrefix(clause, "ADD", "FULLTEXT") || hasWordPrefix(clause, "ADD", "SPATIAL"):
+	case lintkit.HasWordPrefix(clause, "ADD", "UNIQUE") || lintkit.HasWordPrefix(clause, "ADD", "INDEX") || lintkit.HasWordPrefix(clause, "ADD", "KEY") ||
+		lintkit.HasWordPrefix(clause, "ADD", "FULLTEXT") || lintkit.HasWordPrefix(clause, "ADD", "SPATIAL"):
 		if j := indexNameAfter(w, i+1); j >= 0 && j < end {
 			collect(nameIndex, j, owner)
 		}
 	default:
-		if start, _, ok := addColumnClause(w, i); ok {
+		if start, _, ok := lintkit.AddColumnClause(w, i); ok {
 			collect(nameColumn, start-1, owner)
 		}
 	}

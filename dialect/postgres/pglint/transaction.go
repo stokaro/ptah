@@ -1,13 +1,40 @@
 package pglint
 
 import (
-	"slices"
-
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/txrequire"
 )
+
+// transactionRules is the TX family.
+func transactionRules() []lintkit.Rule {
+	return []lintkit.Rule{
+		{
+			Rule: lintext.Rule{
+				Code:     "TX101",
+				Title:    "transactional and non-transactional statements mixed",
+				Severity: lintext.Warning,
+				Targets:  []string{platform.Postgres},
+			},
+			// Either direction: the migrator wraps a down file in the same
+			// transaction it wraps an up file in, so a rollback that mixes
+			// CREATE INDEX CONCURRENTLY with transactional DDL is refused by
+			// PostgreSQL exactly the same way.
+			File: checkTransactionMix,
+		},
+		{
+			Rule: lintext.Rule{
+				Code:     "TX201",
+				Title:    "transaction block embedded in migration",
+				Severity: lintext.Warning,
+				Targets:  []string{platform.Postgres},
+			},
+			Statement: checkEmbeddedTransaction,
+		},
+	}
+}
 
 // checkTransactionMix reports a file whose statements cannot all run inside
 // one transaction.
@@ -22,9 +49,8 @@ import (
 // Either direction is checked. The migrator wraps a down file in the same
 // transaction it wraps an up file in, so a rollback that mixes a concurrent
 // index with transactional DDL is refused the same way.
-func checkTransactionMix(_ lintext.Target, files []lintext.File, index int) []lintext.Violation {
-	file := &files[index]
-	if (!file.Up && !file.Down) || file.NoTransaction {
+func checkTransactionMix(file *lintkit.File) []lintext.Violation {
+	if (!file.IsUp && !file.IsDown) || file.NoTransaction {
 		return nil
 	}
 	statements := make([]txrequire.Statement, 0, len(file.Statements))
@@ -65,8 +91,8 @@ func checkTransactionMix(_ lintext.Target, files []lintext.File, index int) []li
 
 // checkEmbeddedTransaction reports an explicit transaction block, which the
 // migrator's own transaction management cannot nest.
-func checkEmbeddedTransaction(_ lintext.Target, _ *lintext.File, statement *lintext.Statement) (bool, string) {
-	if !hasWordPrefix(statement.Words, "BEGIN") && !hasWordPrefix(statement.Words, "START", "TRANSACTION") {
+func checkEmbeddedTransaction(_ *lintkit.File, statement *lintext.Statement) (bool, string) {
+	if !lintkit.HasWordPrefix(statement.Words, "BEGIN") && !lintkit.HasWordPrefix(statement.Words, "START", "TRANSACTION") {
 		return false, ""
 	}
 	return true, "explicit transaction blocks conflict with the migrator's transaction management; remove BEGIN/COMMIT or mark the migration non-transactional"
@@ -95,13 +121,8 @@ func isReportedStatement(result txrequire.Result, index int) bool {
 // isTransactionControlStatement reports a statement that opens or closes a
 // transaction, which the mix judges as neither side.
 func isTransactionControlStatement(words []string) bool {
-	return hasWordPrefix(words, "BEGIN") ||
-		hasWordPrefix(words, "START", "TRANSACTION") ||
-		hasWordPrefix(words, "COMMIT") ||
-		hasWordPrefix(words, "ROLLBACK")
-}
-
-// hasWordPrefix reports whether words starts with prefix.
-func hasWordPrefix(words []string, prefix ...string) bool {
-	return len(words) >= len(prefix) && slices.Equal(words[:len(prefix)], prefix)
+	return lintkit.HasWordPrefix(words, "BEGIN") ||
+		lintkit.HasWordPrefix(words, "START", "TRANSACTION") ||
+		lintkit.HasWordPrefix(words, "COMMIT") ||
+		lintkit.HasWordPrefix(words, "ROLLBACK")
 }

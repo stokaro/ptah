@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbfamily"
@@ -1280,7 +1281,7 @@ func ydbGrantOptionRevokeRule() Rule {
 		Dialects:      ydbOnly,
 		AppliesToDown: true,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) || !hasWordPrefix(stmt.Words, "REVOKE", "GRANT", "OPTION", "FOR") {
+			if !ydbRun(stmt.Target) || !lintkit.HasWordPrefix(stmt.Words, "REVOKE", "GRANT", "OPTION", "FOR") {
 				return false, ""
 			}
 			return true, "REVOKE GRANT OPTION FOR takes away the permission it names as well as " +
@@ -1303,7 +1304,7 @@ func ydbPrincipalDropRule() Rule {
 		Dialects:      ydbOnly,
 		AppliesToDown: true,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) || !hasWordPrefix(stmt.Words, "DROP") || len(stmt.Words) < 2 {
+			if !ydbRun(stmt.Target) || !lintkit.HasWordPrefix(stmt.Words, "DROP") || len(stmt.Words) < 2 {
 				return false, ""
 			}
 			kind := stmt.Words[1]

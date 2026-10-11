@@ -3,17 +3,20 @@ package pglint_test
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ptah.run/core/lintext"
 	"ptah.run/dialect/postgres/pglint"
 )
 
 // ExampleService shows the PostgreSQL owner answering one lint run: a host
-// reads the rules as data, then asks for the findings of the codes the run
-// enables over every file in one call.
+// reads the rules as data, here the TX family, then asks for the findings of
+// the codes the run enables over every file in one call.
 func ExampleService() {
 	for _, rule := range pglint.Rules() {
-		fmt.Println(rule.Code, rule.Severity, rule.Title)
+		if strings.HasPrefix(rule.Code, "TX") {
+			fmt.Println(rule.Code, rule.Severity, rule.Title)
+		}
 	}
 
 	request := lintext.CheckRequest{
