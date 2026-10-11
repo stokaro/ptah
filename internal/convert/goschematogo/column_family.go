@@ -4,7 +4,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/ydbfamily"
 )
 
@@ -102,5 +101,5 @@ func (ctx *renderContext) captureIndexPartitioning() error {
 // properties.
 func isAnnotatedFacet(kind schemaext.Kind) bool {
 	return kind == ydbschema.ColumnFamiliesKind || kind == ydbschema.TablePartitioningKind ||
-		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind
+		kind == ydbschema.ColumnStoreKind
 }

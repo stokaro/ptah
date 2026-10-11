@@ -21,7 +21,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/feature/pgextension"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/ydbsource"
 )
 
@@ -65,9 +64,6 @@ func (ctx *renderContext) captureFeatureObjects(requestContext context.Context) 
 		return err
 	}
 	if err := ctx.encodeOwners(requestContext); err != nil {
-		return err
-	}
-	if err := ctx.captureSwitches(); err != nil {
 		return err
 	}
 	parents := make(map[objectidentity.Key]struct{}, len(ctx.db.Tables))
@@ -123,9 +119,6 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 		}
 		ctx.streamingAnnotations = append(ctx.streamingAnnotations, streamingQueryAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, query))
 		return nil
-	}
-	if policy, ok := object.Value.(*pgpolicy.DesiredPolicy); ok {
-		return ctx.capturePolicy(object, policy)
 	}
 	if extension, ok := object.Value.(*pgextension.DesiredExtension); ok {
 		return ctx.captureExtension(object, extension)

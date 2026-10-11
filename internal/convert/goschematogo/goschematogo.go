@@ -289,16 +289,9 @@ type renderContext struct {
 	indexesByTable      map[string][]schemamodel.Index
 	constraintsByTable  map[string][]schemamodel.Constraint
 	rlsByTable          map[string][]schemamodel.RLSPolicy
-	// policyTables names each table by the identity a PostgreSQL row-level
-	// security policy names its table by; policyAnnotations and
-	// switchAnnotations hold what is written beside each table, by its
-	// qualified name.
-	policyTables      map[objectidentity.Key]string
-	policyAnnotations map[string][]string
-	switchAnnotations map[string]string
-	rlsEnabledByTable map[string][]schemamodel.RLSEnabledTable
-	triggersByTable   map[string][]schemamodel.Trigger
-	imports           map[string]struct{}
+	rlsEnabledByTable   map[string][]schemamodel.RLSEnabledTable
+	triggersByTable     map[string][]schemamodel.Trigger
+	imports             map[string]struct{}
 }
 
 func newRenderContext(db *schemamodel.Database, opts Options) *renderContext {
@@ -612,12 +605,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, policy := range ctx.rlsByTable[table.StructName] {
 		w.writeComment(rlsPolicyAnnotation(policy))
 	}
-	// The PostgreSQL owner's policies, which this package still writes,
-	// follow the other owners' policies, as its name orders them.
 	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterPolicies, table: sourceTable(table)})
-	for _, text := range ctx.policyAnnotations[table.QualifiedName()] {
-		w.writeComment(text)
-	}
 	for _, enabled := range ctx.rlsEnabledByTable[table.StructName] {
 		w.writeComment(annotation("ptah:schema:rls:enable",
 			attr{name: "table", value: enabled.Table, set: true},
@@ -626,9 +614,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 			dialectsAttr(enabled.Dialects),
 		))
 	}
-	if text, found := ctx.switchAnnotations[table.QualifiedName()]; found {
-		w.writeComment(text)
-	}
+	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterSwitches, table: sourceTable(table)})
 	for _, trigger := range ctx.triggersByTable[table.QualifiedName()] {
 		w.writeComment(triggerAnnotation(trigger))
 	}
