@@ -217,6 +217,20 @@ func TestPopulated_AnswersForEveryDepthTheModelReaches(t *testing.T) {
 	}
 }
 
+// TestPopulatedFields_AgreesWithPopulated is the control for the one-walk
+// answer the measurements read: on a spread of fixtures, every field it names
+// is one Populated answers true for, and every other field is one it answers
+// false for.
+func TestPopulatedFields_AgreesWithPopulated(t *testing.T) {
+	c := qt.New(t)
+
+	disagreements, populated := populatedDisagreements()
+
+	c.Assert(disagreements, qt.HasLen, 0,
+		qt.Commentf("fields the two answers disagree about:\n%s", strings.Join(disagreements, "\n")))
+	c.Assert(populated > 100, qt.IsTrue, qt.Commentf("%d populated fields checked", populated))
+}
+
 // TestFixtures_AreNamedOnce keeps a fixture from being shadowed by a rename that
 // duplicated it, which would leave a field measured against the wrong schema.
 func TestFixtures_AreNamedOnce(t *testing.T) {
@@ -360,6 +374,29 @@ func repeatedFixtureNames() []string {
 	}
 	slices.Sort(repeated)
 	return repeated
+}
+
+// populatedDisagreements compares PopulatedFields with Populated on every
+// seventh fixture and every field, and counts the fields both call populated.
+func populatedDisagreements() ([]string, int) {
+	var disagreements []string
+	populated := 0
+	for index, fixture := range schemacensus.Fixtures() {
+		if index%7 != 0 {
+			continue
+		}
+		walked := schemacensus.PopulatedFields(fixture.Schema)
+		for _, field := range schemacensus.Fields() {
+			asked := schemacensus.Populated(fixture.Schema, field)
+			if asked != walked[field] {
+				disagreements = append(disagreements, fmt.Sprintf("%s in %s: Populated %t", field, fixture.Name, asked))
+			}
+			if asked {
+				populated++
+			}
+		}
+	}
+	return disagreements, populated
 }
 
 // observationsByField keys one Measure run so several assertions can read it.

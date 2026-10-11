@@ -146,7 +146,7 @@ func observe(
 ) (Observation, error) {
 	observation := Observation{Field: field}
 	for index, fixture := range fixtures {
-		if !Populated(fixture.Schema, field) {
+		if !fixture.declares(field) {
 			continue
 		}
 		observation.Covered = append(observation.Covered, fixture.Name)
