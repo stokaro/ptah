@@ -495,9 +495,10 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 // The schema is taken from the qualified name each comparison already puts on
 // the diff -- tables, enums, domains, composites, ranges, sequences, functions,
 // views, materialized views and a trigger's target relation are all named that
-// way. Extensions keep installation schema on their desired definitions, and a
-// default privilege keeps the schema its IN SCHEMA clause names, so both
-// contribute that exact identifier directly. Names that carry no schema
+// way. Extensions keep installation schema on their desired definitions, an
+// extension that moves names the schema it moves to, and a default privilege
+// keeps the schema its IN SCHEMA clause names, so all three contribute that
+// exact identifier directly. Names that carry no schema
 // contribute none, which is every name on a single-schema migration.
 func (p *Planner) addSchemaPreconditions(
 	result []ast.Node,
@@ -540,15 +541,13 @@ func (p *Planner) addSchemaPreconditions(
 		seen[schema] = struct{}{}
 		schemas = append(schemas, schema)
 	}
-	// The addition carries the extension, so the inner search over the desired
-	// schema is gone (stokaro/ptah#2315).
-	for _, extension := range diff.ExtensionsAdded {
-		if extension.Schema == "" || systemschema.IsUncreatableSchema(p.dialect, extension.Schema) {
+	for _, schema := range p.extensionSchemas(diff) {
+		if schema == "" || systemschema.IsUncreatableSchema(p.dialect, schema) {
 			continue
 		}
-		if _, ok := seen[extension.Schema]; !ok {
-			seen[extension.Schema] = struct{}{}
-			schemas = append(schemas, extension.Schema)
+		if _, ok := seen[schema]; !ok {
+			seen[schema] = struct{}{}
+			schemas = append(schemas, schema)
 		}
 	}
 	// A default privilege names its schema in the IN SCHEMA clause rather than
@@ -577,6 +576,28 @@ func (p *Planner) addSchemaPreconditions(
 		result = append(result, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
 	return result
+}
+
+// extensionSchemas are the schemas the plan's extensions are put into. The
+// addition carries the extension, so the inner search over the desired schema
+// is gone (stokaro/ptah#2315). A move names the schema it goes to the same
+// way: ALTER EXTENSION ... SET SCHEMA into a schema nothing created answers
+// `schema "ext" does not exist`, measured on PostgreSQL 18. A move carries
+// the schema resolved under the connection's default, so a declaration that
+// left the schema to that default names it here; like an addition that names
+// no schema, it needs no precondition.
+func (p *Planner) extensionSchemas(diff *difftypes.SchemaDiff) []string {
+	schemas := make([]string, 0, len(diff.ExtensionsAdded)+len(diff.ExtensionsModified))
+	for _, extension := range diff.ExtensionsAdded {
+		schemas = append(schemas, extension.Schema)
+	}
+	defaultSchema := diff.EffectiveIdentifierSemantics(p.targetDialect()).DefaultSchema
+	for _, change := range diff.ExtensionsModified {
+		if change.ToSchema != change.FromSchema && change.ToSchema != defaultSchema {
+			schemas = append(schemas, change.ToSchema)
+		}
+	}
+	return schemas
 }
 
 // addForeignKeyConstraints adds foreign key constraints via ALTER TABLE
@@ -1842,7 +1863,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
 		return nil, err
 	}
-	result, err := p.planExtensionChanges(result, diff)
+	// The extension alterations are planned here, so a refusal ends the plan
+	// before anything else is planned, and joined after the schema
+	// preconditions below, which create the schema a move goes to.
+	alterations, err := p.planExtensionChanges(nil, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -1889,6 +1913,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// created in them. Every phase below can name a schema, so this cannot sit
 	// inside one of them.
 	result = p.addSchemaPreconditions(result, diff)
+
+	// 0a. Update and move the extensions that stay, before anything that may
+	// use what they supply.
+	result = append(result, alterations...)
 
 	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff)
