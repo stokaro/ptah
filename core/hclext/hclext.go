@@ -47,11 +47,18 @@ const TopLevel Site = "top-level"
 // Naming is how a block's labels name the object it declares.
 type Naming string
 
-// SchemaAndName names the object by its labels: one label is the name, and
-// two are the schema and the name. An optional `schema` attribute, a
-// reference such as `schema.app` or a string, names the schema of a
-// one-label block, and must agree with the schema label of a two-label one.
-const SchemaAndName Naming = "schema-and-name"
+const (
+	// SchemaAndName names the object by its labels: one label is the name,
+	// and two are the schema and the name. An optional `schema` attribute, a
+	// reference such as `schema.app` or a string, names the schema of a
+	// one-label block, and must agree with the schema label of a two-label
+	// one.
+	SchemaAndName Naming = "schema-and-name"
+	// SchemaAndQualifiedName is [SchemaAndName], and a name written
+	// `schema.name` where nothing else names a schema names the schema too:
+	// `app.hourly` is hourly in app, not a relation whose name holds a dot.
+	SchemaAndQualifiedName Naming = "schema-and-qualified-name"
+)
 
 // Kind is the kind of value an attribute takes. The frontend reads the
 // attribute as that kind and refuses one it cannot; an owner receives only
@@ -66,6 +73,9 @@ const (
 	// otherwise the attribute's source text. It is text the frontend
 	// produced, never an expression for the owner to evaluate.
 	Text Kind = "text"
+	// Bool is a bool. A value that is not a bool reads as if the attribute
+	// were absent, as the frontend's own optional flags read.
+	Bool Kind = "bool"
 )
 
 // Attribute is one attribute a block takes.
@@ -96,6 +106,8 @@ type Value struct {
 	Kind Kind
 	// Text is the value of a [String] or a [Text] attribute.
 	Text string
+	// Bool is the value of a [Bool] attribute.
+	Bool bool
 }
 
 // Claim is one block of a document an owner's shape matched.
@@ -123,6 +135,13 @@ type Declaration struct {
 	// extension's Kinds. The frontend adds them to the document and refuses
 	// an object the document declares twice.
 	Objects []schemaext.Object
+	// TableSetting is a setting the block declares on the table its labels
+	// name, such as a TimescaleDB hypertable, of one of the extension's
+	// Kinds. The frontend attaches it once every table of the load is known,
+	// so the block and the table may sit in different files of one schema
+	// directory, and refuses a table the load does not declare and a second
+	// setting of one table. Nil declares none.
+	TableSetting schemaext.Value
 }
 
 // Result is an owner's reading of a [Request].
@@ -253,7 +272,7 @@ func validateBlock(owner string, block Block) error {
 	if strings.TrimSpace(block.Type) == "" {
 		return fmt.Errorf("HCL extension of %s declares a block without a type", owner)
 	}
-	if block.Naming != SchemaAndName {
+	if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName {
 		return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
 	}
 	names := map[string]bool{"schema": true}
@@ -266,7 +285,7 @@ func validateBlock(owner string, block Block) error {
 				schemaext.ErrDuplicate, block.Type, owner, attribute.Name)
 		}
 		names[attribute.Name] = true
-		if attribute.Kind != String && attribute.Kind != Text {
+		if attribute.Kind != String && attribute.Kind != Text && attribute.Kind != Bool {
 			return fmt.Errorf("HCL attribute %q of %s block %q names unknown kind %q", attribute.Name, owner, block.Type, attribute.Kind)
 		}
 	}
@@ -340,16 +359,32 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 				schemaext.ErrInvalidValue, extension.Owner, len(request.Claims), len(result.Declarations))
 		}
 		for i, position := range positions[index] {
-			for _, object := range result.Declarations[i].Objects {
-				if !slices.Contains(extension.Kinds, schemaext.Kind(object.Ref.Kind)) {
-					return nil, fmt.Errorf("%w: HCL decoder of %s answered an object of kind %q, which its extension does not declare",
-						schemaext.ErrInvalidValue, extension.Owner, object.Ref.Kind)
-				}
+			if err := checkDeclaration(extension, result.Declarations[i]); err != nil {
+				return nil, err
 			}
 			declarations[position] = result.Declarations[i]
 		}
 	}
 	return declarations, nil
+}
+
+// checkDeclaration refuses a declaration of a model the extension does not
+// claim.
+func checkDeclaration(extension Extension, declaration Declaration) error {
+	kinds := make([]schemaext.Kind, 0, len(declaration.Objects)+1)
+	for _, object := range declaration.Objects {
+		kinds = append(kinds, schemaext.Kind(object.Ref.Kind))
+	}
+	if declaration.TableSetting != nil {
+		kinds = append(kinds, declaration.TableSetting.Kind())
+	}
+	for _, kind := range kinds {
+		if !slices.Contains(extension.Kinds, kind) {
+			return fmt.Errorf("%w: HCL decoder of %s answered a model of kind %q, which its extension does not declare",
+				schemaext.ErrInvalidValue, extension.Owner, kind)
+		}
+	}
+	return nil
 }
 
 // Coverage combines the claims of every extension of the set. A set without

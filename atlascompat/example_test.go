@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/atlascompat"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -44,6 +45,45 @@ table "users" {
 	// table: users
 	// column id int primary=true
 	// column email varchar(255) primary=false
+}
+
+// ExampleParseAtlasHCLWithOptions reads a document that carries an owner's
+// block -- a TimescaleDB hypertable -- with the HCL set of the bundled
+// runtime. ParseAtlasHCL selects no owner and refuses the same document, so a
+// caller whose schemas carry such blocks reads them this way.
+func ExampleParseAtlasHCLWithOptions() {
+	document := []byte(`
+schema "public" {}
+
+table "metrics" {
+  schema = schema.public
+  column "time" {
+    null = false
+    type = timestamptz
+  }
+}
+
+hypertable "public" "metrics" {
+  column = "time"
+}
+`)
+	runtime := must.Must(builtin.Bundled())
+
+	db, err := atlascompat.ParseAtlasHCLWithOptions(document, "schema.hcl", atlascompat.ParseHCLOptions{HCL: runtime.HCL()})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	_, plainErr := atlascompat.ParseAtlasHCL(document, "schema.hcl")
+
+	fmt.Println("tables:", len(db.Tables))
+	fmt.Println("hypertable facets:", db.Tables[0].Facets.Len())
+	fmt.Println("refused without the owners:", plainErr != nil)
+
+	// Output:
+	// tables: 1
+	// hypertable facets: 1
+	// refused without the owners: true
 }
 
 // ExampleParseAtlasHCL_projectFile shows the refusal that keeps a project file

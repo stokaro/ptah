@@ -2667,17 +2667,20 @@ SQL owners of its `lint.Runtime`.
 `core/hclext` is the HCL schema reader's contract with the owners whose blocks
 an HCL document carries. An `Extension` registers each block as a `Block`
 shape: the site it stands at, its type, how its labels name the object
-(`SchemaAndName`), and the attributes it takes and of which `Kind`.
+(`SchemaAndName`, or `SchemaAndQualifiedName`, where a one-label `schema.name`
+names the schema too), and the attributes it takes and of which `Kind`.
 
 - The reader checks a block against its shape with the refusals it gives its
   own blocks, including the tolerance for unknown names.
 - The reader evaluates every attribute in its own context. An owner receives
-  values, never expressions: a `String` is a string and a `Text` is the text
-  the reader produced. Variables, locals, functions and the confinement of
-  `file()` stay the reader's.
+  values, never expressions: a `String` is a string, a `Text` is the text the
+  reader produced, and a `Bool` is a bool, absent when the value is not one,
+  as the reader's own flags read. Variables, locals, functions and the
+  confinement of `file()` stay the reader's.
 - Once a document is read, the owner's `Decoder` gets every block of its in one
-  call and returns the objects each declares. A `ClaimError` refuses one block,
-  positioned at it.
+  call and returns, for each, the objects it declares and a `TableSetting` on
+  the table its labels name, which the reader attaches once the load's tables
+  are known. A `ClaimError` refuses one block, positioned at it.
 - `Extension.Coverage` is the claim every HCL document makes, since a document
   names no target.
 
@@ -2685,10 +2688,12 @@ shape: the site it stands at, its type, how its labels name the object
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 `hclext.None` reads the reader's own blocks.
 
-`synonym.HCL` reads the `synonym` block. `atlascompat.ParseAtlasHCL` and
-`ParseAtlasHCLFile` select no owner, so a synonym block is refused there as an
-unsupported block; `ParseAtlasHCLWithOptions` takes the owners in
-`ParseHCLOptions.HCL`. This changes behavior; pre-v1, so no compatibility is
+`synonym.HCL` reads the `synonym` block, and `tssource.HCL` the `hypertable`
+and `continuous_aggregate` blocks. `atlascompat.ParseAtlasHCL` and
+`ParseAtlasHCLFile` select no owner, so those blocks are refused there as
+unsupported blocks, and so is each owner block whose owner takes it over;
+`ParseAtlasHCLWithOptions` takes the owners in `ParseHCLOptions.HCL`, usually
+a runtime's HCL set. This changes behavior; pre-v1, so no compatibility is
 owed.
 
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation

@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
 	"ptah.run/internal/atlashcl"
 )
@@ -206,4 +207,128 @@ func TestParseWithOptions_RefusesAnUnselectedOwnerSet(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, hclext.ErrUnselected)
 	c.Assert(db, qt.IsNil)
+}
+
+// dialDecoder sets a gadget on the table each `dial` block names, sized by
+// whether the block turned it `on`, declares nothing for a `knob` block, and
+// records the requests it is given.
+type dialDecoder struct {
+	requests *[]hclext.Request
+}
+
+func (d dialDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
+	*d.requests = append(*d.requests, request)
+	declarations := make([]hclext.Declaration, 0, len(request.Claims))
+	for _, claim := range request.Claims {
+		if claim.Block == "knob" {
+			declarations = append(declarations, hclext.Declaration{})
+			continue
+		}
+		size := "off"
+		if claim.Attributes["on"].Bool {
+			size = "on"
+		}
+		declarations = append(declarations, hclext.Declaration{TableSetting: &gadget{Size: size}})
+	}
+	return hclext.Result{Declarations: declarations}, nil
+}
+
+// dialOwners registers the owner example.org/custom, whose `dial` block sets
+// a gadget on the table it names and whose `knob` block, named with a
+// qualified name, declares nothing.
+func dialOwners(requests *[]hclext.Request) hclext.Set {
+	return must.Must(engine.New(engine.Provider{
+		ID:     "example.org/custom",
+		Codecs: []schemaext.Codec{gadgetCodec()},
+		HCL: []hclext.Extension{{
+			Owner: "example.org/custom",
+			Kinds: []schemaext.Kind{gadgetKind},
+			Blocks: []hclext.Block{
+				{Site: hclext.TopLevel, Type: "dial", Naming: hclext.SchemaAndName, Attributes: []hclext.Attribute{{Name: "on", Kind: hclext.Bool}}},
+				{Site: hclext.TopLevel, Type: "knob", Naming: hclext.SchemaAndQualifiedName},
+			},
+			Decoder: dialDecoder{requests: requests},
+		}},
+	})).HCL()
+}
+
+// TestParseWithOptions_AttachesAnOwnersTableSetting attaches the setting a
+// block declares to the table its labels name, though the table block comes
+// later, and reads a bool attribute that is not a bool as absent, as the
+// reader's own flags read.
+func TestParseWithOptions_AttachesAnOwnersTableSetting(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+	document := `dial "app" "first" {
+  on = true
+}
+
+dial "app" "second" {
+  on = "yes"
+}
+
+schema "app" {}
+
+table "first" {
+  schema = schema.app
+  column "id" {
+    type = int
+  }
+}
+
+table "second" {
+  schema = schema.app
+  column "id" {
+    type = int
+  }
+}
+`
+
+	db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: dialOwners(&requests)})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(requests[0].Claims[0].Attributes, qt.DeepEquals, map[string]hclext.Value{"on": {Kind: hclext.Bool, Bool: true}})
+	c.Assert(requests[0].Claims[1].Attributes, qt.HasLen, 0)
+	c.Assert(tableGadgets(c, db), qt.DeepEquals, map[string]string{"first": "on", "second": "off"})
+}
+
+// TestParseWithOptions_RefusesASettingOfAnUndeclaredTable refuses a setting
+// whose table the document does not declare, positioned at its block.
+func TestParseWithOptions_RefusesASettingOfAnUndeclaredTable(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+
+	db, err := atlashcl.ParseWithOptions([]byte("dial \"app\" \"missing\" {}\n"), "schema.hcl", atlashcl.Options{HCL: dialOwners(&requests)})
+
+	c.Assert(err, qt.ErrorMatches, `.*schema\.hcl:1,1-5.*dial "app\.missing" names a table this schema does not declare`)
+	c.Assert(db, qt.IsNil)
+}
+
+// TestParseWithOptions_ReadsAQualifiedName splits a one-label name written
+// `schema.name` into its schema and name for a block named that way, and
+// keeps a dotted name whole where the block names a schema.
+func TestParseWithOptions_ReadsAQualifiedName(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+
+	_, err := atlashcl.ParseWithOptions([]byte("knob \"app.volume\" {}\nknob \"app\" \"bass.boost\" {}\n"), "schema.hcl",
+		atlashcl.Options{HCL: dialOwners(&requests)})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(requests[0].Claims, qt.DeepEquals, []hclext.Claim{
+		{Block: "knob", Schema: "app", Name: "volume", Attributes: make(map[string]hclext.Value)},
+		{Block: "knob", Schema: "app", Name: "bass.boost", Attributes: make(map[string]hclext.Value)},
+	})
+}
+
+// tableGadgets maps each table to the size of the gadget set on it.
+func tableGadgets(c *qt.C, db *schemamodel.Database) map[string]string {
+	c.Helper()
+	sizes := make(map[string]string, len(db.Tables))
+	for _, table := range db.Tables {
+		set, _, err := schemaext.FacetAs[*gadget](table.Facets, gadgetKind)
+		c.Assert(err, qt.IsNil)
+		sizes[table.Name] = set.Size
+	}
+	return sizes
 }
