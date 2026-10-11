@@ -708,7 +708,6 @@ func TestParseFunctionComment(t *testing.T) {
 				Name:       "get_current_tenant_id",
 				Returns:    "text", // lowercased
 				Language:   "plpgsql",
-				Security:   "INVOKER", // default
 				Volatility: "STABLE",
 				Body:       "BEGIN RETURN current_setting('app.current_tenant_id', true); END;",
 			},
@@ -721,20 +720,19 @@ func TestParseFunctionComment(t *testing.T) {
 				Name:       "test_func",
 				Returns:    "integer", // lowercased
 				Language:   "sql",
-				Security:   "INVOKER",  // default
 				Volatility: "VOLATILE", // default
 				Comment:    "Test function for unit tests",
 			},
 		},
 		{
-			// The language is the target's, which no annotation can know.
-			name:    "Empty language stays empty",
+			// The language and the security mode are the target's, which no
+			// annotation can know.
+			name:    "Empty language and security stay empty",
 			comment: `//ptah:schema:function name="no_lang" returns="VOID" body="BEGIN END;"`,
 			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "no_lang",
 				Returns:    "void", // lowercased
-				Security:   "INVOKER",
 				Volatility: "VOLATILE",
 				Body:       "BEGIN END;",
 			},

@@ -113,6 +113,9 @@ const (
 		"(stokaro/ptah#3789); this comparison reads one database"
 	exemptVirtualTable = "the comparison refuses any change of a SQLite virtual table, because rebuilding it destroys " +
 		"the module's storage (stokaro/ptah#1028); the refusal names the table, which is the comparison reading it"
+	exemptForeignDefiner = "a routine that states no security mode is a definer routine here, a definer routine is " +
+		"replaced only beside a recorded definer and connected account, and a description converted from a catalog " +
+		"records neither, so the comparison refuses the replacement and names the routine"
 )
 
 // RoundTripUnmeasured is every compared field the round trip cannot ask
@@ -540,6 +543,7 @@ var roundTripExemptions = []Unreached{
 	},
 	{Field: "schemamodel.Extension.IfNotExists", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptIfNotExists},
 	{Field: "schemamodel.Field.Primary", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptClickHouseKey},
+	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
 	{
 		Field:      "schemamodel.Grant.Dialects",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver"},

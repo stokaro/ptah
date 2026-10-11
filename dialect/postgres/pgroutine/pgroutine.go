@@ -24,6 +24,10 @@ import (
 // is the language the server assumes for one written by hand.
 const Language = "plpgsql"
 
+// Security is the security mode of a PostgreSQL routine that states none, as
+// the reader reports it: the routine runs with its caller's rights.
+const Security = "INVOKER"
+
 // Reader reads the routine bodies of the PostgreSQL family: postgres,
 // cockroachdb, yugabytedb and spanner. Its zero value is ready to use.
 type Reader struct{}

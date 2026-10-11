@@ -326,10 +326,12 @@ takes from a target: how a column's type, default and sequence, an index's
 options and a view's query read on it. YDB registers all three, so a declared
 BIGINT compares as the Int64 its catalog reports, a declared BTREE as the
 synchronous global index, and a view's query in the form the server stores
-it. `Routines` names the language a routine that declares none is in, so the
-comparison reads an omitted language as the target's: plpgsql on the PostgreSQL
-family, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle. A nil member
-keeps the shared rule.
+it. `Routines` names the language a routine that declares none is in and the
+rights one that states no security mode runs with, so the comparison reads an
+omitted value as the target's: plpgsql and the caller's rights on the
+PostgreSQL family, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle, the
+definer's rights on MySQL, MariaDB and Oracle and the caller's on SQL Server. A
+nil member keeps the shared rule.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
 files used as current state. It predicts CREATE defaults and column keys.

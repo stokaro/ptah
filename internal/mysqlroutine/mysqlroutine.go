@@ -27,6 +27,12 @@ import (
 // reports it. A routine that declares no language is in it.
 const Language = "sql"
 
+// Security is the SQL SECURITY a routine that states none runs with on MySQL
+// and MariaDB: its definer's rights. Measured on MySQL 26.7.0 and MariaDB
+// 12.3.2, a procedure and a function created with no SQL SECURITY clause both
+// report SECURITY_TYPE DEFINER.
+const Security = "DEFINER"
+
 // Volatility values, spelled as [schemamodel.Function.Canonicalize] leaves them.
 const (
 	Immutable = "IMMUTABLE"

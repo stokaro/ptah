@@ -257,6 +257,38 @@ func TestVisitNode_CreateFunctionVolatilityIsDistinguishableAfterARead(t *testin
 	}
 }
 
+// TestVisitNode_CreateFunctionWritesTheSecurityModeItStates pins that a
+// routine is written with the SQL SECURITY it states, and with none where it
+// states none: the server then applies DEFINER, its own default for a routine
+// created by hand, which the comparison reads an unstated mode as.
+func TestVisitNode_CreateFunctionWritesTheSecurityModeItStates(t *testing.T) {
+	tests := []struct {
+		name     string
+		security string
+		want     string
+	}{
+		{name: "definer", security: "DEFINER", want: "READS SQL DATA SQL SECURITY DEFINER RETURN 1;"},
+		{name: "invoker", security: "INVOKER", want: "READS SQL DATA SQL SECURITY INVOKER RETURN 1;"},
+		{name: "none stated", security: "", want: "READS SQL DATA RETURN 1;"},
+	}
+
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				r := newRenderer(dialect)
+
+				err := r.VisitNode(&ast.CreateFunctionNode{
+					Name: "fn", Returns: "int", Security: test.security, Volatility: "VOLATILE", Body: "RETURN 1",
+				})
+
+				c.Assert(err, qt.IsNil)
+				c.Check(r.Output(), qt.Contains, test.want)
+			})
+		}
+	}
+}
+
 // TestVisitNode_CreateFunctionRefusesValuesItCannotRepresent holds the refusal seam.
 //
 // Dropping either silently produces the same permanent drift: an unknown

@@ -78,9 +78,10 @@ func TestFunctionDefinitions_ADifferentDefaultIsAChange(t *testing.T) {
 
 // routineWithArguments compares one declared routine against a catalog
 // routine of the same name, with the argument spellings a server answered. The
-// declaration states no language, and the PostgreSQL target's rules read it as
-// plpgsql. The spellings are found by the declaration as written, before that
-// fold, which is the key the server was asked under.
+// declaration states no language and no security mode, and the PostgreSQL
+// target's rules read them as plpgsql and INVOKER. The spellings are found by
+// the declaration as written, before that fold, which is the key the server
+// was asked under.
 func routineWithArguments(
 	declared, observed string,
 	spellings map[string]config.RoutineArguments,
@@ -93,7 +94,7 @@ func routineWithArguments(
 			Language: "plpgsql", Security: "INVOKER", Volatility: "VOLATILE",
 		}}},
 		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spellings,
-		schemacomparison.RoutineDefaults{Language: "plpgsql"},
+		schemacomparison.RoutineDefaults{Language: "plpgsql", Security: "INVOKER"},
 	)
 	return diff
 }

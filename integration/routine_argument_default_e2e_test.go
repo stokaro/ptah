@@ -170,10 +170,11 @@ func TestSchemaApplyCreatesARoutineWithTheDeclaredDefaultE2E(t *testing.T) {
 // in HCL with no language, which on PostgreSQL is plpgsql, and with a default
 // the server prints back with a cast.
 //
-// The server's spelling of the arguments is found by a key that holds the
-// routine's language, and the comparison reads a routine with no language in
-// the one the target's lowering gives it. Probed without that language, the
-// spelling was never found, and the routine was planned again on every run.
+// The server's spelling of the arguments is found by a key built from the
+// declaration as written, language included, and the comparison reads a
+// routine with no language as one in the target's. The spelling is looked up
+// before that reading, under the key the probe was asked for; looked up after
+// it, the spelling is not found, and the routine is planned on every run.
 func TestSchemaApplyFindsAnHCLRoutineWithoutALanguageSyncedE2E(t *testing.T) {
 	c := qt.New(t)
 	schema := filepath.Join(c.TempDir(), "schema.hcl")

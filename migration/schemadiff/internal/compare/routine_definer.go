@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/tableref"
@@ -23,7 +24,9 @@ import (
 // security are DEFINER and the routine's definer is another account, that is a
 // change of the principal the body runs as, which the declaration did not ask
 // for. The capability is the gate, not the dialect: the rule holds wherever
-// the plan replaces a routine that way.
+// the plan replaces a routine that way. A routine that states no security mode
+// is read through routines, the target's rules, as the comparison reads it:
+// on the MySQL family it is a definer routine.
 //
 // A routine whose definer or connected account the read did not record, such as
 // one from a description rather than a live read, is refused as well: treating
@@ -41,6 +44,7 @@ func ValidateRoutineDefinerReplacements(
 	dialect string,
 	caps capability.Capabilities,
 	semantics identifier.Semantics,
+	routines schemacomparison.Routines,
 ) error {
 	if !caps.Has(capability.RoutineReplacementResetsDefiner) || desired == nil || database == nil || diff == nil ||
 		len(diff.FunctionsModified) == 0 {
@@ -63,6 +67,9 @@ func ValidateRoutineDefinerReplacements(
 		}
 
 		desired.Canonicalize()
+		// A routine that states no security mode runs with the rights the
+		// target gives it, which on the MySQL family is its definer's.
+		withTargetDefaults(&desired, &current, routines)
 		// A routine in a language the target does not run is left alone,
 		// with no DROP, so nothing is replaced. The targets with the
 		// capability are the MySQL family, whose plan decides this with

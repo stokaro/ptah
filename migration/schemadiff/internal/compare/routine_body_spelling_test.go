@@ -9,6 +9,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -26,7 +27,8 @@ var declaredItemCount = schemamodel.Function{
 const storedItemCount = "SELECT count(*) FROM f1.public.items;"
 
 // routineWithBody compares declaredItemCount against a catalog function of the
-// same name holding body, with the answers a server gave.
+// same name holding body, with the answers a server gave. The declaration
+// states no security mode, which CockroachDB reads as INVOKER.
 func routineWithBody(body string, spellings map[string]config.RoutineArguments) *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
 	compare.FunctionsWithSemantics(
@@ -36,7 +38,7 @@ func routineWithBody(body string, spellings map[string]config.RoutineArguments) 
 			Language: "sql", Security: "INVOKER", Volatility: "STABLE",
 		}}},
 		diff, platform.CockroachDB, identifier.ForDialect(platform.CockroachDB), spellings,
-		nil,
+		schemacomparison.RoutineDefaults{Security: "INVOKER"},
 	)
 	return diff
 }

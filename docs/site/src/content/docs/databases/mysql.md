@@ -52,6 +52,10 @@ SQL:
 - A nonunique referenced key must be a complete leftmost BTREE prefix.
   FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
   qualify.
+- A routine that states no security mode runs with its definer's rights, as
+  the server applies to one created by hand: a declaration that omits
+  `security` is `SQL SECURITY DEFINER`. Declare `security="INVOKER"` for a
+  routine that runs with its caller's rights.
 - A modified `SQL SECURITY DEFINER` routine is refused before migration SQL is
   planned when its catalog `DEFINER` differs from the connected
   `CURRENT_USER()`. Connect as that definer, change the desired routine to

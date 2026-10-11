@@ -1195,8 +1195,10 @@ file, exactly as any other command reaching the same URL would.
   `CURRENT_USER()`. If a modified routine would be dropped and recreated by a
   different account, comparison refuses before any migration SQL is planned.
   Connect as the existing definer, declare `SQL SECURITY INVOKER` explicitly,
-  or leave the foreign routine unchanged. Missing ownership facts also fail
-  closed for a modified definer routine. The refusal follows
+  or leave the foreign routine unchanged. A routine that states no security
+  mode is a definer routine on these engines, as one created by hand is, and is
+  refused the same way. Missing ownership facts also fail closed for a modified
+  definer routine. The refusal follows
   `routine_replacement_resets_definer`, which names the targets where Ptah's
   plan replaces a routine by DROP and CREATE, not the dialect.
 

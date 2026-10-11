@@ -74,14 +74,16 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 				Parameters: "group_id_param text",
 				Returns:    "void",
 				Language:   "plpgsql",
-				// No security= → default INVOKER (drops SECURITY DEFINER).
+				// No security=: PostgreSQL's own mode, INVOKER, which the
+				// postgres target's rules read it as. That drops SECURITY
+				// DEFINER, and the compare must name the target to know it.
 				Body: "\nBEGIN PERFORM set_config('app.current_group_id', group_id_param, true); END;\n",
 			},
 		},
 	}
 
 	// Run the diff over the live DB schema.
-	diff := must.Must(schemadiff.Compare(t.Context(), target, before, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, before, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("body+security change must be detected"))
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 	mod := diff.FunctionsModified[0]
@@ -128,7 +130,7 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 		qt.Commentf("function body must no longer contain the previous flag value"))
 
 	// Idempotency: a second diff against the freshly updated DB must be empty.
-	idempDiff := must.Must(schemadiff.Compare(t.Context(), target, after, must.Must(builtin.New())))
+	idempDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, after, "postgres", must.Must(builtin.New())))
 	c.Assert(idempDiff.HasChanges(), qt.IsFalse,
 		qt.Commentf("re-running diff after applying the migration must report no changes"))
 }
@@ -173,7 +175,7 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 		},
 	}
 
-	diff := must.Must(schemadiff.Compare(t.Context(), target, before, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, before, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 	c.Assert(diff.FunctionsModified[0].Changes["volatility"], qt.Equals, "VOLATILE -> STABLE")
@@ -205,7 +207,7 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 
 	// Idempotency: re-diffing the freshly-updated DB against the same target
 	// must report no changes.
-	idempDiff := must.Must(schemadiff.Compare(t.Context(), target, after, must.Must(builtin.New())))
+	idempDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, after, "postgres", must.Must(builtin.New())))
 	c.Assert(idempDiff.HasChanges(), qt.IsFalse,
 		qt.Commentf("post-migration diff must be clean"))
 }
