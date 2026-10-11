@@ -4,15 +4,24 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/sqlext"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/parser"
 )
 
+// sqliteOwners are the SQLite owner's SQL extensions, which read CREATE
+// VIRTUAL TABLE.
+func sqliteOwners() sqlext.Set {
+	return must.Must(sqlext.NewSet(sqlitetable.SQL()...))
+}
+
 // TestParseCreateVirtualTable_KeepsTheModuleAndItsArgumentsVerbatim pins that
-// Ptah can read the statement it writes.
+// Ptah can read the statement it writes, through the SQLite owner, in a
+// SQLite document and in one that names no target.
 //
 // The reader emits CREATE VIRTUAL TABLE and the SQLite renderer writes it, but
 // the SQL parser refused it -- so `ptah db read` produced a file `ptah schema
@@ -79,24 +88,62 @@ func TestParseCreateVirtualTable_KeepsTheModuleAndItsArgumentsVerbatim(t *testin
 		},
 	}
 
-	for _, test := range tests {
+	for _, dialect := range []string{platform.SQLite, ""} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				statements, err := parser.NewParser(test.sql, parser.WithDialect(dialect), parser.WithSQL(sqliteOwners())).Parse()
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(statements.Statements, qt.HasLen, 1)
+				table, ok := statements.Statements[0].(*ast.CreateTableNode)
+				c.Assert(ok, qt.IsTrue, qt.Commentf("got %T", statements.Statements[0]))
+				c.Assert(table.Name, qt.Equals, test.wantTable)
+				declared, err := sqlitetable.VirtualDeclaration(table.Facets)
+				c.Assert(err, qt.IsNil)
+				c.Assert(declared, qt.DeepEquals, &sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: test.wantModule, Arguments: test.wantArguments}})
+				// A virtual table has no parsed column list: the arguments are
+				// the module's business, and inventing columns from them would
+				// plan statements SQLite refuses on a virtual table.
+				c.Assert(table.Columns, qt.HasLen, 0)
+			})
+		}
+	}
+}
+
+// TestParseCreateVirtualTable_IfNotExists keeps the guard on the table the
+// statement declares.
+func TestParseCreateVirtualTable_IfNotExists(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(a);\nCREATE VIRTUAL TABLE more USING fts5(b);",
+		parser.WithDialect(platform.SQLite), parser.WithSQL(sqliteOwners())).Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+	c.Assert(statements.Statements[0].(*ast.CreateTableNode).IfNotExists, qt.IsTrue)
+	c.Assert(statements.Statements[1].(*ast.CreateTableNode).IfNotExists, qt.IsFalse)
+}
+
+// TestParseCreateVirtualTable_IsTheSQLiteOwners refuses the statement where
+// the SQLite owner does not read it: a parse that selects no owner, and a
+// document of another target. The shared grammar has no virtual table.
+func TestParseCreateVirtualTable_IsTheSQLiteOwners(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		options []parser.Option
+	}{
+		{name: "no owner", options: []parser.Option{parser.WithDialect(platform.SQLite)}},
+		{name: "another target", options: []parser.Option{parser.WithDialect(platform.Postgres), parser.WithSQL(sqliteOwners())}},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.SQLite)).Parse()
+			statements, err := parser.NewParser("CREATE VIRTUAL TABLE docs USING fts5(a);", test.options...).Parse()
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(statements.Statements, qt.HasLen, 1)
-			table, ok := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(ok, qt.IsTrue, qt.Commentf("got %T", statements.Statements[0]))
-			c.Assert(table.Name, qt.Equals, test.wantTable)
-			declared, err := sqlitetable.VirtualDeclaration(table.Facets)
-			c.Assert(err, qt.IsNil)
-			c.Assert(declared, qt.DeepEquals, &sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: test.wantModule, Arguments: test.wantArguments}})
-			// A virtual table has no parsed column list: the arguments are the
-			// module's business, and inventing columns from them would plan
-			// statements SQLite refuses on a virtual table.
-			c.Assert(table.Columns, qt.HasLen, 0)
+			c.Assert(err, qt.ErrorMatches, `unsupported CREATE target: VIRTUAL at position 7`)
+			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
@@ -106,7 +153,7 @@ func TestParseCreateVirtualTable_KeepsTheModuleAndItsArgumentsVerbatim(t *testin
 func TestParseCreateVirtualTable_RefusesAnUnfinishedStatement(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parser.NewParser(`CREATE VIRTUAL TABLE docs USING fts5(title, body`, parser.WithDialect(platform.SQLite)).Parse()
+	_, err := parser.NewParser(`CREATE VIRTUAL TABLE docs USING fts5(title, body`, parser.WithDialect(platform.SQLite), parser.WithSQL(sqliteOwners())).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `.*unterminated virtual table arguments.*`)
+	c.Assert(err, qt.ErrorMatches, `unterminated virtual table arguments at position 37`)
 }

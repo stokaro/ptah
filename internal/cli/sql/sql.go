@@ -166,6 +166,7 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 			Capabilities:  target.Capabilities,
 			DisabledRules: opts.disabled,
 			Severities:    severities,
+			SQL:           runtime.SQL(),
 			Bodies:        runtime,
 		})
 		if err != nil {

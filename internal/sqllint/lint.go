@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/routineext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
@@ -90,6 +91,13 @@ type Options struct {
 	// exits 0 (stokaro/ptah#1270, criterion 7).
 	Schema *schemamodel.Database
 
+	// SQL are the owners whose syntax a file may carry beside the shared
+	// grammar, usually the engine runtime's, so a SQLite file's CREATE VIRTUAL
+	// TABLE is read as the SQLite owner reads it. A set nobody selected is
+	// refused with sqlext.ErrUnselected; sqlext.None reads the shared grammar
+	// alone.
+	SQL sqlext.Set
+
 	// Bodies reads the routine bodies the file defines, in their engine's
 	// language: the engine runtime answers it. A file whose routines need
 	// reading is refused without one, because [RuleDynamicSQL] would
@@ -152,6 +160,9 @@ func DefaultRules() []Rule {
 // LintSource lints every statement of one file. The routine bodies the file
 // defines are read in one call to opts.Bodies, before any rule runs.
 func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, error) {
+	if !opts.SQL.Selected() {
+		return nil, sqlext.ErrUnselected
+	}
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
 		return nil, err
 	}
@@ -491,7 +502,7 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 }
 
 func parserOptions(opts Options, caps capability.Capabilities) []parser.Option {
-	var parseOpts []parser.Option
+	parseOpts := []parser.Option{parser.WithSQL(opts.SQL)}
 	if opts.Dialect != "" {
 		parseOpts = append(parseOpts, parser.WithDialect(opts.Dialect))
 	}

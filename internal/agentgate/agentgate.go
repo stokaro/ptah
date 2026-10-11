@@ -351,6 +351,7 @@ func (r *Runner) migrationSQL(ctx context.Context, scope *agentworkspace.Scope) 
 				Dialect:      r.opts.Dialect,
 				Version:      r.opts.Version,
 				Capabilities: r.opts.Capabilities,
+				SQL:          r.opts.Owners.SQL(),
 				Bodies:       r.opts.RoutineBodies,
 			},
 		)

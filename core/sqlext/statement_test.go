@@ -86,9 +86,27 @@ func TestSet_Parse_HandsAStatementTheObjectsOfItsKinds(t *testing.T) {
 	c.Assert(requests[0].Declared[0].Ref.Name.Source, qt.Equals, "earlier")
 }
 
+// TestSet_Parse_ReturnsATableAStatementDeclares returns a statement's table,
+// which declares nothing beside it.
+func TestSet_Parse_ReturnsATableAStatementDeclares(t *testing.T) {
+	c := qt.New(t)
+	table := &sqlext.TableDeclaration{Name: "main.docs", IfNotExists: true}
+	set := gadgetSet(sqlext.Statement, answeringParser{value: sqlext.Value{Table: table}, requests: new([]sqlext.Request)})
+	matches := []sqlext.Match{{Candidate: set.Candidates("x", sqlext.Statement)[0],
+		Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "CREATE GADGET main.docs"}}}
+
+	values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(values, qt.HasLen, 1)
+	c.Assert(values[0].Table, qt.Equals, table)
+	c.Assert(values[0].Statement, qt.IsNil)
+}
+
 // TestSet_Parse_RefusesAValueItsSiteDoesNotTake refuses a statement answered
-// without the owner's statement, a value of another site that declares
-// objects, and an object of a kind the extension does not declare.
+// without the owner's statement or a table, or with both, a table without a
+// name or with objects beside it, a value of another site that declares
+// objects or a table, and an object of a kind the extension does not declare.
 func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -98,6 +116,20 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 	}{
 		{name: "a statement without the owner's statement", site: sqlext.Statement, value: sqlext.Value{},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with no statement`},
+		{name: "a statement and a table", site: sqlext.Statement,
+			value:   sqlext.Value{Statement: &gadgetStatement{}, Table: &sqlext.TableDeclaration{Name: "t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with both a statement and a table`},
+		{name: "a table without a name", site: sqlext.Statement, value: sqlext.Value{Table: &sqlext.TableDeclaration{Name: " "}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table without a name`},
+		{name: "a table and an object", site: sqlext.Statement,
+			value:   sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "new")}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table and objects beside it`},
+		{name: "a table and an amendment", site: sqlext.Statement,
+			value:   sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}, Replaces: []schemaext.Object{gadgetObject(gadgetKind, "old")}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table and objects beside it`},
+		{name: "a table at another site", site: sqlext.TableElement,
+			value:   sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}, Table: &sqlext.TableDeclaration{Name: "t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-element claim "gadget" with a statement's value`},
 		{name: "objects at another site", site: sqlext.AlterOperation,
 			value:   sqlext.Value{Operation: &gadgetStatement{}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "new")}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its alter-operation claim "gadget" with a statement's value`},

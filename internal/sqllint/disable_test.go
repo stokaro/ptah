@@ -26,7 +26,7 @@ func reportedCodes(tb testing.TB, sql string, disabled []string) []string {
 
 	findings, err := sqllint.LintSource(c.Context(),
 		sqllint.Source{Name: "probe.sql", SQL: sql},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: disabled},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: disabled},
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -115,7 +115,7 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 
 			_, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "probe.sql", SQL: "CREATE TABLE ;"},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: row.disabled},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: row.disabled},
 			)
 
 			c.Assert(err, qt.IsNotNil)

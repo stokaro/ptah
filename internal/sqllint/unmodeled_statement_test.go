@@ -47,7 +47,7 @@ func TestLintSource_AFileOfUnanalyzedStatementsIsNotClean(t *testing.T) {
 
 			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: row.sql},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "postgres"},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -75,7 +75,7 @@ func TestLintSource_TheUnanalyzedFindingIsOnePerFile(t *testing.T) {
 			"CREATE VIEW b AS SELECT 2;\n" +
 			"CREATE SEQUENCE s;\n" +
 			"DROP TABLE t;\n",
-	}, sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"})
+	}, sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -105,7 +105,7 @@ func TestLintSource_AnAnalyzedStatementStaysSilent(t *testing.T) {
 
 			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: row.sql},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "postgres"},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "postgres"},
 			)
 
 			c.Assert(err, qt.IsNil)

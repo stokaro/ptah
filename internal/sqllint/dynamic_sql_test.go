@@ -97,7 +97,7 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 
 			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "routine.sql", SQL: test.sql},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: test.dialect},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: test.dialect},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -122,7 +122,7 @@ func TestDynamicSQL_TheFindingPointsAtTheExecute(t *testing.T) {
 	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "routine.sql", SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 			"    EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -206,7 +206,7 @@ func TestDynamicSQL_TheBoundaryIsFoundAtAnyDepth(t *testing.T) {
 					Name: "routine.sql",
 					SQL:  "CREATE PROCEDURE p() AS $$\nBEGIN\n" + test.body + "\nEND;\n$$ LANGUAGE plpgsql;",
 				},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 			)
 
 			c.Assert(err, qt.IsNil)

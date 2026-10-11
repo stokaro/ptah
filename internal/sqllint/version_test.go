@@ -22,7 +22,7 @@ func TestLintSource_RefusesAVersionThatNamesNoServer(t *testing.T) {
 	findings, err := sqllint.LintSource(t.Context(), sqllint.Source{
 		Name: "index.sql",
 		SQL:  "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);",
-	}, sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Version: "not-a-version"})
+	}, sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Version: "not-a-version"})
 
 	c.Assert(findings, qt.IsNil)
 	var unrecognized *servertarget.UnrecognizedVersionError
@@ -39,7 +39,7 @@ func TestLintSource_ExplicitCapabilitiesOutrankTheVersionString(t *testing.T) {
 	findings, err := sqllint.LintSource(t.Context(), sqllint.Source{
 		Name: "index.sql",
 		SQL:  "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);",
-	}, sqllint.Options{Bodies: builtintest.Runtime(),
+	}, sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 		Dialect:      platform.Postgres,
 		Version:      "not-a-version",
 		Capabilities: capability.Postgres16(),
