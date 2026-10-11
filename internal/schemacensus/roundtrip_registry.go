@@ -40,7 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossColumnComment     = "goschematodb drops a column's comment, so every commented column plans its comment again"
 	lossColumnUnique      = "a column's own UNIQUE does not survive the conversion, so the comparison plans it again"
 	lossNamedPrimaryKey   = "dbschematogo drops a primary key declared as a named table constraint, so the converted-back declaration drops the key"
 	lossInlineEnum        = "an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild"
@@ -63,7 +62,6 @@ const (
 	gapToCatalog         = "goschematodb drops it: the catalog is the same with and without it"
 	gapFromCatalog       = "dbschematogo drops it: the converted-back declaration is the same with and without it"
 	gapComparison        = "both conversions carry it, and the comparison plans nothing when it changes"
-	gapColumnComment     = "goschematodb drops a column's comment; the other direction is a recorded loss"
 	gapRoutineAttributes = "goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet"
 	gapRoutineKind       = "the conversions drop a routine's kind; the other direction is a recorded loss"
 	gapPrimaryKeyInclude = "goschematodb drops a primary key's INCLUDE columns; the other direction is a recorded loss"
@@ -182,12 +180,6 @@ func Alternates() []string {
 func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
-	{
-		Fixtures:   []string{"column-core", "embedded-json"},
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossColumnComment,
-	},
 	{Fixtures: []string{"column-unique"}, Dialects: []string{"mariadb", "mysql", "postgres"}, Directions: nil, Reason: lossColumnUnique},
 	{
 		Fixtures:   []string{"constraint-pk"},
@@ -293,13 +285,7 @@ var roundTripGaps = []Unreached{
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
-	{
-		Field:      "schemamodel.EmbeddedField.Comment",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "ydb", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapColumnComment,
-	},
-	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: []Direction{FromCatalog}, Reason: gapToCatalog},
+	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"cockroachdb", "sqlite"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Enum.Schema", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Extension.Dialects", Dialects: []string{"spanner", "ydb"}, Directions: []Direction{ToCatalog}, Reason: gapComparison},
@@ -310,12 +296,6 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Field.Collate", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
-	{
-		Field:      "schemamodel.Field.Comment",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "ydb", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapColumnComment,
-	},
 	{
 		Field:      "schemamodel.Field.DefaultSet",
 		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
