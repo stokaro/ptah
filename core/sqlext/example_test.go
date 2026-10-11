@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 )
 
@@ -42,7 +43,7 @@ func ExampleNewSet() {
 
 	values, err := set.Parse(context.Background(), "custom", []sqlext.Match{
 		{Candidate: candidate, Claim: sqlext.Claim{Pattern: "bucket", Site: sqlext.TableElement, Text: "BUCKET by_day ON day"}},
-	})
+	}, schemaext.Objects{})
 	if err != nil {
 		fmt.Println(err)
 		return

@@ -2600,6 +2600,17 @@ an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index a table element or an ALTER TABLE
 operation declares, the owner's operation payload, or facets of a view.
 
+A `Statement` pattern claims a whole top-level statement. Its value carries
+the owner's statement payload, which the parse places where the statement
+stood, the objects the statement declares, and new values of objects declared
+before it, such as the comment a COMMENT ON gives an object a CREATE declared.
+Each object is of one of the extension's `Kinds`. A request carries the objects
+of those kinds that earlier documents of the load declared, so an owner can
+amend an object an earlier file of a schema directory declared, and refuse
+one nothing declared with an error wrapping `sqlext.ErrUndeclared`. The reader
+adds the declared objects, refusing a duplicate, and replaces each amended one
+where it was declared.
+
 `engine.Provider.SQL` registers an extension, and `engine.Runtime.SQL` returns
 the frozen set. An extension reads only targets its provider registers, and
 two patterns one document could consult at one site that can match the same

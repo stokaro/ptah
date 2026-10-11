@@ -138,13 +138,17 @@ func refuseFeatureCoverageHeader(data []byte) error {
 func convert(
 	ctx context.Context, data []byte, dialect string, document *Document, owners sqlext.Set,
 ) (schemamodel.Database, *ast.StatementList, error) {
-	parsed := parser.NewParser(string(data), parser.WithDialect(dialect), parser.WithSQL(owners))
+	if document == nil {
+		document = NewDocument(nil)
+	}
+	options := []parser.Option{parser.WithDialect(dialect), parser.WithSQL(owners)}
+	if document.base != nil {
+		options = append(options, parser.WithDeclared(document.base.FeatureObjects))
+	}
+	parsed := parser.NewParser(string(data), options...)
 	statements, err := parsed.ParseContext(ctx)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
-	}
-	if document == nil {
-		document = NewDocument(nil)
 	}
 	document.notes = parsed
 	defer func() { document.notes = nil }()

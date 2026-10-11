@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -37,6 +38,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 		}
 		extension.Targets = slices.Clone(extension.Targets)
 		extension.Header = slices.Clone(extension.Header)
+		extension.Kinds = slices.Clone(extension.Kinds)
 		patterns := make([]Pattern, 0, len(extension.Patterns))
 		for _, pattern := range extension.Patterns {
 			pattern.Words = slices.Clone(pattern.Words)
@@ -135,6 +137,11 @@ func validateExtension(extension Extension) error {
 	if extension.Grammar != nil && len(extension.Patterns) > 0 {
 		return fmt.Errorf("SQL extension of %s declares patterns beside a grammar", extension.Owner)
 	}
+	for _, kind := range extension.Kinds {
+		if !kind.Valid() {
+			return fmt.Errorf("SQL extension of %s declares invalid object kind %q", extension.Owner, kind)
+		}
+	}
 	names := make(map[string]bool, len(extension.Patterns))
 	for _, pattern := range extension.Patterns {
 		if strings.TrimSpace(pattern.Name) == "" {
@@ -156,7 +163,7 @@ func validateExtension(extension Extension) error {
 
 func knownSite(site Site) bool {
 	switch site {
-	case TableElement, AlterOperation, ViewClause:
+	case TableElement, AlterOperation, ViewClause, Statement:
 		return true
 	default:
 		return false
@@ -301,10 +308,12 @@ type Match struct {
 }
 
 // Parse hands each extension the claims its candidates made, in one call per
-// extension, and returns the values in the order of matches. A parser that
-// fails, or answers with another number of values than it was given claims,
-// fails the parse.
-func (s Set) Parse(ctx context.Context, target string, matches []Match) ([]Value, error) {
+// extension, with the objects of declared its statements may amend, and
+// returns the values in the order of matches. declared is what the documents
+// read before this one declared. A parser that fails, answers with another
+// number of values than it was given claims, or answers a claim with a value
+// its site does not take, fails the parse.
+func (s Set) Parse(ctx context.Context, target string, matches []Match, declared schemaext.Objects) ([]Value, error) {
 	values := make([]Value, len(matches))
 	positions := make(map[int][]int)
 	var order []int
@@ -316,7 +325,11 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match) ([]Value
 	}
 	for _, index := range order {
 		extension := s.extensions[index]
-		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index]))}
+		owned, err := ownedObjects(extension, declared)
+		if err != nil {
+			return nil, err
+		}
+		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index])), Declared: owned}
 		for _, position := range positions[index] {
 			request.Claims = append(request.Claims, matches[position].Claim)
 		}
@@ -332,10 +345,52 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match) ([]Value
 				schemaext.ErrInvalidValue, extension.Owner, len(request.Claims), len(result.Values))
 		}
 		for i, position := range positions[index] {
+			if err := checkValue(extension, request.Claims[i], result.Values[i]); err != nil {
+				return nil, err
+			}
 			values[position] = result.Values[i]
 		}
 	}
 	return values, nil
+}
+
+// ownedObjects returns the objects of declared whose kind is one of the
+// extension's Kinds, in identity order.
+func ownedObjects(extension Extension, declared schemaext.Objects) ([]schemaext.Object, error) {
+	if len(extension.Kinds) == 0 || declared.IsZero() {
+		return nil, nil
+	}
+	all, err := declared.Select(func(ref objectidentity.ID) bool {
+		return slices.Contains(extension.Kinds, schemaext.Kind(ref.Kind))
+	}).All()
+	if err != nil || len(all) == 0 {
+		return nil, err
+	}
+	return all, nil
+}
+
+// checkValue refuses a value that does not fit its claim's site: a statement
+// carries the owner's statement, only a statement declares or amends
+// objects, and every such object is of one of the extension's Kinds.
+func checkValue(extension Extension, claim Claim, value Value) error {
+	if claim.Site != Statement {
+		if value.Statement != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
+			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
+				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
+		}
+		return nil
+	}
+	if value.Statement == nil {
+		return fmt.Errorf("%w: SQL parser of %s answered its statement claim %q with no statement",
+			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
+	}
+	for _, object := range slices.Concat(value.Objects, value.Replaces) {
+		if !slices.Contains(extension.Kinds, schemaext.Kind(object.Ref.Kind)) {
+			return fmt.Errorf("%w: SQL parser of %s answered an object of kind %q, which its extension does not declare",
+				schemaext.ErrInvalidValue, extension.Owner, object.Ref.Kind)
+		}
+	}
+	return nil
 }
 
 // Coverage combines the claims of the extensions that read documents of

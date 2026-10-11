@@ -722,25 +722,7 @@ func toDatabase(
 func appendStatement(
 	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) error {
-	if appendRoutine(database, stmt, sourcePlatform) {
-		return nil
-	}
-	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
-		return err
-	}
-	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
-		return err
-	}
-	if handled, err := appendYDBDeclaration(database, document, stmt, sourcePlatform); handled {
-		return err
-	}
-	if appendView(database, stmt, sourcePlatform) {
-		return nil
-	}
-	if appendNamespace(database, stmt, sourcePlatform) {
-		return nil
-	}
-	if handled, err := changeDeclared(database, document, stmt, sourcePlatform); handled {
+	if handled, err := appendFamilyStatement(database, document, stmt, sourcePlatform); handled {
 		return err
 	}
 	switch node := stmt.(type) {
@@ -778,6 +760,34 @@ func appendStatement(
 			"%w: %s", ErrUnmodeledStatement, describeUnmodeledStatement(stmt))
 	}
 	return nil
+}
+
+// appendFamilyStatement applies a statement of a family with a converter of
+// its own: an owner's statement, a routine, a privilege, row security, a YDB
+// object, a view, a namespace, or a change to an earlier declaration. handled
+// is false for any other statement, which [appendStatement] converts itself.
+func appendFamilyStatement(
+	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
+) (handled bool, err error) {
+	if handled, err := applyOwnerStatement(database, document, stmt); handled {
+		return true, err
+	}
+	if appendRoutine(database, stmt, sourcePlatform) {
+		return true, nil
+	}
+	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
+		return true, err
+	}
+	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
+		return true, err
+	}
+	if handled, err := appendYDBDeclaration(database, document, stmt, sourcePlatform); handled {
+		return true, err
+	}
+	if appendView(database, stmt, sourcePlatform) || appendNamespace(database, stmt, sourcePlatform) {
+		return true, nil
+	}
+	return changeDeclared(database, document, stmt, sourcePlatform)
 }
 
 // changeDeclared applies a statement that changes or removes an object an

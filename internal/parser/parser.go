@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/mysql/mysqlschema"
@@ -98,6 +99,12 @@ type Parser struct {
 	// declaredIndexes are the indexes owners' ALTER TABLE operations declare;
 	// see [Parser.DeclaredIndex].
 	declaredIndexes map[*ast.ExtensionAlterOperation]sqlext.Index
+	// declared are the objects the documents read before this one declared;
+	// see [WithDeclared].
+	declared schemaext.Objects
+	// ownerStatements are the values of the owners' statements; see
+	// [Parser.OwnerStatement].
+	ownerStatements map[*ast.ExtensionStatement]sqlext.Value
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -230,6 +237,9 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return nil, fmt.Errorf("expected SQL keyword, got %s at position %d", p.current.Type, p.current.Start)
 	}
 
+	if statement, claimed := p.claimOwnerStatement(); claimed {
+		return statement, nil
+	}
 	keyword := strings.ToUpper(p.current.Value)
 	switch keyword {
 	case "CREATE":
