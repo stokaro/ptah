@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/systemschema"
 )
 
 // encodeOwnerBlocks hands the owners the document: its objects, its tables'
@@ -38,48 +39,71 @@ func (r *renderer) renderAfterTables() {
 }
 
 // renderOwnerBlocks writes the blocks the owners placed at placement, in a
-// table when table is not nil, ordered by type, schema, scope and name so a
-// document's order does not depend on which owner wrote a block or when its
-// owner was registered.
+// table when table is not nil; see [renderer.renderSlot].
 func (r *renderer) renderOwnerBlocks(placement hclext.Placement, table *hclext.Table) {
-	type placed struct {
-		schema string
-		block  hclext.EncodedBlock
-	}
-	var blocks []placed
+	r.renderSlot(placement, table)
+}
+
+// slotEntry is one block of a placement waiting for its place, with what
+// orders it and what writes it.
+type slotEntry struct {
+	blockType string
+	schema    string
+	scope     string
+	name      string
+	write     func()
+}
+
+// renderSlot writes the blocks of a placement, this package's own entries
+// and the blocks the owners placed there, in a table when table is not nil,
+// ordered by type, schema, scope and name so a document's order does not
+// depend on which owner wrote a block or when its owner was registered. A
+// schema that is only where an object is installed does not order it.
+func (r *renderer) renderSlot(placement hclext.Placement, table *hclext.Table, entries ...slotEntry) {
 	for _, block := range r.ownerBlocks {
 		if block.Placement != placement || (table != nil && *block.Table != *table) {
 			continue
 		}
-		blocks = append(blocks, placed{schema: r.ownerSchema(block), block: block})
+		schema := r.ownerSchema(block)
+		order := schema
+		if block.SchemaRole == hclext.SchemaPlacement {
+			order = ""
+		}
+		entries = append(entries, slotEntry{blockType: block.Type, schema: order, scope: block.Scope, name: block.Name,
+			write: func() { r.writeOwnerBlock(block, schema) }})
 	}
-	slices.SortStableFunc(blocks, func(a, b placed) int {
-		return cmp.Or(cmp.Compare(a.block.Type, b.block.Type), cmp.Compare(a.schema, b.schema),
-			cmp.Compare(a.block.Scope, b.block.Scope), cmp.Compare(a.block.Name, b.block.Name))
+	slices.SortStableFunc(entries, func(a, b slotEntry) int {
+		return cmp.Or(cmp.Compare(a.blockType, b.blockType), cmp.Compare(a.schema, b.schema),
+			cmp.Compare(a.scope, b.scope), cmp.Compare(a.name, b.name))
 	})
-	for _, block := range blocks {
-		r.writeOwnerBlock(block.block, block.schema)
+	for _, entry := range entries {
+		entry.write()
 	}
 }
 
-// ownerSchema is the schema an owner's block writes: the one the block names
-// or, unless the block's empty schema is an address of its own, the
-// document's default schema.
+// ownerSchema is the schema an owner's block writes, by what the schema is: a
+// namespace takes an inspected document's default schema when it is blank,
+// an address is left out when it is blank, and a placement takes the default
+// only when it is empty, since a blank name is still a schema.
 func (r *renderer) ownerSchema(block hclext.EncodedBlock) string {
-	if !block.SchemaIsAddress {
+	switch block.SchemaRole {
+	case hclext.SchemaAddress:
+		if strings.TrimSpace(block.Schema) == "" {
+			return ""
+		}
+		return block.Schema
+	case hclext.SchemaPlacement:
+		return cmp.Or(block.Schema, r.defaultSchema)
+	default:
 		return r.schemaFor(block.Schema)
 	}
-	if strings.TrimSpace(block.Schema) == "" {
-		return ""
-	}
-	return block.Schema
 }
 
 // writeOwnerBlock writes a block an owner encoded where it stands: first the
 // losses the owner reports about it, then, unless the block is unwritten or
-// the Atlas-compatible surface leaves its type out, its label, its `schema`
-// reference and its attributes in the owner's order. A block in a table is
-// indented one level and takes no label.
+// the Atlas-compatible surface leaves it out, its label, its `schema` and its
+// attributes in the owner's order. A block in a table is indented one level
+// and takes no label.
 func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 	for _, loss := range block.Losses {
 		r.warn(block.Path, loss)
@@ -95,18 +119,43 @@ func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 		r.line("  }")
 		return
 	}
-	if r.omitRefusedBlock(block.Path, block.Type, block.Name) {
+	if r.omitOwnerBlock(block) {
 		return
 	}
 	r.linef(`%s %s {`, block.Type, quote(block.Name))
-	if schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(schema))
-	}
+	r.writeOwnerSchema(block, schema)
 	for _, attribute := range block.Attributes {
 		r.rawAttr(1, attribute.Name, r.ownerValue(attribute.Value))
 	}
 	r.line("}")
 	r.line("")
+}
+
+// omitOwnerBlock decides an owner's block's fate on the Atlas-compatible
+// surface, by its type, as this package decides its own blocks': an
+// extension by what the document needs of it, any other type by whether the
+// document names the block or something it supplies.
+func (r *renderer) omitOwnerBlock(block hclext.EncodedBlock) bool {
+	if block.Type == blockExtension {
+		return r.omitRefusedExtension(block.Path, extensionBlock{name: block.Name, provides: block.Provides})
+	}
+	return r.omitRefusedBlock(block.Path, block.Type, append([]string{block.Name}, block.Provides...)...)
+}
+
+// writeOwnerSchema writes a block's schema as a reference to the schema
+// block the document then declares, except a placement in a schema the
+// target owns, which is written as a string so the document declares no
+// schema block the server would refuse to create. The common PostgreSQL
+// namespaces are recognized even when the dialect is empty, which keeps
+// dialect-neutral documents from turning placement into a declaration.
+func (r *renderer) writeOwnerSchema(block hclext.EncodedBlock, schema string) {
+	switch {
+	case schema == "":
+	case block.SchemaRole == hclext.SchemaPlacement && systemschema.IsPostgresFamilySystemSchema(r.dialect, schema):
+		r.stringAttr(1, "schema", schema)
+	default:
+		r.rawAttr(1, "schema", r.schemaRef(schema))
+	}
 }
 
 // ownerValue writes an encoded value: a string quoted, a bool bare, a

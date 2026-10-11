@@ -129,7 +129,7 @@ func (hclEncoder) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (
 		}
 		properties = append(properties, labeled{label: property.Label(), block: hclext.EncodedBlock{
 			Type: propertyBlock, Placement: hclext.AfterTables,
-			Schema: property.Schema, SchemaIsAddress: true, Name: property.Name,
+			Schema: property.Schema, SchemaRole: hclext.SchemaAddress, Name: property.Name,
 			Object: object.Ref, Targets: []string{platform.SQLServer},
 			Attributes: hclStrings("table", property.Table, "column", property.Column, "value", property.Value, "comment", property.Comment),
 		}})

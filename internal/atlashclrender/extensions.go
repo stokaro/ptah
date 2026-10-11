@@ -1,21 +1,17 @@
 package atlashclrender
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
 
-	"ptah.run/core/objectidentity"
+	"ptah.run/core/hclext"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
-	"ptah.run/feature/pgextension"
 	"ptah.run/internal/systemschema"
 )
 
-// extensionBlock is one extension block as the document writes it, whether
-// the common model declared the extension or the extension owner did. Both
-// write the same block, so a document reads back the same whichever declared
-// it.
+// extensionBlock is one extension block of the common model as the document
+// writes it, and what the Atlas-compatible surface asks of an extension an
+// owner writes.
 type extensionBlock struct {
 	name        string
 	schema      string
@@ -25,70 +21,61 @@ type extensionBlock struct {
 	provides    []string
 }
 
-// captureExtensions validates the extensions the document declares, from the
-// common model and from the extension owner, before rendering, and orders
-// them by name. A name both declare is refused: the document could write only
-// one block for it, and nothing says which declaration is meant.
-func (r *renderer) captureExtensions() error {
+// refuseRepeatedExtensions refuses an extension the common model declares and
+// an owner writes too: the document could write only one block for it, and
+// nothing says which declaration is meant.
+func (r *renderer) refuseRepeatedExtensions() error {
 	declared := make(map[string]bool, len(r.db.Extensions))
 	for _, extension := range r.db.Extensions {
 		declared[extension.Name] = true
-		r.extensions = append(r.extensions, extensionBlock{name: extension.Name, schema: extension.Schema, version: extension.Version,
-			comment: extension.Comment, ifNotExists: extension.IfNotExists, provides: slices.Clone(extension.Provides)})
 	}
-	objects, err := r.db.FeatureObjects.All()
-	if err != nil {
-		return err
-	}
-	for _, object := range objects {
-		if object.Ref.Kind != objectidentity.Kind(pgextension.ExtensionKind) {
+	for _, block := range r.ownerBlocks {
+		if block.Type != blockExtension {
 			continue
 		}
-		value, ok := object.Value.(*pgextension.DesiredExtension)
-		if !ok {
-			return fmt.Errorf("%w: HCL requires desired extension values", schemaext.ErrInvalidValue)
+		if declared[block.Name] {
+			return fmt.Errorf("%w: extension %q is declared twice", ptaherr.ErrInvalidSchemaDiff, block.Name)
 		}
-		if err := pgextension.ValidateRef(object.Ref); err != nil {
-			return err
-		}
-		if err := pgextension.ValidateDesired(value); err != nil {
-			return err
-		}
-		name := pgextension.Name(object.Ref)
-		if declared[name] {
-			return fmt.Errorf("%w: extension %q is declared twice", ptaherr.ErrInvalidSchemaDiff, name)
-		}
-		declared[name] = true
-		r.extensions = append(r.extensions, extensionBlock{name: name, schema: value.Schema, version: value.Version,
-			comment: value.Comment, ifNotExists: value.IfNotExists, provides: slices.Clone(value.Provides)})
+		declared[block.Name] = true
 	}
-	slices.SortFunc(r.extensions, func(a, b extensionBlock) int { return cmp.Compare(a.name, b.name) })
 	return nil
 }
 
-func (r *renderer) renderExtensions() {
-	for _, extension := range r.extensions {
-		if r.omitRefusedExtension("extensions."+extension.name, extension) {
-			continue
-		}
-		r.linef(`extension %s {`, quote(extension.name))
-		if schema := r.extensionSchemaFor(extension); schema != "" {
-			// The common PostgreSQL namespaces are recognized even when dialect is
-			// empty, which keeps dialect-neutral artifacts from turning placement
-			// into a schema declaration. Target-specific namespaces such as
-			// CockroachDB's crdb_internal still require a concrete dialect.
-			if systemschema.IsPostgresFamilySystemSchema(r.dialect, schema) {
-				r.stringAttr(1, "schema", schema)
-			} else {
-				r.rawAttr(1, "schema", r.schemaRef(schema))
-			}
-		}
-		if extension.ifNotExists {
-			r.trueAttr(1, "if_not_exists")
-		}
-		r.stringAttr(1, "version", extension.version)
-		r.stringAttr(1, "comment", extension.comment)
-		r.line("}")
-		r.line("")
+// renderBeforeTypes writes the blocks the rest of the document may depend
+// on: the extensions, the common model's and the ones owners write, ordered
+// by name, since an extension's schema is only where it is installed.
+func (r *renderer) renderBeforeTypes() {
+	entries := make([]slotEntry, 0, len(r.db.Extensions))
+	for _, extension := range r.db.Extensions {
+		block := extensionBlock{name: extension.Name, schema: extension.Schema, version: extension.Version,
+			comment: extension.Comment, ifNotExists: extension.IfNotExists, provides: slices.Clone(extension.Provides)}
+		entries = append(entries, slotEntry{blockType: blockExtension, name: extension.Name, write: func() { r.renderExtension(block) }})
 	}
+	r.renderSlot(hclext.BeforeTypes, nil, entries...)
+}
+
+// renderExtension writes an extension the common model declares.
+func (r *renderer) renderExtension(extension extensionBlock) {
+	if r.omitRefusedExtension("extensions."+extension.name, extension) {
+		return
+	}
+	r.linef(`extension %s {`, quote(extension.name))
+	if schema := r.extensionSchemaFor(extension); schema != "" {
+		// The common PostgreSQL namespaces are recognized even when dialect is
+		// empty, which keeps dialect-neutral artifacts from turning placement
+		// into a schema declaration. Target-specific namespaces such as
+		// CockroachDB's crdb_internal still require a concrete dialect.
+		if systemschema.IsPostgresFamilySystemSchema(r.dialect, schema) {
+			r.stringAttr(1, "schema", schema)
+		} else {
+			r.rawAttr(1, "schema", r.schemaRef(schema))
+		}
+	}
+	if extension.ifNotExists {
+		r.trueAttr(1, "if_not_exists")
+	}
+	r.stringAttr(1, "version", extension.version)
+	r.stringAttr(1, "comment", extension.comment)
+	r.line("}")
+	r.line("")
 }
