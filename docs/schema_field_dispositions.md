@@ -98,12 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-18 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+17 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `column-core`, `embedded-json` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | goschematodb drops a column's comment, so every commented column plans its comment again |
 | `column-unique` | `mariadb`, `mysql`, `postgres` | both | a column's own UNIQUE does not survive the conversion, so the comparison plans it again |
 | `constraint-pk` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops a primary key declared as a named table constraint, so the converted-back declaration drops the key |
 | `column-enum` | `mariadb`, `mysql`, `oracle`, `sqlserver` | to-catalog | an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild |
@@ -124,7 +123,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-95 known gaps: a conversion or the comparison drops each one on the dialects named.
+93 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -144,14 +143,12 @@ migration nobody asked for.
 | `schemamodel.Constraint.NotValid` | `cockroachdb`, `postgres`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Database.Schemas` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.EmbeddedField.Comment` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `ydb`, `yugabytedb` | from-catalog | goschematodb drops a column's comment; the other direction is a recorded loss |
-| `schemamodel.EmbeddedField.Overrides` | `mysql` | from-catalog | goschematodb drops it: the catalog is the same with and without it |
+| `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Enum.Schema` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Extension.Dialects` | `spanner`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.AutoInc` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Field.Comment` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `ydb`, `yugabytedb` | from-catalog | goschematodb drops a column's comment; the other direction is a recorded loss |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |

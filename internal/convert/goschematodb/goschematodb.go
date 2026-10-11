@@ -251,7 +251,11 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		IsPrimaryKey:          field.Primary,
 		IsUnique:              field.Unique,
 		Collate:               field.Collate,
-		GeneratedKind:         field.GeneratedKind,
+		// The column's own comment, which a read reports beside it. Without
+		// it, a schema file compared with itself planned the comment again
+		// on every commented column.
+		Comment:       field.Comment,
+		GeneratedKind: field.GeneratedKind,
 		// The start and the increment a declaration gives an identity or a
 		// Serial, which a YDB comparison reads a Serial's sequence by: a
 		// description compared with itself has to find them equal.
