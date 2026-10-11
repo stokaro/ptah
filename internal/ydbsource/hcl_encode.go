@@ -53,5 +53,5 @@ func (hclEncoder) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (
 		blocks = append(blocks, hclext.EncodedBlock{Type: coordinationBlock, Placement: hclext.AfterTables,
 			Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source, Object: object.Ref, Attributes: attributes})
 	}
-	return hclext.EncodeResult{Blocks: blocks, Header: header}, nil
+	return hclext.EncodeResult{Blocks: blocks, Header: header, Attributes: settingAttributes(request)}, nil
 }

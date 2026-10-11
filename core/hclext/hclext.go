@@ -333,6 +333,12 @@ type Extension struct {
 	// the HCL writer; see [Set.Encode]. It is optional; without it the
 	// writer reports an object of Kinds as one HCL does not represent.
 	Encoder Encoder
+	// Unrecorded are models whose not-described records an HCL document
+	// cannot carry, such as a YDB secret a read could not inspect: no header
+	// entry and no captured claim spells one. The writer reports such a
+	// record, of an object the document does not hold, as a loss. The
+	// provider that registers the extension owns their desired codecs.
+	Unrecorded []schemaext.Kind
 }
 
 // CoverageRequest is what a document says to one owner's claim.
@@ -418,6 +424,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 		}
 		extension.Kinds = slices.Clone(extension.Kinds)
 		extension.Header = slices.Clone(extension.Header)
+		extension.Unrecorded = slices.Clone(extension.Unrecorded)
 		extension.Blocks = blocks
 		set.extensions = append(set.extensions, extension)
 	}
@@ -658,6 +665,12 @@ func (s Set) Coverage(document CoverageRequest) (schemaext.Coverage, error) {
 // kind as a limit on its own claim; see [Extension.Header].
 func (s Set) ReadsHeader(kind coverage.Kind) bool {
 	return slices.ContainsFunc(s.extensions, func(extension Extension) bool { return containsKind(extension.Header, kind) })
+}
+
+// Unrecorded reports whether an extension of the set says an HCL document
+// cannot carry a not-described record of kind; see [Extension.Unrecorded].
+func (s Set) Unrecorded(kind schemaext.Kind) bool {
+	return slices.ContainsFunc(s.extensions, func(extension Extension) bool { return slices.Contains(extension.Unrecorded, kind) })
 }
 
 // ReadsCapturedCoverage reports whether an extension of the set reads a

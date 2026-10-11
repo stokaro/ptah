@@ -424,16 +424,16 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 // HCL can carry, so a ClickHouse skipping index keeps its type and granularity
 // in the document. A model without a source-property codec stays a facet, and
 // the renderer reports it as a loss rather than writing a partial block. The
-// table facets the renderer handles itself are set aside first: the encoder
-// refuses every table while one facet has no property spelling, and every YDB
-// table read holds column families beside any TTL it has. A YDB index's
-// partitioning is set aside for the same reason.
+// table and index facets an HCL owner writes or reports are set aside first:
+// the encoder refuses every table while one facet has no property spelling,
+// and every YDB table read holds column families beside any TTL it has. A YDB
+// index's partitioning is set aside for the same reason.
 func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
 	if r.db == nil || r.info.Dialect == "" {
 		return r.db, nil
 	}
-	db, written := facetsplit.SetAside(r.db, atlashclrender.WritesTableFacet(r.runtime.HCL()))
-	db, writtenIndexes := facetsplit.SetAsideIndexes(db, atlashclrender.WritesIndexFacet(r.runtime.HCL()))
+	db, written := facetsplit.SetAside(r.db, r.runtime.HCL().Encodes)
+	db, writtenIndexes := facetsplit.SetAsideIndexes(db, r.runtime.HCL().Encodes)
 	for _, encode := range []func(context.Context, *schemamodel.Database, string, schemaproperties.Runtime) (*schemamodel.Database, error){
 		schemaproperties.EncodeTables, schemaproperties.EncodeIndexes,
 	} {

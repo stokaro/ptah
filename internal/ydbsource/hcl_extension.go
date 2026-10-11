@@ -9,7 +9,11 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 )
@@ -31,10 +35,14 @@ const (
 //     node unmanaged, and a captured `ptah:feature-coverage` header.
 //
 // All are Ptah extensions of the format: the pinned Atlas community binary has
-// no YDB driver. The writer writes each node back as the same block, and the
-// captured header with it. The claim enrolls the coordination nodes a document can
-// declare, less the ones its header leaves unmanaged, or exactly the captured
-// header's account.
+// no YDB driver. The writer writes each node back as the same block, the
+// captured header with it, and the index settings as the same attributes. It
+// reports the table settings HCL has no spelling for -- column families,
+// column storage, partitioning -- as losses at their table. The claim enrolls
+// the coordination nodes a document can declare, less the ones its header
+// leaves unmanaged, or exactly the captured header's account. A secret,
+// topic, external object, async replication or transfer a source records as
+// not described is one HCL cannot record.
 func HCL() hclext.Extension {
 	nodeAttributes := make([]hclext.Attribute, 0, len(ydbcoordination.Settings()))
 	for _, setting := range ydbcoordination.Settings() {
@@ -46,7 +54,8 @@ func HCL() hclext.Extension {
 	}
 	return hclext.Extension{
 		Owner: ydbschema.Owner,
-		Kinds: []schemaext.Kind{ydbcoordination.Kind, ydbschema.VectorIndexKind, ydbschema.IndexPartitioningKind},
+		Kinds: []schemaext.Kind{ydbcoordination.Kind, ydbschema.VectorIndexKind, ydbschema.IndexPartitioningKind,
+			ydbschema.ColumnFamiliesKind, ydbschema.ColumnStoreKind, ydbschema.TablePartitioningKind},
 		Blocks: []hclext.Block{
 			{Site: hclext.TopLevel, Type: coordinationBlock, Naming: hclext.SchemaAndName, Attributes: nodeAttributes},
 			{Site: hclext.IndexAttributes, Type: indexBlock, Attributes: indexAttributes},
@@ -56,6 +65,8 @@ func HCL() hclext.Extension {
 		CapturedCoverage: true,
 		Coverage:         hclClaim,
 		Encoder:          hclEncoder{},
+		Unrecorded: []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind,
+			ydbreplication.ReplicationKind, ydbreplication.TransferKind},
 	}
 }
 

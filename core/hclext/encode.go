@@ -82,10 +82,11 @@ type SlotAttributes struct {
 	Slot Slot
 	// Attributes are written into the block. The writer places an attribute
 	// whose name the Atlas layout fixes where that layout puts it, such as a
-	// table's `engine` first and its `charset` after its names, and any
-	// other after the block's own attributes. A table's `engine` takes the
-	// place of the engine the common model holds. The writer refuses an
-	// attribute the block writes itself, such as a column's `type`.
+	// table's `engine` first and its `charset` after its names. A table's
+	// `engine` takes the place of the engine the common model holds. An index
+	// writes any other attribute after its `include`, in the owner's order,
+	// and refuses one it writes itself, such as `columns`. Any other block
+	// refuses an attribute it has no place for.
 	Attributes []EncodedAttribute
 	// Losses are what the document cannot say about the block's object. The
 	// writer reports each where it writes the block, at the path it names the

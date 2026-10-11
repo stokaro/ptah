@@ -25,9 +25,6 @@ func (r *renderer) encodeOwnerBlocks(owners hclext.Set) (hclext.EncodeResult, er
 		return hclext.EncodeResult{}, err
 	}
 	request.Objects, request.Coverage = objects, r.db.FeatureCoverage
-	for _, table := range r.db.Tables {
-		request.Tables = append(request.Tables, hclext.TableFacets{Table: slotTable(table), Facets: table.Facets})
-	}
 	return owners.Encode(context.Background(), request)
 }
 
