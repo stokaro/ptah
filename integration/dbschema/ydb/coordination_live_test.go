@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbtarget"
@@ -163,8 +164,11 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 
 // Plain Atlas HCL does not claim YDB namespace completeness. An explicitly
 // captured empty namespace can request removal, and its header must survive
-// export and parsing before the live planner may act on that absence.
+// export and parsing before the live planner may act on that absence. Both
+// documents are read with the runtime's owners, as the CLI reads them: the
+// YDB owner is the one that reads the captured header.
 func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
+	owners := atlashcl.Options{HCL: must.Must(builtin.New()).HCL()}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -174,7 +178,7 @@ func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
 			c.Cleanup(func() { dropCoordinationDirectory(c, conn, coordinationSchema) })
 			apply(c, conn, []string{"CREATE COORDINATION NODE `ptah_ydb_coordination/plain`"})
 
-			plain, err := atlashcl.Parse([]byte(`schema "ptah_ydb_coordination" {}`), "plain.hcl")
+			plain, err := atlashcl.ParseWithOptions([]byte(`schema "ptah_ydb_coordination" {}`), "plain.hcl", owners)
 			c.Assert(err, qt.IsNil)
 			preserved := planAgainst(c, conn, plain, coordinationSchemas)
 			c.Assert(preserved, qt.HasLen, 0)
@@ -188,7 +192,7 @@ func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
 			}
 			exported, err := atlashclrender.RenderForDialect(declared, "ydb")
 			c.Assert(err, qt.IsNil)
-			complete, err := atlashcl.Parse(exported.Data, "complete.hcl")
+			complete, err := atlashcl.ParseWithOptions(exported.Data, "complete.hcl", owners)
 			c.Assert(err, qt.IsNil)
 			drop := planAgainst(c, conn, complete, coordinationSchemas)
 			c.Assert(drop, qt.DeepEquals, []string{"DROP COORDINATION NODE `ptah_ydb_coordination/plain`"})

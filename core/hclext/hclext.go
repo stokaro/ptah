@@ -28,6 +28,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 )
 
@@ -40,9 +41,19 @@ var ErrUnselected = errors.New("no HCL schema owners were selected")
 // Site is the place in a document where an owner's block may stand.
 type Site string
 
-// TopLevel is a block at the top of a document, beside `table` and `schema`.
-// Its [Declaration] declares objects of the owner.
-const TopLevel Site = "top-level"
+const (
+	// TopLevel is a block at the top of a document, beside `table` and
+	// `schema`. Its [Declaration] declares objects of the owner, or a
+	// setting of the table its labels name.
+	TopLevel Site = "top-level"
+	// IndexAttributes is the frontend's own `index` block inside a table,
+	// whose attributes an owner extends. The [Block] names the attributes,
+	// its Type is "index" and its Naming is empty. Every index block of a
+	// document is claimed, with the index in [Claim.Index], because an
+	// index's type may select the owner's reading without any of the
+	// owner's attributes. Its [Declaration] carries facets of the index.
+	IndexAttributes Site = "index-attributes"
+)
 
 // Naming is how a block's labels name the object it declares.
 type Naming string
@@ -121,6 +132,21 @@ type Claim struct {
 	// Attributes holds the value of each attribute the block writes. An
 	// attribute the block leaves out has no entry.
 	Attributes map[string]Value
+	// Index is the index an [IndexAttributes] claim is about, whose name is
+	// Name, and nil for a claim at another site.
+	Index *Index
+}
+
+// Index is what the frontend read of an index an [IndexAttributes] claim is
+// about.
+type Index struct {
+	// Table is the table the index is on, qualified as the frontend names
+	// it.
+	Table string
+	// Type is the index's `type`, as written.
+	Type string
+	// Operator is the operator class the index names, as written.
+	Operator string
 }
 
 // Request is every block of one document an owner's shapes matched, in the
@@ -142,6 +168,10 @@ type Declaration struct {
 	// directory, and refuses a table the load does not declare and a second
 	// setting of one table. Nil declares none.
 	TableSetting schemaext.Value
+	// Facets are settings of the claim's index, for an [IndexAttributes]
+	// claim, each of one of the extension's Kinds. The frontend adds them to
+	// the index's facets.
+	Facets schemaext.Facets
 }
 
 // Result is an owner's reading of a [Request].
@@ -188,12 +218,34 @@ type Extension struct {
 	Blocks []Block
 	// Decoder reads the blocks. It is required with Blocks.
 	Decoder Decoder
+	// Header lists the kinds a document's `ptah:not-described` header may
+	// name that the owner reads as limits on its own claim, rather than as
+	// the common coverage vocabulary, such as a YDB coordination node the
+	// document leaves unmanaged.
+	Header []coverage.Kind
+	// CapturedCoverage reports that the owner reads a document's captured
+	// `ptah:feature-coverage` header: the exact claim an export wrote. A
+	// document carrying one is refused unless an owner of the set reads it.
+	CapturedCoverage bool
 	// Coverage is the knowledge every HCL document holds about Kinds, such
 	// as that a document without a synonym block describes a database
 	// without a synonym. An HCL document names no target, so the claim
-	// holds for every document. It is optional; without it the owner claims
-	// nothing.
-	Coverage func() (schemaext.Coverage, error)
+	// holds for every document. It is handed the document's header entries
+	// of the Header kinds, and its captured header where CapturedCoverage is
+	// set. It is optional; without it the owner claims nothing.
+	Coverage func(request CoverageRequest) (schemaext.Coverage, error)
+}
+
+// CoverageRequest is what a document's header says to one owner's claim.
+type CoverageRequest struct {
+	// Limits are the header's `ptah:not-described` entries of the owner's
+	// Header kinds, in the header's order.
+	Limits []coverage.Object
+	// Captured are the bodies of the document's `ptah:feature-coverage`
+	// header comments, marker included, in order: text, which
+	// schemaext.Registry.DecodeCoverageHeaderBodies decodes. Only an owner
+	// that sets CapturedCoverage receives them.
+	Captured []string
 }
 
 // Set is the frozen collection of extensions one parse selects. The zero
@@ -259,6 +311,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 			blocks = append(blocks, block)
 		}
 		extension.Kinds = slices.Clone(extension.Kinds)
+		extension.Header = slices.Clone(extension.Header)
 		extension.Blocks = blocks
 		set.extensions = append(set.extensions, extension)
 	}
@@ -266,13 +319,17 @@ func NewSet(extensions ...Extension) (Set, error) {
 }
 
 func validateBlock(owner string, block Block) error {
-	if block.Site != TopLevel {
+	if block.Site != TopLevel && block.Site != IndexAttributes {
 		return fmt.Errorf("HCL block %q of %s names unknown site %q", block.Type, owner, block.Site)
 	}
 	if strings.TrimSpace(block.Type) == "" {
 		return fmt.Errorf("HCL extension of %s declares a block without a type", owner)
 	}
-	if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName {
+	if block.Site == IndexAttributes {
+		if block.Type != "index" || block.Naming != "" {
+			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
+		}
+	} else if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName {
 		return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
 	}
 	names := map[string]bool{"schema": true}
@@ -338,6 +395,7 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 		}
 		positions[match.Shape.extension] = append(positions[match.Shape.extension], position)
 	}
+	var earliest *ClaimError
 	for _, index := range order {
 		extension := s.extensions[index]
 		request := Request{Claims: make([]Claim, 0, len(positions[index]))}
@@ -346,7 +404,12 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 		}
 		result, err := extension.Decoder.DecodeHCL(ctx, request)
 		if refused, ok := errors.AsType[*ClaimError](err); ok && refused.Claim >= 0 && refused.Claim < len(request.Claims) {
-			return nil, &ClaimError{Claim: positions[index][refused.Claim], Err: refused.Err}
+			// Another owner may refuse a claim the document holds earlier,
+			// and the document is refused where it is first wrong.
+			if claim := positions[index][refused.Claim]; earliest == nil || claim < earliest.Claim {
+				earliest = &ClaimError{Claim: claim, Err: refused.Err}
+			}
+			continue
 		}
 		if err != nil {
 			return nil, err
@@ -365,6 +428,9 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 			declarations[position] = result.Declarations[i]
 		}
 	}
+	if earliest != nil {
+		return nil, earliest
+	}
 	return declarations, nil
 }
 
@@ -378,6 +444,7 @@ func checkDeclaration(extension Extension, declaration Declaration) error {
 	if declaration.TableSetting != nil {
 		kinds = append(kinds, declaration.TableSetting.Kind())
 	}
+	kinds = append(kinds, declaration.Facets.Kinds()...)
 	for _, kind := range kinds {
 		if !slices.Contains(extension.Kinds, kind) {
 			return fmt.Errorf("%w: HCL decoder of %s answered a model of kind %q, which its extension does not declare",
@@ -387,23 +454,58 @@ func checkDeclaration(extension Extension, declaration Declaration) error {
 	return nil
 }
 
-// Coverage combines the claims of every extension of the set. A set without
-// a claim has none.
-func (s Set) Coverage() (schemaext.Coverage, error) {
+// Coverage combines the claims of every extension of the set, each handed
+// the entries of header whose kind it reads and, where it reads one, the
+// captured header. A set without a claim has none. An extension's error is
+// returned as it is.
+func (s Set) Coverage(header []coverage.Object, captured []string) (schemaext.Coverage, error) {
 	var combined schemaext.Coverage
 	for _, extension := range s.extensions {
 		if extension.Coverage == nil {
 			continue
 		}
-		claim, err := extension.Coverage()
+		request := CoverageRequest{}
+		for _, entry := range header {
+			if containsKind(extension.Header, entry.Kind) {
+				request.Limits = append(request.Limits, entry)
+			}
+		}
+		if extension.CapturedCoverage {
+			request.Captured = slices.Clone(captured)
+		}
+		// An owner's refusal is the reader's refusal of the document, in the
+		// owner's words, so it is not wrapped.
+		claim, err := extension.Coverage(request)
 		if err != nil {
-			return schemaext.Coverage{}, fmt.Errorf("coverage of %s: %w", extension.Owner, err)
+			return schemaext.Coverage{}, err
 		}
 		if combined, err = combined.Combine(claim); err != nil {
-			return schemaext.Coverage{}, fmt.Errorf("coverage of %s: %w", extension.Owner, err)
+			return schemaext.Coverage{}, err
 		}
 	}
 	return combined, nil
+}
+
+// ReadsHeader reports whether an extension of the set reads a header entry of
+// kind as a limit on its own claim; see [Extension.Header].
+func (s Set) ReadsHeader(kind coverage.Kind) bool {
+	return slices.ContainsFunc(s.extensions, func(extension Extension) bool { return containsKind(extension.Header, kind) })
+}
+
+// ReadsCapturedCoverage reports whether an extension of the set reads a
+// captured feature coverage header; see [Extension.CapturedCoverage].
+func (s Set) ReadsCapturedCoverage() bool {
+	return slices.ContainsFunc(s.extensions, func(extension Extension) bool { return extension.CapturedCoverage })
+}
+
+// containsKind compares kinds as a header spells them, ignoring case and
+// surrounding space. It lowers both rather than folding them, as core/sqlext
+// does: [strings.EqualFold] also matches U+017F to "s".
+func containsKind(kinds []coverage.Kind, kind coverage.Kind) bool {
+	want := strings.ToLower(strings.TrimSpace(string(kind)))
+	return slices.ContainsFunc(kinds, func(candidate coverage.Kind) bool {
+		return strings.ToLower(strings.TrimSpace(string(candidate))) == want
+	})
 }
 
 // Runtime supplies the HCL extensions of one explicit provider selection, so

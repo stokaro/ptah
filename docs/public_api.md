@@ -2688,7 +2688,9 @@ SQL owners of its `lint.Runtime`.
 an HCL document carries. An `Extension` registers each block as a `Block`
 shape: the site it stands at, its type, how its labels name the object
 (`SchemaAndName`, or `SchemaAndQualifiedName`, where a one-label `schema.name`
-names the schema too), and the attributes it takes and of which `Kind`.
+names the schema too), and the attributes it takes and of which `Kind`. A
+shape at the `IndexAttributes` site adds attributes to the reader's own `index`
+block instead.
 
 - The reader checks a block against its shape with the refusals it gives its
   own blocks, including the tolerance for unknown names.
@@ -2700,9 +2702,17 @@ names the schema too), and the attributes it takes and of which `Kind`.
 - Once a document is read, the owner's `Decoder` gets every block of its in one
   call and returns, for each, the objects it declares and a `TableSetting` on
   the table its labels name, which the reader attaches once the load's tables
-  are known. A `ClaimError` refuses one block, positioned at it.
+  are known. An owner of index attributes gets every `index` block, with the
+  table, type and operator the reader read in `Claim.Index`, and returns the
+  `Facets` the reader adds to that index. A `ClaimError` refuses one block,
+  positioned at it. Of an owner's refusal and the reader's own, the reader
+  reports the one earlier in the document, so the result does not depend on
+  when the owner runs.
 - `Extension.Coverage` is the claim every HCL document makes, since a document
-  names no target.
+  names no target. Its `CoverageRequest` holds the header entries of the kinds
+  the extension lists in `Header`, and, when `CapturedCoverage` is set, the
+  bodies of the document's `ptah:feature-coverage` header. A document with
+  that header is refused when no selected owner reads it.
 
 `engine.Provider.HCL` registers an extension, and `engine.Runtime.HCL` returns
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
@@ -2710,12 +2720,15 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 
 `synonym.HCL` reads the `synonym` block, `tssource.HCL` the `hypertable`
 and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
-`extended_property` block. `atlascompat.ParseAtlasHCL` and
-`ParseAtlasHCLFile` select no owner, so those blocks are refused there as
-unsupported blocks, and so is each owner block whose owner takes it over;
-`ParseAtlasHCLWithOptions` takes the owners in `ParseHCLOptions.HCL`, usually
-a runtime's HCL set. This changes behavior; pre-v1, so no compatibility is
-owed.
+`extended_property` block. `ydbsource.HCL` reads the `coordination_node` block,
+the vector and partitioning attributes of an `index` block, the
+`coordination_node` header entries and the captured header.
+
+`atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
+blocks and attributes and the captured header are refused there, and so is
+each owner block whose owner takes it over. `ParseAtlasHCLWithOptions` takes
+the owners in `ParseHCLOptions.HCL`, usually a runtime's HCL set. This changes
+behavior; pre-v1, so no compatibility is owed.
 
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into

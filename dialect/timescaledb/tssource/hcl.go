@@ -30,8 +30,10 @@ func HCL() hclext.Extension {
 				{Name: "as", Kind: hclext.String}, {Name: "materialized_only", Kind: hclext.Bool}, {Name: "comment", Kind: hclext.Text},
 			}},
 		},
-		Decoder:  hclDecoder{},
-		Coverage: func() (schemaext.Coverage, error) { return tsschema.CompleteCoverage(schemaext.Desired) },
+		Decoder: hclDecoder{},
+		Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) {
+			return tsschema.CompleteCoverage(schemaext.Desired)
+		},
 	}
 }
 

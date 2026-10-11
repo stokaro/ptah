@@ -12,10 +12,13 @@ import (
 )
 
 // ownerClaim is a block an owner's shape matched, waiting for the owner's
-// declaration, and the block a refusal is positioned at.
+// declaration, and the block a refusal is positioned at. index is where the
+// claimed index sits in the document's indexes, for an [hclext.IndexAttributes]
+// claim, and -1 for another.
 type ownerClaim struct {
 	block *hclsyntax.Block
 	match hclext.Match
+	index int
 }
 
 // claimOwnerBlock reads a block an owner's shape matches with the refusals
@@ -47,25 +50,55 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	if err := p.rejectUnsupportedAttrs(block, supported, block.Type); err != nil {
 		return err
 	}
+	values, err := p.ownerValues(block, shape)
+	if err != nil {
+		return err
+	}
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, match: hclext.Match{Shape: shape,
+		Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values}}})
+	return nil
+}
+
+// claimOwnerIndex records an index block, the one at position in the
+// document's indexes, for the owner that reads attributes of index blocks.
+// Every index is claimed, whether or not it writes the owner's attributes,
+// because its type may select the owner's reading; the owner's attributes were
+// admitted on the block by rejectUnsupportedIndexAttrs.
+func (p *parser) claimOwnerIndex(block *hclsyntax.Block, position int) error {
+	shape, owned := p.owners.Lookup(hclext.IndexAttributes, "index")
+	if !owned {
+		return nil
+	}
+	values, err := p.ownerValues(block, shape)
+	if err != nil {
+		return err
+	}
+	index := p.db.Indexes[position]
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: position, match: hclext.Match{Shape: shape,
+		Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values,
+			Index: &hclext.Index{Table: index.TableName, Type: index.Type, Operator: index.Operator}}}})
+	return nil
+}
+
+// ownerValues reads the attributes of shape that block writes, each as its
+// kind and in the order the shape lists them.
+func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape) (map[string]hclext.Value, error) {
 	values := make(map[string]hclext.Value, len(shape.Block.Attributes))
 	for _, attribute := range shape.Block.Attributes {
-		attr := block.Body.Attributes[attribute.Name]
-		if attr == nil {
+		if block.Body.Attributes[attribute.Name] == nil {
 			continue
 		}
 		// Each attribute is evaluated once: a print() call in it prints
 		// once, as it does in a block of this package's own.
 		value, present, err := p.ownerValue(block, attribute)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if present {
 			values[attribute.Name] = value
 		}
 	}
-	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, match: hclext.Match{Shape: shape,
-		Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values}}})
-	return nil
+	return values, nil
 }
 
 // ownerValue reads one attribute as its kind: a [hclext.String] through
@@ -117,6 +150,14 @@ func (p *parser) readOwnerClaims() error {
 				return p.blockError(claim.block, "%s %s is declared twice: %v", claim.block.Type, qualifiedName(claim.match.Claim), err)
 			}
 			p.db.FeatureObjects = objects
+		}
+		if claim.index >= 0 && declaration.Facets.Len() > 0 {
+			index := &p.db.Indexes[claim.index]
+			facets, err := index.Facets.Merge(declaration.Facets)
+			if err != nil {
+				return p.blockError(claim.block, "index %q: %v", index.Name, err)
+			}
+			index.Facets = facets
 		}
 		if declaration.TableSetting != nil {
 			p.tableSettings = append(p.tableSettings, TableSetting{Schema: claim.match.Claim.Schema, Table: claim.match.Claim.Name,

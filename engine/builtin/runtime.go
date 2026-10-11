@@ -170,6 +170,7 @@ func New() (*engine.Runtime, error) {
 			registerYDBIndexPartitioningServices(&provider, name)
 			provider.Annotations = append(provider.Annotations, ydbsource.Annotations())
 			provider.YAML = append(provider.YAML, ydbsource.YAML())
+			provider.HCL = append(provider.HCL, ydbsource.HCL())
 			provider.SQL = append(provider.SQL, ydbsql.SQL())
 			// The YDB state a read records and does not describe, which a
 			// document's header may name.

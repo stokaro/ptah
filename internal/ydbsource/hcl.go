@@ -15,11 +15,18 @@ import (
 // independently of the runtime's installed providers.
 // The boolean reports an explicit versioned header, for lossless file splitting.
 func ReadHCLCoverage(document string, limits Limits) (schemaext.Coverage, bool, error) {
+	return readHCLCoverage(schemaext.CoverageHeaderBodies(document), limits)
+}
+
+// readHCLCoverage is [ReadHCLCoverage] over the bodies of a document's
+// captured feature coverage header, which is what the HCL frontend hands the
+// owner rather than the document.
+func readHCLCoverage(captured []string, limits Limits) (schemaext.Coverage, bool, error) {
 	registry, err := hclCoverageRegistry()
 	if err != nil {
 		return schemaext.Coverage{}, false, err
 	}
-	known, found, err := registry.DecodeCoverageHeader(context.Background(), schemaext.Desired, document)
+	known, found, err := registry.DecodeCoverageHeaderBodies(context.Background(), schemaext.Desired, captured)
 	if err != nil {
 		return schemaext.Coverage{}, false, err
 	}

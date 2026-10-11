@@ -40,6 +40,26 @@ func (r Registry) EncodeCoverageHeader(ctx context.Context, representation Repre
 // malformed JSON, unknown models, and a different representation are refused.
 // Without a directive it returns an empty account for the requested direction.
 func (r Registry) DecodeCoverageHeader(ctx context.Context, representation Representation, document string) (Coverage, bool, error) {
+	return r.DecodeCoverageHeaderBodies(ctx, representation, CoverageHeaderBodies(document))
+}
+
+// CoverageHeaderBodies returns the comment bodies of document's leading header
+// that carry [CoverageHeaderMarker], marker included, in order.
+func CoverageHeaderBodies(document string) []string {
+	var bodies []string
+	for body := range coverage.HeaderComments(document) {
+		if strings.HasPrefix(body, CoverageHeaderMarker) {
+			bodies = append(bodies, body)
+		}
+	}
+	return bodies
+}
+
+// DecodeCoverageHeaderBodies is [Registry.DecodeCoverageHeader] over the
+// header bodies [CoverageHeaderBodies] returns, for a reader that hands the
+// header to the owner of its models rather than the document. A body without
+// the marker is refused, and so is a second body.
+func (r Registry) DecodeCoverageHeaderBodies(ctx context.Context, representation Representation, bodies []string) (Coverage, bool, error) {
 	if err := codecContext(ctx); err != nil {
 		return Coverage{}, false, err
 	}
@@ -48,10 +68,10 @@ func (r Registry) DecodeCoverageHeader(ctx context.Context, representation Repre
 		return Coverage{}, false, err
 	}
 	found := false
-	for body := range coverage.HeaderComments(document) {
+	for _, body := range bodies {
 		data, recognized := strings.CutPrefix(body, CoverageHeaderMarker)
 		if !recognized {
-			continue
+			return Coverage{}, false, fmt.Errorf("%w: a feature coverage header body must open with %s", ErrInvalidValue, CoverageHeaderMarker)
 		}
 		if found {
 			return Coverage{}, false, fmt.Errorf("%w: duplicate feature coverage header", ErrDuplicate)

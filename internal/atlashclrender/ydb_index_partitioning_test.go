@@ -16,6 +16,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/planner"
@@ -69,7 +70,7 @@ func TestYDBIndexPartitioning_HCLRoundTrip(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			// The block writes the settings, so nothing reports them lost.
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-			parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+			parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Indexes, qt.HasLen, 1)
 			c.Assert(heldIndexPartitioning(c, parsed.Indexes[0].Facets), qt.DeepEquals, test.spec)

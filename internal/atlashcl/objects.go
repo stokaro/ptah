@@ -20,7 +20,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/pgpolicysource"
@@ -1937,54 +1936,6 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 		return nil, p.blockError(block, "%s attribute %q must be an integer within the int64 range", label, name)
 	}
 	return &result, nil
-}
-
-// parseCoordinationNode parses a top-level coordination_node block into a
-// an owned YDB declaration.
-//
-// It is a Ptah extension, as the synonym block is: Atlas has no YDB driver,
-// so no document of its could name a node. The settings are string
-// attributes spelled as the annotation spells them, and are read and checked
-// by dialect/ydb/ydbcoordination, so a value the annotation refuses is refused
-// here too.
-func (p *parser) parseCoordinationNode(block *hclsyntax.Block) error {
-	schema, name, err := p.objectSchemaAndName(block, "coordination_node")
-	if err != nil {
-		return err
-	}
-	if err := p.rejectNestedBlocks(block, "coordination_node"); err != nil {
-		return err
-	}
-	allowed := map[string]bool{"schema": true}
-	for _, setting := range ydbcoordination.Settings() {
-		allowed[setting] = true
-	}
-	if err := p.rejectUnsupportedAttrs(block, allowed, "coordination_node"); err != nil {
-		return err
-	}
-	if err := ydbcoordination.RefuseName(schema, name); err != nil {
-		return p.blockError(block, "%v", err)
-	}
-	values := make(map[string]string)
-	for _, setting := range ydbcoordination.Settings() {
-		if block.Body.Attributes[setting] == nil {
-			continue
-		}
-		value, err := p.stringAttr(block, setting, "coordination_node")
-		if err != nil {
-			return err
-		}
-		values[setting] = value
-	}
-	spec, err := ydbcoordination.ParseDeclaration(values)
-	if err != nil {
-		return p.blockError(block, "coordination_node %q: %v", name, err)
-	}
-	p.db.FeatureObjects, err = p.db.FeatureObjects.With(ydbcoordination.DesiredObject(schema, name, "", spec))
-	if err != nil {
-		return p.blockError(block, "coordination_node %q: %v", name, err)
-	}
-	return nil
 }
 
 // TableSetting is a table setting a document declares in a block of its own,

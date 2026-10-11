@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderInspectedForAtlasCLIWritesAYDBVectorIndex writes a vector index's
@@ -69,7 +70,7 @@ func TestRenderInspectedForAtlasCLIWritesAYDBVectorIndex(t *testing.T) {
 
 			result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.YDB, "")
 			c.Assert(err, qt.IsNil)
-			parsed, err := atlashcl.Parse(result.Data, "schema.hcl")
+			parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
