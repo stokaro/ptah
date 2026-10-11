@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/cockroachtype"
+	"ptah.run/internal/columnkey"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/oracletype"
@@ -83,7 +84,7 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
 		Enums:       toDBEnums(db.Enums),
 		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
-		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct, dialect),
+		Constraints: toDBConstraints(db, tableByStruct, dialect),
 		Extensions:  toDBExtensions(db.Extensions),
 		Functions:   toDBFunctions(db.Functions),
 		Sequences:   toDBSequences(db.Sequences),
@@ -386,13 +387,8 @@ func toDBIndexParts(parts []schemamodel.IndexPart, indexOperator string) []catal
 	return converted
 }
 
-func toDBConstraints(
-	tablesList []schemamodel.Table,
-	fields []schemamodel.Field,
-	constraints []schemamodel.Constraint,
-	tables map[string]schemamodel.Table,
-	dialect string,
-) []catalog.Constraint {
+func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamodel.Table, dialect string) []catalog.Constraint {
+	tablesList, fields, constraints := declared.Tables, declared.Fields, declared.Constraints
 	fieldsByStruct := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
 		fieldsByStruct[field.StructName] = append(fieldsByStruct[field.StructName], field)
@@ -493,6 +489,9 @@ func toDBConstraints(
 				appendConstraint(constraint)
 			}
 		}
+		for _, key := range columnOwnKeys(declared, table, fieldsByStruct[table.StructName], dialect) {
+			appendConstraint(key)
+		}
 		// A table's `checks` list renders as named CHECKs, and the comparison's
 		// other side holds them. Left out here, a document compared with itself
 		// planned every entry as an addition.
@@ -537,6 +536,39 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 // toDBFieldConstraints converts the CHECK and the foreign key a column declares.
 // checkName is the name the column's CHECK takes; see
 // [schemaprep.ColumnCheckNames].
+// columnOwnKeys describes the key each column's own UNIQUE builds, under the
+// name the server gives it, on the engines whose naming [columnkey] measures.
+//
+// The comparison reads such a column's uniqueness from the database key with
+// that name, by the same [columnkey.Name] and [columnkey.Taken] it asks here.
+// Without the key, a document compared with itself read every UNIQUE column
+// as one without its key, and the plan added the key again.
+func columnOwnKeys(declared *schemamodel.Database, table schemamodel.Table, fields []schemamodel.Field, dialect string) []catalog.Constraint {
+	if !columnkey.Named(dialect) {
+		return nil
+	}
+	taken := columnkey.Taken(dialect, []*schemamodel.Database{declared}, table)
+	var keys []catalog.Constraint
+	for _, field := range fields {
+		if !field.Unique {
+			continue
+		}
+		name, ok := columnkey.Name(dialect, table.Name, field.Name, taken)
+		if !ok {
+			continue
+		}
+		keys = append(keys, catalog.Constraint{
+			Name:        name,
+			TableName:   table.Name,
+			Schema:      table.Schema,
+			Type:        "UNIQUE",
+			ColumnName:  field.Name,
+			ColumnNames: []string{field.Name},
+		})
+	}
+	return keys
+}
+
 func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field, checkName string) []catalog.Constraint {
 	var out []catalog.Constraint
 	if field.Check != "" {
