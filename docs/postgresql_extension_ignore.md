@@ -63,6 +63,7 @@ import (
     "ptah.run/core/goschema"
     "ptah.run/dbschema"
     "ptah.run/engine/builtin"
+    "ptah.run/feature/pgextension"
     "ptah.run/migration/schemadiff"
 )
 
@@ -98,9 +99,13 @@ func main() {
         panic(err)
     }
     
-    // plpgsql in database will NOT be marked for removal
-    fmt.Printf("Extensions to add: %v\n", diff.ExtensionsAdded)
-    fmt.Printf("Extensions to remove: %v\n", diff.ExtensionsRemoved)
+    // The extension owner's changes are in diff.FeatureChanges. plpgsql in
+    // the database is not among them: the default list ignores it.
+    for _, record := range diff.FeatureChanges {
+        if change, ok := record.Value.(*pgextension.Change); ok {
+            fmt.Printf("%s: installed %v, declared %v\n", pgextension.Name(record.Subject), change.Before, change.After)
+        }
+    }
 }
 ```
 

@@ -131,11 +131,6 @@ func reverseSchemaDiffWithPrior(
 		// in the rollback too, and its down file says so the same way.
 		SkippedFeatures: slices.Clone(diff.SkippedFeatures),
 
-		// Reverse extension operations
-		ExtensionsAdded:    diff.ExtensionsRemoved, // Extensions to remove become extensions to add
-		ExtensionsRemoved:  diff.ExtensionsAdded,   // Extensions to add become extensions to remove
-		ExtensionsModified: reverseExtensionDiffs(diff.ExtensionsModified),
-
 		// Reverse function operations. A removed routine of either kind comes
 		// back as an addition carrying its own kind, so the two removal lists
 		// merge into one addition list without losing which was which.

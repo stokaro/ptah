@@ -32,7 +32,7 @@ for expected in \
 	"2. Custom Ignore List (ignore 'adminpack' only):" \
 	"3. Additional Ignored Extensions (default + 'adminpack'):" \
 	'4. Manage All Extensions (no ignoring):' \
-	'Extensions to remove: [{adminpack public true 2.1  [] []} {plpgsql pg_catalog true 1.0  [] []}]'; do
+	'Extensions to remove: [adminpack plpgsql]'; do
 	grep -qF "$expected" "$work_dir/extensions.txt" || {
 		echo "check-examples: extension_ignore did not print $expected" >&2
 		exit 1

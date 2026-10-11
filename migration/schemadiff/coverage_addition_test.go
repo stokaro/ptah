@@ -76,30 +76,6 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	}
 }
 
-func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T) {
-	for _, ifNotExists := range []bool{false, true} {
-		t.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(t *testing.T) {
-			c := qt.New(t)
-			desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-				Name:        "citext",
-				Schema:      "extensions",
-				IfNotExists: ifNotExists,
-			}}}
-			current := &catalog.Database{}
-			current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
-
-			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
-			c.Assert(err, qt.IsNil)
-
-			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-			c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
-				Kind: coverage.Extension,
-				Name: "citext",
-			}})
-		})
-	}
-}
-
 // TestAPolicyAdditionSurvivesAReadThatDidNotLook covers the kind whose guard
 // belongs to the planner rather than to the declaration: an RLS policy is
 // emitted as `DROP POLICY IF EXISTS` followed by `CREATE POLICY`, measured on
@@ -148,15 +124,6 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 			notDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded.Names() },
 			wantWithheld: []coverage.Object{{Kind: coverage.Sequence, Name: "public.s1"}},
-		},
-		{
-			name: "an extension declared without if_not_exists",
-			desired: func() *schemamodel.Database {
-				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
-			},
-			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded.Names() },
-			wantWithheld: []coverage.Object{{Kind: coverage.Extension, Name: "citext"}},
 		},
 		{
 			name: "a role, which has no conditional creation at all",
@@ -213,14 +180,6 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded.Names() },
 			wantPlanned: []string{"public.s1"},
-		},
-		{
-			name: "an extension declared without if_not_exists",
-			desired: func() *schemamodel.Database {
-				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
-			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded.Names() },
-			wantPlanned: []string{"citext"},
 		},
 		{
 			name: "a role",
@@ -283,21 +242,21 @@ func TestWithheldAdditionsAreOrdered(t *testing.T) {
 	c := qt.New(t)
 
 	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "citext"}, {Name: "btree_gist"}},
+		Roles: []schemamodel.Role{{Name: "writer", Login: true}, {Name: "auditor", Login: true}},
 		Sequences: []schemamodel.Sequence{
 			{Name: "b_seq", Schema: "public"},
 			{Name: "a_seq", Schema: "public"},
 		},
 	}
 	database := &catalog.Database{}
-	database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension, coverage.Sequence)
+	database.NotDescribed = coverage.Set{}.WithKind(coverage.Role, coverage.Sequence)
 
 	_, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{
-		{Kind: coverage.Extension, Name: "btree_gist"},
-		{Kind: coverage.Extension, Name: "citext"},
+		{Kind: coverage.Role, Name: "auditor"},
+		{Kind: coverage.Role, Name: "writer"},
 		{Kind: coverage.Sequence, Name: "public.a_seq"},
 		{Kind: coverage.Sequence, Name: "public.b_seq"},
 	})
@@ -311,12 +270,12 @@ func TestAGuardIsNotAnExcuseToIgnoreARemovalRecord(t *testing.T) {
 	c := qt.New(t)
 
 	desired := &schemamodel.Database{}
-	desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
-	database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
+	desired.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
+	database := &catalog.Database{Sequences: []catalog.Sequence{{Name: "s1", Schema: "public"}}}
 
 	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(undecided.Common, qt.HasLen, 0)
 }

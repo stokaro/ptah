@@ -409,9 +409,6 @@ func rejectUnsupportedSchemaObjects(diff *difftypes.SchemaDiff) error {
 	if names := changedNames(diff.MaterializedViewsAdded.Names(), diff.MaterializedViewsRemoved.Names(), materializedViewNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("materialized views are not supported: %s", strings.Join(names, ", "))
 	}
-	if names := changedNames(diff.ExtensionsAdded.Names(), diff.ExtensionsRemoved.Names(), extensionNames(diff)); len(names) > 0 {
-		return unsupportedFeaturef("extensions are not supported: %s", strings.Join(names, ", "))
-	}
 	if names := changedNames(diff.FunctionsAdded.Names(), diff.FunctionsRemoved.Names(), functionNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("functions are not supported: %s", strings.Join(names, ", "))
 	}
@@ -1143,14 +1140,6 @@ func materializedViewNames(diff *difftypes.SchemaDiff) []string {
 	names := make([]string, 0, len(diff.MaterializedViewsModified))
 	for _, view := range diff.MaterializedViewsModified {
 		names = append(names, view.ViewName)
-	}
-	return names
-}
-
-func extensionNames(diff *difftypes.SchemaDiff) []string {
-	names := make([]string, 0, len(diff.ExtensionsModified))
-	for _, extension := range diff.ExtensionsModified {
-		names = append(names, extension.Name)
 	}
 	return names
 }

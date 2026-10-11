@@ -18,11 +18,7 @@ import (
 // freshYugabyteDB is what a YugabyteDB 2026.1.2 database made by CREATE
 // DATABASE reports, before anybody creates anything in it.
 func freshYugabyteDB() *catalog.Database {
-	return &catalog.Database{Extensions: []catalog.Extension{
-		{Name: "pg_stat_statements", Schema: "pg_catalog", Version: "1.10-yb-2.1"},
-		{Name: "plpgsql", Schema: "pg_catalog", Version: "1.0"},
-		{Name: "postgres_fdw", Schema: "pg_catalog", Version: "1.1"},
-	}}
+	return holdingOwnerExtensions("pg_catalog", "pg_stat_statements", "plpgsql", "postgres_fdw")
 }
 
 // removedExtensionNames lists the extensions a comparison plans to drop.
@@ -33,11 +29,8 @@ func removedExtensionNames(c *qt.C, desired *schemamodel.Database, database *cat
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, database,
 		catalog.ServerInfo{Dialect: dialect, Capabilities: caps}, opts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	names := make([]string, 0, len(diff.ExtensionsRemoved))
-	for _, removed := range diff.ExtensionsRemoved {
-		names = append(names, removed.Name)
-	}
-	return names
+	_, dropped := installedAndDropped(diff)
+	return append(make([]string, 0, len(dropped)), dropped...)
 }
 
 // A YugabyteDB database starts with pg_stat_statements and postgres_fdw, and a
@@ -72,7 +65,7 @@ func TestCompareWithDatabaseInfo_ServerInstalledExtensionsAreNotDropped(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			removed := removedExtensionNames(c, &schemamodel.Database{}, freshYugabyteDB(), test.dialect, test.caps, test.opts)
+			removed := removedExtensionNames(c, declaringOwnerExtensions(), freshYugabyteDB(), test.dialect, test.caps, test.opts)
 
 			c.Assert(removed, qt.DeepEquals, test.want)
 		})
@@ -83,17 +76,14 @@ func TestCompareWithDatabaseInfo_ServerInstalledExtensionsAreNotDropped(t *testi
 // a declaration of it on that line is created as any other would be.
 func TestCompareWithDatabaseInfo_AServerExtensionALineLacksIsCreated(t *testing.T) {
 	c := qt.New(t)
-	database := &catalog.Database{Extensions: []catalog.Extension{
-		{Name: "pg_stat_statements", Schema: "pg_catalog", Version: "1.10-yb-2.1"},
-		{Name: "plpgsql", Schema: "pg_catalog", Version: "1.0"},
-	}}
-	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "postgres_fdw"}}}
+	database := holdingOwnerExtensions("pg_catalog", "pg_stat_statements", "plpgsql")
+	desired := declaringOwnerExtensions("postgres_fdw")
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database,
 		catalog.ServerInfo{Dialect: platform.YugabyteDB, Capabilities: capability.YugabyteDB25()}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.ExtensionsAdded, qt.HasLen, 1)
-	c.Assert(diff.ExtensionsAdded[0].Name, qt.Equals, "postgres_fdw")
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	installed, dropped := installedAndDropped(diff)
+	c.Assert(installed, qt.DeepEquals, []string{"postgres_fdw"})
+	c.Assert(dropped, qt.HasLen, 0)
 }

@@ -13,8 +13,10 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -1284,504 +1286,51 @@ func TestPlanner_GenerateMigrationAST_AnIndexTheDeclarationLacksIsStillCreated(t
 	c.Assert(nodes, qt.HasLen, 1)
 }
 
-func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
-		{Name: "pgcrypto", Schema: " Extension Store "},
-	}}
-	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "pgcrypto", Schema: " Extension Store ",
-	}}}
-
-	nodes, err := postgres.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
-		withDeclaredObjects(diff, desired),
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 2)
-	schema, ok := nodes[0].(*ast.CreateSchemaNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(schema.Name, qt.Equals, " Extension Store ")
-	c.Assert(schema.IfNotExists, qt.IsTrue)
-	extension, ok := nodes[1].(*ast.ExtensionNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(extension.Name, qt.Equals, "pgcrypto")
-	c.Assert(extension.Schema, qt.Equals, " Extension Store ")
-}
-
-func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
-		{Name: "pgcrypto", Schema: " "},
-	}}
-	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "pgcrypto", Schema: " ",
-	}}}
-
-	nodes, err := postgres.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
-		withDeclaredObjects(diff, desired),
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 2)
-	schema, ok := nodes[0].(*ast.CreateSchemaNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(schema.Name, qt.Equals, " ")
-	c.Assert(schema.IfNotExists, qt.IsTrue)
-	extension, ok := nodes[1].(*ast.ExtensionNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(extension.Name, qt.Equals, "pgcrypto")
-	c.Assert(extension.Schema, qt.Equals, " ")
-}
-
-func TestPlanner_GenerateMigrationAST_SystemExtensionInstallationSchemaNeedsNoPrecondition(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
-		{Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true},
-	}}
-	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
-	}}}
-
-	nodes, err := postgres.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
-		withDeclaredObjects(diff, desired),
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 1)
-	extension, ok := nodes[0].(*ast.ExtensionNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(extension.Name, qt.Equals, "plpgsql")
-	c.Assert(extension.Schema, qt.Equals, "pg_catalog")
-}
-
-func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
-	tests := []struct {
-		name     string
-		diff     *difftypes.SchemaDiff
-		desired  *schemamodel.Database
-		expected func(nodes []ast.Node) bool
-	}{
-		{
-			name: "single extension added",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: difftypes.ExtensionChanges{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-				},
-			},
-			desired: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-				},
-			},
-			expected: func(nodes []ast.Node) bool {
-				if len(nodes) != 1 {
-					return false
-				}
-				extNode, ok := nodes[0].(*ast.ExtensionNode)
-				if !ok {
-					return false
-				}
-				return extNode.Name == "pg_trgm" &&
-					extNode.IfNotExists == true &&
-					extNode.Comment == "Enable trigram similarity search"
-			},
-		},
-		{
-			name: "multiple extensions added",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: difftypes.ExtensionChanges{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
-				},
-			},
-			desired: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
-				},
-			},
-			expected: func(nodes []ast.Node) bool {
-				if len(nodes) != 2 {
-					return false
-				}
-
-				// Check first extension
-				ext1, ok := nodes[0].(*ast.ExtensionNode)
-				if !ok || ext1.Name != "pg_trgm" {
-					return false
-				}
-
-				// Check second extension
-				ext2, ok := nodes[1].(*ast.ExtensionNode)
-				if !ok || ext2.Name != "btree_gin" {
-					return false
-				}
-
-				return true
-			},
-		},
-		{
-			name: "extension with version",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: difftypes.ExtensionChanges{
-					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
-				},
-			},
-			desired: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
-				},
-			},
-			expected: func(nodes []ast.Node) bool {
-				if len(nodes) != 1 {
-					return false
-				}
-				extNode, ok := nodes[0].(*ast.ExtensionNode)
-				if !ok {
-					return false
-				}
-				return extNode.Name == "postgis" &&
-					extNode.Version == "3.0" &&
-					extNode.IfNotExists == true &&
-					extNode.Comment == "Geographic data support"
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				withDeclaredObjects(tt.diff, tt.desired),
-			)
-			c.Assert(err, qt.IsNil)
-
-			c.Assert(tt.expected(nodes), qt.IsTrue)
-		})
-	}
-}
-
-// TestPlanner_GenerateMigrationAST_ExtensionChanges covers what replaced a
-// blanket refusal.
-//
-// Ending the whole plan with "extension schema moves are not yet supported" on
-// any non-empty ExtensionsModified is wrong on the engine the message names.
-// PostgreSQL has both ALTER EXTENSION forms, and the reader captures what
-// decides between them (stokaro/ptah#1718).
-func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
+// TestPlanner_GenerateMigrationAST_AnOwnerPlacementCreatesItsSchema pins the
+// schema precondition an owner's change that places its object asks for; see
+// [schemaext.SchemaPlacement]. An extension installed into a schema the plan
+// does not create answers `schema "ext" does not exist`, and so does ALTER
+// EXTENSION ... SET SCHEMA into one, measured on PostgreSQL 18. The schema is
+// created first, under its own spelling, and a move to the connection's
+// default schema needs none.
+func TestPlanner_GenerateMigrationAST_AnOwnerPlacementCreatesItsSchema(t *testing.T) {
+	trgm := &pgextension.ObservedExtension{Schema: "public", Version: "1.5", Relocatable: true}
 	tests := []struct {
 		name   string
-		change difftypes.ExtensionDiff
+		change *pgextension.Change
 		want   string
 	}{{
-		name: "a relocatable move becomes SET SCHEMA",
-		change: difftypes.ExtensionDiff{
-			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions", Relocatable: true,
-		},
-		want: `ALTER EXTENSION "pgcrypto" SET SCHEMA "extensions";`,
+		name:   "an installation into a schema whose name needs quotes",
+		change: &pgextension.Change{After: &pgextension.DesiredExtension{Schema: " Extension Store "}},
+		want:   "CREATE SCHEMA IF NOT EXISTS \" Extension Store \";\nCREATE EXTENSION \"pg_trgm\" WITH SCHEMA \" Extension Store \";\n",
 	}, {
-		name: "a raised version becomes UPDATE TO",
-		change: difftypes.ExtensionDiff{
-			Name: "pg_trgm", FromSchema: "public", ToSchema: "public",
-			FromVersion: "1.5", ToVersion: "1.6",
-		},
-		want: `ALTER EXTENSION "pg_trgm" UPDATE TO '1.6';`,
-	}}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			nodes, err := postgres.New().GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
-			)
-			c.Assert(err, qt.IsNil)
-
-			rendered, renderErr := builtin.RenderSQL(platform.Postgres, nodes...)
-			c.Assert(renderErr, qt.IsNil)
-			c.Assert(rendered, qt.Contains, test.want)
-		})
-	}
-}
-
-// TestPlanner_GenerateMigrationAST_ExtensionMoveCreatesItsSchema pins the
-// order of a move: the schema it goes to is created first, and the version
-// moves before the extension does. ALTER EXTENSION ... SET SCHEMA into a
-// schema nothing created answers `schema "ext" does not exist`, measured on
-// PostgreSQL 18; the plan once ran it ahead of every schema precondition.
-// A move to the connection's default schema, where a declaration naming no
-// schema puts the extension, needs no precondition, as an addition naming
-// none does not.
-func TestPlanner_GenerateMigrationAST_ExtensionMoveCreatesItsSchema(t *testing.T) {
-	tests := []struct {
-		name   string
-		change difftypes.ExtensionDiff
-		want   string
-	}{{
-		name: "a move to a new schema",
-		change: difftypes.ExtensionDiff{Name: "pg_trgm", FromSchema: "public", ToSchema: "ext",
-			FromVersion: "1.5", ToVersion: "1.6", Relocatable: true},
+		name:   "a move to a new schema",
+		change: &pgextension.Change{Before: trgm, After: &pgextension.DesiredExtension{Schema: "ext", Version: "1.6"}, Schema: "ext"},
 		want: "CREATE SCHEMA IF NOT EXISTS \"ext\";\n" +
 			"-- Update extension pg_trgm from 1.5 to 1.6\nALTER EXTENSION \"pg_trgm\" UPDATE TO '1.6';\n" +
 			"-- Move extension pg_trgm from schema public to ext\nALTER EXTENSION \"pg_trgm\" SET SCHEMA \"ext\";\n",
 	}, {
-		name:   "a move to the default schema",
-		change: difftypes.ExtensionDiff{Name: "pg_trgm", FromSchema: "ext", ToSchema: "public", Relocatable: true},
-		want:   "-- Move extension pg_trgm from schema ext to public\nALTER EXTENSION \"pg_trgm\" SET SCHEMA \"public\";\n",
+		name: "a move to the default schema",
+		change: &pgextension.Change{Before: &pgextension.ObservedExtension{Schema: "ext", Version: "1.5", Relocatable: true},
+			After: &pgextension.DesiredExtension{}, Schema: "public"},
+		want: "-- Move extension pg_trgm from schema ext to public\nALTER EXTENSION \"pg_trgm\" SET SCHEMA \"public\";\n",
 	}, {
 		name:   "an update that stays",
-		change: difftypes.ExtensionDiff{Name: "pg_trgm", FromSchema: "ext", ToSchema: "ext", FromVersion: "1.5", ToVersion: "1.6"},
+		change: &pgextension.Change{Before: trgm, After: &pgextension.DesiredExtension{Version: "1.6"}},
 		want:   "-- Update extension pg_trgm from 1.5 to 1.6\nALTER EXTENSION \"pg_trgm\" UPDATE TO '1.6';\n",
 	}}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgextension.Ref("pg_trgm"), Value: test.change}}}
 
-			nodes, err := postgres.New().GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
-			)
+			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)
 			c.Assert(err, qt.IsNil)
 
 			rendered, renderErr := builtin.RenderSQL(platform.Postgres, nodes...)
 			c.Assert(renderErr, qt.IsNil)
 			c.Assert(rendered, qt.Equals, test.want)
-		})
-	}
-}
-
-// TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals covers the two
-// shapes that stay refused.
-//
-// They are refusals rather than skips because the server answers each with an
-// error of its own, measured on PostgreSQL 18: a downgrade is "has no update
-// path", and moving a fixed extension is "does not support SET SCHEMA". Ptah's
-// message names the reason the server's cannot.
-func TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals(t *testing.T) {
-	tests := []struct {
-		name   string
-		change difftypes.ExtensionDiff
-		want   string
-	}{{
-		name: "a fixed extension is refused, naming why the server would",
-		change: difftypes.ExtensionDiff{
-			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
-		},
-		want: `(?s).*not relocatable.*does not support SET SCHEMA.*`,
-	}, {
-		name: "a lowered version is refused rather than attempted",
-		change: difftypes.ExtensionDiff{
-			Name: "pg_trgm", FromSchema: "public", ToSchema: "public",
-			FromVersion: "1.6", ToVersion: "1.5",
-		},
-		want: `(?s).*one direction only.*has no update path.*`,
-	}}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			nodes, err := postgres.New().GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
-			)
-
-			c.Assert(nodes, qt.IsNil)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(err, qt.ErrorMatches, test.want)
-		})
-	}
-}
-
-func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
-	tests := []struct {
-		name     string
-		diff     *difftypes.SchemaDiff
-		desired  *schemamodel.Database
-		expected func(nodes []ast.Node) bool
-	}{
-		{
-			name: "single extension removed",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
-			},
-			desired: &schemamodel.Database{},
-			expected: func(nodes []ast.Node) bool {
-				// Should have 3 warning comments + 1 drop extension statement
-				if len(nodes) != 4 {
-					return false
-				}
-
-				// Check warning comments
-				for i := range 3 {
-					if _, ok := nodes[i].(*ast.CommentNode); !ok {
-						return false
-					}
-				}
-
-				// Check drop extension statement
-				dropNode, ok := nodes[3].(*ast.DropExtensionNode)
-				if !ok {
-					return false
-				}
-				return dropNode.Name == "pg_trgm" &&
-					dropNode.IfExists == true
-			},
-		},
-		{
-			name: "multiple extensions removed",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
-			},
-			desired: &schemamodel.Database{},
-			expected: func(nodes []ast.Node) bool {
-				// Should have 3 warnings + 1 drop + blank line + 3 warnings + 1 drop = 9 nodes
-				if len(nodes) != 9 {
-					return false
-				}
-
-				// Check first extension removal (3 warnings + 1 drop)
-				dropNode1, ok := nodes[3].(*ast.DropExtensionNode)
-				if !ok || dropNode1.Name != "pg_trgm" {
-					return false
-				}
-
-				// Check blank line at position 4
-				blankComment, ok := nodes[4].(*ast.CommentNode)
-				if !ok {
-					return false
-				}
-
-				// Check second extension removal (3 warnings + 1 drop)
-				// Second extension drop is at position 8
-				dropNode2, ok := nodes[8].(*ast.DropExtensionNode)
-				if !ok || dropNode2.Name != "btree_gin" {
-					return false
-				}
-
-				return blankComment != nil
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				withDeclaredObjects(tt.diff, tt.desired),
-			)
-			c.Assert(err, qt.IsNil)
-
-			c.Assert(tt.expected(nodes), qt.IsTrue)
-		})
-	}
-}
-
-func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
-	tests := []struct {
-		name          string
-		diff          *difftypes.SchemaDiff
-		desired       *schemamodel.Database
-		expectedSQL   []string
-		unexpectedSQL []string
-	}{
-		{
-			name: "extension creation SQL",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: difftypes.ExtensionChanges{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-				},
-			},
-			desired: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-				},
-			},
-			expectedSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
-				"COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';",
-			},
-			unexpectedSQL: []string{
-				"DROP EXTENSION",
-			},
-		},
-		{
-			name: "extension removal SQL",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
-			},
-			desired: &schemamodel.Database{},
-			expectedSQL: []string{
-				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
-				"Consider reviewing all database objects that use this extension",
-				"Extension removal may cascade to dependent objects",
-				"DROP EXTENSION IF EXISTS pg_trgm;",
-			},
-			unexpectedSQL: []string{
-				"CREATE EXTENSION",
-			},
-		},
-		{
-			name: "extension with version SQL",
-			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: difftypes.ExtensionChanges{
-					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
-				},
-			},
-			desired: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
-				},
-			},
-			expectedSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';",
-				"COMMENT ON EXTENSION postgis IS 'Geographic data support';",
-			},
-			unexpectedSQL: []string{
-				"DROP EXTENSION",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				withDeclaredObjects(tt.diff, tt.desired),
-			)
-			c.Assert(err, qt.IsNil)
-
-			// Render nodes to SQL
-			sql, err := builtin.RenderSQL("postgres", nodes...)
-			c.Assert(err, qt.IsNil)
-			sql = legacyRenderedSQL(sql)
-
-			// Check expected SQL patterns
-			for _, expected := range tt.expectedSQL {
-				c.Assert(sql, qt.Contains, expected,
-					qt.Commentf("Expected SQL to contain: %s\nActual SQL:\n%s", expected, sql))
-			}
-
-			// Check unexpected SQL patterns
-			for _, unexpected := range tt.unexpectedSQL {
-				c.Assert(sql, qt.Not(qt.Contains), unexpected,
-					qt.Commentf("Expected SQL to NOT contain: %s\nActual SQL:\n%s", unexpected, sql))
-			}
 		})
 	}
 }

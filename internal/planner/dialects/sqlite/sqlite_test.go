@@ -899,28 +899,6 @@ func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "sqlite: changing constraints on existing tables requires a table rebuild plan")
 }
 
-func TestPlannerRejectsExtensionPlacementChanges(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{{
-		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
-	}}}
-
-	nodes, err := planner.GenerateSchemaDiffAST(
-		context.Background(), must.Must(builtin.New()),
-		diff, platform.SQLite,
-	)
-
-	c.Assert(nodes, qt.IsNil)
-	var planErr *ptaherr.PlanError
-	c.Assert(err, qt.ErrorAs, &planErr)
-	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	// The name is part of the refusal now: "extensions are not supported" told
-	// an operator that something in their schema is an extension, not which one
-	// to remove (stokaro/ptah#1628).
-	c.Assert(err, qt.ErrorMatches, "sqlite: extensions are not supported: pgcrypto")
-}
-
 func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	c := qt.New(t)
 

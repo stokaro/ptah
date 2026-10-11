@@ -21,12 +21,12 @@ import (
 // the same named not-supported comment `ptah schema render` already produces.
 //
 // Without this the two surfaces disagree: `schema render --dialect mysql` on a
-// schema declaring an extension and a standalone sequence emits
-// `-- Extension pg_trgm not supported in MySQL` and
+// schema declaring a standalone sequence emits
 // `-- CREATE SEQUENCE order_number_seq not supported in mysql`, while
 // `schema apply --dry-run` against live MySQL 9.7 and live MariaDB 10.11.18
-// plans the CREATE TABLE alone and says nothing about either object
-// (stokaro/ptah#931 items 5 and 8).
+// plans the CREATE TABLE alone and says nothing about it
+// (stokaro/ptah#931 items 5 and 8). An extension is the extension owner's,
+// and a target that cannot host one says so through the off-target policy.
 //
 // The nodes carry identity only. Neither renderer emits DDL for these kinds, so
 // identity is all they read, and the resulting comments are stripped before
@@ -44,15 +44,6 @@ import (
 // about an object `render` names is the same disagreement between the two
 // surfaces that #929 is about, pointing the other way.
 func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, extension := range diff.ExtensionsAdded {
-		result = append(result, ast.NewExtension(extension.Name))
-	}
-	for _, extension := range diff.ExtensionsRemoved {
-		result = append(result, ast.NewDropExtension(extension.Name))
-	}
-	for _, extension := range diff.ExtensionsModified {
-		result = append(result, ast.NewExtension(extension.Name).SetSchema(extension.ToSchema))
-	}
 	result = p.reportRemovedUserTypes(result, diff)
 	result = p.reportUnsupportedSequences(result, diff)
 	return p.reportUnsupportedRoutinesAndRoles(result, diff)

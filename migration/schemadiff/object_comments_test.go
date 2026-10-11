@@ -7,7 +7,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -17,34 +16,26 @@ import (
 )
 
 // commentedObjects declares one object of every kind whose comment
-// ObjectCommentsChanged carries, each with comment, in the schema app. The
-// extension carries extension.
-func commentedObjects(comment, extension string) *schemamodel.Database {
+// ObjectCommentsChanged carries, each with comment, in the schema app.
+func commentedObjects(comment string) *schemamodel.Database {
 	return &schemamodel.Database{
 		Views:          []schemamodel.View{{Name: "app.v", Body: "SELECT 1", Comment: comment}},
 		Sequences:      []schemamodel.Sequence{{Name: "s", Schema: "app", Comment: comment}},
 		Domains:        []schemamodel.Domain{{Name: "d", Schema: "app", BaseType: "integer", Comment: comment}},
 		CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "app", Fields: []schemamodel.CompositeField{{Name: "n", Type: "integer"}}, Comment: comment}},
 		Ranges:         []schemamodel.Range{{Name: "r", Schema: "app", Subtype: "integer", Comment: comment}},
-		Extensions:     []schemamodel.Extension{{Name: "hstore", Comment: extension}},
 	}
 }
 
 // reportedObjects is the database side of commentedObjects: the same objects,
-// with comment on each and extension on the extension, as a reader reports
-// them.
-func reportedObjects(comment, extension string) *catalog.Database {
-	var extensionComment *string
-	if extension != "" {
-		extensionComment = &extension
-	}
+// with comment on each, as a reader reports them.
+func reportedObjects(comment string) *catalog.Database {
 	return &catalog.Database{
 		Views:      []catalog.View{{Name: "v", Schema: "app", Body: "SELECT 1", Comment: comment}},
 		Sequences:  []catalog.Sequence{{Name: "s", Schema: "app", Comment: comment}},
 		Domains:    []catalog.Domain{{Name: "d", Schema: "app", BaseType: "integer", Comment: comment}},
 		Composites: []catalog.CompositeType{{Name: "c", Schema: "app", Fields: []catalog.CompositeField{{Name: "n", Type: "integer"}}, Comment: comment}},
 		Ranges:     []catalog.Range{{Name: "r", Schema: "app", Subtype: "integer", Comment: comment}},
-		Extensions: []catalog.Extension{{Name: "hstore", Schema: "public", Comment: extensionComment}},
 	}
 }
 
@@ -82,8 +73,8 @@ func TestCompareWithDialect_ObjectCommentDifferenceIsAChange(t *testing.T) {
 			c := qt.New(t)
 
 			diff := must.Must(schemadiff.CompareWithDialect(
-				t.Context(), commentedObjects(test.declared, ""),
-				reportedObjects(test.inDatabase, ""),
+				t.Context(), commentedObjects(test.declared),
+				reportedObjects(test.inDatabase),
 				platform.Postgres, must.Must(builtin.New()),
 			))
 
@@ -93,50 +84,6 @@ func TestCompareWithDialect_ObjectCommentDifferenceIsAChange(t *testing.T) {
 			c.Assert(diff.DomainsModified, qt.HasLen, 0)
 			c.Assert(diff.CompositeTypesModified, qt.HasLen, 0)
 			c.Assert(diff.RangesModified, qt.HasLen, 0)
-		})
-	}
-}
-
-// An extension's comment is compared only when the declaration states one,
-// because CREATE EXTENSION gives every extension the comment its control file
-// carries.
-func TestCompareWithDialect_ExtensionCommentOnlyWhenDeclared(t *testing.T) {
-	tests := []struct {
-		name       string
-		declared   string
-		inDatabase string
-		ignored    []string
-		want       []difftypes.ObjectCommentChange
-	}{
-		{
-			name: "a declared comment that differs", declared: "mine", inDatabase: "data type for storing sets",
-			want: []difftypes.ObjectCommentChange{{
-				Kind: difftypes.CommentedExtension, Name: "hstore", Current: "data type for storing sets", Desired: "mine",
-			}},
-		},
-		{
-			name: "a declared comment on an extension with none", declared: "mine", inDatabase: "",
-			want: []difftypes.ObjectCommentChange{{Kind: difftypes.CommentedExtension, Name: "hstore", Desired: "mine"}},
-		},
-		{name: "no declared comment beside the control file's", declared: "", inDatabase: "data type for storing sets"},
-		{name: "the same comment", declared: "mine", inDatabase: "mine"},
-		{name: "an ignored extension", declared: "mine", inDatabase: "data type for storing sets", ignored: []string{"hstore"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			opts := config.DefaultCompareOptions()
-			opts.Dialect = platform.Postgres
-			opts.IgnoredExtensions = test.ignored
-
-			diff := must.Must(schemadiff.CompareWithOptions(
-				t.Context(), commentedObjects("same", test.declared),
-				reportedObjects("same", test.inDatabase),
-				opts, must.Must(builtin.New()),
-			))
-
-			c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, test.want)
-			c.Assert(diff.ExtensionsModified, qt.HasLen, 0)
 		})
 	}
 }
@@ -177,14 +124,14 @@ func TestCompareWithDatabaseInfo_ObjectCommentsFollowTheTargetsCapabilities(t *t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			declared := commentedObjects("new", "")
+			declared := commentedObjects("new")
 			// CockroachDB has neither domains nor ranges before 26.3, and a
 			// declaration it cannot host is refused before any comparison.
 			declared.Domains, declared.Ranges = nil, nil
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
 				t.Context(), declared,
-				reportedObjects("old", ""),
+				reportedObjects("old"),
 				catalog.ServerInfo{Dialect: test.dialect, Capabilities: test.caps},
 				nil, must.Must(builtin.New()),
 			)
@@ -218,7 +165,7 @@ func withoutKinds(
 func TestCompareWithDialect_ObjectCommentOnlyForObjectsBothSidesHold(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedObjects("new", "mine"), &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedObjects("new"), &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.HasLen, 0)
 	c.Assert(diff.ViewsAdded, qt.HasLen, 1)
@@ -229,7 +176,7 @@ func TestCompareWithDialect_ObjectCommentOnlyForObjectsBothSidesHold(t *testing.
 func TestCompareSchemas_UnnamedDialectComparesObjectCommentsAsPostgreSQL(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.Compare(t.Context(), commentedObjects("new", ""), reportedObjects("old", ""), must.Must(builtin.New())))
+	diff := must.Must(schemadiff.Compare(t.Context(), commentedObjects("new"), reportedObjects("old"), must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, everyObjectComment("old", "new"))
 }
@@ -241,15 +188,9 @@ func TestCompareSchemas_UnnamedDialectComparesObjectCommentsAsPostgreSQL(t *test
 func TestCompareSchemas_ObjectCommentsSurviveTheConversion(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.CompareSchemas(t.Context(), commentedObjects("new", "mine"), commentedObjects("old", "theirs"), platform.Postgres, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), commentedObjects("new"), commentedObjects("old"), platform.Postgres, must.Must(builtin.New())))
 
-	want := everyObjectComment("old", "new")
-	// The kinds sort by name, so the extension falls between the domain and
-	// the range.
-	want = append(want[:2:2], append([]difftypes.ObjectCommentChange{
-		{Kind: difftypes.CommentedExtension, Name: "hstore", Current: "theirs", Desired: "mine"},
-	}, want[2:]...)...)
-	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, want)
+	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, everyObjectComment("old", "new"))
 }
 
 // A removed domain, composite or range carries its comment, so the rollback
@@ -257,7 +198,7 @@ func TestCompareSchemas_ObjectCommentsSurviveTheConversion(t *testing.T) {
 func TestCompareWithDialect_RemovedUserTypesCarryTheirComments(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, reportedObjects("kept", ""), platform.Postgres, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, reportedObjects("kept"), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.DomainsRemoved, qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved[0].Comment, qt.Equals, "kept")

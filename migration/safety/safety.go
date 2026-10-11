@@ -130,9 +130,6 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	// warning above. Losing a uniqueness protection is not a query-plan change
 	// and must not pass a destructive gate or a drift threshold as one.
 	add(&findings, "unique_protections_removed", len(diff.ConstraintBackedIndexRemovals), Destructive)
-	add(&findings, "extensions_added", len(diff.ExtensionsAdded), Safe)
-	add(&findings, "extensions_removed", len(diff.ExtensionsRemoved), Destructive)
-	add(&findings, "extensions_modified", len(diff.ExtensionsModified), Warning)
 	add(&findings, "functions_added", len(diff.FunctionsAdded), Safe)
 	add(&findings, "functions_removed", len(diff.FunctionsRemoved), Destructive)
 	add(&findings, "functions_modified", len(diff.FunctionsModified), Warning)

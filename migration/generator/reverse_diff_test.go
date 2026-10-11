@@ -19,86 +19,6 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-func TestReverseSchemaDiff_Extensions(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    *difftypes.SchemaDiff
-		expected *difftypes.SchemaDiff
-	}{
-		{
-			name: "reverse added, removed, and moved extensions",
-			input: &difftypes.SchemaDiff{
-				ExtensionsAdded:    difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
-				ExtensionsRemoved:  difftypes.ExtensionChanges{{Name: "postgis"}, {Name: "uuid-ossp"}},
-				ExtensionsModified: []difftypes.ExtensionDiff{{Name: "citext", FromSchema: "public", ToSchema: "extensions"}},
-			},
-			expected: &difftypes.SchemaDiff{
-				ExtensionsAdded:    difftypes.ExtensionChanges{{Name: "postgis"}, {Name: "uuid-ossp"}},
-				ExtensionsRemoved:  difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
-				ExtensionsModified: []difftypes.ExtensionDiff{{Name: "citext", FromSchema: "extensions", ToSchema: "public"}},
-			},
-		},
-		{
-			name: "reverse only extensions added",
-			input: &difftypes.SchemaDiff{
-				ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "pg_trgm"}},
-				ExtensionsRemoved: make(difftypes.ExtensionChanges, 0),
-			},
-			expected: &difftypes.SchemaDiff{
-				ExtensionsAdded:   make(difftypes.ExtensionChanges, 0),
-				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
-			},
-		},
-		{
-			name: "reverse only extensions removed",
-			input: &difftypes.SchemaDiff{
-				ExtensionsAdded:   make(difftypes.ExtensionChanges, 0),
-				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "postgis"}},
-			},
-			expected: &difftypes.SchemaDiff{
-				ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "postgis"}},
-				ExtensionsRemoved: make(difftypes.ExtensionChanges, 0),
-			},
-		},
-		{
-			name: "no extensions to reverse",
-			input: &difftypes.SchemaDiff{
-				ExtensionsAdded:   make(difftypes.ExtensionChanges, 0),
-				ExtensionsRemoved: make(difftypes.ExtensionChanges, 0),
-			},
-			expected: &difftypes.SchemaDiff{
-				ExtensionsAdded:   make(difftypes.ExtensionChanges, 0),
-				ExtensionsRemoved: make(difftypes.ExtensionChanges, 0),
-			},
-		},
-		{
-			name: "nil extension slices",
-			input: &difftypes.SchemaDiff{
-				ExtensionsAdded:   nil,
-				ExtensionsRemoved: nil,
-			},
-			expected: &difftypes.SchemaDiff{
-				ExtensionsAdded:   nil,
-				ExtensionsRemoved: nil,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			result := reverseForTest(t,
-				tt.input, nil, nil, "postgres",
-			)
-
-			c.Assert(result.ExtensionsAdded.Names(), qt.DeepEquals, tt.expected.ExtensionsAdded.Names())
-			c.Assert(result.ExtensionsRemoved.Names(), qt.DeepEquals, tt.expected.ExtensionsRemoved.Names())
-			c.Assert(result.ExtensionsModified, qt.DeepEquals, tt.expected.ExtensionsModified)
-		})
-	}
-}
-
 func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c := qt.New(t)
 
@@ -112,10 +32,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_old", TableName: "old_table"},
 		},
-		ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
-		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "postgis"}},
-		FunctionsAdded:    difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "get_tenant_id"}}, {Function: schemamodel.Function{Name: "set_tenant_context"}}},
-		FunctionsRemoved:  difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "old_function"}}},
+		FunctionsAdded:   difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "get_tenant_id"}}, {Function: schemamodel.Function{Name: "set_tenant_context"}}},
+		FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "old_function"}}},
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "user_policy", TableName: "users"},
 			{PolicyName: "tenant_policy", TableName: "posts"},
@@ -156,8 +74,6 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.EnumsRemoved.Names(), qt.DeepEquals, input.EnumsAdded.Names())
 	c.Assert(result.IndexAdditions(), qt.DeepEquals, input.IndexesRemoved)
 	c.Assert(result.IndexesRemoved, qt.DeepEquals, input.IndexAdditions())
-	c.Assert(result.ExtensionsAdded.Names(), qt.DeepEquals, input.ExtensionsRemoved.Names())
-	c.Assert(result.ExtensionsRemoved.Names(), qt.DeepEquals, input.ExtensionsAdded.Names())
 
 	// Verify function reversals
 	c.Assert(result.FunctionsAdded.Names(), qt.DeepEquals, input.FunctionsRemoved.Names())

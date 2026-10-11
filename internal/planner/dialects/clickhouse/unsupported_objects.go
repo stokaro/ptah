@@ -36,7 +36,6 @@ import (
 // are stripped before execution by atlasschema.SplitApplyStatements.
 func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	result = reportRemovedUserTypes(result, diff)
-	result = reportExtensions(result, diff)
 	result = reportSequences(result, diff)
 	return result
 }
@@ -96,19 +95,6 @@ func reportRemovedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 	}
 	for _, rangeType := range diff.RangesRemoved {
 		result = append(result, ast.NewDropType(rangeType.QualifiedName()))
-	}
-	return result
-}
-
-func reportExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, extension := range diff.ExtensionsAdded {
-		result = append(result, ast.NewExtension(extension.Name))
-	}
-	for _, extension := range diff.ExtensionsRemoved {
-		result = append(result, ast.NewDropExtension(extension.Name))
-	}
-	for _, extension := range diff.ExtensionsModified {
-		result = append(result, ast.NewExtension(extension.Name).SetSchema(extension.ToSchema))
 	}
 	return result
 }

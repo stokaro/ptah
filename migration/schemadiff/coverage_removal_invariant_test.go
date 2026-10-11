@@ -47,12 +47,6 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 			removed: func(d *difftypes.SchemaDiff) int { return len(d.SequencesRemoved) },
 		},
 		{
-			name:    "extension",
-			kind:    coverage.Extension,
-			current: func(db *catalog.Database) { db.Extensions = []catalog.Extension{{Name: "e"}} },
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.ExtensionsRemoved) },
-		},
-		{
 			name:    "domain",
 			kind:    coverage.Domain,
 			current: func(db *catalog.Database) { db.Domains = []catalog.Domain{{Name: "d"}} },

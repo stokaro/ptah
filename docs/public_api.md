@@ -3916,12 +3916,9 @@ change, carried by its table's `TableDiff.FeatureChanges`. Every planner but YDB
 refuses a diff that carries one with `ptaherr.ErrUnsupportedFeature`, so a
 diff built by hand cannot reach a planner that would plan nothing for it.
 
-`SchemaDiff.ExtensionsModified` contains `ExtensionDiff` entries with the
-extension name and its `FromSchema`/`ToSchema` placement. Empty and explicit
-default-schema spellings compare under the diff's identifier semantics. The
-PostgreSQL planner currently rejects a placement change with
-`ptaherr.ErrInvalidSchemaDiff` before emitting any AST; additions and removals
-remain independently plannable.
+A PostgreSQL extension's installation, removal, version update, move and
+comment are the extension owner's changes in `SchemaDiff.FeatureChanges`
+(`pgextension.Change`); the diff has no list of its own for them.
 
 Row-level security policies are carried the same way. `RLSPoliciesAdded` and
 `RLSPoliciesRemoved` are `[]RLSPolicyRef`, and `RLSPoliciesModified` is

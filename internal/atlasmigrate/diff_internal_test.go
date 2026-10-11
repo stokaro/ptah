@@ -122,62 +122,6 @@ func errorTextOf(err error) string {
 	return err.Error()
 }
 
-func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
-	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
-	current := &catalog.Database{
-		Extensions: []catalog.Extension{{Name: "pgcrypto"}},
-	}
-	desired := &schemamodel.Database{
-		NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
-	}
-	runtime := diffRuntime{
-		readDevSchema: func(
-			context.Context,
-			*dbschema.DatabaseConnection,
-			[]string,
-			string,
-		) (*catalog.Database, error) {
-			return current, nil
-		},
-	}
-
-	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, devclean.Baseline{}, nil, nil,
-		atlasschema.DiffPolicy{}, selectedRuntime(c),
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(replayed, qt.Equals, current)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
-}
-
-func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
-	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
-	current := &catalog.Database{
-		Extensions: []catalog.Extension{{Name: "pgcrypto"}},
-	}
-	runtime := diffRuntime{
-		readDevSchema: func(
-			context.Context,
-			*dbschema.DatabaseConnection,
-			[]string,
-			string,
-		) (*catalog.Database, error) {
-			return current, nil
-		},
-	}
-
-	_, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&schemamodel.Database{}, devclean.Baseline{}, nil, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
-}
-
 func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *testing.T) {
 	c := qt.New(t)
 	conn := connectDiffComparisonSQLite(c)
@@ -215,35 +159,6 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	c.Assert(err, qt.IsNil)
 	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
-}
-
-func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *testing.T) {
-	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
-	schemas := []string{"app"}
-	current := &catalog.Database{
-		Extensions: []catalog.Extension{{Name: "citext", Schema: "extensions"}},
-	}
-	runtime := diffRuntime{
-		readDevSchema: func(
-			context.Context,
-			*dbschema.DatabaseConnection,
-			[]string,
-			string,
-		) (*catalog.Database, error) {
-			return schemascope.FilterDatabaseWithDefaultSchema(current, schemas, "public"), nil
-		},
-	}
-
-	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, schemas, "public",
-		schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{}, schemas, "public"), devclean.Baseline{}, nil, nil,
-		atlasschema.DiffPolicy{}, selectedRuntime(c),
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"citext"})
 }
 
 func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {

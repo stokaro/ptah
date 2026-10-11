@@ -530,18 +530,6 @@
     },
     {
       "path": "internal/planner/dialects/postgres/postgres_test.go",
-      "function": "TestPlanner_GenerateMigrationAST_ExtensionsAdded",
-      "kind": "if",
-      "count": 7
-    },
-    {
-      "path": "internal/planner/dialects/postgres/postgres_test.go",
-      "function": "TestPlanner_GenerateMigrationAST_ExtensionsRemoved",
-      "kind": "if",
-      "count": 7
-    },
-    {
-      "path": "internal/planner/dialects/postgres/postgres_test.go",
       "function": "TestPlanner_GenerateMigrationSQL_ComplexScenario",
       "kind": "if",
       "count": 1
@@ -741,12 +729,6 @@
     {
       "path": "migration/schemadiff/internal/compare/compare_test.go",
       "function": "TestColumnByName_EdgeCases",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/schemadiff/internal/compare/extensions_test.go",
-      "function": "TestExtensions_EdgeCases",
       "kind": "if",
       "count": 1
     },

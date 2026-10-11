@@ -203,7 +203,6 @@ func planBidirectionalSchemaDiffWithRefs(
 	if err != nil {
 		return nil, fmt.Errorf("reverse feature changes: %w", err)
 	}
-	recovery = append(recovery, extensionVersionLimits(opts.Diff.ExtensionsModified)...)
 
 	forwardOpts := planner.Options{
 		Capabilities:            caps,

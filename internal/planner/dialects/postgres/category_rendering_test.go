@@ -217,7 +217,9 @@ func TestSupplementalDiffCategoriesAreDocumented(t *testing.T) {
 
 func TestRefusedDiffCategoriesAreDocumented(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(refusedDiffCategories["ExtensionsModified"], qt.Not(qt.Equals), "")
+	for field, fixture := range refusedDiffCategories {
+		c.Assert(fixture.why, qt.Not(qt.Equals), "", qt.Commentf("%s", field))
+	}
 }
 
 func diffCategoryFixtures() []categoryFixture {
@@ -280,12 +282,6 @@ func diffCategoryFixtures() []categoryFixture {
 			},
 			&schemamodel.Database{},
 		},
-		{
-			"ExtensionsAdded",
-			&difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pg_trgm"}}},
-			&schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm"}}},
-		},
-		{"ExtensionsRemoved", &difftypes.SchemaDiff{ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}}}, &schemamodel.Database{}},
 		{
 			"FunctionsAdded",
 			&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "f"}}}},
@@ -431,20 +427,6 @@ func diffCategoryFixtures() []categoryFixture {
 				Desired: schemamodel.Trigger{
 					Name: "tg", Table: "t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;",
 				},
-			}}},
-			&schemamodel.Database{},
-		},
-		{
-			// This row was exempt as "refused before emission until ALTER
-			// EXTENSION SET SCHEMA planning is supported" until
-			// TestEveryRefusedDiffCategoryIsRefused asked whether it still was.
-			// stokaro/ptah#1718 replaced that blanket refusal with real
-			// planning, and the exemption outlived it -- so the category had
-			// been out of this walk ever since, which is the state this file
-			// exists to prevent.
-			"ExtensionsModified",
-			&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{{
-				Name: "pg_trgm", FromSchema: "public", ToSchema: "extensions", Relocatable: true,
 			}}},
 			&schemamodel.Database{},
 		},

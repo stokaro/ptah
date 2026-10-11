@@ -50,13 +50,6 @@ func TestPlanner_ObjectCommentChangeIsSetInPlace(t *testing.T) {
 			exclude: "TYPE \"app\".\"r\" AS",
 		},
 		{
-			// An extension's name is database-wide and never split on a dot.
-			name:    "an extension",
-			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedExtension, Name: "odd.name", Current: "old", Desired: "new"},
-			want:    `COMMENT ON EXTENSION "odd.name" IS 'new';`,
-			exclude: "CREATE EXTENSION",
-		},
-		{
 			name:    "an enum type",
 			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedEnumType, Name: "app.e", Current: "old", Desired: "new"},
 			want:    `COMMENT ON TYPE "app"."e" IS 'new';`,
