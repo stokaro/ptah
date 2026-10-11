@@ -459,3 +459,49 @@ func TestDeriveRoutines_AMySQLBranchIsUnresolvedRatherThanEmpty(t *testing.T) {
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "the if statement's contents could not be read")
 }
+
+// TestDeriveRoutines_AMySQLPreparedStatementIsNamed pins what the MySQL owner
+// reports about a prepared statement.
+//
+// PREPARE and EXECUTE compose their statement at run time, and the reason says
+// which one does. Releasing a prepared statement and closing a cursor write
+// nothing, so neither leaves the writes incomplete.
+func TestDeriveRoutines_AMySQLPreparedStatementIsNamed(t *testing.T) {
+	c := qt.New(t)
+
+	result := deriveRoutines(c, &schemamodel.Database{
+		Functions: []schemamodel.Function{
+			{
+				Name: "p", Kind: "procedure", Language: "sql",
+				Body: "BEGIN DECLARE cur CURSOR FOR SELECT id FROM t; OPEN cur; CLOSE cur; SET @s = 'DELETE FROM t'; " +
+					"PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt; DROP PREPARE stmt; END",
+			},
+		},
+	}, "mysql")
+
+	c.Assert(result.Writes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Equals, "the body is mysql: a PREPARE composes its statement at run time; "+
+		"an EXECUTE composes its statement at run time, so the writes are not complete; the columns it reads are not "+
+		"resolved, because a declared variable takes precedence over a column of the same name on this engine and the "+
+		"body does not distinguish them")
+}
+
+// TestDeriveRoutines_AMySQLCursorBodyIsComplete is the control: without the
+// prepared statement the same body is classified whole.
+func TestDeriveRoutines_AMySQLCursorBodyIsComplete(t *testing.T) {
+	c := qt.New(t)
+
+	result := deriveRoutines(c, &schemamodel.Database{
+		Functions: []schemamodel.Function{
+			{
+				Name: "p", Kind: "procedure", Language: "sql",
+				Body: "BEGIN DECLARE cur CURSOR FOR SELECT id FROM t; OPEN cur; CLOSE cur; DEALLOCATE PREPARE stmt; END",
+			},
+		},
+	}, "mariadb")
+
+	c.Assert(result.Writes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Matches, `the body is mariadb: every statement was classified, so the writes are complete; .*`)
+}

@@ -7,19 +7,17 @@ import (
 	"ptah.run/core/ast"
 )
 
-// dialectDynamicStatements returns the statements in a MySQL or T-SQL routine
-// body that build SQL at run time, with the label naming the routine.
+// dialectDynamicStatements returns the statements in a T-SQL routine body that
+// build SQL at run time, with the label naming the routine.
 //
-// PL/pgSQL has a statement kind for it, so the PostgreSQL half of this rule
-// asks the parser. Neither of the other two models one: MySQL's PREPARE and
-// T-SQL's sp_executesql arrive in the raw kind, and the leading words are what
-// separate them from an ordinary statement. Until this, both answered with
-// SQL002 alone -- "not modelled" -- which says nothing about the one property
-// that makes a body unanalyzable (stokaro/ptah#1270, criterion 6).
+// The owners that read their bodies say which statements compose SQL at run
+// time; T-SQL's owner reads none yet. Its sp_executesql arrives in the raw
+// kind, and the leading words are what separate it from an ordinary
+// statement. Until this, it answered with SQL002 alone -- "not modelled" --
+// which says nothing about the one property that makes a body unanalyzable
+// (stokaro/ptah#1270, criterion 6).
 func dialectDynamicStatements(stmt ast.Node) (label string, dynamic []string) {
 	switch node := stmt.(type) {
-	case *ast.MySQLRoutineNode:
-		return routineLabel(string(node.Kind), node.Name), mysqlDynamicStatements(node.Body.Statements)
 	case *ast.SQLServerRoutineNode:
 		return routineLabel(string(node.Kind), node.Name), sqlServerDynamicStatements(node.Body.Statements)
 	default:
@@ -30,21 +28,6 @@ func dialectDynamicStatements(stmt ast.Node) (label string, dynamic []string) {
 // routineLabel names the routine the way the PostgreSQL half does.
 func routineLabel(kind, name string) string {
 	return fmt.Sprintf("%s %s", strings.ToLower(kind), name)
-}
-
-// mysqlDynamicStatements finds MySQL's prepared-statement mechanism.
-//
-// PREPARE takes the text from a variable, and EXECUTE runs what PREPARE built:
-// both halves are reported, because a body carrying only one of them is still a
-// body whose SQL is not in the file.
-func mysqlDynamicStatements(statements []ast.MySQLRoutineStatement) []string {
-	dynamic := make([]string, 0)
-	for _, statement := range statements {
-		if dynamicLeadingWord(statement.SQL, "PREPARE", "EXECUTE", "DEALLOCATE") {
-			dynamic = append(dynamic, statement.SQL)
-		}
-	}
-	return dynamic
 }
 
 // sqlServerDynamicStatements finds T-SQL's two spellings.

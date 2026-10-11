@@ -48,6 +48,10 @@ type lineageDocument struct {
 			Column    string `json:"column"`
 			ByRoutine string `json:"by_routine"`
 		} `json:"writes"`
+		Undecided []struct {
+			Routine string `json:"routine"`
+			Reason  string `json:"reason"`
+		} `json:"undecided"`
 	} `json:"routines"`
 }
 

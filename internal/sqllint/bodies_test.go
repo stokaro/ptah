@@ -117,9 +117,10 @@ func TestLintSource_AFunctionWithNoRoutineBodyIsNotRead(t *testing.T) {
 }
 
 // recordingReader records each request and reads every body as one dynamic
-// statement.
+// statement carrying label.
 type recordingReader struct {
 	asked *[]routineext.ReadRequest
+	label string
 }
 
 func (r recordingReader) ReadBodies(_ context.Context, request routineext.ReadRequest) (routineext.ReadResult, error) {
@@ -127,8 +128,38 @@ func (r recordingReader) ReadBodies(_ context.Context, request routineext.ReadRe
 	result := routineext.ReadResult{}
 	for _, body := range request.Bodies {
 		result.Bodies = append(result.Bodies, routineext.Reading{
-			Statements: []routineext.Statement{{Kind: routineext.StatementDynamic, Label: "execute", SQL: body.SQL}},
+			Statements: []routineext.Statement{{Kind: routineext.StatementDynamic, Label: r.label, SQL: body.SQL}},
 		})
 	}
 	return result, nil
+}
+
+// A reader names the statement that composes SQL when it labels one, and the
+// finding names the routine alone when it does not: the label is optional in
+// the contract.
+func TestLintSource_ADynamicStatementIsNamedByItsLabel(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		label string
+		want  string
+	}{
+		{name: "labeled", label: "execute", want: "procedure p builds SQL at run time with EXECUTE"},
+		{name: "unlabeled", label: "", want: "procedure p builds SQL at run time"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var asked []routineext.ReadRequest
+			runtime := must.Must(engine.New(engine.Provider{ID: "example.org/postgres", Targets: []engine.Target{
+				{Name: "postgres", RoutineBodies: recordingReader{asked: &asked, label: test.label}}}}))
+
+			findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql",
+				SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\nEXECUTE 'TRUNCATE a';\nEND;\n$$ LANGUAGE plpgsql;\n"},
+				sqllint.Options{Dialect: platform.Postgres, Bodies: runtime})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(asked, qt.HasLen, 1)
+			c.Assert(rulesOf(findings), qt.DeepEquals, []string{sqllint.RuleUnsupportedStatement, sqllint.RuleDynamicSQL})
+			c.Assert(findings[1].Message, qt.Equals, test.want)
+		})
+	}
 }

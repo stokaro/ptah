@@ -26,21 +26,6 @@ type RoutineRead struct {
 	Statement string `json:"statement"`
 }
 
-// readsAreDerivable reports whether a dialect whose owner reads no bodies yet
-// resolves a variable and a column of the same name in a way that lets this
-// analysis tell them apart. An owner that reads bodies says so itself
-// ([routineext.Reading.ColumnReads]).
-//
-// This is the whole of what decides which dialects get a read answer, and it is
-// not about parser strength. T-SQL variables carry an @ prefix and cannot
-// collide at all. MySQL resolves the other way -- a declared variable takes
-// precedence over a column of the same name -- so an identifier in a MySQL
-// body does not say which it is, and reporting it as a column read would be
-// the confident wrong answer this package exists to avoid (stokaro/ptah#2394).
-func readsAreDerivable(dialect string) bool {
-	return isSQLServerFamily(dialect)
-}
-
 // deriveProceduralReads resolves the columns a procedural body reads from the
 // text of its statements.
 //

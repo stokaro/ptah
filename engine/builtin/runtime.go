@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/dialect/mysql/mysqlconvert"
+	"ptah.run/dialect/mysql/mysqlroutine"
 	"ptah.run/dialect/postgres/pglint"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/postgres/pgroutine"
@@ -113,8 +114,10 @@ func New() (*engine.Runtime, error) {
 		if name == platform.MariaDB {
 			// MariaDB's tables are created by the MySQL owner's rules too; the
 			// rest of that owner registers its MariaDB services on the mysql
-			// provider.
+			// provider. A MariaDB routine body is a compound statement in
+			// MySQL's grammar, which the MySQL owner reads.
 			provider.Targets[0].Creations = mysqlconvert.CreationService{}
+			provider.Targets[0].RoutineBodies = mysqlroutine.Reader{}
 		}
 		if name == platform.MySQL {
 			registerMySQLServices(&provider)

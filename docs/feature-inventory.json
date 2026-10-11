@@ -1084,6 +1084,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mysql-mysqlroutine",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlroutine",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mysql-mysqlschema",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mysql/mysqlschema",
