@@ -1297,8 +1297,9 @@ For a live PostgreSQL desired schema, a selected extension outside the default
 schema retains its installation schema. A create plans `CREATE SCHEMA IF NOT
 EXISTS` followed by `CREATE EXTENSION ... WITH SCHEMA ...`, identical live
 placements compare as synced, and drops remain supported. A placement change
-is detected but fails before SQL output because Ptah does not yet plan `ALTER
-EXTENSION ... SET SCHEMA`.
+plans `ALTER EXTENSION ... SET SCHEMA`, after `CREATE SCHEMA IF NOT EXISTS`
+when the schema is new; an extension that is not relocatable fails before SQL
+output.
 
 **`--plan file://<path>`** executes a pre-approved local plan file instead of
 re-planning. Both plan formats are accepted, detected by content: the Atlas
