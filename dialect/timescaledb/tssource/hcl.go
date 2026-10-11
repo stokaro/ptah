@@ -17,6 +17,7 @@ import (
 // Both are Ptah extensions of the format. Their claim is that every HCL
 // document describes the hypertables and the continuous aggregates of the
 // database, so one without such a block describes a database without one.
+// The writer writes each back as the same block.
 func HCL() hclext.Extension {
 	return hclext.Extension{
 		Owner: tsschema.Owner,
@@ -34,6 +35,7 @@ func HCL() hclext.Extension {
 		Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) {
 			return tsschema.CompleteCoverage(schemaext.Desired)
 		},
+		Encoder: hclEncoder{},
 	}
 }
 

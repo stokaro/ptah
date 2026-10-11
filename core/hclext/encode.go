@@ -23,6 +23,20 @@ type EncodeRequest struct {
 	// Objects are the document's objects of the extension's Kinds, in the
 	// order of their identities.
 	Objects []schemaext.Object
+	// Tables are the document's tables that hold a facet of the extension's
+	// Kinds, each with those facets alone, in the document's order.
+	Tables []TableFacets
+	// Coverage is what the document knows of the extension's Kinds, such
+	// as a limit the format may have no spelling for.
+	Coverage schemaext.Coverage
+}
+
+// TableFacets is a table of a document and facets it holds.
+type TableFacets struct {
+	// Table is the table, as the writer names it.
+	Table Table
+	// Facets are the facets.
+	Facets schemaext.Facets
 }
 
 // EncodeResult is an owner's writing of an [EncodeRequest].
@@ -85,32 +99,38 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 	})
 }
 
-// Encode hands each extension that has an [Encoder] the objects of its Kinds
-// in objects, in one call per extension, and returns every block they write,
-// extension by extension. It refuses a block without a type, a name or a
-// known placement, an attribute without a name, written twice or of a kind
+// Encode hands each extension that has an [Encoder] what document holds of
+// its Kinds -- the objects, the tables' facets and the coverage -- in one call
+// per extension, also when the document holds none of them, since an owner
+// may refuse a coverage record it cannot write. It returns every block they
+// write, extension by extension. It refuses a block without a type, a name or
+// a known placement, an attribute without a name, written twice or of a kind
 // the writer cannot write, and a block that writes an object of a kind its
 // extension does not claim. An encoder's own error is returned as it is: it
 // refuses the document, as a value the owner cannot write would otherwise
 // be written wrong.
-func (s Set) Encode(ctx context.Context, objects schemaext.Objects) ([]EncodedBlock, error) {
-	all, err := objects.All()
-	if err != nil {
-		return nil, err
-	}
+func (s Set) Encode(ctx context.Context, document EncodeRequest) ([]EncodedBlock, error) {
 	var blocks []EncodedBlock
 	for _, extension := range s.extensions {
 		if extension.Encoder == nil {
 			continue
 		}
-		request := EncodeRequest{}
-		for _, object := range all {
+		request := EncodeRequest{Coverage: document.Coverage.SelectKinds(extension.Kinds)}
+		for _, object := range document.Objects {
 			if slices.Contains(extension.Kinds, schemaext.Kind(object.Ref.Kind)) {
 				request.Objects = append(request.Objects, object)
 			}
 		}
-		if len(request.Objects) == 0 {
-			continue
+		for _, table := range document.Tables {
+			facets := table.Facets
+			for _, kind := range facets.Kinds() {
+				if !slices.Contains(extension.Kinds, kind) {
+					facets = facets.Without(kind)
+				}
+			}
+			if facets.Len() > 0 {
+				request.Tables = append(request.Tables, TableFacets{Table: table.Table, Facets: facets})
+			}
 		}
 		result, err := extension.Encoder.EncodeHCL(ctx, request)
 		if err != nil {

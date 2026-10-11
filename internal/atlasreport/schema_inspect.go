@@ -432,7 +432,7 @@ func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
 	if r.db == nil || r.info.Dialect == "" {
 		return r.db, nil
 	}
-	db, written := facetsplit.SetAside(r.db, atlashclrender.WritesTableFacet)
+	db, written := facetsplit.SetAside(r.db, atlashclrender.WritesTableFacet(r.runtime.HCL()))
 	db, writtenIndexes := facetsplit.SetAsideIndexes(db, atlashclrender.WritesIndexFacet)
 	for _, encode := range []func(context.Context, *schemamodel.Database, string, schemaproperties.Runtime) (*schemamodel.Database, error){
 		schemaproperties.EncodeTables, schemaproperties.EncodeIndexes,

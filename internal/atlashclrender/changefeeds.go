@@ -6,7 +6,6 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -25,9 +24,8 @@ import (
 // turn export loss into a successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
-		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind) ||
-			ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) || ref.Kind == objectidentity.Kind(pgextension.ExtensionKind) ||
-			r.owners.Encodes(schemaext.Kind(ref.Kind)) {
+		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) ||
+			ref.Kind == objectidentity.Kind(pgextension.ExtensionKind) || r.owners.Encodes(schemaext.Kind(ref.Kind)) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
@@ -62,7 +60,7 @@ func (r *renderer) reportFacets() {
 	writes := make(map[*schemaext.Facets]func(schemaext.Kind) bool, len(r.db.Tables)+len(r.db.Indexes)+len(r.db.Fields))
 	for i := range r.db.Tables {
 		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
-		writes[&r.db.Tables[i].Facets] = WritesTableFacet
+		writes[&r.db.Tables[i].Facets] = WritesTableFacet(r.owners)
 		writes[&r.db.Tables[i].PrimaryKeyFacets] = WritesKeyFacet
 	}
 	for i := range r.db.Constraints {
