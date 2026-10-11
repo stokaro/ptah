@@ -249,6 +249,12 @@ the same without the kind, for a report that names the kind in words. A
 component holding a dot or a double quote is quoted in both, so two
 identities never read alike.
 
+An `ID` encodes as JSON with snake_case keys (`kind`, `catalog`, `schema`,
+`parent`, `name`, `signature`, and `source`, `normalized`, `quoted`,
+`defaulted` in a part), and an empty component, part field or signature is
+left out. Every report that names a subject uses this form, and so does the
+schema fingerprint a saved plan records.
+
 `core/manageddata.LoadRowValues` reads a managed-data YAML file while retaining
 scalar spelling and tags in `schemamodel.ManagedRow`. `LoadRows` reads resolved Go
 values for row comparison. `ResolveRows` resolves carried declarations without

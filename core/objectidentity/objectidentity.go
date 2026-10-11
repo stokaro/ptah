@@ -102,14 +102,14 @@ const (
 // component exactly when their Normalized values match.
 type Part struct {
 	// Source is the component as written, quoting included.
-	Source string
+	Source string `json:"source,omitzero"`
 	// Normalized is the comparison form under the target's semantics.
-	Normalized string
+	Normalized string `json:"normalized,omitzero"`
 	// Quoted records whether the source spelling was quoted. It is a FACT about
 	// the spelling rather than part of the key: the quotes are inside
 	// Normalized already, which is what keeps `"Users"` and `Users` apart on a
 	// folding target, and a renderer asks this instead of parsing the string.
-	Quoted bool
+	Quoted bool `json:"quoted,omitzero"`
 	// Defaulted records that the source did not write this component and the
 	// target's default filled it in. It is a fact about the spelling too, and
 	// it is not part of the key: `users` and `public.users` are one table on
@@ -120,7 +120,7 @@ type Part struct {
 	// `users`, which is the same class of mistake as emitting a folded type or
 	// an ON DELETE clause nobody wrote (ADR 0001 invariant 2), and without this
 	// flag Source alone cannot tell the two apart (stokaro/ptah#1662).
-	Defaulted bool
+	Defaulted bool `json:"defaulted,omitzero"`
 }
 
 // Authored returns the spelling the source wrote: Source, or the empty string
@@ -144,27 +144,33 @@ func (p Part) Empty() bool {
 
 // ID is the identity of one database object.
 //
+// In JSON it is an object with snake_case keys, the convention of every
+// document Ptah writes, and a component, a part's field or a signature that is
+// empty is left out: the identity of the table `app.events` encodes as
+// {"kind":"table","schema":{"source":"app","normalized":"app"},
+// "name":{"source":"events","normalized":"events"}}.
+//
 // It is compared as a struct. Nothing here builds a string key, which is the
 // defect class this package exists to remove: every component is its own field,
 // so a component containing the character some previous key joined on cannot
 // collide with a component boundary.
 type ID struct {
 	// Kind is the object family.
-	Kind Kind
+	Kind Kind `json:"kind,omitzero"`
 	// Catalog and Schema qualify the object. Catalog is empty on every dialect
 	// Ptah targets today and is modeled because a reference that cannot express
 	// it cannot refuse an invalid scope transition either.
-	Catalog Part
-	Schema  Part
+	Catalog Part `json:"catalog,omitzero"`
+	Schema  Part `json:"schema,omitzero"`
 	// Parent owns the object for a family that has one: the table a column,
 	// index, constraint or policy belongs to. Empty for a schema-level object.
-	Parent Part
+	Parent Part `json:"parent,omitzero"`
 	// Name is the object's own name.
-	Name Part
+	Name Part `json:"name,omitzero"`
 	// Signature is a routine's overload identity -- the normalized argument
 	// type list. Two functions with the same name and different signatures are
 	// different objects, and a model without this cannot say so.
-	Signature string
+	Signature string `json:"signature,omitzero"`
 }
 
 // Key is the value equality is decided on, and the type a map keys on.
