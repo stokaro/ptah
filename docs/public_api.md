@@ -2341,7 +2341,8 @@ after the extension without importing this package.
 
 A declaration made from a read also carries the read's `Provides`. No
 statement writes it and no comparison reads it; an export uses it to keep an
-extension a document still depends on.
+extension a document still depends on. `Names` and `Select` read and filter
+the extensions of a collection by name and leave every other object alone.
 
 `Change` holds both operands and what the comparison established: the schema a
 surviving extension moves to, resolved under the target's default, and whether

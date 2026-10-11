@@ -294,7 +294,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
-	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, declaredExtensions(desired))
+	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, devclean.DeclaredExtensions(desired))
 	dbSchema = revisiontable.Without(dbSchema, opts.RevisionTables)
 	if err := recoverMigrationPublication(ctx, opts.AllowedOutputRoot, opts.OutputDir); err != nil {
 		return nil, err
@@ -373,18 +373,6 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		reportFormat:                 opts.ReportFormat,
 		specs:                        specs,
 	}, nil
-}
-
-// declaredExtensions is the set of extensions a desired schema declares.
-func declaredExtensions(desired *schemamodel.Database) map[string]bool {
-	names := make(map[string]bool)
-	if desired == nil {
-		return names
-	}
-	for _, extension := range desired.Extensions {
-		names[extension.Name] = true
-	}
-	return names
 }
 
 // compareForPlan compares desired with the database a migration is planned

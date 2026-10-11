@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
@@ -202,19 +203,11 @@ type State struct {
 	EnvironmentState *catalog.Database
 }
 
-// ExtensionNames is the set of extensions the state holds.
+// ExtensionNames is the set of extensions the state holds, in the common
+// model and as the extension owner's objects.
 func (s State) ExtensionNames() map[string]bool {
-	names := make(map[string]bool)
-	if s.DB != nil {
-		for _, extension := range s.DB.Extensions {
-			names[extension.Name] = true
-		}
-	}
-	if s.Schema != nil {
-		for _, extension := range s.Schema.Extensions {
-			names[extension.Name] = true
-		}
-	}
+	names := devclean.ReadExtensions(s.DB)
+	maps.Copy(names, devclean.DeclaredExtensions(s.Schema))
 	return names
 }
 
@@ -273,13 +266,15 @@ func (s State) WithoutEnvironment(declared map[string]bool) State {
 	}
 	s.DB = filtered
 	if s.Schema != nil {
+		kept := devclean.ReadExtensions(filtered)
 		schema := *s.Schema
 		schema.Extensions = nil
 		for _, extension := range s.Schema.Extensions {
-			if slices.ContainsFunc(filtered.Extensions, func(kept catalog.Extension) bool { return kept.Name == extension.Name }) {
+			if kept[extension.Name] {
 				schema.Extensions = append(schema.Extensions, extension)
 			}
 		}
+		schema.FeatureObjects = pgextension.Select(s.Schema.FeatureObjects, func(name string) bool { return kept[name] })
 		s.Schema = &schema
 	}
 	return s

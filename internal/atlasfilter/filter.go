@@ -126,6 +126,10 @@ func excludeDatabase(
 	filtered.Indexes = state.filterIndexes(filtered.Indexes)
 	filtered.Constraints = state.filterConstraints(filtered.Constraints)
 	filtered.Extensions = state.filterExtensions(filtered.Extensions)
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSynonymFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
@@ -244,6 +248,10 @@ func excludeGenerated(
 	filtered.CompositeTypes = state.filterGeneratedCompositeTypes(filtered.CompositeTypes)
 	filtered.Ranges = state.filterGeneratedRanges(filtered.Ranges)
 	filtered.Extensions = state.filterGeneratedExtensions(filtered.Extensions)
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	filtered.Functions = state.filterGeneratedFunctions(filtered.Functions)
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
 	filtered.MaterializedViews = state.filterGeneratedMaterializedViews(filtered.MaterializedViews)

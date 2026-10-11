@@ -4,8 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/schemaclean"
 )
 
@@ -46,6 +50,21 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 		{Name: "pgcrypto", Schema: "app"},
 	})
 	c.Assert(schema.Extensions, qt.HasLen, 2)
+}
+
+// TestSnapshotWithinWriterScopeKeepsOnlySchemaOwnedOwnerExtensions pins the
+// same scope over the extension owner's observations.
+func TestSnapshotWithinWriterScopeKeepsOnlySchemaOwnedOwnerExtensions(t *testing.T) {
+	c := qt.New(t)
+	schema := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		must.Must(pgextension.ObservedObject(pgextension.Ref("plpgsql"), pgextension.ObservedExtension{Schema: "pg_catalog", Version: "1.0"})),
+		must.Must(pgextension.ObservedObject(pgextension.Ref("pgcrypto"), pgextension.ObservedExtension{Schema: "app", Version: "1.3"})),
+	))}
+
+	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
+
+	c.Assert(got.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{pgextension.Ref("pgcrypto")})
+	c.Assert(schema.FeatureObjects.Len(), qt.Equals, 2)
 }
 
 // TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/envbool/envbooltest"
@@ -198,6 +199,8 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "extensions", database: &schemamodel.Database{Extensions: []schemamodel.Extension{{
 			Name: "pgcrypto", Schema: "extensions",
 		}}}},
+		{name: "extensions", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+			must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"}))))}},
 		{name: "functions", database: &schemamodel.Database{Functions: []schemamodel.Function{{}}}},
 		{name: "standalone sequences", database: &schemamodel.Database{Sequences: []schemamodel.Sequence{{}}}},
 		{name: "domains", database: &schemamodel.Database{Domains: []schemamodel.Domain{{}}}},
@@ -269,6 +272,55 @@ func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
 	})
 	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support desired schema extensions`)
+}
+
+// TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlOwnedExtension is the same
+// carve-out over the extension owner's objects: plpgsql read from a server
+// passes, and any other extension, or a declared plpgsql, is refused.
+func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlOwnedExtension(t *testing.T) {
+	c := qt.New(t)
+	policy := atlascompatpolicy.StrictCE()
+	declared := func(names ...string) *schemamodel.Database {
+		var objects []schemaext.Object
+		for _, name := range names {
+			objects = append(objects, must.Must(pgextension.DesiredObject(pgextension.Ref(name), pgextension.DesiredExtension{})))
+		}
+		return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...))}
+	}
+
+	c.Assert(policy.ValidateInspectedSchema(declared("plpgsql")), qt.IsNil)
+	c.Assert(policy.ValidateSchemaCleanSnapshot(declared("plpgsql")), qt.IsNil)
+	c.Assert(policy.ValidateInspectedSchema(declared("plpgsql", "citext")), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support inspected schema extensions`)
+	c.Assert(policy.ValidateSchemaCleanSnapshot(declared("citext")), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support cleaning live schema extensions`)
+	c.Assert(policy.ValidateDesiredSchema(declared("plpgsql")), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support desired schema extensions`)
+}
+
+// TestPrepareInspectedSchemaRemovesTheOwnedPlpgsqlBaseline pins the read side:
+// strict mode leaves the server's plpgsql out of an inspection read as the
+// extension owner's object, and refuses one that holds another extension.
+func TestPrepareInspectedSchemaRemovesTheOwnedPlpgsqlBaseline(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	read := func(names ...string) *catalog.Database {
+		var objects []schemaext.Object
+		for _, name := range names {
+			objects = append(objects, must.Must(pgextension.ObservedObject(pgextension.Ref(name), pgextension.ObservedExtension{Schema: "pg_catalog", Version: "1.0"})))
+		}
+		return &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
+			FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed))}
+	}
+	baseline := read("plpgsql")
+
+	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), baseline, "postgres", runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(prepared.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(baseline.FeatureObjects.Len(), qt.Equals, 1)
+	_, err = atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), read("plpgsql", "citext"), "postgres", runtime)
+	c.Assert(err, qt.ErrorMatches, `Atlas Community Edition strict compatibility does not support inspected schema extensions`)
 }
 
 func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {

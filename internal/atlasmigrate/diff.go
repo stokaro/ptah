@@ -741,7 +741,7 @@ func compareReplayedState(
 	// The extensions the dev database held before the replay are its
 	// environment, not something the directory built; see
 	// [devclean.Baseline.WithoutEnvironment].
-	replayed = baseline.WithoutEnvironment(replayed, desiredExtensionNames(desired))
+	replayed = baseline.WithoutEnvironment(replayed, devclean.DeclaredExtensions(desired))
 	// A dev database a docker block provisioned holds its starting point too,
 	// which the directory did not create either.
 	desiredCatalog, err := goschematodb.ToDBSchema(ctx, desired, replayConn.Info().Dialect, selected)
@@ -876,16 +876,4 @@ func filterByTable[T any](values []T, keep func(T) bool) []T {
 		}
 	}
 	return out
-}
-
-// desiredExtensionNames is the set of extensions a desired schema declares.
-func desiredExtensionNames(desired *schemamodel.Database) map[string]bool {
-	names := make(map[string]bool)
-	if desired == nil {
-		return names
-	}
-	for _, extension := range desired.Extensions {
-		names[extension.Name] = true
-	}
-	return names
 }

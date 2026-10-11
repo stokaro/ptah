@@ -486,7 +486,7 @@ func inspectOnDev(
 				if err != nil {
 					return err
 				}
-				schema = baseline.WithoutEnvironment(schema, declaredExtensionNames(desired))
+				schema = baseline.WithoutEnvironment(schema, devclean.DeclaredExtensions(desired))
 				declared, err := goschematodb.ToDBSchema(ctx, desired, materializedConn.Info().Dialect, opts.Runtime)
 				if err != nil {
 					return err

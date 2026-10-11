@@ -215,3 +215,30 @@ func TestExtension_EqualAndCopy(t *testing.T) {
 		c.Assert((*pgextension.DesiredExtension)(nil).Copy(), qt.IsNil)
 	})
 }
+
+// TestNamesAndSelect pins the name view of a collection: extensions by name in
+// identity order, and every other object left alone.
+func TestNamesAndSelect(t *testing.T) {
+	c := qt.New(t)
+	other := schemaext.Object{Ref: objectidentity.ID{Kind: "example.org/other", Name: objectidentity.Part{Source: "pg_trgm", Normalized: "pg_trgm"}},
+		Value: &otherValue{}}
+	objects := must.Must(schemaext.NewObjects(
+		must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{})),
+		must.Must(pgextension.ObservedObject(pgextension.Ref("citext"), pgextension.ObservedExtension{Schema: "public", Version: "1.6"})),
+		other,
+	))
+
+	kept := pgextension.Select(objects, func(name string) bool { return name != "pg_trgm" })
+
+	c.Assert(pgextension.Names(objects), qt.DeepEquals, []string{"citext", "pg_trgm"})
+	c.Assert(pgextension.Names(kept), qt.DeepEquals, []string{"citext"})
+	c.Assert(kept.Refs(), qt.DeepEquals, []objectidentity.ID{other.Ref, pgextension.Ref("citext")})
+	c.Assert(objects.Len(), qt.Equals, 3)
+}
+
+// otherValue is another owner's object that happens to share a name.
+type otherValue struct{}
+
+func (*otherValue) Kind() schemaext.Kind             { return "example.org/other" }
+func (*otherValue) Clone() schemaext.Value           { return &otherValue{} }
+func (*otherValue) Equal(other schemaext.Value) bool { _, ok := other.(*otherValue); return ok }

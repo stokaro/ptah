@@ -396,7 +396,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current := opts.baseline.WithoutEnvironment(read.current, declaredExtensionNames(desired))
+	current := opts.baseline.WithoutEnvironment(read.current, devclean.DeclaredExtensions(desired))
 	declared, err := goschematodb.ToDBSchema(ctx, desired, conn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return applyComputation{}, err
