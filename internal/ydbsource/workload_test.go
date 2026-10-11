@@ -144,7 +144,7 @@ func TestGoExportRefusesWorkloadInspectionLoss(t *testing.T) {
 			t.Run(string(kind)+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
 				db := &schemamodel.Database{FeatureCoverage: must.Must(ydbworkload.Coverage(kind, schemaext.Desired, test.namespace, test.subjects))}
-				files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+				files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(files, qt.IsNil)
 			})
@@ -169,7 +169,7 @@ func TestGoExportRefusesUnrepresentableWorkloadIntent(t *testing.T) {
 					schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
 						Kind: family.kind, Subject: family.ref, Knowledge: schemaext.Knowledge{State: state},
 					}}))
-				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: known}, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: known}, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(files, qt.IsNil)
 			})
@@ -202,7 +202,7 @@ func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
 			t.Run(layout.name+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
 				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: test.coverage, Tables: test.tables, Fields: test.fields},
-					goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})
+					goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: layout.single, Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				source := fstest.MapFS{}
 				for _, file := range files {
@@ -215,7 +215,7 @@ func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
 				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing"), ydbsecret.Ref("", "missing"), ydbtopic.Ref("", "missing")} {
 					c.Assert(parsed.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Uninspected)
 				}
-				again, err := goschematogo.Render(t.Context(), parsed, goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})
+				again, err := goschematogo.Render(t.Context(), parsed, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: layout.single, Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				c.Assert(again, qt.DeepEquals, files)
 			})
@@ -240,7 +240,7 @@ type Limits struct{}
 			db.Enums = []schemamodel.Enum{{Name: "mood", Values: []string{"ok"}}}
 			db.Tables = []schemamodel.Table{{Name: "records", StructName: "Records"}}
 			db.Fields = []schemamodel.Field{{StructName: "Records", Name: "id", FieldName: "ID", Type: "Int64"}}
-			files, err := goschematogo.Render(t.Context(), &db, goschematogo.Options{SingleFile: single, Dialect: "ydb"})
+			files, err := goschematogo.Render(t.Context(), &db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: single, Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(files) > 0, qt.IsTrue)
 			for _, file := range files {
@@ -259,7 +259,7 @@ func TestGoExportPartialFilesKeepUnknownNamespaces(t *testing.T) {
 		Tables: []schemamodel.Table{{Name: "records", StructName: "Records"}},
 		Fields: []schemamodel.Field{{StructName: "Records", Name: "id", FieldName: "ID", Type: "Int64"}},
 	}
-	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{PerTable: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), PerTable: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 3)
 	for _, file := range files {
@@ -286,7 +286,7 @@ func TestGoExport_CarriesASecretAReadLeftUnmanaged(t *testing.T) {
 	c := qt.New(t)
 	db := secretExportSource(c, schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbsecret.UnsupportedReason})
 
-	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
@@ -304,7 +304,7 @@ func TestGoExport_RefusesASecretLeftUnknownForAnotherReason(t *testing.T) {
 	c := qt.New(t)
 	db := secretExportSource(c, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read failed"})
 
-	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 
 	c.Assert(err, qt.ErrorMatches, `.*secrets object .* cannot be exported without losing its coverage record.*`)
 	c.Assert(files, qt.IsNil)

@@ -59,7 +59,7 @@ func readableFamiliesDatabase() *schemamodel.Database {
 func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), readableFamiliesDatabase(), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), readableFamiliesDatabase(), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 
 	var source strings.Builder
@@ -102,7 +102,7 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 func TestRender_AProcedureDoesNotComeBackAFunction(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), readableFamiliesDatabase(), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), readableFamiliesDatabase(), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 
 	var source strings.Builder
@@ -130,7 +130,7 @@ func TestRender_AFunctionStaysAFunction(t *testing.T) {
 	db.Functions[0].Kind = ""
 	db.Functions[0].Returns = "integer"
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 
 	var source strings.Builder
@@ -176,7 +176,7 @@ func TestRender_AUserTypeAloneStillGetsTheStructItHangsOff(t *testing.T) {
 		t.Run(db.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			files, err := goschematogo.Render(c.Context(), db.build(), goschematogo.Options{SingleFile: true})
+			files, err := goschematogo.Render(c.Context(), db.build(), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 			c.Assert(err, qt.IsNil)
 
 			var source strings.Builder

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -28,7 +29,7 @@ func deferrableUniqueDatabase(deferrable bool) *schemamodel.Database {
 func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), deferrableUniqueDatabase(true), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), deferrableUniqueDatabase(true), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.ErrorMatches, `UNIQUE "slots_pos_key" defers its check, which a Go annotation cannot represent`)
 	c.Assert(files, qt.IsNil)
@@ -38,7 +39,7 @@ func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 func TestRender_DeferrableKey_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), deferrableUniqueDatabase(false), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), deferrableUniqueDatabase(false), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -74,7 +75,7 @@ func scopedDatabase() *schemamodel.Database {
 func TestRender_EveryScopedObjectKeepsItsDialectScope(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), scopedDatabase(), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), scopedDatabase(), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.Not(qt.HasLen), 0)
 
@@ -117,7 +118,7 @@ func TestRender_AnUnscopedObjectWritesNoDialectsAttribute(t *testing.T) {
 	db := scopedDatabase()
 	db.Extensions[0].Dialects = nil
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 
 	var source strings.Builder

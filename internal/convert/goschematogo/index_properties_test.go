@@ -44,13 +44,13 @@ type Event struct {
 				"clickhouse": {"type.state": "default", "granularity": "18446744073709551615"},
 				"other":      {"future": "", "escaped": "line\n\"quote\"\\path"},
 			})
-			files, err := goschematogo.Render(t.Context(), &db, goschematogo.Options{SingleFile: single})
+			files, err := goschematogo.Render(t.Context(), &db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: single})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
 			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, db.Indexes[0].Overrides)
-			again, err := goschematogo.Render(t.Context(), &parsed, goschematogo.Options{SingleFile: single})
+			again, err := goschematogo.Render(t.Context(), &parsed, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: single})
 			c.Assert(err, qt.IsNil)
 			c.Assert(again, qt.DeepEquals, files)
 		})
@@ -70,7 +70,7 @@ func TestRenderEncodesSelectedIndexFacets(t *testing.T) {
 		Fields:  []schemamodel.Field{{StructName: "Event", Name: "id", FieldName: "ID", Type: "UInt64"}},
 		Indexes: []schemamodel.Index{{Name: "by_id", StructName: "Event", TableName: "events", Fields: []string{"id"}, Facets: facets}},
 	}
-	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ch", Runtime: runtime})
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ch", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
@@ -98,7 +98,7 @@ func TestRenderRefusesUnrepresentableIndexProperties(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{Indexes: []schemamodel.Index{{Name: "by_id", Overrides: test.properties}}}
-			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true})
+			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 			c.Assert(err, qt.ErrorMatches, `index "by_id" has an unrepresentable Go annotation .*`)
 			c.Assert(files, qt.IsNil)
 		})
@@ -108,7 +108,7 @@ func TestRenderRefusesUnrepresentableIndexProperties(t *testing.T) {
 func TestRenderRefusesConflictingIndexSourceDeclarations(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{Indexes: []schemamodel.Index{{Name: "by_id", Type: "minmax", Overrides: map[string]map[string]string{"ch": {"type": "set(10)"}}}}}
-	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ch", Runtime: indexSourceRuntime()})
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ch", Runtime: indexSourceRuntime()})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
 	c.Assert(files, qt.IsNil)
 	c.Assert(db.Indexes[0].Type, qt.Equals, "minmax")

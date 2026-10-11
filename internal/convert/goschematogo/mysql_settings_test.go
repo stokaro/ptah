@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -29,7 +30,7 @@ func TestRender_MySQLSettingsBoundToTheFamily(t *testing.T) {
 			Facets: must.Must(mysqlschema.WithIndexOptions(schemaext.Facets{}, mysqlschema.DesiredIndex{Parser: "ngram"}))}},
 	}
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

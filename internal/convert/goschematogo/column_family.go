@@ -101,6 +101,6 @@ func (ctx *renderContext) captureIndexPartitioning() error {
 // its own, or as attributes of the table's directive, rather than as platform
 // properties.
 func isAnnotatedFacet(kind schemaext.Kind) bool {
-	return isTimescaleFacet(kind) || kind == ydbschema.ColumnFamiliesKind || kind == ydbschema.TablePartitioningKind ||
+	return kind == ydbschema.ColumnFamiliesKind || kind == ydbschema.TablePartitioningKind ||
 		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind
 }

@@ -24,14 +24,14 @@ func TestRender_PreservesTableProperties(t *testing.T) {
 			source := "package models\n" + `//ptah:schema:table name="events" platform.clickhouse.engine="ReplacingMergeTree(version)" platform.clickhouse.primary_key="" platform.clickhouse.order_by="tuple(id, version)" platform.postgres.comment="line\n\"quote\"\\path"` + "\ntype Events struct {\n//ptah:schema:field type=\"UInt64\"\nID uint64\n}\n"
 			db, err := goschema.ParseSource(builtintest.Annotations(), "input.go", source)
 			c.Assert(err, qt.IsNil)
-			files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{SingleFile: single})
+			files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: single})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
 			got, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Tables[0].Overrides, qt.DeepEquals, db.Tables[0].Overrides)
 			c.Assert(string(files[0].Data), qt.Contains, `platform.clickhouse.primary_key=""`)
-			again, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{SingleFile: single})
+			again, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: single})
 			c.Assert(err, qt.IsNil)
 			c.Assert(again, qt.DeepEquals, files)
 		})
@@ -48,7 +48,7 @@ func TestRender_EncodesSelectedOwnedTableFacets(t *testing.T) {
 	}))
 	facets = must.Must(facets.WithTargetScope(chschema.TableKind, "clickhouse"))
 	db := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", StructName: "Events", Facets: facets}}, Fields: []schemamodel.Field{{StructName: "Events", Name: "id", FieldName: "ID", Type: "UInt64"}}}
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "clickhouse", Runtime: runtime})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "clickhouse", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", files[0].Data)
@@ -66,7 +66,7 @@ func TestRender_RefusesUnrepresentableTablePropertyNames(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", StructName: "Events", Overrides: map[string]map[string]string{"clickhouse": {key: "value"}}}}}
-			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 			c.Assert(err, qt.ErrorMatches, `table "events" has an unrepresentable Go annotation property .*`)
 			c.Assert(files, qt.IsNil)
 		})
@@ -77,7 +77,7 @@ func TestRender_RefusesCanceledContext(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithCancel(c.Context())
 	cancel()
-	files, err := goschematogo.Render(ctx, &schemamodel.Database{}, goschematogo.Options{})
+	files, err := goschematogo.Render(ctx, &schemamodel.Database{}, goschematogo.Options{Annotations: builtintest.Annotations()})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(files, qt.IsNil)
 }
@@ -87,7 +87,7 @@ func TestRender_RefusesConflictingOwnedProperties(t *testing.T) {
 	db := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", StructName: "Events", Overrides: map[string]map[string]string{
 		"clickhouse": {"engine": "Memory", "engine.state": "default"},
 	}}}}
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "clickhouse", Runtime: must.Must(builtin.New())})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "clickhouse", Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(files, qt.IsNil)
 	c.Assert(db.Tables[0].Overrides["clickhouse"], qt.HasLen, 2)
@@ -98,7 +98,7 @@ func TestRender_RefusesAmbiguousPropertyTargets(t *testing.T) {
 	db := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", StructName: "Events", Overrides: map[string]map[string]string{
 		"click.house": {"engine": "Memory"},
 	}}}}
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.ErrorMatches, `table "events" has an unrepresentable Go annotation target "click.house"`)
 	c.Assert(files, qt.IsNil)
 }

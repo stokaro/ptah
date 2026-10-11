@@ -1,6 +1,7 @@
 package annotation_test
 
 import (
+	"context"
 	"fmt"
 
 	"ptah.run/core/annotation"
@@ -150,4 +151,70 @@ type Room struct{}
 	fmt.Println(db.Tables[0].Name, painted.Name)
 	// Output:
 	// rooms teal+navy
+}
+
+// shadeWriter writes each shade a table holds back as the directive the
+// decoder in ExampleNewSet reads.
+type shadeWriter struct{}
+
+func (shadeWriter) EncodeAnnotations(_ context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
+	var result annotation.EncodeResult
+	for _, slot := range request.Slots {
+		painted, _, err := schemaext.FacetAs[*shade](slot.Facets, "example.org/paint/shade")
+		if err != nil {
+			return annotation.EncodeResult{}, err
+		}
+		table := slot.Slot.Table
+		result.Directives = append(result.Directives, annotation.EncodedDirective{
+			Directive: "ptah:schema:shade", Placement: annotation.AfterTable, Table: &table,
+			Attributes: []annotation.EncodedAttribute{{Name: "table", Value: table.QualifiedName()}, {Name: "name", Value: painted.Name}},
+		})
+	}
+	return result, nil
+}
+
+// ExampleSet_Encode shows an owner writing its table setting back as data: the
+// directive, where it stands and its attributes. The Go annotation writer
+// quotes the values and writes the comment beside the table.
+func ExampleSet_Encode() {
+	owners, err := annotation.NewSet(annotation.Extension{
+		Owner: "example.org/paint",
+		Directives: []annotation.Directive{{
+			Name:   "ptah:schema:shade",
+			Scopes: []annotation.Scope{annotation.ScopeStruct},
+			Attributes: []annotation.Attribute{
+				{Name: "table", Description: "Table to paint.", Value: "string", Required: true},
+				{Name: "name", Description: "The shade.", Value: "string", Required: true},
+			},
+		}},
+		Kinds:    []schemaext.Kind{"example.org/paint/shade"},
+		Decode:   func(annotation.Declaration) ([]annotation.Contribution, error) { return nil, nil },
+		Encoder:  shadeWriter{},
+		Encodes:  []schemaext.Kind{"example.org/paint/shade"},
+		Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil }),
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	rooms := annotation.Table{Schema: "app", Name: "rooms", Struct: "Room"}
+	painted, err := schemaext.NewFacets(&shade{Name: "teal"})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	result, err := owners.Encode(context.Background(), annotation.EncodeRequest{
+		Tables: annotation.Tables{rooms},
+		Slots:  []annotation.SlotFacets{{Slot: annotation.Slot{Directive: "ptah:schema:table", Table: rooms}, Facets: painted}},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, directive := range result.Directives {
+		fmt.Println(directive.Directive, directive.Placement, directive.Table.Struct, directive.Attributes)
+	}
+	// Output:
+	// ptah:schema:shade after-table Room [{table app.rooms} {name teal}]
 }

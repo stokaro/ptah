@@ -63,7 +63,7 @@ func TestGoExportPreservesClickHouseStorageLive(t *testing.T) {
 			runtime := must.Must(builtin.New())
 			model, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), &catalog.Database{Tables: []catalog.Table{table}, FeatureCoverage: coverage}, "clickhouse", runtime)
 			c.Assert(err, qt.IsNil)
-			files, err := goschematogo.Render(c.Context(), model, goschematogo.Options{SingleFile: true, Dialect: "clickhouse", Runtime: runtime})
+			files, err := goschematogo.Render(c.Context(), model, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "clickhouse", Runtime: runtime})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
 			reparsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", files[0].Data)

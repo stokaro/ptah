@@ -70,7 +70,7 @@ func TestGoExport_CarriesATopicAReadLeftUnread(t *testing.T) {
 			c := qt.New(t)
 			db := topicExportSource(c, schemaext.Knowledge{State: schemaext.Uninspected, Reason: reason})
 
-			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
@@ -90,7 +90,7 @@ func TestGoExport_RefusesATopicLeftUnknownForAnotherReason(t *testing.T) {
 	c := qt.New(t)
 	db := topicExportSource(c, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read failed"})
 
-	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 
 	c.Assert(err, qt.ErrorMatches, `.*topics object .* cannot be exported without losing its coverage record.*`)
 	c.Assert(files, qt.IsNil)

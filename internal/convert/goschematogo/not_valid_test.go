@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -29,7 +30,7 @@ func unvalidatedCheckDatabase(notValid bool) *schemamodel.Database {
 func TestRender_NotValidConstraint_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), unvalidatedCheckDatabase(true), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), unvalidatedCheckDatabase(true), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.ErrorMatches, `CHECK "slots_pos_positive" is NOT VALID, which a Go annotation cannot represent`)
 	c.Assert(files, qt.IsNil)
@@ -39,7 +40,7 @@ func TestRender_NotValidConstraint_FailurePath(t *testing.T) {
 func TestRender_NotValidConstraint_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(c.Context(), unvalidatedCheckDatabase(false), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), unvalidatedCheckDatabase(false), goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

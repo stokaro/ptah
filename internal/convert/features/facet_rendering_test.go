@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -110,7 +111,7 @@ func TestGoExportRefusesUnrepresentableExcludedFacetBindings(t *testing.T) {
 	facets := scopedRenderFacets("mysql")
 	excluded := must.Must(facets.ForTarget(must.Must(schemaext.NewTargetSelection("postgres"))))
 	database := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "items", StructName: "Item", Facets: excluded}}}
-	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*has an excluded facet "example.org/facet".*`)
 	c.Assert(files, qt.IsNil)

@@ -29,7 +29,7 @@ func TestRenderSecretsRoundTripThroughParser(t *testing.T) {
 		)),
 		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
-	files, err := goschematogo.Render(c.Context(), desired, goschematogo.Options{PackageName: "models", SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), desired, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	dir := t.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)

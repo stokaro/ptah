@@ -14,6 +14,11 @@
 // narrow its claim. A [Set] freezes the owners one parse selects, and a
 // [Reader] reads one file for the frontend. The frontend imports no owner;
 // whoever assembles the providers hands it the set.
+//
+// Writing is the mirror. An owner's [Encoder] returns the objects and facets
+// it owns as [EncodedDirective] values, data the Go annotation writer
+// quotes, places and writes as comments, so the owner never writes Go
+// source and the writer imports no owner either.
 package annotation
 
 import (

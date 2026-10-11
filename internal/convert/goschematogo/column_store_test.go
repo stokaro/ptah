@@ -21,7 +21,7 @@ func TestRender_ColumnStoreRoundTrip(t *testing.T) {
 		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", PrimaryKey: []string{"id"}, Facets: must.Must(schemaext.NewFacets(spec))}},
 		Fields: []schemamodel.Field{{StructName: "Event", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true}, {StructName: "Event", FieldName: "At", Name: "at", Type: "TIMESTAMP"}},
 	}
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	reparsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
