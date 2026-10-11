@@ -185,6 +185,35 @@ func (v *RangeChange) CreatedType(subject objectidentity.ID) (schemaext.DefinedT
 	return v.After.DefinedType(subject), true
 }
 
+// PlacementSchema is the schema a change that creates the domain puts it
+// into: the one subject names, empty where the declaration leaves it to the
+// connection's default; see [schemaext.SchemaPlacement]. A domain that
+// survives or is dropped is already where it goes, and names none.
+func (v *DomainChange) PlacementSchema(subject objectidentity.ID) string {
+	if v == nil || v.Before != nil {
+		return ""
+	}
+	return AuthoredSchema(subject)
+}
+
+// PlacementSchema is the schema a change that creates the composite type
+// puts it into, as [DomainChange.PlacementSchema] says.
+func (v *CompositeChange) PlacementSchema(subject objectidentity.ID) string {
+	if v == nil || v.Before != nil {
+		return ""
+	}
+	return AuthoredSchema(subject)
+}
+
+// PlacementSchema is the schema a change that creates the range type puts
+// it into, as [DomainChange.PlacementSchema] says.
+func (v *RangeChange) PlacementSchema(subject objectidentity.ID) string {
+	if v == nil || v.Before != nil {
+		return ""
+	}
+	return AuthoredSchema(subject)
+}
+
 // Differ reports whether the change names attribute as different.
 func (v *DomainChange) Differ(attribute string) bool {
 	return v != nil && slices.Contains(v.Differs, attribute)

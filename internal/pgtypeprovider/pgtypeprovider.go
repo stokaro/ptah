@@ -2,7 +2,7 @@
 // pgtype as one engine provider: its codecs, its conversion, comparison,
 // domain normalization, planning, declaration and reversal services on every
 // PostgreSQL-family target, and its reports in both representations. The
-// bundled runtime does not select it yet.
+// bundled runtime selects it without its reports.
 package pgtypeprovider
 
 import (
@@ -43,6 +43,15 @@ func Provider() engine.Provider {
 			{Header: coverage.Domain, Model: pgtype.DomainKind, Names: typeNames},
 			{Header: coverage.Composite, Model: pgtype.CompositeKind, Names: typeNames},
 			{Header: coverage.Range, Model: pgtype.RangeKind, Names: typeNames},
+		},
+		// A type on a target outside the family is refused, naming the scope
+		// that keeps it to the targets that host it: a column declared with
+		// the type would otherwise name something the server has no
+		// definition of (stokaro/ptah#1717).
+		OffTarget: []engine.OffTargetPolicy{
+			{Kinds: []schemaext.Kind{pgtype.DomainKind}, Action: schemaext.OffTargetRefuse, Label: "PostgreSQL domain"},
+			{Kinds: []schemaext.Kind{pgtype.CompositeKind}, Action: schemaext.OffTargetRefuse, Label: "PostgreSQL composite type"},
+			{Kinds: []schemaext.Kind{pgtype.RangeKind}, Action: schemaext.OffTargetRefuse, Label: "PostgreSQL range type"},
 		},
 	}
 	models := pgtype.Kinds()

@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -22,7 +24,8 @@ import (
 const loweringKind schemaext.Kind = "example.org/lowering-probe"
 
 // loweringValue is an owner's value. Schema, when set, is the schema it puts
-// its object into (see [schemaext.SchemaPlacement]).
+// its object into, and the schema its subject names otherwise (see
+// [schemaext.SchemaPlacement]).
 type loweringValue struct {
 	Name   string
 	Schema string
@@ -32,7 +35,9 @@ func (*loweringValue) Kind() schemaext.Kind { return loweringKind }
 func (v *loweringValue) Clone() schemaext.Value {
 	return &loweringValue{Name: v.Name, Schema: v.Schema}
 }
-func (v *loweringValue) PlacementSchema() string { return v.Schema }
+func (v *loweringValue) PlacementSchema(subject objectidentity.ID) string {
+	return cmp.Or(v.Schema, subject.Schema.Authored())
+}
 func (v *loweringValue) Equal(other schemaext.Value) bool {
 	w, ok := other.(*loweringValue)
 	return ok && w != nil && *v == *w
@@ -79,6 +84,24 @@ func TestCollectDatabase_PreservesFeatureChildrenOnEveryTarget(t *testing.T) {
 			c.Assert(database.FeatureCoverage, qt.DeepEquals, loweringFeatureFixture(dialect).FeatureCoverage)
 		})
 	}
+}
+
+// TestCollectDatabase_CreatesTheSchemaAnObjectsIdentityNames pins that a
+// render creates the schema an owner's object is placed in when the owner
+// answers from the object's identity, as a type created in the schema its
+// identity names does. Nothing else declares the schema here.
+func TestCollectDatabase_CreatesTheSchemaAnObjectsIdentityNames(t *testing.T) {
+	c := qt.New(t)
+	database := loweringFeatureFixture(platform.Postgres)
+	database.Tables[0].Schema = "app"
+	ref := objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres)).ColumnParts("app", "table.with.dot", "child")
+	ref.Kind = objectidentity.Kind(loweringKind)
+	database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &loweringValue{Name: "placed"}}))
+
+	list, err := modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(list.Statements[0], qt.DeepEquals, ast.Node(&ast.CreateSchemaNode{Name: "app", IfNotExists: true}))
 }
 
 func TestCollectDatabase_PreservesTableFacetsOnEveryTarget(t *testing.T) {

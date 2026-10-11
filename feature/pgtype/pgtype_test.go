@@ -155,6 +155,36 @@ func TestRepresentations_RoundTrip(t *testing.T) {
 	c.Assert(composite, qt.DeepEquals, &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "int"}}})
 }
 
+// TestDesiredDomain_PredictsTheServersSpelling pins that a declaration a
+// server spelled predicts the observation in that spelling, which is what the
+// catalog reports: a declaration compared with its own prediction then agrees,
+// where the written CHECK against the server's spelling would plan an ALTER
+// DOMAIN on every run. A part the declaration states and the server did not
+// spell keeps the declared text.
+func TestDesiredDomain_PredictsTheServersSpelling(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared *pgtype.DesiredDomain
+		want     *pgtype.ObservedDomain
+	}{
+		{name: "both spelled", declared: &pgtype.DesiredDomain{BaseType: "text", DefaultExpr: "lower('X')", Check: "VALUE <> ''",
+			Normalized: &pgtype.NormalizedDomain{Check: "(VALUE <> ''::text)", Default: "lower('X'::text)"}},
+			want: &pgtype.ObservedDomain{BaseType: "text", Default: "lower('X'::text)", Check: "(VALUE <> ''::text)"}},
+		{name: "a literal default spelled", declared: &pgtype.DesiredDomain{BaseType: "integer", Default: "7",
+			Normalized: &pgtype.NormalizedDomain{Default: "7"}},
+			want: &pgtype.ObservedDomain{BaseType: "integer", Default: "7"}},
+		{name: "a CHECK the server did not spell", declared: &pgtype.DesiredDomain{BaseType: "text", Check: "VALUE <> ''",
+			Normalized: &pgtype.NormalizedDomain{}},
+			want: &pgtype.ObservedDomain{BaseType: "text", Check: "VALUE <> ''"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.declared.Observed(), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestValues_CloneIndependently pins that a clone shares no list or pointer
 // with its original, so an owner can hand one out.
 func TestValues_CloneIndependently(t *testing.T) {

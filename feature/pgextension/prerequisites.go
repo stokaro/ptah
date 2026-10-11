@@ -6,8 +6,9 @@ import (
 )
 
 // PlacementSchema is the schema the declaration installs the extension into,
-// empty for the connection's default; see [schemaext.SchemaPlacement].
-func (v *DesiredExtension) PlacementSchema() string {
+// empty for the connection's default; see [schemaext.SchemaPlacement]. An
+// extension's identity names no schema, so the subject adds nothing.
+func (v *DesiredExtension) PlacementSchema(objectidentity.ID) string {
 	if v == nil {
 		return ""
 	}
@@ -25,7 +26,7 @@ func (v *DesiredExtension) ProvidedCapabilities(subject objectidentity.ID, caps 
 // installation schema of one it installs, and the schema one it moves goes
 // to. It is empty for a drop, a change that leaves the schema, and an
 // installation into the connection's default.
-func (v *Change) PlacementSchema() string {
+func (v *Change) PlacementSchema(objectidentity.ID) string {
 	switch {
 	case v == nil || v.After == nil:
 		return ""

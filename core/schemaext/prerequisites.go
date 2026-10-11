@@ -23,12 +23,17 @@ type CapabilityProvider interface {
 }
 
 // SchemaPlacement is a feature value or change that puts its object into a
-// named schema, as an extension's installation schema does. A host that
-// creates the schemas a plan or a render puts objects into creates this one
-// first. An empty answer names no schema: the object goes where the
-// connection's default puts it, and no schema has to be created for it.
+// named schema, as an extension's installation schema does, or as a type
+// created in the schema its identity names does. A host that creates the
+// schemas a plan or a render puts objects into creates this one first. An
+// empty answer names no schema: the object goes where the connection's
+// default puts it, and no schema has to be created for it.
+//
+// PlacementSchema answers for the object subject identifies, whose identity
+// holds what a value alone may not, such as the schema of a schema-scoped
+// object.
 type SchemaPlacement interface {
-	PlacementSchema() string
+	PlacementSchema(subject objectidentity.ID) string
 }
 
 // Requirer is a desired feature value that cannot exist without other

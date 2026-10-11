@@ -79,16 +79,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-617 fields are reachable from the desired schema, and each one carries
+640 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 520 | reaches rendered SQL on at least one target |
-| `comparison` | 24 | read when two schemas are compared, and written into no statement |
+| `ddl` | 536 | reaches rendered SQL on at least one target |
+| `comparison` | 28 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 29 | identifies the source text the declaration was read from |
+| `source` | 32 | identifies the source text the declaration was read from |
 | `export` | 12 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -217,7 +217,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-39 exemptions, each with the reason it is right.
+43 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -232,6 +232,10 @@ migration nobody asked for.
 | `mssqlschema.Predicate.Type` | `sqlserver` | both | the fixture's other predicate is a BLOCK for every operation, and a second BLOCK beside it is refused, so no single change of the type is valid there. The predicate's other fields are reached |
 | `pgextension.DesiredExtension.IfNotExists` | `postgres`, `yugabytedb` | both | IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it |
 | `pgpolicy.RoleSelector.Keyword` | `cockroachdb`, `postgres`, `yugabytedb` | both | a role keyword such as CURRENT_USER has no observation until a server resolves it, and the conversion refuses it; a connected comparison reads the server's resolution from pgpolicy.NormalizedPolicy.Roles |
+| `pgtype.DesiredDomain.Check` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
+| `pgtype.DesiredDomain.Default` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
+| `pgtype.DesiredDomain.DefaultExpr` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
+| `pgtype.DesiredRange.Cleared` | any | both | a cleared range attribute converts to the empty attribute an absent one converts to, so it differs only from a current range that holds the attribute; pgtypeprovider.TestCompareTypes_FindsChanges measures that |
 | `schemamodel.Database.FeatureCoverage` | any | both | it is what a feature comparison may conclude from: without it the comparison refuses the objects as not inspected, which is the comparison reading it |
 | `schemamodel.Database.NotDescribed` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `schemamodel.Domain.Check` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
@@ -263,11 +267,14 @@ migration nobody asked for.
 
 ### Compared fields the round trip cannot ask about
 
-10, besides the ones only a recorded loss hides.
+13, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
 | `mssqlschema.DesiredSecurityPolicy.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtype.DesiredDomain.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtype.NormalizedDomain.Check` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtype.NormalizedDomain.Default` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `schemamodel.Database.Facets` | declared only by the census's unknown-facet fixture, which every target refuses |
 | `schemamodel.Enum.Facets` | declared only by the census's unknown-facet fixture, which every target refuses |
 | `schemamodel.Field.UniqueExpr` | every target refuses it: uniqueness over an expression is not implemented |
@@ -377,6 +384,29 @@ migration nobody asked for.
 | `pgpolicy.NormalizedPolicy.WithCheck` | `comparison` | the server's spelling of a declared WITH CHECK expression, compared with the catalog's and never rendered |
 | `pgpolicy.RoleSelector.Keyword` | `ddl` | — |
 | `pgpolicy.RoleSelector.Name` | `ddl` | — |
+| `pgtype.Attribute.Name` | `ddl` | — |
+| `pgtype.Attribute.Type` | `ddl` | — |
+| `pgtype.DesiredComposite.Attributes` | `ddl` | — |
+| `pgtype.DesiredComposite.Comment` | `ddl` | — |
+| `pgtype.DesiredComposite.StructName` | `source` | the Go struct the declaration was read from; the type's schema and name are its identity |
+| `pgtype.DesiredDomain.BaseType` | `ddl` | — |
+| `pgtype.DesiredDomain.Check` | `ddl` | — |
+| `pgtype.DesiredDomain.Comment` | `ddl` | — |
+| `pgtype.DesiredDomain.Default` | `ddl` | — |
+| `pgtype.DesiredDomain.DefaultExpr` | `ddl` | — |
+| `pgtype.DesiredDomain.Normalized` | `comparison` | a connected server's spelling of the declared CHECK and default, attached before a live comparison; a statement writes the declaration |
+| `pgtype.DesiredDomain.NotNull` | `ddl` | — |
+| `pgtype.DesiredDomain.StructName` | `source` | the Go struct the declaration was read from; the type's schema and name are its identity |
+| `pgtype.DesiredRange.Canonical` | `ddl` | — |
+| `pgtype.DesiredRange.Cleared` | `comparison` | names a range attribute the declaration writes empty, which a comparison tells apart from one it leaves out; a statement writes neither (stokaro/ptah#2223) |
+| `pgtype.DesiredRange.Collation` | `ddl` | — |
+| `pgtype.DesiredRange.Comment` | `ddl` | — |
+| `pgtype.DesiredRange.StructName` | `source` | the Go struct the declaration was read from; the type's schema and name are its identity |
+| `pgtype.DesiredRange.Subtype` | `ddl` | — |
+| `pgtype.DesiredRange.SubtypeDiff` | `ddl` | — |
+| `pgtype.DesiredRange.SubtypeOpClass` | `ddl` | — |
+| `pgtype.NormalizedDomain.Check` | `comparison` | the server's spelling of a declared domain CHECK, compared with the catalog's and never rendered |
+| `pgtype.NormalizedDomain.Default` | `comparison` | the server's spelling of a declared domain default, compared with the catalog's and never rendered |
 | `schemamodel.CompositeField.Name` | `ddl` | — |
 | `schemamodel.CompositeField.Type` | `ddl` | — |
 | `schemamodel.CompositeType.Comment` | `ddl` | — |

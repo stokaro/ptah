@@ -24,6 +24,7 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
+	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/pgpolicyprovider"
 	"ptah.run/internal/ydbextensions"
@@ -156,6 +157,10 @@ func validatePostgresFamilyObjects(dialect string, objects schemaext.Objects) er
 				return err
 			}
 			if err := pgextension.ValidateDesired(value); err != nil {
+				return err
+			}
+		case *pgtype.DesiredDomain, *pgtype.DesiredComposite, *pgtype.DesiredRange:
+			if _, err := pgtype.DesiredObject(object.Ref, value); err != nil {
 				return err
 			}
 		default:

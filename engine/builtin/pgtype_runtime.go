@@ -1,10 +1,8 @@
 package builtin
 
 import (
-	"slices"
-
 	"ptah.run/engine"
-	"ptah.run/feature/pgtype"
+	"ptah.run/internal/pgtypeprovider"
 )
 
 // pgtypeProvider assembles the PostgreSQL user-type owner as a provider of
@@ -13,10 +11,14 @@ import (
 // importing them. Its rendering joins the family's composition in
 // [ownersFor].
 //
-// It registers the change and operation codecs alone. No reader, source or
-// planner produces a user-type value yet, so the common user-type path still
-// plans and renders what a declaration asks for; the model codecs and the
-// services join when the owner plans.
+// No source or reader produces a user-type value yet, so the common user-type
+// path still plans and renders what a declaration asks for. The owner's
+// reports stay out until the common user-type model goes: both count the
+// types under the metric names "domains", "composite_types" and
+// "range_types", and the schema statistics refuse a metric two reports
+// define.
 func pgtypeProvider() engine.Provider {
-	return engine.Provider{ID: pgtype.Owner, Codecs: slices.Concat(pgtype.ChangeCodecs(), pgtype.OperationCodecs())}
+	provider := pgtypeprovider.Provider()
+	provider.Reporting = nil
+	return provider
 }

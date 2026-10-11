@@ -1,6 +1,7 @@
 package pgtype
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -171,17 +172,22 @@ func (v *ObservedDomain) Desired() *DesiredDomain {
 
 // Observed is the observation a declaration predicts: its base type, NOT
 // NULL, the default it writes, which is the expression where it states one,
-// and its CHECK, as written. It names no CHECK constraint, because only the
-// server names one.
+// and its CHECK. The CHECK and the default are in the server's spelling where
+// [DesiredDomain.Normalized] holds one, since that is what the catalog
+// reports, and as written otherwise. It names no CHECK constraint, because
+// only the server names one.
 func (v *DesiredDomain) Observed() *ObservedDomain {
 	if v == nil {
 		return nil
 	}
-	defaultValue := v.Default
+	defaultValue, check := v.Default, v.Check
 	if v.DefaultExpr != "" {
 		defaultValue = v.DefaultExpr
 	}
-	return &ObservedDomain{BaseType: v.BaseType, NotNull: v.NotNull, Default: defaultValue, Check: v.Check, Comment: v.Comment}
+	if v.Normalized != nil {
+		defaultValue, check = cmp.Or(v.Normalized.Default, defaultValue), cmp.Or(v.Normalized.Check, check)
+	}
+	return &ObservedDomain{BaseType: v.BaseType, NotNull: v.NotNull, Default: defaultValue, Check: check, Comment: v.Comment}
 }
 
 // ValidateDesiredDomain checks representation invariants: a base type is

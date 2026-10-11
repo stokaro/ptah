@@ -2682,7 +2682,7 @@ func placedSchemas(database schemamodel.Database, targetPlatform string) ([]stri
 	var named []string
 	for _, object := range objects {
 		if placed, ok := object.Value.(schemaext.SchemaPlacement); ok {
-			if schema := placed.PlacementSchema(); schema != defaultSchema {
+			if schema := placed.PlacementSchema(object.Ref); schema != defaultSchema {
 				named = append(named, schema)
 			}
 		}

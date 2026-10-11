@@ -599,7 +599,10 @@ compares a column typed by one.
 
 `schemaext.SchemaPlacement` is a value or a change that puts its object into a
 named schema; a host that creates the schemas a plan or a render puts objects
-into creates that one too, unless it is the connection's default.
+into creates that one too, unless it is the connection's default. It is given
+the object's identity, so an owner whose object takes the schema its identity
+names, as a created domain does, answers from it.
+
 `schemaext.CapabilityProvider` is a value or a change whose object, once
 created, provides capabilities; it is given the object's identity, which holds
 what a value alone does not, such as an extension's name.
@@ -2656,9 +2659,12 @@ DOMAIN, ALTER DOMAIN, CREATE TYPE ... AS, ALTER TYPE ... ATTRIBUTE, CREATE TYPE
 TYPE. Each creation, alteration and comment names the capability key it needs.
 
 `feature/pgtype/typerender` renders them for the PostgreSQL family, byte for
-byte as the common path renders the same statements. The builtin runtime
-registers the change and operation codecs and composes the handlers on every
-PostgreSQL-family target; nothing produces the owner's objects yet.
+byte as the common path renders the same statements. A change that creates a
+type places it in the schema its identity names (`schemaext.SchemaPlacement`),
+and a declaration that a server spelled predicts its observation in that
+spelling. The bundled runtime selects the owner on every PostgreSQL-family
+target, without its reports, which count under the metric names the common
+schema statistics still report; nothing produces the owner's objects yet.
 
 `feature/pgtype/typecompare` compares types by kind, schema and name. Type
 spellings are compared in the form format_type reports, a composite type's

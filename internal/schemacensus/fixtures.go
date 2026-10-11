@@ -215,6 +215,7 @@ func corpus() []Fixture {
 		{Name: "pgpolicy-policy-declared", Schema: tableDeclaredPolicyFixture()},
 		{Name: "pgpolicy-table-state", Schema: tableRowSecurityFixture()},
 		{Name: "pgextension-extension", Schema: ownedExtensionFixture()},
+		{Name: "pgtype-types", Schema: ownedTypeFixture()},
 		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
 		{Name: "external-objects", Schema: externalObjectsFixture(),
 			Flags: []capability.Capability{capability.ExternalDataSources}},
