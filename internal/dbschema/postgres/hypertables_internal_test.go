@@ -61,7 +61,7 @@ func TestReadHypertables_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	hypertables, err := reader.readHypertables(t.Context(), []catalog.Extension{{Name: "plpgsql"}})
+	hypertables, err := reader.readHypertables(t.Context(), []string{"plpgsql"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hypertables, qt.HasLen, 0)

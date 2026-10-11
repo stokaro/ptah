@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgexclude"
@@ -5013,11 +5014,9 @@ func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog
 	// described. The comparator then withholds rather than concluding an
 	// extension is missing from a read that never asked (stokaro/ptah#942).
 	if r.caps.Has(capability.PostgresCatalogFunctions) {
-		extensions, err := r.readExtensions(ctx)
-		if err != nil {
+		if err := r.readExtensionObjects(ctx, schema); err != nil {
 			return fmt.Errorf("failed to read extensions: %w", err)
 		}
-		schema.Extensions = extensions
 	} else {
 		schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
 			Kind:       coverage.Extension,
@@ -5053,7 +5052,7 @@ func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog
 	// currentCatalog exists: asking a server that has no TimescaleDB would fail the
 	// statement, and a failed statement aborts the enclosing transaction --
 	// every later read then answers SQLSTATE 25P02 (stokaro/ptah#1026).
-	aggregates, err := r.readContinuousAggregates(ctx, schema.Extensions)
+	aggregates, err := r.readContinuousAggregates(ctx, pgextension.Names(schema.FeatureObjects))
 	if err != nil {
 		return fmt.Errorf("failed to read continuous aggregates: %w", err)
 	}
@@ -5062,7 +5061,7 @@ func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog
 	// Read from the same extension list and for the same reason: a hypertable
 	// is an ordinary table everywhere but here, so nothing else in this
 	// description can say that one is partitioned (stokaro/ptah#1026).
-	hypertables, err := r.readHypertables(ctx, schema.Extensions)
+	hypertables, err := r.readHypertables(ctx, pgextension.Names(schema.FeatureObjects))
 	if err != nil {
 		return fmt.Errorf("failed to read hypertables: %w", err)
 	}

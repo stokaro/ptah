@@ -34,7 +34,7 @@
 // comparison is pinned in internal/sqlident/sqlident_test.go instead.
 package models
 
-//ptah:schema:extension name="pgcrypto" if_not_exists="true"
+//ptah:schema:extension name="pgcrypto" if_not_exists="true" dialects="postgres,cockroachdb,yugabytedb,spanner"
 type ExtensionsMarker struct{}
 
 //ptah:schema:enum name="enum_status" values="active,archived"

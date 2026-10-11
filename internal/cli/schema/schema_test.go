@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/builtintest"
@@ -185,8 +186,8 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
-	c.Assert(parsed.Extensions, qt.HasLen, 1)
-	c.Assert(parsed.Extensions[0].IfNotExists, qt.IsTrue)
+	c.Assert(parsedExtensions(c, parsed), qt.HasLen, 1)
+	c.Assert(parsedExtensions(c, parsed)[0].IfNotExists, qt.IsTrue)
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Domains, qt.HasLen, 1)
 	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
@@ -526,4 +527,20 @@ type User struct {
 `
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 	return path
+}
+
+// parsedExtensions lists the extensions a parsed source holds as the
+// extension owner's objects, in name order and in the shape a declaration
+// renders them from, so a round trip compares like with like.
+func parsedExtensions(c *qt.C, db *schemamodel.Database) []schemamodel.Extension {
+	c.Helper()
+	var extensions []schemamodel.Extension
+	for _, name := range pgextension.Names(db.FeatureObjects) {
+		object, _, err := db.FeatureObjects.Get(pgextension.Ref(name))
+		c.Assert(err, qt.IsNil)
+		value := object.Value.(*pgextension.DesiredExtension)
+		extensions = append(extensions, schemamodel.Extension{Name: name, Schema: value.Schema, Version: value.Version,
+			Comment: value.Comment, IfNotExists: value.IfNotExists})
+	}
+	return extensions
 }

@@ -52,6 +52,7 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 	reader := postgres.NewPostgreSQLReader(db, "public")
 	before, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
+	before.FeatureObjects = withoutExtensions(before.FeatureObjects)
 
 	var beforeFn *struct{ Body, Security string }
 	for _, fn := range before.Functions {
@@ -110,6 +111,7 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 	// Verify the live function actually flipped both attributes.
 	after, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
+	after.FeatureObjects = withoutExtensions(after.FeatureObjects)
 	var afterFn *struct{ Body, Security string }
 	for _, fn := range after.Functions {
 		if fn.Name == "ptah_test_set_group_context" {
@@ -155,6 +157,7 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 	reader := postgres.NewPostgreSQLReader(db, "public")
 	before, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
+	before.FeatureObjects = withoutExtensions(before.FeatureObjects)
 
 	// Target schema marks the same function as STABLE.
 	target := &schemamodel.Database{
@@ -189,6 +192,7 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 
 	after, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
+	after.FeatureObjects = withoutExtensions(after.FeatureObjects)
 	var afterFn *struct{ Volatility string }
 	for _, fn := range after.Functions {
 		if fn.Name == "ptah_test_get_current_group_id" {

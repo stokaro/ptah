@@ -9,22 +9,22 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/atlashcl"
+	"ptah.run/feature/pgextension"
 )
 
 func TestParseExtensionIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 extension "pg_trgm" {
   if_not_exists = true
   version       = "1.6"
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Extensions, qt.HasLen, 1)
-	c.Assert(db.Extensions[0].IfNotExists, qt.IsTrue)
-	c.Assert(db.Extensions[0].Version, qt.Equals, "1.6")
+	c.Assert(ownedExtensions(c, db), qt.HasLen, 1)
+	c.Assert(ownedExtensions(c, db)[0].IfNotExists, qt.IsTrue)
+	c.Assert(ownedExtensions(c, db)[0].Version, qt.Equals, "1.6")
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE EXTENSION IF NOT EXISTS pg_trgm VERSION '1.6';`)
@@ -33,12 +33,12 @@ extension "pg_trgm" {
 func TestParseExtensionDefaultsWithoutIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 extension "pg_trgm" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Extensions, qt.HasLen, 1)
-	c.Assert(db.Extensions[0].IfNotExists, qt.IsFalse)
+	c.Assert(ownedExtensions(c, db), qt.HasLen, 1)
+	c.Assert(ownedExtensions(c, db)[0].IfNotExists, qt.IsFalse)
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE EXTENSION pg_trgm;`)
@@ -74,9 +74,9 @@ func TestParseExtensionSchemaAttributePresence(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{
+			c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{
 				Schema: test.wantSchema,
 				Name:   test.wantName,
 			}})
@@ -87,7 +87,7 @@ func TestParseExtensionSchemaAttributePresence(t *testing.T) {
 func TestParseTwoLabelExtensionRejectsExplicitDefaultSchema(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseWithOwners([]byte(`
 extension "extensions" "citext" {
   schema = ""
 }
@@ -99,7 +99,7 @@ extension "extensions" "citext" {
 func TestParseExplicitExtensionSystemSchemaReferenceIsRefused(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "pg_catalog" {}
 schema "PG_CATALOG" {}
 
@@ -109,8 +109,8 @@ extension "plpgsql" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Extensions, qt.HasLen, 1)
-	c.Assert(db.Extensions[0].Schema, qt.Equals, "pg_catalog")
+	c.Assert(ownedExtensions(c, db), qt.HasLen, 1)
+	c.Assert(ownedExtensions(c, db)[0].Schema, qt.Equals, "pg_catalog")
 	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{
 		{Name: "pg_catalog"},
 		{Name: "PG_CATALOG"},
@@ -125,7 +125,7 @@ extension "plpgsql" {
 func TestParseLiteralExtensionSystemSchemaNeedsNoDeclaration(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 extension "plpgsql" {
   schema  = "pg_catalog"
   version = "1.0"
@@ -133,7 +133,7 @@ extension "plpgsql" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Schemas, qt.HasLen, 0)
-	c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{
+	c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{
 		Name:    "plpgsql",
 		Schema:  "pg_catalog",
 		Version: "1.0",
@@ -147,7 +147,7 @@ extension "plpgsql" {
 func TestParseStandaloneSystemSchemaIsNotTreatedAsAnExtensionReference(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "pg_catalog" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
@@ -162,7 +162,7 @@ schema "pg_catalog" {}
 func TestParseSystemSchemaUsedByAnObjectIsNotTreatedAsAnExtensionReference(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "pg_catalog" {}
 
 extension "plpgsql" {
@@ -189,7 +189,7 @@ table "blocked" {
 func TestParseTwoLabelExtensionDoesNotMakeASystemSchemaReferenceOnly(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "pg_catalog" {}
 extension "pg_catalog" "plpgsql" {}
 `), "schema.hcl")
@@ -214,7 +214,7 @@ func TestParsePermissionTargetKeepsItsSystemSchemaSemantic(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse([]byte(`
+			db, err := parseWithOwners([]byte(`
 schema "pg_catalog" {}
 
 extension "plpgsql" {
@@ -241,10 +241,35 @@ permission {
 func TestParseExtensionRejectsNonBoolIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseWithOwners([]byte(`
 extension "pg_trgm" {
   if_not_exists = "yes"
 }
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*extension attribute "if_not_exists" must be a bool.*`)
+}
+
+// declaredExtension is one extension a document declares, as the extension
+// owner holds it, named.
+type declaredExtension struct {
+	Name        string
+	Schema      string
+	Version     string
+	Comment     string
+	IfNotExists bool
+}
+
+// ownedExtensions lists the extensions db holds as the extension owner's
+// objects, in name order.
+func ownedExtensions(c *qt.C, db *schemamodel.Database) []declaredExtension {
+	c.Helper()
+	var extensions []declaredExtension
+	for _, name := range pgextension.Names(db.FeatureObjects) {
+		object, _, err := db.FeatureObjects.Get(pgextension.Ref(name))
+		c.Assert(err, qt.IsNil)
+		value := object.Value.(*pgextension.DesiredExtension)
+		extensions = append(extensions, declaredExtension{Name: name, Schema: value.Schema, Version: value.Version,
+			Comment: value.Comment, IfNotExists: value.IfNotExists})
+	}
+	return extensions
 }

@@ -47,8 +47,8 @@ extension "citext" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)
 	c.Assert(diagnostics.String(), qt.Matches,
-		`Warning: extension "citext" is declared by --to but no change was planned for it:`+
-			" --from records `ptah:not-described extension`.*cannot safely converge from an unknown current state\\.\n")
+		`Warning: ptah.run/pgextension/extension .*"citext".* could not be compared between --from and --to: `+
+			"whether the extension is installed was not established: the description does not describe extension\\.\n")
 }
 
 func TestDiffPlansGuardedExtensionPlacementWhenCurrentIsAuthoritative(t *testing.T) {

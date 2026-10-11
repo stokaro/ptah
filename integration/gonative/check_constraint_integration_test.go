@@ -197,5 +197,6 @@ func filterCheckConstraintSchema(in *catalog.Database, tableName string) *catalo
 	out.Tables = filterTables(in.Tables, keepTables)
 	out.Indexes = filterIndexes(in.Indexes, keepTables)
 	out.Constraints = filterConstraints(in.Constraints, keepTables)
+	out.FeatureObjects = withoutExtensions(in.FeatureObjects)
 	return &out
 }

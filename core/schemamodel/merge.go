@@ -41,8 +41,10 @@ func NewDatabase() *Database {
 // maps (Dependencies, FunctionDependencies, SelfReferencingForeignKeys) are not
 // copied: they are rebuilt from the combined slices by finalizeDatabase, so
 // carrying them here would only risk duplicating self-referencing entries.
+// A feature object both declare is refused, unless its owner states that it
+// is idempotent to declare and the two are equal ([schemaext.Redeclarable]).
 func AppendDatabase(dst, src *Database) error {
-	objects, err := dst.FeatureObjects.Merge(src.FeatureObjects)
+	objects, err := dst.FeatureObjects.MergeDeclarations(src.FeatureObjects)
 	if err != nil {
 		return err
 	}

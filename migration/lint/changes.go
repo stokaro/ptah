@@ -195,6 +195,9 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 		}
 		return out, false
 	}
+	if kind, object, ok := ownerStatementChange(node); ok {
+		return scope.keepChange(change(kind, object), object)
+	}
 	if object, ok := addNodeObject(node); ok {
 		return scope.keepChange(change(SchemaChangeAdd, object), nodeScopeReference(node, object))
 	}
@@ -432,6 +435,37 @@ func constraintName(constraint *ast.ConstraintNode) string {
 
 // A logical addition can have a behavioral execution risk. Do not derive these
 // reporting categories from Effect, which serves the safety classifier.
+// ownerStatementChange reports the change an owner's statement makes, as its
+// payload reports it, such as the extension a PostgreSQL CREATE EXTENSION
+// adds. A statement whose payload reports no named change contributes none,
+// as an unmodeled statement does: it has no parent to fall back to.
+func ownerStatementChange(node ast.Node) (SchemaChangeKind, string, bool) {
+	statement, ok := node.(*ast.ExtensionStatement)
+	if !ok || statement == nil || schemaext.ValidatePayload(statement.Payload) != nil {
+		return "", "", false
+	}
+	reporter, ok := statement.Payload.(ast.ExtensionChangeReporter)
+	if !ok {
+		return "", "", false
+	}
+	change := reporter.SchemaChange()
+	if strings.TrimSpace(change.Name) == "" {
+		return "", "", false
+	}
+	switch change.Action {
+	case ast.ExtensionAdd:
+		return SchemaChangeAdd, change.Name, true
+	case ast.ExtensionDrop:
+		return SchemaChangeDrop, change.Name, true
+	case ast.ExtensionModify:
+		return SchemaChangeModify, change.Name, true
+	case ast.ExtensionRename:
+		return SchemaChangeRename, change.Name, true
+	default:
+		return "", "", false
+	}
+}
+
 func extensionOperationChange(alter *ast.AlterTableNode, op *ast.ExtensionAlterOperation) (SchemaChangeKind, string) {
 	if op == nil || schemaext.ValidatePayload(op.Payload) != nil {
 		return SchemaChangeModify, alter.Name

@@ -291,11 +291,12 @@ func (p *parser) rejectRedeclarations() error {
 // Every block kind this parser accepts, at every nesting level it accepts one,
 // with the verdict and the reason. A kind absent from this comment is a kind
 // this parser does not accept, or one a feature owner reads: a `policy`,
-// `row_security` or `synonym` block, among others, is its owner's, and the
-// owner refuses two blocks that declare one object, naming both.
+// `row_security`, `synonym` or `extension` block, among others, is its
+// owner's, and two blocks that declare one object are refused, by the owner
+// naming both or by [parser.addOwnerDeclarations].
 //
-// TOP LEVEL. `table`, `enum`, `sequence`, `domain`, `composite`, `range`,
-// `extension` and `trigger` are refused by default. `view`,
+// TOP LEVEL. `table`, `enum`, `sequence`, `domain`, `composite`, `range`
+// and `trigger` are refused by default. `view`,
 // `materialized` and `role` are refused only under
 // [StrictRedeclarationsEnvVar], because the pinned binary reads a repeat of each
 // at exit 0 -- it drops the block unread -- and so did Ptah. Four are exempt

@@ -16,9 +16,6 @@ ptah_schema_constraints{dialect="sqlite"} 0
 # HELP ptah_schema_enums Enum types.
 # TYPE ptah_schema_enums gauge
 ptah_schema_enums{dialect="sqlite"} 0
-# HELP ptah_schema_extensions Extensions.
-# TYPE ptah_schema_extensions gauge
-ptah_schema_extensions{dialect="sqlite"} 0
 # HELP ptah_schema_functions Functions and procedures.
 # TYPE ptah_schema_functions gauge
 ptah_schema_functions{dialect="sqlite"} 0
@@ -91,6 +88,9 @@ ptah_schema_mysql_index_block_sizes{dialect="sqlite"} 0
 # HELP ptah_schema_mysql_table_options MySQL and MariaDB table options a table states.
 # TYPE ptah_schema_mysql_table_options gauge
 ptah_schema_mysql_table_options{dialect="sqlite"} 0
+# HELP ptah_schema_extensions Extensions.
+# TYPE ptah_schema_extensions gauge
+ptah_schema_extensions{dialect="sqlite"} 0
 # HELP ptah_schema_row_security_policies PostgreSQL row-level security policies.
 # TYPE ptah_schema_row_security_policies gauge
 ptah_schema_row_security_policies{dialect="sqlite"} 0

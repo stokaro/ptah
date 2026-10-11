@@ -69,7 +69,6 @@ func Collect(ctx context.Context, db *schemamodel.Database, target string, runti
 		{Name: "indexes", Help: "Indexes", Value: len(db.Indexes)},
 		{Name: "constraints", Help: "Table-level constraints", Value: len(db.Constraints)},
 		{Name: "enums", Help: "Enum types", Value: len(db.Enums)},
-		{Name: "extensions", Help: "Extensions", Value: len(db.Extensions)},
 		{Name: "functions", Help: "Functions and procedures", Value: len(db.Functions)},
 		{Name: "sequences", Help: "Standalone sequences", Value: len(db.Sequences)},
 		{Name: "domains", Help: "Domain types", Value: len(db.Domains)},

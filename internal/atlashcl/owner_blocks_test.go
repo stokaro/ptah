@@ -527,3 +527,116 @@ func TestParseWithOptions_ReportsTheEarliestRefusal(t *testing.T) {
 		})
 	}
 }
+
+// probeDecoder records the requests it is given and declares nothing.
+type probeDecoder struct {
+	requests *[]hclext.Request
+}
+
+func (d probeDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
+	*d.requests = append(*d.requests, request)
+	return hclext.Result{Declarations: make([]hclext.Declaration, len(request.Claims))}, nil
+}
+
+// probeOwners registers the owner example.org/custom, whose `probe` block is
+// named by its schema, which it reads as an optional reference to a schema,
+// and takes an optional reference to a table.
+func probeOwners(requests *[]hclext.Request) hclext.Set {
+	return must.Must(engine.New(engine.Provider{
+		ID:     "example.org/custom",
+		Codecs: []schemaext.Codec{gadgetCodec()},
+		HCL: []hclext.Extension{{
+			Owner: "example.org/custom",
+			Kinds: []schemaext.Kind{gadgetKind},
+			Blocks: []hclext.Block{{Site: hclext.TopLevel, Type: "probe", Naming: hclext.SchemaAndName, Attributes: []hclext.Attribute{
+				{Name: "schema", Kind: hclext.Ref, Refers: "schema", Optional: true},
+				{Name: "target", Kind: hclext.Ref, Refers: "table", Optional: true},
+			}}},
+			Decoder: probeDecoder{requests: requests},
+		}},
+	})).HCL()
+}
+
+// TestParseWithOptions_ReadsOptionalReferences pins an optional reference: a
+// block that leaves it out has no entry and is not refused, and one it
+// writes is read. A reference to a schema names the block's schema as the
+// naming's `schema` attribute does, and agrees with a schema label.
+func TestParseWithOptions_ReadsOptionalReferences(t *testing.T) {
+	tests := []struct {
+		name       string
+		document   string
+		wantSchema string
+		want       map[string]hclext.Value
+	}{
+		{name: "left out", document: `probe "p" {}`, want: make(map[string]hclext.Value)},
+		{name: "written", document: `schema "app" {}
+table "docs" {
+  schema = schema.app
+  column "id" {
+    type = int
+  }
+}
+probe "p" {
+  schema = schema.app
+  target = table.docs
+}`, wantSchema: "app", want: map[string]hclext.Value{
+			"schema": {Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "schema", Name: "app"}},
+			"target": {Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "table", Schema: "app", Name: "docs"}},
+		}},
+		{name: "a schema label and its reference", document: `probe "app" "p" {
+  schema = "app"
+}`, wantSchema: "app", want: map[string]hclext.Value{
+			"schema": {Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "schema", Name: "app"}},
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var requests []hclext.Request
+
+			_, err := atlashcl.ParseWithOptions([]byte(test.document+"\n"), "schema.hcl", atlashcl.Options{HCL: probeOwners(&requests)})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(requests, qt.HasLen, 1)
+			c.Assert(requests[0].Claims[0].Schema, qt.Equals, test.wantSchema)
+			c.Assert(requests[0].Claims[0].Attributes, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestParseWithOptions_RefusesAReferenceToNoSchema pins what a reference to
+// a schema refuses: a qualified reference, a reference to another type and
+// an expression that is neither a string nor a schema reference, and a
+// schema that disagrees with the label.
+func TestParseWithOptions_RefusesAReferenceToNoSchema(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		wantErr  string
+	}{
+		{name: "qualified", document: `probe "p" {
+  schema = schema.app.extra
+}`, wantErr: `parse HCL schema at schema\.hcl:1,1-6: probe attribute "schema" must be a string template or exact schema reference`},
+		{name: "another type", document: `probe "p" {
+  schema = table.docs
+}`, wantErr: `parse HCL schema at schema\.hcl:1,1-6: probe attribute "schema" must be a string template or exact schema reference`},
+		{name: "a function", document: `probe "p" {
+  schema = sql("app")
+}`, wantErr: `parse HCL schema at schema\.hcl:1,1-6: probe attribute "schema" must be a string template or exact schema reference`},
+		{name: "another schema than the label", document: `probe "app" "p" {
+  schema = schema.other
+}`, wantErr: `parse HCL schema at schema\.hcl:1,1-6: probe "p" schema label conflicts with schema attribute "other"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var requests []hclext.Request
+
+			db, err := atlashcl.ParseWithOptions([]byte(test.document+"\n"), "schema.hcl", atlashcl.Options{HCL: probeOwners(&requests)})
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+			c.Assert(requests, qt.HasLen, 0)
+		})
+	}
+}

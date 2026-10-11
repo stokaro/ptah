@@ -288,21 +288,31 @@ func TestSet_Parse_FailurePath(t *testing.T) {
 }
 
 // TestSet_Coverage claims for a document of a target what its extensions
-// claim, and nothing for a document of another target or of none.
+// claim, and nothing for a document of another target. A document that names
+// no target claims what an extension claims only when every pattern of the
+// extension, at least one, is untargeted.
 func TestSet_Coverage(t *testing.T) {
-	set := must.Must(sqlext.NewSet(sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"}, Coverage: noClaim}))
+	statement := sqlext.Pattern{Name: "create", Site: sqlext.Statement, Words: []string{"CREATE", "WIDGET"}}
+	targeted := sqlext.Pattern{Name: "index", Site: sqlext.TableElement, Words: []string{"INDEX"}, Targeted: true}
+	claim := func(patterns ...sqlext.Pattern) sqlext.Extension {
+		return sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"}, Patterns: patterns, Parser: shortParser{}, Coverage: noClaim}
+	}
 	tests := []struct {
 		name        string
+		extension   sqlext.Extension
 		target      string
 		wantClaimed bool
 	}{
-		{name: "its target", target: "a", wantClaimed: true},
-		{name: "another target", target: "b", wantClaimed: false},
-		{name: "no target", target: "", wantClaimed: false},
+		{name: "its target", extension: claim(), target: "a", wantClaimed: true},
+		{name: "another target", extension: claim(), target: "b", wantClaimed: false},
+		{name: "no target, no syntax", extension: claim(), target: "", wantClaimed: false},
+		{name: "no target, untargeted syntax", extension: claim(statement), target: "", wantClaimed: true},
+		{name: "no target, targeted syntax", extension: claim(statement, targeted), target: "", wantClaimed: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			set := must.Must(sqlext.NewSet(test.extension))
 
 			_, claimed, err := set.Coverage(test.target, nil)
 

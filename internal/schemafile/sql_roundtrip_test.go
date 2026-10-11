@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
@@ -174,13 +175,13 @@ func TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint(t *testing.T) {
 	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	first := renderPostgres(c, fromHCL)
-	c.Assert(first, qt.HasLen, 15)
+	c.Assert(first, qt.HasLen, 16)
 
 	sqlPath := writeSchemaFile(c, dir, "first.sql", strings.Join(first, ";\n")+";\n")
 	fromSQL, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	second := renderPostgres(c, fromSQL)
-	c.Assert(second, qt.HasLen, 15)
+	c.Assert(second, qt.HasLen, 16)
 
 	// Every statement comes back identical apart from the object comments that
 	// were rendered as bare `--` lines.
@@ -212,8 +213,9 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Tables, qt.HasLen, 1)
-	c.Assert(got.Extensions, qt.HasLen, 1)
-	c.Assert(got.Extensions[0].Schema, qt.Equals, "public")
+	c.Assert(ownerExtensions(c, got), qt.DeepEquals, map[string]pgextension.DesiredExtension{
+		"pg_trgm": {Schema: "public", Version: "1.6", Comment: "trigram search", IfNotExists: true},
+	})
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Domains, qt.HasLen, 1)
 	c.Assert(got.CompositeTypes, qt.HasLen, 1)

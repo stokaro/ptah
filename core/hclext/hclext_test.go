@@ -102,6 +102,14 @@ func TestNewSet_FailurePath(t *testing.T) {
 			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
 				Attributes: []hclext.Attribute{{Name: "schema", Kind: hclext.String}}})},
 			wantErr: `duplicate.*: HCL block "gadget" of example.org/a declares attribute "schema" twice or as its naming's own`},
+		{name: "the naming's own attribute as a reference to a table", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
+				Attributes: []hclext.Attribute{{Name: "schema", Kind: hclext.Ref, Refers: "table"}}})},
+			wantErr: `duplicate.*: HCL block "gadget" of example.org/a declares attribute "schema" twice or as its naming's own`},
+		{name: "an optional attribute of another kind", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
+				Attributes: []hclext.Attribute{{Name: "size", Kind: hclext.String, Optional: true}}})},
+			wantErr: `HCL attribute "size" of example.org/a block "gadget" is a string, and only a reference is made optional`},
 		{name: "an unknown kind", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
 			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
 				Attributes: []hclext.Attribute{{Name: "size", Kind: "expression"}}})},
@@ -146,7 +154,8 @@ func TestNewSet_FailurePath(t *testing.T) {
 
 // TestNewSet_HappyPath accepts every site, every naming and every attribute
 // kind. A block named by its labels alone takes no `schema` attribute, so it
-// may take an attribute of that name.
+// may take an attribute of that name, and a block named by its schema may list
+// the naming's `schema` as an optional reference to a schema.
 func TestNewSet_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
@@ -154,6 +163,8 @@ func TestNewSet_HappyPath(t *testing.T) {
 		hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName,
 			Attributes: []hclext.Attribute{{Name: "size", Kind: hclext.String}, {Name: "note", Kind: hclext.Text}, {Name: "on", Kind: hclext.Bool}}},
 		hclext.Block{Site: hclext.TopLevel, Type: "widget", Naming: hclext.SchemaAndQualifiedName},
+		hclext.Block{Site: hclext.TopLevel, Type: "plugin", Naming: hclext.SchemaAndName,
+			Attributes: []hclext.Attribute{{Name: "schema", Kind: hclext.Ref, Refers: "schema", Optional: true}}},
 		hclext.Block{Site: hclext.TopLevel, Type: "rule", Naming: hclext.JoinedName, Attributes: []hclext.Attribute{
 			{Name: "schema", Kind: hclext.Text}, {Name: "on", Kind: hclext.Ref, Refers: "table"}, {Name: "to", Kind: hclext.Refs, Refers: "role"}}},
 		hclext.Block{Site: hclext.InTable, Type: "switch", Attributes: []hclext.Attribute{{Name: "on", Kind: hclext.Bool}}},

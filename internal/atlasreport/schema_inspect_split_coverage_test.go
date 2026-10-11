@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashcl"
@@ -186,6 +187,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(must.Must(mysqlsource.BlockSizeCoverage()))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(pgextension.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

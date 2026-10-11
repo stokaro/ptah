@@ -117,6 +117,28 @@ func (s Set) ReadsHeader(target string, kind coverage.Kind) bool {
 // surrounding space. It lowers both rather than fold them: [strings.EqualFold]
 // also matches U+017F to "s", which would read a kind no owner records as one
 // of its own and drop it.
+// claimsFor reports whether extension's claim holds for a document of
+// target. A document that names no target reads only untargeted patterns, so
+// it makes the claim of an extension that reads it through patterns alone,
+// at least one, every one untargeted: it can write all the extension reads,
+// and the claim is about that. The PostgreSQL extension owner's statements
+// are such. An extension with a targeted pattern, a grammar, or no syntax at
+// all claims nothing there.
+func claimsFor(extension Extension, target string) bool {
+	if target != "" {
+		return slices.Contains(extension.Targets, target)
+	}
+	if extension.Grammar != nil || len(extension.Patterns) == 0 {
+		return false
+	}
+	for _, pattern := range extension.Patterns {
+		if pattern.Targeted {
+			return false
+		}
+	}
+	return true
+}
+
 func containsKind(kinds []coverage.Kind, kind coverage.Kind) bool {
 	want := strings.ToLower(strings.TrimSpace(string(kind)))
 	return slices.ContainsFunc(kinds, func(candidate coverage.Kind) bool {
@@ -396,15 +418,13 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 // Coverage combines the claims of the extensions that read documents of
 // target, each handed the entries of header whose kind it reads, and reports
 // whether any of them claims something. A document that names no target
-// claims nothing.
+// claims what an extension claims only where it reads all of that
+// extension's syntax; see [claimsFor].
 func (s Set) Coverage(target string, header []coverage.Object) (schemaext.Coverage, bool, error) {
 	var combined schemaext.Coverage
 	claimed := false
-	if target == "" {
-		return combined, false, nil
-	}
 	for _, extension := range s.extensions {
-		if !slices.Contains(extension.Targets, target) || extension.Coverage == nil {
+		if !claimsFor(extension, target) || extension.Coverage == nil {
 			continue
 		}
 		var limits []coverage.Object

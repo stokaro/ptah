@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
 )
@@ -123,7 +124,7 @@ tables:
 func TestParse_CoversCurrentSchemaIR(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(rowSecurityOwners, []byte(`
+	db, err := yamlschema.Parse(postgresOwners, []byte(`
 enums:
   account_status: [active, suspended]
 extensions:
@@ -220,8 +221,9 @@ rls_policies:
 	c.Assert(db.Fields[5].GeneratedExpression, qt.Equals, "lower(email)")
 	c.Assert(db.Fields[5].GeneratedKind, qt.Equals, "STORED")
 	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{{Name: "account_status", Values: []string{"active", "suspended"}}})
-	c.Assert(db.Extensions, qt.HasLen, 1)
-	c.Assert(db.Extensions[0].Schema, qt.Equals, "extensions")
+	extension, _, err := db.FeatureObjects.Get(pgextension.Ref("pg_trgm"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(extension.Value, qt.DeepEquals, &pgextension.DesiredExtension{Schema: "extensions", IfNotExists: true})
 	c.Assert(db.Functions, qt.HasLen, 1)
 	c.Assert(db.Functions[0].Returns, qt.Equals, "text")
 	c.Assert(db.Functions[0].Language, qt.Equals, "sql")
@@ -252,7 +254,7 @@ rls_policies:
 	c.Assert(db.DefaultPrivileges[1].Dialects, qt.DeepEquals, []string{"postgres"})
 	// Row-level security reaches the PostgreSQL row-security owner.
 	c.Assert(db.Tables[1].Facets.Kinds(), qt.Contains, pgpolicy.TableStateKind)
-	c.Assert(db.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{pgpolicy.PolicyRef("", "users", "users_tenant_isolation")})
+	c.Assert(db.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{pgextension.Ref("pg_trgm"), pgpolicy.PolicyRef("", "users", "users_tenant_isolation")})
 	c.Assert(db.RLSEnabledTables, qt.HasLen, 0)
 	c.Assert(db.RLSPolicies, qt.HasLen, 0)
 	c.Assert(db.Constraints, qt.HasLen, 1)

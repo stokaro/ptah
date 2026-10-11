@@ -480,6 +480,10 @@ func parseBoolPtr(value string) *bool {
 	return new(strings.EqualFold(value, "true"))
 }
 
+// extensionDirective is the frontend's extension directive, which a selected
+// extension owner reads by its target scope.
+const extensionDirective = "ptah:schema:extension"
+
 func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:extension", kv["name"])
@@ -489,6 +493,18 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	scope, err := parseDialectScope(kv, ctx)
 	if err != nil {
 		return err
+	}
+	// An extension a selected owner reads by its target scope is the
+	// extension owner's: one without a scope, or scoped to PostgreSQL-family
+	// targets only. One scoped to other targets only stays shared.
+	_, owned, err := s.annotations.TargetOwner(extensionDirective, scope)
+	if err != nil {
+		return s.targetScopeError(ctx, dialectscope.Attribute, err)
+	}
+	if owned {
+		// The extension is the declaration's subject wherever it is written,
+		// so a refusal names it there, as the shared model's does.
+		return s.handToOwner(extensionDirective, kv, kv["name"], scope, ctx)
 	}
 
 	s.extensions = append(s.extensions, schemamodel.Extension{

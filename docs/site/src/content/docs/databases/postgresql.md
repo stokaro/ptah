@@ -1238,6 +1238,28 @@ version the extension keeps.
 type PostgreSQLExtensions struct{}
 ```
 
+An extension declaration that names no target reaches every target. A target
+outside the PostgreSQL family leaves it out and says so in one line, in a
+render, in a plan and beside a `schema apply` result:
+
+```sql
+-- MYSQL: PostgreSQL extension "pgcrypto" is not supported by this target; skipped.
+```
+
+YDB refuses the declaration instead, because a skipped object would let an
+apply exit 0 without it. Add `dialects="postgres,yugabytedb"` to the
+annotation, or the equivalent scope in another source, to keep an extension
+off the other targets.
+
+Two Go packages, or a Go package and a YAML file, may each declare the same
+extension. Two equal declarations are one extension, and two that differ in
+any attribute are refused, naming the extension. A SQL schema directory runs
+its files in order, as the server would. A later file may declare an
+extension an earlier file declared only with `IF NOT EXISTS` and the same
+definition, `IF NOT EXISTS` included; any other second declaration is refused.
+`COMMENT ON EXTENSION` in a later file sets the comment of the extension an
+earlier file created.
+
 ## Standalone sequences
 
 PostgreSQL creates an implicit sequence for every `SERIAL` column and identity

@@ -841,7 +841,9 @@ two blocks sharing a name can be two overloads; `permission`, which renders a
 GRANT the engine accepts twice; and `data`, which declares no database object.
 
 Setting `PTAH_HCL_MERGE_REDECLARATIONS=1` restores the merge for every kind
-in the refused list above.
+in the refused list above. Two `extension` blocks merge only when they are
+equal; two that differ are refused, naming the extension, because keeping one
+would drop the other's version, schema or comment.
 
 An `enum` block accepts one or two labels. `enum "public" "mood"` names the
 schema and then the enum, exactly as `table` does, and is the spelling the Atlas

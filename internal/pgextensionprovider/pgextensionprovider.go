@@ -1,17 +1,21 @@
 // Package pgextensionprovider assembles the PostgreSQL extension owner of
-// package pgextension as one engine provider: its codecs, and its conversion,
-// comparison, planning, declaration and reversal services on every
-// PostgreSQL-family target, and its reports in both representations. The
-// bundled runtime selects it without the reports.
+// package pgextension as one engine provider: its codecs, its Go annotation,
+// YAML, SQL and HCL readers, its conversion, comparison, planning, declaration and
+// reversal services on every PostgreSQL-family target, and its reports in
+// both representations.
 package pgextensionprovider
 
 import (
 	"slices"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
+	"ptah.run/core/yamlext"
 	"ptah.run/engine"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgextension/extensioncompare"
@@ -19,6 +23,7 @@ import (
 	"ptah.run/feature/pgextension/extensionplan"
 	"ptah.run/feature/pgextension/extensionreport"
 	"ptah.run/feature/pgextension/extensionreverse"
+	"ptah.run/internal/pgextensionsource"
 )
 
 // Targets are the targets the services are registered for: every target of
@@ -38,6 +43,10 @@ func Provider() engine.Provider {
 		// whose extension blocks the compatibility surface left out,
 		// describes none of the owner's extensions either.
 		CoverageLimits: []schemaext.LimitMapping{{Header: coverage.Extension, Model: pgextension.ExtensionKind, Names: extensionNames}},
+		Annotations:    []annotation.Extension{pgextensionsource.Annotations()},
+		SQL:            []sqlext.Extension{pgextensionsource.SQL()},
+		HCL:            []hclext.Extension{pgextensionsource.HCL()},
+		YAML:           []yamlext.Extension{pgextensionsource.YAML()},
 		// An extension on a target outside the family is skipped with a note:
 		// the target does not miss it, and a Go tree that targets several
 		// engines shares one set of annotations.

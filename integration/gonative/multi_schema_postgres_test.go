@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -103,7 +104,16 @@ func filterMultiSchemaIntegrationTables(in *catalog.Database) *catalog.Database 
 	out.Tables = filterTables(in.Tables, keepTables)
 	out.Indexes = filterIndexes(in.Indexes, keepTables)
 	out.Constraints = filterConstraints(in.Constraints, keepTables)
+	out.FeatureObjects = withoutExtensions(in.FeatureObjects)
 	return &out
+}
+
+// withoutExtensions drops the extensions a PostgreSQL read hands to their
+// owner. These tests compare the objects they create; the extensions belong
+// to the shared database, and a comparison without a target refuses owner
+// state.
+func withoutExtensions(objects schemaext.Objects) schemaext.Objects {
+	return pgextension.Select(objects, func(string) bool { return false })
 }
 
 func filterTables(in []catalog.Table, keep map[string]struct{}) []catalog.Table {

@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
@@ -212,7 +213,8 @@ func TestPolicyRoles_LiveReaderReportsPUBLICBesideARole(t *testing.T) {
 
 			live := f.read(c)
 
-			objects := must.Must(live.FeatureObjects.All())
+			// The read also reports the database's extensions; the policy is the subject.
+			objects := must.Must(pgextension.Select(live.FeatureObjects, func(string) bool { return false }).All())
 			c.Assert(objects, qt.HasLen, 1)
 			c.Assert(objects[0].Value.(*pgpolicy.ObservedPolicy).Roles, qt.DeepEquals, []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}})
 		})

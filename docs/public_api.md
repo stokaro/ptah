@@ -2394,9 +2394,10 @@ declares an installation schema, a version, a comment and IF NOT EXISTS, and an
 empty field leaves its choice to the server. `ObservedExtension` holds what
 `pg_extension` reports, whether the extension may move to another schema, and
 `Provides`, the catalog names the extension supplies that do not resolve
-without it. `Subject` names an extension in a plan step's effects under the
-common `objectidentity.KindExtension`, so another owner can order its steps
-after the extension without importing this package.
+without it. A `DesiredExtension` is `schemaext.Redeclarable`, and states IF NOT
+EXISTS as `schemaext.Guarded`. `Subject` names an extension in a plan step's
+effects under the common `objectidentity.KindExtension`, so another owner can
+order its steps after the extension without importing this package.
 
 A declaration made from a read also carries the read's `Provides`. No
 statement writes it and no comparison reads it; an export uses it to keep an
@@ -2414,10 +2415,11 @@ and case-variant keys, and a refused value is a `schemaext.InvalidModelError`.
 `feature/pgextension/extensionrender` renders the payloads for the PostgreSQL
 family. CockroachDB and Spanner create an extension and do nothing else with
 one, so an installation schema and every alteration are refused there. The
-builtin runtime selects the owner on every PostgreSQL-family target and
-composes the handlers there; it leaves the reports out while the common
-`extensions` metric counts the same objects. No source or reader produces the
-models yet.
+builtin runtime selects the owner, its reports included, on every
+PostgreSQL-family target and composes the handlers there. The Go annotation,
+YAML, HCL and SQL sources hand an extension declaration to the owner, and the
+PostgreSQL reader hands it the installed extensions. A SQL document of a target
+outside the family reads CREATE EXTENSION through the shared grammar.
 
 `feature/pgextension/extensioncompare` compares extensions by name. The
 installation schema is compared under the target's default schema, the version
@@ -2663,15 +2665,29 @@ one nothing declared with an error wrapping `sqlext.ErrUndeclared`. The reader
 adds the declared objects, refusing a duplicate, and replaces each amended one
 where it was declared.
 
+An owner may instead state the amendment of an object it cannot find, and the
+reader refuses it, leading with the statement: `COMMENT ON EXTENSION citext IS
+'x': extension "citext" is not declared in this schema`. A reader of syntax
+alone, such as migration lint, which reads each statement by itself, then never
+sees a refusal for what other statements declare.
+
 `engine.Provider.SQL` registers an extension, and `engine.Runtime.SQL` returns
-the frozen set. An extension reads only targets its provider registers, and
-two patterns one document could consult at one site that can match the same
-syntax are refused at registration. The zero set is refused with
-`sqlext.ErrUnselected`, and `sqlext.None` reads the shared grammar alone.
-`Extension.Coverage` is the claim a document of the owner's targets makes. It
-is handed the entries of the document's `ptah:not-described` header whose kind
-is one of `Extension.Header`, such as a YDB topic the document leaves
-unmanaged.
+the frozen set. An extension reads targets its provider registers. A provider
+that does not register a target may still read statements of its own there:
+every pattern is a `Statement`, and each of its `Kinds` is a model whose
+desired codec the provider owns and which it compares or plans on that
+target. The PostgreSQL extension owner reads CREATE EXTENSION on every
+PostgreSQL-family target so. Two patterns one document could consult at one
+site that can match the same syntax are refused at registration. The zero set
+is refused with `sqlext.ErrUnselected`, and `sqlext.None` reads the shared
+grammar alone.
+
+`Extension.Coverage` is the claim a document of the owner's targets makes. A
+document that names no target makes it only when every pattern of the
+extension, at least one, is untargeted, because such a document can write all
+the extension reads. It is handed the entries of the document's
+`ptah:not-described` header whose kind is one of `Extension.Header`, such as a
+YDB topic the document leaves unmanaged.
 
 An owner whose target is not written in the shared grammar registers a
 `Grammar` instead of patterns, and one target takes one grammar. The reader
@@ -2716,7 +2732,14 @@ a block inside a `table`, with no labels.
   Name}`. A reference to a `table` the document declares carries that table's
   schema. One that several declared tables match is refused, naming their
   schemas. A missing reference, or one to another type, is refused as
-  `<type> "<name>" requires <attribute>`.
+  `<type> "<name>" requires <attribute>`. An `Attribute.Optional` reference
+  the block leaves out has no entry.
+- A reference to a `schema` names one schema: a string, a string template,
+  `schema.app` or `schema["app"]`. Anything else is refused as `<type>
+  attribute "<attribute>" must be a string template or exact schema
+  reference`. A `SchemaAndName` block may list the naming's own `schema` that
+  way, and the reference then names the block's schema and agrees with a
+  schema label.
 - A `Refs` attribute is a list of references, where a string or an identifier
   names the object as written. An element that refers to another type is
   refused. So is a string that spells a reference, such as `"role.app"`.
@@ -2774,8 +2797,9 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 partitioning attributes of an `index` block and the `coordination_node` header
 entries.
 `pgpolicysource.HCL` reads the `policy` block and a table's `row_security`
-block. `mysqlsource.HCL` reads no block: it claims that an index an HCL
-document declares has no block size, since the format cannot spell one.
+block, and `pgextensionsource.HCL` the `extension` block. `mysqlsource.HCL`
+reads no block: it claims that an index an HCL document declares has no block
+size, since the format cannot spell one.
 
 `atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
 blocks and attributes and the captured header are refused there, and no
@@ -2830,6 +2854,23 @@ A skipped object is a `schemaext.SkippedObject`: a render writes its
 writes as a comment. `engine.Target.RefusesSkips` makes a target refuse what an
 owner would skip there. A model without a statement reaches the target's
 services as before.
+
+`schemaext.Redeclarable` is an owner's statement that its object is idempotent
+to declare: two packages that each use pg_trgm may each declare it. It is a
+property of the model, not a way for a host to tolerate duplicates. A source
+that meets a second declaration of the same identity keeps one of two equal
+ones and refuses two that differ in value or target scope, naming the identity
+(`Objects.Declare`, `Objects.MergeDeclarations`). A model whose value does not
+state it, such as a row-level security policy, keeps every second declaration a
+refusal.
+
+`schemaext.Guarded` is an owner's statement that its object was declared
+under the statement's "may already exist" clause, as CREATE EXTENSION IF NOT
+EXISTS declares one. A SQL schema directory runs its files in order, so it
+admits a later file's guarded declaration of an object an earlier file
+declared and refuses an unguarded one, naming the object by the noun its kind
+ends in: `read state from "002.sql": extension "pg_trgm" already exists`.
+Whether the two declarations then combine is `Redeclarable`'s question.
 
 The constants of `core/coverage` are the common kinds. An owner that records
 state it does not model declares its own kinds, such as `ydbschema.CoverageChangefeed`

@@ -8,11 +8,13 @@
 package sqldecl
 
 import (
+	"strings"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
-	"ptah.run/feature/pgpolicy"
 )
 
 // The object kinds a declaration names, spelled the way the directory check's
@@ -37,7 +39,9 @@ const (
 func Of(path string, db *schemamodel.Database, statements *ast.StatementList) sqlext.FileDeclarations {
 	listed := schemas(db)
 	listed = append(listed, objects(db)...)
-	return sqlext.FileDeclarations{Path: path, Objects: listed, Guards: guards(statements), Tables: tables(statements)}
+	return sqlext.FileDeclarations{
+		Path: path, Objects: listed, Guards: append(guards(statements), ownerGuards(db)...), Tables: tables(statements),
+	}
 }
 
 // OfDocument describes what one file that is no script declares, an HCL file.
@@ -97,13 +101,12 @@ func objects(db *schemamodel.Database) []sqlext.Declaration {
 	for _, policy := range db.RLSPolicies {
 		listed = append(listed, declaration(Policy, qualifyWithOwner(policy.Table, policy.Name)))
 	}
-	// An HCL document hands its policies to the row-security owner as it is
-	// read; a SQL file's are handed over once the whole directory is read.
+	// An owner's object is listed whichever owner reads it, by its identity:
+	// a SQL file's extensions, and the policies an HCL document hands to the
+	// row-security owner as it is read. A SQL file's policies are handed over
+	// once the whole directory is read, so they are listed above.
 	for _, ref := range db.FeatureObjects.Refs() {
-		if ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) {
-			table := schemamodel.QualifyTableName(ref.Schema.Authored(), ref.Parent.Source)
-			listed = append(listed, declaration(Policy, qualifyWithOwner(table, ref.Name.Source)))
-		}
+		listed = append(listed, Owned(ref))
 	}
 	listed = append(listed, declaredTypes(db)...)
 	for _, sequence := range db.Sequences {
@@ -116,6 +119,58 @@ func objects(db *schemamodel.Database) []sqlext.Declaration {
 		listed = append(listed, declaration(Role, role.Name))
 	}
 	return listed
+}
+
+// Owned is how the ledger names an owner's object: by the noun its kind ends
+// in, with hyphens read as spaces, and by its name qualified with its schema,
+// as written, and its parent. `ptah.run/pgpolicy/policy` on table app.users is
+// policy "app.users.p", as the shared grammar's policies are named, and
+// `ptah.run/pgextension/extension` is extension "pg_trgm". A component that
+// holds a dot or a double quote is written in double quotes, as
+// [objectidentity.ID.String] writes it, so a YDB table named `app.events` and
+// a table events in the directory app keep apart. A refusal names the object
+// by the same words.
+func Owned(ref objectidentity.ID) sqlext.Declaration {
+	noun := string(ref.Kind)
+	if index := strings.LastIndex(noun, "/"); index >= 0 {
+		noun = noun[index+1:]
+	}
+	parts := make([]string, 0, 4)
+	for _, part := range []string{ref.Catalog.Authored(), ref.Schema.Authored(), ref.Parent.Source, ref.Name.Source} {
+		switch {
+		case part == "":
+		case strings.ContainsAny(part, `."`):
+			parts = append(parts, `"`+strings.ReplaceAll(part, `"`, `""`)+`"`)
+		default:
+			parts = append(parts, part)
+		}
+	}
+	name := strings.Join(parts, ".")
+	if ref.Signature != "" {
+		name += "(" + ref.Signature + ")"
+	}
+	return declaration(strings.ReplaceAll(noun, "-", " "), name)
+}
+
+// ownerGuards lists the owners' objects a SQL file declares under the
+// statement's "may already exist" clause, as each value states it; see
+// [schemaext.Guarded]. A value that cannot be read is not a guard, so its
+// redeclaration is refused rather than admitted.
+func ownerGuards(db *schemamodel.Database) []sqlext.Declaration {
+	if db == nil {
+		return nil
+	}
+	var guarded []sqlext.Declaration
+	for _, ref := range db.FeatureObjects.Refs() {
+		object, found, err := db.FeatureObjects.Get(ref)
+		if err != nil || !found {
+			continue
+		}
+		if value, ok := object.Value.(schemaext.Guarded); ok && value.Guarded() {
+			guarded = append(guarded, Owned(ref))
+		}
+	}
+	return guarded
 }
 
 // declaredTypes lists the four object kinds that share one type namespace, so a

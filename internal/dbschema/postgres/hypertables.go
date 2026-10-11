@@ -88,8 +88,8 @@ type readHypertable struct {
 // A failure once the extension IS installed is surfaced rather than swallowed,
 // for the reason the aggregate read gives: an empty answer would say "no table
 // here is partitioned", and that is a claim a failed read cannot make.
-func (r *Reader) readHypertables(ctx context.Context, extensions []catalog.Extension) ([]readHypertable, error) {
-	if !hasTimescaleExtension(extensions) {
+func (r *Reader) readHypertables(ctx context.Context, installed []string) ([]readHypertable, error) {
+	if !hasTimescaleExtension(installed) {
 		return nil, nil
 	}
 	var hypertables []readHypertable
