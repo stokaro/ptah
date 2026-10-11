@@ -96,3 +96,39 @@ func TestLintSource_RoutinesWithoutAReader_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `sql lint reads the routine bodies the file defines and was given no routine body reader`)
 	c.Assert(findings, qt.IsNil)
 }
+
+// Only a body the parser attached as a PostgreSQL routine body is read. On
+// another target a CREATE FUNCTION carries its text and no routine body, and
+// a reader that target registers is not handed it, since nothing says the
+// text is in its language.
+func TestLintSource_AFunctionWithNoRoutineBodyIsNotRead(t *testing.T) {
+	c := qt.New(t)
+	var asked []routineext.ReadRequest
+	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/oracle", Targets: []engine.Target{
+		{Name: "oracle", RoutineBodies: recordingReader{asked: &asked}}}}))
+
+	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql",
+		SQL: "CREATE FUNCTION f() RETURNS integer AS $$ EXECUTE 'x' $$ LANGUAGE sql;"},
+		sqllint.Options{Dialect: platform.Oracle, Bodies: runtime})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(asked, qt.HasLen, 0)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{sqllint.RuleUnsupportedStatement})
+}
+
+// recordingReader records each request and reads every body as one dynamic
+// statement.
+type recordingReader struct {
+	asked *[]routineext.ReadRequest
+}
+
+func (r recordingReader) ReadBodies(_ context.Context, request routineext.ReadRequest) (routineext.ReadResult, error) {
+	*r.asked = append(*r.asked, request)
+	result := routineext.ReadResult{}
+	for _, body := range request.Bodies {
+		result.Bodies = append(result.Bodies, routineext.Reading{
+			Statements: []routineext.Statement{{Kind: routineext.StatementDynamic, Label: "execute", SQL: body.SQL}},
+		})
+	}
+	return result, nil
+}

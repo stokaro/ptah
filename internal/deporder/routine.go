@@ -3,7 +3,6 @@ package deporder
 import (
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
@@ -51,19 +50,16 @@ type RoutineCreation struct {
 	Relations []string
 }
 
-// ResolvesBodyAtCreate reports whether dialect resolves the names in routine's
+// BodyResolution reports whether a target resolves the names in a routine's
 // body when the routine is created, so that everything the body reads has to
-// exist first.
+// exist first. A target that resolves a body at its first call, or never, is
+// nil: only the routine's signature then orders it.
 //
-// On the PostgreSQL family that is a LANGUAGE sql routine. A PL/pgSQL body is
-// parsed at creation and resolved at its first call: measured on PostgreSQL
-// 18.6, a PL/pgSQL function reading a table that does not exist is created. A
-// routine stating no language is refused by the server, so it has nothing to
-// order. The other dialects create a routine whose body names a missing table
-// and report it later, or not at all, so none of them is listed.
-func ResolvesBodyAtCreate(routine schemamodel.Function, dialect string) bool {
-	return platform.IsPostgresFamily(dialect) && strings.EqualFold(strings.TrimSpace(routine.Language), "sql")
-}
+// It is the target's rule, not this package's: on the PostgreSQL family a
+// LANGUAGE sql body is resolved at creation and a PL/pgSQL body at its first
+// call, and the PostgreSQL planner states that
+// (internal/planner/dialects/postgres).
+type BodyResolution func(schemamodel.Function) bool
 
 // PlaceRoutines returns where each routine can go, keyed by routine name.
 //
@@ -73,18 +69,19 @@ func ResolvesBodyAtCreate(routine schemamodel.Function, dialect string) bool {
 // the overloads of one name share the latest placement any of them needs.
 //
 // dependencies is the call graph, routine name to the routine names it calls.
-// A caller takes at least its callee's placement, because PostgreSQL resolves
-// the call in a LANGUAGE sql body at creation, and the caller is ordered after
-// the callee in every other case already.
+// A caller takes at least its callee's placement, because a body resolved at
+// creation resolves the call too, and the caller is ordered after the callee
+// in every other case already. resolves is the target's [BodyResolution].
 func PlaceRoutines(
 	routines []schemamodel.Function,
 	dependencies map[string][]string,
 	created RoutineCreation,
 	dialect string,
+	resolves BodyResolution,
 ) map[string]RoutinePlacement {
 	placements := make(map[string]RoutinePlacement, len(routines))
 	for _, routine := range routines {
-		placement := placeRoutine(routine, created, dialect)
+		placement := placeRoutine(routine, created, dialect, resolves)
 		if current, known := placements[routine.Name]; !known || placement > current {
 			placements[routine.Name] = placement
 		}
@@ -112,10 +109,10 @@ func PlaceRoutines(
 }
 
 // placeRoutine is the placement one routine's own definition needs.
-func placeRoutine(routine schemamodel.Function, created RoutineCreation, dialect string) RoutinePlacement {
+func placeRoutine(routine schemamodel.Function, created RoutineCreation, dialect string, resolves BodyResolution) RoutinePlacement {
 	signature := RoutineSignatureText(routine)
 	resolvedBody := ""
-	if ResolvesBodyAtCreate(routine, dialect) {
+	if resolves != nil && resolves(routine) {
 		resolvedBody = routine.Body
 	}
 	for _, relation := range created.Relations {
@@ -139,11 +136,11 @@ func RoutineSignatureText(routine schemamodel.Function) string {
 }
 
 // RoutineOrderingBody is the text a routine is ordered by among the view-likes:
-// its signature, and its body where the server resolves the body at creation.
-// A PL/pgSQL body that names a view adds no edge, because the server does not
-// read it until the routine runs.
-func RoutineOrderingBody(routine schemamodel.Function, dialect string) string {
-	if ResolvesBodyAtCreate(routine, dialect) {
+// its signature, and its body where the target resolves the body at creation
+// (resolves). A body resolved at its first call adds no edge, because the
+// server does not read it until the routine runs.
+func RoutineOrderingBody(routine schemamodel.Function, resolves BodyResolution) string {
+	if resolves != nil && resolves(routine) {
 		return RoutineSignatureText(routine) + "\n" + routine.Body
 	}
 	return RoutineSignatureText(routine)

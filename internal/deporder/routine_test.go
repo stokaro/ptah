@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
+	pgplanner "ptah.run/internal/planner/dialects/postgres"
 )
 
 // createdOrdersAndMood is a plan that creates the table orders in schema app,
@@ -18,107 +19,109 @@ var createdOrdersAndMood = deporder.RoutineCreation{
 }
 
 // TestPlaceRoutines_OneRoutine pins where one routine's own definition puts
-// it. The rows vary what PostgreSQL resolves at creation: the signature always,
-// a LANGUAGE sql body, and nothing else.
+// it. The rows vary what the target resolves at creation: the signature
+// always, and the body where the target's rule says so -- on the PostgreSQL
+// family a LANGUAGE sql body, and on a target with no rule nothing else.
 func TestPlaceRoutines_OneRoutine(t *testing.T) {
 	tests := []struct {
-		name    string
-		routine schemamodel.Function
-		dialect string
-		want    deporder.RoutinePlacement
+		name     string
+		routine  schemamodel.Function
+		dialect  string
+		resolves deporder.BodyResolution
+		want     deporder.RoutinePlacement
 	}{
 		{
 			name:    "a sql body reading a created table waits for it",
 			routine: schemamodel.Function{Name: "order_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM app.orders"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineWithRelations,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineWithRelations,
 		},
 		{
 			name:    "an unqualified reference names the qualified table",
 			routine: schemamodel.Function{Name: "order_count", Language: "SQL", Returns: "bigint", Body: "SELECT count(*) FROM orders"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineWithRelations,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineWithRelations,
 		},
 		{
 			name:    "a sql body reading a created view waits for it",
 			routine: schemamodel.Function{Name: "recent_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM recent_orders"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineWithRelations,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineWithRelations,
 		},
 		{
 			name:    "a PL/pgSQL body is not read at creation",
 			routine: schemamodel.Function{Name: "order_count", Language: "plpgsql", Returns: "bigint", Body: "BEGIN RETURN (SELECT count(*) FROM app.orders); END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineBeforeTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineBeforeTypes,
 		},
 		{
 			name:    "a table row type in the signature waits for the table",
 			routine: schemamodel.Function{Name: "big_orders", Language: "plpgsql", Returns: "SETOF app.orders", Body: "BEGIN RETURN; END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineWithRelations,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineWithRelations,
 		},
 		{
 			name:    "a created type in the signature waits for the type only",
 			routine: schemamodel.Function{Name: "default_mood", Language: "plpgsql", Returns: "mood", Body: "BEGIN RETURN 'happy'; END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineAfterTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineAfterTypes,
 		},
 		{
 			name:    "a created type in a parameter waits for the type",
 			routine: schemamodel.Function{Name: "is_happy", Language: "sql", Parameters: "m mood", Returns: "boolean", Body: "SELECT m = 'happy'"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineAfterTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineAfterTypes,
 		},
 		{
 			name:    "a created type named in the default schema waits for the type",
 			routine: schemamodel.Function{Name: "default_mood", Language: "plpgsql", Returns: "public.mood", Body: "BEGIN RETURN 'happy'; END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineAfterTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineAfterTypes,
 		},
 		{
 			name:    "a created view named in the default schema waits for the view",
 			routine: schemamodel.Function{Name: "recent", Language: "plpgsql", Returns: `SETOF "public"."recent_orders"`, Body: "BEGIN RETURN; END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineWithRelations,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineWithRelations,
 		},
 		{
 			name:    "an unqualified type named in another schema names nothing",
 			routine: schemamodel.Function{Name: "other_mood", Language: "plpgsql", Returns: "other.mood", Body: "BEGIN RETURN 'happy'; END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineBeforeTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineBeforeTypes,
 		},
 		{
 			name:    "a qualified table is not named in the default schema",
 			routine: schemamodel.Function{Name: "public_orders", Language: "plpgsql", Returns: "SETOF public.orders", Body: "BEGIN RETURN; END"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineBeforeTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineBeforeTypes,
 		},
 		{
 			name:    "a table the plan does not create names nothing",
 			routine: schemamodel.Function{Name: "user_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM users"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineBeforeTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineBeforeTypes,
 		},
 		{
 			name:    "a name inside a string literal names nothing",
 			routine: schemamodel.Function{Name: "label", Language: "sql", Returns: "text", Body: "SELECT 'orders'::text"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineBeforeTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineBeforeTypes,
 		},
 		{
 			name:    "a name inside a comment names nothing",
 			routine: schemamodel.Function{Name: "one", Language: "sql", Returns: "integer", Body: "SELECT 1 -- from orders"},
-			dialect: platform.Postgres,
-			want:    deporder.RoutineBeforeTypes,
+			dialect: platform.Postgres, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineBeforeTypes,
 		},
 		{
 			name:    "CockroachDB resolves a sql body too",
 			routine: schemamodel.Function{Name: "order_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM orders"},
-			dialect: platform.CockroachDB,
-			want:    deporder.RoutineWithRelations,
+			dialect: platform.CockroachDB, resolves: pgplanner.ResolvesBodyAtCreate,
+			want: deporder.RoutineWithRelations,
 		},
 		{
-			name:    "MySQL does not resolve a body at creation",
+			name:    "a target with no rule resolves no body at creation",
 			routine: schemamodel.Function{Name: "order_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM orders"},
 			dialect: platform.MySQL,
 			want:    deporder.RoutineBeforeTypes,
@@ -129,7 +132,7 @@ func TestPlaceRoutines_OneRoutine(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := deporder.PlaceRoutines([]schemamodel.Function{test.routine}, nil, createdOrdersAndMood, test.dialect)
+			got := deporder.PlaceRoutines([]schemamodel.Function{test.routine}, nil, createdOrdersAndMood, test.dialect, test.resolves)
 
 			c.Assert(got, qt.DeepEquals, map[string]deporder.RoutinePlacement{test.routine.Name: test.want})
 		})
@@ -149,7 +152,7 @@ func TestPlaceRoutines_ACallerFollowsItsCallee(t *testing.T) {
 	}
 	dependencies := map[string][]string{"top": {"middle"}, "middle": {"order_count"}}
 
-	got := deporder.PlaceRoutines(routines, dependencies, createdOrdersAndMood, platform.Postgres)
+	got := deporder.PlaceRoutines(routines, dependencies, createdOrdersAndMood, platform.Postgres, pgplanner.ResolvesBodyAtCreate)
 
 	c.Assert(got, qt.DeepEquals, map[string]deporder.RoutinePlacement{
 		"top":         deporder.RoutineWithRelations,
@@ -169,7 +172,7 @@ func TestPlaceRoutines_OverloadsShareTheLatestPlacement(t *testing.T) {
 		{Name: "total", Language: "sql", Parameters: "a bigint", Returns: "bigint", Body: "SELECT sum(id) FROM orders"},
 	}
 
-	got := deporder.PlaceRoutines(routines, nil, createdOrdersAndMood, platform.Postgres)
+	got := deporder.PlaceRoutines(routines, nil, createdOrdersAndMood, platform.Postgres, pgplanner.ResolvesBodyAtCreate)
 
 	c.Assert(got, qt.DeepEquals, map[string]deporder.RoutinePlacement{"total": deporder.RoutineWithRelations})
 }
@@ -181,7 +184,7 @@ func TestViewLikesForCreate_ARoutineSitsBetweenTheViewsItReadsAndCalls(t *testin
 	c := qt.New(t)
 	routine := schemamodel.Function{Name: "big_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM big"}
 	objects := []deporder.ViewLike{
-		{Name: "big_count", Body: deporder.RoutineOrderingBody(routine, platform.Postgres), Routine: true},
+		{Name: "big_count", Body: deporder.RoutineOrderingBody(routine, pgplanner.ResolvesBodyAtCreate), Routine: true},
 		{Name: "summary", Body: "SELECT big_count() AS n"},
 		{Name: "big", Body: "SELECT * FROM orders WHERE total > 100"},
 	}
@@ -193,4 +196,28 @@ func TestViewLikesForCreate_ARoutineSitsBetweenTheViewsItReadsAndCalls(t *testin
 		names = append(names, object.Name)
 	}
 	c.Assert(names, qt.DeepEquals, []string{"big", "big_count", "summary"})
+}
+
+// TestRoutineOrderingBody_IsTheTextTheTargetResolvesAtCreate pins what a
+// routine is ordered by among the view-likes: its signature, and its body
+// only where the target's rule resolves the body when the routine is created.
+func TestRoutineOrderingBody_IsTheTextTheTargetResolvesAtCreate(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		language string
+		resolves deporder.BodyResolution
+		want     string
+	}{
+		{name: "a body the target resolves at creation", language: "sql", resolves: pgplanner.ResolvesBodyAtCreate,
+			want: "() bigint\nSELECT count(*) FROM orders"},
+		{name: "a body the target resolves at its first call", language: "plpgsql", resolves: pgplanner.ResolvesBodyAtCreate,
+			want: "() bigint"},
+		{name: "a target with no rule", language: "sql", want: "() bigint"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			routine := schemamodel.Function{Name: "order_count", Language: test.language, Returns: "bigint", Body: "SELECT count(*) FROM orders"}
+			c.Assert(deporder.RoutineOrderingBody(routine, test.resolves), qt.Equals, test.want)
+		})
+	}
 }

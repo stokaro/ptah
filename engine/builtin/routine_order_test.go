@@ -64,6 +64,15 @@ CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT c
 			order: []string{`CREATE TABLE "rates"`, `FUNCTION "default_pct"`, `CREATE TABLE "invoices"`},
 		},
 		{
+			name: "a routine a table calls reads a table that waits for a routine of its own",
+			sql: `CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());
+CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL DEFAULT seed_pct());
+CREATE TABLE settings (pct integer NOT NULL);
+CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce((SELECT pct FROM rates WHERE code = 'std'), 0) $$;
+CREATE FUNCTION seed_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce(max(pct), 0) FROM settings $$;`,
+			order: []string{`CREATE TABLE "settings"`, `FUNCTION "seed_pct"`, `CREATE TABLE "rates"`, `FUNCTION "default_pct"`, `CREATE TABLE "invoices"`},
+		},
+		{
 			name: "a CHECK calls a LANGUAGE sql routine reading another table",
 			sql: `CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
 CREATE FUNCTION has_rate(c text) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM rates WHERE code = c) $$;

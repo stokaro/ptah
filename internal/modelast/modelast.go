@@ -1905,7 +1905,9 @@ func WalkDatabase(
 	return lowering.Context.Err()
 }
 
-func walkCommonDatabase(database schemamodel.Database, targetPlatform string, names grantName, visit func(ast.Node) error) error {
+func walkCommonDatabase(
+	database schemamodel.Database, targetPlatform string, names grantName, resolves deporder.BodyResolution, visit func(ast.Node) error,
+) error {
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
 	// wrong default refuses rather than merges.
@@ -1925,7 +1927,7 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, na
 	// render creates goes before the types, one whose signature names a type
 	// goes after them, and both precede the tables whose defaults may call
 	// them. One that names a relation waits for it among the view-likes.
-	placements := declaredRoutinePlacements(database, targetPlatform)
+	placements := declaredRoutinePlacements(database, targetPlatform, resolves)
 	if err := appendPreTableStatements(visit, database, targetPlatform, placements); err != nil {
 		return err
 	}
@@ -1940,7 +1942,7 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, na
 	// takes them here, with the table; what remains is emitted after.
 	tableIndexes, viewIndexes := splitMaterializedViewIndexes(database)
 	inlineIndexes, tableIndexes := inlineTableIndexes(database.Tables, tableIndexes, targetPlatform)
-	tableRoutines, err := appendTableStatements(visit, database, allFields, targetPlatform, placements, inlineIndexes)
+	tableRoutines, err := appendTableStatements(visit, database, allFields, targetPlatform, placements, inlineIndexes, resolves)
 	if err != nil {
 		return err
 	}
@@ -1966,7 +1968,7 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, na
 	}
 
 	// 9. Everything that needs the tables to exist first.
-	if err := appendPostTableObjectStatements(visit, database, targetPlatform, names, placements, tableRoutines); err != nil {
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform, names, placements, tableRoutines, resolves); err != nil {
 		return err
 	}
 
@@ -2129,6 +2131,7 @@ func appendTableStatements(
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
 	inlineIndexes map[string][]*ast.IndexNode,
+	resolves deporder.BodyResolution,
 ) (map[string]bool, error) {
 	sqliteTarget := isSQLiteTarget(targetPlatform)
 	mode := tableConstraintsWithoutForeignKeys
@@ -2148,7 +2151,7 @@ func appendTableStatements(
 			Expressions: deporder.TableExpressions(table.Checks, tableFields(table, allFields), tableConstraints(table, database.Constraints)),
 		})
 	}
-	steps := deporder.TablesWithRoutinesForCreate(creations, routines, database.FunctionDependencies, targetPlatform)
+	steps := deporder.TablesWithRoutinesForCreate(creations, routines, database.FunctionDependencies, targetPlatform, resolves)
 
 	created := make(map[string]bool)
 	tables := make(map[string][]schemamodel.Table, len(database.Tables))
@@ -2403,6 +2406,7 @@ func appendPostTableObjectStatements(
 	names grantName,
 	placements map[string]deporder.RoutinePlacement,
 	tableRoutines map[string]bool,
+	resolves deporder.BodyResolution,
 ) error {
 	// Associate standalone sequences with their owning table.column now that the
 	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
@@ -2413,7 +2417,7 @@ func appendPostTableObjectStatements(
 			}
 		}
 	}
-	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements, tableRoutines); err != nil {
+	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements, tableRoutines, resolves); err != nil {
 		return err
 	}
 	for _, rlsEnabled := range database.RLSEnabledTables {
@@ -2490,6 +2494,7 @@ func appendOrderedViewLikeStatements(
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
 	tableRoutines map[string]bool,
+	resolves deporder.BodyResolution,
 ) error {
 	objects := make([]deporder.ViewLike, 0, len(database.Views)+len(database.MaterializedViews))
 	viewsByName := make(map[string]schemamodel.View, len(database.Views))
@@ -2502,7 +2507,7 @@ func appendOrderedViewLikeStatements(
 		if _, seen := routinesByName[function.Name]; !seen {
 			objects = append(objects, deporder.ViewLike{
 				Name:      function.Name,
-				Body:      deporder.RoutineOrderingBody(function, targetPlatform),
+				Body:      deporder.RoutineOrderingBody(function, resolves),
 				Routine:   true,
 				DependsOn: database.FunctionDependencies[function.Name],
 			})
@@ -2550,7 +2555,9 @@ func appendOrderedViewLikeStatements(
 // Name. Named by Name alone, `CREATE TABLE app.t` is a bare `t`, which a
 // routine's `RETURNS SETOF app.t` does not reference, so the routine is created
 // first and refused with `type "app.t" does not exist` (stokaro/ptah#4039).
-func declaredRoutinePlacements(database schemamodel.Database, targetPlatform string) map[string]deporder.RoutinePlacement {
+func declaredRoutinePlacements(
+	database schemamodel.Database, targetPlatform string, resolves deporder.BodyResolution,
+) map[string]deporder.RoutinePlacement {
 	var created deporder.RoutineCreation
 	for _, enum := range database.Enums {
 		created.Types = append(created.Types, enum.QualifiedName())
@@ -2573,7 +2580,7 @@ func declaredRoutinePlacements(database schemamodel.Database, targetPlatform str
 	for _, view := range database.MaterializedViews {
 		created.Relations = append(created.Relations, view.Name)
 	}
-	return deporder.PlaceRoutines(database.Functions, database.FunctionDependencies, created, targetPlatform)
+	return deporder.PlaceRoutines(database.Functions, database.FunctionDependencies, created, targetPlatform, resolves)
 }
 
 func isSQLiteTarget(targetPlatform string) bool {

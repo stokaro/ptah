@@ -76,12 +76,13 @@ func TableExpressions(checks []string, fields []schemamodel.Field, constraints [
 // A routine no table calls is not in the result; it stays with the views. A
 // cycle -- a routine that reads the very table whose default calls it -- is
 // one no order satisfies, and degrades to the order given, which PostgreSQL
-// then refuses at the routine.
+// then refuses at the routine. resolves is the target's [BodyResolution].
 func TablesWithRoutinesForCreate(
 	tables []TableCreation,
 	routines []schemamodel.Function,
 	dependencies map[string][]string,
 	dialect string,
+	resolves BodyResolution,
 ) []TableStep {
 	byName := make(map[string][]schemamodel.Function, len(routines))
 	var routineNames []string
@@ -97,7 +98,7 @@ func TablesWithRoutinesForCreate(
 		return tablesOnly(tables)
 	}
 
-	nodes, edges := tableRoutineGraph(tables, routineNames, byName, called, dependencies, dialect)
+	nodes, edges := tableRoutineGraph(tables, routineNames, byName, called, dependencies, dialect, resolves)
 
 	steps := make([]TableStep, 0, len(nodes))
 	for _, id := range StableTopologicalSort(nodes, edges) {
@@ -125,6 +126,7 @@ func tableRoutineGraph(
 	called map[string]bool,
 	dependencies map[string][]string,
 	dialect string,
+	resolves BodyResolution,
 ) (nodes []string, edges map[string][]string) {
 	edges = make(map[string][]string)
 	for i := range tables {
@@ -135,7 +137,7 @@ func tableRoutineGraph(
 			continue
 		}
 		nodes = append(nodes, routineNodeID(name))
-		edges[routineNodeID(name)] = append(edges[routineNodeID(name)], namedTables(tables, byName[name], dialect)...)
+		edges[routineNodeID(name)] = append(edges[routineNodeID(name)], namedTables(tables, byName[name], dialect, resolves)...)
 		for _, callee := range dependencies[name] {
 			if called[callee] {
 				edges[routineNodeID(name)] = append(edges[routineNodeID(name)], routineNodeID(callee))
@@ -153,14 +155,14 @@ func tableRoutineGraph(
 }
 
 // namedTables are the nodes of the new tables any overload of a routine names.
-func namedTables(tables []TableCreation, overloads []schemamodel.Function, dialect string) []string {
+func namedTables(tables []TableCreation, overloads []schemamodel.Function, dialect string, resolves BodyResolution) []string {
 	var named []string
 	for i, table := range tables {
 		if table.Existing {
 			continue
 		}
 		for _, routine := range overloads {
-			if namesObject(RoutineOrderingBody(routine, dialect), table.Name, dialect) {
+			if namesObject(RoutineOrderingBody(routine, resolves), table.Name, dialect) {
 				named = append(named, tableNodeID(i))
 				break
 			}

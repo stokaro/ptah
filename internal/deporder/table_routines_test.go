@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
+	pgplanner "ptah.run/internal/planner/dialects/postgres"
 )
 
 // ratesReaders are routines that read the table rates: default_pct directly,
@@ -113,7 +114,7 @@ func TestTablesWithRoutinesForCreate_PlacesACalledRoutineBetweenTables(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := deporder.TablesWithRoutinesForCreate(test.tables, ratesReaders, ratesCallGraph, platform.Postgres)
+			got := deporder.TablesWithRoutinesForCreate(test.tables, ratesReaders, ratesCallGraph, platform.Postgres, pgplanner.ResolvesBodyAtCreate)
 
 			c.Assert(got, qt.DeepEquals, test.want)
 		})

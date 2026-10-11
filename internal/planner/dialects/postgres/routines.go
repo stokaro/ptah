@@ -1,12 +1,26 @@
 package postgres
 
 import (
+	"strings"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/schemadiff/difftypes"
 )
+
+// ResolvesBodyAtCreate reports whether the PostgreSQL family resolves the
+// names in routine's body when the routine is created, so that everything the
+// body reads has to exist first ([deporder.BodyResolution]).
+//
+// That is a LANGUAGE sql routine. A PL/pgSQL body is parsed at creation and
+// resolved at its first call: measured on PostgreSQL 18.6, a PL/pgSQL function
+// reading a table that does not exist is created. A routine stating no
+// language is refused by the server, so it has nothing to order.
+func ResolvesBodyAtCreate(routine schemamodel.Function) bool {
+	return strings.EqualFold(strings.TrimSpace(routine.Language), "sql")
+}
 
 // routinePlacements says where each routine this plan creates or replaces
 // goes; see [deporder.PlaceRoutines], which is the rule. A replaced routine is
@@ -23,6 +37,7 @@ func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff) map[string]depor
 		diff.DeclaredFunctions.Dependencies,
 		routineCreation(diff),
 		p.targetDialect(),
+		ResolvesBodyAtCreate,
 	)
 }
 
@@ -148,7 +163,7 @@ func (p *Planner) relationRoutines(
 		if _, seen := routines.nodes[routine.Name]; !seen {
 			routines.objects = append(routines.objects, deporder.ViewLike{
 				Name:      routine.Name,
-				Body:      deporder.RoutineOrderingBody(routine, p.targetDialect()),
+				Body:      deporder.RoutineOrderingBody(routine, ResolvesBodyAtCreate),
 				Routine:   true,
 				DependsOn: diff.DeclaredFunctions.Dependencies[routine.Name],
 			})
@@ -171,6 +186,7 @@ func (p *Planner) relationRoutines(
 		declarations,
 		diff.DeclaredFunctions.Dependencies,
 		p.targetDialect(),
+		ResolvesBodyAtCreate,
 	)
 	return routines
 }
