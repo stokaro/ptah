@@ -45,6 +45,12 @@ const commonOwner = "ptah.run/postgres"
 // The prerequisite creation window is after the schema preconditions and the
 // extensions the plan installs, before every other creation, and the
 // prerequisite removal window is after the last removal.
+//
+// The type creation window is after the enums, the routines that name no
+// type the plan creates and the common user types, and before the enum
+// changes, the routines whose signatures name a created type and the tables.
+// The type removal window is after the tables, routines and roles are
+// removed, and before the user types and the enums are.
 func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, windows featurehost.Windows) ([]ast.Node, error) {
 	target := p.targetDialect()
 	if diff == nil || !hasFeatureChanges(target, diff) {
@@ -83,7 +89,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		return nil, err
 	}
 	request.CommonSteps = graph.CommonSteps()
-	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite)
+	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite, featureplan.PhaseType)
 	if err != nil {
 		return nil, err
 	}

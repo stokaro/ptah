@@ -73,7 +73,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		return err
 	}
 	if len(objects) == 0 {
-		return walkCommonDatabase(database, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, visit)
+		return walkCommonDatabase(database, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, visit, nil)
 	}
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
@@ -82,10 +82,11 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	// position before, between, or after them; streaming SQL before scheduling
 	// would make a late conflict leave a successful prefix.
 	var nodes []ast.Node
+	typeWindow := 0
 	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
 		nodes = append(nodes, node)
 		return lowering.Context.Err()
-	}); err != nil {
+	}, func() { typeWindow = len(nodes) }); err != nil {
 		return err
 	}
 	common, metadata, err := declarationCommonGraph(lowering, nodes)
@@ -117,18 +118,11 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	for _, source := range reply.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: source.Owner, Dependencies: slices.Clone(source.Dependencies)}
 		for _, step := range source.Steps {
-			// A whole-schema render orders an owner's steps by their
-			// dependencies alone, except a prerequisite, which it runs after
-			// the schema statements and before the rest: an object every
-			// other object may use. It has no window for any other phase.
-			switch step.Payload.Phase {
-			case featureplan.PhaseDefault:
-			case featureplan.PhasePrerequisite:
-				contribution.Dependencies = append(contribution.Dependencies, prerequisiteDependencies(nodes, metadata, step.ID)...)
-			default:
-				return fmt.Errorf("%w: declaration step %s/%s asks for the %q phase, which a schema render has no window for",
-					schemaext.ErrInvalidValue, step.ID.Owner, step.ID.Name, step.Payload.Phase)
+			placed, err := phaseDependencies(step.ID, step.Payload.Phase, nodes, metadata, typeWindow)
+			if err != nil {
+				return err
 			}
+			contribution.Dependencies = append(contribution.Dependencies, placed...)
 			payload, err := featureops.Nodes(step.Payload, names)
 			if err != nil {
 				return err
@@ -158,6 +152,29 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	return lowering.Context.Err()
 }
 
+// phaseDependencies places a declaration step of phase among the common
+// steps. A whole-schema render orders an owner's steps by their dependencies
+// alone, except a prerequisite, which it runs after the schema statements
+// and before the rest: an object every other object may use; and a type,
+// which it runs at typeWindow, after the enums and before the routines that
+// name a type and the tables, as a migration plan does. It has no window for
+// any other phase.
+func phaseDependencies(
+	step plangraph.StepID, phase featureplan.Phase, nodes []ast.Node, metadata []featureplan.CommonStep, typeWindow int,
+) ([]plangraph.Dependency, error) {
+	switch phase {
+	case featureplan.PhaseDefault:
+		return nil, nil
+	case featureplan.PhasePrerequisite:
+		return prerequisiteDependencies(nodes, metadata, step), nil
+	case featureplan.PhaseType:
+		return windowDependencies(metadata, typeWindow, step), nil
+	default:
+		return nil, fmt.Errorf("%w: declaration step %s/%s asks for the %q phase, which a schema render has no window for",
+			schemaext.ErrInvalidValue, step.Owner, step.Name, phase)
+	}
+}
+
 // prerequisiteDependencies places step after the schema statements a render
 // opens with and before its first other statement, nodes and metadata being
 // the common sequence and its steps.
@@ -169,12 +186,18 @@ func prerequisiteDependencies(nodes []ast.Node, metadata []featureplan.CommonSte
 		}
 		schemas++
 	}
+	return windowDependencies(metadata, schemas, step)
+}
+
+// windowDependencies places step after the common step before position and
+// before the one at it, metadata being the common steps in order.
+func windowDependencies(metadata []featureplan.CommonStep, position int, step plangraph.StepID) []plangraph.Dependency {
 	var dependencies []plangraph.Dependency
-	if schemas > 0 {
-		dependencies = append(dependencies, plangraph.Dependency{Before: metadata[schemas-1].ID, After: step})
+	if position > 0 {
+		dependencies = append(dependencies, plangraph.Dependency{Before: metadata[position-1].ID, After: step})
 	}
-	if schemas < len(metadata) {
-		dependencies = append(dependencies, plangraph.Dependency{Before: step, After: metadata[schemas].ID})
+	if position < len(metadata) {
+		dependencies = append(dependencies, plangraph.Dependency{Before: step, After: metadata[position].ID})
 	}
 	return dependencies
 }

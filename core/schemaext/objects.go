@@ -64,6 +64,9 @@ func cloneObject(object Object) (Object, error) {
 	if object.Ref.Kind != objectidentity.Kind(value.Kind()) || object.Ref.Name.Source == "" || object.Ref.Name.Normalized == "" {
 		return Object{}, fmt.Errorf("%w: object identity does not name value kind %q", ErrInvalidValue, value.Kind())
 	}
+	if err := validDefinedObject(Object{Ref: object.Ref, Value: value}); err != nil {
+		return Object{}, err
+	}
 	targets, err := normalizeTargetScope(object.Targets)
 	if err != nil {
 		return Object{}, err

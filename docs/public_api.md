@@ -499,6 +499,29 @@ whole-schema render runs it after its schema statements and before the rest.
 Every other host refuses it. The runtime refuses a phase the contract does not
 define.
 
+`PhaseType` is for a data type that columns, routine signatures and other
+types may name, such as a PostgreSQL domain. The migration planners of the
+PostgreSQL family place its creations and in-place changes after the enums and
+the routines whose signatures name no type the plan creates, and before the
+routines that do and the tables. A step that drops a type no step of the phase
+creates again runs after the tables, routines and roles are removed and before
+the enums are. Both halves of a type dropped and created again ask for the
+phase and stay in the creation window, where the owner orders them; a split
+replacement in any other phase but the dependent one is refused. A
+whole-schema render runs such a step after its enums and before the routines
+that name a type and the tables. Every other host refuses it.
+
+`schemaext.TypeDefiner` is a value whose object defines a named data type, and
+`schemaext.TypeCreator` is a change that creates, rebuilds or changes one in
+place. Each answers with a `schemaext.DefinedType`: the type's identity under a
+common kind, `objectidentity.KindDomain`, `KindComposite` or `KindRange`, and
+the type spellings its definition names. `schemaext.DefinedTypes` and
+`schemaext.CreatedTypes` collect the answers. A collection refuses an object
+whose value answers under another kind or without a name, and `CreatedTypes`
+refuses such a change, each with `ErrInvalidValue`. A migration plan and a whole-schema
+render create a routine whose signature names such a type after the type, as
+they do for an enum.
+
 `schemaext.SchemaPlacement` is a value or a change that puts its object into a
 named schema; a host that creates the schemas a plan or a render puts objects
 into creates that one too, unless it is the connection's default.

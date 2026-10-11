@@ -1945,7 +1945,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// trigger may call them. A routine that names a type or a relation this plan
 	// creates waits for it, at step 4b or among the view-likes at step 6.6; see
 	// deporder.PlaceRoutines.
-	placements := p.routinePlacements(diff)
+	placements, err := p.routinePlacements(diff)
+	if err != nil {
+		return nil, err
+	}
 	relationPlaced := p.relationRoutines(diff, placements)
 	result = p.addNewFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
 
@@ -1974,6 +1977,13 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// their constraint from the domain as it is when the column is created.
 	result = p.alterModifiedDomains(result, diff)
 	result = p.alterModifiedCompositeTypes(result, diff)
+
+	// Feature operations of the type phase that create a type, change one in
+	// place or rebuild one join the plan here: after the enums and the
+	// routines that name no type the plan creates, which a type may name, and
+	// before the routines whose signatures name a type and the tables whose
+	// columns may. Their pure drops join it at step 15.
+	types := &featurehost.TypeWindows{Creation: len(result)}
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff)
@@ -2135,7 +2145,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 14. Remove roles (must be done after removing functions and policies that depend on them)
 	result = p.removeRoles(result, diff)
 
-	// 15. Remove enums (dangerous!)
+	// 15. Remove enums (dangerous!). The type phase's drops go first: after
+	// the tables, routines and roles that may use a type are gone, and before
+	// the enums a type may name.
+	types.Removal = len(result)
 	result = p.removeUserTypes(result, diff)
 	result = p.removeEnums(result, diff)
 
@@ -2144,6 +2157,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	prerequisites.Removal = len(result)
 	windows.Prerequisites = prerequisites
+	windows.Types = types
 	return result, nil
 }
 

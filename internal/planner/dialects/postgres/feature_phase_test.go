@@ -31,15 +31,22 @@ const phaseOwner = "example.org/phase"
 const secondOwner = "example.org/second"
 
 // phaseChange asks an owner to create, drop or read one object; an empty
-// Action creates it. An empty Owner is the phase owner.
+// Action creates it. An empty Owner is the phase owner. A Type names the
+// common kind of the data type the object is, which a change that does not
+// drop it creates; an empty Type creates none.
 type phaseChange struct {
 	Action plangraph.Action
 	Owner  string
+	Type   objectidentity.Kind
 }
 
 func (*phaseChange) Kind() schemaext.Kind { return phaseOwner + "/change" }
 func (v *phaseChange) CloneChange() schemaext.ChangeValue {
-	return &phaseChange{Action: v.Action, Owner: v.Owner}
+	return &phaseChange{Action: v.Action, Owner: v.Owner, Type: v.Type}
+}
+func (v *phaseChange) CreatedType(subject objectidentity.ID) (schemaext.DefinedType, bool) {
+	subject.Kind = v.Type
+	return schemaext.DefinedType{ID: subject}, v.Type != "" && v.Action != plangraph.Drop
 }
 
 // phaseOperation is the statement an owner contributes.
@@ -103,6 +110,14 @@ func phaseOrder(nodes []ast.Node) []string {
 		switch typed := node.(type) {
 		case *ast.CreateSchemaNode:
 			order = append(order, "create schema")
+		case *ast.EnumNode:
+			order = append(order, "create enum "+typed.Name)
+		case *ast.CreateTypeNode:
+			order = append(order, "create type "+typed.Name)
+		case *ast.DropTypeNode:
+			order = append(order, "drop type "+typed.Name)
+		case *ast.CreateFunctionNode:
+			order = append(order, "create function "+typed.Name)
 		case *ast.CreateTableNode:
 			order = append(order, "create table")
 		case *ast.CreateViewNode:
@@ -132,6 +147,9 @@ func phaseOrder(nodes []ast.Node) []string {
 			if operation, ok := typed.Payload.(*phaseOperation); ok {
 				order = append(order, map[bool]string{false: "owner", true: "second owner"}[operation.Second]+
 					map[plangraph.Action]string{plangraph.Create: " creates", plangraph.Drop: " drops", plangraph.Read: " reads"}[operation.Action])
+			}
+			if operation, ok := typed.Payload.(*typeOwnerOperation); ok {
+				order = append(order, map[bool]string{false: "type owner creates ", true: "type owner drops "}[operation.Drop]+operation.Name)
 			}
 		}
 	}
