@@ -2688,8 +2688,9 @@ names the schema too), and the attributes it takes and of which `Kind`.
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 `hclext.None` reads the reader's own blocks.
 
-`synonym.HCL` reads the `synonym` block, and `tssource.HCL` the `hypertable`
-and `continuous_aggregate` blocks. `atlascompat.ParseAtlasHCL` and
+`synonym.HCL` reads the `synonym` block, `tssource.HCL` the `hypertable`
+and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
+`extended_property` block. `atlascompat.ParseAtlasHCL` and
 `ParseAtlasHCLFile` select no owner, so those blocks are refused there as
 unsupported blocks, and so is each owner block whose owner takes it over;
 `ParseAtlasHCLWithOptions` takes the owners in `ParseHCLOptions.HCL`, usually
