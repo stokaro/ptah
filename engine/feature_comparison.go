@@ -32,6 +32,10 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 	if request, err = r.foldCoverageLimits(request); err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
+	request, skipped, err := r.scopeComparisonOffTarget(request)
+	if err != nil {
+		return schemaext.ComparisonResult{}, err
+	}
 	facetKinds, objectKinds, err := r.featureComparisonKinds(request)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -59,6 +63,7 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		},
 		Changes: objectResult.Changes, FacetChanges: facetResult.Changes,
 		Undecided: append(slices.Clone(objectResult.Undecided), facetResult.Undecided...),
+		Skipped:   skipped,
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -67,6 +72,56 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), schemaext.CompareRefs(a.Subject, b.Subject))
 	})
 	return result, nil
+}
+
+// scopeComparisonOffTarget leaves out, on both sides, the objects the target
+// does not serve whose owners answer [schemaext.OffTargetSkip], and the
+// coverage of their models, which no owner on the target reads. It returns
+// the subjects it left out, each once, desired side first. An object whose
+// owner answers [schemaext.OffTargetRefuse] is refused.
+func (r *Runtime) scopeComparisonOffTarget(request schemaext.ComparisonRequest) (schemaext.ComparisonRequest, []schemaext.SkippedObject, error) {
+	desired, skipped, err := r.ScopeOffTarget(request.Target, request.Desired.Objects)
+	if err != nil {
+		return schemaext.ComparisonRequest{}, nil, err
+	}
+	current, skippedCurrent, err := r.ScopeOffTarget(request.Target, request.Current.Objects)
+	if err != nil {
+		return schemaext.ComparisonRequest{}, nil, err
+	}
+	for _, object := range skippedCurrent {
+		if !slices.ContainsFunc(skipped, func(held schemaext.SkippedObject) bool { return held.Subject.Key() == object.Subject.Key() }) {
+			skipped = append(skipped, object)
+		}
+	}
+	request.Desired.Objects, request.Current.Objects = desired, current
+	request.Desired.Coverage = r.coverageOnTarget(request.Target, request.Desired.Coverage)
+	request.Current.Coverage = r.coverageOnTarget(request.Target, request.Current.Coverage)
+	return request, skipped, nil
+}
+
+// coverageOnTarget returns coverage without the records of the models target
+// skips: the ones it does not serve whose owners answer
+// [schemaext.OffTargetSkip] there. Coverage that holds none comes back as it
+// is.
+func (r *Runtime) coverageOnTarget(target string, coverage schemaext.Coverage) schemaext.Coverage {
+	selected, _ := r.lookup(target)
+	skips := func(kind schemaext.Kind) bool {
+		policy, stated := r.offTarget[kind]
+		return stated && policy.Action == schemaext.OffTargetSkip && !selected.refusesSkips && !r.serves(selected.name, kind)
+	}
+	var kept []schemaext.Kind
+	dropped := false
+	for _, record := range coverage.KindRecords() {
+		if skips(record.Model.Kind) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, record.Model.Kind)
+	}
+	if !dropped {
+		return coverage
+	}
+	return coverage.SelectKinds(kept)
 }
 
 func (r *Runtime) featureComparisonKinds(request schemaext.ComparisonRequest) (facetKinds, objectKinds []schemaext.Kind, err error) {

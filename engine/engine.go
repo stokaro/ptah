@@ -95,6 +95,26 @@ type Provider struct {
 	// services that check them. A rule judges targets the runtime registers,
 	// whichever provider owns them, and a code belongs to one rule.
 	Lint []Lint
+	// OffTarget states, per named-object model the provider owns, what a
+	// target that serves the model nowhere does with one of its objects:
+	// skip it with a note or refuse it with the scope that would keep it;
+	// see [schemaext.OffTarget]. A model without a statement reaches the
+	// target's services as before, which refuse it there. A model is stated
+	// once.
+	OffTarget []OffTargetPolicy
+}
+
+// OffTargetPolicy is a provider's statement about its objects on a target
+// that does not serve their model: one where no provider compares or plans
+// declarations of it.
+type OffTargetPolicy struct {
+	// Kinds are the provider's named-object models the statement covers.
+	Kinds []schemaext.Kind
+	// Action is the answer: [schemaext.OffTargetSkip] or
+	// [schemaext.OffTargetRefuse].
+	Action schemaext.OffTarget
+	// Label names the model for a reader, such as "PostgreSQL extension".
+	Label string
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -130,6 +150,11 @@ type Target struct {
 	// Splitter splits the target's migration SQL into the statements
 	// migration lint reads. Nil leaves lint unable to run for the target.
 	Splitter lintext.Splitter
+	// RefusesSkips makes the target refuse an object an owner would skip on
+	// it ([schemaext.OffTargetSkip]), as the owner's refusal does. It is for a
+	// target that answers nothing it cannot hold with a comment, because a
+	// comment lets an apply succeed without the object.
+	RefusesSkips bool
 }
 
 // Runtime is a frozen selection of providers. It is safe for concurrent calls
@@ -166,6 +191,7 @@ type Runtime struct {
 	limits              []schemaext.LimitMapping
 	lintRules           map[string]ownedLintRule
 	lintServices        []lintext.Service
+	offTarget           map[schemaext.Kind]OffTargetPolicy
 }
 
 type target struct {
@@ -181,6 +207,7 @@ type target struct {
 	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
 	splitter        lintext.Splitter
+	refusesSkips    bool
 }
 
 // New validates and freezes explicit provider ownership. Duplicate provider
@@ -197,6 +224,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		properties:     make(map[propertyKey]int),
 		probes:         make(map[conversionKey]int),
 		lintRules:      make(map[string]ownedLintRule),
+		offTarget:      make(map[schemaext.Kind]OffTargetPolicy),
 	}
 	owners := make(map[string]struct{}, len(providers))
 	var codecs []schemaext.OwnedCodec
@@ -226,21 +254,35 @@ func New(providers ...Provider) (*Runtime, error) {
 		if err := runtime.registerServices(provider); err != nil {
 			return nil, err
 		}
-		for _, normalization := range provider.Normalizations {
-			if err := runtime.registerNormalization(provider.ID, normalization); err != nil {
-				return nil, err
-			}
-		}
-		for _, lint := range provider.Lint {
-			if err := runtime.registerLint(provider.ID, lint); err != nil {
-				return nil, err
-			}
+		if err := runtime.registerStatements(provider); err != nil {
+			return nil, err
 		}
 	}
 	if err := runtime.registerSources(providers); err != nil {
 		return nil, err
 	}
 	return runtime, nil
+}
+
+// registerStatements registers a provider's probes, lint rules and
+// off-target answers, once every provider's codecs and services are known.
+func (r *Runtime) registerStatements(provider Provider) error {
+	for _, normalization := range provider.Normalizations {
+		if err := r.registerNormalization(provider.ID, normalization); err != nil {
+			return err
+		}
+	}
+	for _, lint := range provider.Lint {
+		if err := r.registerLint(provider.ID, lint); err != nil {
+			return err
+		}
+	}
+	for _, policy := range provider.OffTarget {
+		if err := r.registerOffTarget(provider.ID, policy); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // registerSources freezes what the providers contribute to the desired-schema
@@ -350,7 +392,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
-			splitter: declared.Splitter,
+			splitter: declared.Splitter, refusesSkips: declared.RefusesSkips,
 		}
 	}
 	return nil

@@ -219,8 +219,8 @@ func TestRLSAndFunctionIntegration_MySQLRefusesUnscopedRowSecurity_FailurePath(t
 	statements, err := builtin.GetOrderedCreateStatements(&database, "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*PostgreSQL policy "test_policy" on table public.test_table cannot be planned on mysql; `+
-		`scope its declaration to the targets that host it, as dialects="postgres,cockroachdb,yugabytedb" does in a Go annotation`)
+	c.Assert(err, qt.ErrorMatches, `.*PostgreSQL policy "test_table.test_policy" cannot be planned on mysql; `+
+		`scope its declaration to the targets that host it, as dialects="cockroachdb,postgres,yugabytedb" does in a Go annotation`)
 	c.Assert(statements, qt.IsNil)
 }
 

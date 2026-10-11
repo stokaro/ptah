@@ -165,6 +165,7 @@ func compareReportingUndecidedAdditions(
 	if err := attachFeatureChanges(diff, desired, database, comparisonChanges(featureResult), opts.Dialect, identifierSemantics); err != nil {
 		return nil, Diagnostics{}, err
 	}
+	diff.SkippedFeatures = featureResult.Skipped
 
 	// Compare enum type definitions and values. The semantics carry the
 	// connection's default schema, without which an `enum` block's mandatory

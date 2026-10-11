@@ -268,6 +268,7 @@ func writeComparison(
 	sql, dialect string,
 ) {
 	undecidednote.Report(errOut, undecided, "the database", "the desired schema")
+	reportSkipped(errOut, diff)
 	categories := diffreport.Categories(diff)
 	if len(categories) == 0 && !undecided.Empty() {
 		fmt.Fprintf(out, "No differences planned, but %s:\n", undecidednote.Summary(undecided))
@@ -400,4 +401,17 @@ func resolveGeneratedExpressions(
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.GeneratedExpressions = resolved
 	return compareOpts, nil
+}
+
+// reportSkipped writes one line for each object the comparison left out
+// because the target does not serve its model and its owner skips it there,
+// as a plan writes it, so "No schema differences detected." never stands
+// alone over it.
+func reportSkipped(errOut io.Writer, diff *difftypes.SchemaDiff) {
+	if diff == nil {
+		return
+	}
+	for _, object := range diff.SkippedFeatures {
+		fmt.Fprintln(errOut, strings.ToUpper(object.Target)+": "+object.Note())
+	}
 }

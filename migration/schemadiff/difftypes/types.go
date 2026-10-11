@@ -867,6 +867,13 @@ type SchemaDiff struct {
 
 	// FeatureChanges holds changes to standalone feature objects. Table-owned changes stay with their table.
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
+	// SkippedFeatures are the objects the comparison left out because the
+	// target does not serve their model and their owner answers
+	// [schemaext.OffTargetSkip]. They are not changes: a plan writes one
+	// comment line for each, a report writes the same line beside its
+	// result, and [SchemaDiff.HasChanges] does not count them. Like the
+	// planner inputs below it is not on the wire.
+	SkippedFeatures []schemaext.SkippedObject `json:"-"`
 	// IdentifierSemantics records live catalog identifier rules used to produce
 	// this diff. It is absent for dialect-only comparisons, whose planners use
 	// conservative offline defaults.

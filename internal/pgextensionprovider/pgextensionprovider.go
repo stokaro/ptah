@@ -38,6 +38,11 @@ func Provider() engine.Provider {
 		// whose extension blocks the compatibility surface left out,
 		// describes none of the owner's extensions either.
 		CoverageLimits: []schemaext.LimitMapping{{Header: coverage.Extension, Model: pgextension.ExtensionKind, Names: extensionNames}},
+		// An extension on a target outside the family is skipped with a note:
+		// the target does not miss it, and a Go tree that targets several
+		// engines shares one set of annotations.
+		OffTarget: []engine.OffTargetPolicy{{Kinds: []schemaext.Kind{pgextension.ExtensionKind}, Action: schemaext.OffTargetSkip,
+			Label: "PostgreSQL extension"}},
 	}
 	models := []schemaext.Kind{pgextension.ExtensionKind}
 	changes := []schemaext.Kind{pgextension.ChangeKind}

@@ -52,6 +52,9 @@ func Convert(ctx context.Context, runtime schemaext.ConversionRuntime, target st
 	if err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
 	}
+	if objects, err = scopeOffTarget(runtime, target, objects); err != nil {
+		return schemaext.Objects{}, schemaext.Coverage{}, err
+	}
 	inputs, err := objects.All()
 	if err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
@@ -108,6 +111,19 @@ func Convert(ctx context.Context, runtime schemaext.ConversionRuntime, target st
 		*destinations[i] = group
 	}
 	return convertedObjects, convertedCoverage, nil
+}
+
+// scopeOffTarget leaves out an object the target does not serve, whose owner
+// answers that the target skips it: it is not part of the target's state, so
+// no service of the target converts it. A runtime that cannot scope leaves
+// objects as they are.
+func scopeOffTarget(runtime schemaext.ConversionRuntime, target string, objects schemaext.Objects) (schemaext.Objects, error) {
+	scoper, ok := runtime.(schemaext.OffTargetScoper)
+	if !ok || objects.Len() == 0 {
+		return objects, nil
+	}
+	kept, _, err := scoper.ScopeOffTarget(target, objects)
+	return kept, err
 }
 
 // Replacing each converted value retains source bindings, including exclusions

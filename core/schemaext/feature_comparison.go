@@ -58,12 +58,16 @@ type ComparisonRequest struct {
 
 // ComparisonResult joins the selected object and facet owners' replies. No
 // changes are usable without Complete. An operational error exposes no result.
+// Skipped lists the objects the runtime left out because the target does not
+// serve their model and their owner answers [OffTargetSkip]; they are not
+// changes.
 type ComparisonResult struct {
 	Complete     bool
 	Desired      FeatureState
 	Changes      []ChangeRecord
 	FacetChanges []FacetChange
 	Undecided    []UndecidedChange
+	Skipped      []SkippedObject
 }
 
 // ComparisonService compares both feature surfaces as one contextual operation.
