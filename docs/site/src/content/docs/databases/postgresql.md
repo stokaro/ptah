@@ -1229,7 +1229,9 @@ schema when it is new. An extension the server marks as not relocatable, such
 as `plpgsql`, is refused before SQL is emitted, because the server refuses the
 move too. A declared version the extension does not have plans `ALTER
 EXTENSION ... UPDATE TO`; a lower one is refused, because an extension updates
-in one direction only.
+in one direction only. For the same reason a generated migration's down file
+does not take the version back: it says, in a `Recovery limit` comment, which
+version the extension keeps.
 
 ```go
 //ptah:schema:extension name="pgcrypto" schema="extensions" if_not_exists="true"

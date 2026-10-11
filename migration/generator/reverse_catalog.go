@@ -4,9 +4,12 @@ package generator
 // row-level-security policies, roles and object comments.
 
 import (
+	"fmt"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -16,28 +19,53 @@ func reverseExtensionDiffs(diffs []difftypes.ExtensionDiff) []difftypes.Extensio
 	if diffs == nil {
 		return nil
 	}
-	reversed := make([]difftypes.ExtensionDiff, len(diffs))
-	for i, diff := range diffs {
-		reversed[i] = difftypes.ExtensionDiff{
+	reversed := make([]difftypes.ExtensionDiff, 0, len(diffs))
+	for _, diff := range diffs {
+		// A version moves one way only, so the rollback leaves it where the
+		// forward change put it and says so instead; see
+		// [extensionVersionLimits]. A change of the version alone has nothing
+		// to run back. Swapping the pair asked the planner for a downgrade it
+		// refuses, and that refusal failed the whole generation, the up file
+		// included.
+		if diff.FromSchema == diff.ToSchema {
+			continue
+		}
+		reversed = append(reversed, difftypes.ExtensionDiff{
 			Name:       diff.Name,
 			FromSchema: diff.ToSchema,
 			ToSchema:   diff.FromSchema,
-			// The version pair is swapped for the reason the schema pair is:
-			// the rollback moves the extension back to where it was. Dropping
-			// it made a version-only change reverse to a diff describing no
-			// change at all, so the down file said "No rollback operations
-			// needed" and the extension stayed upgraded (stokaro/ptah#2418).
-			FromVersion: diff.ToVersion,
-			ToVersion:   diff.FromVersion,
 			// Carried, not swapped: whether the extension may be moved is a
 			// property of the extension, not a direction. Dropping it made
 			// every reversed diff claim false, and the planner refuses a move
 			// of a non-relocatable extension -- so a legal move reversed into
 			// a FAILING down migration.
 			Relocatable: diff.Relocatable,
-		}
+		})
 	}
 	return reversed
+}
+
+// extensionVersionLimits is what the rollback of a version update cannot
+// undo. PostgreSQL updates an extension in one direction only: ALTER
+// EXTENSION ... UPDATE TO an older version answers "has no update path",
+// measured on PostgreSQL 18. The rollback states the version it leaves
+// rather than saying nothing about it (stokaro/ptah#2418): each record has no
+// statement and one limitation, which the down migration carries as a
+// note.
+func extensionVersionLimits(diffs []difftypes.ExtensionDiff) []schemaext.Reversal {
+	var limits []schemaext.Reversal
+	for _, diff := range diffs {
+		if diff.ToVersion == "" {
+			continue
+		}
+		limits = append(limits, schemaext.Reversal{
+			Change:   schemaext.ChangeRecord{Subject: objectidentity.ID{Kind: objectidentity.KindExtension, Name: objectidentity.Part{Source: diff.Name, Normalized: diff.Name}}},
+			Strategy: "keeps the extension at the version the migration installed",
+			Limitations: []string{fmt.Sprintf("PostgreSQL updates an extension in one direction only: after the rollback, %s stays at version %s rather than %s.",
+				diff.Name, diff.ToVersion, diff.FromVersion)},
+		})
+	}
+	return limits
 }
 
 // reverseSequenceDiffs reverses sequence modifications for down migrations.
