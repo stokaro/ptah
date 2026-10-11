@@ -66,9 +66,9 @@ func TestPostgresLiveRoutinePlannerPropertiesConverge(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	description, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `
+	description, err := atlashcl.ParseWithOptions(plannerPropertiesDocument(schemaName, `
   leakproof = true
-  parallel  = SAFE`), "schema.hcl")
+  parallel  = SAFE`), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
@@ -117,7 +117,7 @@ func TestPostgresLiveRoutineWithoutPlannerPropertiesConverges(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	description, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl")
+	description, err := atlashcl.ParseWithOptions(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
@@ -163,7 +163,7 @@ func TestPostgresLiveRoutinePlannerPropertyDifferenceIsPlanned(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	plain, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl")
+	plain, err := atlashcl.ParseWithOptions(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 	statements, err := builtin.GetOrderedCreateStatements(plain, platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -175,10 +175,10 @@ func TestPostgresLiveRoutinePlannerPropertyDifferenceIsPlanned(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
-	wanted, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `
+	wanted, err := atlashcl.ParseWithOptions(plannerPropertiesDocument(schemaName, `
   volatility = STABLE
   leakproof  = true
-  parallel   = SAFE`), "schema.hcl")
+  parallel   = SAFE`), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
