@@ -2745,21 +2745,28 @@ a block inside a `table`, with no labels.
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 `hclext.None` reads the reader's own blocks.
 
-`Extension.Encoder` is the mirror for the HCL writer. `Set.Encode` hands each
-encoder the document's objects of its kinds, and the encoder returns
-`EncodedBlock` values as data: type, `Placement`, schema, name, and
-`EncodedAttribute` values of kind `String` or `Bool`. The writer quotes
-values, writes the `schema` reference and places each block. Within one
-placement it orders blocks by type, schema and name, so the order does not
-depend on registration. `SchemaIsAddress` keeps an empty schema empty, where
-the writer would otherwise fill in an inspected document's default. A block's
-`Object` and `Targets` say which object it writes and the targets reading it
-back binds that object to, so a scope the block restores is not a loss. An
-object of a kind no encoder writes is reported as one HCL does not represent.
+`Extension.Encoder` is the mirror for the HCL writer.
 
-`synonym.HCL` reads and writes the `synonym` block, `tssource.HCL` reads the
-`hypertable` and `continuous_aggregate` blocks, and `mssqlproperty.HCL` reads
-and writes the `extended_property` block. `ydbsource.HCL` reads the
+- `Set.Encode` hands each encoder what the document holds of its kinds: the
+  objects, the tables with their facets of those kinds
+  (`EncodeRequest.Tables`), and the coverage. Every encoder is asked, also for
+  a document that holds none of its kinds, since an owner may refuse a
+  coverage limit it cannot write.
+- The encoder returns `EncodedBlock` values as data: type, `Placement`,
+  schema, name, and `EncodedAttribute` values of kind `String` or `Bool`. The
+  writer quotes values, writes the `schema` reference and places each block.
+  Within one placement it orders blocks by type, schema and name, so the order
+  does not depend on registration.
+- `SchemaIsAddress` keeps an empty schema empty, where the writer would
+  otherwise fill in an inspected document's default.
+- A block's `Object` and `Targets` say which object it writes and the targets
+  reading it back binds that object to, so a scope the block restores is not a
+  loss. An object of a kind no encoder writes is reported as one HCL does not
+  represent.
+
+`synonym.HCL` reads and writes the `synonym` block, `tssource.HCL` the
+`hypertable` and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
+`extended_property` block. `ydbsource.HCL` reads the
 `coordination_node` block, the vector and partitioning attributes of an `index`
 block, the `coordination_node` header entries and the captured header.
 `pgpolicysource.HCL` reads the `policy` block and a table's `row_security`

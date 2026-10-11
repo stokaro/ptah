@@ -126,3 +126,24 @@ func TestRenderRefusesATimescaleLimitItCannotWrite(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*daily.*cannot be exported without losing its coverage record.*`)
 	c.Assert(result.Data, qt.IsNil)
 }
+
+// TestRenderRefusesATimescaleLimitWithoutTimescaleObjects refuses the limit
+// in a document that holds no hypertable and no aggregate: the owner is asked
+// whatever the document holds of its kinds, so a limit is refused before
+// there is anything to write.
+func TestRenderRefusesATimescaleLimitWithoutTimescaleObjects(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "readings", Schema: "public"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "time", Type: "TIMESTAMPTZ"}},
+		FeatureCoverage: must.Must(schemaext.NewCoverage(schemaext.Desired, must.Must(tsschema.CompleteCoverage(schemaext.Desired)).KindRecords(),
+			[]schemaext.SubjectCoverage{{Kind: tsschema.ContinuousAggregateKind, Subject: tsschema.ContinuousAggregateRef("public", "daily"),
+				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the definition could not be read"}}})),
+	}
+
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*daily.*cannot be exported without losing its coverage record.*`)
+	c.Assert(result.Data, qt.IsNil)
+}

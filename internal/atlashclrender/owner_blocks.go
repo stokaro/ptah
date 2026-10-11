@@ -2,12 +2,29 @@ package atlashclrender
 
 import (
 	"cmp"
+	"context"
 	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/core/hclext"
 )
+
+// encodeOwnerBlocks hands the owners the document: its objects, its tables'
+// facets and its coverage. The writers take no context yet; the owners
+// encode in process.
+func (r *renderer) encodeOwnerBlocks(owners hclext.Set) ([]hclext.EncodedBlock, error) {
+	objects, err := r.db.FeatureObjects.All()
+	if err != nil {
+		return nil, err
+	}
+	tables := make([]hclext.TableFacets, 0, len(r.db.Tables))
+	for _, table := range r.db.Tables {
+		tables = append(tables, hclext.TableFacets{Table: hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName},
+			Facets: table.Facets})
+	}
+	return owners.Encode(context.Background(), hclext.EncodeRequest{Objects: objects, Tables: tables, Coverage: r.db.FeatureCoverage})
+}
 
 // slotBlock is one top-level block of a placement, written and waiting for its
 // place: blocks of one placement are ordered by type, schema and name, so a
@@ -27,7 +44,7 @@ type slotBlock struct {
 // them is an Atlas block, so no Atlas output fixes their order, and the order
 // by type, schema and name is the stable one.
 func (r *renderer) renderAfterTables() {
-	blocks := slices.Concat(r.hypertableBlocks(), r.continuousAggregateBlocks(), r.coordinationNodeBlocks())
+	blocks := r.coordinationNodeBlocks()
 	for _, block := range r.ownerBlocks {
 		if block.Placement == hclext.AfterTables {
 			blocks = append(blocks, r.writeOwnerBlock(block))

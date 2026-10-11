@@ -3,7 +3,6 @@ package atlashclrender
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -221,10 +220,7 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 	// and places. A value an owner cannot write refuses the export, as a
 	// value this package cannot write does. The writers take no context
 	// yet; the owners encode in process.
-	if r.ownerBlocks, err = opts.HCL.Encode(context.Background(), db.FeatureObjects); err != nil {
-		return Result{}, err
-	}
-	if err := r.captureTimescale(); err != nil {
+	if r.ownerBlocks, err = r.encodeOwnerBlocks(opts.HCL); err != nil {
 		return Result{}, err
 	}
 	if err := r.captureRowSecurity(); err != nil {
@@ -244,8 +240,6 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 type renderer struct {
 	coordinationNodes      []coordinationNode
 	coordinationDirectives []string
-	hypertables            []hypertableBlock
-	aggregates             []aggregateBlock
 	policies               []policyBlock
 	extensions             []extensionBlock
 	tableStates            map[string]*pgpolicy.DesiredTableState

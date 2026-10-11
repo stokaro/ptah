@@ -13,13 +13,17 @@ import (
 )
 
 // namingEncoder writes one block of type kind for each object, named after
-// the object, and records the objects it is given.
+// the object, and records the objects and the requests it is given.
 type namingEncoder struct {
-	block   string
-	objects *[]string
+	block    string
+	objects  *[]string
+	requests *[]hclext.EncodeRequest
 }
 
 func (e namingEncoder) EncodeHCL(_ context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {
+	if e.requests != nil {
+		*e.requests = append(*e.requests, request)
+	}
 	blocks := make([]hclext.EncodedBlock, 0, len(request.Objects))
 	for _, object := range request.Objects {
 		*e.objects = append(*e.objects, object.Ref.Name.Source)
@@ -44,25 +48,28 @@ func encodingExtension(owner string, kind schemaext.Kind, encoder hclext.Encoder
 }
 
 // TestSet_Encode_HappyPath hands each extension the objects of its own kinds
-// in one call, and returns the blocks every extension writes; an extension
-// without an encoder, or without objects, is not asked.
+// in one call, and returns the blocks every extension writes. An extension
+// with an encoder is asked whatever the document holds of its kinds, since it
+// may refuse the coverage; one without an encoder is not.
 func TestSet_Encode_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	var first, second []string
+	var first, second, third []string
+	var empty []hclext.EncodeRequest
 	set := must.Must(hclext.NewSet(
 		encodingExtension("example.org/a", "example.org/a/x", namingEncoder{block: "gadget", objects: &first}),
 		encodingExtension("example.org/b", "example.org/b/x", namingEncoder{block: "widget", objects: &second}),
-		encodingExtension("example.org/c", "example.org/c/x", answeringEncoder{err: errors.New("asked")}),
+		encodingExtension("example.org/c", "example.org/c/x", namingEncoder{block: "gizmo", objects: &third, requests: &empty}),
 		hclext.Extension{Owner: "example.org/d", Kinds: []schemaext.Kind{"example.org/d/x"}},
 	))
-	objects := must.Must(schemaext.NewObjects(object("example.org/a/x", "g1"), object("example.org/b/x", "w1"),
-		object("example.org/a/x", "g2"), object("example.org/d/x", "d1")))
+	objects := must.Must(must.Must(schemaext.NewObjects(object("example.org/a/x", "g1"), object("example.org/b/x", "w1"),
+		object("example.org/a/x", "g2"), object("example.org/d/x", "d1"))).All())
 
-	blocks, err := set.Encode(t.Context(), objects)
+	blocks, err := set.Encode(t.Context(), hclext.EncodeRequest{Objects: objects})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(first, qt.DeepEquals, []string{"g1", "g2"})
 	c.Assert(second, qt.DeepEquals, []string{"w1"})
+	c.Assert(empty, qt.DeepEquals, []hclext.EncodeRequest{{}})
 	c.Assert(blocks, qt.HasLen, 3)
 	c.Assert([]string{blocks[0].Name, blocks[1].Name, blocks[2].Name}, qt.DeepEquals, []string{"g1", "g2", "w1"})
 	c.Assert(set.Encodes("example.org/a/x"), qt.IsTrue)
@@ -113,7 +120,7 @@ func TestSet_Encode_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x", test.encoder)))
 
-			blocks, err := set.Encode(t.Context(), must.Must(schemaext.NewObjects(object("example.org/a/x", "g"))))
+			blocks, err := set.Encode(t.Context(), hclext.EncodeRequest{Objects: []schemaext.Object{object("example.org/a/x", "g")}})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(blocks, qt.IsNil)
@@ -130,4 +137,25 @@ func TestNewSet_RefusesAnEncoderWithoutAModel(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `HCL extension of example.org/a declares an encoder without a model to encode`)
 	c.Assert(set.Selected(), qt.IsFalse)
+}
+
+// TestSet_Encode_HandsEachOwnerItsFacets hands each extension the tables that
+// hold a facet of its kinds, with those facets alone.
+func TestSet_Encode_HandsEachOwnerItsFacets(t *testing.T) {
+	c := qt.New(t)
+	var objects []string
+	var requests []hclext.EncodeRequest
+	set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x",
+		namingEncoder{block: "gadget", objects: &objects, requests: &requests})))
+	both := must.Must(schemaext.NewFacets(&widget{kind: "example.org/a/x"}, &widget{kind: "example.org/b/x"}))
+	other := must.Must(schemaext.NewFacets(&widget{kind: "example.org/b/x"}))
+
+	_, err := set.Encode(t.Context(), hclext.EncodeRequest{Tables: []hclext.TableFacets{
+		{Table: hclext.Table{Name: "both"}, Facets: both}, {Table: hclext.Table{Name: "other"}, Facets: other}}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(requests, qt.HasLen, 1)
+	c.Assert(requests[0].Tables, qt.HasLen, 1)
+	c.Assert(requests[0].Tables[0].Table, qt.Equals, hclext.Table{Name: "both"})
+	c.Assert(requests[0].Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{"example.org/a/x"})
 }
