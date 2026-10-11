@@ -14,6 +14,9 @@ import (
 // CompareFeatures accounts for named feature objects and attached settings in
 // one operation. Both input surfaces are validated before either kind of owner
 // runs. An error on either surface discards all changes from both surfaces.
+// Each side's not-described records are folded into the coverage of the
+// models a provider maps them onto before any owner runs; see
+// [Provider.CoverageLimits].
 func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.ComparisonRequest) (schemaext.ComparisonResult, error) {
 	if err := schemaext.RequireRuntime(ctx, r); err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -23,6 +26,9 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		return schemaext.ComparisonResult{}, err
 	}
 	request.Target = selected.Name()
+	if request, err = r.foldCoverageLimits(request); err != nil {
+		return schemaext.ComparisonResult{}, err
+	}
 	facetKinds, objectKinds, err := r.featureComparisonKinds(request)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err

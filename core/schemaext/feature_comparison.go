@@ -3,6 +3,7 @@ package schemaext
 import (
 	"context"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -39,6 +40,13 @@ type ComparisonRequest struct {
 	// caller does not know it. An owner whose objects name other objects by
 	// path reads an absolute one against it. See [ObjectComparisonRequest].
 	DatabasePath string
+	// DesiredLimits and CurrentLimits are what each side's description says
+	// it does not describe, in the common not-described vocabulary: a
+	// document's coverage header, a Go notdescribed declaration, or what a
+	// read recorded it could not look at. Before an owner compares, the
+	// runtime folds the records the owner maps onto its models into their
+	// coverage; see [LimitMapping]. Records nothing maps change nothing here.
+	DesiredLimits, CurrentLimits coverage.Set
 }
 
 // ComparisonResult joins the selected object and facet owners' replies. No

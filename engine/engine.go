@@ -76,6 +76,13 @@ type Provider struct {
 	// [Runtime.CoverageVocabulary]. A kind belongs to one provider and is
 	// never a common kind.
 	CoverageKinds []coverage.Kind
+	// CoverageLimits map not-described kinds onto the provider's named-object
+	// models, so a description that declines a kind, such as a document whose
+	// header says it does not describe policies, does not describe the
+	// owner's policies either. The kind is a common kind or one a selected
+	// provider registers, and the provider owns both codecs of the model. One
+	// kind may limit several models; a pair is registered once.
+	CoverageLimits []schemaext.LimitMapping
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -137,6 +144,7 @@ type Runtime struct {
 	annotations         annotation.Set
 	yaml                yamlext.Set
 	vocabulary          coverage.Vocabulary
+	limits              []schemaext.LimitMapping
 }
 
 type target struct {
@@ -201,6 +209,9 @@ func New(providers ...Provider) (*Runtime, error) {
 		}
 	}
 	if err := runtime.registerCoverageKinds(providers); err != nil {
+		return nil, err
+	}
+	if err := runtime.registerCoverageLimits(providers); err != nil {
 		return nil, err
 	}
 	if err := runtime.registerAnnotations(providers); err != nil {
