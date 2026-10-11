@@ -1283,6 +1283,34 @@ func TestExport_HappyPath_CleansAGoTreeDeclaringOnlyDefaultPrivileges(t *testing
 	}
 }
 
+// TestExport_HappyPath_ExportsAGoTreeDeclaringOnlyAFeatureObject drives the
+// export over a tree whose only declaration is an owner's object, a synonym.
+// The object count read only the common families, so the export refused the
+// tree with ErrNoAnnotations although HCL writes a synonym block.
+func TestExport_HappyPath_ExportsAGoTreeDeclaringOnlyAFeatureObject(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(root, "models.go"),
+		[]byte("package models\n\n//ptah:schema:synonym name=\"current_users\" schema=\"app\" target=\"dbo.users\"\ntype Aliases struct{}\n"),
+		0o600), qt.IsNil)
+	output := filepath.Join(root, "schema.hcl")
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	outputData, err := os.ReadFile(output)
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.Parse(outputData, output)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 1)
+	c.Assert(string(outputData), qt.Contains, `synonym "current_users" {`)
+}
+
 func writeSimpleModel(c *qt.C, root string) string {
 	path := filepath.Join(root, "model.go")
 	data := []byte(`package models
