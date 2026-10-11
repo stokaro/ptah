@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
