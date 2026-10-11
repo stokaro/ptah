@@ -9,12 +9,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine"
 	"ptah.run/internal/atlashclrender"
 )
@@ -117,21 +117,63 @@ func TestRender_WritesAnOwnersBlock(t *testing.T) {
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
 }
 
+const widgetKind schemaext.Kind = "example.org/other/widget"
+
+// widget is an object of a second owner, example.org/other.
+type widget struct{}
+
+func (*widget) Kind() schemaext.Kind { return widgetKind }
+
+func (w *widget) Clone() schemaext.Value { return new(*w) }
+
+func (w *widget) Equal(other schemaext.Value) bool {
+	_, ok := other.(*widget)
+	return ok
+}
+
+func widgetCodec() schemaext.Codec {
+	encode := func(schemaext.Payload) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
+	return schemaext.Codec{Prototype: &widget{}, Representation: schemaext.Desired, Version: 1,
+		Definition: json.RawMessage(`{"type":"object"}`),
+		Clone:      func(value schemaext.Payload) (schemaext.Payload, error) { return value.(*widget).Clone(), nil },
+		Encode:     encode, Canonical: encode,
+		Decode: func(json.RawMessage) (schemaext.Payload, error) { return &widget{}, nil },
+	}
+}
+
+// widgetEncoder writes each widget as a `middle` block.
+type widgetEncoder struct{}
+
+func (widgetEncoder) EncodeHCL(_ context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {
+	blocks := make([]hclext.EncodedBlock, 0, len(request.Objects))
+	for _, object := range request.Objects {
+		blocks = append(blocks, hclext.EncodedBlock{Type: "middle", Placement: hclext.AfterTables, Name: object.Ref.Name.Source, Object: object.Ref})
+	}
+	return hclext.EncodeResult{Blocks: blocks}, nil
+}
+
 // TestRender_OrdersTheBlocksAfterTheTables orders every block after the tables
-// by type, schema and name, whichever wrote it: an owner's block of type
-// "aardvark" comes before a YDB coordination node this package writes itself,
-// and one of type "zebra" after it.
+// by type, schema and name, whichever owner wrote it and whatever order the
+// owners were registered in: the second owner's `middle` block stands
+// between the first owner's `aardvark` and `zebra` blocks.
 func TestRender_OrdersTheBlocksAfterTheTables(t *testing.T) {
 	c := qt.New(t)
-	db := gadgetDocument(gadgetObject("", "b", "zebra"), gadgetObject("", "z", "aardvark"), gadgetObject("", "a", "aardvark"),
-		ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}))
+	owners := must.Must(engine.New(
+		engine.Provider{ID: "example.org/custom", Codecs: []schemaext.Codec{gadgetCodec()},
+			HCL: []hclext.Extension{{Owner: "example.org/custom", Kinds: []schemaext.Kind{gadgetKind}, Encoder: gadgetEncoder{}}}},
+		engine.Provider{ID: "example.org/other", Codecs: []schemaext.Codec{widgetCodec()},
+			HCL: []hclext.Extension{{Owner: "example.org/other", Kinds: []schemaext.Kind{widgetKind}, Encoder: widgetEncoder{}}}},
+	)).HCL()
+	middle := schemaext.Object{Ref: objectidentity.ID{Kind: objectidentity.Kind(widgetKind), Name: objectidentity.Part{Source: "m", Normalized: "m"}},
+		Value: &widget{}}
+	db := gadgetDocument(gadgetObject("", "b", "zebra"), gadgetObject("", "z", "aardvark"), gadgetObject("", "a", "aardvark"), middle)
 
-	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(gadgetEncoder{})})
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: owners})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "\naardvark \"a\" {\n  note = \"a \\\"quoted\\\" note\"\n  on = true\n}\n\n"+
 		"aardvark \"z\" {\n  note = \"a \\\"quoted\\\" note\"\n  on = true\n}\n\n"+
-		"coordination_node \"locks\" {\n}\n\n"+
+		"middle \"m\" {\n}\n\n"+
 		"zebra \"b\" {\n  note = \"a \\\"quoted\\\" note\"\n  on = true\n}\n")
 }
 
@@ -233,4 +275,27 @@ func TestRender_FailurePath(t *testing.T) {
 			c.Assert(result.Data, qt.IsNil)
 		})
 	}
+}
+
+// headerEncoder writes the lines of header in the document's header and no
+// block.
+type headerEncoder struct {
+	header []string
+}
+
+func (e headerEncoder) EncodeHCL(context.Context, hclext.EncodeRequest) (hclext.EncodeResult, error) {
+	return hclext.EncodeResult{Header: e.header}, nil
+}
+
+// TestRender_WritesAnOwnersHeaderLines writes the lines an owner writes in the
+// header after the document's own record of what it does not describe.
+func TestRender_WritesAnOwnersHeaderLines(t *testing.T) {
+	c := qt.New(t)
+	db := gadgetDocument()
+	db.NotDescribed = coverage.Set{Objects: []coverage.Object{{Kind: coverage.View}}}
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(headerEncoder{header: []string{"gadget:claim {}", "gadget:more"}})})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Matches, `(?s)// Code generated by ptah; DO NOT EDIT\.\n// ptah:not-described view\n// gadget:claim \{\}\n// gadget:more\n\n.*`)
 }

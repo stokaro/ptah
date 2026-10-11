@@ -25,12 +25,14 @@ func (e namingEncoder) EncodeHCL(_ context.Context, request hclext.EncodeRequest
 		*e.requests = append(*e.requests, request)
 	}
 	blocks := make([]hclext.EncodedBlock, 0, len(request.Objects))
+	var header []string
 	for _, object := range request.Objects {
 		*e.objects = append(*e.objects, object.Ref.Name.Source)
 		blocks = append(blocks, hclext.EncodedBlock{Type: e.block, Placement: hclext.AfterTables, Name: object.Ref.Name.Source,
 			Object: object.Ref, Attributes: []hclext.EncodedAttribute{{Name: "size", Value: hclext.Value{Kind: hclext.String, Text: "s"}}}})
+		header = append(header, e.block+" "+object.Ref.Name.Source)
 	}
-	return hclext.EncodeResult{Blocks: blocks}, nil
+	return hclext.EncodeResult{Blocks: blocks, Header: header}, nil
 }
 
 // answeringEncoder answers every request with result and err.
@@ -64,14 +66,15 @@ func TestSet_Encode_HappyPath(t *testing.T) {
 	objects := must.Must(must.Must(schemaext.NewObjects(object("example.org/a/x", "g1"), object("example.org/b/x", "w1"),
 		object("example.org/a/x", "g2"), object("example.org/d/x", "d1"))).All())
 
-	blocks, err := set.Encode(t.Context(), hclext.EncodeRequest{Objects: objects})
+	encoded, err := set.Encode(t.Context(), hclext.EncodeRequest{Objects: objects})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(first, qt.DeepEquals, []string{"g1", "g2"})
 	c.Assert(second, qt.DeepEquals, []string{"w1"})
 	c.Assert(empty, qt.DeepEquals, []hclext.EncodeRequest{{}})
-	c.Assert(blocks, qt.HasLen, 3)
-	c.Assert([]string{blocks[0].Name, blocks[1].Name, blocks[2].Name}, qt.DeepEquals, []string{"g1", "g2", "w1"})
+	c.Assert(encoded.Blocks, qt.HasLen, 3)
+	c.Assert([]string{encoded.Blocks[0].Name, encoded.Blocks[1].Name, encoded.Blocks[2].Name}, qt.DeepEquals, []string{"g1", "g2", "w1"})
+	c.Assert(encoded.Header, qt.DeepEquals, []string{"gadget g1", "gadget g2", "widget w1"})
 	c.Assert(set.Encodes("example.org/a/x"), qt.IsTrue)
 	c.Assert(set.Encodes("example.org/d/x"), qt.IsFalse)
 	c.Assert(hclext.None().Encodes("example.org/a/x"), qt.IsFalse)
@@ -111,6 +114,10 @@ func TestSet_Encode_FailurePath(t *testing.T) {
 		{name: "the naming's own attribute", encoder: written(hclext.EncodedBlock{Type: "gadget", Name: "g", Placement: hclext.AfterTables,
 			Attributes: []hclext.EncodedAttribute{text("schema")}}),
 			wantErr: `invalid feature value: HCL encoder of example.org/a wrote block "gadget" with attribute "schema" unnamed, twice or as its naming's own`},
+		{name: "an empty header line", encoder: answeringEncoder{result: hclext.EncodeResult{Header: []string{" "}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote a header line that is empty or holds a line break: " "`},
+		{name: "a header line with a line break", encoder: answeringEncoder{result: hclext.EncodeResult{Header: []string{"a\nb"}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote a header line that is empty or holds a line break: "a\\nb"`},
 		{name: "a kind the writer cannot write", encoder: written(hclext.EncodedBlock{Type: "gadget", Name: "g", Placement: hclext.AfterTables,
 			Attributes: []hclext.EncodedAttribute{{Name: "on", Value: hclext.Value{Kind: hclext.Ref}}}}),
 			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "on" of block "gadget" as "reference", which the writer cannot write`},
@@ -120,10 +127,10 @@ func TestSet_Encode_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x", test.encoder)))
 
-			blocks, err := set.Encode(t.Context(), hclext.EncodeRequest{Objects: []schemaext.Object{object("example.org/a/x", "g")}})
+			encoded, err := set.Encode(t.Context(), hclext.EncodeRequest{Objects: []schemaext.Object{object("example.org/a/x", "g")}})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(blocks, qt.IsNil)
+			c.Assert(encoded, qt.DeepEquals, hclext.EncodeResult{})
 		})
 	}
 }

@@ -213,16 +213,15 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		carryStorageParams:     carryStorageParams,
 		owners:                 opts.HCL,
 	}
-	if err := r.captureCoordinationNodes(); err != nil {
-		return Result{}, err
-	}
 	// The owners write their objects as data, which this package writes
 	// and places. A value an owner cannot write refuses the export, as a
 	// value this package cannot write does. The writers take no context
 	// yet; the owners encode in process.
-	if r.ownerBlocks, err = r.encodeOwnerBlocks(opts.HCL); err != nil {
+	encoded, err := r.encodeOwnerBlocks(opts.HCL)
+	if err != nil {
 		return Result{}, err
 	}
+	r.ownerBlocks, r.ownerHeader = encoded.Blocks, encoded.Header
 	if err := r.captureRowSecurity(); err != nil {
 		return Result{}, err
 	}
@@ -238,13 +237,11 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 }
 
 type renderer struct {
-	coordinationNodes      []coordinationNode
-	coordinationDirectives []string
-	policies               []policyBlock
-	extensions             []extensionBlock
-	tableStates            map[string]*pgpolicy.DesiredTableState
-	db                     *schemamodel.Database
-	dialect                string
+	policies    []policyBlock
+	extensions  []extensionBlock
+	tableStates map[string]*pgpolicy.DesiredTableState
+	db          *schemamodel.Database
+	dialect     string
 	// defaultSchema owns every object that arrived without one. Empty means the
 	// IR is taken as written, which is what every parse-and-re-render caller
 	// wants.
@@ -286,10 +283,12 @@ type renderer struct {
 	// wrote, filled by [renderer.schemaRef] as the body is rendered and read
 	// afterwards by [renderer.referencedSchemas].
 	schemaRefs map[string]bool
-	// owners are the feature owners whose objects this render writes, and
-	// ownerBlocks the blocks they wrote; see [renderer.writeOwnerBlock].
+	// owners are the feature owners whose objects this render writes,
+	// ownerBlocks the blocks they wrote, and ownerHeader the lines they write
+	// in the header; see [renderer.writeOwnerBlock].
 	owners      hclext.Set
 	ownerBlocks []hclext.EncodedBlock
+	ownerHeader []string
 	builder     strings.Builder
 	diagnostics []Diagnostic
 }

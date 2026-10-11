@@ -2759,6 +2759,9 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
   does not depend on registration.
 - `SchemaIsAddress` keeps an empty schema empty, where the writer would
   otherwise fill in an inspected document's default.
+- `EncodeResult.Header` holds lines the writer adds to the document's header
+  comment, after its `ptah:not-described` entries, such as a captured
+  `ptah:feature-coverage` claim the owner reads back.
 - A block's `Object` and `Targets` say which object it writes and the targets
   reading it back binds that object to, so a scope the block restores is not a
   loss. An object of a kind no encoder writes is reported as one HCL does not
@@ -2766,9 +2769,10 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 
 `synonym.HCL` reads and writes the `synonym` block, `tssource.HCL` the
 `hypertable` and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
-`extended_property` block. `ydbsource.HCL` reads the
-`coordination_node` block, the vector and partitioning attributes of an `index`
-block, the `coordination_node` header entries and the captured header.
+`extended_property` block. `ydbsource.HCL` reads and writes the
+`coordination_node` block and the captured header, and reads the vector and
+partitioning attributes of an `index` block and the `coordination_node` header
+entries.
 `pgpolicysource.HCL` reads the `policy` block and a table's `row_security`
 block. `mysqlsource.HCL` reads no block: it claims that an index an HCL
 document declares has no block size, since the format cannot spell one.

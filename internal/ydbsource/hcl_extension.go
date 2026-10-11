@@ -31,7 +31,8 @@ const (
 //     node unmanaged, and a captured `ptah:feature-coverage` header.
 //
 // All are Ptah extensions of the format: the pinned Atlas community binary has
-// no YDB driver. The claim enrolls the coordination nodes a document can
+// no YDB driver. The writer writes each node back as the same block, and the
+// captured header with it. The claim enrolls the coordination nodes a document can
 // declare, less the ones its header leaves unmanaged, or exactly the captured
 // header's account.
 func HCL() hclext.Extension {
@@ -54,6 +55,7 @@ func HCL() hclext.Extension {
 		Header:           []coverage.Kind{coverage.Kind(sourceKindToken(ydbcoordination.Kind))},
 		CapturedCoverage: true,
 		Coverage:         hclClaim,
+		Encoder:          hclEncoder{},
 	}
 }
 

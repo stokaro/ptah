@@ -13,10 +13,10 @@ import (
 // encodeOwnerBlocks hands the owners the document: its objects, its tables'
 // facets and its coverage. The writers take no context yet; the owners
 // encode in process.
-func (r *renderer) encodeOwnerBlocks(owners hclext.Set) ([]hclext.EncodedBlock, error) {
+func (r *renderer) encodeOwnerBlocks(owners hclext.Set) (hclext.EncodeResult, error) {
 	objects, err := r.db.FeatureObjects.All()
 	if err != nil {
-		return nil, err
+		return hclext.EncodeResult{}, err
 	}
 	tables := make([]hclext.TableFacets, 0, len(r.db.Tables))
 	for _, table := range r.db.Tables {
@@ -44,7 +44,7 @@ type slotBlock struct {
 // them is an Atlas block, so no Atlas output fixes their order, and the order
 // by type, schema and name is the stable one.
 func (r *renderer) renderAfterTables() {
-	blocks := r.coordinationNodeBlocks()
+	var blocks []slotBlock
 	for _, block := range r.ownerBlocks {
 		if block.Placement == hclext.AfterTables {
 			blocks = append(blocks, r.writeOwnerBlock(block))

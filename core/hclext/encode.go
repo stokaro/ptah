@@ -43,6 +43,11 @@ type TableFacets struct {
 type EncodeResult struct {
 	// Blocks are the blocks the owner writes.
 	Blocks []EncodedBlock
+	// Header are lines the owner writes in the document's header comment,
+	// after the document's `ptah:not-described` entries, each as one `// `
+	// line, such as the captured `ptah:feature-coverage` claim the owner
+	// reads back. A line holds no line break.
+	Header []string
 }
 
 // Placement is where among the writer's own top-level blocks an encoded
@@ -106,47 +111,70 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // write, extension by extension. It refuses a block without a type, a name or
 // a known placement, an attribute without a name, written twice or of a kind
 // the writer cannot write, and a block that writes an object of a kind its
-// extension does not claim. An encoder's own error is returned as it is: it
-// refuses the document, as a value the owner cannot write would otherwise
-// be written wrong.
-func (s Set) Encode(ctx context.Context, document EncodeRequest) ([]EncodedBlock, error) {
-	var blocks []EncodedBlock
+// extension does not claim, and a header line that is empty or holds a line
+// break. The header lines are returned in the order of the extensions. An
+// encoder's own error is returned as it is: it refuses the document, as a
+// value the owner cannot write would otherwise be written wrong.
+func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, error) {
+	var encoded EncodeResult
 	for _, extension := range s.extensions {
 		if extension.Encoder == nil {
 			continue
 		}
-		request := EncodeRequest{Coverage: document.Coverage.SelectKinds(extension.Kinds)}
-		for _, object := range document.Objects {
-			if slices.Contains(extension.Kinds, schemaext.Kind(object.Ref.Kind)) {
-				request.Objects = append(request.Objects, object)
-			}
-		}
-		for _, table := range document.Tables {
-			facets := table.Facets
-			for _, kind := range facets.Kinds() {
-				if !slices.Contains(extension.Kinds, kind) {
-					facets = facets.Without(kind)
-				}
-			}
-			if facets.Len() > 0 {
-				request.Tables = append(request.Tables, TableFacets{Table: table.Table, Facets: facets})
-			}
-		}
-		result, err := extension.Encoder.EncodeHCL(ctx, request)
+		result, err := extension.Encoder.EncodeHCL(ctx, extension.selectRequest(document))
 		if err != nil {
-			return nil, err
+			return EncodeResult{}, err
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return EncodeResult{}, err
 		}
-		for _, block := range result.Blocks {
-			if err := checkEncodedBlock(extension, block); err != nil {
-				return nil, err
-			}
-			blocks = append(blocks, block)
+		if err := checkEncodeResult(extension, result); err != nil {
+			return EncodeResult{}, err
+		}
+		encoded.Blocks = append(encoded.Blocks, result.Blocks...)
+		encoded.Header = append(encoded.Header, result.Header...)
+	}
+	return encoded, nil
+}
+
+// selectRequest is what document holds of the extension's Kinds: its objects,
+// its tables with those facets alone, and its coverage of them.
+func (e Extension) selectRequest(document EncodeRequest) EncodeRequest {
+	request := EncodeRequest{Coverage: document.Coverage.SelectKinds(e.Kinds)}
+	for _, object := range document.Objects {
+		if slices.Contains(e.Kinds, schemaext.Kind(object.Ref.Kind)) {
+			request.Objects = append(request.Objects, object)
 		}
 	}
-	return blocks, nil
+	for _, table := range document.Tables {
+		facets := table.Facets
+		for _, kind := range facets.Kinds() {
+			if !slices.Contains(e.Kinds, kind) {
+				facets = facets.Without(kind)
+			}
+		}
+		if facets.Len() > 0 {
+			request.Tables = append(request.Tables, TableFacets{Table: table.Table, Facets: facets})
+		}
+	}
+	return request
+}
+
+// checkEncodeResult refuses a result the writer cannot write: a block it
+// cannot write, or a header line that is empty or holds a line break.
+func checkEncodeResult(extension Extension, result EncodeResult) error {
+	for _, block := range result.Blocks {
+		if err := checkEncodedBlock(extension, block); err != nil {
+			return err
+		}
+	}
+	for _, line := range result.Header {
+		if strings.TrimSpace(line) == "" || strings.ContainsAny(line, "\r\n") {
+			return fmt.Errorf("%w: HCL encoder of %s wrote a header line that is empty or holds a line break: %q",
+				schemaext.ErrInvalidValue, extension.Owner, line)
+		}
+	}
+	return nil
 }
 
 // checkEncodedBlock refuses a block the writer cannot write.
