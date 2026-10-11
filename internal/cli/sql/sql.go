@@ -154,14 +154,19 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
 	var findings []sqllint.Finding
 	for _, source := range sources {
-		sourceFindings, err := sqllint.LintSource(source, sqllint.Options{
+		sourceFindings, err := sqllint.LintSource(cmd.Context(), source, sqllint.Options{
 			Dialect:       normalizedDialect,
 			Version:       opts.version,
 			Capabilities:  target.Capabilities,
 			DisabledRules: opts.disabled,
 			Severities:    severities,
+			Bodies:        runtime,
 		})
 		if err != nil {
 			return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())

@@ -82,18 +82,17 @@ func unreadableContents(kind string) string {
 	return fmt.Sprintf("the %s statement's contents could not be read", kind)
 }
 
-// proceduralWritesFor selects the body analysis a dialect's routines get.
+// proceduralWritesFor selects the body analysis the routines of a dialect
+// whose owner reads no bodies yet get. A PostgreSQL body is read by its owner
+// and never reaches here.
 //
-// PostgreSQL, MySQL and SQL Server each parse a routine body with their own
-// grammar, and there is no shared one to fall back on: a T-SQL body read by the
-// PL/pgSQL splitter is not a conservative answer, it is a wrong one. A dialect
-// with no routine-body parser is reported as having none rather than analyzed
-// by whichever parser happened to be reachable.
+// MySQL and SQL Server each parse a routine body with their own grammar, and
+// there is no shared one to fall back on: a T-SQL body read by the PL/pgSQL
+// splitter is not a conservative answer, it is a wrong one. A dialect with no
+// routine-body parser is reported as having none rather than analyzed by
+// whichever parser happened to be reachable.
 func proceduralWritesFor(dialect string, routine schemamodel.Function, kind string) (writes []RoutineWrite, unresolved []string, analyzed bool) {
 	switch {
-	case platform.IsPostgresFamily(dialect):
-		writes, unresolved = deriveProceduralWrites(routine, kind)
-		return writes, unresolved, true
 	case isMySQLFamily(dialect):
 		writes, unresolved = deriveMySQLWrites(routine, kind)
 		return writes, unresolved, true

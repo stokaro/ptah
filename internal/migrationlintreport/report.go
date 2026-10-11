@@ -33,12 +33,12 @@ import (
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -97,10 +97,11 @@ type Report struct {
 }
 
 // Runtime supplies conversion, reporting, and schema rendering for replayed
-// schema captures, and the statement splitting and rules of each target's
-// owner.
+// schema captures, the statement splitting and rules of each target's owner,
+// and the routine body reading the baseline's dependents are resolved with.
 type Runtime interface {
 	lintext.Runtime
+	schemalineage.Bodies
 	goschematodb.Runtime
 	schemacomparison.Runtime
 	schemaext.ReportingRuntime
@@ -792,7 +793,7 @@ func replayVersionObserver(
 // A nil observer is handed to the replay when nothing was asked for, so a
 // directory with no renames pays no introspection at all.
 type baselineCollector struct {
-	runtime dbschematogo.Runtime
+	runtime baselineRuntime
 	wanted  map[int64]bool
 	schemas []string
 	columns []lintext.BaselineColumn
@@ -805,7 +806,7 @@ type baselineCollector struct {
 	hypertables []lintext.BaselineHypertable
 }
 
-func newBaselineCollector(versions []int64, devURL string, runtime dbschematogo.Runtime) *baselineCollector {
+func newBaselineCollector(versions []int64, devURL string, runtime baselineRuntime) *baselineCollector {
 	collector := &baselineCollector{runtime: runtime, wanted: make(map[int64]bool, len(versions))}
 	for _, version := range versions {
 		collector.wanted[version] = true

@@ -167,13 +167,14 @@ SQL expressions.
 
 PostgreSQL-family dialect mode keeps `CREATE FUNCTION` rendering on
 `ast.CreateFunctionNode`, but attaches parser-only `PostgresRoutineBody`
-metadata for quoted, SQL-standard `RETURN`, and `BEGIN ATOMIC` bodies.
+metadata for quoted, SQL-standard `RETURN`, and `BEGIN ATOMIC` bodies: the
+body text, its dollar-quote delimiter and its language.
 `CREATE PROCEDURE` and `DO` blocks become PostgreSQL-specific routine nodes in
 PostgreSQL-family dialect mode and still render through the raw-SQL visitor
 contract.
-PL/pgSQL expressions remain raw; the body parser classifies top-level
-declarations, block statements, exceptions, returns, dynamic execution, raises,
-and control-flow statements.
+This package does not split a PostgreSQL body into statements. The PostgreSQL
+owner does (`dialect/postgres/pgroutine`), through the runtime's routine body
+reader (`core/routineext`), and a host that analyzes a body asks the runtime.
 
 Parsing a PostgreSQL `DO` body does not execute it. The shared desired-schema
 reader interprets the bounded conditional role-bootstrap form documented in

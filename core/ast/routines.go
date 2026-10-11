@@ -37,8 +37,10 @@ type PostgresRoutineNode struct {
 	Body PostgresRoutineBody
 }
 
-// PostgresRoutineBody contains parser metadata for a PostgreSQL function,
-// procedure, or DO body. Expressions remain raw PostgreSQL fragments.
+// PostgresRoutineBody is the body of a PostgreSQL function, procedure, or DO
+// block as the statement writes it. What its statements are is the PostgreSQL
+// owner's to read: a host asks the runtime's routine body reader
+// (ptah.run/core/routineext).
 type PostgresRoutineBody struct {
 	// SQL is the raw body text without string or dollar-quote delimiters.
 	SQL string
@@ -47,47 +49,6 @@ type PostgresRoutineBody struct {
 	Delimiter string
 	// Language is the normalized body language known at parse time.
 	Language string
-	// Statements are top-level PL/pgSQL-ish statements when the body is a
-	// block; SQL-language bodies usually remain a single raw statement.
-	Statements []PostgresRoutineStatement
-}
-
-// PostgresRoutineStatementKind identifies a PostgreSQL routine-body statement
-// class.
-type PostgresRoutineStatementKind string
-
-const (
-	PostgresRoutineStatementRaw         PostgresRoutineStatementKind = "raw"
-	PostgresRoutineStatementDeclaration PostgresRoutineStatementKind = "declaration"
-	PostgresRoutineStatementBlock       PostgresRoutineStatementKind = "block"
-	PostgresRoutineStatementException   PostgresRoutineStatementKind = "exception"
-	PostgresRoutineStatementReturn      PostgresRoutineStatementKind = "return"
-	PostgresRoutineStatementPerform     PostgresRoutineStatementKind = "perform"
-	PostgresRoutineStatementExecute     PostgresRoutineStatementKind = "execute"
-	PostgresRoutineStatementRaise       PostgresRoutineStatementKind = "raise"
-	PostgresRoutineStatementIf          PostgresRoutineStatementKind = "if"
-	PostgresRoutineStatementCase        PostgresRoutineStatementKind = "case"
-	PostgresRoutineStatementLoop        PostgresRoutineStatementKind = "loop"
-)
-
-// PostgresRoutineStatement is one top-level statement inside a PostgreSQL
-// routine body.
-type PostgresRoutineStatement struct {
-	Kind PostgresRoutineStatementKind
-	SQL  string
-
-	// Statements are the statements a control-flow statement carries, empty for
-	// every other kind and for one this parser could not split.
-	//
-	// The model was flat, and SQL is the whole text either way -- an IF carries
-	// its own `END IF`. A consumer that stopped at the top level therefore saw
-	// the IF and not what runs inside it, which is how an EXECUTE inside a
-	// conditional went unreported by the rule whose whole job is to say where
-	// analysis stops (stokaro/ptah#2393).
-	//
-	// Additive on purpose: the top-level list is unchanged, so a reader that
-	// does not care about nesting sees exactly what it saw before.
-	Statements []PostgresRoutineStatement `json:",omitempty"`
 }
 
 // SQLServerRoutineNode represents a SQL Server CREATE FUNCTION or CREATE

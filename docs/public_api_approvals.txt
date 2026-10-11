@@ -681,3 +681,13 @@ v0.13.0 ptah.run/engine
 # baseline types a run is handed are core/lintext's, because the owners read
 # the same values. Pre-v1, so no compatibility is owed.
 v0.13.0 ptah.run/migration/lint
+
+# #4140 family 8 moves the reading of a PostgreSQL routine body to its owner,
+# ptah.run/dialect/postgres/pgroutine, behind the routine body contract
+# ptah.run/core/routineext. ast.PostgresRoutineBody keeps the body text, its
+# delimiter and its language; its Statements field, the PostgresRoutineStatement
+# type and the PostgresRoutineStatementKind constants are removed without
+# aliases, and a caller asks the runtime's routine body reader instead. This
+# changes the Go API; pre-v1, so no compatibility is owed under the authorized
+# #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/core/ast

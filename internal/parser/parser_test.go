@@ -508,11 +508,6 @@ CREATE INDEX idx_users_name ON users (name);`
 	c.Assert(block.Body.Language, qt.Equals, "plpgsql")
 	c.Assert(block.Body.SQL, qt.Contains, "DECLARE")
 	c.Assert(block.Body.SQL, qt.Contains, "RAISE NOTICE 'missing';")
-	c.Assert(postgresRoutineStatementKinds(block.Body.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementDeclaration,
-		ast.PostgresRoutineStatementIf,
-		ast.PostgresRoutineStatementException,
-	})
 	rendered, err := builtin.RenderSQL(platform.Postgres, block)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, "DO $do$")
@@ -945,10 +940,6 @@ AS $$ SELECT value + 1; $$;`
 		SQL:       " SELECT value + 1; ",
 		Delimiter: "$$",
 		Language:  "sql",
-		Statements: []ast.PostgresRoutineStatement{{
-			Kind: ast.PostgresRoutineStatementRaw,
-			SQL:  "SELECT value + 1;",
-		}},
 	})
 }
 
@@ -980,11 +971,6 @@ $fn$;`
 	c.Assert(createFunction.RoutineBody.SQL, qt.Contains, "DECLARE")
 	c.Assert(createFunction.RoutineBody.SQL, qt.Contains, "EXECUTE 'SELECT 1';")
 	c.Assert(createFunction.RoutineBody.SQL, qt.Contains, "RETURN user_id;")
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementDeclaration,
-		ast.PostgresRoutineStatementExecute,
-		ast.PostgresRoutineStatementReturn,
-	})
 }
 
 func TestParser_ParseGenericFunctionDoesNotClaimPostgresRoutineBody(t *testing.T) {
@@ -1028,9 +1014,6 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
 	c.Assert(createFunction.RoutineBody.Delimiter, qt.Equals, "$fn$")
 	c.Assert(createFunction.RoutineBody.SQL, qt.Contains, "PERFORM '$$ not the delimiter';")
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementPerform,
-	})
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1060,11 +1043,6 @@ $fn$;`
 	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementBlock,
-		ast.PostgresRoutineStatementReturn,
-	})
-	c.Assert(createFunction.RoutineBody.Statements[0].SQL, qt.Contains, "PERFORM 1;")
 }
 
 func TestParser_ParsePostgresDialectFunctionSQLForUpdateDoesNotOpenLoop(t *testing.T) {
@@ -1088,11 +1066,6 @@ $fn$;`
 	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementPerform,
-		ast.PostgresRoutineStatementReturn,
-	})
-	c.Assert(createFunction.RoutineBody.Statements[0].SQL, qt.Contains, "FOR UPDATE")
 }
 
 func TestParser_ParsePostgresDialectFunctionForLoopStatement(t *testing.T) {
@@ -1118,11 +1091,6 @@ $fn$;`
 	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementLoop,
-		ast.PostgresRoutineStatementReturn,
-	})
-	c.Assert(createFunction.RoutineBody.Statements[0].SQL, qt.Contains, "PERFORM i;")
 }
 
 func TestParser_ParsePostgresDialectTriggerFunctionBodyAndReference(t *testing.T) {
@@ -1152,10 +1120,6 @@ EXECUTE FUNCTION public.touch_updated_at();`
 	c.Assert(createFunction.Returns, qt.Equals, "trigger")
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
 	c.Assert(createFunction.RoutineBody.SQL, qt.Contains, "NEW.updated_at := now();")
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementRaw,
-		ast.PostgresRoutineStatementReturn,
-	})
 
 	// An argument-free EXECUTE FUNCTION is a trigger node that references the
 	// named function, so the SQL frontend can read back the trigger Ptah
@@ -1198,9 +1162,6 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(routine.Language, qt.Equals, "plpgsql")
 	c.Assert(routine.Body.Delimiter, qt.Equals, "$proc$")
 	c.Assert(routine.Body.SQL, qt.Contains, "PERFORM user_id;")
-	c.Assert(postgresRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementPerform,
-	})
 	rendered, err := builtin.RenderSQL(platform.Postgres, routine)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, "CREATE PROCEDURE public.touch_user")
@@ -1255,10 +1216,6 @@ CREATE TABLE after_atomic (id int);`
 	c.Assert(routine.Language, qt.Equals, "sql")
 	c.Assert(routine.Body.SQL, qt.Contains, "BEGIN ATOMIC")
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT INTO tbl VALUES (b);")
-	c.Assert(routine.Body.Statements, qt.DeepEquals, []ast.PostgresRoutineStatement{{
-		Kind: ast.PostgresRoutineStatementRaw,
-		SQL:  routine.Body.SQL,
-	}})
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1294,12 +1251,6 @@ $fn$;`
 	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
-	c.Assert(postgresRoutineStatementKinds(createFunction.RoutineBody.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
-		ast.PostgresRoutineStatementLoop,
-		ast.PostgresRoutineStatementLoop,
-		ast.PostgresRoutineStatementLoop,
-		ast.PostgresRoutineStatementReturn,
-	})
 }
 
 func TestParser_ParseCreateOrReplaceFunction(t *testing.T) {
@@ -2554,14 +2505,6 @@ END;`
 
 func routineStatementKinds(statements []ast.MySQLRoutineStatement) []ast.MySQLRoutineStatementKind {
 	kinds := make([]ast.MySQLRoutineStatementKind, 0, len(statements))
-	for _, stmt := range statements {
-		kinds = append(kinds, stmt.Kind)
-	}
-	return kinds
-}
-
-func postgresRoutineStatementKinds(statements []ast.PostgresRoutineStatement) []ast.PostgresRoutineStatementKind {
-	kinds := make([]ast.PostgresRoutineStatementKind, 0, len(statements))
 	for _, stmt := range statements {
 		kinds = append(kinds, stmt.Kind)
 	}

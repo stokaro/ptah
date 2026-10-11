@@ -17,6 +17,13 @@ import (
 	"ptah.run/internal/schemalineage"
 )
 
+// baselineRuntime converts a replayed catalog and reads the routine bodies it
+// holds, which is what resolving the baseline's dependents takes.
+type baselineRuntime interface {
+	dbschematogo.Runtime
+	schemalineage.Bodies
+}
+
 // baselineState is the schema state one migration version starts from, in
 // the forms the linter looks things up in.
 type baselineState struct {
@@ -40,7 +47,7 @@ func readBaselineState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	version int64,
 	schemas []string,
-	runtime dbschematogo.Runtime,
+	runtime baselineRuntime,
 ) (baselineState, error) {
 	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
@@ -257,7 +264,7 @@ func numericDataType(column catalog.Column) string {
 // contributes no dependent, so the rule stays silent about it rather than
 // naming a reader it did not establish -- the rule reports a fact, and the
 // analysis's own undecided list is where the gaps are stated.
-func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime dbschematogo.Runtime) ([]lintext.BaselineDependent, error) {
+func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime baselineRuntime) ([]lintext.BaselineDependent, error) {
 	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, dialect, runtime)
 	if err != nil {
 		return nil, err
@@ -272,7 +279,11 @@ func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version
 			Dependent: edge.ToView, Kind: viewKinds[edge.Materialized],
 		})
 	}
-	for _, read := range schemalineage.DeriveRoutines(desired, dialect).Reads {
+	routines, err := schemalineage.DeriveRoutines(ctx, runtime, desired, dialect)
+	if err != nil {
+		return nil, err
+	}
+	for _, read := range routines.Reads {
 		dependents = append(dependents, lintext.BaselineDependent{
 			Version: version, Schema: tableSchemas[read.Table],
 			Table: read.Table, Column: read.Column,

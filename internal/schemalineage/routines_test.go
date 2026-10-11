@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemalineage"
 )
 
@@ -33,7 +34,7 @@ func TestDeriveRoutines_ResolvesWhatItCanAndNamesWhatItCannot(t *testing.T) {
 
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(db, "postgres")
+	result := deriveRoutines(c, db, "postgres")
 
 	c.Assert(result.Edges, qt.HasLen, 2)
 	c.Assert(result.Edges[0].ToRoutine, qt.Equals, "active_emails")
@@ -57,7 +58,7 @@ func TestDeriveRoutines_ResolvesWhatItCanAndNamesWhatItCannot(t *testing.T) {
 func TestDeriveRoutines_AProceduralBodyIsUndecidedRatherThanEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Functions: []schemamodel.Function{
 			{Name: "f", Language: "plpgsql", Body: "BEGIN SELECT email FROM users; END;"},
 		},
@@ -75,7 +76,7 @@ func TestDeriveRoutines_AProceduralBodyIsUndecidedRatherThanEmpty(t *testing.T) 
 func TestDeriveRoutines_NoRoutinesIsNotAnUndecided(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "U", Name: "users"}},
 	}, "postgres")
 
@@ -102,7 +103,7 @@ func undecidedRoutines(result schemalineage.RoutineResult) []string {
 func TestDeriveRoutines_AnUnresolvableSQLBodyCarriesTheReadersReason(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+	result := deriveRoutines(c, &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "U", Name: "users"}},
 		Fields: []schemamodel.Field{{StructName: "U", Name: "email", Type: "TEXT"}},
 		Functions: []schemamodel.Function{
@@ -115,4 +116,13 @@ func TestDeriveRoutines_AnUnresolvableSQLBodyCarriesTheReadersReason(t *testing.
 	c.Assert(result.Undecided[0].Routine, qt.Equals, "joined")
 	c.Assert(result.Undecided[0].Reason, qt.Not(qt.Equals), "")
 	c.Assert(result.Undecided[0].Reason, qt.Not(qt.Contains), "plain SQL")
+}
+
+// deriveRoutines derives a schema's routine lineage, its procedural bodies read
+// by the bundled runtime's owners.
+func deriveRoutines(c *qt.C, db *schemamodel.Database, dialect string) schemalineage.RoutineResult {
+	c.Helper()
+	result, err := schemalineage.DeriveRoutines(c.Context(), builtintest.Runtime(), db, dialect)
+	c.Assert(err, qt.IsNil)
+	return result
 }

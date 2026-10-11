@@ -149,6 +149,8 @@ func TestNew_LintFailurePath(t *testing.T) {
 		}, `.*lint rule XY101 is published by "example.org/one" and "example.org/two"`},
 		{"a typed-nil splitter", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha", Splitter: (*upperSplitter)(nil)}}}},
 			`.*target "alpha" has a typed-nil statement splitter service`},
+		{"a typed-nil routine body reader", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha",
+			RoutineBodies: (*echoReader)(nil)}}}}, `.*target "alpha" has a typed-nil routine body reader service`},
 		{"a typed-nil annotator", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha", Annotator: (*wordAnnotator)(nil)}}}},
 			`.*target "alpha" has a typed-nil statement annotator service`},
 	} {

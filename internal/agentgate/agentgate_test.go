@@ -51,7 +51,7 @@ func scopeFor(
 // runner builds the gate runner every test uses.
 func runner(c *qt.C) *agentgate.Runner {
 	c.Helper()
-	built, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
+	built, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), RoutineBodies: builtintest.Runtime(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	return built
 }
@@ -151,6 +151,27 @@ func TestRun_MigrationsReportUnparsableSQL(t *testing.T) {
 	failing := errorDiagnostics(sql.Diagnostics)
 	c.Assert(failing, qt.HasLen, 1)
 	c.Assert(failing[0].Path, qt.Equals, "1700000000_init.up.sql")
+}
+
+// The SQL gate reads the routine bodies a migration defines through the
+// runtime it was given, so a function that composes SQL at run time is
+// reported where it does.
+func TestRun_MigrationsReadRoutineBodies(t *testing.T) {
+	c := qt.New(t)
+	scope := scopeFor(c, agentpolicy.ClassMigrations, map[string]string{
+		"1700000000_init.up.sql":   "CREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n  EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;\n",
+		"1700000000_init.down.sql": "DROP FUNCTION f();\n",
+	})
+	hashMigrations(c, scope)
+
+	report, err := runner(c).Run(context.Background(), scope)
+
+	c.Assert(err, qt.IsNil)
+	messages := make([]string, 0)
+	for _, diagnostic := range resultFor(c, report, agentgate.GateMigrationSQL).Diagnostics {
+		messages = append(messages, diagnostic.Path+": "+diagnostic.Message)
+	}
+	c.Assert(messages, qt.Contains, "1700000000_init.up.sql: function f builds SQL at run time with EXECUTE")
 }
 
 // errorDiagnostics keeps the diagnostics that fail a gate.

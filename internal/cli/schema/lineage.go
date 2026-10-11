@@ -135,9 +135,13 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	routines, err := schemalineage.DeriveRoutines(cmd.Context(), owners, database, opts.dialect)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	document := lineageDocument{
 		Result:   schemalineage.DeriveForDialect(database, opts.dialect),
-		Routines: schemalineage.DeriveRoutines(database, opts.dialect),
+		Routines: routines,
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
 }
@@ -216,9 +220,13 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("convert database schema: %w", err))
 	}
+	routines, err := schemalineage.DeriveRoutines(cmd.Context(), runtime, database, dialect)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	document := lineageDocument{
 		Result:   schemalineage.DeriveForDialect(database, dialect),
-		Routines: schemalineage.DeriveRoutines(database, dialect),
+		Routines: routines,
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
 }

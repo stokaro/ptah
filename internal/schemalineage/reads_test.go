@@ -44,7 +44,7 @@ func readTargets(result schemalineage.RoutineResult) []string {
 func TestDeriveRoutines_AnAssignedColumnIsWrittenAndNotRead(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(customersSchema("", "plpgsql",
+	result := deriveRoutines(c, customersSchema("", "plpgsql",
 		"BEGIN UPDATE customers SET country = 'CZ' WHERE id = 1; END;"), "postgres")
 
 	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.id:update"})
@@ -61,7 +61,7 @@ func TestDeriveRoutines_AnAssignedColumnIsWrittenAndNotRead(t *testing.T) {
 func TestDeriveRoutines_AColumnAssignedFromItselfIsBoth(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(customersSchema("", "plpgsql",
+	result := deriveRoutines(c, customersSchema("", "plpgsql",
 		"BEGIN UPDATE customers SET email = lower(email) WHERE id = 1; END;"), "postgres")
 
 	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.email:update", "customers.id:update"})
@@ -76,10 +76,25 @@ func TestDeriveRoutines_AColumnAssignedFromItselfIsBoth(t *testing.T) {
 func TestDeriveRoutines_AReadInsideABranchIsReached(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(customersSchema("", "plpgsql",
+	result := deriveRoutines(c, customersSchema("", "plpgsql",
 		"BEGIN IF true THEN SELECT email FROM customers WHERE id = 1; END IF; END;"), "postgres")
 
 	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.email:select", "customers.id:select"})
+}
+
+// TestDeriveRoutines_ASelectWithACaseColumnKeepsItsReads pins what a CASE
+// expression does to a statement's reads. The PL/pgSQL splitter finds the THEN
+// of a CASE expression as it finds a CASE statement's, and the fragments it
+// split out of the expression were read in place of the SELECT: "1" and "2"
+// name no table, so the reads of the FROM were lost. Only a control-flow
+// statement carries statements now.
+func TestDeriveRoutines_ASelectWithACaseColumnKeepsItsReads(t *testing.T) {
+	c := qt.New(t)
+
+	result := deriveRoutines(c, customersSchema("", "plpgsql",
+		"BEGIN SELECT CASE WHEN country = 'CZ' THEN 1 ELSE 2 END INTO v FROM customers WHERE id = 1; END;"), "postgres")
+
+	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.country:select", "customers.id:select"})
 }
 
 // TestDeriveRoutines_TSQLReadsAreDerived is the other half of the dialect rule.
@@ -95,7 +110,7 @@ func TestDeriveRoutines_AReadInsideABranchIsReached(t *testing.T) {
 func TestDeriveRoutines_TSQLReadsAreDerived(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(customersSchema("procedure", "sql",
+	result := deriveRoutines(c, customersSchema("procedure", "sql",
 		"UPDATE customers SET country = 'CZ' WHERE id = 1;"), "sqlserver")
 
 	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.id:update"})
@@ -114,7 +129,7 @@ func TestDeriveRoutines_TSQLReadsAreDerived(t *testing.T) {
 func TestDeriveRoutines_MySQLReadsAreRefusedWithTheirReason(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(customersSchema("procedure", "sql",
+	result := deriveRoutines(c, customersSchema("procedure", "sql",
 		"BEGIN UPDATE customers SET country = 'CZ' WHERE id = 1; END"), "mysql")
 
 	c.Assert(result.Reads, qt.HasLen, 0)
@@ -147,7 +162,7 @@ func TestDeriveRoutines_TwoTablesInScopeYieldNoRead(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := schemalineage.DeriveRoutines(customersSchema("", "plpgsql", row.body), "postgres")
+			result := deriveRoutines(c, customersSchema("", "plpgsql", row.body), "postgres")
 
 			c.Assert(result.Reads, qt.HasLen, 0)
 		})
@@ -163,7 +178,7 @@ func TestDeriveRoutines_TwoTablesInScopeYieldNoRead(t *testing.T) {
 func TestDeriveRoutines_AColumnMentionedTwiceIsReadOnce(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(customersSchema("", "plpgsql",
+	result := deriveRoutines(c, customersSchema("", "plpgsql",
 		"BEGIN DELETE FROM customers WHERE id = 1 AND id < 9; END;"), "postgres")
 
 	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.id:delete"})
