@@ -1342,6 +1342,18 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgextension-extensioncompare",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension/extensioncompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgextension-extensionconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension/extensionconvert",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgextension-extensionrender",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgextension/extensionrender",

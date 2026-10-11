@@ -141,6 +141,21 @@ func (v *ObservedExtension) Desired() *DesiredExtension {
 	return declared
 }
 
+// Observed is the observation a declaration predicts: the schema and the
+// version it names, empty where it leaves them to the server, and its
+// comment. Whether the extension may move is a fact of its control file that
+// no declaration states, so the prediction says it may not.
+func (v *DesiredExtension) Observed() *ObservedExtension {
+	if v == nil {
+		return nil
+	}
+	observed := &ObservedExtension{Schema: v.Schema, Version: v.Version}
+	if v.Comment != "" {
+		observed.Comment = new(v.Comment)
+	}
+	return observed
+}
+
 // DesiredObject validates a declaration and its identity and returns it as a
 // feature object.
 func DesiredObject(ref objectidentity.ID, extension DesiredExtension) (schemaext.Object, error) {

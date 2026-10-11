@@ -1,6 +1,7 @@
 package schemaext
 
 import (
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 )
 
@@ -12,11 +13,13 @@ import (
 // connection opened before the object existed answers about the past, and
 // would skip the statements that need the object.
 //
-// ProvidedCapabilities returns caps widened by what the object provides, and
-// caps unchanged where it provides nothing, as a change that drops its object
-// does. It must not change caps.
+// ProvidedCapabilities returns caps widened by what the object subject
+// names provides, and caps unchanged where it provides nothing, as a change
+// that drops its object does. The subject is the object's identity, which
+// holds what a value alone does not, such as an extension's name. It must not
+// change caps.
 type CapabilityProvider interface {
-	ProvidedCapabilities(caps capability.Capabilities) capability.Capabilities
+	ProvidedCapabilities(subject objectidentity.ID, caps capability.Capabilities) capability.Capabilities
 }
 
 // SchemaPlacement is a feature value or change that puts its object into a
@@ -28,14 +31,14 @@ type SchemaPlacement interface {
 	PlacementSchema() string
 }
 
-// ProvidedCapabilities returns caps widened by every value of values that is
-// a [CapabilityProvider], in order; any other value provides nothing. caps is
+// ProvidedByChanges returns caps widened by every change whose value is a
+// [CapabilityProvider], in order; any other change provides nothing. caps is
 // not changed.
-func ProvidedCapabilities(caps capability.Capabilities, values ...any) capability.Capabilities {
+func ProvidedByChanges(caps capability.Capabilities, changes []ChangeRecord) capability.Capabilities {
 	caps = caps.Clone()
-	for _, value := range values {
-		if provider, ok := value.(CapabilityProvider); ok {
-			caps = provider.ProvidedCapabilities(caps)
+	for _, change := range changes {
+		if provider, ok := change.Value.(CapabilityProvider); ok {
+			caps = provider.ProvidedCapabilities(change.Subject, caps)
 		}
 	}
 	return caps

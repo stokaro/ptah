@@ -133,6 +133,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/feature/pgextension`
+- `ptah.run/feature/pgextension/extensioncompare`
+- `ptah.run/feature/pgextension/extensionconvert`
 - `ptah.run/feature/pgextension/extensionrender`
 - `ptah.run/feature/pgpolicy`
 - `ptah.run/feature/pgpolicy/policycompare`
@@ -370,8 +372,10 @@ define.
 named schema; a host that creates the schemas a plan or a render puts objects
 into creates that one too, unless it is the connection's default.
 `schemaext.CapabilityProvider` is a value or a change whose object, once
-created, provides capabilities; `schemaext.ProvidedCapabilities` widens a set
-with them, and a rendered plan widens its target's capabilities with what the
+created, provides capabilities; it is given the object's identity, which holds
+what a value alone does not, such as an extension's name.
+`schemaext.ProvidedByChanges` widens a set with what a list of changes
+provides, and a rendered plan widens its target's capabilities with what the
 changes it creates provide.
 
 `core/featureplan.DeclarationService` plans authored standalone objects, and
@@ -2299,6 +2303,22 @@ one, so an installation schema and every alteration are refused there. The
 builtin runtime registers the change and operation codecs and composes the
 handlers on every PostgreSQL-family target. No source or planner produces
 these payloads yet.
+
+`feature/pgextension/extensioncompare` compares extensions by name. The
+installation schema is compared under the target's default schema, the version
+only where the declaration names one, and the comment only where the
+declaration states one and the target stores it. An extension the run excludes
+(`schemaext.Exclusion`) is never planned, in either direction. An extension a
+declared column's type needs, one the server installs in every database, and
+one the desired source did not describe is not dropped, and one the read could
+not establish is not created but reported undecided.
+
+`feature/pgextension/extensionconvert` projects a declaration to the
+observation it predicts and an observation to the declaration that keeps it. A
+`DesiredExtension` and a `Change` that installs or moves an extension name its
+schema (`schemaext.SchemaPlacement`), and installing timescaledb provides
+TimescaleDB's capabilities (`schemaext.CapabilityProvider`). The provider maps
+the `extension` not-described kind onto the model.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
 another object. A synonym is one feature object of `Kind`, identified by its
