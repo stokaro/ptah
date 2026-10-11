@@ -1,4 +1,4 @@
-package mssql
+package mssql_test
 
 import (
 	"context"
@@ -8,13 +8,14 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/planner/dialects/mssql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 	c := qt.New(t)
 
-	plan := New()
+	plan := mssql.New()
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName: "users",
@@ -38,7 +39,7 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 	c := qt.New(t)
 
-	plan := New()
+	plan := mssql.New()
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",

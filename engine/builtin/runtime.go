@@ -3,6 +3,7 @@ package builtin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"ptah.run/core/ast"
@@ -27,6 +28,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/lintscan"
+	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbcomparison"
 	"ptah.run/internal/ydbextensions"
@@ -42,10 +44,17 @@ import (
 var bundled = sync.OnceValues(New)
 
 // New assembles a runtime with the bundled providers and their codecs. It returns a
-// fresh registry on every call and installs no process-global handlers. The
-// provider services create their own visitor for each batch, so the runtime
-// can render concurrently without sharing output buffers.
+// fresh registry on every call. The provider services create their own visitor
+// for each batch, so the runtime can render concurrently without sharing output
+// buffers.
+//
+// It installs one process-global handler, once per process: the YDB owner's
+// migration planner, in migration/planner's registry, which links no owner.
+// Until New runs, planner.GetPlanner refuses ydb as an unregistered dialect.
 func New() (*engine.Runtime, error) {
+	if err := ydbplanner.RegisterPlanner(); err != nil {
+		return nil, fmt.Errorf("register the YDB planner: %w", err)
+	}
 	aliases := make(map[string][]string)
 	var names []string
 	for _, spelling := range platform.DialectSpellings() {

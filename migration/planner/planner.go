@@ -22,7 +22,6 @@ import (
 	"ptah.run/internal/planner/dialects/oracle"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/planner/dialects/sqlite"
-	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/txrequire"
 	"ptah.run/internal/usertypescope"
 	"ptah.run/migration/diffpolicy"
@@ -227,6 +226,11 @@ func RegisteredDialects() ([]string, error) {
 // planner does, and RegisteredDialects for the set at runtime, which a
 // third-party Register call can extend.
 //
+// ydb is the YDB owner's planner, which this package does not link. The
+// built-in runtime registers it when it assembles the YDB owner, so ydb is
+// present only once a built-in runtime (engine/builtin.New) exists in the
+// process; before that, a lookup fails as for any unregistered dialect.
+//
 // # Parameters
 //
 //   - dialect: Database dialect identifier (use constants from platform package)
@@ -325,13 +329,6 @@ func registerBuiltInPlanners() error {
 
 	if err := registerPlannerFactory(platform.ClickHouse, func(opts Options) Planner {
 		return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(platform.ClickHouse))
-	}); err != nil {
-		return err
-	}
-	if err := registerPlannerFactory(platform.YDB, func(opts Options) Planner {
-		return ydb.NewWithCapabilities(opts.CapabilitiesFor(platform.YDB)).
-			WithTableRebuild(opts.AllowTableRebuild).
-			WithTableRebuildRequest(opts.TableRebuildRequest)
 	}); err != nil {
 		return err
 	}

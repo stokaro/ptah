@@ -31,7 +31,6 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/unloggedtable"
-	"ptah.run/internal/ydbacl"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -1683,26 +1682,22 @@ func grantObject(grant schemamodel.Grant) (objectType, objectName, arguments str
 	}
 }
 
-// withGrantPath names a grant's object by the path [grantPath] gives it.
-func withGrantPath(node *ast.GrantPrivilegeNode, databasePath, targetPlatform string) *ast.GrantPrivilegeNode {
-	node.ObjectName = grantPath(node.ObjectType, node.ObjectName, databasePath, targetPlatform)
-	return node
+// grantName names a grant's object in a render; see [Lowering.GrantPath]. A
+// nil grantName keeps every name.
+type grantName func(objectType, objectName string) string
+
+// rename returns the name a grant's object renders under.
+func (name grantName) rename(objectType, objectName string) string {
+	if name == nil {
+		return objectName
+	}
+	return name(objectType, objectName)
 }
 
-// grantPath is how a grant names its object in a render of a description a
-// live YDB read made: by its absolute path where the database's path is known
-// and the object needs one on some line -- the database itself, and an object
-// at the database root -- so the render does not depend on the line. Every
-// other grant, and every target but YDB, keeps the name it has.
-func grantPath(objectType, objectName, databasePath, targetPlatform string) string {
-	if databasePath == "" || platform.NormalizeDialect(targetPlatform) != platform.YDB {
-		return objectName
-	}
-	path, err := ydbacl.StatementPath(objectType, objectName, databasePath, nil)
-	if err != nil || !strings.HasPrefix(path, "/") {
-		return objectName
-	}
-	return path
+// withGrantPath names a grant's object by the name [grantName] gives it.
+func withGrantPath(node *ast.GrantPrivilegeNode, name grantName) *ast.GrantPrivilegeNode {
+	node.ObjectName = name.rename(node.ObjectType, node.ObjectName)
+	return node
 }
 
 // FromDefaultPrivilege converts a schemamodel.DefaultPrivilege to an
@@ -1910,7 +1905,7 @@ func WalkDatabase(
 	return lowering.Context.Err()
 }
 
-func walkCommonDatabase(database schemamodel.Database, targetPlatform, databasePath string, visit func(ast.Node) error) error {
+func walkCommonDatabase(database schemamodel.Database, targetPlatform string, names grantName, visit func(ast.Node) error) error {
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
 	// wrong default refuses rather than merges.
@@ -1971,7 +1966,7 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform, databaseP
 	}
 
 	// 9. Everything that needs the tables to exist first.
-	if err := appendPostTableObjectStatements(visit, database, targetPlatform, databasePath, placements, tableRoutines); err != nil {
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform, names, placements, tableRoutines); err != nil {
 		return err
 	}
 
@@ -2404,7 +2399,8 @@ func appendRoutineStatements(
 func appendPostTableObjectStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
-	targetPlatform, databasePath string,
+	targetPlatform string,
+	names grantName,
 	placements map[string]deporder.RoutinePlacement,
 	tableRoutines map[string]bool,
 ) error {
@@ -2436,13 +2432,13 @@ func appendPostTableObjectStatements(
 	// on PostgreSQL 18, so after a column GRANT it would take that too.
 	for _, revoked := range database.RevokedGrants {
 		node := FromRevokedGrant(revoked)
-		node.ObjectName = grantPath(node.ObjectType, node.ObjectName, databasePath, targetPlatform)
+		node.ObjectName = names.rename(node.ObjectType, node.ObjectName)
 		if err := visit(node); err != nil {
 			return err
 		}
 	}
 	for _, grant := range database.Grants {
-		if err := visit(withGrantPath(FromGrant(grant), databasePath, targetPlatform)); err != nil {
+		if err := visit(withGrantPath(FromGrant(grant), names)); err != nil {
 			return err
 		}
 	}

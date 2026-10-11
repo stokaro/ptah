@@ -36,7 +36,7 @@ features, database implementations, or external modules.
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
-| `neutral-packages-link-owners` | Models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner. | falling; the [baseline](architecture_boundaries.json) holds the count |
+| `neutral-packages-link-owners` | Models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner. | 0 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build.
@@ -46,7 +46,7 @@ A fall fails too, until it is recorded with
 is written down: a ceiling nobody lowers is not a ratchet, and leaving the old
 number would let the debt return to it with the gate green the whole way.
 
-### What the recorded debt is
+### What the owner rule holds
 
 `neutral-packages-link-owners` holds the neutral layer of the
 [#4140](https://github.com/stokaro/ptah/issues/4140) design to its import rule.
@@ -55,11 +55,24 @@ The layer is every package at or under `catalog`, `core`, `engine` (except
 one neutral package and one owner it links through any chain of imports:
 `dialect/<name>`, `feature/<name>` or `engine/builtin`. Moving a type between two
 packages of one owner does not change the count; a neutral package that starts
-linking another owner does. The recorded findings are comparison and planning
-code that still names YDB types. The SQL and HCL readers under `internal/`
-still decode owner syntax themselves; they sit outside the layer, so
-`core/schemasource` takes them from its caller rather than importing them. Run
-`go run ./internal/cmd/boundaries -json` for the current list.
+linking another owner does. The count is zero, so the first such link fails the
+build. Run `go run ./internal/cmd/boundaries -json` for the current list.
+
+Two seams keep the YDB owner out of the layer:
+
+- `migration/planner` registers no YDB planner. `engine/builtin.New` registers
+  the YDB owner's planner through `planner.Register`, once per process, so
+  `planner.GetPlanner("ydb")` succeeds only after a built-in runtime exists.
+  That order dependence is pinned by a test in
+  `engine/builtin/internal/plannerorder`. The follow-up is to serve target
+  planners from the runtime ([#4204](https://github.com/stokaro/ptah/issues/4204)).
+- `internal/modelast` names a grant's object through `Lowering.GrantPath`.
+  `internal/builtinlowering` sets the hook for YDB, which names a grant on the
+  database, or on an object at its root, by its absolute path.
+
+The HCL reader under `internal/` still decodes owner syntax itself, and the SQL
+reader still converts YQL for the YDB owner. Both sit outside the layer, so
+`core/schemasource` takes them from its caller rather than importing them.
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
@@ -139,7 +152,7 @@ test and the control that make it evidence.
 | Determinism: equivalent inputs produce identical output across runs and map orders | `TestCompare_EquivalentInputsProduceIdenticalOutput`, on `schemadiff.Compare` | 20 runs plus a reversed-input control; deleting one `sort.Strings` in `compare/sequences.go` kills both halves ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
-| Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in a clean package and in one that already carries owner debt |
+| Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
 
 ## How target facts are held
 

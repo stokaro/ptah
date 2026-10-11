@@ -3642,6 +3642,14 @@ from that state rather than from a newly reopened path.
 references, unresolved additions, and target index-namespace conflicts fail
 before SQL is returned.
 
+`migration/planner` registers a built-in planner for every dialect but YDB,
+and links no owner. The YDB planner is the YDB owner's: `engine/builtin.New`
+registers it through `planner.Register` once per process. `GetPlanner` and the
+`GenerateSchemaDiff*` functions therefore refuse `ydb` with
+`ptaherr.ErrUnsupportedDialect` until a built-in runtime exists in the
+process, and `RegisteredDialects` lists it only from then on. This changes
+behavior; pre-v1, so no compatibility is owed.
+
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures
