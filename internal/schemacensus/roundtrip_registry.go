@@ -40,7 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossViewAttributes    = "a view's CHECK OPTION and comment do not survive goschematodb, so the view is replaced"
 	lossPrimaryKeyInclude = "a primary key's INCLUDE columns do not survive goschematodb, so the key is dropped and added again"
 	lossPrimaryKeyFacets  = "a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again"
 	lossIndexParser       = "a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again"
@@ -62,7 +61,6 @@ const (
 	gapRoutineAttributes = "goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet"
 	gapRoutineKind       = "the conversions drop a routine's kind; the other direction is a recorded loss"
 	gapPrimaryKeyInclude = "goschematodb drops a primary key's INCLUDE columns; the other direction is a recorded loss"
-	gapViewAttributes    = "goschematodb drops a view's attributes; the other direction is a recorded loss"
 )
 
 // The reasons a compared field does not reach the plan by design.
@@ -180,12 +178,6 @@ func Alternates() []string {
 func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
-	{
-		Fixtures:   []string{"view"},
-		Dialects:   []string{"cockroachdb", "postgres", "sqlserver", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossViewAttributes,
-	},
 	{
 		Fixtures:   []string{"table-pk-include"},
 		Dialects:   []string{"postgres", "yugabytedb"},
@@ -495,7 +487,6 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Trigger.ExecuteFunction", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.View.Attributes", Dialects: []string{"sqlserver"}, Directions: []Direction{FromCatalog}, Reason: gapViewAttributes},
 	{
 		Field:      "schemamodel.View.Dialects",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite", "ydb"},

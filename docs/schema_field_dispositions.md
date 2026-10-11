@@ -98,12 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-13 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+12 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `view` | `cockroachdb`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | a view's CHECK OPTION and comment do not survive goschematodb, so the view is replaced |
 | `table-pk-include` | `postgres`, `yugabytedb` | to-catalog | a primary key's INCLUDE columns do not survive goschematodb, so the key is dropped and added again |
 | `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again |
 | `index-mysql-parser` | `mariadb`, `mysql` | to-catalog | a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again |
@@ -119,7 +118,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-93 known gaps: a conversion or the comparison drops each one on the dialects named.
+92 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -208,7 +207,6 @@ migration nobody asked for.
 | `schemamodel.Trigger.Dialects` | `clickhouse`, `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Trigger.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Trigger.ExecuteFunction` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.View.Attributes` | `sqlserver` | from-catalog | goschematodb drops a view's attributes; the other direction is a recorded loss |
 | `schemamodel.View.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `sqlitetable.DesiredTable.Options` | `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `sqlitetable.Options.Strict` | `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
