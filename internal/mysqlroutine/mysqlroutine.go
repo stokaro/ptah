@@ -19,6 +19,7 @@ package mysqlroutine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -160,6 +161,54 @@ func VolatilityFromCatalog(isDeterministic, sqlDataAccess string) string {
 		return Stable
 	}
 	return Volatile
+}
+
+// FromCharacteristics reads the security mode and the volatility that a
+// routine's characteristics state, as a CREATE statement writes them before
+// the body: `SQL SECURITY INVOKER`, `DETERMINISTIC`, `NO SQL`. It is the
+// declared counterpart of [VolatilityFromCatalog] and of the catalog's
+// SECURITY_TYPE, so a routine read from SQL states what the server reports for
+// the same routine, and it reads back what [Characteristic] writes.
+//
+// A value the characteristics do not state is empty, and the target's own
+// applies. Where a characteristic is written more than once the last one
+// counts, as on the server: measured on MySQL 26.7.0 and MariaDB 12.3.3,
+// `DETERMINISTIC NOT DETERMINISTIC` reports NO and `SQL SECURITY INVOKER SQL
+// SECURITY DEFINER` reports DEFINER. COMMENT and LANGUAGE are skipped whole, so a
+// comment that reads like a characteristic is not taken for one.
+func FromCharacteristics(characteristics []string) (security, volatility string) {
+	deterministic, dataAccess, statesVolatility := "NO", "CONTAINS SQL", false
+	for _, characteristic := range characteristics {
+		words := strings.Fields(strings.ToUpper(characteristic))
+		if len(words) > 0 && (words[0] == "COMMENT" || words[0] == "LANGUAGE") {
+			continue
+		}
+		for len(words) > 0 {
+			switch {
+			case hasWords(words, "SQL", "SECURITY", "DEFINER"), hasWords(words, "SQL", "SECURITY", "INVOKER"):
+				security, words = words[2], words[3:]
+			case hasWords(words, "NOT", "DETERMINISTIC"):
+				deterministic, statesVolatility, words = "NO", true, words[2:]
+			case hasWords(words, "DETERMINISTIC"):
+				deterministic, statesVolatility, words = "YES", true, words[1:]
+			case hasWords(words, "NO", "SQL"), hasWords(words, "CONTAINS", "SQL"):
+				dataAccess, statesVolatility, words = strings.Join(words[:2], " "), true, words[2:]
+			case hasWords(words, "READS", "SQL", "DATA"), hasWords(words, "MODIFIES", "SQL", "DATA"):
+				dataAccess, statesVolatility, words = strings.Join(words[:3], " "), true, words[3:]
+			default:
+				words = words[1:]
+			}
+		}
+	}
+	if statesVolatility {
+		volatility = VolatilityFromCatalog(deterministic, dataAccess)
+	}
+	return security, volatility
+}
+
+// hasWords reports whether words begins with prefix.
+func hasWords(words []string, prefix ...string) bool {
+	return len(words) >= len(prefix) && slices.Equal(words[:len(prefix)], prefix)
 }
 
 // SecurityClause returns the SQL SECURITY clause for a security mode, and

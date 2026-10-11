@@ -1158,6 +1158,12 @@ func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, er
 		return false, p.parseFunctionLanguage(function)
 	case "SECURITY":
 		return false, p.parseFunctionSecurity(function)
+	case "EXTERNAL":
+		// EXTERNAL SECURITY is the SQL standard's spelling of SECURITY, which
+		// PostgreSQL accepts with the same meaning.
+		p.advance()
+		p.skipWhitespace()
+		return false, p.parseFunctionSecurity(function)
 	case "IMMUTABLE", "STABLE", "VOLATILE":
 		function.SetVolatility(keyword)
 		p.advance()
