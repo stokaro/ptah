@@ -26,9 +26,72 @@ type EncodeRequest struct {
 	// Tables are the document's tables that hold a facet of the extension's
 	// Kinds, each with those facets alone, in the document's order.
 	Tables []TableFacets
+	// Columns, Indexes and Keys are the column, index, and primary key and
+	// constraint blocks the writer writes that hold a facet of the
+	// extension's Kinds, each with those facets alone, in the order the
+	// writer writes them.
+	Columns []SlotFacets
+	Indexes []SlotFacets
+	Keys    []SlotFacets
 	// Coverage is what the document knows of the extension's Kinds, such
 	// as a limit the format may have no spelling for.
 	Coverage schemaext.Coverage
+}
+
+// SlotKind is the kind of one of the writer's own blocks an owner adds to.
+type SlotKind string
+
+const (
+	// SlotTable is a table block.
+	SlotTable SlotKind = "table"
+	// SlotColumn is a column block of a table.
+	SlotColumn SlotKind = "column"
+	// SlotIndex is an index block of a table.
+	SlotIndex SlotKind = "index"
+	// SlotKey is a table's primary key, or a constraint of it.
+	SlotKey SlotKind = "key"
+)
+
+// Slot names one of the writer's own blocks: a table, or a column, an index,
+// the primary key or a constraint of one. It is comparable, and two blocks of
+// one document do not share one.
+type Slot struct {
+	// Kind is the kind of block.
+	Kind SlotKind
+	// Table is the table the block is, or is in, as the writer names it.
+	Table Table
+	// Name is the name of a column, an index or a constraint, and empty for a
+	// table, a primary key and a constraint without a name.
+	Name string
+	// Primary marks a table's primary key, a [SlotKey] without a name.
+	Primary bool
+}
+
+// SlotFacets is one of the writer's own blocks and facets it holds.
+type SlotFacets struct {
+	// Slot is the block.
+	Slot Slot
+	// Facets are the facets.
+	Facets schemaext.Facets
+}
+
+// SlotAttributes is what an owner adds to one of the writer's own blocks it
+// was handed: attributes it writes there, and losses the block cannot say.
+type SlotAttributes struct {
+	// Slot is the block.
+	Slot Slot
+	// Attributes are written into the block. The writer places an attribute
+	// whose name the Atlas layout fixes where that layout puts it, such as a
+	// table's `engine` first and its `charset` after its names, and any
+	// other after the block's own attributes. A table's `engine` takes the
+	// place of the engine the common model holds. The writer refuses an
+	// attribute the block writes itself, such as a column's `type`.
+	Attributes []EncodedAttribute
+	// Losses are what the document cannot say about the block's object. The
+	// writer reports each where it writes the block, at the path it names the
+	// block with in its own diagnostics, such as `indexes["t"]["i"]`: the
+	// block is the writer's, and so is its name.
+	Losses []string
 }
 
 // TableFacets is a table of a document and facets it holds.
@@ -48,6 +111,9 @@ type EncodeResult struct {
 	// line, such as the captured `ptah:feature-coverage` claim the owner
 	// reads back. A line holds no line break.
 	Header []string
+	// Attributes are what the owner adds to the writer's own blocks, one
+	// entry for each block.
+	Attributes []SlotAttributes
 }
 
 // Placement is where among the writer's own blocks an encoded block stands.
@@ -145,11 +211,11 @@ const (
 type EncodedAttribute struct {
 	// Name is the attribute's name.
 	Name string
-	// Value is its value. The writer quotes a [String], writes a [Bool] bare,
-	// writes a [Ref] to a table as the reference the document resolves, and
-	// writes a [Refs] list element by element: a role it declares as
-	// `role.<name>`, any other role and an element of no Kind, such as a
-	// role keyword, as a string.
+	// Value is its value. The writer quotes a [String], writes a [Bool] and
+	// a [Number] bare, writes [SQL] text as `sql("<text>")`, writes a [Ref] to
+	// a table as the reference the document resolves, and writes a [Refs]
+	// list element by element: a role it declares as `role.<name>`, any other
+	// role and an element of no Kind, such as a role keyword, as a string.
 	Value Value
 }
 
@@ -161,36 +227,84 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 }
 
 // Encode hands each extension that has an [Encoder] what document holds of
-// its Kinds -- the objects, the tables' facets and the coverage -- in one call
-// per extension, also when the document holds none of them, since an owner
-// may refuse a coverage record it cannot write. It returns every block they
-// write, extension by extension. It refuses a block without a type, a name or
-// a known placement, an attribute without a name, written twice or of a kind
-// the writer cannot write, and a block that writes an object of a kind its
-// extension does not claim, and a header line that is empty or holds a line
-// break. The header lines are returned in the order of the extensions. An
-// encoder's own error is returned as it is: it refuses the document, as a
+// its Kinds -- the objects, the facets of the writer's blocks and the
+// coverage -- in one call per extension, also when the document holds none of
+// them, since an owner may refuse a coverage record it cannot write. It
+// returns every block and every attribute of the writer's blocks they write,
+// extension by extension. It refuses a block without a type, a name or a
+// known placement, an attribute without a name, written twice or of a kind
+// the writer cannot write, a block that writes an object of a kind its
+// extension does not claim, a header line that is empty or holds a line
+// break, attributes for a block of the writer's the extension was not handed
+// or written for one block twice, and an attribute two extensions write to
+// one block. The header lines are returned in the order of the extensions.
+// An encoder's own error is returned as it is: it refuses the document, as a
 // value the owner cannot write would otherwise be written wrong.
 func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, error) {
 	var encoded EncodeResult
+	writers := make(map[slotAttribute]string)
 	for _, extension := range s.extensions {
 		if extension.Encoder == nil {
 			continue
 		}
-		result, err := extension.Encoder.EncodeHCL(ctx, extension.selectRequest(document))
+		request := extension.selectRequest(document)
+		result, err := extension.Encoder.EncodeHCL(ctx, request)
 		if err != nil {
 			return EncodeResult{}, err
 		}
 		if err := ctx.Err(); err != nil {
 			return EncodeResult{}, err
 		}
-		if err := checkEncodeResult(extension, result); err != nil {
+		if err := checkEncodeResult(extension, request, result); err != nil {
+			return EncodeResult{}, err
+		}
+		if err := claimSlotAttributes(writers, extension, result.Attributes); err != nil {
 			return EncodeResult{}, err
 		}
 		encoded.Blocks = append(encoded.Blocks, result.Blocks...)
 		encoded.Header = append(encoded.Header, result.Header...)
+		encoded.Attributes = append(encoded.Attributes, result.Attributes...)
 	}
 	return encoded, nil
+}
+
+// slotAttribute is one attribute of one of the writer's blocks.
+type slotAttribute struct {
+	slot Slot
+	name string
+}
+
+// claimSlotAttributes records which extension writes each attribute of the
+// writer's blocks, and refuses one another extension already writes.
+func claimSlotAttributes(writers map[slotAttribute]string, extension Extension, slots []SlotAttributes) error {
+	for _, slot := range slots {
+		for _, attribute := range slot.Attributes {
+			key := slotAttribute{slot: slot.Slot, name: attribute.Name}
+			if owner, found := writers[key]; found {
+				return fmt.Errorf("%w: HCL encoders of %s and %s both write attribute %q of %s",
+					schemaext.ErrDuplicate, owner, extension.Owner, attribute.Name, slot.Slot)
+			}
+			writers[key] = extension.Owner
+		}
+	}
+	return nil
+}
+
+// String names the block for a diagnostic, such as `index "i" of table
+// "public.t"`.
+func (s Slot) String() string {
+	table := s.Table.Name
+	if s.Table.Schema != "" {
+		table = s.Table.Schema + "." + s.Table.Name
+	}
+	switch {
+	case s.Kind == SlotTable:
+		return fmt.Sprintf("table %q", table)
+	case s.Primary:
+		return fmt.Sprintf("the primary key of table %q", table)
+	default:
+		return fmt.Sprintf("%s %q of table %q", s.Kind, s.Name, table)
+	}
 }
 
 // selectRequest is what document holds of the extension's Kinds: its objects,
@@ -203,22 +317,42 @@ func (e Extension) selectRequest(document EncodeRequest) EncodeRequest {
 		}
 	}
 	for _, table := range document.Tables {
-		facets := table.Facets
-		for _, kind := range facets.Kinds() {
-			if !slices.Contains(e.Kinds, kind) {
-				facets = facets.Without(kind)
-			}
-		}
-		if facets.Len() > 0 {
+		if facets := e.selectFacets(table.Facets); facets.Len() > 0 {
 			request.Tables = append(request.Tables, TableFacets{Table: table.Table, Facets: facets})
 		}
 	}
+	request.Columns = e.selectSlots(document.Columns)
+	request.Indexes = e.selectSlots(document.Indexes)
+	request.Keys = e.selectSlots(document.Keys)
 	return request
 }
 
+// selectSlots are the slots that hold a facet of the extension's Kinds, each
+// with those facets alone.
+func (e Extension) selectSlots(slots []SlotFacets) []SlotFacets {
+	var selected []SlotFacets
+	for _, slot := range slots {
+		if facets := e.selectFacets(slot.Facets); facets.Len() > 0 {
+			selected = append(selected, SlotFacets{Slot: slot.Slot, Facets: facets})
+		}
+	}
+	return selected
+}
+
+// selectFacets are the facets of the extension's Kinds.
+func (e Extension) selectFacets(facets schemaext.Facets) schemaext.Facets {
+	for _, kind := range facets.Kinds() {
+		if !slices.Contains(e.Kinds, kind) {
+			facets = facets.Without(kind)
+		}
+	}
+	return facets
+}
+
 // checkEncodeResult refuses a result the writer cannot write: a block it
-// cannot write, or a header line that is empty or holds a line break.
-func checkEncodeResult(extension Extension, result EncodeResult) error {
+// cannot write, a header line that is empty or holds a line break, or
+// attributes it cannot write to one of its blocks.
+func checkEncodeResult(extension Extension, request EncodeRequest, result EncodeResult) error {
 	for _, block := range result.Blocks {
 		if err := checkEncodedBlock(extension, block); err != nil {
 			return err
@@ -228,6 +362,54 @@ func checkEncodeResult(extension Extension, result EncodeResult) error {
 		if strings.TrimSpace(line) == "" || strings.ContainsAny(line, "\r\n") {
 			return fmt.Errorf("%w: HCL encoder of %s wrote a header line that is empty or holds a line break: %q",
 				schemaext.ErrInvalidValue, extension.Owner, line)
+		}
+	}
+	written := make(map[Slot]bool, len(result.Attributes))
+	for _, slot := range result.Attributes {
+		if !request.hands(slot.Slot) || written[slot.Slot] {
+			return fmt.Errorf("%w: HCL encoder of %s wrote attributes for %s, which it was not handed or wrote twice",
+				schemaext.ErrInvalidValue, extension.Owner, slot.Slot)
+		}
+		written[slot.Slot] = true
+		if err := checkSlotAttributes(extension, slot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hands reports whether the request hands the encoder the writer's block slot.
+func (r EncodeRequest) hands(slot Slot) bool {
+	handed := func(slots []SlotFacets) bool {
+		return slices.ContainsFunc(slots, func(entry SlotFacets) bool { return entry.Slot == slot })
+	}
+	switch slot.Kind {
+	case SlotTable:
+		return slot.Name == "" && !slot.Primary && slices.ContainsFunc(r.Tables, func(entry TableFacets) bool { return entry.Table == slot.Table })
+	case SlotColumn:
+		return handed(r.Columns)
+	case SlotIndex:
+		return handed(r.Indexes)
+	case SlotKey:
+		return handed(r.Keys)
+	default:
+		return false
+	}
+}
+
+// checkSlotAttributes refuses an attribute without a name or written twice,
+// and a value the writer cannot write.
+func checkSlotAttributes(extension Extension, slot SlotAttributes) error {
+	names := make(map[string]bool, len(slot.Attributes))
+	for _, attribute := range slot.Attributes {
+		if strings.TrimSpace(attribute.Name) == "" || names[attribute.Name] {
+			return fmt.Errorf("%w: HCL encoder of %s wrote attribute %q of %s unnamed or twice",
+				schemaext.ErrInvalidValue, extension.Owner, attribute.Name, slot.Slot)
+		}
+		names[attribute.Name] = true
+		if !writable(attribute.Value) {
+			return fmt.Errorf("%w: HCL encoder of %s wrote attribute %q of %s as %q, which the writer cannot write",
+				schemaext.ErrInvalidValue, extension.Owner, attribute.Name, slot.Slot, attribute.Value.Kind)
 		}
 	}
 	return nil
@@ -286,12 +468,15 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 	return nil
 }
 
-// writable reports whether the writer can write value: a string, a bool, a
-// reference to a table, or a list of roles and of names of no kind.
+// writable reports whether the writer can write value: a string, a bool,
+// decimal digits, SQL text, a reference to a table, or a list of roles and of
+// names of no kind. The writer quotes any SQL text inside its sql() call.
 func writable(value Value) bool {
 	switch value.Kind {
-	case String, Bool:
+	case String, Bool, SQL:
 		return true
+	case Number:
+		return value.Text != "" && strings.TrimFunc(value.Text, func(r rune) bool { return r >= '0' && r <= '9' }) == ""
 	case Ref:
 		return value.Reference != nil && value.Reference.Kind == "table" && value.Reference.Name != ""
 	case Refs:

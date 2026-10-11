@@ -128,6 +128,15 @@ const (
 	// or an identifier, which is the name as written. An element that refers
 	// to another type of object is refused, positioned at the attribute.
 	Refs Kind = "references"
+	// Number is decimal digits the writer writes bare, such as a table's
+	// `auto_increment`. Only the writer takes it: a block an owner reads
+	// takes no Number.
+	Number Kind = "number"
+	// SQL is a SQL expression the writer writes as an sql() call, such as a
+	// column's `on_update`. The writer writes the text and never evaluates
+	// it, as the reader hands an owner the text of an sql() call and never
+	// the call. Only the writer takes it.
+	SQL Kind = "sql"
 )
 
 // Attribute is one attribute a block takes.

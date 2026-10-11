@@ -12,11 +12,13 @@ import (
 // provider: the options a table is created with, STRICT and WITHOUT ROWID,
 // read from the table's platform properties, and the module declaration that
 // makes a table virtual. Every stage is registered together, so no stage can
-// accept a value another would refuse or ignore.
+// accept a value another would refuse or ignore. The HCL extension writes the
+// options into the table block.
 func registerSQLiteServices(provider *engine.Provider) {
 	target := platform.SQLite
 	tables := []schemaext.Kind{sqlitetable.TableKind}
 	virtual := []schemaext.Kind{sqlitetable.VirtualKind}
+	provider.HCL = append(provider.HCL, sqlitetable.HCL())
 	provider.Codecs = append(provider.Codecs, append(sqlitetable.TableCodecs(), sqlitetable.ChangeCodec())...)
 	provider.Codecs = append(provider.Codecs, append(sqlitetable.VirtualCodecs(), sqlitetable.VirtualChangeCodec())...)
 	provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: virtual, Service: sqlitetable.VirtualConvertService{}})

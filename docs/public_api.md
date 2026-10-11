@@ -2788,9 +2788,11 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 
 - `Set.Encode` hands each encoder what the document holds of its kinds: the
   objects, the tables with their facets of those kinds
-  (`EncodeRequest.Tables`), and the coverage. Every encoder is asked, also for
-  a document that holds none of its kinds, since an owner may refuse a
-  coverage limit it cannot write.
+  (`EncodeRequest.Tables`), the writer's column, index, and primary key and
+  constraint blocks with theirs (`Columns`, `Indexes`, `Keys`, each a `Slot`
+  with its facets), and the coverage. Every encoder is asked, also for a
+  document that holds none of its kinds, since an owner may refuse a coverage
+  limit it cannot write.
 - The encoder returns `EncodedBlock` values as data: type, `Placement`
   (`BeforeTypes`, `AfterTables`, `AfterTriggers`, or `WithinTable` with the
   block's `Table`),
@@ -2816,6 +2818,15 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
   reading it back binds that object to, so a scope the block restores is not a
   loss. An object of a kind no encoder writes is reported as one HCL does not
   represent.
+- `EncodeResult.Attributes` adds to the writer's own blocks, one
+  `SlotAttributes` for each `Slot` the encoder was handed. The writer places
+  an attribute where the Atlas layout puts it, such as a table's `engine`,
+  which takes the place of the common one, and refuses one the block has no
+  place for. A `Number` is written bare. `SQL` text is written as `sql(...)`
+  and never evaluated. `Set.Encode` refuses two encoders writing one attribute
+  of one block. The writer reports `Losses` where it writes the block, at the
+  path it names the block with, and refuses a document that repeats a block's
+  name where both hold an owner's facets.
 
 `synonym.HCL` reads and writes the `synonym` block, `tssource.HCL` the
 `hypertable` and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
@@ -2824,8 +2835,13 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 partitioning attributes of an `index` block and the `coordination_node` header
 entries. `pgpolicysource.HCL` reads and writes the `policy` block and a table's
 `row_security` block, and `pgextensionsource.HCL` the `extension` block.
+
 `mysqlsource.HCL` reads no block: it claims that an index an HCL document
-declares has no block size, since the format cannot spell one.
+declares has no block size, since the format cannot spell one. Its encoder
+writes a table's engine, charset and auto-increment value, a column's charset
+and `on_update`, and an index's parser into the writer's blocks, and reports a
+block size as a loss. `sqlitetable.HCL` writes a table's `strict` and
+`without_rowid`.
 
 `atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
 blocks and attributes and the captured header are refused there, and no

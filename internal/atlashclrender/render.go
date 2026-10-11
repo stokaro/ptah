@@ -19,7 +19,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
@@ -211,6 +210,7 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
 		carryStorageParams:     carryStorageParams,
 		owners:                 opts.HCL,
+		layout:                 layTables(db),
 	}
 	// The owners write their objects as data, which this package writes
 	// and places. A value an owner cannot write refuses the export, as a
@@ -221,6 +221,9 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		return Result{}, err
 	}
 	r.ownerBlocks, r.ownerHeader = encoded.Blocks, encoded.Header
+	if r.slots, err = collectSlots(encoded.Attributes); err != nil {
+		return Result{}, err
+	}
 	if err := r.refuseRepeatedExtensions(); err != nil {
 		return Result{}, err
 	}
@@ -277,11 +280,16 @@ type renderer struct {
 	// afterwards by [renderer.referencedSchemas].
 	schemaRefs map[string]bool
 	// owners are the feature owners whose objects this render writes,
-	// ownerBlocks the blocks they wrote, and ownerHeader the lines they write
-	// in the header; see [renderer.writeOwnerBlock].
+	// ownerBlocks the blocks they wrote, ownerHeader the lines they write in
+	// the header, and slots what they add to this writer's own blocks; see
+	// [renderer.writeOwnerBlock] and [renderer.ownerSlot].
 	owners      hclext.Set
 	ownerBlocks []hclext.EncodedBlock
 	ownerHeader []string
+	slots       map[hclext.Slot]ownerSlot
+	// layout is the tables this render writes, with their columns, indexes
+	// and constraints.
+	layout      tableLayout
 	builder     strings.Builder
 	diagnostics []Diagnostic
 }
@@ -741,28 +749,22 @@ func (r *renderer) enumNameIsAmbiguous(name string) bool {
 }
 
 func (r *renderer) renderTables() {
-	tables := append([]schemamodel.Table(nil), r.db.Tables...)
-	sort.Slice(tables, func(i, j int) bool {
-		return tables[i].QualifiedName() < tables[j].QualifiedName()
-	})
-	fieldsByStruct := groupFieldsByStruct(r.db.Fields)
-	indexesByTable, orphanIndexes := groupIndexesByTable(r.db.Indexes, tables)
-	constraintsByTable, orphanConstraints := groupConstraintsByTable(r.db.Constraints, tables)
+	tables := r.layout.tables
 	rlsEnabledByTable, orphanRLSEnabledTables := groupRLSEnabledByTable(r.db.RLSEnabledTables, tables)
 
 	for _, table := range tables {
 		r.renderTable(
 			table,
-			fieldsByStruct[table.StructName],
-			indexesByTable[table.QualifiedName()],
-			constraintsByTable[table.QualifiedName()],
+			r.layout.fieldsByStruct[table.StructName],
+			r.layout.indexesByTable[table.QualifiedName()],
+			r.layout.constraintsByTable[table.QualifiedName()],
 			rlsEnabledByTable[table.QualifiedName()],
 		)
 	}
-	for _, index := range orphanIndexes {
+	for _, index := range r.layout.orphanIndexes {
 		r.warn("index "+index.Name, "index cannot be rendered because the target table is absent from the exported schema")
 	}
-	for _, constraint := range orphanConstraints {
+	for _, constraint := range r.layout.orphanConstraints {
 		r.warn("constraint "+constraint.Name, "constraint cannot be rendered because the target table is absent from the exported schema")
 	}
 	for _, rlsEnabled := range orphanRLSEnabledTables {
@@ -777,36 +779,36 @@ func (r *renderer) renderTable(
 	constraints []schemamodel.Constraint,
 	rlsEnabled *schemamodel.RLSEnabledTable,
 ) {
+	owner := slotTable(table)
+	slot := r.ownerSlot(hclext.Slot{Kind: hclext.SlotTable, Table: owner}, table.Facets)
+	r.reportSlotLosses("table."+table.QualifiedName(), slot)
 	r.linef(`table %s {`, quote(table.Name))
 	if schema := r.schemaFor(table.Schema); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
-	options := mysqlTableOptions(table)
-	r.stringAttr(1, "engine", cmp.Or(options.Engine, table.Engine))
+	// An owner's engine takes the place of the common one.
+	if _, found := slot.attributes["engine"]; found {
+		r.slotAttr(1, slot, "engine")
+	} else {
+		r.stringAttr(1, "engine", table.Engine)
+	}
 	r.stringAttr(1, "api_name", table.APIName)
 	r.stringAttr(1, "openapi_name", table.APINames.OpenAPI)
 	r.stringAttr(1, "graphql_name", table.APINames.GraphQL)
 	r.stringAttr(1, "proto_name", table.APINames.Protobuf)
-	r.stringAttr(1, "charset", options.Charset)
+	r.slotAttr(1, slot, "charset")
 	r.stringAttr(1, "collate", table.Collate)
 	r.stringAttr(1, "comment", table.Comment)
-	if options.AutoIncrement != "" {
-		r.rawAttr(1, "auto_increment", options.AutoIncrement)
-	}
-	strict, withoutRowID := sqliteTableOptions(table)
-	if strict {
-		r.rawAttr(1, "strict", "true")
-	}
-	if withoutRowID {
-		r.rawAttr(1, "without_rowid", "true")
-	}
+	r.slotAttr(1, slot, "auto_increment")
+	r.slotAttr(1, slot, "strict")
+	r.slotAttr(1, slot, "without_rowid")
 	if len(table.Checks) > 0 {
 		r.rawAttr(1, "checks", stringList(table.Checks))
 	}
 	r.stringAttr(1, "custom", table.CustomSQL)
 	r.renderPlatformOverrides(1, table.Overrides)
 	r.renderRowSecurity(rlsEnabled)
-	r.renderOwnerBlocks(hclext.WithinTable, &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName})
+	r.renderOwnerBlocks(hclext.WithinTable, &owner)
 
 	// The columns are written in the order the schema carries them, which is the
 	// order the table has: a live read returns catalog order, a schema file
@@ -826,37 +828,22 @@ func (r *renderer) renderTable(
 		if fieldIsPrimary(table, field) && r.keyColumnIsNotNull(table, fields, field) {
 			field.Nullable = false
 		}
-		r.renderColumn(field)
+		r.renderColumn(r.ownerSlot(hclext.Slot{Kind: hclext.SlotColumn, Table: owner, Name: field.Name}, field.Facets), field)
 	}
-	r.renderPrimaryKey(table, fields)
+	r.renderPrimaryKey(r.ownerSlot(hclext.Slot{Kind: hclext.SlotKey, Table: owner, Primary: true}, table.PrimaryKeyFacets), table, fields)
 	r.renderPartition(table.Partition)
 	r.renderFieldForeignKeys(table, fields, constraints)
 	for _, constraint := range constraints {
-		r.renderConstraint(constraint)
+		r.renderConstraint(r.ownerSlot(hclext.Slot{Kind: hclext.SlotKey, Table: owner, Name: constraint.Name}, constraint.Facets), constraint)
 	}
 	for _, index := range indexes {
-		r.renderIndex(index)
+		r.renderIndex(r.ownerSlot(hclext.Slot{Kind: hclext.SlotIndex, Table: owner, Name: index.Name}, index.Facets), index)
 	}
 	r.line("}")
 	r.line("")
 }
 
-// columnSettings returns the MySQL owner's settings of a column, which the
-// column block writes as charset and on_update. A value the owner's models
-// cannot read is reported rather than dropped.
-func (r *renderer) columnSettings(field schemamodel.Field) mysqlschema.ColumnSettings {
-	settings, _, err := mysqlschema.Settings(field.Facets)
-	if err != nil {
-		r.diagnostics = append(r.diagnostics, Diagnostic{
-			Severity: SeverityWarning,
-			Path:     "column." + field.StructName + "." + field.Name,
-			Message:  fmt.Sprintf("column settings are not represented in HCL: %v", err),
-		})
-	}
-	return settings
-}
-
-func (r *renderer) renderColumn(field schemamodel.Field) {
+func (r *renderer) renderColumn(slot ownerSlot, field schemamodel.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
 	r.rawAttr(2, "type", r.columnTypeExpr(field))
 	r.stringAttr(2, "api_name", field.APIName)
@@ -879,10 +866,8 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 	} else if field.DefaultSet || field.Default != "" {
 		r.rawAttr(2, "default", quote(field.Default))
 	}
-	settings := r.columnSettings(field)
-	if settings.OnUpdate != "" {
-		r.rawAttr(2, "on_update", sqlCall(settings.OnUpdate))
-	}
+	r.reportSlotLosses("column."+field.StructName+"."+field.Name, slot)
+	r.slotAttr(2, slot, "on_update")
 	if field.GeneratedExpression != "" {
 		r.line("    as {")
 		r.stringAttr(3, "expr", field.GeneratedExpression)
@@ -905,7 +890,7 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 	}
 	r.stringAttr(2, "check", field.Check)
 	r.stringAttr(2, "check_name", field.CheckName)
-	r.stringAttr(2, "charset", settings.Charset)
+	r.slotAttr(2, slot, "charset")
 	r.stringAttr(2, "collate", field.Collate)
 	r.stringAttr(2, "comment", field.Comment)
 	r.renderPlatformOverrides(2, field.Overrides)
@@ -972,7 +957,9 @@ func foreignKeyConstraintNames(constraints []schemamodel.Constraint) map[string]
 	return result
 }
 
-func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamodel.Field) {
+// primaryKeyColumns are the columns of a table's primary key, as the table
+// names them or, when it names none, as its fields mark them.
+func primaryKeyColumns(table schemamodel.Table, fields []schemamodel.Field) []string {
 	columns := table.PrimaryKey
 	if len(columns) == 0 {
 		for _, field := range fields {
@@ -981,9 +968,20 @@ func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamode
 			}
 		}
 	}
-	if len(columns) == 0 && len(table.PrimaryKeyParts) == 0 {
+	return columns
+}
+
+// writesPrimaryKey reports whether the table block writes a primary_key
+// block.
+func writesPrimaryKey(table schemamodel.Table, fields []schemamodel.Field) bool {
+	return len(primaryKeyColumns(table, fields)) > 0 || len(table.PrimaryKeyParts) > 0
+}
+
+func (r *renderer) renderPrimaryKey(slot ownerSlot, table schemamodel.Table, fields []schemamodel.Field) {
+	if !writesPrimaryKey(table, fields) {
 		return
 	}
+	columns := primaryKeyColumns(table, fields)
 	r.line("  primary_key {")
 	if len(table.PrimaryKeyParts) > 0 && !simplePrimaryKeyParts(table.PrimaryKeyParts) {
 		for _, part := range table.PrimaryKeyParts {
@@ -1006,9 +1004,10 @@ func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamode
 	if len(table.PrimaryKeyInclude) > 0 {
 		r.rawAttr(2, "include", columnRefs(table.PrimaryKeyInclude))
 	}
-	if size, _, _ := mysqlschema.IndexBlockSize(table.PrimaryKeyFacets); size != 0 || table.PrimaryKeyComment != "" {
-		r.warn("tables["+strconv.Quote(table.Name)+"].primary_key", "the primary key COMMENT and KEY_BLOCK_SIZE options cannot be represented in HCL schema output")
+	if table.PrimaryKeyComment != "" {
+		r.warn(primaryKeyPath(table), "the primary key COMMENT option cannot be represented in HCL schema output")
 	}
+	r.reportSlotLosses(primaryKeyPath(table), slot)
 	renderPrimaryKeyMethod(r, table.PrimaryKeyMethod)
 	r.line("  }")
 }
@@ -1038,7 +1037,10 @@ func (r *renderer) renderPartition(partition *schemamodel.PartitionSpec) {
 	r.line("  }")
 }
 
-func (r *renderer) renderConstraint(constraint schemamodel.Constraint) {
+// renderConstraint writes a constraint, reporting first what the owners say
+// it loses, whichever block writes it.
+func (r *renderer) renderConstraint(slot ownerSlot, constraint schemamodel.Constraint) {
+	r.reportSlotLosses(constraintPath(constraint), slot)
 	if r.renderAtlasConstraint(constraint) {
 		return
 	}
@@ -1102,9 +1104,6 @@ func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool
 }
 
 func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
-	if size, _, _ := mysqlschema.IndexBlockSize(constraint.Facets); size != 0 {
-		r.warn("constraints["+strconv.Quote(constraint.Name)+"]", "the primary key KEY_BLOCK_SIZE option cannot be represented in HCL schema output")
-	}
 	r.linef(`  constraint %s {`, quote(constraint.Name))
 	r.stringAttr(2, "type", constraint.Type)
 	r.stringAttr(2, "using", constraint.UsingMethod)
@@ -1216,13 +1215,13 @@ func (r *renderer) renderForeignKey(
 	r.line("  }")
 }
 
-func (r *renderer) renderIndex(index schemamodel.Index) {
+func (r *renderer) renderIndex(slot ownerSlot, index schemamodel.Index) {
 	r.linef(`  index %s {`, quote(index.Name))
 	if index.Unique {
 		r.rawAttr(2, "unique", "true")
 	}
 	r.stringAttr(2, "type", index.Type)
-	r.stringAttr(2, "parser", mysqlIndexOptions(index).Parser)
+	r.slotAttr(2, slot, "parser")
 	r.stringAttr(2, "where", index.Condition)
 	r.stringAttr(2, "comment", index.Comment)
 	r.stringAttr(2, "ops", index.Operator)
@@ -1232,10 +1231,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	// as a visible one and says nothing. The index is written, and the loss
 	// is reported, because applying the document back makes it visible and
 	// changes the query plans its author held back (stokaro/ptah#3853).
-	if size, _, _ := mysqlschema.IndexBlockSize(index.Facets); size != 0 {
-		r.warn(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name),
-			"the index KEY_BLOCK_SIZE hint cannot be represented in HCL schema output; applying this HCL removes the hint")
-	}
+	r.reportSlotLosses(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name), slot)
 	if index.Invisible {
 		r.warn(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name),
 			"the index is hidden from the optimizer, which HCL schema output cannot represent; "+
@@ -1848,50 +1844,4 @@ func vectorSettings(facets schemaext.Facets) (ydbschema.VectorSettings, bool) {
 		return observed.Settings(), true
 	}
 	return ydbschema.VectorSettings{}, false
-}
-
-// mysqlTableOptions are the MySQL-family table options a table's facet holds,
-// declared or read, written as the table block's engine, charset and
-// auto_increment attributes the HCL parser reads them from. An invalid value
-// holds none here and is refused where it is used.
-func mysqlTableOptions(table schemamodel.Table) mysqlschema.DesiredTable {
-	if declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredTable](table.Facets, mysqlschema.TableKind); err == nil && found {
-		return *declared
-	}
-	if observed, found, err := schemaext.FacetAs[*mysqlschema.ObservedTable](table.Facets, mysqlschema.TableKind); err == nil && found {
-		return *observed.Desired()
-	}
-	return mysqlschema.DesiredTable{}
-}
-
-// sqliteTableOptions are the SQLite table options a table's facet holds,
-// declared or read, written as the table block's strict and without_rowid
-// attributes the HCL parser reads them from. The facet is asked through the
-// method the SQLite owner's values have, as internal/sqlitekey asks it, so
-// this writer does not depend on the owner.
-func sqliteTableOptions(table schemamodel.Table) (strict, withoutRowID bool) {
-	values, err := table.Facets.Values()
-	if err != nil {
-		return false, false
-	}
-	for _, value := range values {
-		if shape, ok := value.(interface{ SQLiteRowidShape() (bool, bool) }); ok {
-			return shape.SQLiteRowidShape()
-		}
-	}
-	return false, false
-}
-
-// mysqlIndexOptions are the MySQL-family index options an index's facet
-// holds, declared or read, written as the index block's parser attribute the
-// HCL parser reads it from. An invalid value holds none here and is refused
-// where it is used.
-func mysqlIndexOptions(index schemamodel.Index) mysqlschema.DesiredIndex {
-	if declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](index.Facets, mysqlschema.IndexKind); err == nil && found {
-		return *declared
-	}
-	if observed, found, err := schemaext.FacetAs[*mysqlschema.ObservedIndex](index.Facets, mysqlschema.IndexKind); err == nil && found {
-		return *observed.Desired()
-	}
-	return mysqlschema.DesiredIndex{}
 }

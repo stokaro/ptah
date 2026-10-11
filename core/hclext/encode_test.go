@@ -185,3 +185,156 @@ func TestSet_Encode_HandsEachOwnerItsFacets(t *testing.T) {
 	c.Assert(requests[0].Tables[0].Table, qt.Equals, hclext.Table{Name: "both"})
 	c.Assert(requests[0].Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{"example.org/a/x"})
 }
+
+// slotEncoder answers every request with the attributes and losses it is
+// given, and records the requests.
+type slotEncoder struct {
+	slots    []hclext.SlotAttributes
+	requests *[]hclext.EncodeRequest
+}
+
+func (e slotEncoder) EncodeHCL(_ context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {
+	if e.requests != nil {
+		*e.requests = append(*e.requests, request)
+	}
+	return hclext.EncodeResult{Attributes: e.slots}, nil
+}
+
+// slotDocument is a table t with a column c, an index i and a primary key,
+// each holding a facet of example.org/a and of example.org/b, and a column d
+// holding one of example.org/b alone.
+func slotDocument() hclext.EncodeRequest {
+	both := must.Must(schemaext.NewFacets(&widget{kind: "example.org/a/x"}, &widget{kind: "example.org/b/x"}))
+	other := must.Must(schemaext.NewFacets(&widget{kind: "example.org/b/x"}))
+	table := hclext.Table{Schema: "app", Name: "t"}
+	return hclext.EncodeRequest{
+		Tables: []hclext.TableFacets{{Table: table, Facets: both}},
+		Columns: []hclext.SlotFacets{{Slot: hclext.Slot{Kind: hclext.SlotColumn, Table: table, Name: "c"}, Facets: both},
+			{Slot: hclext.Slot{Kind: hclext.SlotColumn, Table: table, Name: "d"}, Facets: other}},
+		Indexes: []hclext.SlotFacets{{Slot: hclext.Slot{Kind: hclext.SlotIndex, Table: table, Name: "i"}, Facets: both}},
+		Keys:    []hclext.SlotFacets{{Slot: hclext.Slot{Kind: hclext.SlotKey, Table: table, Primary: true}, Facets: both}},
+	}
+}
+
+// TestSet_Encode_HandsEachOwnerItsSlots hands each extension the writer's
+// blocks that hold a facet of its kinds, with those facets alone, and returns
+// what every extension adds to them, extension by extension. The writer
+// writes digits and any SQL text, line breaks included, since it quotes it.
+func TestSet_Encode_HandsEachOwnerItsSlots(t *testing.T) {
+	c := qt.New(t)
+	document := slotDocument()
+	column, index := document.Columns[0].Slot, document.Indexes[0].Slot
+	first := hclext.SlotAttributes{Slot: column, Attributes: []hclext.EncodedAttribute{
+		{Name: "on_update", Value: hclext.Value{Kind: hclext.SQL, Text: "a\n\"b\" ${c}"}}}, Losses: []string{"lost"}}
+	second := hclext.SlotAttributes{Slot: column, Attributes: []hclext.EncodedAttribute{{Name: "auto_increment", Value: hclext.Value{Kind: hclext.Number, Text: "007"}}}}
+	third := hclext.SlotAttributes{Slot: index, Losses: []string{"hint"}}
+	var requests []hclext.EncodeRequest
+	set := must.Must(hclext.NewSet(
+		encodingExtension("example.org/a", "example.org/a/x", slotEncoder{slots: []hclext.SlotAttributes{first}, requests: &requests}),
+		encodingExtension("example.org/b", "example.org/b/x", slotEncoder{slots: []hclext.SlotAttributes{second, third}})))
+
+	encoded, err := set.Encode(t.Context(), document)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded.Attributes, qt.DeepEquals, []hclext.SlotAttributes{first, second, third})
+	c.Assert(requests, qt.HasLen, 1)
+	c.Assert(requests[0].Tables, qt.HasLen, 1)
+	for _, slots := range [][]hclext.SlotFacets{requests[0].Columns, requests[0].Indexes, requests[0].Keys} {
+		c.Assert(slots, qt.HasLen, 1)
+		c.Assert(slots[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{"example.org/a/x"})
+	}
+	c.Assert(requests[0].Columns[0].Slot, qt.Equals, column)
+	c.Assert(requests[0].Indexes[0].Slot, qt.Equals, index)
+	c.Assert(requests[0].Keys[0].Slot, qt.Equals, document.Keys[0].Slot)
+}
+
+// TestSet_Encode_RefusesSlotAttributes_FailurePath refuses attributes for a
+// block the extension was not handed or wrote twice, and an attribute the
+// writer cannot write there.
+func TestSet_Encode_RefusesSlotAttributes_FailurePath(t *testing.T) {
+	table := hclext.Table{Schema: "app", Name: "t"}
+	column := hclext.Slot{Kind: hclext.SlotColumn, Table: table, Name: "c"}
+	text := hclext.EncodedAttribute{Name: "charset", Value: hclext.Value{Kind: hclext.String, Text: "t"}}
+	number := func(digits string) []hclext.EncodedAttribute {
+		return []hclext.EncodedAttribute{{Name: "auto_increment", Value: hclext.Value{Kind: hclext.Number, Text: digits}}}
+	}
+	tests := []struct {
+		name    string
+		slots   []hclext.SlotAttributes
+		wantErr string
+	}{
+		{name: "a column it was not handed", slots: []hclext.SlotAttributes{{Slot: hclext.Slot{Kind: hclext.SlotColumn, Table: table, Name: "d"}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for column "d" of table "app.t", which it was not handed or wrote twice`},
+		{name: "a column twice", slots: []hclext.SlotAttributes{{Slot: column}, {Slot: column}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for column "c" of table "app.t", which it was not handed or wrote twice`},
+		{name: "a table with a name", slots: []hclext.SlotAttributes{{Slot: hclext.Slot{Kind: hclext.SlotTable, Table: table, Name: "c"}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for table "app.t", which it was not handed or wrote twice`},
+		{name: "a table it was not handed", slots: []hclext.SlotAttributes{{Slot: hclext.Slot{Kind: hclext.SlotTable, Table: hclext.Table{Name: "u"}}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for table "u", which it was not handed or wrote twice`},
+		{name: "a constraint it was not handed", slots: []hclext.SlotAttributes{{Slot: hclext.Slot{Kind: hclext.SlotKey, Table: table, Name: "k"}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for key "k" of table "app.t", which it was not handed or wrote twice`},
+		{name: "a primary key it was not handed", slots: []hclext.SlotAttributes{{Slot: hclext.Slot{Kind: hclext.SlotKey, Table: hclext.Table{Name: "u"}, Primary: true}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for the primary key of table "u", which it was not handed or wrote twice`},
+		{name: "an unknown kind of block", slots: []hclext.SlotAttributes{{Slot: hclext.Slot{Kind: "view", Table: table, Name: "c"}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attributes for view "c" of table "app.t", which it was not handed or wrote twice`},
+		{name: "an attribute without a name", slots: []hclext.SlotAttributes{{Slot: column, Attributes: []hclext.EncodedAttribute{{Name: " ", Value: text.Value}}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute " " of column "c" of table "app.t" unnamed or twice`},
+		{name: "an attribute twice", slots: []hclext.SlotAttributes{{Slot: column, Attributes: []hclext.EncodedAttribute{text, text}}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "charset" of column "c" of table "app.t" unnamed or twice`},
+		{name: "a number with a sign", slots: []hclext.SlotAttributes{{Slot: column, Attributes: number("-1")}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "auto_increment" of column "c" of table "app.t" as "number", which the writer cannot write`},
+		{name: "a number with an exponent", slots: []hclext.SlotAttributes{{Slot: column, Attributes: number("1e3")}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "auto_increment" of column "c" of table "app.t" as "number", which the writer cannot write`},
+		{name: "an empty number", slots: []hclext.SlotAttributes{{Slot: column, Attributes: number("")}},
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "auto_increment" of column "c" of table "app.t" as "number", which the writer cannot write`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x", slotEncoder{slots: test.slots})))
+
+			encoded, err := set.Encode(t.Context(), slotDocument())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(encoded, qt.DeepEquals, hclext.EncodeResult{})
+		})
+	}
+}
+
+// TestSet_Encode_RefusesAnAttributeTwoOwnersWrite refuses two extensions
+// writing one attribute of one block, whichever registered first, while each
+// may write its own attributes there.
+func TestSet_Encode_RefusesAnAttributeTwoOwnersWrite(t *testing.T) {
+	c := qt.New(t)
+	column := slotDocument().Columns[0].Slot
+	write := func(name string) hclext.Encoder {
+		return slotEncoder{slots: []hclext.SlotAttributes{{Slot: column, Attributes: []hclext.EncodedAttribute{
+			{Name: name, Value: hclext.Value{Kind: hclext.String, Text: "t"}}}}}}
+	}
+	set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x", write("charset")),
+		encodingExtension("example.org/b", "example.org/b/x", write("charset"))))
+
+	encoded, err := set.Encode(t.Context(), slotDocument())
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+	c.Assert(err, qt.ErrorMatches, `duplicate feature identity: HCL encoders of example.org/a and example.org/b both write attribute "charset" of column "c" of table "app.t"`)
+	c.Assert(encoded, qt.DeepEquals, hclext.EncodeResult{})
+}
+
+// TestSet_Encode_KeepsEachOwnersAttributesOfOneBlock is the control: two
+// extensions writing different attributes of one block are both returned.
+func TestSet_Encode_KeepsEachOwnersAttributesOfOneBlock(t *testing.T) {
+	c := qt.New(t)
+	column := slotDocument().Columns[0].Slot
+	write := func(name string) hclext.Encoder {
+		return slotEncoder{slots: []hclext.SlotAttributes{{Slot: column, Attributes: []hclext.EncodedAttribute{
+			{Name: name, Value: hclext.Value{Kind: hclext.String, Text: "t"}}}}}}
+	}
+	set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x", write("charset")),
+		encodingExtension("example.org/b", "example.org/b/x", write("collation"))))
+
+	encoded, err := set.Encode(t.Context(), slotDocument())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded.Attributes, qt.HasLen, 2)
+}

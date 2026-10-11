@@ -53,19 +53,21 @@ func (r *renderer) reportFeatureObjects() {
 func (r *renderer) reportFacets() {
 	tables := make(map[*schemaext.Facets]string, len(r.db.Tables))
 	writes := make(map[*schemaext.Facets]func(schemaext.Kind) bool, len(r.db.Tables)+len(r.db.Indexes)+len(r.db.Fields))
+	writesTable, writesKey := WritesTableFacet(r.owners), WritesKeyFacet(r.owners)
+	writesIndex, writesColumn := WritesIndexFacet(r.owners), WritesColumnFacet(r.owners)
 	for i := range r.db.Tables {
 		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
-		writes[&r.db.Tables[i].Facets] = WritesTableFacet(r.owners)
-		writes[&r.db.Tables[i].PrimaryKeyFacets] = WritesKeyFacet
+		writes[&r.db.Tables[i].Facets] = writesTable
+		writes[&r.db.Tables[i].PrimaryKeyFacets] = writesKey
 	}
 	for i := range r.db.Constraints {
-		writes[&r.db.Constraints[i].Facets] = WritesKeyFacet
+		writes[&r.db.Constraints[i].Facets] = writesKey
 	}
 	for i := range r.db.Indexes {
-		writes[&r.db.Indexes[i].Facets] = WritesIndexFacet
+		writes[&r.db.Indexes[i].Facets] = writesIndex
 	}
 	for i := range r.db.Fields {
-		writes[&r.db.Fields[i].Facets] = WritesColumnFacet
+		writes[&r.db.Fields[i].Facets] = writesColumn
 	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
