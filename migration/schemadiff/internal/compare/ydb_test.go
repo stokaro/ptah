@@ -230,7 +230,7 @@ func TestIndexesWithDialect_YDBRebuildsAChangedIndex(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(
+			indexesWithYDBRules(
 				&schemamodel.Database{Indexes: []schemamodel.Index{test.desired}},
 				&catalog.Database{Indexes: []catalog.Index{test.database}},
 				diff, platform.YDB,
@@ -266,7 +266,7 @@ func TestIndexesWithDialect_YDBKeepsAnUnchangedIndex(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(
+			indexesWithYDBRules(
 				&schemamodel.Database{Indexes: []schemamodel.Index{test.desired}},
 				&catalog.Database{Indexes: []catalog.Index{test.database}},
 				diff, platform.YDB,

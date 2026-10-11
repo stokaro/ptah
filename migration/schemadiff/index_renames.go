@@ -44,6 +44,10 @@ func renamedIndexOwners(database *catalog.Database, renames []difftypes.IndexRen
 	if len(subjects) == 0 {
 		return database, nil
 	}
+	// A read that recorded no feature knowledge has none to move.
+	if database.FeatureCoverage.IsZero() {
+		return &renamed, nil
+	}
 	records := database.FeatureCoverage.SubjectRecords()
 	for i, record := range records {
 		if to, found := subjects[record.Subject.Key()]; found {

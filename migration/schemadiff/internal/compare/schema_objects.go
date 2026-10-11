@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/exprkey"
@@ -21,7 +22,6 @@ import (
 	"ptah.run/internal/routineparallel"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbview"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -993,11 +993,13 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchem
 
 // declaredBodies is what a view-like comparison knows about a declared body
 // beyond its text: the columns the desired relations declare, which a `*`
-// stands for, and the server's spelling of each body, keyed by
-// [exprkey.ViewBody] and nil when no server was asked.
+// stands for, the server's spelling of each body, keyed by [exprkey.ViewBody]
+// and nil when no server was asked, and the target's view rules, nil where it
+// registers none.
 type declaredBodies struct {
 	columns relationColumns
 	spelled map[string]config.ViewBody
+	rules   schemacomparison.Views
 }
 
 // declaredBodyEqual is [schemaObjectBodiesEqual], and failing that the same
@@ -1012,15 +1014,12 @@ type declaredBodies struct {
 // such as a function in FROM, which PostgreSQL prints with the function's
 // whole result as a column alias list (stokaro/ptah#4057).
 //
-// YDB is answered on its own and exactly. The server stores a view's query as
-// its tokens and nothing else, so both sides are read into that form and
-// compared as they stand: YDB names are case-sensitive, so the case folding
-// the other dialects share would call two different views one, and the server
-// keeps a `*` and the qualifiers it was given, so there is nothing for the
-// later folds to undo.
+// A target that registers view rules is answered by them alone
+// ([schemacomparison.Views.QueryEqual]), as YDB is: the folds here are the
+// shared reading the rules replace.
 func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, bodies declaredBodies) bool {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return ydbview.QueryText(generatedBody) == ydbview.QueryText(databaseBody)
+	if bodies.rules != nil {
+		return bodies.rules.QueryEqual(generatedBody, databaseBody)
 	}
 	if schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema) {
 		return true

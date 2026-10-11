@@ -26,6 +26,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/ydbcomparison"
 	"ptah.run/internal/ydbextensions"
 	"ptah.run/internal/ydblowering"
 	"ptah.run/internal/ydbsource"
@@ -95,6 +96,9 @@ func New() (*engine.Runtime, error) {
 			// privilege as a permission name; the comparison lowers the
 			// desired schema to match.
 			provider.Targets[0].Lowering = ydblowering.Service{}
+			// The shared comparison reads a YDB index's kind and settings,
+			// and a view's query, through YDB's own rules.
+			provider.Targets[0].Comparison = ydbcomparison.Rules()
 			provider.Codecs = ydbextensions.Codecs()
 			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, Service: ydbconvert.Service{}}}
 			provider.Comparisons = []engine.ObjectComparison{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, ChangeKinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbcompare.Service{}}}

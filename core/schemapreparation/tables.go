@@ -1,5 +1,7 @@
-// Package schemapreparation defines target-owned normalization of captured
-// tables before comparison. Authored state and prepared state remain separate.
+// Package schemapreparation defines target-owned normalization before
+// comparison: of captured tables, and of a whole desired schema into the shape
+// the target's reader reports it in. Authored state and prepared state remain
+// separate.
 package schemapreparation
 
 import (
@@ -13,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemaproperties"
 )
@@ -107,13 +110,14 @@ type Service interface {
 	PrepareTables(context.Context, Request) (Result, error)
 }
 
-// Runtime selects preparation, desired lowering and feature comparison using
-// the same target registry and codecs. Source properties are decoded before
-// preparation captures declarations. It does not select a built-in
-// implementation implicitly.
+// Runtime selects preparation, desired lowering, comparison rules and feature
+// comparison using the same target registry and codecs. Source properties are
+// decoded before preparation captures declarations. It does not select a
+// built-in implementation implicitly.
 type Runtime interface {
 	schemaext.ComparisonRuntime
 	schemaproperties.Runtime
+	schemacomparison.Runtime
 	Service
 	Lowering
 }
