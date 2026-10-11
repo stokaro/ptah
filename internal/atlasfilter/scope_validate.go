@@ -309,6 +309,23 @@ func validateDatabaseTypes(
 			report("domain", domain.Schema, domain.Name)
 		}
 	}
+	// The same four kinds validateGeneratedTypes asks about. A composite or a
+	// range the selection dropped while a kept column still uses it described
+	// a table the description cannot create.
+	for _, composite := range original.Composites {
+		if !typeObjectKept(final.Composites, composite.Schema, composite.Name, func(c catalog.CompositeType) (string, string) {
+			return c.Schema, c.Name
+		}) {
+			report("composite type", composite.Schema, composite.Name)
+		}
+	}
+	for _, item := range original.Ranges {
+		if !typeObjectKept(final.Ranges, item.Schema, item.Name, func(r catalog.Range) (string, string) {
+			return r.Schema, r.Name
+		}) {
+			report("range type", item.Schema, item.Name)
+		}
+	}
 }
 
 func databaseEnumKept(enums []catalog.Enum, schema, name string) bool {
