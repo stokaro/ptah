@@ -111,6 +111,7 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		NotDescribed: db.NotDescribed,
 	}
 	applyTablePrimaryKeys(out, db.Tables)
+	applyConstraintPrimaryKeys(out)
 	applyPreparedColumnKeys(out, prepared)
 	if err := features.RequireFacetPreservation(db.FacetSlots(), out.FacetSlots()); err != nil {
 		return nil, err
@@ -294,6 +295,32 @@ func applyTablePrimaryKeys(schema *catalog.Database, tables []schemamodel.Table)
 		for columnIdx, column := range table.Columns {
 			if _, ok := columns[column.Name]; ok {
 				schema.Tables[tableIdx].Columns[columnIdx].IsPrimaryKey = true
+			}
+		}
+	}
+}
+
+// applyConstraintPrimaryKeys marks the columns of every PRIMARY KEY declared
+// as a table constraint, as a read marks the columns of the key it reports.
+//
+// A key declared through the table or a field is marked where its columns are
+// described. One declared as a constraint was left unmarked, and dbschematogo
+// reads a single-column key from the column's mark: converted back, the
+// declaration had no primary key, and the plan dropped the one it came from.
+func applyConstraintPrimaryKeys(schema *catalog.Database) {
+	for _, constraint := range schema.Constraints {
+		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
+			continue
+		}
+		columns := constraint.ColumnNamesOrDefault()
+		for tableIdx, table := range schema.Tables {
+			if table.QualifiedName() != constraint.QualifiedTableName() {
+				continue
+			}
+			for columnIdx, column := range table.Columns {
+				if slices.Contains(columns, column.Name) {
+					schema.Tables[tableIdx].Columns[columnIdx].IsPrimaryKey = true
+				}
 			}
 		}
 	}
