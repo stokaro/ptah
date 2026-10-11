@@ -2775,11 +2775,17 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
   (`EncodeRequest.Tables`), and the coverage. Every encoder is asked, also for
   a document that holds none of its kinds, since an owner may refuse a
   coverage limit it cannot write.
-- The encoder returns `EncodedBlock` values as data: type, `Placement`,
-  schema, name, and `EncodedAttribute` values of kind `String` or `Bool`. The
-  writer quotes values, writes the `schema` reference and places each block.
-  Within one placement it orders blocks by type, schema and name, so the order
-  does not depend on registration.
+- The encoder returns `EncodedBlock` values as data: type, `Placement`
+  (`AfterTables`, `AfterTriggers`, or `WithinTable` with the block's `Table`),
+  schema, name, `Scope`, and `EncodedAttribute` values. The writer quotes a
+  `String`, writes a `Bool` bare, a `Ref` to a table as the reference the
+  document resolves, and a `Refs` list of roles as role references where the
+  document declares the role. Within one placement it orders blocks by type,
+  schema, scope and name, so the order does not depend on registration.
+- A block's `Losses` are reported at its `Path`, the owner's display path, which
+  nothing parses, before the block; an `Unwritten` block reports them and is
+  left out. The Atlas-compatible surface leaves out an owner's block of a type
+  the pinned binary refuses, as it leaves out its own.
 - `SchemaIsAddress` keeps an empty schema empty, where the writer would
   otherwise fill in an inspected document's default.
 - `EncodeResult.Header` holds lines the writer adds to the document's header
@@ -2795,11 +2801,10 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 `extended_property` block. `ydbsource.HCL` reads and writes the
 `coordination_node` block and the captured header, and reads the vector and
 partitioning attributes of an `index` block and the `coordination_node` header
-entries.
-`pgpolicysource.HCL` reads the `policy` block and a table's `row_security`
-block, and `pgextensionsource.HCL` the `extension` block. `mysqlsource.HCL`
-reads no block: it claims that an index an HCL document declares has no block
-size, since the format cannot spell one.
+entries. `pgpolicysource.HCL` reads and writes the `policy` block and a table's
+`row_security` block, and `pgextensionsource.HCL` reads the `extension` block.
+`mysqlsource.HCL` reads no block: it claims that an index an HCL document
+declares has no block size, since the format cannot spell one.
 
 `atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
 blocks and attributes and the captured header are refused there, and no

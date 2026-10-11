@@ -6,25 +6,29 @@ import (
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/feature/pgpolicy"
 )
 
 // WritesTableFacet returns whether a render with owners handles a table facet
-// kind itself rather than as platform properties: a facet an owner of the set
-// writes, such as a hypertable, YDB column families, whose loss it reports by
-// family and which it leaves out where a table has only the default family
-// stating nothing, a YDB table's settings, whose loss it reports by setting,
-// YDB column storage, whose loss it reports by table, MySQL table options,
-// which it writes as the table's engine, charset and auto_increment, SQLite
-// table options, which it writes as the table's strict and without_rowid
-// attributes, the spelling the community binary reads, and a SQLite virtual
-// table's module declaration, which no HCL block carries and whose loss the
-// inspect command reports with the module. A caller that encodes the other
-// facets as platform properties sets these aside first.
+// kind itself rather than as platform properties:
+//   - a facet an owner of the set writes, such as a hypertable or a table's
+//     row-level security switches;
+//   - YDB column families, whose loss it reports by family and which it leaves
+//     out where a table has only the default family stating nothing;
+//   - a YDB table's settings, whose loss it reports by setting, and YDB column
+//     storage, whose loss it reports by table;
+//   - MySQL table options, which it writes as the table's engine, charset and
+//     auto_increment;
+//   - SQLite table options, which it writes as the table's strict and
+//     without_rowid attributes, the spelling the community binary reads;
+//   - a SQLite virtual table's module declaration, which no HCL block carries
+//     and whose loss the inspect command reports with the module.
+//
+// A caller that encodes the other facets as platform properties sets these
+// aside first.
 func WritesTableFacet(owners hclext.Set) func(kind schemaext.Kind) bool {
 	return func(kind schemaext.Kind) bool {
 		return owners.Encodes(kind) || kind == ydbschema.ColumnFamiliesKind || kind == mysqlschema.TableKind || kind == ydbschema.TablePartitioningKind ||
-			kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind || kind == sqlitetable.TableKind || kind == sqlitetable.VirtualKind
+			kind == ydbschema.ColumnStoreKind || kind == sqlitetable.TableKind || kind == sqlitetable.VirtualKind
 	}
 }
 

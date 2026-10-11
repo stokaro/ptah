@@ -21,7 +21,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/schemaprep"
@@ -222,9 +221,6 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		return Result{}, err
 	}
 	r.ownerBlocks, r.ownerHeader = encoded.Blocks, encoded.Header
-	if err := r.captureRowSecurity(); err != nil {
-		return Result{}, err
-	}
 	if err := r.captureExtensions(); err != nil {
 		return Result{}, err
 	}
@@ -237,11 +233,9 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 }
 
 type renderer struct {
-	policies    []policyBlock
-	extensions  []extensionBlock
-	tableStates map[string]*pgpolicy.DesiredTableState
-	db          *schemamodel.Database
-	dialect     string
+	extensions []extensionBlock
+	db         *schemamodel.Database
+	dialect    string
 	// defaultSchema owns every object that arrived without one. Empty means the
 	// IR is taken as written, which is what every parse-and-re-render caller
 	// wants.
@@ -625,7 +619,7 @@ func (r *renderer) renderBody() {
 	r.renderMaterializedViews()
 	r.renderTriggers()
 	r.renderRLSPolicies()
-	r.renderPolicies()
+	r.renderOwnerBlocks(hclext.AfterTriggers, nil)
 	r.renderGrants()
 	r.renderRevokedGrants()
 	// After the grants: a grant is about an object the document already declares,
@@ -813,7 +807,7 @@ func (r *renderer) renderTable(
 	r.stringAttr(1, "custom", table.CustomSQL)
 	r.renderPlatformOverrides(1, table.Overrides)
 	r.renderRowSecurity(rlsEnabled)
-	r.renderTableState(table)
+	r.renderOwnerBlocks(hclext.WithinTable, &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName})
 
 	// The columns are written in the order the schema carries them, which is the
 	// order the table has: a live read returns catalog order, a schema file
