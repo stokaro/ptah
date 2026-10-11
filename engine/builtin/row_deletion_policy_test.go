@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -17,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/sqlschema"
 )
 
 // policySource is one table keyed on id, with a timestamp column created_at
@@ -191,4 +193,26 @@ func TestRowDeletionPolicy_AMisspelledPropertyIsRefused(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// TestRowDeletionPolicy_ReadFromSpannerSQL reads a Spanner document's TTL
+// clause through the bundled runtime's SQL owners: the table carries the
+// Spanner owner's policy, and the document claims every table's policy, so a
+// table without one requests none.
+func TestRowDeletionPolicy_ReadFromSpannerSQL(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	source := "CREATE TABLE events (id bigint PRIMARY KEY, created_at timestamptz) TTL INTERVAL '30 days' ON created_at;\n" +
+		"CREATE TABLE plain (id bigint PRIMARY KEY);\n"
+
+	database, _, err := sqlschema.ReadWith(c.Context(), []byte(source), platform.Spanner, nil,
+		sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Tables, qt.HasLen, 2)
+	policy, found, err := schemaext.FacetAs[*spannerschema.DesiredRowDeletion](database.Tables[0].Facets, spannerschema.RowDeletionKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(policy.Policy, qt.Equals, spannerschema.Policy{Column: "created_at", Interval: "30 days"})
+	c.Assert(database.FeatureCoverage.Lookup(spannerschema.RowDeletionKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 }

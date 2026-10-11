@@ -55,6 +55,11 @@ const (
 	// the view's name and AS. A span ends at a top-level AS or at the end of
 	// the statement. Its [Value] carries the owner's facets of the view.
 	ViewClause Site = "view-clause"
+	// TableOption is an option of a CREATE TABLE statement after its column
+	// list, among the table's options. A span ends at the next top-level
+	// comma or at the end of the statement. Its [Value] carries the owner's
+	// facets of the table.
+	TableOption Site = "table-option"
 	// Statement is a whole top-level statement. A span ends at the semicolon
 	// that ends the statement or at the end of the document. Its [Value] is
 	// the owner's statement, and may declare objects of the owner or amend
@@ -136,7 +141,7 @@ type Value struct {
 	// alter operation requires.
 	Operation ast.ExtensionPayload
 	// Facets are the owner's settings of the subject, such as a materialized
-	// view's refresh schedule.
+	// view's refresh schedule or a table's row deletion policy.
 	Facets schemaext.Facets
 	// Statement is the owner's payload of a statement. A statement carries
 	// it or a Table, never both. The parse places it where the statement

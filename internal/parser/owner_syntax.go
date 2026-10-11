@@ -130,7 +130,7 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 		return true
 	}
 	switch site {
-	case sqlext.TableElement, sqlext.AlterOperation:
+	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption:
 		return p.current.MatchOperatorValue(",")
 	case sqlext.ViewClause:
 		return p.current.MatchIdentifierValue("AS")
@@ -245,6 +245,19 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 	}
 	p.ownerStatements[statement] = note
 	return statement, true
+}
+
+// claimOwnerTableOption claims an owner's option of a CREATE TABLE after its
+// column list. The facets it reads are the table's.
+func (p *Parser) claimOwnerTableOption(table *ast.CreateTableNode) bool {
+	return p.claimOwnerSyntax(sqlext.TableOption, table.Name, func(value sqlext.Value) error {
+		merged, err := table.Facets.Merge(value.Facets)
+		if err != nil {
+			return fmt.Errorf("table %s: %w", table.Name, err)
+		}
+		table.Facets = merged
+		return nil
+	})
 }
 
 // claimOwnerViewClauses claims every owner's clause between a materialized

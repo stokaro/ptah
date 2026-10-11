@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/engine"
 	"ptah.run/internal/sqlschema"
@@ -73,6 +74,86 @@ func TestReadWith_WithoutTheTableOwnerRefusesItsSyntax(t *testing.T) {
 		sqlschema.Options{Owners: sqlext.None()})
 
 	c.Assert(err, qt.ErrorMatches, `unsupported CREATE target: SHELF at position 7`)
+	c.Assert(database.Tables, qt.HasLen, 0)
+	c.Assert(statements, qt.IsNil)
+}
+
+const labelKind schemaext.Kind = "example.org/shelves/label"
+
+// label is the shelves owner's setting of a table, written after its column
+// list as `LABELED '<text>'`.
+type label struct {
+	Text string
+}
+
+func (*label) Kind() schemaext.Kind { return labelKind }
+
+func (l *label) Clone() schemaext.Value { return new(*l) }
+
+func (l *label) Equal(other schemaext.Value) bool {
+	o, ok := other.(*label)
+	return ok && *o == *l
+}
+
+// labelParser reads `LABELED '<text>'` into the table's label facet.
+type labelParser struct{}
+
+func (labelParser) ParseSQL(_ context.Context, request sqlext.Request) (sqlext.Result, error) {
+	values := make([]sqlext.Value, 0, len(request.Claims))
+	for _, claim := range request.Claims {
+		words := strings.Fields(claim.Text)
+		facets, err := schemaext.Facets{}.With(&label{Text: strings.Trim(words[1], "'")})
+		if err != nil {
+			return sqlext.Result{}, err
+		}
+		values = append(values, sqlext.Value{Facets: facets})
+	}
+	return sqlext.Result{Values: values}, nil
+}
+
+// labelOwners registers target "shelves" with an owner whose table option
+// labels a table.
+func labelOwners() sqlext.Set {
+	return must.Must(engine.New(engine.Provider{
+		ID:      "example.org/shelves",
+		Targets: []engine.Target{{Name: "shelves"}},
+		SQL: []sqlext.Extension{{
+			Owner:    "example.org/shelves",
+			Targets:  []string{"shelves"},
+			Patterns: []sqlext.Pattern{{Name: "label", Site: sqlext.TableOption, Words: []string{"LABELED"}}},
+			Parser:   labelParser{},
+		}},
+	})).SQL()
+}
+
+// TestReadWith_AppliesAnOwnersTableOption reads an owner's option after a
+// table's column list as the owner's facet of that table, beside the shared
+// grammar's options, and ends the option's span at a comma.
+func TestReadWith_AppliesAnOwnersTableOption(t *testing.T) {
+	c := qt.New(t)
+	source := "CREATE TABLE a (id INTEGER) LABELED 'archive', STRICT;\nCREATE TABLE b (id INTEGER);\n"
+
+	_, statements, err := sqlschema.ReadWith(t.Context(), []byte(source), "shelves", nil, sqlschema.Options{Owners: labelOwners()})
+
+	c.Assert(err, qt.IsNil)
+	labeled := statements.Statements[0].(*ast.CreateTableNode)
+	got, found, err := schemaext.FacetAs[*label](labeled.Facets, labelKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(got.Text, qt.Equals, "archive")
+	c.Assert(labeled.Options["STRICT"], qt.Equals, "true")
+	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Facets.Len(), qt.Equals, 0)
+}
+
+// TestReadWith_WithoutTheOptionOwnerRefusesItsSyntax is the control: the
+// shared grammar has no LABELED option.
+func TestReadWith_WithoutTheOptionOwnerRefusesItsSyntax(t *testing.T) {
+	c := qt.New(t)
+
+	database, statements, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE a (id INTEGER) LABELED 'archive';"), "shelves", nil,
+		sqlschema.Options{Owners: sqlext.None()})
+
+	c.Assert(err, qt.ErrorMatches, `unsupported table option: LABELED at position 28`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 	c.Assert(statements, qt.IsNil)
 }

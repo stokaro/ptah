@@ -128,6 +128,8 @@ func TestNewSet_HappyPath(t *testing.T) {
 		{name: "next words told apart", extensions: []sqlext.Extension{
 			extension("example.org/a", "a", parser, sqlext.Pattern{Name: "ttl", Site: sqlext.AlterOperation, Words: []string{"TTL"}, Next: []string{"INTERVAL"}}),
 			extension("example.org/b", "a", parser, sqlext.Pattern{Name: "ttl", Site: sqlext.AlterOperation, Words: []string{"TTL"}, NotNext: []string{"INTERVAL"}})}},
+		{name: "a table option", extensions: []sqlext.Extension{
+			extension("example.org/a", "a", parser, sqlext.Pattern{Name: "ttl", Site: sqlext.TableOption, Words: []string{"TTL"}, Targeted: true})}},
 		{name: "different opening words", extensions: []sqlext.Extension{
 			extension("example.org/a", "a", parser, sqlext.Pattern{Name: "a", Site: sqlext.ViewClause, Words: []string{"REFRESH"}}),
 			extension("example.org/b", "a", parser, sqlext.Pattern{Name: "b", Site: sqlext.ViewClause, Words: []string{"ENGINE"}})}},

@@ -185,7 +185,7 @@ func validateExtension(extension Extension) error {
 
 func knownSite(site Site) bool {
 	switch site {
-	case TableElement, AlterOperation, ViewClause, Statement:
+	case TableElement, AlterOperation, ViewClause, TableOption, Statement:
 		return true
 	default:
 		return false
@@ -395,11 +395,16 @@ func ownedObjects(extension Extension, declared schemaext.Objects) ([]schemaext.
 // carries the owner's statement or the table it declares, one and not both,
 // only a statement declares a table or declares or amends objects, a
 // statement that declares a table names it and declares and amends nothing
-// else, and every object is of one of the extension's Kinds.
+// else, a site that takes facets alone takes no index and no operation, and
+// every object is of one of the extension's Kinds.
 func checkValue(extension Extension, claim Claim, value Value) error {
 	if claim.Site != Statement {
 		if value.Statement != nil || value.Table != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
+				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
+		}
+		if (claim.Site == ViewClause || claim.Site == TableOption) && (value.Index != nil || value.Operation != nil) {
+			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with an index or an operation, which the site does not take",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}
 		return nil
