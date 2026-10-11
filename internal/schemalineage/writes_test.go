@@ -505,3 +505,36 @@ func TestDeriveRoutines_AMySQLCursorBodyIsComplete(t *testing.T) {
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Matches, `the body is mariadb: every statement was classified, so the writes are complete; .*`)
 }
+
+// TestDeriveRoutines_ATSQLTransactionAndDynamicStatementAreNamed pins what the
+// SQL Server owner reports about a transaction and about sp_executesql.
+//
+// BEGIN TRAN opens no block and writes nothing, so it leaves the writes
+// complete. sp_executesql composes its statement at run time, and the reason
+// says so by name.
+func TestDeriveRoutines_ATSQLTransactionAndDynamicStatementAreNamed(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "a transaction", body: "BEGIN BEGIN TRAN; UPDATE t SET c = 1; COMMIT; END",
+			want: "the body is sqlserver: every statement was classified, so the writes are complete; " +
+				"the reads are those of its statements that name one table"},
+		{name: "a dynamic statement", body: "BEGIN BEGIN TRAN; UPDATE t SET c = 1; EXEC sp_executesql @s; COMMIT; END",
+			want: "the body is sqlserver: an EXEC composes its statement at run time, so the writes are not complete; " +
+				"the reads are those of its statements that name one table"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := deriveRoutines(c, &schemamodel.Database{
+				Functions: []schemamodel.Function{{Name: "p", Kind: "procedure", Language: "sql", Body: test.body}},
+			}, "sqlserver")
+
+			c.Assert(writeTargets(result), qt.DeepEquals, []string{"t.c:update"})
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Reason, qt.Equals, test.want)
+		})
+	}
+}

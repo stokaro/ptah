@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/nullsdistinct"
+	"ptah.run/internal/sqlcompound"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/yqlparse"
 )
@@ -1005,14 +1006,14 @@ func (p *Parser) skipSQLServerBracketedIdentifier() {
 func trackSQLServerRawRoutineKeyword(keyword, nextValue string, blockDepth, caseDepth *int) bool {
 	switch keyword {
 	case "BEGIN":
-		if sqlServerRawRoutineNonBlockBeginFollower(nextValue) {
+		if !sqlcompound.SQLServerBeginOpensBlock(nextValue) {
 			return false
 		}
 		(*blockDepth)++
 	case "CASE":
 		(*caseDepth)++
 	case "END":
-		if strings.EqualFold(nextValue, "CONVERSATION") {
+		if !sqlcompound.SQLServerEndClosesBlock(nextValue) {
 			return false
 		}
 		if *caseDepth > 0 {
@@ -1043,15 +1044,6 @@ func sqlServerRawRoutineNextSignificantValue(input string, pos int) string {
 		default:
 			return strings.ToUpper(tok.Value)
 		}
-	}
-}
-
-func sqlServerRawRoutineNonBlockBeginFollower(value string) bool {
-	switch strings.ToUpper(value) {
-	case "CONVERSATION", "DIALOG", "DISTRIBUTED", "TRAN", "TRANSACTION":
-		return true
-	default:
-		return false
 	}
 }
 

@@ -714,8 +714,9 @@ A routine body is the engine's own language, so its owner reads it. An
 `engine.Target` carries a `routineext.Reader` in `RoutineBodies`, and a host
 that analyzes bodies, such as `ptah sql lint` or `ptah schema lineage`, asks
 `Runtime.ReadRoutineBodies` once per document and reads each body's statements
-back as data. The PostgreSQL owner's reader is `dialect/postgres/pgroutine`,
-and the MySQL owner's, for MySQL and MariaDB, is `dialect/mysql/mysqlroutine`.
+back as data. The readers are `dialect/postgres/pgroutine` for the PostgreSQL
+family, `dialect/mysql/mysqlroutine` for MySQL and MariaDB, and
+`dialect/mssql/mssqlroutine` for SQL Server.
 
 Rule codes use uppercase ASCII letters and digits and start with a letter.
 Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`

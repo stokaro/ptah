@@ -185,3 +185,47 @@ func TestDeriveRoutines_ADynamicStatementIsNamedByItsLabel(t *testing.T) {
 		})
 	}
 }
+
+// opaqueReader reads a body as one control-flow statement it could not split,
+// carrying label.
+type opaqueReader struct {
+	label string
+}
+
+func (r opaqueReader) ReadBodies(_ context.Context, request routineext.ReadRequest) (routineext.ReadResult, error) {
+	result := routineext.ReadResult{}
+	for _, body := range request.Bodies {
+		result.Bodies = append(result.Bodies, routineext.Reading{
+			Statements:  []routineext.Statement{{Kind: routineext.StatementControl, Label: r.label, SQL: body.SQL, Opaque: true}},
+			ColumnReads: true,
+		})
+	}
+	return result, nil
+}
+
+// A control-flow statement whose contents the owner could not split is named
+// by its label, and as a control-flow statement when the reader gave it no
+// label: the label is optional in the contract.
+func TestDeriveRoutines_AnOpaqueStatementIsNamedByItsLabel(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		label string
+		want  string
+	}{
+		{name: "labeled", label: "if", want: "the if statement's contents could not be read"},
+		{name: "unlabeled", label: "", want: "a control-flow statement's contents could not be read"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(engine.New(engine.Provider{ID: "example.org/postgres", Targets: []engine.Target{
+				{Name: "postgres", RoutineBodies: opaqueReader{label: test.label}}}}))
+
+			result, err := schemalineage.DeriveRoutines(c.Context(), runtime, proceduralRoutine("BEGIN IF a THEN NULL; END IF; END;"), "postgres")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Reason, qt.Equals, "the body is plpgsql: "+test.want+
+				", so the writes are not complete; the reads are those of its statements that name one table")
+		})
+	}
+}

@@ -356,3 +356,29 @@ func (s *State) KeepSemicolonInsideStatement() bool {
 	}
 	return true
 }
+
+// SQLServerBeginOpensBlock reports whether a T-SQL BEGIN followed by the word
+// next opens a block that an END closes. BEGIN TRAN, BEGIN TRANSACTION, BEGIN
+// DISTRIBUTED TRANSACTION, BEGIN DIALOG and BEGIN CONVERSATION TIMER are
+// statements of their own and open nothing.
+//
+// Two readers ask it and must agree: the parser, which finds where a CREATE
+// PROCEDURE or CREATE FUNCTION ends, and the SQL Server owner, which splits the
+// body inside it. A second list in either would let one of them read an END as
+// closing a block the other never opened.
+func SQLServerBeginOpensBlock(next string) bool {
+	switch strings.ToUpper(next) {
+	case "CONVERSATION", "DIALOG", "DISTRIBUTED", "TRAN", "TRANSACTION":
+		return false
+	default:
+		return true
+	}
+}
+
+// SQLServerEndClosesBlock reports whether a T-SQL END followed by the word
+// next closes a block. END CONVERSATION is a statement of its own and closes
+// nothing. The readers of [SQLServerBeginOpensBlock] ask it for the same
+// reason.
+func SQLServerEndClosesBlock(next string) bool {
+	return !strings.EqualFold(next, "CONVERSATION")
+}

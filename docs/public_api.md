@@ -82,6 +82,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mssql/mssqlrender`
 - `ptah.run/dialect/mssql/mssqlreport`
 - `ptah.run/dialect/mssql/mssqlreverse`
+- `ptah.run/dialect/mssql/mssqlroutine`
 - `ptah.run/dialect/mssql/mssqlschema`
 - `ptah.run/dialect/mysql/mysqlast`
 - `ptah.run/dialect/mysql/mysqlcompare`
@@ -393,6 +394,16 @@ reports each of those as opaque. MySQL resolves a name that a declared
 variable and a column share to the variable, so no reading reports its column
 reads as attributable. The bundled runtime registers it on the mysql and
 mariadb targets.
+
+`dialect/mssql/mssqlroutine` is the SQL Server owner's routine body reader.
+`Reader` splits a T-SQL body into the statements of its outer `BEGIN ... END`,
+or of the body itself when it has none, ending a statement at a semicolon or
+where a keyword that only starts one begins. It does not split the statements
+an `IF`, a `WHILE` or a nested block runs, so it reports each of those as
+opaque. `EXEC` or `EXECUTE` running a string or `sp_executesql` is dynamic. A
+T-SQL variable carries an `@` prefix and cannot share a name with a column, so
+every reading reports its column reads as attributable. The bundled runtime
+registers it on the sqlserver target.
 
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
 publishes the PG and TX families and the online rules ON101 and ON103 as data,

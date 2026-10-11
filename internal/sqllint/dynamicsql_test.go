@@ -164,3 +164,26 @@ func TestLintSource_MySQLSaysWhichStatementComposes(t *testing.T) {
 		})
 	}
 }
+
+// TestLintSource_TSQLSaysWhichStatementComposes pins the SQL Server finding.
+//
+// Each finding names the spelling that runs the composed statement and points
+// at it. sp_executesql is found under a qualification, in brackets and with a
+// return status assigned; a procedure called by name composes nothing.
+func TestLintSource_TSQLSaysWhichStatementComposes(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "x.sql", SQL: "CREATE PROCEDURE p AS\nBEGIN\n" +
+		"  EXEC sp_executesql N'DROP TABLE t';\n  EXECUTE ('DROP TABLE t');\n  EXEC sys.sp_executesql @s;\n" +
+		"  EXEC [sys].[sp_executesql] @s;\n  EXEC @rc = sp_executesql @s;\n  EXEC dbo.other_proc;\nEND"},
+		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "sqlserver"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(dynamicMessages(findings), qt.DeepEquals, []string{
+		"3:3 procedure p builds SQL at run time with EXEC",
+		"4:3 procedure p builds SQL at run time with EXECUTE",
+		"5:3 procedure p builds SQL at run time with EXEC",
+		"6:3 procedure p builds SQL at run time with EXEC",
+		"7:3 procedure p builds SQL at run time with EXEC",
+	})
+}

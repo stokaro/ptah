@@ -10,9 +10,11 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/routineext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
+	"ptah.run/dialect/mssql/mssqlroutine"
 	"ptah.run/dialect/mysql/mysqlconvert"
 	"ptah.run/dialect/mysql/mysqlroutine"
 	"ptah.run/dialect/postgres/pglint"
@@ -84,12 +86,10 @@ func New() (*engine.Runtime, error) {
 				// lint scanner in the dialect's mode; YDB's owner replaces it
 				// below.
 				Splitter: lintscan.Splitter{Dialect: name},
+				// A routine body is the engine's own language, so its owner
+				// reads it.
+				RoutineBodies: routineBodyReader(name),
 			}},
-		}
-		if platform.IsPostgresFamily(name) {
-			// Every dialect of the PostgreSQL family writes its routine
-			// bodies in PL/pgSQL or SQL, which the PostgreSQL owner reads.
-			provider.Targets[0].RoutineBodies = pgroutine.Reader{}
 		}
 		if name == platform.YDB {
 			// YDB answers nothing it cannot hold with a skip comment, since
@@ -114,10 +114,8 @@ func New() (*engine.Runtime, error) {
 		if name == platform.MariaDB {
 			// MariaDB's tables are created by the MySQL owner's rules too; the
 			// rest of that owner registers its MariaDB services on the mysql
-			// provider. A MariaDB routine body is a compound statement in
-			// MySQL's grammar, which the MySQL owner reads.
+			// provider.
 			provider.Targets[0].Creations = mysqlconvert.CreationService{}
-			provider.Targets[0].RoutineBodies = mysqlroutine.Reader{}
 		}
 		if name == platform.MySQL {
 			registerMySQLServices(&provider)
@@ -188,6 +186,23 @@ func New() (*engine.Runtime, error) {
 	}
 	providers = append(providers, timescaleProvider(), pgpolicyProvider(), pgextensionProvider(), mssqlProvider(), mssqlPropertyProvider(), synonymProvider())
 	return assembleSchemaServices(providers)
+}
+
+// routineBodyReader is the owner that reads a target's routine bodies, or nil
+// for a target whose owner reads none. A routine body is written in the
+// engine's own language: PL/pgSQL or SQL on the PostgreSQL family, a compound
+// statement on MySQL and MariaDB, T-SQL on SQL Server.
+func routineBodyReader(name string) routineext.Reader {
+	switch {
+	case platform.IsPostgresFamily(name):
+		return pgroutine.Reader{}
+	case name == platform.MySQL, name == platform.MariaDB:
+		return mysqlroutine.Reader{}
+	case name == platform.SQLServer:
+		return mssqlroutine.Reader{}
+	default:
+		return nil
+	}
 }
 
 // Whole-schema services depend on a frozen declaration dispatcher. Derive it

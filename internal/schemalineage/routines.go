@@ -199,14 +199,14 @@ func deriveRoutine(
 func deriveProceduralRoutine(
 	routine schemamodel.Function, dialect, kind string, columns map[string][]string, reading *routineext.Reading,
 ) RoutineResult {
-	analysis, analyzed := analyzeProcedural(routine, dialect, kind, reading)
-	if !analyzed {
+	if reading == nil {
 		return RoutineResult{Undecided: []UndecidedRoutine{{
 			Routine: routine.Name,
 			Kind:    kind,
 			Reason:  fmt.Sprintf("no routine-body analysis exists for the %s dialect", dialect),
 		}}}
 	}
+	analysis := analyzeProcedural(routine.Name, kind, *reading)
 	result := RoutineResult{Writes: analysis.writes}
 	if analysis.columnReads {
 		result.Reads = deriveProceduralReads(routine.Name, kind, columns, analysis.statements)
@@ -233,23 +233,11 @@ type procedural struct {
 	columnReads bool
 }
 
-// analyzeProcedural analyzes a procedural body from the owner's reading, or,
-// for a dialect whose owner reads no bodies yet, with this package's own body
-// parser for it. It reports false for a dialect with neither.
-func analyzeProcedural(routine schemamodel.Function, dialect, kind string, reading *routineext.Reading) (procedural, bool) {
-	if reading != nil {
-		writes, unresolved := readingWrites(reading.Statements, routine.Name, kind)
-		return procedural{writes: writes, unresolved: unresolved, statements: readingSQL(reading.Statements),
-			columnReads: reading.ColumnReads}, true
-	}
-	writes, unresolved, analyzed := proceduralWritesFor(dialect, routine, kind)
-	if !analyzed {
-		return procedural{}, false
-	}
-	// The one dialect analyzed here is T-SQL. Its variables carry an @ prefix
-	// and cannot share a name with a column, so a name in its body may be
-	// attributed as a column read.
-	return procedural{writes: writes, unresolved: unresolved, statements: proceduralStatementSQL(routine), columnReads: true}, true
+// analyzeProcedural analyzes a procedural body from its owner's reading.
+func analyzeProcedural(routine, kind string, reading routineext.Reading) procedural {
+	writes, unresolved := readingWrites(reading.Statements, routine, kind)
+	return procedural{writes: writes, unresolved: unresolved, statements: readingSQL(reading.Statements),
+		columnReads: reading.ColumnReads}
 }
 
 // bodyLanguage names the language a body is written in for the reason line.
