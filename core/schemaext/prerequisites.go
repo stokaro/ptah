@@ -43,3 +43,22 @@ func ProvidedByChanges(caps capability.Capabilities, changes []ChangeRecord) cap
 	}
 	return caps
 }
+
+// ProvidedByObjects returns caps widened by every object whose value is a
+// [CapabilityProvider], in identity order; any other object provides
+// nothing. A whole-schema render, which has no connection to ask, reads what
+// the objects it declares will provide this way. caps is not changed. The
+// error is a value that cannot be cloned out of the collection.
+func ProvidedByObjects(caps capability.Capabilities, objects Objects) (capability.Capabilities, error) {
+	all, err := objects.All()
+	if err != nil {
+		return nil, err
+	}
+	caps = caps.Clone()
+	for _, object := range all {
+		if provider, ok := object.Value.(CapabilityProvider); ok {
+			caps = provider.ProvidedCapabilities(object.Ref, caps)
+		}
+	}
+	return caps, nil
+}

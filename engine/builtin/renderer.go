@@ -1847,8 +1847,13 @@ func orderedCreateStatements(
 	// A render has no connection to ask which extensions the target has, and
 	// the schema in front of it declares them. Without this a document that
 	// declares the timescaledb extension and a hypertable rendered the CREATE
-	// EXTENSION and then skipped the call that needs it.
+	// EXTENSION and then skipped the call that needs it. The owners' objects
+	// say the same about themselves.
 	caps = capability.WithDeclaredExtensions(caps, declaredExtensionNames(r))
+	caps, err := schemaext.ProvidedByObjects(caps, r.FeatureObjects)
+	if err != nil {
+		return nil, err
+	}
 	database, err := prepareDatabaseForRendering(r, dialect, caps)
 	if err != nil {
 		return nil, err

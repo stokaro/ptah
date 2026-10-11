@@ -410,7 +410,9 @@ created, provides capabilities; it is given the object's identity, which holds
 what a value alone does not, such as an extension's name.
 `schemaext.ProvidedByChanges` widens a set with what a list of changes
 provides, and a rendered plan widens its target's capabilities with what the
-changes it creates provide.
+changes it creates provide. `schemaext.ProvidedByObjects` does the same for a
+collection of objects, and a whole-schema render widens its target's
+capabilities with what the objects it declares provide.
 
 `core/featureplan.DeclarationService` plans authored standalone objects, and
 the named children of a declared table, for schema creation.
@@ -2334,9 +2336,10 @@ and case-variant keys, and a refused value is a `schemaext.InvalidModelError`.
 `feature/pgextension/extensionrender` renders the payloads for the PostgreSQL
 family. CockroachDB and Spanner create an extension and do nothing else with
 one, so an installation schema and every alteration are refused there. The
-builtin runtime registers the change and operation codecs and composes the
-handlers on every PostgreSQL-family target. No source or planner produces
-these payloads yet.
+builtin runtime selects the owner on every PostgreSQL-family target and
+composes the handlers there; it leaves the reports out while the common
+`extensions` metric counts the same objects. No source or reader produces the
+models yet.
 
 `feature/pgextension/extensioncompare` compares extensions by name. The
 installation schema is compared under the target's default schema, the version

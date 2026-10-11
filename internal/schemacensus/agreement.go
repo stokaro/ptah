@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -102,11 +103,19 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 	if platform.IsPostgresFamily(cell.Dialect) {
 		// A PostgreSQL-family read records TimescaleDB knowledge whether or not
 		// the extension is installed; an empty database holds neither model.
+		// It describes the installed extensions too, and an empty database
+		// has none.
 		known, err := tsschema.CompleteCoverage(schemaext.Observed)
 		if err != nil {
 			return nil, err
 		}
-		current.FeatureCoverage = known
+		extensions, err := pgextension.CompleteCoverage(schemaext.Observed)
+		if err != nil {
+			return nil, err
+		}
+		if current.FeatureCoverage, err = known.Combine(extensions); err != nil {
+			return nil, err
+		}
 	}
 	if cell.Dialect == platform.SQLServer {
 		// A SQL Server read describes security policies; an empty database

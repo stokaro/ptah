@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 )
 
 // TestRender_ADeclaredExtensionIsTheOfflineEvidence pins that a render produces
@@ -31,6 +32,28 @@ func TestRender_ADeclaredExtensionIsTheOfflineEvidence(t *testing.T) {
 	script := strings.Join(statements, "\n")
 	c.Assert(script, qt.Contains, `CREATE EXTENSION "timescaledb"`)
 	c.Assert(script, qt.Contains, `SELECT create_hypertable('"public"."readings"'`)
+	c.Assert(script, qt.Not(qt.Contains), "hypertable public.readings is not supported")
+}
+
+// TestRender_AnOwnedExtensionIsTheOfflineEvidence pins the same rule for an
+// extension its owner declares: the object says what it provides, and the
+// render installs it before the table and partitions the table after it.
+func TestRender_AnOwnedExtensionIsTheOfflineEvidence(t *testing.T) {
+	c := qt.New(t)
+	database := hypertableDocument()
+	database.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("timescaledb"),
+		pgextension.DesiredExtension{}))))
+	database.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
+
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	script := strings.Join(statements, "\n")
+	extension := strings.Index(script, `CREATE EXTENSION "timescaledb";`)
+	table := strings.Index(script, `CREATE TABLE "public"."readings"`)
+	hypertable := strings.Index(script, `SELECT create_hypertable('"public"."readings"'`)
+	c.Assert([]bool{extension >= 0, table > extension, hypertable > table}, qt.DeepEquals, []bool{true, true, true},
+		qt.Commentf("script:\n%s", script))
 	c.Assert(script, qt.Not(qt.Contains), "hypertable public.readings is not supported")
 }
 
