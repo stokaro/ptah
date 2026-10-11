@@ -12,6 +12,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
 	"github.com/zclconf/go-cty/cty/function/stdlib"
+
+	"ptah.run/internal/hcldiag"
 )
 
 // TopLevelScope is the [IgnoredName.Scope] of a name no construct contains.
@@ -395,6 +397,7 @@ func (p *parser) unknownVariableError(name string, rng hcl.Range) error {
 // rest of this package: lower-cased summary, then the detail the HCL library
 // wrote, at the range the diagnostic points to.
 func (p *parser) evaluationFailed(diags hcl.Diagnostics) error {
+	diags = hcldiag.Stable(diags)
 	for _, diag := range diags {
 		if diag.Severity != hcl.DiagError {
 			continue

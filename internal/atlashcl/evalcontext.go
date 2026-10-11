@@ -17,6 +17,8 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
 	"github.com/zclconf/go-cty/cty/function/stdlib"
+
+	"ptah.run/internal/hcldiag"
 )
 
 const (
@@ -212,7 +214,7 @@ func variableFromAttrs(ctx *hcl.EvalContext, block *hclsyntax.Block) (schemaVari
 	value, diags := defaultAttr.Expr.Value(ctx)
 	if diags.HasErrors() {
 		return schemaVariable{}, fmt.Errorf(
-			"parse HCL schema: variable %q default: %s", variable.name, diags.Error(),
+			"parse HCL schema: variable %q default: %s", variable.name, hcldiag.Stable(diags).Error(),
 		)
 	}
 	converted, err := convert.Convert(value, variable.typ)
@@ -335,7 +337,7 @@ func bindLocals(ctx *hcl.EvalContext, body *hclsyntax.Body) (*hcl.EvalContext, e
 		if !bindResolvableLocals(ctx, values, pending) {
 			attr := pending[stuck]
 			_, diags := attr.Expr.Value(ctx)
-			return nil, fmt.Errorf("parse HCL schema: local %q: %s", stuck, diags.Error())
+			return nil, fmt.Errorf("parse HCL schema: local %q: %s", stuck, hcldiag.Stable(diags).Error())
 		}
 	}
 	return ctx, nil

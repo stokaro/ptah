@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/hcldiag"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
@@ -215,7 +216,7 @@ func ParseAtlasFSCollectionWithOptions(
 	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
-		return nil, fmt.Errorf("parse atlas project config: %s", diags.Error())
+		return nil, fmt.Errorf("parse atlas project config: %s", hcldiag.Stable(diags).Error())
 	}
 	body, ok := file.Body.(*hclsyntax.Body)
 	if !ok {
@@ -3602,7 +3603,7 @@ func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, di
 	}
 	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
-		p.scrubSensitive(diags.Error()))
+		p.scrubSensitive(hcldiag.Stable(diags).Error()))
 }
 
 // sensitiveVariableIn reports the first `sensitive = true` variable expr reads.

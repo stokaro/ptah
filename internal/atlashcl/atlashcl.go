@@ -23,6 +23,7 @@ import (
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/pgpolicysource"
@@ -149,7 +150,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
-		return nil, fmt.Errorf("parse HCL schema: %s", diags.Error())
+		return nil, fmt.Errorf("parse HCL schema: %s", hcldiag.Stable(diags).Error())
 	}
 	body, ok := file.Body.(*hclsyntax.Body)
 	if !ok {
