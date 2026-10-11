@@ -83,7 +83,7 @@ func TestPostgresLiveRoutineReturnFormsConverge(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	description, err := atlashcl.Parse(returnFormsDocument(schemaName), "schema.hcl")
+	description, err := atlashcl.ParseWithOptions(returnFormsDocument(schemaName), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)

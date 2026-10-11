@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // TestPostgresRoutineGrant_HCLDocumentConverges applies an HCL document that
@@ -61,7 +62,7 @@ permission {
   privileges = ["EXECUTE"]
 }
 `, fixture.schema, fixture.role)
-	desired, err := atlashcl.Parse([]byte(document), "schema.hcl")
+	desired, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	fixture.apply(c, ctx, desired)

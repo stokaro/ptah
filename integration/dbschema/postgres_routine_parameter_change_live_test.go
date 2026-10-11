@@ -35,7 +35,7 @@ import (
 // body that only uses its own parameter, so a rename has to reach the body too.
 func parameterDocument(c *qt.C, schemaName, parameter, parameterType, body string) *schemamodel.Database {
 	c.Helper()
-	description, err := atlashcl.Parse([]byte(`
+	description, err := atlashcl.ParseWithOptions([]byte(`
 schema "`+schemaName+`" {}
 
 function "scalar" {
@@ -47,7 +47,7 @@ function "scalar" {
   return = integer
   as     = "`+body+`"
 }
-`), "schema.hcl")
+`), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 	return description
 }

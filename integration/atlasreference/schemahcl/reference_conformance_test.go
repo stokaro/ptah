@@ -334,7 +334,7 @@ table "t" {
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNil)
-			without, err := atlashcl.Parse([]byte(tt.equivalent), "schema.hcl")
+			without, err := atlashcl.ParseWithOptions([]byte(tt.equivalent), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(tolerant, qt.DeepEquals, without)
 		})
