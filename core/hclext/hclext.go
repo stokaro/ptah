@@ -73,7 +73,9 @@ const (
 	// and two are the schema and the name. An optional `schema` attribute, a
 	// reference such as `schema.app` or a string, names the schema of a
 	// one-label block, and must agree with the schema label of a two-label
-	// one.
+	// one. A block whose shape lists `schema` itself, as a [Ref] to `schema`,
+	// reads that attribute as such a reference, and its claim carries the
+	// reference too; see [Ref].
 	SchemaAndName Naming = "schema-and-name"
 	// SchemaAndQualifiedName is [SchemaAndName], and a name written
 	// `schema.name` where nothing else names a schema names the schema too:
@@ -110,7 +112,15 @@ const (
 	// several declared tables match is refused, naming their schemas, and
 	// one that none matches is kept as written. The attribute is required: a
 	// block that leaves it out, or writes a reference to another type, is
-	// refused as `<type> "<name>" requires <attribute>`.
+	// refused as `<type> "<name>" requires <attribute>`. An
+	// [Attribute.Optional] reference a block leaves out has no entry.
+	//
+	// A reference to a `schema` names one schema: a string, a string
+	// template, `schema.app` or `schema["app"]`. Anything else, a qualified
+	// reference included, is refused as `<type> attribute "<attribute>" must
+	// be a string template or exact schema reference`. A schema is no
+	// relation of the document, so the reference is not resolved against its
+	// tables.
 	Ref Kind = "reference"
 	// Refs is a list of references to objects of the
 	// [Attribute.Refers] type, or a single one, each read into a
@@ -130,6 +140,10 @@ type Attribute struct {
 	// refers to, such as "table" or "role". It is required for those kinds
 	// and refused for the others.
 	Refers string
+	// Optional makes a [Ref] attribute one a block may leave out, as an
+	// extension's installation `schema` is. It is refused on every other
+	// kind, which a block may leave out already.
+	Optional bool
 }
 
 // Block is the shape of one block an owner reads.
@@ -413,6 +427,10 @@ func validateBlock(owner string, block Block) error {
 		if strings.TrimSpace(attribute.Name) == "" {
 			return fmt.Errorf("HCL block %q of %s declares an attribute without a name", block.Type, owner)
 		}
+		if attribute.Name == "schema" && names["schema"] && NamesSchema(attribute) {
+			// The naming's own schema, listed to be read as a reference.
+			names[attribute.Name] = false
+		}
 		if names[attribute.Name] {
 			return fmt.Errorf("%w: HCL block %q of %s declares attribute %q twice or as its naming's own",
 				schemaext.ErrDuplicate, block.Type, owner, attribute.Name)
@@ -451,6 +469,9 @@ func validateNaming(owner string, block Block) error {
 // validateKind refuses an unknown kind, a reference without the type it
 // refers to, and a type to refer to on another kind.
 func validateKind(owner string, block Block, attribute Attribute) error {
+	if attribute.Optional && attribute.Kind != Ref {
+		return fmt.Errorf("HCL attribute %q of %s block %q is a %s, and only a reference is made optional", attribute.Name, owner, block.Type, attribute.Kind)
+	}
 	switch attribute.Kind {
 	case String, Text, Bool:
 		if attribute.Refers != "" {
@@ -464,6 +485,12 @@ func validateKind(owner string, block Block, attribute Attribute) error {
 		return fmt.Errorf("HCL attribute %q of %s block %q names unknown kind %q", attribute.Name, owner, block.Type, attribute.Kind)
 	}
 	return nil
+}
+
+// NamesSchema reports whether attribute is a [Ref] to a `schema`, which a
+// [SchemaAndName] block may list as its naming's own `schema`.
+func NamesSchema(attribute Attribute) bool {
+	return attribute.Kind == Ref && attribute.Refers == "schema"
 }
 
 // Selected reports whether the set was built by [NewSet] or [None].

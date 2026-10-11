@@ -1756,7 +1756,23 @@ func validateSchemaWithCapabilities(ctx context.Context, runtime featureplan.Dec
 	if err := validateDeclaredPrimaryKeys(ctx, runtime, dialect, caps, prepared); err != nil {
 		return err
 	}
-	return validateTablesWithInlineIndexes(ctx, runtime, dialect, caps, prepared)
+	if schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(dialect)) {
+		// That walk lowers the owners' declarations as it goes.
+		return validateTablesWithInlineIndexes(ctx, runtime, dialect, caps, prepared)
+	}
+	return validateDeclaredObjects(ctx, runtime, dialect, caps, prepared)
+}
+
+// validateDeclaredObjects plans the owners' declarations the way the render
+// plans them, so validation refuses what an owner refuses, such as a
+// PostgreSQL extension installation schema on CockroachDB. A schema that
+// declares no owner object has nothing to plan.
+func validateDeclaredObjects(ctx context.Context, runtime featureplan.DeclarationRuntime, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+	if database.FeatureObjects.IsZero() {
+		return nil
+	}
+	return modelast.WalkDatabase(database, dialect, func(ast.Node) error { return ctx.Err() },
+		builtinlowering.ForTarget(ctx, runtime, dialect, caps))
 }
 
 // validateTablesWithInlineIndexes renders every table on a target that writes a
@@ -1773,9 +1789,6 @@ func validateSchemaWithCapabilities(ctx context.Context, runtime featureplan.Dec
 // of caps, because that is the set the walk below asks when it puts the indexes
 // into the table: the tables validated here are the ones the walk builds.
 func validateTablesWithInlineIndexes(ctx context.Context, runtime featureplan.DeclarationRuntime, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
-	if !schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(dialect)) {
-		return nil
-	}
 	return modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
 		table, ok := node.(*ast.CreateTableNode)
 		if !ok {

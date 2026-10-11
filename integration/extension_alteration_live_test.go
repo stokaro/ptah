@@ -13,13 +13,54 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
+
+// declaredExtension is a desired schema that declares one extension to its
+// owner, and claims that it declares every extension.
+func declaredExtension(c *qt.C, name string, extension pgextension.DesiredExtension) *schemamodel.Database {
+	c.Helper()
+	object, err := pgextension.DesiredObject(pgextension.Ref(name), extension)
+	c.Assert(err, qt.IsNil)
+	objects, err := schemaext.NewObjects(object)
+	c.Assert(err, qt.IsNil)
+	known, err := pgextension.CompleteCoverage(schemaext.Desired)
+	c.Assert(err, qt.IsNil)
+	return &schemamodel.Database{FeatureObjects: objects, FeatureCoverage: known}
+}
+
+// extensionChanges returns the extension owner's changes a diff holds.
+func extensionChanges(diff *difftypes.SchemaDiff) []*pgextension.Change {
+	var changes []*pgextension.Change
+	for _, record := range diff.FeatureChanges {
+		if change, ok := record.Value.(*pgextension.Change); ok {
+			changes = append(changes, change)
+		}
+	}
+	return changes
+}
+
+// observedExtensions returns what a read reports of each extension, by name.
+func observedExtensions(c *qt.C, objects schemaext.Objects) map[string]pgextension.ObservedExtension {
+	c.Helper()
+	all, err := objects.All()
+	c.Assert(err, qt.IsNil)
+	observed := make(map[string]pgextension.ObservedExtension)
+	for _, object := range all {
+		if extension, ok := object.Value.(*pgextension.ObservedExtension); ok {
+			observed[pgextension.Name(object.Ref)] = *extension
+		}
+	}
+	return observed
+}
 
 // TestExtensionVersionAndSchemaConvergeLive is the test the extension halves
 // could not have been changed without.
@@ -69,15 +110,14 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 
 	// 1. A raised pin is seen at all. This is the assertion the whole issue is
 	// about: before it, the comparison reported nothing.
-	declared := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "pg_trgm", Schema: home, Version: "1.6",
-	}}}
+	declared := declaredExtension(c, "pg_trgm", pgextension.DesiredExtension{Schema: home, Version: "1.6"})
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	raised := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, live, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(raised.ExtensionsModified, qt.HasLen, 1)
-	c.Assert(raised.ExtensionsModified[0].FromVersion, qt.Equals, "1.5")
-	c.Assert(raised.ExtensionsModified[0].ToVersion, qt.Equals, "1.6")
+	c.Assert(extensionChanges(raised), qt.HasLen, 1)
+	c.Assert(extensionChanges(raised)[0].Before.Version, qt.Equals, "1.5")
+	c.Assert(extensionChanges(raised)[0].After.Version, qt.Equals, "1.6")
+	c.Assert(extensionChanges(raised)[0].UpdatesVersion(), qt.IsTrue)
 
 	// 2. It plans a statement the server accepts.
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
@@ -95,17 +135,14 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	settled, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	after := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, settled, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(after.ExtensionsModified, qt.HasLen, 0)
-	c.Assert(after.ExtensionsAdded.Names(), qt.HasLen, 0)
-	c.Assert(after.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	c.Assert(extensionChanges(after), qt.HasLen, 0)
 
 	// 4. The schema move, which is refused for no target.
-	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "pg_trgm", Schema: away, Version: "1.6",
-	}}}
+	moved := declaredExtension(c, "pg_trgm", pgextension.DesiredExtension{Schema: away, Version: "1.6"})
 	move := must.Must(schemadiff.CompareWithDialect(t.Context(), moved, settled, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(move.ExtensionsModified, qt.HasLen, 1)
-	c.Assert(move.ExtensionsModified[0].Relocatable, qt.IsTrue)
+	c.Assert(extensionChanges(move), qt.HasLen, 1)
+	c.Assert(extensionChanges(move)[0].Schema, qt.Equals, away)
+	c.Assert(extensionChanges(move)[0].Before.Relocatable, qt.IsTrue)
 	moveStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		context.Background(), must.Must(builtin.New()),
 		move, platform.Postgres,
@@ -118,7 +155,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 
 	relocated, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), moved, relocated, platform.Postgres, must.Must(builtin.New()))).ExtensionsModified, qt.HasLen, 0)
+	c.Assert(extensionChanges(must.Must(schemadiff.CompareWithDialect(t.Context(), moved, relocated, platform.Postgres, must.Must(builtin.New())))), qt.HasLen, 0)
 }
 
 // TestExtensionMovesIntoASchemaThePlanCreatesLive pins that a move into a
@@ -149,7 +186,7 @@ func TestExtensionMovesIntoASchemaThePlanCreatesLive(t *testing.T) {
 	c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP EXTENSION IF EXISTS pg_trgm"), qt.IsNil)
 	c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE EXTENSION pg_trgm WITH SCHEMA "+home), qt.IsNil)
 
-	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm", Schema: away}}}
+	moved := declaredExtension(c, "pg_trgm", pgextension.DesiredExtension{Schema: away})
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	move := must.Must(schemadiff.CompareWithDialect(t.Context(), moved, live, platform.Postgres, must.Must(builtin.New())))
@@ -165,7 +202,7 @@ func TestExtensionMovesIntoASchemaThePlanCreatesLive(t *testing.T) {
 	relocated, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), moved, relocated, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(settled.ExtensionsModified, qt.HasLen, 0)
+	c.Assert(extensionChanges(settled), qt.HasLen, 0)
 }
 
 // TestExtensionAlterationRefusalsMatchTheServerLive pins that the two shapes
@@ -214,11 +251,8 @@ func TestExtensionAlterationRefusalsMatchTheServerLive(t *testing.T) {
 
 		live, readErr := conn.Reader().ReadSchemaContext(ctx)
 		c.Assert(readErr, qt.IsNil)
-		byName := make(map[string]bool)
-		for _, extension := range live.Extensions {
-			byName[extension.Name] = extension.Relocatable
-		}
-		c.Assert(byName["pg_trgm"], qt.IsTrue)
-		c.Assert(byName["plpgsql"], qt.IsFalse)
+		byName := observedExtensions(c, live.FeatureObjects)
+		c.Assert(byName["pg_trgm"].Relocatable, qt.IsTrue)
+		c.Assert(byName["plpgsql"].Relocatable, qt.IsFalse)
 	})
 }

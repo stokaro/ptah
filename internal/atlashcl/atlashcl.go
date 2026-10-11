@@ -459,7 +459,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"composite":         (*parser).parseComposite,
 	"range":             (*parser).parseRange,
 	"table":             (*parser).parseTable,
-	"extension":         (*parser).parseExtension,
 	"function":          (*parser).parseFunction,
 	"procedure":         (*parser).parseProcedure,
 	"view":              (*parser).parseView,

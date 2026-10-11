@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/engine"
 )
@@ -38,6 +39,8 @@ func TestRuntimeSQL_HappyPath(t *testing.T) {
 }
 
 func TestRuntimeSQL_FailurePath(t *testing.T) {
+	server := comparisonProvider(comparisonFunc(unchangedComparison))
+	server.Targets = nil
 	tests := []struct {
 		name      string
 		providers []engine.Provider
@@ -57,6 +60,74 @@ func TestRuntimeSQL_FailurePath(t *testing.T) {
 			sqlProvider("example.org/first", "first", bucketExtension("example.org/first", "first")),
 			sqlProvider("example.org/second", "second", bucketExtension("example.org/second", "second"))},
 			wantErr: `.*can match the same table-element syntax`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			runtime, err := engine.New(test.providers...)
+
+			c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(runtime, qt.IsNil)
+		})
+	}
+}
+
+// statementReader is a feature owner that registers no target: it compares
+// its first model on custom, which another provider registers, and reads
+// statements declaring kinds on targets.
+func statementReader(site sqlext.Site, kinds []schemaext.Kind, targets ...string) engine.Provider {
+	provider := comparisonProvider(comparisonFunc(unchangedComparison))
+	provider.Targets = nil
+	provider.SQL = []sqlext.Extension{{Owner: provider.ID, Targets: targets, Kinds: kinds, Parser: noSQL{},
+		Patterns: []sqlext.Pattern{{Name: "create", Site: site, Words: []string{"CREATE", "FIRST"}}}}}
+	return provider
+}
+
+// hostProvider registers the targets a feature owner reads statements on.
+func hostProvider() engine.Provider {
+	return engine.Provider{ID: "example.org/host", Targets: []engine.Target{{Name: "custom"}, {Name: "elsewhere"}}}
+}
+
+// TestRuntimeSQL_AFeatureOwnerReadsItsStatements pins that an owner reads
+// statements declaring its own objects on a target another provider
+// registers, where it serves them.
+func TestRuntimeSQL_AFeatureOwnerReadsItsStatements(t *testing.T) {
+	c := qt.New(t)
+
+	runtime := mustRuntime(c, hostProvider(), statementReader(sqlext.Statement, []schemaext.Kind{conversionFirst}, "custom"))
+
+	c.Assert(runtime.SQL().Candidates("custom", sqlext.Statement), qt.HasLen, 1)
+}
+
+// TestRuntimeSQL_AFeatureOwnerReadsNothingElse pins what an owner that does
+// not register a target may not read there: syntax inside another owner's
+// statements, statements of no kind, statements of a kind another owner
+// serves there, and statements on a target where it serves nothing.
+func TestRuntimeSQL_AFeatureOwnerReadsNothingElse(t *testing.T) {
+	foreign := engine.Provider{ID: "example.org/reader", SQL: []sqlext.Extension{{Owner: "example.org/reader",
+		Targets: []string{"custom"}, Kinds: []schemaext.Kind{conversionFirst}, Parser: noSQL{},
+		Patterns: []sqlext.Pattern{{Name: "create", Site: sqlext.Statement, Words: []string{"CREATE", "FIRST"}}}}}}
+	server := comparisonProvider(comparisonFunc(unchangedComparison))
+	server.Targets = nil
+	tests := []struct {
+		name      string
+		providers []engine.Provider
+		wantErr   string
+	}{
+		{name: "syntax inside a statement",
+			providers: []engine.Provider{hostProvider(), statementReader(sqlext.TableElement, []schemaext.Kind{conversionFirst}, "custom")},
+			wantErr:   `.*provider "example.org/converter" registers SQL syntax for target "custom" it does not register`},
+		{name: "statements of no kind",
+			providers: []engine.Provider{hostProvider(), statementReader(sqlext.Statement, nil, "custom")},
+			wantErr:   `.*provider "example.org/converter" registers SQL syntax for target "custom" it does not register`},
+		{name: "a kind another owner serves",
+			providers: []engine.Provider{hostProvider(), server, foreign},
+			wantErr:   `.*provider "example.org/reader" registers SQL syntax for target "custom" it does not register`},
+		{name: "a target it serves nothing on",
+			providers: []engine.Provider{hostProvider(), statementReader(sqlext.Statement, []schemaext.Kind{conversionFirst}, "elsewhere")},
+			wantErr:   `.*provider "example.org/converter" registers SQL syntax for target "elsewhere" it does not register`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

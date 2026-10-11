@@ -140,7 +140,8 @@ func (r *Runtime) HCL() hclext.Set {
 
 // registerSQL freezes every provider's SQL extensions into one set. An
 // extension must name its provider as the owner and read only targets that
-// provider registers, under their canonical names.
+// provider registers, under their canonical names, or targets it reads
+// statements of its own on; see [Runtime.readsStatements].
 func (r *Runtime) registerSQL(providers []Provider) error {
 	var extensions []sqlext.Extension
 	for _, provider := range providers {
@@ -150,7 +151,7 @@ func (r *Runtime) registerSQL(providers []Provider) error {
 			}
 			for _, target := range extension.Targets {
 				selected, found := r.targets[target]
-				if !found || selected.owner != provider.ID || selected.name != target {
+				if !found || selected.name != target || (selected.owner != provider.ID && !r.readsStatements(provider.ID, extension, target)) {
 					return fmt.Errorf("%w: provider %q registers SQL syntax for target %q it does not register", ErrInvalidRegistration, provider.ID, target)
 				}
 			}
@@ -163,6 +164,29 @@ func (r *Runtime) registerSQL(providers []Provider) error {
 	}
 	r.sql = set
 	return nil
+}
+
+// readsStatements reports whether owner may read statements on target, a
+// target another provider registers: the extension adds whole statements and
+// nothing else, and every object kind they declare is owner's and served on
+// target. The PostgreSQL extension owner reads CREATE EXTENSION so on every
+// PostgreSQL-family target. Syntax inside another owner's statements, and a
+// grammar of a whole document, stay the target's owner's.
+func (r *Runtime) readsStatements(owner string, extension sqlext.Extension, target string) bool {
+	if extension.Grammar != nil || len(extension.Patterns) == 0 || len(extension.Kinds) == 0 {
+		return false
+	}
+	for _, pattern := range extension.Patterns {
+		if pattern.Site != sqlext.Statement {
+			return false
+		}
+	}
+	for _, kind := range extension.Kinds {
+		if !r.ownsCodec(owner, kind, schemaext.Desired) || !r.serves(target, kind) {
+			return false
+		}
+	}
+	return true
 }
 
 // SQL returns the SQL extensions of the runtime's providers as one frozen

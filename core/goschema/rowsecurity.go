@@ -56,7 +56,7 @@ func (s *schemaParseState) attachRowSecurity() ([]schemamodel.RLSPolicy, []schem
 		case selectedRowSecurity:
 			err = s.handToOwner(rlsPolicyDirective, declared.attributes, declared.policy.StructName, declared.policy.Dialects, declared.ctx)
 		case clickHouseRowSecurity:
-			err = s.rowSecurityError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: a ClickHouse row policy is not a "+
+			err = s.targetScopeError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: a ClickHouse row policy is not a "+
 				"row-level security policy; declare it with //ptah:schema:rowpolicy instead", ptaherr.ErrInvalidAttributeValue))
 		default:
 			policies = append(policies, declared.policy)
@@ -75,7 +75,7 @@ func (s *schemaParseState) attachRowSecurity() ([]schemamodel.RLSPolicy, []schem
 		case selectedRowSecurity:
 			err = s.handToOwner(rlsEnableDirective, declared.attributes, declared.enabled.StructName, declared.enabled.Dialects, declared.ctx)
 		case clickHouseRowSecurity:
-			err = s.rowSecurityError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: ClickHouse has no row-level "+
+			err = s.targetScopeError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: ClickHouse has no row-level "+
 				"security switch: a row policy filters rows once it exists; remove the enablement scoped to %s",
 				ptaherr.ErrInvalidAttributeValue, strings.Join(declared.enabled.Dialects, ",")))
 		default:
@@ -110,7 +110,7 @@ const (
 func (s *schemaParseState) rowSecurityOwner(directive string, scope []string, ctx annotationErrorContext) (rowSecurityOwner, error) {
 	_, owned, err := s.annotations.TargetOwner(directive, scope)
 	if err != nil {
-		return sharedRowSecurity, s.rowSecurityError(ctx, dialectscope.Attribute, err)
+		return sharedRowSecurity, s.targetScopeError(ctx, dialectscope.Attribute, err)
 	}
 	if owned {
 		return selectedRowSecurity, nil
@@ -136,7 +136,9 @@ func (s *schemaParseState) handToOwner(directive string, attributes map[string]s
 	return s.contribute(declaration, contributions)
 }
 
-func (s *schemaParseState) rowSecurityError(ctx annotationErrorContext, attribute string, err error) error {
+// targetScopeError reports a declaration whose target scope no selected
+// owner can take, as an invalid value of attribute.
+func (s *schemaParseState) targetScopeError(ctx annotationErrorContext, attribute string, err error) error {
 	return &ptaherr.ParseError{
 		File:      ctx.file,
 		Line:      ctx.line,

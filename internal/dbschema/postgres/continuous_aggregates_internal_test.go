@@ -42,22 +42,22 @@ func (e sqlStateError) SQLState() string { return e.state }
 func TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll(t *testing.T) {
 	tests := []struct {
 		name       string
-		extensions []catalog.Extension
+		extensions []string
 		want       bool
 	}{
 		{
 			name:       "installed",
-			extensions: []catalog.Extension{{Name: "plpgsql"}, {Name: "timescaledb"}},
+			extensions: []string{"plpgsql", "timescaledb"},
 			want:       true,
 		},
 		{
 			name:       "installed under another spelling",
-			extensions: []catalog.Extension{{Name: "TimescaleDB"}},
+			extensions: []string{"TimescaleDB"},
 			want:       true,
 		},
 		{
 			name:       "an ordinary PostgreSQL server",
-			extensions: []catalog.Extension{{Name: "plpgsql"}, {Name: "pg_trgm"}},
+			extensions: []string{"plpgsql", "pg_trgm"},
 			want:       false,
 		},
 		{
@@ -71,7 +71,7 @@ func TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll(t *testing.T
 		},
 		{
 			name:       "a name that merely contains it",
-			extensions: []catalog.Extension{{Name: "timescaledb_toolkit"}},
+			extensions: []string{"timescaledb_toolkit"},
 			want:       false,
 		},
 	}
@@ -118,7 +118,7 @@ func TestReadContinuousAggregates_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	aggregates, err := reader.readContinuousAggregates(t.Context(), []catalog.Extension{{Name: "plpgsql"}})
+	aggregates, err := reader.readContinuousAggregates(t.Context(), []string{"plpgsql"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.HasLen, 0)
@@ -232,8 +232,8 @@ func answeringContinuousAggregates(
 }
 
 // timescaleInstalled is the extension list of a server that has it.
-func timescaleInstalled() []catalog.Extension {
-	return []catalog.Extension{{Name: "plpgsql"}, {Name: "timescaledb"}}
+func timescaleInstalled() []string {
+	return []string{"plpgsql", "timescaledb"}
 }
 
 // recordingQueries answers nothing and remembers what it was asked.

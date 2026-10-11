@@ -201,7 +201,7 @@ func TestReadWith_RefusesAnAmendmentOfNothingDeclared(t *testing.T) {
 		{name: "the owner refuses", careless: false,
 			wantErr: `the statement changes an object its load does not declare: COMMENT ON WIDGET w names an object this schema does not declare`},
 		{name: "the reader refuses", careless: true,
-			wantErr: `the schema model has no place for this statement: an owner's statement changes example.org/custom/widget w, which this schema does not declare`},
+			wantErr: `COMMENT ON WIDGET w IS 'note': widget "w" is not declared in this schema`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

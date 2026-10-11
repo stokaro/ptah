@@ -20,6 +20,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashcl"
@@ -237,6 +238,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	c.Assert(err, qt.IsNil)
 	// An HCL document also describes PostgreSQL row-level security.
 	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(pgextension.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

@@ -216,15 +216,21 @@ func (p *Parser) claimOwnerAlterOperation(table string) (ast.AlterOperation, boo
 // statement declares and amends is a note of the parse.
 func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 	statement := &ast.ExtensionStatement{}
+	note := &OwnerStatement{}
 	claimed := p.claimOwnerSyntax(sqlext.Statement, "", func(value sqlext.Value) error {
 		statement.Payload = value.Statement
-		if p.ownerStatements == nil {
-			p.ownerStatements = make(map[*ast.ExtensionStatement]sqlext.Value)
-		}
-		p.ownerStatements[statement] = sqlext.Value{Objects: value.Objects, Replaces: value.Replaces}
+		note.Objects, note.Replaces = value.Objects, value.Replaces
 		return nil
 	})
-	return statement, claimed
+	if !claimed {
+		return statement, false
+	}
+	note.Text = p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Text
+	if p.ownerStatements == nil {
+		p.ownerStatements = make(map[*ast.ExtensionStatement]*OwnerStatement)
+	}
+	p.ownerStatements[statement] = note
+	return statement, true
 }
 
 // claimOwnerViewClauses claims every owner's clause between a materialized
@@ -254,11 +260,28 @@ func (p *Parser) DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.I
 	return index, found
 }
 
-// OwnerStatement returns the objects an owner's statement of the parsed
-// document declares and amends, as the value's Objects and Replaces.
-func (p *Parser) OwnerStatement(statement *ast.ExtensionStatement) (sqlext.Value, bool) {
-	value, found := p.ownerStatements[statement]
-	return value, found
+// OwnerStatement is what an owner's statement of a parsed document declares
+// and amends, and the statement as the document writes it.
+type OwnerStatement struct {
+	// Objects are the objects the statement declares; see
+	// [sqlext.Value.Objects].
+	Objects []schemaext.Object
+	// Replaces are the objects the statement amends; see
+	// [sqlext.Value.Replaces].
+	Replaces []schemaext.Object
+	// Text is the statement as the document writes it, without the
+	// semicolon that ends it, so a refusal can name it.
+	Text string
+}
+
+// OwnerStatement returns what an owner's statement of the parsed document
+// declares and amends.
+func (p *Parser) OwnerStatement(statement *ast.ExtensionStatement) (OwnerStatement, bool) {
+	note, found := p.ownerStatements[statement]
+	if !found {
+		return OwnerStatement{}, false
+	}
+	return *note, true
 }
 
 // ParseContext is [Parser.Parse] with the context the owners' parsers run

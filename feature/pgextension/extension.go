@@ -62,6 +62,15 @@ type ObservedExtension struct {
 // Kind returns the model identity.
 func (*DesiredExtension) Kind() schemaext.Kind { return ExtensionKind }
 
+// Redeclarable states that an extension is idempotent to declare: two
+// packages that each use one may each declare it, and an equal declaration
+// declares nothing new; see [schemaext.Redeclarable].
+func (*DesiredExtension) Redeclarable() bool { return true }
+
+// Guarded reports IfNotExists: the declaration admits an extension that is
+// already installed.
+func (v *DesiredExtension) Guarded() bool { return v != nil && v.IfNotExists }
+
 // Kind returns the model identity.
 func (*ObservedExtension) Kind() schemaext.Kind { return ExtensionKind }
 

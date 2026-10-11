@@ -147,5 +147,6 @@ func TestSchemaDiffFromAFileKeepsItsCoverageRecordE2E(t *testing.T) {
 	out := runPtahNative(c, "schema", "diff", "--from", "file://"+from, "--to", target, "--dev-url", dev)
 
 	c.Assert(out, qt.Contains, "Schemas are synced")
-	c.Assert(out, qt.Contains, `extension "citext" is declared by --to but no change was planned for it`)
+	c.Assert(out, qt.Contains, `"citext"`)
+	c.Assert(out, qt.Contains, "could not be compared between --from and --to: whether the extension is installed was not established")
 }

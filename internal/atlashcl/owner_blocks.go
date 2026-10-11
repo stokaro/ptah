@@ -54,7 +54,7 @@ type writtenReference struct {
 // owner receives the values and never the expressions, so this package's
 // evaluation context stays its own.
 func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) error {
-	schema, name, err := p.ownerName(block, shape.Block.Naming)
+	schema, name, err := p.ownerName(block, shape)
 	if err != nil {
 		return err
 	}
@@ -75,11 +75,17 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 }
 
 // ownerName reads the schema and the name a block's labels give the object,
-// as naming reads them.
-func (p *parser) ownerName(block *hclsyntax.Block, naming hclext.Naming) (schema, name string, err error) {
+// as the shape's naming reads them. A shape that lists `schema` as a
+// reference to a schema has the naming's schema read as one; see
+// [parser.schemaReference].
+func (p *parser) ownerName(block *hclsyntax.Block, shape hclext.Shape) (schema, name string, err error) {
+	naming := shape.Block.Naming
 	if naming == hclext.JoinedName {
 		name, err = p.objectName(block, block.Type)
 		return "", name, err
+	}
+	if listsSchemaReference(shape) {
+		return p.referencedSchemaAndName(block)
 	}
 	schema, name, err = p.objectSchemaAndName(block, block.Type)
 	if err != nil {
@@ -90,6 +96,62 @@ func (p *parser) ownerName(block *hclsyntax.Block, naming hclext.Naming) (schema
 		schema, name = ref.Schema, ref.Name
 	}
 	return schema, name, nil
+}
+
+// listsSchemaReference reports whether a shape lists its naming's `schema`
+// as a reference to a schema.
+func listsSchemaReference(shape hclext.Shape) bool {
+	for _, attribute := range shape.Block.Attributes {
+		if attribute.Name == "schema" && hclext.NamesSchema(attribute) {
+			return true
+		}
+	}
+	return false
+}
+
+// referencedSchemaAndName reads a block's name as [parser.objectSchemaAndName]
+// does, its `schema` attribute read as a schema reference: one label is the
+// name, two are the schema and the name, and an attribute that names another
+// schema than the label is a conflict.
+func (p *parser) referencedSchemaAndName(block *hclsyntax.Block) (schema, name string, err error) {
+	attr, written := block.Body.Attributes["schema"]
+	if written {
+		if schema, err = p.schemaReference(block, attr); err != nil {
+			return "", "", err
+		}
+	}
+	switch len(block.Labels) {
+	case 1:
+		return schema, block.Labels[0], nil
+	case 2:
+		if written && schema != block.Labels[0] {
+			return "", "", p.blockError(block, "%s %q schema label conflicts with schema attribute %q", block.Type, block.Labels[1], schema)
+		}
+		return block.Labels[0], block.Labels[1], nil
+	default:
+		return "", "", p.blockError(block, "%s block requires one or two name labels", block.Type)
+	}
+}
+
+// schemaReference reads an attribute that names one schema: a string, a
+// string template it evaluates, `schema.<name>` or `schema["<name>"]`. A
+// schema is named by one label, so a qualified reference, a reference to
+// another type, and any other expression are refused.
+func (p *parser) schemaReference(block *hclsyntax.Block, attr *hclsyntax.Attribute) (string, error) {
+	switch attr.Expr.(type) {
+	case *hclsyntax.TemplateExpr, *hclsyntax.TemplateWrapExpr:
+		value, diags := attr.Expr.Value(p.ctx)
+		if !diags.HasErrors() && value.IsKnown() && !value.IsNull() && value.Type() == cty.String {
+			return value.AsString(), nil
+		}
+	}
+	if traversal, diags := hcl.AbsTraversalForExpr(attr.Expr); !diags.HasErrors() && len(traversal) == 2 &&
+		traversal.RootName() == "schema" {
+		if name, ok := traversalPart(traversal[1]); ok {
+			return name, nil
+		}
+	}
+	return "", p.blockError(block, "%s attribute %q must be a string template or exact schema reference", block.Type, attr.Name)
 }
 
 // ownerAttributeNames are the attributes a block of shape may write: the
@@ -165,6 +227,20 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 	values := make(map[string]hclext.Value, len(shape.Block.Attributes))
 	var references []writtenReference
 	for _, attribute := range shape.Block.Attributes {
+		attr, written := block.Body.Attributes[attribute.Name]
+		if attribute.Kind == hclext.Ref && attribute.Optional && !written {
+			continue
+		}
+		if hclext.NamesSchema(attribute) && written {
+			// A schema is no relation of the document, so the reference is
+			// read here rather than resolved against its tables.
+			schema, err := p.schemaReference(block, attr)
+			if err != nil {
+				return nil, nil, err
+			}
+			values[attribute.Name] = hclext.Value{Kind: hclext.Ref, Reference: &hclext.Reference{Kind: attribute.Refers, Name: schema}}
+			continue
+		}
 		if attribute.Kind == hclext.Ref {
 			// The reference this package reads anywhere, so a policy's
 			// `on` reads as a trigger's does; one to another type of
@@ -378,15 +454,24 @@ func (p *parser) decodeOwnerClaims() (declarations []hclext.Declaration, documen
 }
 
 // addOwnerDeclarations adds what each owner declared for its claims.
+//
+// A document declares each object once, as [parser.rejectRedeclarations]
+// holds this package's own blocks to, so a second declaration is refused.
+// Under [MergeRedeclarationsEnvVar] an object its owner states is idempotent
+// to declare, such as an extension, is combined instead: an equal repeat is
+// one declaration and one that differs is refused; see
+// [schemaext.Objects.Declare].
 func (p *parser) addOwnerDeclarations(declarations []hclext.Declaration) error {
+	policy, err := resolveRedeclarationPolicy()
+	if err != nil {
+		return err
+	}
 	for i, declaration := range declarations {
 		claim := p.ownerClaims[i]
 		for _, object := range declaration.Objects {
-			objects, err := p.db.FeatureObjects.With(object)
-			if err != nil {
-				return p.blockError(claim.block, "%s %s is declared twice: %v", claim.block.Type, qualifiedName(claim.match.Claim), err)
+			if err := p.addOwnerObject(claim, object, policy); err != nil {
+				return err
 			}
-			p.db.FeatureObjects = objects
 		}
 		if err := p.addOwnerFacets(claim, declaration.Facets); err != nil {
 			return err
@@ -397,6 +482,28 @@ func (p *parser) addOwnerDeclarations(declarations []hclext.Declaration) error {
 		}
 	}
 	return nil
+}
+
+// addOwnerObject adds one object a claim declares, refusing a second
+// declaration of its identity, or combining it as a declaration where policy
+// merges repeats.
+// The refusal of an object its owner states is idempotent to declare says how
+// to combine repeats.
+func (p *parser) addOwnerObject(claim ownerClaim, object schemaext.Object, policy redeclarationPolicy) error {
+	add := p.db.FeatureObjects.With
+	if policy.merge {
+		add = p.db.FeatureObjects.Declare
+	}
+	objects, err := add(object)
+	if err == nil {
+		p.db.FeatureObjects = objects
+		return nil
+	}
+	remedy := ""
+	if redeclarable, ok := object.Value.(schemaext.Redeclarable); ok && redeclarable.Redeclarable() && !policy.merge {
+		remedy = fmt.Sprintf(" (set %s=1 to merge repeated declarations instead)", MergeRedeclarationsEnvVar)
+	}
+	return p.blockError(claim.block, "%s %s is declared twice: %v%s", claim.block.Type, qualifiedName(claim.match.Claim), err, remedy)
 }
 
 // addOwnerFacets adds facets an owner declared to the index or the table its

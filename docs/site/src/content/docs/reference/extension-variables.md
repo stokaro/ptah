@@ -301,6 +301,9 @@ community CLI refuses the same document.
 - Refused whatever the variable says: two `policy` blocks that declare one
   policy. The refusal names both blocks, since a merge would keep whichever
   came last.
+- Merged only when equal: two `extension` blocks. Two that differ are refused,
+  naming the extension, since a merge would drop one block's version, schema or
+  comment.
 - Exempt under every setting: `schema`, because a directory of HCL files is one
   document and its files each open with the same block; `function`, because two
   blocks sharing a name can be two legal overloads; `permission`, which renders

@@ -15,7 +15,8 @@ import (
 // order, each against what the earlier ones declared: the second document's
 // ALTER TABLE adds a changefeed to the table the first one created, and the
 // sequence it names resolves against the request's database root. Each file's
-// declarations are its own.
+// declarations are its own: the changefeed is the second file's, as an index
+// an ALTER TABLE adds is, so a third file that adds it again is refused.
 func TestReadScript_ReadsTheLoadAsOneScript(t *testing.T) {
 	c := qt.New(t)
 	request := sqlext.GrammarRequest{Target: "ydb", DatabasePath: "/Root/db", Files: []sqlext.SourceFile{
@@ -38,7 +39,7 @@ func TestReadScript_ReadsTheLoadAsOneScript(t *testing.T) {
 	c.Assert(result.Files[0].Objects, qt.DeepEquals, []sqlext.Declaration{{Kind: "table", Name: "app.orders"}})
 	c.Assert(result.Files[0].Tables, qt.DeepEquals, []sqlext.TableStatement{{Name: "`app/orders`"}})
 	c.Assert(result.Files[1].Path, qt.Equals, "002.sql")
-	c.Assert(result.Files[1].Objects, qt.HasLen, 0)
+	c.Assert(result.Files[1].Objects, qt.DeepEquals, []sqlext.Declaration{{Kind: "changefeed", Name: "app.orders.updates"}})
 	c.Assert(result.Files[1].Tables, qt.HasLen, 0)
 }
 

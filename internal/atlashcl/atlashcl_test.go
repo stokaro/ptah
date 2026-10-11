@@ -1395,8 +1395,8 @@ permission {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Extensions, qt.HasLen, 1)
-	c.Assert(db.Extensions[0].Version, qt.Equals, "1.6")
+	c.Assert(ownedExtensions(c, db), qt.HasLen, 1)
+	c.Assert(ownedExtensions(c, db)[0].Version, qt.Equals, "1.6")
 	c.Assert(db.Roles, qt.HasLen, 1)
 	c.Assert(db.Roles[0].Login, qt.IsTrue)
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -1427,7 +1427,7 @@ permission {
 func TestParseExtensionSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "extensions" {}
 extension "pg_trgm" {
   schema = schema.extensions
@@ -1435,7 +1435,7 @@ extension "pg_trgm" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{Name: "pg_trgm", Schema: "extensions"}})
+	c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{Name: "pg_trgm", Schema: "extensions"}})
 }
 
 func TestParseExtensionSchemaPlacementForms(t *testing.T) {
@@ -1465,14 +1465,14 @@ variable "target" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse(fmt.Appendf(nil, `%s
+			db, err := parseWithOwners(fmt.Appendf(nil, `%s
 extension "pg_trgm" {
   schema = %s
 }
 `, test.prefix, test.expression), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{Name: "pg_trgm", Schema: test.want}})
+			c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{Name: "pg_trgm", Schema: test.want}})
 		})
 	}
 }
@@ -1501,7 +1501,7 @@ variable "target" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse(fmt.Appendf(nil, `%s
+			_, err := parseWithOwners(fmt.Appendf(nil, `%s
 extension "pg_trgm" {
   schema = %s
 }

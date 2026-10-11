@@ -36,5 +36,6 @@ func filterConformanceSchema(in *catalog.Database, keepTables map[string]struct{
 	out.Tables = filterTables(in.Tables, keepTables)
 	out.Indexes = filterIndexes(in.Indexes, keepTables)
 	out.Constraints = filterConstraints(in.Constraints, keepTables)
+	out.FeatureObjects = withoutExtensions(in.FeatureObjects)
 	return &out
 }

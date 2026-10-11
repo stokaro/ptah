@@ -26,8 +26,12 @@ import (
 // TestAppend_MergesEveryObjectFamily is what keeps the next family
 // from being missed the same way: it reflects over the struct rather than
 // trusting this list.
+//
+// An owner's object both describe is combined as a declaration: an extension
+// two files declare alike is one extension, and two that differ are refused;
+// see [schemaext.Objects.MergeDeclarations].
 func Append(dst, src *schemamodel.Database) error {
-	objects, err := dst.FeatureObjects.Merge(src.FeatureObjects)
+	objects, err := dst.FeatureObjects.MergeDeclarations(src.FeatureObjects)
 	if err != nil {
 		return err
 	}

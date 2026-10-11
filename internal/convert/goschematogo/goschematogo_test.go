@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
@@ -140,7 +141,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Enums, qt.DeepEquals, db.Enums)
-	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, db.Extensions)
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].Name, qt.Equals, "order_items")
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})
@@ -159,8 +160,9 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	c.Assert(parsed.Grants[0].Role, qt.Equals, "app_user")
 	c.Assert(parsed.Grants[0].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
 	c.Assert(parsed.Grants[0].OnTable, qt.Equals, "order_items")
-	// Row-level security reads back as the PostgreSQL row-security owner's.
-	c.Assert(parsed.FeatureObjects.Refs(), qt.HasLen, 1)
+	// Row-level security reads back as the PostgreSQL row-security owner's,
+	// and the extension as the extension owner's.
+	c.Assert(parsed.FeatureObjects.Refs(), qt.HasLen, 2)
 	c.Assert(slices.ContainsFunc(parsed.Tables, func(table schemamodel.Table) bool {
 		return slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind)
 	}), qt.IsTrue)
@@ -563,4 +565,20 @@ func TestRenderRolesRoundTripThroughParser(t *testing.T) {
 
 	c.Assert(after.Roles, qt.DeepEquals, before.Roles)
 	c.Assert(after.RevokedGrants, qt.DeepEquals, before.RevokedGrants)
+}
+
+// parsedExtensions lists the extensions a parsed source holds as the
+// extension owner's objects, in name order and in the shape a declaration
+// renders them from, so a round trip compares like with like.
+func parsedExtensions(c *qt.C, db *schemamodel.Database) []schemamodel.Extension {
+	c.Helper()
+	var extensions []schemamodel.Extension
+	for _, name := range pgextension.Names(db.FeatureObjects) {
+		object, _, err := db.FeatureObjects.Get(pgextension.Ref(name))
+		c.Assert(err, qt.IsNil)
+		value := object.Value.(*pgextension.DesiredExtension)
+		extensions = append(extensions, schemamodel.Extension{Name: name, Schema: value.Schema, Version: value.Version,
+			Comment: value.Comment, IfNotExists: value.IfNotExists})
+	}
+	return extensions
 }

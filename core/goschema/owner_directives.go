@@ -73,7 +73,11 @@ func (s *schemaParseState) contribute(declaration annotation.Declaration, contri
 				value: contribution.Facet, targets: contribution.Targets, label: contribution.Label, directive: declaration.Directive, ctx: ctx})
 			continue
 		}
-		objects, err := s.featureObjects.With(*contribution.Object)
+		objects, err := s.featureObjects.Declare(*contribution.Object)
+		if redeclarable, ok := contribution.Object.Value.(schemaext.Redeclarable); ok && redeclarable.Redeclarable() &&
+			errors.Is(err, schemaext.ErrDuplicate) {
+			return s.placementError(ctx, declaration.Directive, fmt.Sprintf("conflicting %s definitions", contribution.Label))
+		}
 		if errors.Is(err, schemaext.ErrDuplicate) {
 			return s.placementError(ctx, declaration.Directive, fmt.Sprintf("%s is declared twice", contribution.Label))
 		}

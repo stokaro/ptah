@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
+	"ptah.run/internal/parser"
 )
 
 // Document is a schema read one file at a time: the model the earlier files
@@ -37,7 +38,7 @@ type Document struct {
 type parseNotes interface {
 	ForeignKeyIndex(index *ast.IndexNode) bool
 	DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool)
-	OwnerStatement(statement *ast.ExtensionStatement) (sqlext.Value, bool)
+	OwnerStatement(statement *ast.ExtensionStatement) (parser.OwnerStatement, bool)
 }
 
 // foreignKeyIndex reports whether the parse found index named by a foreign key
@@ -56,10 +57,10 @@ func (d *Document) declaredIndex(operation *ast.ExtensionAlterOperation) (sqlext
 }
 
 // ownerStatement returns the objects an owner's statement declares and
-// amends. A document without notes has no owner's statement.
-func (d *Document) ownerStatement(statement *ast.ExtensionStatement) (sqlext.Value, bool) {
+// amends, and its text. A document without notes has no owner's statement.
+func (d *Document) ownerStatement(statement *ast.ExtensionStatement) (parser.OwnerStatement, bool) {
 	if d == nil || d.notes == nil {
-		return sqlext.Value{}, false
+		return parser.OwnerStatement{}, false
 	}
 	return d.notes.OwnerStatement(statement)
 }

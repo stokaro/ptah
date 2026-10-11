@@ -374,18 +374,6 @@ range "floatrange" {
 			wantErr: `parse HCL schema schema.hcl: range "public.floatrange" is declared more than once;.*`,
 		},
 		{
-			name: "an extension declared twice",
-			source: `schema "public" {}
-extension "pg_trgm" {
-  version = "1.6"
-}
-extension "pg_trgm" {
-  version = "1.6"
-}
-`,
-			wantErr: `parse HCL schema schema.hcl: extension "pg_trgm" is declared more than once;.*`,
-		},
-		{
 			name: "a trigger declared twice",
 			source: `schema "public" {}
 table "users" {
@@ -1086,4 +1074,57 @@ func TestParse_RefusesAPolicyDeclaredTwice(t *testing.T) {
 			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+// repeatedExtension declares pg_trgm twice, at the versions given.
+func repeatedExtension(first, second string) string {
+	return `extension "pg_trgm" {
+  version = "` + first + `"
+}
+extension "pg_trgm" {
+  version = "` + second + `"
+}
+`
+}
+
+// TestParse_RefusesARepeatedExtensionBlock pins a repeated extension block,
+// which its owner reads: refused as every repeat is, saying how to combine
+// repeats, and under the merge variable refused still when the two differ.
+func TestParse_RefusesARepeatedExtensionBlock(t *testing.T) {
+	tests := []struct {
+		name    string
+		merge   string
+		source  string
+		wantErr string
+	}{
+		{name: "two that are equal, without merging", merge: "false", source: repeatedExtension("1.6", "1.6"),
+			wantErr: `parse HCL schema at schema.hcl:4,1-10: extension pg_trgm is declared twice: duplicate feature identity: ` +
+				`object ptah.run/pgextension/extension pg_trgm \(set PTAH_HCL_MERGE_REDECLARATIONS=1 to merge repeated declarations instead\)`},
+		{name: "two that differ, under the merge variable", merge: "1", source: repeatedExtension("1.5", "1.6"),
+			wantErr: `parse HCL schema at schema.hcl:4,1-10: extension pg_trgm is declared twice: duplicate feature identity: ` +
+				`conflicting definitions of ptah.run/pgextension/extension pg_trgm`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, test.merge)
+			c := qt.New(t)
+
+			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+		})
+	}
+}
+
+// TestParse_MergesAnEqualRepeatedExtensionBlock is the merge variable's other
+// half: two equal extension blocks are one extension.
+func TestParse_MergesAnEqualRepeatedExtensionBlock(t *testing.T) {
+	t.Setenv(atlashcl.MergeRedeclarationsEnvVar, "1")
+	c := qt.New(t)
+
+	db, err := parseWithOwners([]byte(repeatedExtension("1.6", "1.6")), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{Name: "pg_trgm", Version: "1.6"}})
 }

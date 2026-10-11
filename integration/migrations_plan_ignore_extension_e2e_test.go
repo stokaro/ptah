@@ -240,7 +240,7 @@ func TestSchemaDriftIgnoreExtensionE2E(t *testing.T) {
 		got := drift(c)
 
 		c.Assert(driftFindingCategories(c, got.Stdout), qt.DeepEquals,
-			[]string{"extensions_removed", "tables_added"})
+			[]string{"feature_changes:ptah.run/pgextension/extension-change", "tables_added"})
 	})
 
 	t.Run("the flag removes that finding and nothing else", func(t *testing.T) {

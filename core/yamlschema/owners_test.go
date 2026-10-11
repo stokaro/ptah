@@ -4,6 +4,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/yamlext"
+	"ptah.run/internal/pgextensionsource"
 	"ptah.run/internal/pgpolicysource"
 )
 
@@ -15,3 +16,6 @@ var noOwners = yamlext.None()
 // PostgreSQL row-level security the way a runtime that registers the owner
 // does.
 var rowSecurityOwners = must.Must(yamlext.NewSet(pgpolicysource.YAML()))
+
+// postgresOwners adds the extension owner, which reads the extensions key.
+var postgresOwners = must.Must(yamlext.NewSet(pgpolicysource.YAML(), pgextensionsource.YAML()))

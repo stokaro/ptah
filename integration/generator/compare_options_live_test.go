@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/generator"
 )
 
@@ -59,8 +60,10 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("empty ignore list manages plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-			Runtime:        must.Must(builtin.New()),
-			Generated:      &schemamodel.Database{},
+			Runtime: must.Must(builtin.New()),
+			// The desired schema says it declares every extension, as a
+			// source does; without the claim no extension is dropped.
+			Generated:      declaringExtensions(c, nil),
 			DBConn:         target,
 			MigrationName:  "manage_plpgsql",
 			OutputDir:      c.TempDir(),
@@ -78,10 +81,8 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("desired extension is added while plpgsql is ignored", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-			Runtime: must.Must(builtin.New()),
-			Generated: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{{Name: "pg_trgm", IfNotExists: true}},
-			},
+			Runtime:        must.Must(builtin.New()),
+			Generated:      declaringExtensions(c, map[string]pgextension.DesiredExtension{"pg_trgm": {IfNotExists: true}}),
 			DBConn:         target,
 			MigrationName:  "add_pg_trgm",
 			OutputDir:      c.TempDir(),

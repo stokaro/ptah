@@ -102,9 +102,9 @@ type Parser struct {
 	// declared are the objects the documents read before this one declared;
 	// see [WithDeclared].
 	declared schemaext.Objects
-	// ownerStatements are the values of the owners' statements; see
+	// ownerStatements are the notes of the owners' statements; see
 	// [Parser.OwnerStatement].
-	ownerStatements map[*ast.ExtensionStatement]sqlext.Value
+	ownerStatements map[*ast.ExtensionStatement]*OwnerStatement
 }
 
 // NewParser creates a new parser with the given SQL input.

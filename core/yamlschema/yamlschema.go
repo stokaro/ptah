@@ -157,7 +157,6 @@ type document struct {
 	Indexes           map[string]indexSpec            `yaml:"indexes"`
 	Constraints       map[string]constraintSpec       `yaml:"constraints"`
 	Enums             map[string]enumSpec             `yaml:"enums"`
-	Extensions        map[string]extensionSpec        `yaml:"extensions"`
 	Functions         map[string]functionSpec         `yaml:"functions"`
 	RLSPolicies       map[string]rlsPolicySpec        `yaml:"rls_policies"`
 	RLSEnabledTables  map[string]rlsEnableSpec        `yaml:"rls_enabled_tables"`
@@ -302,14 +301,6 @@ func (s *enumSpec) UnmarshalYAML(value *yaml.Node) error {
 	}
 	*s = enumSpec(raw)
 	return nil
-}
-
-type extensionSpec struct {
-	Name        stringScalar `yaml:"name"`
-	Schema      stringScalar `yaml:"schema"`
-	IfNotExists bool         `yaml:"if_not_exists"`
-	Version     stringScalar `yaml:"version"`
-	Comment     stringScalar `yaml:"comment"`
 }
 
 type functionSpec struct {
@@ -503,7 +494,6 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 	if err := d.addConstraints(db); err != nil {
 		return nil, err
 	}
-	d.addExtensions(db)
 	if err := d.addFunctions(db); err != nil {
 		return nil, err
 	}
@@ -908,19 +898,6 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 		return fmt.Errorf("constraint %q has unsupported type %q", key, constraintType)
 	}
 	return nil
-}
-
-func (d document) addExtensions(db *schemamodel.Database) {
-	for _, key := range sortedKeys(d.Extensions) {
-		spec := d.Extensions[key]
-		db.Extensions = append(db.Extensions, schemamodel.Extension{
-			Name:        valueOrDefault(spec.Name, key),
-			Schema:      string(spec.Schema),
-			IfNotExists: spec.IfNotExists,
-			Version:     string(spec.Version),
-			Comment:     string(spec.Comment),
-		})
-	}
 }
 
 func (d document) addFunctions(db *schemamodel.Database) error {

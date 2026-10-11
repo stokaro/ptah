@@ -19,9 +19,9 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// The extension owner is registered, but nothing in this repository's sources
-// or readers produces its models yet, so these tests build them themselves and
-// drive them through the bundled runtime the commands use.
+// These tests build the extension owner's models themselves, rather than read
+// them from a source, and drive them through the bundled runtime the commands
+// use.
 
 // docsWithTrigrams declares pg_trgm in a schema of its own, at a version and
 // with a comment, beside one table.
@@ -135,6 +135,38 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// TestDeclaredExtensionRefusalsFailValidation pins that validation refuses
+// what the render refuses: the owner's refusal of an installation schema on a
+// target of the family without one, and YDB's of the extension. The control
+// is PostgreSQL, which installs the extension where it is declared.
+func TestDeclaredExtensionRefusalsFailValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{name: "a schema on CockroachDB", target: platform.CockroachDB,
+			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
+		{name: "a schema on Spanner", target: platform.Spanner,
+			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
+		{name: "YDB", target: platform.YDB, want: `(?s).*PostgreSQL extension "pg_trgm" cannot be planned on ydb.*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := builtin.ValidateSchema(docsWithTrigrams(pgextension.DesiredExtension{Schema: "ext"}), test.target)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+	t.Run("PostgreSQL", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(builtin.ValidateSchema(docsWithTrigrams(pgextension.DesiredExtension{Schema: "ext"}), platform.Postgres), qt.IsNil)
+	})
 }
 
 // TestOffFamilyTargetsSkipADeclaredExtension pins every target outside the

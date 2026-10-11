@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -51,7 +52,8 @@ func rlsStrengthSchema(schemaName string, forced, restrictive bool) *schemamodel
 // observed it.
 func readPolicy(c *qt.C, live *catalog.Database) *pgpolicy.ObservedPolicy {
 	c.Helper()
-	objects := must.Must(live.FeatureObjects.All())
+	// The read also reports the database's extensions; the policy is the subject.
+	objects := must.Must(pgextension.Select(live.FeatureObjects, func(string) bool { return false }).All())
 	c.Assert(objects, qt.HasLen, 1)
 	return objects[0].Value.(*pgpolicy.ObservedPolicy)
 }

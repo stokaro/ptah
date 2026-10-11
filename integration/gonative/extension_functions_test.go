@@ -3,10 +3,12 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/internal/dbschema/postgres"
@@ -21,14 +23,10 @@ func TestPostgreSQLReader_ExtensionFunctionFiltering_Integration(t *testing.T) {
 
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
-	defer db.Close()
+	c.Cleanup(func() { _ = db.Close() })
 
 	// Create extensions that contain functions
-	_, err = db.Exec(`CREATE EXTENSION IF NOT EXISTS btree_gin`)
-	c.Assert(err, qt.IsNil)
-
-	_, err = db.Exec(`CREATE EXTENSION IF NOT EXISTS pg_trgm`)
-	c.Assert(err, qt.IsNil)
+	installExtensions(c, db, "btree_gin", "pg_trgm")
 
 	// Create a custom user function for comparison
 	_, err = db.Exec(`
@@ -44,8 +42,6 @@ func TestPostgreSQLReader_ExtensionFunctionFiltering_Integration(t *testing.T) {
 	// Clean up after test
 	defer func() {
 		_, _ = db.Exec("DROP FUNCTION IF EXISTS test_user_function(TEXT)")
-		// Note: We don't drop extensions as they might be used by other tests
-		// and dropping them would also drop their functions
 	}()
 
 	// Read schema using our reader
@@ -148,4 +144,27 @@ func TestPostgreSQLReader_CustomFunctionIncluded_Integration(t *testing.T) {
 
 	c.Assert(foundFunction, qt.IsTrue,
 		qt.Commentf("User-defined function should be included in schema"))
+}
+
+// installExtensions installs the extensions a test needs, and drops the ones
+// it installed when the test ends. An extension already installed is left as
+// it was, because another test may use it. One this test leaves behind stays
+// in public, and a later schema-scoped cleanup of public refuses it:
+// `extension "btree_gin" is owned by it`.
+func installExtensions(c *qt.C, db *sql.DB, names ...string) {
+	c.Helper()
+	for _, name := range names {
+		var present bool
+		c.Assert(db.QueryRowContext(c.Context(), "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1)", name).Scan(&present), qt.IsNil)
+		if present {
+			continue
+		}
+		quoted := pgx.Identifier{name}.Sanitize()
+		_, err := db.ExecContext(c.Context(), "CREATE EXTENSION "+quoted)
+		c.Assert(err, qt.IsNil)
+		c.Cleanup(func() {
+			_, cleanupErr := db.ExecContext(context.Background(), "DROP EXTENSION IF EXISTS "+quoted)
+			c.Check(cleanupErr, qt.IsNil)
+		})
+	}
 }

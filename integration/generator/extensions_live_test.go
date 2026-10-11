@@ -10,9 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/generator"
 )
 
@@ -88,7 +88,7 @@ func TestGenerateMigration_ExtensionVersionUpdateWithRealPostgres(t *testing.T) 
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
 	c.Assert(target.Writer().ExecuteSQL(ctx, "CREATE EXTENSION pg_trgm VERSION '1.5'"), qt.IsNil)
-	declared := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm", Schema: "public", Version: "1.6"}}}
+	declared := declaringExtensions(c, map[string]pgextension.DesiredExtension{"pg_trgm": {Schema: "public", Version: "1.6"}})
 
 	up, down := generateLiveMigrationSQL(c, target, declared)
 

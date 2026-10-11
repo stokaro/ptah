@@ -205,12 +205,16 @@ func describe(database *schemamodel.Database, data []byte, dialect string, opts 
 	// owner's claim, such as a ClickHouse materialized view's refresh
 	// schedule, which its CREATE statement states, or the YDB objects a YQL
 	// document declares except those its header leaves unmanaged.
+	// It joins the dialect's own claim, since a Spanner document carries
+	// both its row deletion policies and its extensions.
 	claim, claimed, err := opts.Owners.Coverage(target, owned)
-	if err != nil {
+	if err != nil || !claimed {
 		return err
 	}
-	if claimed {
+	if database.FeatureCoverage.IsZero() {
 		database.FeatureCoverage = claim
+		return nil
 	}
-	return nil
+	database.FeatureCoverage, err = database.FeatureCoverage.Combine(claim)
+	return err
 }

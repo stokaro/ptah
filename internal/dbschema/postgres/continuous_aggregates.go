@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -56,13 +57,8 @@ const continuousAggregateQuery = `
 // A server whose preset left the extension read out reports none, which is the
 // right answer for the two targets that happens to: neither Spanner nor a
 // catalog without pg_extension has TimescaleDB.
-func hasTimescaleExtension(extensions []catalog.Extension) bool {
-	for _, extension := range extensions {
-		if strings.EqualFold(extension.Name, timescaleExtension) {
-			return true
-		}
-	}
-	return false
+func hasTimescaleExtension(installed []string) bool {
+	return slices.ContainsFunc(installed, func(name string) bool { return strings.EqualFold(name, timescaleExtension) })
 }
 
 // readAggregate is one continuous aggregate a read found.
@@ -78,10 +74,8 @@ type readAggregate struct {
 // An empty answer there would say "this server has no continuous aggregates",
 // which is a claim a failed read cannot make -- and the objects it would hide
 // are exactly the ones a plan must not treat as views.
-func (r *Reader) readContinuousAggregates(ctx context.Context,
-	extensions []catalog.Extension,
-) ([]readAggregate, error) {
-	if !hasTimescaleExtension(extensions) {
+func (r *Reader) readContinuousAggregates(ctx context.Context, installed []string) ([]readAggregate, error) {
+	if !hasTimescaleExtension(installed) {
 		return nil, nil
 	}
 	var aggregates []readAggregate
