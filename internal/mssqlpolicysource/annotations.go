@@ -25,8 +25,9 @@ const (
 // Annotations is the SQL Server owner's contribution to the Go annotation
 // frontend. It reads the frontend's rls:policy declarations scoped to SQL
 // Server alone as security policies (see [Attributes.Policy]), refuses an
-// rls:enable scoped to SQL Server, which has no switch on a table, and claims
-// that a Go annotation source describes every security policy.
+// rls:enable scoped to SQL Server, which has no switch on a table, claims that
+// a Go annotation source describes every security policy, and writes each
+// policy back for the Go annotation writer.
 func Annotations() annotation.Extension {
 	scope := func(directive string) annotation.TargetScope {
 		return annotation.TargetScope{Directive: directive, Targets: []string{platform.SQLServer}, Label: "SQL Server"}
@@ -39,6 +40,8 @@ func Annotations() annotation.Extension {
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
 			return mssqlschema.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		},
+		Encoder: annotationEncoder{},
+		Encodes: []schemaext.Kind{mssqlschema.SecurityPolicyKind},
 	}
 }
 

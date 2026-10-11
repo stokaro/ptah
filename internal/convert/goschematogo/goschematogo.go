@@ -612,9 +612,8 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, policy := range ctx.rlsByTable[table.StructName] {
 		w.writeComment(rlsPolicyAnnotation(policy))
 	}
-	// The policies of the SQL Server and PostgreSQL owners, which this
-	// package still writes, follow the other owners' policies, as their
-	// names order them.
+	// The PostgreSQL owner's policies, which this package still writes,
+	// follow the other owners' policies, as its name orders them.
 	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterPolicies, table: sourceTable(table)})
 	for _, text := range ctx.policyAnnotations[table.QualifiedName()] {
 		w.writeComment(text)
