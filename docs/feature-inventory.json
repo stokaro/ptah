@@ -730,6 +730,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-schemacomparison",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemacomparison",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemaext",
       "kind": "public-package",
       "surface": "ptah.run/core/schemaext",

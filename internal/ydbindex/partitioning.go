@@ -1,9 +1,6 @@
 package ydbindex
 
 import (
-	"slices"
-
-	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 )
@@ -82,15 +79,4 @@ func specOf(declared ydbpartition.Declared) *ydbschema.IndexPartitioning {
 		MaxPartitions:   declared.MaxPartitions,
 		ReadReplicas:    declared.ReadReplicas,
 	}
-}
-
-// RenameKeeps reports whether renaming an index in place carries what its
-// facets state: an index's partitioning is carried, since the YDB owner
-// compares it under the new name and changes it in place. Any other facet,
-// such as a vector index's settings, which are fixed when the index is built,
-// is not, and a drop and a create of such an index are not a rename.
-func RenameKeeps(facets schemaext.Facets) bool {
-	return !slices.ContainsFunc(facets.DeclaredKinds(), func(kind schemaext.Kind) bool {
-		return kind != ydbschema.IndexPartitioningKind
-	})
 }

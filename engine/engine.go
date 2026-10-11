@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
@@ -112,6 +113,9 @@ type Target struct {
 	// Constraints predicts constraint-owned index and column effects. Nil
 	// explicitly leaves that prediction unavailable for this target.
 	Constraints schemaprojection.ConstraintService
+	// Comparison holds the rules the shared comparison takes from this
+	// target. A nil member keeps the shared rule for that area.
+	Comparison schemacomparison.Rules
 }
 
 // Runtime is a frozen selection of providers. It is safe for concurrent calls
@@ -156,6 +160,7 @@ type target struct {
 	validation      schemavalidation.Service
 	preparation     schemapreparation.Service
 	lowering        schemapreparation.Lowering
+	comparison      schemacomparison.Rules
 	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
 }
@@ -286,26 +291,23 @@ func (r *Runtime) register(owner string, declared Target) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}
-	if declared.Rendering != nil && nilService(declared.Rendering) {
-		return fmt.Errorf("%w: target %q has a typed-nil rendering service", ErrInvalidRegistration, declared.Name)
-	}
-	if declared.SchemaRendering != nil && nilService(declared.SchemaRendering) {
-		return fmt.Errorf("%w: target %q has a typed-nil schema rendering service", ErrInvalidRegistration, declared.Name)
-	}
-	if declared.Validation != nil && nilService(declared.Validation) {
-		return fmt.Errorf("%w: target %q has a typed-nil validation service", ErrInvalidRegistration, declared.Name)
-	}
-	if declared.Preparation != nil && nilService(declared.Preparation) {
-		return fmt.Errorf("%w: target %q has a typed-nil preparation service", ErrInvalidRegistration, declared.Name)
-	}
-	if declared.Lowering != nil && nilService(declared.Lowering) {
-		return fmt.Errorf("%w: target %q has a typed-nil lowering service", ErrInvalidRegistration, declared.Name)
-	}
-	if declared.Creations != nil && nilService(declared.Creations) {
-		return fmt.Errorf("%w: target %q has a typed-nil creation projection service", ErrInvalidRegistration, declared.Name)
-	}
-	if declared.Constraints != nil && nilService(declared.Constraints) {
-		return fmt.Errorf("%w: target %q has a typed-nil constraint projection service", ErrInvalidRegistration, declared.Name)
+	for _, service := range []struct {
+		name  string
+		value any
+	}{
+		{"rendering", declared.Rendering},
+		{"schema rendering", declared.SchemaRendering},
+		{"validation", declared.Validation},
+		{"preparation", declared.Preparation},
+		{"lowering", declared.Lowering},
+		{"creation projection", declared.Creations},
+		{"constraint projection", declared.Constraints},
+		{"index comparison", declared.Comparison.Indexes},
+		{"view comparison", declared.Comparison.Views},
+	} {
+		if service.value != nil && nilService(service.value) {
+			return fmt.Errorf("%w: target %q has a typed-nil %s service", ErrInvalidRegistration, declared.Name, service.name)
+		}
 	}
 	for _, name := range selection.Names() {
 		if existing, found := r.targets[name]; found {
@@ -316,7 +318,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			owner: owner, name: declared.Name, selection: selection,
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
-			constraints: declared.Constraints, creations: declared.Creations,
+			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
 		}
 	}
 	return nil

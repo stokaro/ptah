@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
@@ -91,37 +92,15 @@ func compareReportingUndecidedAdditions(
 	if len(caps) == 0 {
 		caps = comparisonCapabilities(opts.Dialect)
 	}
+	// The rules the target gives the shared comparison; a comparison without
+	// a target has none.
+	var rules schemacomparison.Rules
 	if opts.Dialect != "" {
-		var err error
-		// The declared scope resolves first, so every later step -- coverage,
-		// identifier validation, each per-kind comparison -- sees the desired
-		// state this target actually has. An object scoped away from this
-		// dialect is absent rather than reported as added, which is what makes
-		// a multi-dialect schema converge: before this, `schema apply` created
-		// nothing for such an object, exited 0, and the very next comparison
-		// asked for it again, forever.
-		// Both sides move together. Projecting only the desired state leaves
-		// the database still holding a scoped-away object, which reads as
-		// present in the target and absent from the declaration -- the shape of
-		// a drop. See suppressScopedAway.
-		desired, database, err = scopeComparison(desired, database, selected, optionIdentifiers(opts))
+		inputs, err := targetComparisonInputs(ctx, desired, database, opts, selected, caps, runtime)
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
-		desired, err = schemaproperties.Decode(ctx, desired, selected.Name(), runtime)
-		if err != nil {
-			return nil, Diagnostics{}, err
-		}
-		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
-		// The target rewrites what its reader reports in another shape, such
-		// as a UNIQUE constraint YDB holds as a unique index.
-		desired, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
-			Target: selected.Name(), Desired: desired, Current: database, Capabilities: caps,
-			Semantics: loweringSemantics(opts),
-		})
-		if err != nil {
-			return nil, Diagnostics{}, err
-		}
+		desired, database, rules = inputs.desired, inputs.current, inputs.rules
 	}
 
 	diff := &difftypes.SchemaDiff{}
@@ -140,7 +119,7 @@ func compareReportingUndecidedAdditions(
 	// The feature comparison runs before the index comparison, and reads a
 	// renamed index under the name the plan gives it.
 	prepared, err := prepareComparisonTables(ctx, desired, database,
-		compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps),
+		compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules.Indexes),
 		opts.Dialect, identifierSemantics, caps, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -194,7 +173,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(
-		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps,
+		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules.Indexes,
 	)
 
 	// Compare PostgreSQL extensions with configuration options
@@ -212,11 +191,11 @@ func compareReportingUndecidedAdditions(
 	compare.RangesWithSemantics(desired, database, diff, cov, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
-	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
+	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies, rules.Views)
 	compare.Features(desired, database, diff)
 
 	// Compare SQL Server extended properties (schema, table and column scope)
-	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
+	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies, rules.Views)
 	if err := attachMaterializedViewChanges(diff, desired, database, comparisonChanges(featureResult), identifierSemantics); err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -642,6 +621,63 @@ func isMySQLFamilyComparison(dialect string) bool {
 	default:
 		return false
 	}
+}
+
+// targetInputs are what a comparison for a selected target compares: both
+// sides scoped to the target, the desired side's source properties decoded,
+// its default foreign key names assigned and lowered by the target, and the
+// rules the target gives the shared comparison.
+type targetInputs struct {
+	desired *schemamodel.Database
+	current *catalog.Database
+	rules   schemacomparison.Rules
+}
+
+// targetComparisonInputs prepares the [targetInputs] of a comparison for
+// selected.
+func targetComparisonInputs(
+	ctx context.Context,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	opts *config.CompareOptions,
+	selected schemaext.TargetSelection,
+	caps capability.Capabilities,
+	runtime schemapreparation.Runtime,
+) (targetInputs, error) {
+	// The declared scope resolves first, so every later step -- coverage,
+	// identifier validation, each per-kind comparison -- sees the desired
+	// state this target actually has. An object scoped away from this
+	// dialect is absent rather than reported as added, which is what makes
+	// a multi-dialect schema converge: before this, `schema apply` created
+	// nothing for such an object, exited 0, and the very next comparison
+	// asked for it again, forever.
+	// Both sides move together. Projecting only the desired state leaves
+	// the database still holding a scoped-away object, which reads as
+	// present in the target and absent from the declaration -- the shape of
+	// a drop. See suppressScopedAway.
+	desired, database, err := scopeComparison(desired, database, selected, optionIdentifiers(opts))
+	if err != nil {
+		return targetInputs{}, err
+	}
+	desired, err = schemaproperties.Decode(ctx, desired, selected.Name(), runtime)
+	if err != nil {
+		return targetInputs{}, err
+	}
+	desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
+	// The target rewrites what its reader reports in another shape, such
+	// as a UNIQUE constraint YDB holds as a unique index.
+	desired, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
+		Target: selected.Name(), Desired: desired, Current: database, Capabilities: caps,
+		Semantics: loweringSemantics(opts),
+	})
+	if err != nil {
+		return targetInputs{}, err
+	}
+	rules, err := runtime.ComparisonRules(selected.Name())
+	if err != nil {
+		return targetInputs{}, err
+	}
+	return targetInputs{desired: desired, current: database, rules: rules}, nil
 }
 
 // loweringSemantics are the identifier rules a target's lowering pairs names

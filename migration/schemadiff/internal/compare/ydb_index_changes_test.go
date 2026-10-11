@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/ydbcomparison"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
@@ -20,9 +21,16 @@ func compareYDBIndexes(desired []schemamodel.Index, database []catalog.Index, ca
 	compare.IndexesWithSemantics(
 		&schemamodel.Database{Indexes: desired},
 		&catalog.Database{Indexes: database},
-		diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, caps,
+		diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, caps, ydbcomparison.Rules().Indexes,
 	)
 	return diff
+}
+
+// indexesWithYDBRules is [compare.IndexesWithDialect] with the index rules the
+// built-in runtime registers for YDB.
+func indexesWithYDBRules(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
+	compare.IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil,
+		capability.ForDialect(dialect), ydbcomparison.Rules().Indexes)
 }
 
 // namedIndex renames one of the indexes ydbDeclaredIndex and ydbIndex build.
@@ -61,7 +69,7 @@ func TestIndexes_YDBPairsARenamedIndex(t *testing.T) {
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(compare.IndexRenames(&schemamodel.Database{Indexes: desired}, &catalog.Database{Indexes: database},
-		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262()), qt.DeepEquals, want)
+		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), ydbcomparison.Rules().Indexes), qt.DeepEquals, want)
 }
 
 // TestIndexes_YDBPairsEqualRenamesInNameOrder pairs two equal indexes renamed

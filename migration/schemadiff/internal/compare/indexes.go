@@ -10,6 +10,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
@@ -17,7 +19,6 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlname"
-	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -128,12 +129,13 @@ type databaseIndexEntry struct {
 // IndexesWithDialect compares indexes for dialect, with its identifier
 // semantics and its default capability preset.
 func IndexesWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect))
+	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect), nil)
 }
 
 // IndexesWithSemantics compares indexes using explicit identifier semantics,
-// on a target with caps. A target with [capability.IndexRename] gets an index
-// the declaration renamed as a rename; see [pairIndexRenames].
+// on a target with caps and the target's index rules, nil where it registers
+// none. A target with [capability.IndexRename] gets an index the declaration
+// renamed as a rename; see [pairIndexRenames].
 func IndexesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -142,6 +144,7 @@ func IndexesWithSemantics(
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
 	caps capability.Capabilities,
+	rules schemacomparison.Indexes,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
 	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
@@ -160,7 +163,7 @@ func IndexesWithSemantics(
 		genIndexes,
 		ambiguousGenerated,
 		dbIndexes,
-		indexComparison{dialect: dialect, semantics: semantics, expressions: indexes, caps: caps},
+		indexComparison{dialect: dialect, semantics: semantics, expressions: indexes, caps: caps, rules: rules},
 	)
 	diff.SetIndexAdditions(diff.IndexesAdded)
 	diff.SetIndexRemovals(diff.IndexRemovals())
@@ -836,6 +839,8 @@ type indexComparison struct {
 	semantics   identifier.Semantics
 	expressions map[string]config.IndexExpression
 	caps        capability.Capabilities
+	// rules are the target's index rules, nil where it registers none.
+	rules schemacomparison.Indexes
 }
 
 // replacementRequired reports whether the database index has to be dropped and
@@ -847,7 +852,18 @@ func (c indexComparison) replacementRequired(desired generatedIndexEntry, databa
 		c.dialect,
 		c.semantics,
 		c.expressions[exprkey.Index(c.semantics, desired.ref.TableName, desired.ref.Name)],
+		c.rules,
 	)
+}
+
+// renameKeeps reports whether an index renamed in place keeps every facet in
+// facets: each facet's kind is one the target's rules say a rename carries. An
+// index without facets keeps everything, and without index rules an index
+// with any facet is never renamed, since no rule says the rename keeps it.
+func (c indexComparison) renameKeeps(facets schemaext.Facets) bool {
+	return !slices.ContainsFunc(facets.DeclaredKinds(), func(kind schemaext.Kind) bool {
+		return c.rules == nil || !c.rules.RenameCarries(kind)
+	})
 }
 
 func appendIndexDifferences(
@@ -965,11 +981,12 @@ func appendIndexCommentChange(
 //
 // A removal whose object a constraint owns is never paired: dropping it drops
 // the constraint, which a rename would leave in place. Nor is an index that
-// carries an owner's facet a rename cannot carry ([ydbindex.RenameKeeps]),
-// such as a YDB vector index's settings: this comparison cannot read them,
-// and a rename would keep the settings the index was built with whatever the
-// declaration states. A YDB index's partitioning is carried: the owner
-// compares it under the new name and changes it in place.
+// carries an owner's facet a rename cannot carry
+// ([schemacomparison.Indexes.RenameCarries]), such as a YDB vector index's
+// settings: this comparison cannot read them, and a rename would keep the
+// settings the index was built with whatever the declaration states. A YDB
+// index's partitioning is carried: the owner compares it under the new name
+// and changes it in place.
 func pairIndexRenames(
 	diff *difftypes.SchemaDiff,
 	additions []generatedIndexEntry,
@@ -1001,7 +1018,7 @@ func pairIndexRenames(
 		match := -1
 		for position, removal := range removals {
 			if paired[position] || removal.constraintBacked ||
-				!ydbindex.RenameKeeps(addition.index.Facets) || !ydbindex.RenameKeeps(removal.index.Facets) ||
+				!comparison.renameKeeps(addition.index.Facets) || !comparison.renameKeeps(removal.index.Facets) ||
 				semantics.TableIdentityKey(removal.ref.TableName) != semantics.TableIdentityKey(addition.ref.TableName) ||
 				comparison.replacementRequired(addition, removal) {
 				continue
@@ -1089,12 +1106,13 @@ func indexReplacementRequired(
 	dialect string,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
+	rules schemacomparison.Indexes,
 ) bool {
 	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
 		desired.ref.Name != database.ref.Name {
 		return true
 	}
-	return indexDefinitionsChanged(desired.index, database.index, dialect, semantics, resolved)
+	return indexDefinitionsChanged(desired.index, database.index, dialect, semantics, resolved, rules)
 }
 
 func indexDefinitionsChanged(
@@ -1103,6 +1121,7 @@ func indexDefinitionsChanged(
 	dialect string,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
+	rules schemacomparison.Indexes,
 ) bool {
 	// The predicate is compared in the server's spelling where the server
 	// answered. PostgreSQL stores a parse tree rather than the text it was
@@ -1119,6 +1138,16 @@ func indexDefinitionsChanged(
 		indexPayloadChanged(desired.IncludeColumns, database.IncludeColumns, dialect, semantics) {
 		return true
 	}
+	// A target that registers index rules has its whole definition compared:
+	// its uniqueness, key parts and covered columns here, and its kind and
+	// build settings by the rules. The covered columns are compared in order,
+	// as the key columns are.
+	if rules != nil {
+		return desired.Unique != database.IsUnique ||
+			indexKeyPartsChanged(desired, database, semantics) ||
+			postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
+			!rules.OptionsEqual(desired, database)
+	}
 	// Every other property is compared per dialect, because "these two indexes
 	// are the same index" is a dialect question. Adding a dialect here means
 	// deciding what its currentCatalog reports and what it leaves implicit; a dialect
@@ -1132,8 +1161,6 @@ func indexDefinitionsChanged(
 		return postgresIndexDefinitionChanged(desired, database, semantics, resolved)
 	case platform.MySQL, platform.MariaDB:
 		return mysqlIndexDefinitionChanged(desired, database, semantics, dialect)
-	case platform.YDB:
-		return ydbIndexDefinitionChanged(desired, database, semantics)
 	default:
 		return false
 	}
@@ -1160,45 +1187,6 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 		return len(desired) > 0
 	}
 	return postgresIncludeColumnsChanged(desired, database, semantics)
-}
-
-// ydbIndexDefinitionChanged answers whether a YDB index has to be rebuilt to
-// match the desired definition. YDB changes none of these in place -- an
-// index's columns, its covered columns, its uniqueness and whether it is
-// maintained synchronously are fixed when it is built -- so a difference in
-// any of them is a DROP INDEX and an ADD INDEX of the same name.
-//
-// The kind is read through [ydbindex.KindOf] on both sides, which is the same
-// reading the renderer writes the clause from, so a declared BTREE and a
-// catalog GLOBAL SYNC are one kind. A catalog therefore reports the kind alone
-// in Method -- `GLOBAL SYNC` or `GLOBAL ASYNC` -- and uniqueness in IsUnique,
-// not the `GLOBAL UNIQUE SYNC` clause the renderer writes. An access method
-// either side cannot read is a difference, because the index cannot be the
-// one that was declared.
-//
-// The covered columns are compared in order, as the key columns are: YDB
-// reports `data_columns` in the order the COVER clause wrote them.
-//
-// The partitioning is never a rebuild: it is the YDB owner's index facet,
-// changed in place by ALTER INDEX. The one change YDB cannot make in place,
-// removing a maximum partition count, is one no declaration asks for, because
-// a maximum it leaves out keeps the held one.
-//
-// A vector index's settings are the YDB owner's facet, which its own
-// comparison reads; a difference in them is planned there.
-func ydbIndexDefinitionChanged(
-	desired schemamodel.Index,
-	database catalog.Index,
-	semantics identifier.Semantics,
-) bool {
-	desiredKind, desiredErr := ydbindex.KindOf(desired.Type)
-	databaseKind, databaseErr := ydbindex.KindOf(database.Method)
-	return desired.Unique != database.IsUnique ||
-		desiredErr != nil || databaseErr != nil || desiredKind != databaseKind ||
-		indexKeyPartsChanged(desired, database, semantics) ||
-		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
-		(desiredKind.IsFullText() && !ydbindex.FullTextEqual(desired.StorageParams, database.StorageParams)) ||
-		(desiredKind.IsLocal() && !ydbindex.LocalEqual(desiredKind, desired.StorageParams, database.StorageParams))
 }
 
 // mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to
@@ -1722,8 +1710,9 @@ func IndexRenames(
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
 	caps capability.Capabilities,
+	rules schemacomparison.Indexes,
 ) []difftypes.IndexRename {
 	scratch := &difftypes.SchemaDiff{}
-	IndexesWithSemantics(desired, database, scratch, dialect, semantics, indexes, caps)
+	IndexesWithSemantics(desired, database, scratch, dialect, semantics, indexes, caps, rules)
 	return scratch.IndexesRenamed
 }

@@ -31,6 +31,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/query`
 - `ptah.run/core/renderer`
 - `ptah.run/core/schemacapture`
+- `ptah.run/core/schemacomparison`
 - `ptah.run/core/schemapreparation`
 - `ptah.run/core/schemaproperties`
 - `ptah.run/core/schemaext`
@@ -1554,6 +1555,17 @@ server holds. A nil service leaves the declaration as written.
 resolved capabilities and the identifier semantics under the target's canonical
 name. A service must not modify the request. An error, a nil result and
 cancellation return no schema.
+
+`Target.Comparison` holds the `schemacomparison.Rules` a target gives the shared
+comparison, where its catalog reports a declaration in a form the shared rules
+cannot read. `Rules.Indexes` compares an index's kind and build settings, and a
+target that registers it has the whole index definition compared; it also says
+which facet kinds an index rename keeps, and without it an index carrying any
+facet is dropped and built again rather than renamed. `Rules.Views` compares
+view and materialized view queries in place of the shared reading. A nil member
+keeps the shared rule, and a typed-nil member is an invalid registration.
+`Runtime.ComparisonRules` returns a target's rules under any of its names, and
+refuses an unregistered target with `ptaherr.ErrUnsupportedDialect`.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete

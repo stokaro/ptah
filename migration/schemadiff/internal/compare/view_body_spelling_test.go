@@ -34,7 +34,7 @@ func viewsWithSpelling(declared, stored string, spelled map[string]config.ViewBo
 	compare.ViewsWithSemantics(
 		&schemamodel.Database{Views: []schemamodel.View{{Name: "item_list", Body: declared}}},
 		&catalog.Database{Views: []catalog.View{{Name: "item_list", Schema: "public", Body: stored}}},
-		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spelled,
+		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spelled, nil,
 	)
 	return diff
 }
@@ -45,7 +45,7 @@ func matViewsWithSpelling(declared, stored string, spelled map[string]config.Vie
 	compare.MaterializedViewsWithSemantics(
 		&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "item_list", Body: declared}}},
 		&catalog.Database{MatViews: []catalog.MaterializedView{{Name: "item_list", Schema: "public", Body: stored}}},
-		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spelled,
+		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spelled, nil,
 	)
 	return diff
 }
