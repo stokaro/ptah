@@ -295,7 +295,7 @@ func (t *roundTrip) measurePair(fixture Fixture, dialect string) (*pairState, er
 		state.losses = append(state.losses, Loss{Pair: state.pair, Direction: direction, Plan: t.describe(answers[direction], dialect)})
 	}
 	for _, field := range t.fields {
-		if field.disposition != DDL || !Populated(fixture.Schema, field.path) {
+		if field.disposition != DDL || !fixture.declares(field.path) {
 			continue
 		}
 		rendered, _, err := t.statements(Ablate(fixture.Schema, field.path), dialect)
@@ -362,7 +362,7 @@ func (t *roundTrip) unmeasured(reach []Reach) []Unmeasured {
 		}
 		declared, accepted, read := false, false, false
 		for index, pair := range t.pairs {
-			if !Populated(t.fixtures[index/len(t.dialects)].Schema, field.path) {
+			if !t.fixtures[index/len(t.dialects)].declares(field.path) {
 				continue
 			}
 			declared = true
@@ -396,7 +396,7 @@ func (t *roundTrip) candidates(field compared, dialect string, direction Directi
 		if field.disposition == DDL && !pair.reads[field.path] {
 			continue
 		}
-		if field.disposition == Comparison && !Populated(pair.fixture.Schema, field.path) {
+		if field.disposition == Comparison && !pair.fixture.declares(field.path) {
 			continue
 		}
 		candidates = append(candidates, pair)

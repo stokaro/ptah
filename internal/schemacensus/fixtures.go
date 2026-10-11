@@ -40,6 +40,10 @@ type Fixture struct {
 	// flags on would; a fixture without them would be refused on every cell,
 	// and no field of it could be measured.
 	Flags []capability.Capability
+
+	// populated is every field path the schema declares, from
+	// [PopulatedFields]; nil on a fixture [Fixtures] did not build.
+	populated map[string]bool
 }
 
 // Cells returns cells with the fixture's flags turned on in the preset of
@@ -83,6 +87,25 @@ func oneTable(name string, table schemamodel.Table, extra ...schemamodel.Field) 
 // Fixtures is the corpus. A field no fixture populates cannot be measured, and
 // the gate reports that as its own state rather than as a loss.
 func Fixtures() []Fixture {
+	fixtures := corpus()
+	for index := range fixtures {
+		fixtures[index].populated = PopulatedFields(fixtures[index].Schema)
+	}
+	return fixtures
+}
+
+// declares reports whether the fixture's schema holds a non-zero instance of
+// the field named by path: [Populated], answered from one walk made when the
+// corpus was built.
+func (f Fixture) declares(path string) bool {
+	if f.populated == nil {
+		return Populated(f.Schema, path)
+	}
+	return f.populated[path]
+}
+
+// corpus is the fixtures themselves.
+func corpus() []Fixture {
 	return withFacetFixtures([]Fixture{
 		{Name: "table-clickhouse-settings", Schema: tableClickHouseSettingsFixture()},
 		{Name: "schema", Schema: schemaFixture()},

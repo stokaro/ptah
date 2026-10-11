@@ -95,6 +95,50 @@ func Populated(schema schemamodel.Database, path string) bool {
 	return populated
 }
 
+// PopulatedFields returns every field path [Populated] answers true for,
+// from one walk over the schema.
+//
+// A measurement asks [Populated] once per field and fixture, and each of those
+// walks the whole schema: several hundred walks of every fixture. This is one,
+// and its answer is the same for every path.
+func PopulatedFields(schema schemamodel.Database) map[string]bool {
+	populated := make(map[string]bool)
+	var walk func(reflect.Value)
+	walk = func(v reflect.Value) {
+		if visitFeatures(v, readOnly, walk) {
+			return
+		}
+		switch v.Kind() {
+		case reflect.Pointer, reflect.Interface:
+			if !v.IsNil() {
+				walk(v.Elem())
+			}
+		case reflect.Slice, reflect.Array:
+			for index := range v.Len() {
+				walk(v.Index(index))
+			}
+		case reflect.Map:
+			for _, key := range v.MapKeys() {
+				walk(v.MapIndex(key))
+			}
+		case reflect.Struct:
+			owner := typeName(v.Type())
+			for index := range v.Type().NumField() {
+				field := v.Type().Field(index)
+				if field.PkgPath != "" {
+					continue
+				}
+				if !v.Field(index).IsZero() {
+					populated[owner+"."+field.Name] = true
+				}
+				walk(v.Field(index))
+			}
+		}
+	}
+	walk(reflect.ValueOf(schema))
+	return populated
+}
+
 // deepCopyDatabase copies mutable fields and retains immutable feature snapshots.
 //
 // The copy lands in a typed variable rather than coming back through
