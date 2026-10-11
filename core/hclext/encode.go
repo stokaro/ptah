@@ -57,6 +57,10 @@ type EncodeResult struct {
 type Placement string
 
 const (
+	// BeforeTypes places a block before the types and the tables, among the
+	// blocks the rest of a document may depend on, such as an extension that
+	// supplies a type.
+	BeforeTypes Placement = "before-types"
 	// AfterTables places a block after the tables: a block that stands for
 	// a table or is attached to one comes after the structure it points at.
 	AfterTables Placement = "after-tables"
@@ -76,15 +80,12 @@ type EncodedBlock struct {
 	Type string
 	// Placement is where the block stands.
 	Placement Placement
-	// Schema is the schema the block's object is in, written as the
-	// block's `schema` reference. The writer writes an empty Schema of an
-	// inspected document as the document's default schema, unless
-	// SchemaIsAddress.
+	// Schema is the block's schema, written as its `schema` reference. What
+	// it means, and so how the writer writes it, is SchemaRole.
 	Schema string
-	// SchemaIsAddress marks an empty Schema as an address of its own, such
-	// as a SQL Server extended property of the database, which the writer
-	// leaves empty.
-	SchemaIsAddress bool
+	// SchemaRole says what Schema is: the namespace the block's object is in
+	// by default.
+	SchemaRole SchemaRole
 	// Name is the block's label. A block [WithinTable] has none.
 	Name string
 	// Scope is the name of the object the block's object is named inside,
@@ -107,6 +108,10 @@ type EncodedBlock struct {
 	// Unwritten leaves the block out, and only its Losses are reported: an
 	// object the format cannot spell at all.
 	Unwritten bool
+	// Provides are names of objects the block's object supplies, such as an
+	// extension's types and functions. The Atlas-compatible surface keeps a
+	// block it would leave out when the document names one of them.
+	Provides []string
 	// Object is the object the block writes, and Targets the targets reading
 	// the block back binds that object to. An object whose declared target
 	// scope is exactly Targets keeps its scope through the document; the
@@ -114,6 +119,27 @@ type EncodedBlock struct {
 	Object  objectidentity.ID
 	Targets []string
 }
+
+// SchemaRole is what an encoded block's schema means.
+type SchemaRole string
+
+const (
+	// SchemaNamespace is the schema the object is in. The writer writes an empty
+	// one, of a blank one, of an inspected document as the document's
+	// default schema.
+	SchemaNamespace SchemaRole = ""
+	// SchemaAddress is a schema whose absence is an address of its own, such as a
+	// SQL Server extended property of the database. The writer leaves a
+	// blank one out.
+	SchemaAddress SchemaRole = "address"
+	// SchemaPlacement is where the object is installed rather than a namespace of
+	// its name, such as an extension's schema. Only an empty one takes an
+	// inspected document's default; a schema the target owns is written as
+	// a string, so the document declares no schema block for it; and the
+	// writer orders the block without it, since it is no part of the
+	// object's identity.
+	SchemaPlacement SchemaRole = "placement"
+)
 
 // EncodedAttribute is one attribute an encoded block writes.
 type EncodedAttribute struct {
@@ -232,8 +258,8 @@ func checkEncodedBlock(extension Extension, block EncodedBlock) error {
 }
 
 // checkPlacement refuses a block without a type, at an unknown placement, a
-// top-level block without a name or with a table, and a block in a table
-// without the table or with a name.
+// top-level block without a name or with a table, a block in a table without
+// the table or with a name, and an unknown schema role.
 func checkPlacement(extension Extension, block EncodedBlock) error {
 	switch {
 	case strings.TrimSpace(block.Type) == "":
@@ -243,7 +269,7 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 			return fmt.Errorf("%w: HCL encoder of %s wrote block %q in a table without the table or with a name",
 				schemaext.ErrInvalidValue, extension.Owner, block.Type)
 		}
-	case block.Placement == AfterTables || block.Placement == AfterTriggers:
+	case block.Placement == BeforeTypes || block.Placement == AfterTables || block.Placement == AfterTriggers:
 		if block.Name == "" {
 			return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
 		}
@@ -253,6 +279,9 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 	default:
 		return fmt.Errorf("%w: HCL encoder of %s placed block %q at unknown placement %q",
 			schemaext.ErrInvalidValue, extension.Owner, block.Type, block.Placement)
+	}
+	if block.SchemaRole != SchemaNamespace && block.SchemaRole != SchemaAddress && block.SchemaRole != SchemaPlacement {
+		return fmt.Errorf("%w: HCL encoder of %s wrote block %q with schema role %q", schemaext.ErrInvalidValue, extension.Owner, block.Type, block.SchemaRole)
 	}
 	return nil
 }

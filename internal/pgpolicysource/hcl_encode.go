@@ -101,7 +101,7 @@ func encodePolicy(object schemaext.Object) (hclext.EncodedBlock, error) {
 	schema, table := object.Ref.Schema.Authored(), object.Ref.Parent.Source
 	qualified := schemamodel.QualifyTableName(schema, table)
 	block := hclext.EncodedBlock{Type: hclPolicyBlock, Placement: hclext.AfterTriggers, Name: object.Ref.Name.Source,
-		Scope: qualified, SchemaIsAddress: true, Object: object.Ref, Path: "rls_policies." + qualified + "." + object.Ref.Name.Source}
+		Scope: qualified, SchemaRole: hclext.SchemaAddress, Object: object.Ref, Path: "rls_policies." + qualified + "." + object.Ref.Name.Source}
 	roles, ok := hclRoles(policy.Roles)
 	if !ok {
 		block.Losses, block.Unwritten = []string{"a role named like a role keyword cannot be represented in HCL"}, true

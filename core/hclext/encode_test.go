@@ -135,6 +135,8 @@ func TestSet_Encode_FailurePath(t *testing.T) {
 		{name: "a list element without a name", encoder: written(hclext.EncodedBlock{Type: "rule", Name: "r", Placement: hclext.AfterTriggers,
 			Attributes: []hclext.EncodedAttribute{{Name: "to", Value: hclext.Value{Kind: hclext.Refs, References: []hclext.Reference{{Kind: "role"}}}}}}),
 			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "to" of block "rule" as "references", which the writer cannot write`},
+		{name: "an unknown schema role", encoder: written(hclext.EncodedBlock{Type: "plugin", Name: "p", Placement: hclext.BeforeTypes, SchemaRole: "owner"}),
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote block "plugin" with schema role "owner"`},
 		{name: "a kind the writer cannot write", encoder: written(hclext.EncodedBlock{Type: "gadget", Name: "g", Placement: hclext.AfterTables,
 			Attributes: []hclext.EncodedAttribute{{Name: "on", Value: hclext.Value{Kind: hclext.Ref}}}}),
 			wantErr: `invalid feature value: HCL encoder of example.org/a wrote attribute "on" of block "gadget" as "reference", which the writer cannot write`},

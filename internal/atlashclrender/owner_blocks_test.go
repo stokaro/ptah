@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
@@ -70,7 +71,7 @@ func (e gadgetEncoder) EncodeHCL(_ context.Context, request hclext.EncodeRequest
 			return hclext.EncodeResult{}, errors.New("gadget is broken")
 		}
 		blocks = append(blocks, hclext.EncodedBlock{Type: size, Placement: hclext.AfterTables,
-			Schema: object.Ref.Schema.Source, SchemaIsAddress: size == "database", Name: object.Ref.Name.Source,
+			Schema: object.Ref.Schema.Source, SchemaRole: gadgetSchemaRole(size), Name: object.Ref.Name.Source,
 			Object: object.Ref, Targets: e.bound,
 			Attributes: []hclext.EncodedAttribute{
 				{Name: "note", Value: hclext.Value{Kind: hclext.String, Text: "a \"quoted\" note"}},
@@ -78,6 +79,15 @@ func (e gadgetEncoder) EncodeHCL(_ context.Context, request hclext.EncodeRequest
 			}})
 	}
 	return hclext.EncodeResult{Blocks: blocks}, nil
+}
+
+// gadgetSchemaRole is the schema role of a gadget of size: an address for a
+// "database" gadget, a namespace otherwise.
+func gadgetSchemaRole(size string) hclext.SchemaRole {
+	if size == "database" {
+		return hclext.SchemaAddress
+	}
+	return hclext.SchemaNamespace
 }
 
 // gadgetOwners registers the owner example.org/custom through the runtime,
@@ -329,7 +339,7 @@ func TestRender_WritesReferencesAndPlacements(t *testing.T) {
 	blocks := []hclext.EncodedBlock{
 		{Type: "switch", Placement: hclext.WithinTable, Table: &hclext.Table{Schema: "app", Name: "t", Struct: "T"},
 			Attributes: []hclext.EncodedAttribute{{Name: "on", Value: hclext.Value{Kind: hclext.Bool, Bool: true}}}},
-		{Type: "rule", Placement: hclext.AfterTriggers, Name: "r", SchemaIsAddress: true, Attributes: []hclext.EncodedAttribute{
+		{Type: "rule", Placement: hclext.AfterTriggers, Name: "r", SchemaRole: hclext.SchemaAddress, Attributes: []hclext.EncodedAttribute{
 			{Name: "on", Value: hclext.Value{Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "table", Schema: "app", Name: "t"}}},
 			{Name: "to", Value: hclext.Value{Kind: hclext.Refs, References: []hclext.Reference{
 				{Kind: "role", Name: "reader"}, {Kind: "role", Name: "writer"}, {Name: "CURRENT_USER"}}}},
@@ -350,8 +360,8 @@ func TestRender_WritesReferencesAndPlacements(t *testing.T) {
 func TestRender_ReportsAnOwnersLossesWhereTheBlockStands(t *testing.T) {
 	c := qt.New(t)
 	blocks := []hclext.EncodedBlock{
-		{Type: "rule", Placement: hclext.AfterTriggers, Name: "kept", SchemaIsAddress: true, Path: "rules.kept", Losses: []string{"partly lost"}},
-		{Type: "rule", Placement: hclext.AfterTriggers, Name: "gone", SchemaIsAddress: true, Path: "rules.gone", Losses: []string{"lost"},
+		{Type: "rule", Placement: hclext.AfterTriggers, Name: "kept", SchemaRole: hclext.SchemaAddress, Path: "rules.kept", Losses: []string{"partly lost"}},
+		{Type: "rule", Placement: hclext.AfterTriggers, Name: "gone", SchemaRole: hclext.SchemaAddress, Path: "rules.gone", Losses: []string{"lost"},
 			Unwritten: true},
 	}
 
@@ -372,7 +382,7 @@ func TestRender_ReportsAnOwnersLossesWhereTheBlockStands(t *testing.T) {
 // leaves out a block of its own.
 func TestRenderInspectedForAtlasCLI_LeavesOutAnOwnersRefusedBlock(t *testing.T) {
 	c := qt.New(t)
-	blocks := []hclext.EncodedBlock{{Type: "policy", Placement: hclext.AfterTriggers, Name: "p", SchemaIsAddress: true, Path: "rls_policies.p"}}
+	blocks := []hclext.EncodedBlock{{Type: "policy", Placement: hclext.AfterTriggers, Name: "p", SchemaRole: hclext.SchemaAddress, Path: "rls_policies.p"}}
 
 	result, err := atlashclrender.RenderInspectedForAtlasCLI(refsDocument(), "app",
 		atlashclrender.Options{HCL: gadgetOwners(blocksEncoder{blocks: blocks}), Dialect: platform.Postgres})
@@ -389,12 +399,67 @@ func TestRenderInspectedForAtlasCLI_LeavesOutAnOwnersRefusedBlock(t *testing.T) 
 func TestRender_OrdersBlocksByScopeBeforeName(t *testing.T) {
 	c := qt.New(t)
 	blocks := []hclext.EncodedBlock{
-		{Type: "rule", Placement: hclext.AfterTriggers, Name: "a", Scope: "u", SchemaIsAddress: true},
-		{Type: "rule", Placement: hclext.AfterTriggers, Name: "b", Scope: "t", SchemaIsAddress: true},
+		{Type: "rule", Placement: hclext.AfterTriggers, Name: "a", Scope: "u", SchemaRole: hclext.SchemaAddress},
+		{Type: "rule", Placement: hclext.AfterTriggers, Name: "b", Scope: "t", SchemaRole: hclext.SchemaAddress},
 	}
 
 	result, err := atlashclrender.Render(refsDocument(), atlashclrender.Options{HCL: gadgetOwners(blocksEncoder{blocks: blocks})})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "rule \"b\" {\n}\n\nrule \"a\" {\n}\n")
+}
+
+// TestRenderInspected_WritesAPlacementSchema writes a schema that is where an
+// object is installed: an empty one as the default schema, a blank one as it
+// is, a schema the target owns as a string, and blocks ordered by name alone.
+func TestRenderInspected_WritesAPlacementSchema(t *testing.T) {
+	c := qt.New(t)
+	placed := func(name, schema string) hclext.EncodedBlock {
+		return hclext.EncodedBlock{Type: "plugin", Placement: hclext.BeforeTypes, Name: name, Schema: schema, SchemaRole: hclext.SchemaPlacement}
+	}
+	blocks := []hclext.EncodedBlock{placed("d", "pg_catalog"), placed("c", " "), placed("b", ""), placed("a", "zeta")}
+
+	result, err := atlashclrender.RenderInspected(refsDocument(), "app",
+		atlashclrender.Options{HCL: gadgetOwners(blocksEncoder{blocks: blocks}), Dialect: platform.Postgres})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "plugin \"a\" {\n  schema = schema.zeta\n}\n\n"+
+		"plugin \"b\" {\n  schema = schema.app\n}\n\n"+
+		"plugin \"c\" {\n  schema = schema[\" \"]\n}\n\n"+
+		"plugin \"d\" {\n  schema = \"pg_catalog\"\n}\n")
+}
+
+// TestRenderInspectedForAtlasCLI_KeepsAnOwnersBlockTheDocumentNeeds keeps an
+// owner's block of a refused type on the Atlas-compatible surface when the
+// document names an object the block supplies.
+func TestRenderInspectedForAtlasCLI_KeepsAnOwnersBlockTheDocumentNeeds(t *testing.T) {
+	c := qt.New(t)
+	db := refsDocument()
+	db.Fields[0].Type = "isbn"
+	blocks := []hclext.EncodedBlock{{Type: "extension", Placement: hclext.BeforeTypes, Name: "isn", Path: "extensions.isn",
+		SchemaRole: hclext.SchemaPlacement, Provides: []string{"isbn"}}}
+
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "app",
+		atlashclrender.Options{HCL: gadgetOwners(blocksEncoder{blocks: blocks}), Dialect: platform.Postgres})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "extension \"isn\" {\n  schema = schema.app\n}\n")
+	c.Assert(result.Diagnostics, qt.HasLen, 1)
+	c.Assert(result.Diagnostics[0].Message, qt.Matches, `kept in Atlas-compatible schema inspect output because another object in this document depends on it.*`)
+}
+
+// TestRender_RefusesAnExtensionDeclaredTwice refuses an extension the common
+// model declares and an owner writes too: the document could write one block
+// for it, and nothing says which declaration is meant.
+func TestRender_RefusesAnExtensionDeclaredTwice(t *testing.T) {
+	c := qt.New(t)
+	db := refsDocument()
+	db.Extensions = []schemamodel.Extension{{Name: "citext"}}
+	blocks := []hclext.EncodedBlock{{Type: "extension", Placement: hclext.BeforeTypes, Name: "citext", SchemaRole: hclext.SchemaPlacement}}
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(blocksEncoder{blocks: blocks})})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*extension "citext" is declared twice`)
+	c.Assert(result.Data, qt.IsNil)
 }

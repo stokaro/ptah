@@ -221,7 +221,7 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		return Result{}, err
 	}
 	r.ownerBlocks, r.ownerHeader = encoded.Blocks, encoded.Header
-	if err := r.captureExtensions(); err != nil {
+	if err := r.refuseRepeatedExtensions(); err != nil {
 		return Result{}, err
 	}
 	r.render()
@@ -233,9 +233,8 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 }
 
 type renderer struct {
-	extensions []extensionBlock
-	db         *schemamodel.Database
-	dialect    string
+	db      *schemamodel.Database
+	dialect string
 	// defaultSchema owns every object that arrived without one. Empty means the
 	// IR is taken as written, which is what every parse-and-re-render caller
 	// wants.
@@ -607,7 +606,7 @@ func (r *renderer) renderBody() {
 	r.reportColumnTables()
 	r.reportFeatureObjects()
 	r.reportTablePartitioning()
-	r.renderExtensions()
+	r.renderBeforeTypes()
 	r.renderSequences()
 	r.renderUserTypes()
 	r.renderEnums()

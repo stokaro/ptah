@@ -10,7 +10,6 @@ import (
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/feature/pgextension"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
@@ -21,7 +20,7 @@ import (
 // turn export loss into a successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
-		if ref.Kind == objectidentity.Kind(pgextension.ExtensionKind) || r.owners.Encodes(schemaext.Kind(ref.Kind)) {
+		if r.owners.Encodes(schemaext.Kind(ref.Kind)) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
