@@ -98,13 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-15 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+13 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `column-enum` | `mariadb`, `mysql`, `oracle`, `sqlserver` | to-catalog | an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild |
-| `column-enum` | `sqlite` | both | an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild |
 | `view` | `cockroachdb`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | a view's CHECK OPTION and comment do not survive goschematodb, so the view is replaced |
 | `table-pk-include` | `postgres`, `yugabytedb` | to-catalog | a primary key's INCLUDE columns do not survive goschematodb, so the key is dropped and added again |
 | `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again |

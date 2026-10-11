@@ -40,7 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossInlineEnum        = "an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild"
 	lossViewAttributes    = "a view's CHECK OPTION and comment do not survive goschematodb, so the view is replaced"
 	lossPrimaryKeyInclude = "a primary key's INCLUDE columns do not survive goschematodb, so the key is dropped and added again"
 	lossPrimaryKeyFacets  = "a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again"
@@ -178,13 +177,6 @@ func Alternates() []string {
 func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
-	{
-		Fixtures:   []string{"column-enum"},
-		Dialects:   []string{"mariadb", "mysql", "oracle", "sqlserver"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossInlineEnum,
-	},
-	{Fixtures: []string{"column-enum"}, Dialects: []string{"sqlite"}, Directions: nil, Reason: lossInlineEnum},
 	{
 		Fixtures:   []string{"view"},
 		Dialects:   []string{"cockroachdb", "postgres", "sqlserver", "yugabytedb"},
