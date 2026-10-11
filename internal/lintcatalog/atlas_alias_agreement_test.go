@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/migration/lint"
 )
@@ -82,7 +84,7 @@ func checksNeedingAnAlias() []lintcatalog.AtlasCheck {
 func TestExcludedAliasesReallyCollide(t *testing.T) {
 	c := qt.New(t)
 	registered := make(map[string]struct{})
-	for _, rule := range lint.Rules() {
+	for _, rule := range must.Must(lint.Rules(builtintest.Runtime())) {
 		registered[rule.Code] = struct{}{}
 	}
 

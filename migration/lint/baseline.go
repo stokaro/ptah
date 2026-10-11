@@ -4,156 +4,9 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintscan"
 )
-
-// BaselineColumn is one column of the schema state a migration version starts
-// from, as read from the dev database the run validates against.
-//
-// Reading SQL text is enough to see that `ALTER TABLE users RENAME COLUMN id TO
-// oid` retires the name `id`. It is not enough to see what the new name
-// introduces: the retired column's type, nullability and default live in an
-// earlier migration file or in the base schema, never in the rename statement.
-// A caller that replays the directory on a dev database can read them there and
-// hand them over here, and only then can the add side of a rename be reported.
-//
-// Callers ask [Analysis.BaselineVersions] which versions are worth reading, so a
-// directory with no renames costs no introspection at all.
-type BaselineColumn struct {
-	// Version is the migration version whose starting state this column belongs
-	// to: the state read BEFORE that version is applied, not after.
-	Version int64
-	// Schema is the schema of the owning table, as the server spells it.
-	Schema string
-	// Table is the owning table, as the server spells it.
-	Table string
-	// Name is the column name, as the server spells it.
-	Name string
-	// DataType is the column type spelled the way the compatibility surface
-	// prints it. Empty when the caller could not establish that spelling, which
-	// leaves the diagnostic reported under Ptah's own wording rather than
-	// inventing an Atlas sentence for a type nobody measured.
-	DataType string
-	// ColumnType is the type exactly as the server spells it, member lists
-	// included: MySQL's information_schema COLUMN_TYPE, `enum('a','b')` or
-	// `set('x','y')`. It is separate from DataType because DataType is a
-	// normalized spelling for one family of diagnostics and is empty for
-	// everything that spelling does not cover, which included every ENUM and
-	// SET column; the rules that compare member lists read this field and
-	// find nothing when it is empty (stokaro/ptah#2942).
-	ColumnType string
-	// Charset is the column's character set as the server names it, empty
-	// for a column whose type carries none. TableCharset is the default
-	// character set of the owning table, which is what a MODIFY that names
-	// no character set gives the column (stokaro/ptah#2942).
-	Charset      string
-	TableCharset string
-	// Collation is the column's collation as the server names it: MySQL's
-	// COLLATION_NAME, which every character column carries, or the collation
-	// a PostgreSQL column was declared with, empty for one that takes the
-	// database default. TableCollation is the owning table's default
-	// collation, which is what a MODIFY that names no COLLATE gives a column
-	// of the table's character set. A statement that names a collation is
-	// judged against these: a restated collation is a no-op on every engine
-	// and a changed one costs an index rebuild or a copy (stokaro/ptah#2957).
-	Collation      string
-	TableCollation string
-	// TablePartitioned reports that the owning table is a PostgreSQL
-	// declaratively partitioned table (relkind 'p'): a parent, or a partition
-	// that is partitioned itself. Nothing in the migration text that indexes it
-	// can say so, and the answer decides which index builds PostgreSQL
-	// accepts: it refuses CREATE INDEX CONCURRENTLY on one.
-	TablePartitioned bool
-	// NotNull reports whether the column rejects NULL.
-	NotNull bool
-	// HasDefault reports whether the column carries a DEFAULT expression.
-	HasDefault bool
-}
-
-// BaselineDependent is one object that reads a column in the schema state a
-// version starts from.
-//
-// It is the answer to "what breaks if this column goes", carried into the
-// linter rather than derived there: resolving it needs the view and routine
-// bodies of the replayed schema, and the linter reads migration text.
-//
-// Kind names what does the reading -- a view, a materialized view, a function
-// or a procedure -- because the operator's next move differs by kind and a bare
-// name does not say which.
-type BaselineDependent struct {
-	// Version is the migration version whose starting state this belongs to:
-	// the state read BEFORE that version is applied.
-	Version int64
-	// Schema and Table are the owning table, as the server spells them.
-	Schema string
-	Table  string
-	// Column is the column that is read.
-	Column string
-	// Dependent is the object that reads it.
-	Dependent string
-	// Kind is what the dependent is.
-	Kind string
-}
-
-// BaselineIndex is one index of the schema state a migration version starts
-// from, read from the dev database beside [BaselineColumn].
-//
-// It settles the questions the columns alone leave open: whether a collation
-// or character-set change on a column takes a copy or an index rebuild,
-// whether a unique index that replaces a dropped one covers the same columns,
-// which columns a primary key attached USING INDEX sets NOT NULL, and whether
-// a unique index already proves the rows unique (stokaro/ptah#2957).
-type BaselineIndex struct {
-	// Version is the migration version whose starting state this index
-	// belongs to: the state read BEFORE that version is applied.
-	Version int64
-	// Schema and Table are the indexed table, as the server spells them.
-	Schema string
-	Table  string
-	// Name is the index name, as the server spells it.
-	Name string
-	// Parts are the key parts in key order.
-	Parts []BaselineIndexPart
-	// Unique reports a unique index or constraint, and Primary the primary
-	// key, which is unique as well.
-	Unique  bool
-	Primary bool
-	// Partial reports an index with a WHERE clause, which covers some rows
-	// and so proves nothing about the others.
-	Partial bool
-	// Incomplete reports a key part the reader could not name, so Parts
-	// lists fewer parts than the key has.
-	Incomplete bool
-}
-
-// BaselineIndexPart is one key part of a [BaselineIndex].
-type BaselineIndexPart struct {
-	// Column is the indexed column, empty for a part that is an expression.
-	Column string
-	// Prefix is the number of leading characters the part indexes, MySQL's
-	// `KEY (notes(20))`; zero indexes the whole value.
-	Prefix int
-}
-
-// BaselineHypertable is one TimescaleDB hypertable of the schema state a
-// migration version starts from, read from the dev database beside
-// [BaselineColumn].
-//
-// Nothing in PostgreSQL's own catalogs says a table is a hypertable: it
-// reads back as an ordinary table, and only the extension's catalog knows. The
-// difference decides what an index build on it may be told to do. Measured on
-// TimescaleDB 2.30.1 over PostgreSQL 18.6, a hypertable refuses `CREATE INDEX
-// CONCURRENTLY` outright (`hypertables do not support concurrent index
-// creation`), so the remedy that fits an ordinary table is a statement the
-// engine rejects here.
-type BaselineHypertable struct {
-	// Version is the migration version whose starting state this hypertable
-	// belongs to: the state read BEFORE that version is applied.
-	Version int64
-	// Schema and Table name the hypertable, as the server spells them.
-	Schema string
-	Table  string
-}
 
 // baselineColumns is one version's starting state, indexed for lookup by the
 // source-spelled references the linter reads out of SQL.
@@ -162,17 +15,17 @@ type BaselineHypertable struct {
 // database gets and what keeps a rename reported exactly as it was before this
 // existed.
 type baselineColumns struct {
-	byRef map[string][]BaselineColumn
+	byRef map[string][]lintext.BaselineColumn
 	// byTable holds every column of a table under the same reference
 	// spellings byRef uses, in catalog order, for the rules whose subject is
 	// the whole table.
-	byTable map[string][]BaselineColumn
+	byTable map[string][]lintext.BaselineColumn
 	// byTableIndexes holds every index of a table under those spellings, in
 	// catalog order.
-	byTableIndexes map[string][]BaselineIndex
+	byTableIndexes map[string][]lintext.BaselineIndex
 	// hypertables holds every TimescaleDB hypertable under the same reference
 	// spellings, one entry per schema that carries the name.
-	hypertables map[string][]BaselineHypertable
+	hypertables map[string][]lintext.BaselineHypertable
 	// schemaless reports that no column in this state names a schema. A reader
 	// scoped to one schema does not repeat that schema's name on every table, so
 	// a migration writing `ALTER TABLE public.users` has a qualifier the state
@@ -185,9 +38,9 @@ type baselineColumns struct {
 // newBaselineIndex groups baseline columns, indexes and hypertables by the
 // version whose starting state they describe.
 func newBaselineIndex(
-	columns []BaselineColumn,
-	indexes []BaselineIndex,
-	hypertables []BaselineHypertable,
+	columns []lintext.BaselineColumn,
+	indexes []lintext.BaselineIndex,
+	hypertables []lintext.BaselineHypertable,
 ) map[int64]baselineColumns {
 	if len(columns) == 0 && len(indexes) == 0 && len(hypertables) == 0 {
 		return nil
@@ -197,10 +50,10 @@ func newBaselineIndex(
 		state, ok := index[version]
 		if !ok {
 			state = baselineColumns{
-				byRef:          make(map[string][]BaselineColumn),
-				byTable:        make(map[string][]BaselineColumn),
-				byTableIndexes: make(map[string][]BaselineIndex),
-				hypertables:    make(map[string][]BaselineHypertable),
+				byRef:          make(map[string][]lintext.BaselineColumn),
+				byTable:        make(map[string][]lintext.BaselineColumn),
+				byTableIndexes: make(map[string][]lintext.BaselineIndex),
+				hypertables:    make(map[string][]lintext.BaselineHypertable),
 				schemaless:     true,
 			}
 		}
@@ -249,7 +102,7 @@ func newBaselineIndex(
 // fold to the same case the rest of the linter folds them to, because the
 // alternative -- missing a column whose file spells it differently from the
 // catalog -- silently drops a diagnostic.
-func baselineKeys(column BaselineColumn) []string {
+func baselineKeys(column lintext.BaselineColumn) []string {
 	name := normalizeIdent(column.Name)
 	table := normalizeIdent(column.Table)
 	qualified := normalizeIdent(column.Schema) + "." + table
@@ -276,7 +129,7 @@ func baselineTableKeys(schema, tableName string) []string {
 // resolving the reference the way [baselineColumns.column] does and failing
 // closed on the same ambiguity: a bare name two schemas carry resolves to
 // neither.
-func (b baselineColumns) tableColumns(tableRef string) []BaselineColumn {
+func (b baselineColumns) tableColumns(tableRef string) []lintext.BaselineColumn {
 	if len(b.byTable) == 0 || tableRef == "" {
 		return nil
 	}
@@ -293,7 +146,7 @@ func (b baselineColumns) tableColumns(tableRef string) []BaselineColumn {
 	return b.exactTable(tableRef[dot+1:])
 }
 
-func (b baselineColumns) exactTable(tableRef string) []BaselineColumn {
+func (b baselineColumns) exactTable(tableRef string) []lintext.BaselineColumn {
 	columns := b.byTable[tableRef]
 	if len(columns) == 0 {
 		return nil
@@ -310,7 +163,7 @@ func (b baselineColumns) exactTable(tableRef string) []BaselineColumn {
 // tableIndexes returns every baseline index of one table, in catalog order,
 // resolving the reference the way [baselineColumns.tableColumns] does and
 // failing closed on the same ambiguity.
-func (b baselineColumns) tableIndexes(tableRef string) []BaselineIndex {
+func (b baselineColumns) tableIndexes(tableRef string) []lintext.BaselineIndex {
 	if len(b.byTableIndexes) == 0 || tableRef == "" {
 		return nil
 	}
@@ -357,7 +210,7 @@ func (b baselineColumns) partitioned(tableRef string) bool {
 	return len(columns) > 0 && columns[0].TablePartitioned
 }
 
-func (b baselineColumns) exactTableIndexes(tableRef string) []BaselineIndex {
+func (b baselineColumns) exactTableIndexes(tableRef string) []lintext.BaselineIndex {
 	indexes := b.byTableIndexes[tableRef]
 	if len(indexes) == 0 {
 		return nil
@@ -375,8 +228,8 @@ func (b baselineColumns) exactTableIndexes(tableRef string) []BaselineIndex {
 // of one table, prefix parts included: an index that reads any part of the
 // value is rebuilt or copied with it. columnName is the linter's normalized
 // form.
-func (b baselineColumns) columnIndexes(tableRef, columnName string) []BaselineIndex {
-	var found []BaselineIndex
+func (b baselineColumns) columnIndexes(tableRef, columnName string) []lintext.BaselineIndex {
+	var found []lintext.BaselineIndex
 	for _, idx := range b.tableIndexes(tableRef) {
 		for _, part := range idx.Parts {
 			if normalizeIdent(part.Column) == columnName {
@@ -390,20 +243,20 @@ func (b baselineColumns) columnIndexes(tableRef, columnName string) []BaselineIn
 
 // indexNamed returns the baseline index of one table with the given name,
 // compared in the linter's normalized form.
-func (b baselineColumns) indexNamed(tableRef, name string) (BaselineIndex, bool) {
+func (b baselineColumns) indexNamed(tableRef, name string) (lintext.BaselineIndex, bool) {
 	for _, idx := range b.tableIndexes(tableRef) {
 		if normalizeIdent(idx.Name) == name {
 			return idx, true
 		}
 	}
-	return BaselineIndex{}, false
+	return lintext.BaselineIndex{}, false
 }
 
 // wholeKeyColumns returns the normalized columns an index keys, or nil when
 // the key is not a plain column list: a part that is an expression or a
 // prefix, or a part the reader could not name, keys something other than the
 // column values, so the index says nothing about them.
-func wholeKeyColumns(idx BaselineIndex) []string {
+func wholeKeyColumns(idx lintext.BaselineIndex) []string {
 	if idx.Incomplete || len(idx.Parts) == 0 {
 		return nil
 	}
@@ -421,7 +274,7 @@ func wholeKeyColumns(idx BaselineIndex) []string {
 // columns hold no duplicate: a unique index or primary key over every row,
 // keyed by whole columns, each of which is one of the given columns. A key
 // over a subset proves the superset unique too. columns are normalized.
-func (b baselineColumns) uniqueCovering(tableRef string, columns []string) (BaselineIndex, bool) {
+func (b baselineColumns) uniqueCovering(tableRef string, columns []string) (lintext.BaselineIndex, bool) {
 	for _, idx := range b.tableIndexes(tableRef) {
 		if !idx.Unique || idx.Partial {
 			continue
@@ -432,7 +285,7 @@ func (b baselineColumns) uniqueCovering(tableRef string, columns []string) (Base
 		}
 		return idx, true
 	}
-	return BaselineIndex{}, false
+	return lintext.BaselineIndex{}, false
 }
 
 // sameColumnSet reports whether two column lists name the same columns,
@@ -462,30 +315,30 @@ func (b baselineColumns) empty() bool {
 	return len(b.byRef) == 0
 }
 
-func (b baselineColumns) column(tableRef, columnName string) (BaselineColumn, bool) {
+func (b baselineColumns) column(tableRef, columnName string) (lintext.BaselineColumn, bool) {
 	if len(b.byRef) == 0 || tableRef == "" || columnName == "" {
-		return BaselineColumn{}, false
+		return lintext.BaselineColumn{}, false
 	}
 	if match, ok := b.exact(tableRef, columnName); ok {
 		return match, ok
 	}
 	if !b.schemaless {
-		return BaselineColumn{}, false
+		return lintext.BaselineColumn{}, false
 	}
 	// Comparing last components when one side is unqualified is the same match
 	// [refersToCreated] makes, and it inherits the same limit: the normalized
 	// form of `"tenant.data"` and of `tenant.data` are one string.
 	dot := strings.LastIndex(tableRef, ".")
 	if dot < 0 {
-		return BaselineColumn{}, false
+		return lintext.BaselineColumn{}, false
 	}
 	return b.exact(tableRef[dot+1:], columnName)
 }
 
-func (b baselineColumns) exact(tableRef, columnName string) (BaselineColumn, bool) {
+func (b baselineColumns) exact(tableRef, columnName string) (lintext.BaselineColumn, bool) {
 	matches := b.byRef[tableRef+"\x00"+columnName]
 	if len(matches) != 1 {
-		return BaselineColumn{}, false
+		return lintext.BaselineColumn{}, false
 	}
 	return matches[0], true
 }
@@ -636,8 +489,8 @@ type UnmetInput struct {
 
 // normalizeBaselineColumns drops entries no lookup can use, so an index never
 // carries rows that can only produce a false ambiguity.
-func normalizeBaselineColumns(columns []BaselineColumn) []BaselineColumn {
-	kept := make([]BaselineColumn, 0, len(columns))
+func normalizeBaselineColumns(columns []lintext.BaselineColumn) []lintext.BaselineColumn {
+	var kept []lintext.BaselineColumn
 	for _, column := range columns {
 		if strings.TrimSpace(column.Table) == "" || strings.TrimSpace(column.Name) == "" {
 			continue
@@ -649,8 +502,8 @@ func normalizeBaselineColumns(columns []BaselineColumn) []BaselineColumn {
 
 // normalizeBaselineHypertables drops the entries no lookup can use, for the
 // same reason [normalizeBaselineColumns] does.
-func normalizeBaselineHypertables(hypertables []BaselineHypertable) []BaselineHypertable {
-	kept := make([]BaselineHypertable, 0, len(hypertables))
+func normalizeBaselineHypertables(hypertables []lintext.BaselineHypertable) []lintext.BaselineHypertable {
+	var kept []lintext.BaselineHypertable
 	for _, hypertable := range hypertables {
 		if strings.TrimSpace(hypertable.Table) == "" {
 			continue
@@ -662,8 +515,8 @@ func normalizeBaselineHypertables(hypertables []BaselineHypertable) []BaselineHy
 
 // normalizeBaselineIndexes drops the entries no lookup can use, for the same
 // reason [normalizeBaselineColumns] does.
-func normalizeBaselineIndexes(indexes []BaselineIndex) []BaselineIndex {
-	kept := make([]BaselineIndex, 0, len(indexes))
+func normalizeBaselineIndexes(indexes []lintext.BaselineIndex) []lintext.BaselineIndex {
+	var kept []lintext.BaselineIndex
 	for _, idx := range indexes {
 		if strings.TrimSpace(idx.Table) == "" || strings.TrimSpace(idx.Name) == "" {
 			continue
@@ -679,7 +532,7 @@ func normalizeBaselineIndexes(indexes []BaselineIndex) []BaselineIndex {
 // database gets and what keeps a drop reported exactly as it was before this
 // existed.
 type baselineDependents struct {
-	byRef map[string][]BaselineDependent
+	byRef map[string][]lintext.BaselineDependent
 	// schemaless carries the same fact, and licenses the same relaxation, that
 	// it does on [baselineColumns].
 	schemaless bool
@@ -687,7 +540,7 @@ type baselineDependents struct {
 
 // newBaselineDependentIndex groups dependents by the version whose starting
 // state they describe.
-func newBaselineDependentIndex(dependents []BaselineDependent) map[int64]baselineDependents {
+func newBaselineDependentIndex(dependents []lintext.BaselineDependent) map[int64]baselineDependents {
 	if len(dependents) == 0 {
 		return nil
 	}
@@ -695,7 +548,7 @@ func newBaselineDependentIndex(dependents []BaselineDependent) map[int64]baselin
 	for _, dependent := range dependents {
 		state, ok := index[dependent.Version]
 		if !ok {
-			state = baselineDependents{byRef: make(map[string][]BaselineDependent), schemaless: true}
+			state = baselineDependents{byRef: make(map[string][]lintext.BaselineDependent), schemaless: true}
 		}
 		if strings.TrimSpace(dependent.Schema) != "" {
 			state.schemaless = false
@@ -710,7 +563,7 @@ func newBaselineDependentIndex(dependents []BaselineDependent) map[int64]baselin
 
 // baselineDependentKeys are the spellings a migration might use for the column,
 // in the forms [baselineKeys] builds for the same reason.
-func baselineDependentKeys(dependent BaselineDependent) []string {
+func baselineDependentKeys(dependent lintext.BaselineDependent) []string {
 	name := normalizeIdent(dependent.Column)
 	table := normalizeIdent(dependent.Table)
 	if dependent.Schema == "" {
@@ -729,7 +582,7 @@ func baselineDependentKeys(dependent BaselineDependent) []string {
 // answer "something reads a column of this name" is still true, and the finding
 // names each reader with the table it read. Reporting nothing would be the
 // silence this rule exists to remove.
-func (b baselineDependents) readers(tableRef, columnName string) []BaselineDependent {
+func (b baselineDependents) readers(tableRef, columnName string) []lintext.BaselineDependent {
 	if len(b.byRef) == 0 || tableRef == "" || columnName == "" {
 		return nil
 	}

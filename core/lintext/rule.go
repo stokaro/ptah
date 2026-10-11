@@ -9,6 +9,43 @@
 // The contract carries no Go closure. An in-process owner may keep its checks
 // as Go functions behind [Checks]; a remote one answers the same requests
 // over its transport.
+//
+// # Baseline rules
+//
+// Some rules cannot judge a statement from its text. Renaming a column says
+// nothing about the type the retired name carried, and an index build says
+// nothing about whether its table is partitioned. A rule that needs the
+// schema state a migration version starts from declares
+// [InputBaselineSchema], or [InputBaselineRefinement] when the text alone
+// supports a finding that the state refines. A host serves such a rule in two
+// calls of [Service.CheckMigrations] over the same files and codes.
+//
+// The first call carries no [CheckRequest.Baseline]. The owner reports what
+// the text supports, and lists in [CheckResult.BaselineSubjects], per rule and
+// file, the statements it would judge further with the state that file's
+// version starts from. It lists them on every call, whatever the request
+// carries, because the host reads them each time to decide what the run still
+// lacks. A rule that lists nothing costs the host nothing.
+//
+// The host keeps the subjects it can act on: those on an up file the run
+// lints, that carries a version, where the run enables the rule, and on a
+// statement in a schema the run reviews. Each file it keeps names a version
+// the host reads. With a dev database, the host replays the migration
+// directory on it in version order and, just before it applies each of those
+// versions, reads the schemas the run reviews: every column, index and
+// TimescaleDB hypertable, and the views and routines that read each column.
+// Those are the rows of a [Baseline], each naming the version whose starting
+// state it describes.
+//
+// The host then calls again, with Baseline holding the rows of every version
+// it read. The second answer replaces the first, so the owner reports every
+// finding again rather than what the state added. A version the host read no
+// rows for resolves nothing, and its files are judged as on the first call. A
+// host may call more than twice for one run, for instance again with a server
+// version the dev database reported, and keeps the last answer. Without a dev
+// database it makes no second call: it keeps the first answer and reports
+// each kept subject's rule and file as an input the run did not supply, so a
+// thinner report never reads as a clean one.
 package lintext
 
 import (
@@ -47,12 +84,21 @@ const (
 	// InputRoutineBody also reads the parsed body of a routine a statement
 	// defines, which [Statement.Routine] carries.
 	InputRoutineBody Input = "routine-body"
-	// InputBaselineSchema also reads the schema state a version starts from.
+	// InputBaselineSchema also reads the schema state a version starts from,
+	// which a host supplies in [CheckRequest.Baseline] for the statements the
+	// rule names in [CheckResult.BaselineSubjects].
 	InputBaselineSchema Input = "baseline-schema"
 	// InputBaselineRefinement reports from the text alone and refines the
-	// report with the schema state where a run supplies it.
+	// report with the schema state where a run supplies it, asked for the
+	// way [InputBaselineSchema] asks.
 	InputBaselineRefinement Input = "baseline-refinement"
 )
+
+// ReadsBaseline reports whether a rule with this input reads the schema state
+// a version starts from, as its subject or as a refinement of the text.
+func (i Input) ReadsBaseline() bool {
+	return i == InputBaselineSchema || i == InputBaselineRefinement
+}
 
 // Rule describes one rule an owner checks, as data a host reads without
 // running it.

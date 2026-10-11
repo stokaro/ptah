@@ -58,7 +58,7 @@ func TestAnalyze_YDB(t *testing.T) {
 func TestLoadPolicy_YDBStandsAlone(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := migrationlintgate.LoadPolicy(ydbGateFS("dialect: postgres\n"), "ydb")
+	_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), ydbGateFS("dialect: postgres\n"), "ydb")
 
 	c.Assert(err, qt.ErrorMatches, `lint dialect "postgres" does not match database dialect "ydb"`)
 }

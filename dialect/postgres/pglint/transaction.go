@@ -1,6 +1,9 @@
-package lint
+package pglint
 
 import (
+	"slices"
+
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/txrequire"
@@ -19,19 +22,19 @@ import (
 // Either direction is checked. The migrator wraps a down file in the same
 // transaction it wraps an up file in, so a rollback that mixes a concurrent
 // index with transactional DDL is refused the same way.
-func checkTransactionMix(file *File) []Finding {
-	if (!file.IsUp && !file.IsDown) || file.NoTransaction {
+func checkTransactionMix(_ lintext.Target, files []lintext.File, index int) []lintext.Violation {
+	file := &files[index]
+	if (!file.Up && !file.Down) || file.NoTransaction {
 		return nil
 	}
 	statements := make([]txrequire.Statement, 0, len(file.Statements))
-	transactional := false
-	for index := range file.Statements {
-		statement := &file.Statements[index]
+	for position := range file.Statements {
+		statement := &file.Statements[position]
 		if isTransactionControlStatement(statement.Words) {
 			continue
 		}
 		statements = append(statements, txrequire.Statement{
-			Index: statement.Index,
+			Index: position,
 			Line:  statement.Line,
 			SQL:   statement.SQL,
 		})
@@ -42,6 +45,7 @@ func checkTransactionMix(file *File) []Finding {
 	}
 	// A file that is ENTIRELY non-transactional is not a mix; it is a file that
 	// should carry the directive, which is a different rule's business.
+	transactional := false
 	for _, statement := range statements {
 		if !isReportedStatement(result, statement.Index) {
 			transactional = true
@@ -52,16 +56,20 @@ func checkTransactionMix(file *File) []Finding {
 		return nil
 	}
 	first := result.Findings[0]
-	return []Finding{{
-		Rule:     "TX101",
-		Title:    "transactional and non-transactional statements mixed",
-		Severity: SeverityWarning,
-		File:     file.Path,
-		Line:     first.Statement.Line,
+	return []lintext.Violation{{
+		Statement: first.Statement.Index,
 		Message: "this migration mixes PostgreSQL statements that require autocommit with " +
 			"transactional DDL: " + first.Message + "; split them into separate migrations",
-		Context: statementFindingContext(first.Statement.Index),
 	}}
+}
+
+// checkEmbeddedTransaction reports an explicit transaction block, which the
+// migrator's own transaction management cannot nest.
+func checkEmbeddedTransaction(_ lintext.Target, _ *lintext.File, statement *lintext.Statement) (bool, string) {
+	if !hasWordPrefix(statement.Words, "BEGIN") && !hasWordPrefix(statement.Words, "START", "TRANSACTION") {
+		return false, ""
+	}
+	return true, "explicit transaction blocks conflict with the migrator's transaction management; remove BEGIN/COMMIT or mark the migration non-transactional"
 }
 
 // transactionMixCapabilities is the server a file is judged against offline.
@@ -82,4 +90,18 @@ func isReportedStatement(result txrequire.Result, index int) bool {
 		}
 	}
 	return false
+}
+
+// isTransactionControlStatement reports a statement that opens or closes a
+// transaction, which the mix judges as neither side.
+func isTransactionControlStatement(words []string) bool {
+	return hasWordPrefix(words, "BEGIN") ||
+		hasWordPrefix(words, "START", "TRANSACTION") ||
+		hasWordPrefix(words, "COMMIT") ||
+		hasWordPrefix(words, "ROLLBACK")
+}
+
+// hasWordPrefix reports whether words starts with prefix.
+func hasWordPrefix(words []string, prefix ...string) bool {
+	return len(words) >= len(prefix) && slices.Equal(words[:len(prefix)], prefix)
 }

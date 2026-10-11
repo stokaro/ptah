@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/dialect/mysql/mysqlconvert"
+	"ptah.run/dialect/postgres/pglint"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
@@ -73,6 +74,7 @@ func New() (*engine.Runtime, error) {
 		}
 		if name == platform.Postgres {
 			provider.Targets[0].Constraints = pgproject.Constraints{}
+			provider.Lint = []engine.Lint{{Rules: pglint.Rules(), Service: pglint.Service{}}}
 		}
 		if name == platform.CockroachDB {
 			registerCockroachDBServices(&provider, name)

@@ -62,6 +62,25 @@ func TestRule_Validate_FailurePath(t *testing.T) {
 	}
 }
 
+// The two baseline inputs read the state a version starts from; the text and
+// a routine body do not.
+func TestInput_ReadsBaseline(t *testing.T) {
+	for _, test := range []struct {
+		input lintext.Input
+		want  bool
+	}{
+		{lintext.InputStatementText, false},
+		{lintext.InputRoutineBody, false},
+		{lintext.InputBaselineSchema, true},
+		{lintext.InputBaselineRefinement, true},
+	} {
+		t.Run(string(test.input), func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.input.ReadsBaseline(), qt.Equals, test.want)
+		})
+	}
+}
+
 // A rule judges the targets it names, and every rule judges a run that
 // names none; a clone shares no slice with the rule.
 func TestRule_JudgesAndClone(t *testing.T) {
@@ -122,6 +141,22 @@ func checkRequest() lintext.CheckRequest {
 	}}}
 }
 
+// A finding about a statement may name its subjects, and a baseline rule may
+// name the statements it wants the state for.
+func TestValidateCheck_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	result := lintext.CheckResult{Complete: true,
+		Findings: []lintext.Finding{
+			{Code: "XY101", Statement: 0, Message: "m", Subjects: []lintext.Subject{
+				{Kind: lintext.SubjectTable, Name: "a"}, {Kind: lintext.SubjectColumn, Name: "id", Parent: "a", DataType: "int"}}},
+			{Code: "XY101", Statement: -1, Message: "m"},
+		},
+		BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", File: 0, Statements: []int{0, 1}}},
+	}
+
+	c.Assert(lintext.ValidateCheck(checkRequest(), result), qt.IsNil)
+}
+
 func TestValidateCheck_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -133,6 +168,22 @@ func TestValidateCheck_FailurePath(t *testing.T) {
 		{"a statement not held", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Statement: 2, Message: "m"}}}},
 		{"below the file", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Statement: -2, Message: "m"}}}},
 		{"no message", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101"}}}},
+		{"a subject of a whole file", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Statement: -1, Message: "m",
+			Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: "a"}}}}}},
+		{"a subject of no known kind", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Message: "m",
+			Subjects: []lintext.Subject{{Kind: "index", Name: "a"}}}}}},
+		{"a subject without a name", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Message: "m",
+			Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn}}}}}},
+		{"a baseline subject of a code not enabled", lintext.CheckResult{Complete: true,
+			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY102", Statements: []int{0}}}}},
+		{"a baseline subject of a file not held", lintext.CheckResult{Complete: true,
+			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", File: 1, Statements: []int{0}}}}},
+		{"a baseline subject of a statement not held", lintext.CheckResult{Complete: true,
+			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", Statements: []int{0, 2}}}}},
+		{"a baseline subject below the statements", lintext.CheckResult{Complete: true,
+			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", Statements: []int{-1}}}}},
+		{"a baseline subject naming no statement", lintext.CheckResult{Complete: true,
+			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101"}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -160,6 +211,10 @@ func TestChecks_CheckMigrations_HappyPath(t *testing.T) {
 		File: func(_ lintext.Target, files []lintext.File, index int) []lintext.Violation {
 			return []lintext.Violation{{Statement: -1, Message: files[index].Name + " has " + strings.Repeat("s", len(files[index].Statements))}}
 		}}
+	subjectCheck := lintext.Check{Rule: lintext.Rule{Code: "XY104", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}},
+		File: func(lintext.Target, []lintext.File, int) []lintext.Violation {
+			return []lintext.Violation{{Statement: 1, Message: "creates b", Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: "b"}}}}
+		}}
 	for _, test := range []struct {
 		name    string
 		checks  lintext.Checks
@@ -173,6 +228,9 @@ func TestChecks_CheckMigrations_HappyPath(t *testing.T) {
 			[]lintext.Finding{{Code: "XY101", File: 0, Statement: 0, Message: "drops a table"}}},
 		{"a file check", lintext.Checks{dropCheck(false), fileCheck}, lintext.CheckRequest{Codes: []string{"XY103"}, Files: checkRequest().Files},
 			[]lintext.Finding{{Code: "XY103", File: 0, Statement: -1, Message: "1.up.sql has ss"}}},
+		{"a file check naming subjects", lintext.Checks{subjectCheck}, lintext.CheckRequest{Codes: []string{"XY104"}, Files: checkRequest().Files},
+			[]lintext.Finding{{Code: "XY104", File: 0, Statement: 1, Message: "creates b",
+				Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: "b"}}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -191,6 +249,8 @@ func TestChecks_CheckMigrations_FailurePath(t *testing.T) {
 	cancel()
 	both := dropCheck(false)
 	both.File = func(lintext.Target, []lintext.File, int) []lintext.Violation { return nil }
+	baselineCheck := dropCheck(false)
+	baselineCheck.Rule.Input = lintext.InputBaselineRefinement
 	for _, test := range []struct {
 		name    string
 		ctx     context.Context
@@ -200,6 +260,8 @@ func TestChecks_CheckMigrations_FailurePath(t *testing.T) {
 		{"a code no check carries", context.Background(), lintext.Checks{}, `.*no check of rule XY101`},
 		{"a check with both functions", context.Background(), lintext.Checks{both}, `.*check XY101 must set exactly one of Statement and File`},
 		{"two checks of one code", context.Background(), lintext.Checks{dropCheck(false), dropCheck(true)}, `.*two checks of rule XY101`},
+		{"a check whose rule reads a baseline", context.Background(), lintext.Checks{baselineCheck},
+			`.*check XY101 reads a baseline, which Checks cannot ask for; implement Service`},
 		{"cancellation", canceled, lintext.Checks{dropCheck(false)}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

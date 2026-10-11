@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
@@ -19,7 +20,7 @@ import (
 // Withheld is the state a run reaches when the replay read no columns for the
 // version a rule asked about, which is what `lintDirectory` returns when the
 // second pass has nothing to re-read with.
-func unmetInputAnalysis(c *qt.C, baseline []lint.BaselineColumn) lint.Analysis {
+func unmetInputAnalysis(c *qt.C, baseline []lintext.BaselineColumn) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_base.sql":   {Data: []byte("CREATE TABLE users (id int NOT NULL);")},
@@ -65,7 +66,7 @@ func TestWriteUnmetInputNoticeIsSilentWhenTheInputArrived(t *testing.T) {
 	var out strings.Builder
 
 	err := migrationlintreport.WriteUnmetInputNotice(&out, migrationlintreport.Report{
-		Analysis: unmetInputAnalysis(c, []lint.BaselineColumn{{
+		Analysis: unmetInputAnalysis(c, []lintext.BaselineColumn{{
 			Version:  2,
 			Table:    "users",
 			Name:     "id",

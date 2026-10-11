@@ -23,7 +23,7 @@ func TestLoadPolicy_ServerVersion_HappyPath(t *testing.T) {
 			lint.ConfigFileName: {Data: []byte("server-version: \"16\"\n")},
 		}
 
-		policy, err := migrationlintgate.LoadPolicy(fsys, "postgres")
+		policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "postgres")
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(policy.BlockingFamilies(), qt.Contains, "DS")
@@ -35,7 +35,7 @@ func TestLoadPolicy_ServerVersion_HappyPath(t *testing.T) {
 			lint.ConfigFileName: {Data: []byte("dialect: postgres\n")},
 		}
 
-		_, err := migrationlintgate.LoadPolicy(fsys, "postgres")
+		_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "postgres")
 
 		c.Assert(err, qt.IsNil)
 	})
@@ -48,7 +48,7 @@ func TestLoadPolicy_ServerVersion_FailurePath(t *testing.T) {
 			lint.ConfigFileName: {Data: []byte("server-version: seventeen\n")},
 		}
 
-		_, err := migrationlintgate.LoadPolicy(fsys, "postgres")
+		_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "postgres")
 
 		c.Assert(err, qt.ErrorMatches, `"seventeen" is not a recognized postgres server version.*`)
 	})
@@ -59,7 +59,7 @@ func TestLoadPolicy_ServerVersion_FailurePath(t *testing.T) {
 			lint.ConfigFileName: {Data: []byte("server-version: 10.11.6-MariaDB\n")},
 		}
 
-		_, err := migrationlintgate.LoadPolicy(fsys, "postgres")
+		_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "postgres")
 
 		c.Assert(err, qt.ErrorMatches, `.*mariadb.*`)
 	})
@@ -75,7 +75,7 @@ func TestLoadPolicy_UnsupportedLintDialect_HappyPath(t *testing.T) {
 		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - MF103\n")},
 	}
 
-	policy, err := migrationlintgate.LoadPolicy(fsys, "oracle")
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "oracle")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(policy.BlockingFamilies(), qt.Contains, "DS")
@@ -89,7 +89,7 @@ func TestLoadPolicy_UnsupportedLintDialect_FailurePath(t *testing.T) {
 		lint.ConfigFileName: {Data: []byte("server-version: \"23\"\n")},
 	}
 
-	_, err := migrationlintgate.LoadPolicy(fsys, "oracle")
+	_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "oracle")
 
 	c.Assert(err, qt.ErrorMatches,
 		`lint server-version "23" cannot be resolved against database dialect "oracle".*`)

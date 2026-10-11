@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintscan"
 )
 
@@ -103,9 +104,9 @@ import (
 //
 // The type comparison reads the column's current spelling, character set and
 // collation, and the keys on it, from the schema state the version starts
-// from ([BaselineColumn.ColumnType], [BaselineColumn.Charset],
-// [BaselineColumn.TableCharset], [BaselineColumn.Collation],
-// [BaselineColumn.TableCollation] and [BaselineIndex]); without that state
+// from ([lintext.BaselineColumn.ColumnType], [lintext.BaselineColumn.Charset],
+// [lintext.BaselineColumn.TableCharset], [lintext.BaselineColumn.Collation],
+// [lintext.BaselineColumn.TableCollation] and [lintext.BaselineIndex]); without that state
 // MY130 and MY136 stay quiet, DS103 and MY101 still report the statement,
 // and [Analysis.UnmetInputs] names them. A clause that names a character set
 // and no collation leaves the column on that set's default collation, which
@@ -213,7 +214,7 @@ const (
 
 // keyCoverageOf classifies the keys on one column. columnName is the
 // linter's normalized form.
-func keyCoverageOf(indexes []BaselineIndex, columnName string) keyCoverage {
+func keyCoverageOf(indexes []lintext.BaselineIndex, columnName string) keyCoverage {
 	coverage := keyNone
 	for _, idx := range indexes {
 		for _, part := range idx.Parts {
@@ -843,7 +844,7 @@ func resolveColumnChanges(file *File) []resolvedColumnChange {
 // without a collation takes that set's own default, which the two engines
 // spell differently, and a table whose default set the file changed earlier
 // has a default collation the baseline did not see.
-func resolvedCollation(updated mysqlType, column BaselineColumn, tableCharset string) string {
+func resolvedCollation(updated mysqlType, column lintext.BaselineColumn, tableCharset string) string {
 	switch {
 	case updated.collate != "":
 		return updated.collate

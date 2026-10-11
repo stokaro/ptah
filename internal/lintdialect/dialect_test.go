@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 )
@@ -356,7 +358,7 @@ type ruleDialectCoverage struct {
 // ruleFamilyCoverage measures every built-in rule against every lint family.
 func ruleFamilyCoverage(c *qt.C) []ruleDialectCoverage {
 	members := familyMembers(c)
-	rules := lint.Rules()
+	rules := must.Must(lint.Rules(builtintest.Runtime()))
 	c.Assert(len(rules) > 0, qt.IsTrue, qt.Commentf("no built-in rules to measure"))
 
 	coverages := make([]ruleDialectCoverage, 0, len(rules)*len(members))

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -478,7 +479,7 @@ func TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword(t *testing.T) {
 		c := qt.New(t)
 
 		analysis := analyzeCost(c, "mysql", alter,
-			lint.BaselineColumn{Version: 2, Table: "orders", Name: "total", ColumnType: "int", NotNull: false})
+			lintext.BaselineColumn{Version: 2, Table: "orders", Name: "total", ColumnType: "int", NotNull: false})
 
 		c.Assert(messageOf(analysis.Findings(), "MY147"), qt.Contains, "making total NOT NULL rebuilds the table")
 	})
@@ -487,7 +488,7 @@ func TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword(t *testing.T) {
 		c := qt.New(t)
 
 		analysis := analyzeCost(c, "mysql", alter,
-			lint.BaselineColumn{Version: 2, Table: "orders", Name: "total", ColumnType: "int", NotNull: true})
+			lintext.BaselineColumn{Version: 2, Table: "orders", Name: "total", ColumnType: "int", NotNull: true})
 
 		c.Assert(messageOf(analysis.Findings(), "MY147"), qt.Equals, "")
 	})

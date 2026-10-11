@@ -69,7 +69,7 @@ func TestAnalyze_WithoutAGateSectionOnlyDataSafetyBlocks(t *testing.T) {
 func TestLoadPolicy_GateFamiliesAreListed(t *testing.T) {
 	c := qt.New(t)
 
-	policy, err := migrationlintgate.LoadPolicy(gateFS("gate:\n  families: [PG, MY, DS]\n"), "mysql")
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), gateFS("gate:\n  families: [PG, MY, DS]\n"), "mysql")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(policy.BlockingFamilies(), qt.DeepEquals, []string{"DS", "PG", "MY"})
@@ -101,7 +101,7 @@ func TestLoadPolicy_GateRefusesAFamilyNoRuleBelongsTo(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := migrationlintgate.LoadPolicy(gateFS(test.policy), "mysql")
+			_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), gateFS(test.policy), "mysql")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}

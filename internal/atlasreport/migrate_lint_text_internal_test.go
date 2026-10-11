@@ -16,6 +16,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -151,7 +152,7 @@ func analyzeMigrationsWithBaseline(
 	t *testing.T,
 	files map[string]string,
 	latest int,
-	baseline []migrationlint.BaselineColumn,
+	baseline []lintext.BaselineColumn,
 ) migrationlint.Analysis {
 	c := qt.New(t)
 	t.Helper()
@@ -209,7 +210,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 		name     string
 		files    map[string]string
 		latest   int
-		baseline []migrationlint.BaselineColumn
+		baseline []lintext.BaselineColumn
 		want     string
 	}{
 		{
@@ -606,7 +607,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 				"2.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\n",
 			},
 			latest: 1,
-			baseline: []migrationlint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "users", Name: "id", DataType: "integer", NotNull: true,
 			}},
 			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
@@ -637,7 +638,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 				"2.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\n",
 			},
 			latest: 1,
-			baseline: []migrationlint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "users", Name: "id", DataType: "integer",
 			}},
 			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +

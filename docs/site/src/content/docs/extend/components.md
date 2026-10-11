@@ -567,7 +567,11 @@ if err != nil {
 }
 fmt.Printf("directory hash: %s\n", sum.DirHash)
 
-lintConfig, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
+runtime, err := builtin.New()
+if err != nil {
+	return err
+}
+lintConfig, err := lint.LoadConfigFS(runtime, fsys, lint.ConfigFileName)
 if err != nil {
 	return err
 }
@@ -580,10 +584,6 @@ lintOptions := lint.Options{
 	Dialect:     dialect,
 	Disabled:    lintConfig.DisabledRules,
 	RuleConfigs: lintConfig.Rules,
-}
-runtime, err := builtin.New()
-if err != nil {
-	return err
 }
 findings, err := lint.LintFS(ctx, runtime, fsys, lintOptions)
 if err != nil {
@@ -604,11 +604,19 @@ are the dialect's own answers; a run that names no dialect splits with the
 dialect-blind scanner. The bundled `builtin.New` runtime splits every
 built-in dialect.
 
+The runtime also holds the rules the engine owners check, such as the
+PostgreSQL owner's transaction family. `lint.Rules(runtime)` lists them after
+the rules the lint package checks itself, and a run asks the owners for their
+findings through `Runtime.CheckMigrations`, once per run, then applies the
+same policy to them as to every other finding. The configuration loaders take
+the runtime for the same reason: a `gate` family is checked against its rules.
+
 `LintFS` and `AnalyzeFS` validate `lint.Options` before reading migrations. A
 host that can return early when no work is pending, or that offers an execution
-override which skips analysis, should call `lint.ValidateOptions(lintOptions)`
-before that branch. This rejects unknown selectors against the active built-in,
-registered, and per-run rule set even when no migration is analyzed.
+override which skips analysis, should call
+`lint.ValidateOptions(runtime, lintOptions)` before that branch. This rejects
+unknown selectors against the runtime's rules and the run's own even when no
+migration is analyzed.
 
 Use `lint.AnalyzeFS` when more than findings are needed. It captures every SQL
 file plus migration metadata (`atlas.sum`, `ptah.sum`, and
@@ -661,13 +669,12 @@ findings. Report adapters should omit ignored files while retaining them in the
 captured snapshot.
 
 A host tool can add its own analyzers to the same run without reimplementing
-the dialect-aware scanner. `Options.ExtraRules` appends per-run rules — the
-preferred shape, with no global state. `lint.Register` separately installs a
-rule process-wide and returns an error for invalid or duplicate rules; callers
-must handle that error during initialization. Either way, the rule receives statements Ptah has already
-prepared: `Statement.Words` is the comment-free token-word sequence the
-built-in rules scan, and `Statement.Canonical` is the uppercased display
-form. This example is compile-checked in `examples/reusable_components`:
+the dialect-aware scanner. `Options.ExtraRules` appends per-run rules, and a
+run refuses an invalid rule or one whose code another rule holds. The rule
+receives statements Ptah has already prepared: `Statement.Words` is the
+comment-free token-word sequence the built-in rules scan, and
+`Statement.Canonical` is the uppercased display form. This example is
+compile-checked in `examples/reusable_components`:
 
 ```go
 findings, err = lint.LintFS(ctx, runtime, fsys, lint.Options{
@@ -683,22 +690,13 @@ findings, err = lint.LintFS(ctx, runtime, fsys, lint.Options{
 })
 ```
 
-For plugin-style process initialization, register once and propagate the
-validation error:
-
-```go
-err := lint.Register(lint.Rule{
-	Code:     "ORG102",
-	Title:    "organization policy",
-	Severity: lint.SeverityWarning,
-	CheckStatement: func(stmt *lint.Statement) (bool, string) {
-		return slices.Contains(stmt.Words, "UNLOGGED"), "UNLOGGED tables require platform review"
-	},
-})
-if err != nil {
-	return err
-}
-```
+An analyzer that belongs to an engine publishes its rules through the
+runtime instead: an `engine.Provider` carries them in `Lint`, as
+`lintext.Rule` values, beside the `lintext.Service` that checks them in one
+call per run. Nothing in that contract is a Go function, so the owner can run
+in another process. The `core/lintext` package documentation describes the
+requests, including the two calls a rule that reads the schema state a
+version starts from is served in.
 
 Rule codes use uppercase ASCII letters and digits and start with a letter.
 Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`

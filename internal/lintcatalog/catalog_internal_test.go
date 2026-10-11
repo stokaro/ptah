@@ -11,7 +11,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -20,7 +22,7 @@ import (
 func TestJoinRefusesARuleTheCatalogDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 
-	registry := append(lint.Rules(), lint.Rule{
+	registry := append(must.Must(lint.Rules(builtintest.Runtime())), lint.Rule{
 		Code:           "PG112P",
 		Title:          "invented for this test",
 		Severity:       lint.SeverityWarning,
@@ -39,8 +41,8 @@ func TestJoinRefusesARuleTheCatalogDoesNotDescribe(t *testing.T) {
 func TestJoinRefusesACatalogRowForARuleThatIsGone(t *testing.T) {
 	c := qt.New(t)
 
-	registry := lint.Rules()[1:]
-	gone := lint.Rules()[0].Code
+	registry := must.Must(lint.Rules(builtintest.Runtime()))[1:]
+	gone := must.Must(lint.Rules(builtintest.Runtime()))[0].Code
 
 	entries, err := migrationEntriesFrom(registry)
 	c.Assert(entries, qt.IsNil)

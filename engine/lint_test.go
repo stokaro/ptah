@@ -223,6 +223,75 @@ func TestRuntime_CheckMigrations_FailurePath(t *testing.T) {
 	}
 }
 
+// replyService answers every check with reply and records each request.
+type replyService struct {
+	reply    lintext.CheckResult
+	requests *[]lintext.CheckRequest
+}
+
+func (s replyService) CheckMigrations(_ context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
+	*s.requests = append(*s.requests, request)
+	return s.reply, nil
+}
+
+// baselineRuntime holds target alpha and one owner of a baseline rule XY301
+// and a text rule XY302, whose service answers with reply.
+func baselineRuntime(c *qt.C, service replyService) *engine.Runtime {
+	c.Helper()
+	rules := []lintext.Rule{
+		{Code: "XY301", Title: "t", Severity: lintext.Warning, Targets: []string{"alpha"}, Input: lintext.InputBaselineSchema},
+		{Code: "XY302", Title: "t", Severity: lintext.Warning, Targets: []string{"alpha"}},
+	}
+	return must.Must(engine.New(engine.Provider{ID: "example.org/baseline", Targets: []engine.Target{{Name: "alpha"}},
+		Lint: []engine.Lint{{Rules: rules, Service: service}}}))
+}
+
+// twoFiles is a request for codes over two files of one statement each,
+// carrying a compatibility surface and a baseline.
+func twoFiles(codes ...string) lintext.CheckRequest {
+	statement := lintext.Statement{Start: 0, End: 1, Line: 1, SQL: "x", Words: []string{"X"}}
+	return lintext.CheckRequest{Target: lintext.Target{Name: "alpha"}, Codes: codes, Compatibility: "atlas",
+		Baseline: &lintext.Baseline{Columns: []lintext.BaselineColumn{{Version: 2, Table: "a", Name: "id"}}},
+		Files: []lintext.File{
+			{Name: "1.up.sql", Version: 1, Up: true, Statements: []lintext.Statement{statement}},
+			{Name: "2.up.sql", Version: 2, Up: true, Statements: []lintext.Statement{statement}},
+		}}
+}
+
+// The owner reads the run's surface and baseline from the request, and the
+// baseline subjects it names are joined in file and code order.
+func TestRuntime_CheckMigrations_BaselineSubjects(t *testing.T) {
+	c := qt.New(t)
+	var requests []lintext.CheckRequest
+	service := replyService{requests: &requests, reply: lintext.CheckResult{Complete: true, BaselineSubjects: []lintext.BaselineSubject{
+		{Code: "XY301", File: 1, Statements: []int{0}},
+		{Code: "XY301", File: 0, Statements: []int{0}},
+	}}}
+
+	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("XY301", "XY302"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true, BaselineSubjects: []lintext.BaselineSubject{
+		{Code: "XY301", File: 0, Statements: []int{0}},
+		{Code: "XY301", File: 1, Statements: []int{0}},
+	}})
+	c.Assert(requests, qt.DeepEquals, []lintext.CheckRequest{twoFiles("XY301", "XY302")})
+}
+
+// A rule that reads text alone has nothing to ask a baseline for, so a reply
+// naming subjects for it does not answer the request.
+func TestRuntime_CheckMigrations_BaselineSubjectsOfATextRule(t *testing.T) {
+	c := qt.New(t)
+	service := replyService{requests: new([]lintext.CheckRequest), reply: lintext.CheckResult{Complete: true,
+		BaselineSubjects: []lintext.BaselineSubject{{Code: "XY302", File: 0, Statements: []int{0}}}}}
+
+	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("XY302"))
+
+	c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
+	c.Assert(err, qt.ErrorMatches, `lint rules of "example.org/baseline": .*rule XY302 names baseline subjects but reads no baseline`)
+	c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
+}
+
 // SplitStatements asks the target's splitter under the canonical name and
 // returns its answer.
 func TestRuntime_SplitStatements_HappyPath(t *testing.T) {

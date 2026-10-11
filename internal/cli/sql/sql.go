@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/serverversion"
@@ -327,7 +328,13 @@ func sourceNames(sources []sqllint.Source) []string {
 // migration/lint owns the format; sqllint takes a plain map, so the dependency
 // stays here in the command rather than between the two libraries.
 func sqlLintSeverities() (map[string]sqllint.Severity, error) {
-	cfg, err := migrationlint.LoadConfigFS(os.DirFS("."), migrationlint.ConfigFileName)
+	// The policy is validated against the bundled rules, as the migration
+	// linter validates it: a gate family no rule belongs to is refused here too.
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := migrationlint.LoadConfigFS(runtime, os.DirFS("."), migrationlint.ConfigFileName)
 	if err != nil {
 		return nil, err
 	}

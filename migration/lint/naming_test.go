@@ -383,7 +383,7 @@ func TestNamingConfig_IsRefusedWhenItCannotEnforceAnything(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := lint.LoadConfigFS(fixture(map[string]string{".ptah-lint.yaml": test.yaml}), ".ptah-lint.yaml")
+			_, err := lint.LoadConfigFS(builtintest.Runtime(), fixture(map[string]string{".ptah-lint.yaml": test.yaml}), ".ptah-lint.yaml")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
@@ -392,7 +392,7 @@ func TestNamingConfig_IsRefusedWhenItCannotEnforceAnything(t *testing.T) {
 func TestNamingConfig_LoadsFromThePolicyFile(t *testing.T) {
 	c := qt.New(t)
 
-	cfg, err := lint.LoadConfigFS(fixture(map[string]string{".ptah-lint.yaml": "naming:\n  match: '^[a-z_]+$'\n  message: snake case\n  severity: error\n  foreign-key:\n    match: '^fk_'\n"}), ".ptah-lint.yaml")
+	cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fixture(map[string]string{".ptah-lint.yaml": "naming:\n  match: '^[a-z_]+$'\n  message: snake case\n  severity: error\n  foreign-key:\n    match: '^fk_'\n"}), ".ptah-lint.yaml")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Naming, qt.DeepEquals, &lint.NamingConfig{

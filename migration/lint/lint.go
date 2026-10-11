@@ -34,6 +34,17 @@
 // directions -- PostgreSQL charges the same lock for a blocking DROP INDEX
 // whether a migration is being applied or rolled back. File-level form rules
 // (naming, pairing) look at every *.sql file.
+//
+// # Rules the engine owners check
+//
+// An engine owner may publish rules of its own through the runtime a run is
+// given, as [ptah.run/core/lintext] data; the PostgreSQL owner publishes the
+// TX family that way. [Rules] lists them after this package's own. A run asks
+// the owners for their findings once, over every file, and applies the same
+// policy to them as to every other finding: suppression directives, severity
+// overrides, excluded paths, subsumption and the reviewed-schema filter. A
+// run that names no dialect sends every owner's rules over the dialect-blind
+// split, as it runs every rule of this package.
 package lint
 
 import (
@@ -43,6 +54,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/risk"
@@ -64,7 +76,9 @@ const (
 	SeverityInfo Severity = risk.Info
 )
 
-// Rule is one lint check. Exactly one of CheckStatement / CheckFile is set.
+// Rule is one lint check. Exactly one of CheckStatement / CheckFile is set,
+// except on a rule an engine owner publishes: [Rules] returns that one with
+// neither, because its owner checks it.
 type Rule struct {
 	// Code is the stable identifier (DS101, PG101, ...). It starts with an
 	// uppercase ASCII letter and contains only uppercase ASCII letters and digits.
@@ -102,9 +116,9 @@ type Rule struct {
 	// so a run that could not resolve the specific one -- no baseline, say --
 	// still reports the statement under the generic rule.
 	//
-	// Every code named here must be a registered rule; [Register] refuses a
-	// rule that subsumes an unknown one, because a misspelled code would
-	// suppress nothing and say nothing.
+	// Every code named here must be a rule the run applies; an analysis
+	// refuses a rule that subsumes an unknown one, because a misspelled code
+	// would suppress nothing and say nothing.
 	Subsumes []string
 	// Input declares what this rule reads. The zero value,
 	// [InputStatementText], is the migration SQL and nothing else.
@@ -128,6 +142,9 @@ type Rule struct {
 	// A directory with nothing for the rule to resolve therefore costs no round
 	// trip at all.
 	BaselineSubjects func(file *File) []int
+	// owned marks a rule an engine owner publishes and checks, whose findings
+	// and baseline subjects an analysis reads from the owner's answer.
+	owned bool
 }
 
 // RuleInput is the analyzer input a [Rule] reads.
@@ -148,7 +165,7 @@ const (
 	InputStatementText RuleInput = iota
 	// InputBaselineSchema additionally reads the schema state the analyzed
 	// version starts from, replayed onto a dev database by the caller and
-	// handed back through [Options.Baseline]; see [BaselineColumn].
+	// handed back through [Options.Baseline]; see [lintext.BaselineColumn].
 	InputBaselineSchema
 	// InputRoutineBody additionally reads the parsed body of a routine the
 	// statement defines; see [Statement.Routine].
@@ -275,9 +292,9 @@ type Options struct {
 	// AtlasTemplateData supplies data for Atlas SQL template migrations.
 	// When nil, templates render with migrationfile.AtlasTemplateData{}.
 	AtlasTemplateData any
-	// ExtraRules appends caller-provided rules to the built-in registry for
-	// this run. It is the preferred API for out-of-tree analyzers that should
-	// not mutate global process state.
+	// ExtraRules appends caller-provided rules to the rules of the runtime
+	// for this run: an in-process analyzer's way in. An analyzer that runs in
+	// an engine owner publishes its rules through the runtime instead.
 	ExtraRules []Rule
 	// RuleConfigs carries per-rule severity and path-scoping overrides,
 	// normally loaded from .ptah-lint.yaml.
@@ -298,8 +315,8 @@ type Options struct {
 	// Baseline carries the schema state each analyzed version starts from,
 	// normally read from the dev database after replaying the migrations that
 	// precede that version. Empty analyzes SQL text alone, which is what every
-	// run without a dev database does. See [BaselineColumn].
-	Baseline []BaselineColumn
+	// run without a dev database does. See [lintext.BaselineColumn].
+	Baseline []lintext.BaselineColumn
 
 	// BaselineDependents carries what reads each column in the state a version
 	// starts from, for the rule that reports a drop by naming what breaks.
@@ -308,20 +325,20 @@ type Options struct {
 	// columns are a catalog query and these come from analyzing view and
 	// routine bodies, so a caller can supply one without the other and the
 	// unmet-input report says which is missing.
-	BaselineDependents []BaselineDependent
+	BaselineDependents []lintext.BaselineDependent
 
 	// BaselineIndexes carries the indexes of the state each version starts
 	// from, read in the same catalog read as Baseline, for the rules whose
 	// answer turns on whether a column is indexed, which index a statement
 	// names, or whether the rows are already proven unique. See
-	// [BaselineIndex].
-	BaselineIndexes []BaselineIndex
+	// [lintext.BaselineIndex].
+	BaselineIndexes []lintext.BaselineIndex
 
 	// BaselineHypertables carries the TimescaleDB hypertables of the state
 	// each version starts from, read in the same catalog read as Baseline,
 	// for the rule whose remedy the engine refuses on a hypertable. See
-	// [BaselineHypertable].
-	BaselineHypertables []BaselineHypertable
+	// [lintext.BaselineHypertable].
+	BaselineHypertables []lintext.BaselineHypertable
 
 	// Naming is the naming convention the NM rules enforce, normally the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
@@ -445,8 +462,12 @@ func collectFindings(file *File, opts Options, rules []Rule) []Finding {
 	return findings
 }
 
-func rulesForOptions(opts Options) ([]Rule, error) {
-	rules := append(Rules(), cloneRules(opts.ExtraRules)...)
+func rulesForOptions(runtime lintext.Runtime, opts Options) ([]Rule, error) {
+	rules, err := Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
+	rules = append(rules, cloneRules(opts.ExtraRules)...)
 	declared, err := compileDeclaredRules(opts.RuleConfigs, rules, opts.Dialect)
 	if err != nil {
 		return nil, err
@@ -611,11 +632,12 @@ func matchGlobSegments(pattern, value []string) bool {
 // match would let `MF101` silence both with no spelling left that reaches
 // the check alone (stokaro/ptah#2942).
 //
-// The registered set is the built-in registry plus every rule added through
-// [Register]; a run's own [Options.ExtraRules] and declared rules are counted
-// by the analysis itself, which compares against the rules it runs.
-func SelectorSelects(selector, code string) bool {
-	return selectorSelects(selector, code, registeredCodes(Rules()))
+// The codes a selector is told apart from are those of rules, normally what
+// [Rules] returns for the run's runtime; a run's own [Options.ExtraRules] and
+// declared rules are counted by the analysis itself, which compares against
+// the rules it runs.
+func SelectorSelects(rules []Rule, selector, code string) bool {
+	return selectorSelects(selector, code, registeredCodes(rules))
 }
 
 func selectorSelects(selector, code string, registered map[string]struct{}) bool {

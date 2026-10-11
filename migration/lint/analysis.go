@@ -323,7 +323,7 @@ func (a Analysis) Findings() []Finding {
 //
 // It is empty for a run that already has nothing to gain, so a caller can skip
 // the dev-database round trips and the second analysis entirely. Feed the
-// versions back through [Options.Baseline]; see [BaselineColumn].
+// versions back through [Options.Baseline]; see [lintext.BaselineColumn].
 func (a Analysis) BaselineVersions() []int64 {
 	return slices.Clone(a.baselineVersions)
 }
@@ -390,18 +390,19 @@ func cloneFindings(findings []Finding) []Finding {
 	return cloned
 }
 
-// ValidateOptions checks a lint policy without reading migration files. Apply
-// gates should call it before any early return or bypass that can skip analysis.
-func ValidateOptions(opts Options) error {
-	_, _, err := validateOptions(opts)
+// ValidateOptions checks a lint policy against the rules of runtime without
+// reading migration files. Apply gates should call it before any early return
+// or bypass that can skip analysis. A nil runtime is an error.
+func ValidateOptions(runtime lintext.Runtime, opts Options) error {
+	_, _, err := validateOptions(runtime, opts)
 	return err
 }
 
-func validateOptions(opts Options) (migrationfile.DirFormat, []Rule, error) {
+func validateOptions(runtime lintext.Runtime, opts Options) (migrationfile.DirFormat, []Rule, error) {
 	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
 		return "", nil, err
 	}
-	rules, err := rulesForOptions(opts)
+	rules, err := rulesForOptions(runtime, opts)
 	if err != nil {
 		return "", nil, err
 	}
@@ -437,7 +438,7 @@ func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Op
 	if ctx == nil || runtime == nil {
 		return Analysis{}, errors.New("lint analysis requires a context and an engine runtime")
 	}
-	dirFormat, rules, err := validateOptions(opts)
+	dirFormat, rules, err := validateOptions(runtime, opts)
 	if err != nil {
 		return Analysis{}, err
 	}
@@ -459,18 +460,7 @@ func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Op
 		present[name] = struct{}{}
 	}
 
-	// Directions present per version, so pairing matches the migrator, which
-	// pairs an up and a down by their shared version prefix regardless of
-	// description, not by an identical file-name stem.
-	versionDirs := make(map[int64]map[string]bool)
-	for _, name := range names {
-		if parsed, parseErr := parseKnownMigrationName(path.Base(name), dirFormat); parseErr == nil {
-			if versionDirs[parsed.Version] == nil {
-				versionDirs[parsed.Version] = make(map[string]bool)
-			}
-			versionDirs[parsed.Version][parsed.Direction] = true
-		}
-	}
+	versionDirs := versionDirections(names, dirFormat)
 
 	// A run that named no server still analyzes against a resolved set, so a
 	// rule reading Capabilities never has to tell an unresolved target apart
@@ -523,6 +513,11 @@ func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Op
 	if opts.Dialect == platform.YDB {
 		ydbHistory(files)
 	}
+	owners, err := checkOwnedRules(ctx, runtime, files, split, rules, opts, target, registered)
+	if err != nil {
+		return Analysis{}, err
+	}
+	rules = owners.bind(rules)
 
 	var findings []Finding
 	for i := range files {
@@ -562,6 +557,22 @@ func LintFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Optio
 		return nil, err
 	}
 	return analysis.Findings(), nil
+}
+
+// versionDirections are the directions present per version, so pairing
+// matches the migrator, which pairs an up and a down by their shared version
+// prefix regardless of description, not by an identical file-name stem.
+func versionDirections(names []string, dirFormat migrationfile.DirFormat) map[int64]map[string]bool {
+	versionDirs := make(map[int64]map[string]bool)
+	for _, name := range names {
+		if parsed, parseErr := parseKnownMigrationName(path.Base(name), dirFormat); parseErr == nil {
+			if versionDirs[parsed.Version] == nil {
+				versionDirs[parsed.Version] = make(map[string]bool)
+			}
+			versionDirs[parsed.Version][parsed.Direction] = true
+		}
+	}
+	return versionDirs
 }
 
 type sqlSources map[string]string

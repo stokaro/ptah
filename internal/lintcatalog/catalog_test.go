@@ -11,7 +11,9 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/internal/migrationlintgate"
@@ -39,7 +41,7 @@ func codesOf(entries []lintcatalog.Entry) []string {
 
 // registeredMigrationCodes is what migration lint would report a finding under.
 func registeredMigrationCodes() []string {
-	rules := lint.Rules()
+	rules := must.Must(lint.Rules(builtintest.Runtime()))
 	codes := make([]string, 0, len(rules))
 	for _, rule := range rules {
 		codes = append(codes, rule.Code)
@@ -91,7 +93,7 @@ func findingCodes(c *qt.C, files map[string]string, profile lint.CompatibilityPr
 // dialectFindingCodes lints a one-version migration directory under a dialect
 // and returns the identifiers reported, sorted. Unlike findingCodes it gates
 // dialect-specific rules, which is what an Atlas row about a MySQL check needs.
-func dialectFindingCodes(tb testing.TB, dialect, up, down string, baseline ...lint.BaselineColumn) []string {
+func dialectFindingCodes(tb testing.TB, dialect, up, down string, baseline ...lintext.BaselineColumn) []string {
 	c := qt.New(tb)
 
 	fsys := fstest.MapFS{
@@ -129,12 +131,12 @@ func atlasRuleList(tb testing.TB, code string) []string {
 // reports a MySQL type, with its member list.
 // Both columns are NOT NULL already, so the NOT NULL a row's MODIFY carries
 // restates what is there and DD103 stays out of the row's finding set.
-func statusColumn(columnType string) []lint.BaselineColumn {
-	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "status", ColumnType: columnType, NotNull: true}}
+func statusColumn(columnType string) []lintext.BaselineColumn {
+	return []lintext.BaselineColumn{{Version: 1, Table: "orders", Name: "status", ColumnType: columnType, NotNull: true}}
 }
 
-func flagsColumn(columnType string) []lint.BaselineColumn {
-	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "flags", ColumnType: columnType, NotNull: true}}
+func flagsColumn(columnType string) []lintext.BaselineColumn {
+	return []lintext.BaselineColumn{{Version: 1, Table: "orders", Name: "flags", ColumnType: columnType, NotNull: true}}
 }
 
 // memberLiterals spells n distinct members, for the rows that exercise a
@@ -264,7 +266,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 		// baseline is the state version 1 starts from, for the rows whose
 		// rule compares the statement with what the column is now. A row
 		// without one is judged on the statement text alone.
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 	}{
 		// The eight member-list rows each carry the column's current list,
 		// because the finding is a comparison and the statement holds only
@@ -341,7 +343,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders MODIFY COLUMN total BIGINT NOT NULL;\n",
 			down:      "ALTER TABLE orders MODIFY COLUMN total INT NOT NULL;\n",
-			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "int", TableCharset: "utf8mb4", NotNull: true}},
+			baseline:  []lintext.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "int", TableCharset: "utf8mb4", NotNull: true}},
 		},
 		{
 			name:      "MY133, a primary key dropped without a replacement",
@@ -370,7 +372,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "postgres",
 			up:        "ALTER TABLE orders ALTER COLUMN total TYPE bigint;\n",
 			down:      "ALTER TABLE orders ALTER COLUMN total TYPE integer;\n",
-			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "integer"}},
+			baseline:  []lintext.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "integer"}},
 		},
 		{
 			name:      "PG304, a primary key over a nullable column",
@@ -378,7 +380,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "postgres",
 			up:        "ALTER TABLE orders ADD PRIMARY KEY (id);\n",
 			down:      "ALTER TABLE orders DROP CONSTRAINT orders_pkey;\n",
-			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "id", ColumnType: "integer"}},
+			baseline:  []lintext.BaselineColumn{{Version: 1, Table: "orders", Name: "id", ColumnType: "integer"}},
 		},
 		{
 			name:      "MY136, a table character set change",
@@ -386,7 +388,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;\n",
 			down:      "ALTER TABLE orders CONVERT TO CHARACTER SET latin1;\n",
-			baseline: []lint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 1, Table: "orders", Name: "note", ColumnType: "varchar(10)", Charset: "latin1", TableCharset: "latin1",
 			}},
 		},

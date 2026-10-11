@@ -282,7 +282,7 @@ func TestDeclaredRule_RefusedDeclarations(t *testing.T) {
 			c := qt.New(t)
 			opts := declaredRuleOptions(test.code, test.config, "postgres")
 
-			err := lint.ValidateOptions(opts)
+			err := lint.ValidateOptions(builtintest.Runtime(), opts)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.message)

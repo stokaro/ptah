@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
@@ -76,7 +77,7 @@ func refusedForDialect(err error) bool {
 // upRefuses reports whether `ptah migrations up` would refuse this policy
 // against a database whose wire dialect is databaseDialect.
 func upRefuses(fsys fstest.MapFS, databaseDialect string) bool {
-	_, err := migrationlintgate.LoadPolicy(fsys, databaseDialect)
+	_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, databaseDialect)
 	return refusedForDialect(err)
 }
 

@@ -5,27 +5,28 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
 
 // ordersIndex is one baseline index of orders over whole columns.
-func ordersIndex(name string, unique bool, columns ...string) lint.BaselineIndex {
-	parts := make([]lint.BaselineIndexPart, 0, len(columns))
+func ordersIndex(name string, unique bool, columns ...string) lintext.BaselineIndex {
+	parts := make([]lintext.BaselineIndexPart, 0, len(columns))
 	for _, column := range columns {
-		parts = append(parts, lint.BaselineIndexPart{Column: column})
+		parts = append(parts, lintext.BaselineIndexPart{Column: column})
 	}
-	return lint.BaselineIndex{Version: 2, Table: "orders", Name: name, Unique: unique, Parts: parts}
+	return lintext.BaselineIndex{Version: 2, Table: "orders", Name: name, Unique: unique, Parts: parts}
 }
 
 // ordersColumn is one baseline column of orders, for the NULLS NOT DISTINCT
 // rows that need to know whether a column can hold NULL.
-func ordersColumn(name string, notNull bool) lint.BaselineColumn {
-	return lint.BaselineColumn{Version: 2, Table: "orders", Name: name, ColumnType: "text", NotNull: notNull}
+func ordersColumn(name string, notNull bool) lintext.BaselineColumn {
+	return lintext.BaselineColumn{Version: 2, Table: "orders", Name: name, ColumnType: "text", NotNull: notNull}
 }
 
-func analyzeUniqueState(c *qt.C, dialect, migration string, columns []lint.BaselineColumn, indexes []lint.BaselineIndex) lint.Analysis {
+func analyzeUniqueState(c *qt.C, dialect, migration string, columns []lintext.BaselineColumn, indexes []lintext.BaselineIndex) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(uniqueFS(migration)), lint.Options{
 		Dialect:         dialect,
@@ -46,14 +47,14 @@ func TestIndexMadeUniqueRule_RecognizesAReplacementUnderANewName(t *testing.T) {
 		name      string
 		dialect   string
 		migration string
-		indexes   []lint.BaselineIndex
+		indexes   []lintext.BaselineIndex
 		want      []string
 	}{
 		{
 			name:      "PostgreSQL DROP INDEX then CREATE UNIQUE INDEX under a new name",
 			dialect:   "postgres",
 			migration: "DROP INDEX orders_email_idx;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_idx", false, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_idx", false, "email")},
 			want: []string{
 				"CREATE UNIQUE INDEX orders_email_uq replaces the index orders_email_idx dropped earlier, which covered the same columns, with a unique one under a new name",
 				"leaves the table without the index it had",
@@ -63,21 +64,21 @@ func TestIndexMadeUniqueRule_RecognizesAReplacementUnderANewName(t *testing.T) {
 			name:      "MySQL in one statement",
 			dialect:   "mysql",
 			migration: "ALTER TABLE orders DROP INDEX k_email, ADD UNIQUE KEY uq_email (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("k_email", false, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("k_email", false, "email")},
 			want:      []string{"ADD UNIQUE uq_email replaces the index k_email dropped earlier, which covered the same columns"},
 		},
 		{
 			name:      "the same columns in another order",
 			dialect:   "postgres",
 			migration: "DROP INDEX orders_email_code;\nCREATE UNIQUE INDEX orders_code_email ON orders (code, email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_code", false, "email", "code")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_code", false, "email", "code")},
 			want:      []string{"replaces the index orders_email_code dropped earlier, which covered the same columns"},
 		},
 		{
 			name:      "the dropped index is found among several",
 			dialect:   "postgres",
 			migration: "DROP INDEX orders_code_idx;\nDROP INDEX orders_email_idx;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_code_idx", false, "code"), ordersIndex("orders_email_idx", false, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_code_idx", false, "code"), ordersIndex("orders_email_idx", false, "email")},
 			want:      []string{"replaces the index orders_email_idx dropped earlier"},
 		},
 	}
@@ -102,27 +103,27 @@ func TestIndexMadeUniqueRule_LeavesADifferentIndexToMF101(t *testing.T) {
 	tests := []struct {
 		name      string
 		migration string
-		indexes   []lint.BaselineIndex
+		indexes   []lintext.BaselineIndex
 	}{
 		{
 			name:      "a dropped index over other columns",
 			migration: "DROP INDEX orders_code_idx;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_code_idx", false, "code")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_code_idx", false, "code")},
 		},
 		{
 			name:      "a dropped index over a superset of the columns",
 			migration: "DROP INDEX orders_email_code;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_code", false, "email", "code")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_code", false, "email", "code")},
 		},
 		{
 			name:      "a dropped index keyed by a prefix",
 			migration: "DROP INDEX orders_email_idx;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_idx", Parts: []lint.BaselineIndexPart{{Column: "email", Prefix: 5}}}},
+			indexes:   []lintext.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_idx", Parts: []lintext.BaselineIndexPart{{Column: "email", Prefix: 5}}}},
 		},
 		{
 			name:      "a dropped index the state does not know",
 			migration: "DROP INDEX orders_email_idx;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_code_idx", false, "code")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_code_idx", false, "code")},
 		},
 	}
 
@@ -142,39 +143,39 @@ func TestUniqueRules_StayQuietWhereTheRowsAreProvenUnique(t *testing.T) {
 	tests := []struct {
 		name      string
 		migration string
-		columns   []lint.BaselineColumn
-		indexes   []lint.BaselineIndex
+		columns   []lintext.BaselineColumn
+		indexes   []lintext.BaselineIndex
 	}{
 		{
 			name:      "a unique index over the same column",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
 		},
 		{
 			name:      "the primary key over a subset of the new key",
 			migration: "CREATE UNIQUE INDEX orders_id_email ON orders (id, email);",
-			indexes:   []lint.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_pkey", Unique: true, Primary: true, Parts: []lint.BaselineIndexPart{{Column: "id"}}}},
+			indexes:   []lintext.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_pkey", Unique: true, Primary: true, Parts: []lintext.BaselineIndexPart{{Column: "id"}}}},
 		},
 		{
 			name:      "a unique constraint added over a covered column",
 			migration: "ALTER TABLE orders ADD CONSTRAINT orders_email_uq UNIQUE (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
 		},
 		{
 			name:      "a unique index dropped and rebuilt under the same name",
 			migration: "DROP INDEX orders_email_uq;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_uq", true, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_uq", true, "email")},
 		},
 		{
 			name:      "NULLS NOT DISTINCT over a NOT NULL covered column",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email) NULLS NOT DISTINCT;",
-			columns:   []lint.BaselineColumn{ordersColumn("email", true)},
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
+			columns:   []lintext.BaselineColumn{ordersColumn("email", true)},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
 		},
 		{
 			name:      "a schema-qualified reference to the covered table",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON public.orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
 		},
 	}
 
@@ -195,51 +196,51 @@ func TestUniqueRules_KeepReportingWhereTheStateProvesNothing(t *testing.T) {
 	tests := []struct {
 		name      string
 		migration string
-		columns   []lint.BaselineColumn
-		indexes   []lint.BaselineIndex
+		columns   []lintext.BaselineColumn
+		indexes   []lintext.BaselineIndex
 	}{
 		{
 			name:      "a unique index over a superset of the new key",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_code", true, "email", "code")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_code", true, "email", "code")},
 		},
 		{
 			name:      "a non-unique index over the same column",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_idx", false, "email")},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_idx", false, "email")},
 		},
 		{
 			name:      "a partial unique index",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_live", Unique: true, Partial: true, Parts: []lint.BaselineIndexPart{{Column: "email"}}}},
+			indexes:   []lintext.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_live", Unique: true, Partial: true, Parts: []lintext.BaselineIndexPart{{Column: "email"}}}},
 		},
 		{
 			name:      "a unique index whose key parts the reader could not name",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_x", Unique: true, Incomplete: true, Parts: []lint.BaselineIndexPart{{Column: "email"}}}},
+			indexes:   []lintext.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_x", Unique: true, Incomplete: true, Parts: []lintext.BaselineIndexPart{{Column: "email"}}}},
 		},
 		{
 			name:      "a unique index keyed by a prefix",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_p", Unique: true, Parts: []lint.BaselineIndexPart{{Column: "email", Prefix: 5}}}},
+			indexes:   []lintext.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_p", Unique: true, Parts: []lintext.BaselineIndexPart{{Column: "email", Prefix: 5}}}},
 		},
 		{
 			name:      "a unique index over an expression",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes:   []lint.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_lower", Unique: true, Parts: []lint.BaselineIndexPart{{Column: ""}}}},
+			indexes:   []lintext.BaselineIndex{{Version: 2, Table: "orders", Name: "orders_email_lower", Unique: true, Parts: []lintext.BaselineIndexPart{{Column: ""}}}},
 		},
 		{
 			name:      "NULLS NOT DISTINCT over a nullable covered column",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email) NULLS NOT DISTINCT;",
-			columns:   []lint.BaselineColumn{ordersColumn("email", false)},
-			indexes:   []lint.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
+			columns:   []lintext.BaselineColumn{ordersColumn("email", false)},
+			indexes:   []lintext.BaselineIndex{ordersIndex("orders_email_old", true, "email")},
 		},
 		{
 			name:      "a table two schemas carry resolves to neither",
 			migration: "CREATE UNIQUE INDEX orders_email_uq ON orders (email);",
-			indexes: []lint.BaselineIndex{
-				{Version: 2, Schema: "public", Table: "orders", Name: "orders_email_old", Unique: true, Parts: []lint.BaselineIndexPart{{Column: "email"}}},
-				{Version: 2, Schema: "archive", Table: "orders", Name: "orders_email_old", Unique: true, Parts: []lint.BaselineIndexPart{{Column: "email"}}},
+			indexes: []lintext.BaselineIndex{
+				{Version: 2, Schema: "public", Table: "orders", Name: "orders_email_old", Unique: true, Parts: []lintext.BaselineIndexPart{{Column: "email"}}},
+				{Version: 2, Schema: "archive", Table: "orders", Name: "orders_email_old", Unique: true, Parts: []lintext.BaselineIndexPart{{Column: "email"}}},
 			},
 		},
 	}

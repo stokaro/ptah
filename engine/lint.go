@@ -102,10 +102,12 @@ func (r *Runtime) SplitStatements(ctx context.Context, request lintext.SplitRequ
 
 // CheckMigrations sends each of the request's codes to the owner that
 // publishes it, one call per owner, and joins the findings, sorted by file,
-// statement and code. A code no owner publishes, a rule that does not judge
-// the request's target and an unregistered target are refused before any
-// owner is called; a reply that does not answer its request wraps
-// lintext.ErrInvalid. An error returns no result.
+// statement and code, and the baseline subjects, sorted by file and code. A
+// code no owner publishes, a rule that does not judge the request's target and
+// an unregistered target are refused before any owner is called; a reply that
+// does not answer its request, or names baseline subjects for a rule whose
+// input reads no baseline, wraps lintext.ErrInvalid. An error returns no
+// result.
 func (r *Runtime) CheckMigrations(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
 	if ctx == nil {
 		return lintext.CheckResult{}, fmt.Errorf("%w: checking requires a context", lintext.ErrInvalid)
@@ -142,13 +144,24 @@ func (r *Runtime) CheckMigrations(ctx context.Context, request lintext.CheckRequ
 		if err != nil {
 			return lintext.CheckResult{}, err
 		}
+		owner := r.lintRules[batch.Codes[0]].owner
 		if err := lintext.ValidateCheck(batch, reply); err != nil {
-			return lintext.CheckResult{}, fmt.Errorf("lint rules of %q: %w", r.lintRules[batch.Codes[0]].owner, err)
+			return lintext.CheckResult{}, fmt.Errorf("lint rules of %q: %w", owner, err)
+		}
+		for _, subject := range reply.BaselineSubjects {
+			if !r.lintRules[subject.Code].rule.Input.ReadsBaseline() {
+				return lintext.CheckResult{}, fmt.Errorf("lint rules of %q: %w: rule %s names baseline subjects but reads no baseline",
+					owner, lintext.ErrInvalid, subject.Code)
+			}
 		}
 		result.Findings = append(result.Findings, reply.Findings...)
+		result.BaselineSubjects = append(result.BaselineSubjects, reply.BaselineSubjects...)
 	}
 	slices.SortStableFunc(result.Findings, func(a, b lintext.Finding) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Statement, b.Statement), cmp.Compare(a.Code, b.Code))
+	})
+	slices.SortStableFunc(result.BaselineSubjects, func(a, b lintext.BaselineSubject) int {
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Code, b.Code))
 	})
 	return result, ctx.Err()
 }

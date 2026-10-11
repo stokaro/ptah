@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -15,7 +16,7 @@ import (
 // info rules are disabled so that each row measures DS103's own judgment:
 // where a change is applied in place they subsume DS103, which
 // inplace_test.go pins on its own.
-func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lint.BaselineColumn) lint.Analysis {
+func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lintext.BaselineColumn) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(costFS(alter)), lint.Options{
 		Dialect:   dialect,
@@ -46,67 +47,67 @@ func TestColumnTypeChangedRule_StaysQuietWhereTheStateShowsNoTypeChange(t *testi
 		name    string
 		dialect string
 		alter   string
-		columns []lint.BaselineColumn
+		columns []lintext.BaselineColumn
 	}{
 		{
 			name:    "MODIFY that only sets NOT NULL",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1")},
 		},
 		{
 			name:    "the display width and a synonym fold away",
 			dialect: "mariadb",
 			alter:   "ALTER TABLE orders MODIFY total INTEGER(11) DEFAULT 0;",
-			columns: []lint.BaselineColumn{costColumn("total", "int(11)", "", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int(11)", "", "latin1")},
 		},
 		{
 			name:    "the same character set spelled out",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY note VARCHAR(10) CHARACTER SET latin1 COMMENT 'x';",
-			columns: []lint.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")},
 		},
 		{
 			name:    "a collation change alone is not a type change",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY note VARCHAR(10) COLLATE latin1_bin;",
-			columns: []lint.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")},
 		},
 		{
 			name:    "CHANGE that only renames",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders CHANGE total amount INT;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1")},
 		},
 		{
 			name:    "the same member list restated",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY kind ENUM('a','b') NOT NULL;",
-			columns: []lint.BaselineColumn{costColumn("kind", "enum('a','b')", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("kind", "enum('a','b')", "latin1", "latin1")},
 		},
 		{
 			name:    "two clauses that both restate",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL, MODIFY note VARCHAR(10) NULL;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1"), costColumn("note", "varchar(10)", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1"), costColumn("note", "varchar(10)", "latin1", "latin1")},
 		},
 		{
 			name:    "PostgreSQL restates the type",
 			dialect: "postgres",
 			alter:   "ALTER TABLE orders ALTER COLUMN total TYPE integer;",
-			columns: []lint.BaselineColumn{pgColumn("total", "integer", false)},
+			columns: []lintext.BaselineColumn{pgColumn("total", "integer", false)},
 		},
 		{
 			name:    "PostgreSQL restates the type through a synonym and SET DATA TYPE",
 			dialect: "postgres",
 			alter:   "ALTER TABLE orders ALTER COLUMN total SET DATA TYPE int4;",
-			columns: []lint.BaselineColumn{pgColumn("total", "integer", false)},
+			columns: []lintext.BaselineColumn{pgColumn("total", "integer", false)},
 		},
 		{
 			name:    "a PostgreSQL collation change alone is not a type change",
 			dialect: "postgres",
 			alter:   `ALTER TABLE orders ALTER COLUMN body TYPE text COLLATE "C";`,
-			columns: []lint.BaselineColumn{pgColumn("body", "text", false)},
+			columns: []lintext.BaselineColumn{pgColumn("body", "text", false)},
 		},
 	}
 
@@ -130,7 +131,7 @@ func TestColumnTypeChangedRule_KeepsReportingWhereTheStateSettlesNothing(t *test
 		name    string
 		dialect string
 		alter   string
-		columns []lint.BaselineColumn
+		columns []lintext.BaselineColumn
 	}{
 		{
 			name:    "no state at all",
@@ -141,55 +142,55 @@ func TestColumnTypeChangedRule_KeepsReportingWhereTheStateSettlesNothing(t *test
 			name:    "a column the state does not know",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY other INT NOT NULL;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1")},
 		},
 		{
 			name:    "a spelling the state cannot parse",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL;",
-			columns: []lint.BaselineColumn{costColumn("total", "", "", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "", "", "latin1")},
 		},
 		{
 			name:    "one restating clause beside one that changes",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL, MODIFY note VARCHAR(20);",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1"), costColumn("note", "varchar(10)", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1"), costColumn("note", "varchar(10)", "latin1", "latin1")},
 		},
 		{
 			name:    "a clause the site readers do not recognize",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL, MODIFY note;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1"), costColumn("note", "varchar(10)", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1"), costColumn("note", "varchar(10)", "latin1", "latin1")},
 		},
 		{
 			name:    "a character set conversion the server applies in place is still a type change",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY note VARCHAR(10) CHARACTER SET utf8mb4;",
-			columns: []lint.BaselineColumn{costColumn("note", "varchar(10)", "utf8mb3", "utf8mb3")},
+			columns: []lintext.BaselineColumn{costColumn("note", "varchar(10)", "utf8mb3", "utf8mb3")},
 		},
 		{
 			name:    "an in-place widening is still a type change",
 			dialect: "mysql",
 			alter:   "ALTER TABLE orders MODIFY note VARCHAR(20);",
-			columns: []lint.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")},
 		},
 		{
 			name:    "a PostgreSQL widening is still a type change",
 			dialect: "postgres",
 			alter:   "ALTER TABLE orders ALTER COLUMN note TYPE varchar(20);",
-			columns: []lint.BaselineColumn{pgColumn("note", "character varying(10)", false)},
+			columns: []lintext.BaselineColumn{pgColumn("note", "character varying(10)", false)},
 		},
 		{
 			name:    "a dialect with no type comparison",
 			dialect: "sqlite",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "")},
 		},
 		{
 			name:    "no dialect to compare with",
 			dialect: "",
 			alter:   "ALTER TABLE orders MODIFY total INT NOT NULL;",
-			columns: []lint.BaselineColumn{costColumn("total", "int", "", "latin1")},
+			columns: []lintext.BaselineColumn{costColumn("total", "int", "", "latin1")},
 		},
 	}
 

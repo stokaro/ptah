@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
@@ -57,7 +58,7 @@ func destructiveSites(c *qt.C, test rebuildCase) []string {
 	c.Helper()
 	opts := lint.Options{Dialect: test.dialect}
 	for _, name := range test.baseline {
-		opts.Baseline = append(opts.Baseline, lint.BaselineColumn{Version: 2, Table: "items", Name: name})
+		opts.Baseline = append(opts.Baseline, lintext.BaselineColumn{Version: 2, Table: "items", Name: name})
 	}
 	if test.dialect == "ydb" {
 		target, err := lint.ResolveTarget("ydb", "")
@@ -194,7 +195,7 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 			c := qt.New(t)
 			opts := lint.Options{Dialect: test.dialect}
 			for _, name := range test.baseline {
-				opts.Baseline = append(opts.Baseline, lint.BaselineColumn{Version: 2, Table: "items", Name: name})
+				opts.Baseline = append(opts.Baseline, lintext.BaselineColumn{Version: 2, Table: "items", Name: name})
 			}
 			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"0000000001_items.up.sql":  test.first,

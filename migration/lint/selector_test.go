@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
@@ -205,7 +206,7 @@ func TestSelectorSelects_TellsACodeFromAPrefix(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.selector+" on "+test.code, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lint.SelectorSelects(test.selector, test.code), qt.Equals, test.want)
+			c.Assert(lint.SelectorSelects(must.Must(lint.Rules(builtintest.Runtime())), test.selector, test.code), qt.Equals, test.want)
 		})
 	}
 }

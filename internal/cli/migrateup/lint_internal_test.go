@@ -200,7 +200,7 @@ func TestLockedDestructiveLintHookUsesLockedPlanVersions(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 		},
 	}
-	policy, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 	c.Assert(err, qt.IsNil)
 	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "")
 
@@ -227,7 +227,7 @@ func TestLockedDestructiveLintHookAllowsSafeLockedPlan(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 		},
 	}
-	policy, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 	c.Assert(err, qt.IsNil)
 	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "")
 

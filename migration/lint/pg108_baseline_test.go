@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -30,11 +31,11 @@ func pg108LockMessage(name string) string {
 
 // measurementsColumns is the starting state of version 2 for measurements in
 // each schema named, partitioned or not.
-func measurementsColumns(partitioned bool, schemas ...string) []lint.BaselineColumn {
-	var columns []lint.BaselineColumn
+func measurementsColumns(partitioned bool, schemas ...string) []lintext.BaselineColumn {
+	var columns []lintext.BaselineColumn
 	for _, schema := range schemas {
 		for _, name := range []string{"id", "taken_on", "value"} {
-			columns = append(columns, lint.BaselineColumn{
+			columns = append(columns, lintext.BaselineColumn{
 				Version: 2, Schema: schema, Table: "measurements", Name: name, TablePartitioned: partitioned,
 			})
 		}
@@ -45,7 +46,7 @@ func measurementsColumns(partitioned bool, schemas ...string) []lint.BaselineCol
 // analyzeMeasurements lints a directory whose first version creates
 // measurements and whose second is the statement under test, in a
 // no_transaction file so PG103 stays out of the way of a CONCURRENTLY row.
-func analyzeMeasurements(c *qt.C, migration string, columns []lint.BaselineColumn, disabled ...string) lint.Analysis {
+func analyzeMeasurements(c *qt.C, migration string, columns []lintext.BaselineColumn, disabled ...string) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1_measurements.sql": "CREATE TABLE measurements (id bigint, taken_on date, value int) PARTITION BY RANGE (taken_on);",
@@ -76,7 +77,7 @@ func TestPG108_ReadsTheStartingState(t *testing.T) {
 	tests := []struct {
 		name      string
 		migration string
-		columns   []lint.BaselineColumn
+		columns   []lintext.BaselineColumn
 		want      []string
 	}{
 		{

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -21,7 +22,7 @@ func renameBaselineFS() map[string]string {
 	}
 }
 
-func renameBaselineOptions(baseline []lint.BaselineColumn) lint.Options {
+func renameBaselineOptions(baseline []lintext.BaselineColumn) lint.Options {
 	return lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		Dialect:       "postgres",
@@ -34,8 +35,8 @@ func renameBaselineOptions(baseline []lint.BaselineColumn) lint.Options {
 // notNullBaseline is the state version 2 starts from when `users.id` is the
 // non-nullable, default-less column the pinned community binary reports an
 // MF103 for.
-func notNullBaseline() []lint.BaselineColumn {
-	return []lint.BaselineColumn{{
+func notNullBaseline() []lintext.BaselineColumn {
+	return []lintext.BaselineColumn{{
 		Version:  2,
 		Table:    "users",
 		Name:     "id",
@@ -45,7 +46,7 @@ func notNullBaseline() []lint.BaselineColumn {
 }
 
 // TestAnalyzeFS_RenameAddSideNeedsTheBaseline pins the whole point of
-// [lint.BaselineColumn]: the add side of a rename is reportable only once the
+// [lintext.BaselineColumn]: the add side of a rename is reportable only once the
 // caller has established what the retired column was.
 //
 // Measured against atlas community version v1.3.0 on PostgreSQL 16 for
@@ -56,7 +57,7 @@ func notNullBaseline() []lint.BaselineColumn {
 func TestAnalyzeFS_RenameAddSideNeedsTheBaseline(t *testing.T) {
 	tests := []struct {
 		name     string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 		want     []string
 	}{
 		{
@@ -121,7 +122,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 	tests := []struct {
 		name     string
 		files    map[string]string
-		baseline []lint.BaselineColumn
+		baseline []lintext.BaselineColumn
 		want     []string
 	}{
 		{
@@ -129,7 +130,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			// fail on existing rows. Measured: one diagnostic, the drop only.
 			name:  "nullable retired column",
 			files: renameBaselineFS(),
-			baseline: []lint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "users", Name: "id", DataType: "integer",
 			}},
 			want: []string{"DS102"},
@@ -140,7 +141,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			// add survive existing rows.
 			name:  "retired column carries a default",
 			files: renameBaselineFS(),
-			baseline: []lint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "users", Name: "id", DataType: "integer",
 				NotNull: true, HasDefault: true,
 			}},
@@ -174,7 +175,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			// established what `users.id` was.
 			name:  "baseline carries another table",
 			files: renameBaselineFS(),
-			baseline: []lint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "accounts", Name: "id", DataType: "integer", NotNull: true,
 			}},
 			want: []string{"DS102"},
@@ -184,7 +185,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			// not the state this file starts from.
 			name:  "baseline carries another version",
 			files: renameBaselineFS(),
-			baseline: []lint.BaselineColumn{{
+			baseline: []lintext.BaselineColumn{{
 				Version: 1, Table: "users", Name: "id", DataType: "integer", NotNull: true,
 			}},
 			want: []string{"DS102"},
@@ -194,7 +195,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			// naming the wrong table's column is worse than saying nothing.
 			name:  "ambiguous bare table name",
 			files: renameBaselineFS(),
-			baseline: []lint.BaselineColumn{
+			baseline: []lintext.BaselineColumn{
 				{Version: 2, Schema: "app", Table: "users", Name: "id", DataType: "integer", NotNull: true},
 				{Version: 2, Schema: "audit", Table: "users", Name: "id", DataType: "bigint", NotNull: true},
 			},

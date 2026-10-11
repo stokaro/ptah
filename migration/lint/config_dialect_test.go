@@ -72,7 +72,7 @@ func dialectFixture(policyDialect string) fstest.MapFS {
 func findingCodes(c *qt.C, policyDialect string) []string {
 	fsys := dialectFixture(policyDialect)
 
-	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
+	cfg, err := lint.LoadConfigFS(builtintest.Runtime(), fsys, lint.ConfigFileName)
 	c.Assert(err, qt.IsNil)
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: cfg.Dialect})
@@ -94,7 +94,7 @@ func TestLoadConfigFS_HappyPath_CanonicalizesEveryAcceptedSpelling(t *testing.T)
 	for _, spelling := range lintSupportedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
-			cfg, err := lint.LoadConfigFS(dialectFixture(spelling), lint.ConfigFileName)
+			cfg, err := lint.LoadConfigFS(builtintest.Runtime(), dialectFixture(spelling), lint.ConfigFileName)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(cfg.Dialect, qt.Equals, platform.NormalizeDialect(spelling))

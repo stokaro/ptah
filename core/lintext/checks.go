@@ -13,6 +13,8 @@ type Violation struct {
 	Statement int
 	// Message says what was found.
 	Message string
+	// Subjects are the schema objects a violation of a statement is about.
+	Subjects []Subject
 }
 
 // Check is one rule an in-process owner implements with Go functions.
@@ -34,14 +36,22 @@ type Check struct {
 // nothing.
 type Checks []Check
 
-// Validate reports a check whose rule does not validate, one that sets
-// neither or both functions, and two checks of one code. Each failure wraps
-// [ErrInvalid].
+// Validate reports a check whose rule does not validate, one whose rule reads
+// a baseline, one that sets neither or both functions, and two checks of one
+// code. Each failure wraps [ErrInvalid].
+//
+// A rule that reads a baseline has to name the statements it wants the state
+// for, which Checks has no function to say; such a rule implements [Service]
+// itself. Accepting it here would let a host never ask for the state and the
+// rule never resolve anything, while the run reads as complete.
 func (c Checks) Validate() error {
 	codes := make([]string, 0, len(c))
 	for _, check := range c {
 		if err := check.Rule.Validate(); err != nil {
 			return err
+		}
+		if check.Rule.Input.ReadsBaseline() {
+			return fmt.Errorf("%w: check %s reads a baseline, which Checks cannot ask for; implement Service", ErrInvalid, check.Rule.Code)
 		}
 		if (check.Statement == nil) == (check.File == nil) {
 			return fmt.Errorf("%w: check %s must set exactly one of Statement and File", ErrInvalid, check.Rule.Code)
@@ -97,7 +107,8 @@ func (c Check) run(request CheckRequest, index int) []Finding {
 	var findings []Finding
 	if c.File != nil {
 		for _, violation := range c.File(request.Target, request.Files, index) {
-			findings = append(findings, Finding{Code: c.Rule.Code, File: index, Statement: violation.Statement, Message: violation.Message})
+			findings = append(findings, Finding{Code: c.Rule.Code, File: index, Statement: violation.Statement, Message: violation.Message,
+				Subjects: slices.Clone(violation.Subjects)})
 		}
 		return findings
 	}
