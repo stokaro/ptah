@@ -158,6 +158,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgpolicy/policyreport`
 - `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/feature/pgpolicy/policyreverse`
+- `ptah.run/feature/pgtype`
+- `ptah.run/feature/pgtype/typerender`
 - `ptah.run/feature/synonym`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
@@ -2590,6 +2592,31 @@ plan installed, installs again what it dropped, and moves an extension and its
 comment back; a version stays where the forward plan put it, and the reversal
 says so in a limitation. `feature/pgextension/extensionreport` counts
 extensions under the `extensions` metric.
+
+`feature/pgtype` owns the PostgreSQL user-defined types other than enums:
+domains (`DomainKind`), composite types (`CompositeKind`) and range types
+(`RangeKind`). Each type is a feature object identified by its schema and name
+through `Ref`, under PostgreSQL's identifier rules; `QualifiedName` writes the
+schema the source wrote. `DesiredDomain`, `DesiredComposite` and
+`DesiredRange` declare a type, and the `Observed` models hold what the catalog
+reports, a domain's named CHECK constraints included. Every value defines its
+type through `schemaext.TypeDefiner` under the common
+`objectidentity.KindDomain`, `KindComposite` or `KindRange`, so a host
+qualifies, orders and compares by the type without importing this package.
+
+`DomainChange`, `CompositeChange` and `RangeChange` hold both operands and the
+attributes the comparison found different. A composite type's change also
+carries the attribute delta ALTER TYPE reaches the declaration with. A change
+that declares a type creates it for a host (`schemaext.TypeCreator`), and a drop
+removes state (`schemaext.StateRemoval`). The seven operations write CREATE
+DOMAIN, ALTER DOMAIN, CREATE TYPE ... AS, ALTER TYPE ... ATTRIBUTE, CREATE TYPE
+... AS RANGE, DROP DOMAIN or DROP TYPE, and COMMENT ON DOMAIN or COMMENT ON
+TYPE. Each creation, alteration and comment names the capability key it needs.
+
+`feature/pgtype/typerender` renders them for the PostgreSQL family, byte for
+byte as the common path renders the same statements. The builtin runtime
+registers the change and operation codecs and composes the handlers on every
+PostgreSQL-family target; nothing produces the owner's objects yet.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
 another object. A synonym is one feature object of `Kind`, identified by its

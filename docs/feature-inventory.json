@@ -1492,6 +1492,18 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgtype",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgtype-typerender",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgtype/typerender",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-synonym",
       "kind": "public-package",
       "surface": "ptah.run/feature/synonym",

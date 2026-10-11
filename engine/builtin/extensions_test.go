@@ -50,6 +50,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/astrouteguard"
 )
@@ -210,7 +211,8 @@ func mysqlReplaceIndexFixture() extensionFixture {
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
-		pgExtensionFixture(), pgExtensionCommentFixture())
+		pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
+		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture())
 }
 
 // synonymFixture creates a synonym for a table in another database.
@@ -271,6 +273,46 @@ func pgExtensionFixture() extensionFixture {
 func pgExtensionCommentFixture() extensionFixture {
 	return extensionFixture{payload: &pgextension.CommentOperation{Name: "postgis", Comment: "it's geography"},
 		wantSQL: "COMMENT ON EXTENSION \"postgis\" IS 'it''s geography';\n"}
+}
+
+func pgTypeCreateDomainFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.CreateDomain{Target: pgtype.Target{Kind: pgtype.DomainKind, Schema: "app", Name: "qty"},
+		BaseType: "integer", NotNull: true, Default: "7", Check: "VALUE > 0"},
+		wantSQL: "CREATE DOMAIN \"app\".\"qty\" AS integer NOT NULL DEFAULT 7 CHECK (VALUE > 0);\n"}
+}
+
+func pgTypeAlterDomainFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.AlterDomain{Target: pgtype.Target{Kind: pgtype.DomainKind, Schema: "app", Name: "qty"},
+		DropChecks: []string{"qty_check"}, AddCheck: "VALUE > 1"},
+		wantSQL: "ALTER DOMAIN \"app\".\"qty\" DROP CONSTRAINT \"qty_check\";\nALTER DOMAIN \"app\".\"qty\" ADD CHECK (VALUE > 1);\n"}
+}
+
+func pgTypeCreateCompositeFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.CreateComposite{Target: pgtype.Target{Kind: pgtype.CompositeKind, Name: "addr"},
+		Attributes: []pgtype.Attribute{{Name: "city", Type: "text"}}},
+		wantSQL: "CREATE TYPE \"addr\" AS (\"city\" text);\n"}
+}
+
+func pgTypeAlterCompositeFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.AlterComposite{Target: pgtype.Target{Kind: pgtype.CompositeKind, Name: "addr"},
+		Add: []pgtype.Attribute{{Name: "zip", Type: "text"}}},
+		wantSQL: "ALTER TYPE \"addr\" ADD ATTRIBUTE \"zip\" text;\n"}
+}
+
+func pgTypeCreateRangeFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.CreateRange{Target: pgtype.Target{Kind: pgtype.RangeKind, Name: "fr"}, Subtype: "float8",
+		SubtypeDiff: "float8mi"},
+		wantSQL: "CREATE TYPE \"fr\" AS RANGE (SUBTYPE = float8, SUBTYPE_DIFF = float8mi);\n"}
+}
+
+func pgTypeDropFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.Drop{Target: pgtype.Target{Kind: pgtype.DomainKind, Schema: "app", Name: "qty"}, Cascade: true},
+		wantSQL: "DROP DOMAIN IF EXISTS \"app\".\"qty\" CASCADE;\n"}
+}
+
+func pgTypeCommentFixture() extensionFixture {
+	return extensionFixture{payload: &pgtype.Comment{Target: pgtype.Target{Kind: pgtype.RangeKind, Name: "fr"}, Comment: "it's a range"},
+		wantSQL: "COMMENT ON TYPE \"fr\" IS 'it''s a range';\n"}
 }
 
 func defaultPoolFixture() extensionFixture {
@@ -554,6 +596,68 @@ func TestPostgreSQLExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, pgExtensionFixture().wantSQL)
 	})
+}
+
+// pgTypeFixtures are the user-type owner's seven payloads.
+func pgTypeFixtures() []extensionFixture {
+	return []extensionFixture{pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
+		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture()}
+}
+
+// TestPostgreSQLTypeOwnerRendersAndNonownersRefuse pins the user-type
+// owner's payloads on the PostgreSQL family and a refusal everywhere else.
+func TestPostgreSQLTypeOwnerRendersAndNonownersRefuse(t *testing.T) {
+	for _, fixture := range pgTypeFixtures() {
+		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+			node := &ast.ExtensionStatement{Payload: fixture.payload}
+			for _, dialect := range []string{"postgres", "yugabytedb"} {
+				sql, err := builtin.RenderSQL(dialect, node)
+				c.Assert(err, qt.IsNil)
+				c.Assert(sql, qt.Equals, fixture.wantSQL)
+			}
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+				sql, err := builtin.RenderSQL(dialect, node)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(sql, qt.Equals, "")
+			}
+		})
+	}
+}
+
+// TestPostgreSQLTypeOwnerSkipsWhatATargetDoesNotHold pins the skip lines a
+// PostgreSQL-family target without a type's capability writes, in the words
+// the common user types are skipped with, and the drop that needs no
+// capability.
+func TestPostgreSQLTypeOwnerSkipsWhatATargetDoesNotHold(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		fixture extensionFixture
+		want    string
+	}{
+		{name: "a domain on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCreateDomainFixture(),
+			want: "-- COCKROACHDB: domain app.qty is not supported by this target; skipped.\n"},
+		{name: "a range type on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCreateRangeFixture(),
+			want: "-- COCKROACHDB: range type fr is not supported by this target; skipped.\n"},
+		{name: "a type comment on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCommentFixture(),
+			want: "-- COCKROACHDB: type comment fr is not supported by this target; skipped.\n"},
+		{name: "a composite type on Spanner", dialect: "spanner", fixture: pgTypeCreateCompositeFixture(),
+			want: "-- SPANNER: composite type addr is not supported by this target; skipped.\n"},
+		{name: "control: a composite type on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCreateCompositeFixture(),
+			want: pgTypeCreateCompositeFixture().wantSQL},
+		{name: "control: a drop on CockroachDB", dialect: "cockroachdb", fixture: pgTypeDropFixture(), want: pgTypeDropFixture().wantSQL},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := builtin.RenderSQL(test.dialect, &ast.ExtensionStatement{Payload: test.fixture.payload})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, test.want)
+		})
+	}
 }
 
 // TestRowSecurityTableFacetsFollowTheirTable pins the lowering of a new table's
