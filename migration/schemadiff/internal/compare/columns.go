@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chtype"
+	"ptah.run/internal/cockroachtype"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -1124,30 +1125,21 @@ func cockroachCatalogTypeName(typeName string) string {
 // resolves the declared spelling through a session setting rather than by its
 // name.
 //
-// CockroachDB is the case. A column declared INT or INTEGER, with no width, is
-// built with the width the session's default_int_size names, 8 unless the
-// session sets it: measured on v26.3.2, `n integer` and `k int` both read back
-// as INT8, and INT4 in a session with default_int_size = 4. Taken at
-// PostgreSQL's width, a declared `integer` differs from the INT8 the same
-// statement built, and the plan carries an ALTER COLUMN ... TYPE on every run
-// (stokaro/ptah#3922). So the declaration is compared as the width the server
-// gives it, and a declaration that does name a width, `int4` or `bigint`, is
-// compared as written.
+// CockroachDB is the case: [cockroachtype.Resolve] says which width it builds a
+// declared INT or INTEGER with. Taken at PostgreSQL's width, a declared
+// `integer` differs from the INT8 the same statement built, and the plan
+// carries an ALTER COLUMN ... TYPE on every run (stokaro/ptah#3922). So the
+// declaration is compared as the width the server gives it. goschematodb asks
+// the same function when it describes a declared schema as a read would, so a
+// schema file compared with itself agrees with itself.
 //
-// defaultIntSize is 0 where no connection read the setting; that is taken as
-// CockroachDB's own default. Every other dialect's declaration is returned
-// unchanged.
+// defaultIntSize is 0 where no connection read the setting. Every other
+// dialect's declaration is returned unchanged.
 func resolvedDeclaredType(declared, dialect string, defaultIntSize int) string {
 	if platform.NormalizeDialect(dialect) != platform.CockroachDB {
 		return declared
 	}
-	if name := strings.ToLower(strings.TrimSpace(declared)); name != "int" && name != "integer" {
-		return declared
-	}
-	if defaultIntSize == 4 {
-		return "int4"
-	}
-	return "int8"
+	return cockroachtype.Resolve(declared, defaultIntSize)
 }
 
 // typeChangeText spells a reported type change for a person reading the plan.

@@ -40,8 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossCockroachInteger = "a converted INTEGER column reads as int8 on CockroachDB against the declared INTEGER, " +
-		"so the comparison plans ALTER COLUMN TYPE INTEGER"
 	lossColumnComment     = "goschematodb drops a column's comment, so every commented column plans its comment again"
 	lossColumnUnique      = "a column's own UNIQUE does not survive the conversion, so the comparison plans it again"
 	lossNamedPrimaryKey   = "dbschematogo drops a primary key declared as a named table constraint, so the converted-back declaration drops the key"
@@ -184,25 +182,6 @@ func Alternates() []string {
 func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
-	{Fixtures: []string{
-		"column-autoinc",
-		"column-check",
-		"column-default",
-		"column-default-expr-only",
-		"column-generated",
-		"index-basic",
-		"index-clickhouse",
-		"index-clickhouse-settings",
-		"index-concurrent",
-		"index-fulltext",
-		"index-host-struct-only",
-		"index-host-table-only",
-		"index-include",
-		"index-invisible",
-		"index-partial",
-		"index-parts",
-		"index-storage",
-	}, Dialects: []string{"cockroachdb"}, Directions: nil, Reason: lossCockroachInteger},
 	{
 		Fixtures:   []string{"column-core", "embedded-json"},
 		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
@@ -321,7 +300,7 @@ var roundTripGaps = []Unreached{
 		Reason:     gapColumnComment,
 	},
 	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: []Direction{FromCatalog}, Reason: gapToCatalog},
-	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"sqlite"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"cockroachdb", "sqlite"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Enum.Schema", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Extension.Dialects", Dialects: []string{"spanner", "ydb"}, Directions: []Direction{ToCatalog}, Reason: gapComparison},
 	{
@@ -405,7 +384,12 @@ var roundTripGaps = []Unreached{
 		Directions: []Direction{FromCatalog},
 		Reason:     gapRoutineAttributes,
 	},
-	{Field: "schemamodel.Index.Comment", Dialects: []string{"postgres", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{
+		Field:      "schemamodel.Index.Comment",
+		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
+		Directions: nil,
+		Reason:     gapComparison,
+	},
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Fields",
@@ -413,38 +397,43 @@ var roundTripGaps = []Unreached{
 		Directions: nil,
 		Reason:     gapComparison,
 	},
+	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Index.Operator", Dialects: []string{"postgres"}, Directions: []Direction{FromCatalog}, Reason: gapToCatalog},
-	{Field: "schemamodel.Index.Operator", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Index.Parts",
-		Dialects:   []string{"clickhouse", "oracle", "spanner", "sqlite", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "sqlite", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.Index.Type", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Index.Type", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: gapToCatalog},
-	{Field: "schemamodel.Index.Type", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.Index.Unique", Dialects: []string{"oracle", "spanner", "sqlite", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{
+		Field:      "schemamodel.Index.Unique",
+		Dialects:   []string{"cockroachdb", "oracle", "spanner", "sqlite", "yugabytedb"},
+		Directions: nil,
+		Reason:     gapComparison,
+	},
 	{
 		Field:      "schemamodel.IndexPart.Desc",
-		Dialects:   []string{"mariadb", "mysql", "oracle", "spanner", "sqlite", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "spanner", "sqlite", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Expr",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "spanner", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Name",
-		Dialects:   []string{"clickhouse", "oracle", "spanner", "sqlite", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "sqlite", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.IndexPart.Prefix", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.MaterializedView.Dialects",
