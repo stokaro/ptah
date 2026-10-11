@@ -5,27 +5,18 @@ package generator
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
-	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasmigrate"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/migration/migrationfile"
-	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func renderSafetyReport(
@@ -74,20 +65,6 @@ func joinScriptStatements(statements []string) string {
 	return script.String()
 }
 
-// generateUpMigrationSQL generates the SQL for the up migration.
-func generateUpMigrationSQL(
-	ctx context.Context, runtime Runtime,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-	dialect string,
-	capsOverride ...capability.Capabilities,
-) (string, error) {
-	return generateUpMigrationSQLWithOptions(
-		ctx, runtime,
-		diff, desired, dialect, generatedDirectiveOptions{}, capsOverride...,
-	)
-}
-
 type generatedDirectiveOptions struct {
 	// skipTimeouts leaves the generated timeouts off a file that runs outside a
 	// transaction. Such a file holds a concurrent index build or a constraint
@@ -97,221 +74,6 @@ type generatedDirectiveOptions struct {
 	// build that waits on a write transaction, leaving an invalid index. A run
 	// that wants the bound sets it with --lock-timeout.
 	skipTimeouts bool
-}
-
-func generateUpMigrationSQLWithOptions(
-	ctx context.Context, runtime Runtime,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-	dialect string,
-	directiveOpts generatedDirectiveOptions,
-	capsOverride ...capability.Capabilities,
-) (string, error) {
-	caps := capability.ForDialect(dialect)
-	if len(capsOverride) > 0 {
-		caps = capsOverride[0]
-	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		ctx, runtime,
-		diff, dialect,
-		planner.Options{Capabilities: caps},
-	)
-
-	if err != nil {
-		return "", fmt.Errorf("error generating up migration SQL: %w", err)
-	}
-
-	if len(statements) == 0 || !hasActualSQLStatements(statements) {
-		// No actual SQL statements generated - this is a successful no-op operation
-		return "", nil
-	}
-
-	// Add header comment
-	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: UP\n\n",
-		time.Now().Format(time.RFC3339))
-
-	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements), dialect, directiveOpts), nil
-}
-
-// generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
-func generateDownMigrationSQL(
-	ctx context.Context,
-	runtime Runtime,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-	dbSchema *catalog.Database,
-	dialect string,
-	capsOverride ...capability.Capabilities,
-) (string, error) {
-	return generateDownMigrationSQLWithOptions(ctx, runtime, diff, desired, dbSchema, dialect, generatedDirectiveOptions{}, capsOverride...)
-}
-
-func generateDownMigrationSQLWithOptions(
-	ctx context.Context,
-	runtime Runtime,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-	dbSchema *catalog.Database,
-	dialect string,
-	directiveOpts generatedDirectiveOptions,
-	capsOverride ...capability.Capabilities,
-) (string, error) {
-	opts := downMigrationOptions{directives: directiveOpts}
-	if len(capsOverride) > 0 {
-		opts.capabilities = capsOverride[0]
-	}
-	return generateDownMigrationSQLQualified(ctx, runtime, diff, desired, dbSchema, dialect, opts)
-}
-
-// downMigrationOptions carries the down-direction planning inputs that vary per
-// caller. A nil capabilities set means "the dialect default preset".
-type downMigrationOptions struct {
-	directives   generatedDirectiveOptions
-	qualifier    atlasmigrate.Qualifier
-	capabilities capability.Capabilities
-	// concurrentIndexRefs and concurrentIndexDropRefs are expressed in DOWN
-	// direction terms: they name indexes the down file builds and drops, which
-	// are the mirror image of the up file's own two sets.
-	concurrentIndexRefs     []difftypes.IndexRef
-	concurrentIndexDropRefs []difftypes.IndexRef
-}
-
-func generateDownMigrationSQLQualified(
-	ctx context.Context,
-	runtime Runtime,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-	dbSchema *catalog.Database,
-	dialect string,
-	opts downMigrationOptions,
-) (string, error) {
-	if normalized := platform.NormalizeDialect(dialect); normalized != "" {
-		dialect = normalized
-	}
-	directiveOpts := opts.directives
-	// For down migrations, we need to use the current database schema as the "generated" schema
-	// since we're reverting back to the current state
-	current, err := restoreTableSource(diff, dbSchema, dialect)
-	if err != nil {
-		return "", err
-	}
-	dbSchema = current
-	dbAsGoSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, dbSchema, dialect, runtime)
-	if err != nil {
-		return "", err
-	}
-
-	// Create a reverse diff to generate down migration. We pass the original
-	// generated schema to resolve table names for RLS policies, and the
-	// introspected database schema so the reversed constraint additions can
-	// rebuild the full prior body from the pre-change DB state — that is exactly
-	// the definition the down must restore.
-	reverseDiff := reverseSchemaDiffWithPrior(diff, desired, dbSchema, dbAsGoSchema, dialect)
-	caps := opts.capabilities
-	if caps == nil {
-		caps = capability.ForDialect(dialect)
-	}
-	recovery, err := reverseFeatureChanges(ctx, diff, reverseDiff, dialect, caps, runtime)
-	if err != nil {
-		return "", err
-	}
-	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
-		forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
-			ctx, runtime,
-			diff, dialect, planner.Options{Capabilities: opts.capabilities},
-		)
-		if err != nil {
-			return "", fmt.Errorf("error planning forward migration: %w", err)
-		}
-		if err := addMySQLFamilyForeignKeyBackingIndexRemovals(
-			reverseDiff,
-			diff,
-			dbSchema,
-			dialect,
-			forwardNodes,
-		); err != nil {
-			return "", err
-		}
-	}
-
-	plannerOpts := planner.Options{
-		Capabilities:            opts.capabilities,
-		ConcurrentIndexRefs:     opts.concurrentIndexRefs,
-		ConcurrentIndexDropRefs: opts.concurrentIndexDropRefs,
-	}
-	statements, err := planDownMigrationStatements(
-		ctx, runtime,
-		reverseDiff, dbAsGoSchema, dialect, plannerOpts, opts.qualifier,
-	)
-	if err != nil {
-		return "", err
-	}
-	notes, err := renderer.Render(ctx, runtime, renderer.Request{Target: dialect, Capabilities: caps, Nodes: recoveryNotes(recovery)})
-	if err != nil {
-		return "", err
-	}
-
-	if len(statements) == 0 {
-		// If no statements generated, create a simple comment
-		header := fmt.Sprintf("-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
-			time.Now().Format(time.RFC3339))
-		return header, nil
-	}
-
-	// Add header comment
-	header := fmt.Sprintf("-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
-		time.Now().Format(time.RFC3339))
-
-	return withGeneratedTimeoutDirectivesForOptions(header+notes.SQL()+joinScriptStatements(statements), dialect, directiveOpts), nil
-}
-
-// planDownMigrationStatements renders the reversed diff into ordered down
-// statements. Without a qualifier it is the historical direct-render path;
-// with one, the plan is generated as AST first so the qualifier rewrite runs
-// before rendering, mirroring the up direction.
-func planDownMigrationStatements(
-	ctx context.Context, runtime Runtime,
-	reverseDiff *difftypes.SchemaDiff,
-	dbAsGoSchema *schemamodel.Database,
-	dialect string,
-	plannerOpts planner.Options,
-	qualifier atlasmigrate.Qualifier,
-) ([]string, error) {
-	// The rollback's target is the schema the database currently holds. The
-	// forward direction's target is validated by the comparison that produced
-	// the forward diff; a reversal has no comparison of its own, so without
-	// this the assertion would be made for one direction only
-	// (stokaro/ptah#2315).
-	if err := validateRollbackTarget(
-		ctx, runtime, dbAsGoSchema, reverseDiff, dialect, plannerOpts.CapabilitiesFor(dialect),
-	); err != nil {
-		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
-	}
-	if qualifier.IsZero() {
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-			ctx, runtime,
-			reverseDiff, dialect, plannerOpts,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("error generating down migration SQL: %w", err)
-		}
-		return statements, nil
-	}
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
-		ctx, runtime,
-		reverseDiff, dialect, plannerOpts,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
-	}
-	if err := qualifier.ApplyToPlan(dialect, dbAsGoSchema, nodes); err != nil {
-		return nil, err
-	}
-	output, err := renderer.Render(ctx, runtime, renderer.Request{Target: dialect, Capabilities: plannerOpts.CapabilitiesFor(dialect), Nodes: nodes})
-	if err != nil {
-		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
-	}
-	return sqlutil.SplitSQLStatementsForDialect(output.SQL(), dialect), nil
 }
 
 func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generatedDirectiveOptions) string {

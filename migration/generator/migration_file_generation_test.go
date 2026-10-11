@@ -112,7 +112,7 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			c.Assert(diff.HasChanges(), qt.IsTrue)
 
 			// 2. Generate up migration SQL
-			upSQL, err := generateUpMigrationSQL(
+			upSQL, err := upMigrationSQL(
 				context.Background(), must.Must(builtin.New()),
 				diff, tt.generatedSchema, "postgres",
 			)
@@ -120,7 +120,7 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			upSQL = legacyRenderedSQL(upSQL)
 
 			// 3. Generate down migration SQL using the fixed reverseSchemaDiff function
-			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				diff, tt.generatedSchema, tt.databaseSchema, "postgres")
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
@@ -190,7 +190,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 		generatedSchema, emptyDatabase, "postgres", must.Must(builtin.New()),
 	))
-	upSQL, err := generateUpMigrationSQL(
+	upSQL, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		upDiff, generatedSchema, "postgres",
 	)
@@ -207,7 +207,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 
 	// 3. Generate down migration (should drop extension)
 	// For down migration, we use the original upDiff and reverse it
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, generatedSchema, databaseAfterUp, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -282,7 +282,7 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 			c := qt.New(t)
 
 			// Generate up migration SQL - should return success with empty SQL for no changes
-			upSQL, err := generateUpMigrationSQL(
+			upSQL, err := upMigrationSQL(
 				context.Background(), must.Must(builtin.New()),
 				tt.diff, tt.generatedSchema, "postgres",
 			)
@@ -292,8 +292,8 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 	}
 }
 
-// TestGenerateUpMigrationSQL_NoChangesSuccess tests that generateUpMigrationSQL returns success
-// with empty SQL when no actual SQL statements are generated, treating it as a successful no-op operation
+// TestGenerateUpMigrationSQL_NoChangesSuccess tests that the up file renders empty, as a success,
+// when no actual SQL statements are generated, treating it as a successful no-op operation
 func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
 	c := qt.New(t)
 
@@ -308,7 +308,7 @@ func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
 	}
 
 	// Generate up migration SQL - should return success with empty SQL
-	upSQL, err := generateUpMigrationSQL(
+	upSQL, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		emptyDiff, emptySchema, "postgres",
 	)

@@ -1,7 +1,7 @@
 package generator
 
 // White-box testing required: the down migration comes from
-// generateDownMigrationSQL, which the exported generator reaches only through a
+// downMigrationSQL, which the exported generator reaches only through a
 // migration directory and a live database. This pins the reversed addition
 // that restores the prior key, list included.
 
@@ -62,7 +62,7 @@ func TestGenerateDownMigration_RestoresTheDeleteColumnList(t *testing.T) {
 		desired, current, "postgres", must.Must(builtin.New()),
 	))
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, current, "postgres")
 
 	c.Assert(err, qt.IsNil)

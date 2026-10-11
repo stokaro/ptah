@@ -71,7 +71,7 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 				Value:   &test.change,
 			}}}
 
-			sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			sql, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				diff, &schemamodel.Database{}, &catalog.Database{}, platform.Postgres, timescaleCapabilities())
 
 			c.Assert(err, qt.IsNil)
@@ -105,7 +105,7 @@ func TestGenerateDownMigration_ContinuousAggregateBodyComesFromTheComparison(t *
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(upDiff.FeatureChanges, qt.HasLen, 1)
 
-	sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	sql, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, timescaleCapabilities())
 
 	c.Assert(err, qt.IsNil)
@@ -137,9 +137,9 @@ func TestGenerateDownMigration_ModifiedAggregateIsRecreatedFromThePriorDeclarati
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(upDiff.FeatureChanges, qt.HasLen, 1)
 
-	up, err := generateUpMigrationSQL(context.Background(), must.Must(builtin.New()), upDiff, desired, platform.Postgres, timescaleCapabilities())
+	up, err := upMigrationSQL(context.Background(), must.Must(builtin.New()), upDiff, desired, platform.Postgres, timescaleCapabilities())
 	c.Assert(err, qt.IsNil)
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()), upDiff, desired, database, platform.Postgres, timescaleCapabilities())
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()), upDiff, desired, database, platform.Postgres, timescaleCapabilities())
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(up, qt.Contains, "DROP MATERIALIZED VIEW IF EXISTS \"public\".\"hourly\";\nCREATE MATERIALIZED VIEW \"public\".\"hourly\" "+
@@ -170,7 +170,7 @@ func TestGenerateDownMigration_AHypertableHasNoRollback(t *testing.T) {
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(upDiff.TablesModified, qt.HasLen, 1)
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()), upDiff, desired, database, platform.Postgres, timescaleCapabilities())
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()), upDiff, desired, database, platform.Postgres, timescaleCapabilities())
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*readings is a hypertable and the desired schema does not declare one; TimescaleDB has no statement that turns a hypertable back into an ordinary table.*`)

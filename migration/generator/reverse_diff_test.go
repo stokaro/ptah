@@ -203,7 +203,7 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 		TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "ptah_fk_order_accounts", "ptah_fk_order_projects", "ptah_fk_order_tasks"),
 	}
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -219,7 +219,7 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 		TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "ptah_fk_order_accounts", "ptah_fk_order_memberships", "ptah_fk_order_projects", "ptah_fk_order_tasks"),
 	}
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -255,7 +255,7 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 	}
 	upDiff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "app.accounts", "app.projects")}
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, &catalog.Database{}, "postgres")
 
 	c.Assert(err, qt.IsNil)
@@ -272,7 +272,7 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKChainInDependencyOrder(t *te
 				schema, &catalog.Database{}, dialect, must.Must(builtin.New()),
 			))
 
-			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
@@ -295,7 +295,7 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKDiamondInDependencyOrder(t *
 				schema, &catalog.Database{}, dialect, must.Must(builtin.New()),
 			))
 
-			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
@@ -321,7 +321,7 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testi
 				schema, &catalog.Database{}, dialect, must.Must(builtin.New()),
 			))
 
-			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
@@ -943,7 +943,7 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 
 	t.Run("postgres", func(t *testing.T) {
 		c := qt.New(t)
-		downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 			upDiff, generatedSchema, dbSchema, "postgres")
 		c.Assert(err, qt.IsNil)
 		downSQL = legacyRenderedSQL(downSQL)
@@ -959,7 +959,7 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 
 	t.Run("mysql", func(t *testing.T) {
 		c := qt.New(t)
-		downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 			upDiff, generatedSchema, dbSchema, "mysql")
 		c.Assert(err, qt.IsNil)
 		downSQL = legacyRenderedSQL(downSQL)
@@ -1015,7 +1015,7 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 			c.Assert(err, qt.IsNil)
 			c.Assert(upDiff.ConstraintsAdded.Names(), qt.DeepEquals, []string{test.wantName})
 
-			downSQL, err := generateDownMigrationSQL(t.Context(), runtime,
+			downSQL, err := downMigrationSQL(t.Context(), runtime,
 				upDiff, generatedSchema, dbSchema, test.dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
@@ -1073,7 +1073,7 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 				t.Run(dialect, func(t *testing.T) {
 					c := qt.New(t)
 
-					downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+					downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 						upDiff, generatedSchema, tt.dbSchema, dialect)
 					c.Assert(err, qt.IsNil)
 					downSQL = normalizedRenderedSQL(downSQL)
@@ -1135,7 +1135,7 @@ func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
 		Sequences: []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 	}
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)

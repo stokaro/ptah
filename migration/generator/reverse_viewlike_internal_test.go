@@ -2,7 +2,7 @@ package generator
 
 // White-box testing required: the reverse plan is built by the unexported
 // reverseSchemaDiffWithPrior and rendered by the unexported
-// generateDownMigrationSQL. Asserting on the reversed SchemaDiff alone would
+// downMigrationSQL. Asserting on the reversed SchemaDiff alone would
 // only restate the swap; these tests need the rendered down SQL, which is not
 // reachable through the exported GenerateMigration API without writing
 // migration files to disk and reading them back.
@@ -137,7 +137,7 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 	c.Assert(upDiff.TriggersAdded[0].Desired.Name, qt.Equals, "rev_touch",
 		qt.Commentf("an addition carries the declaration it renders from (stokaro/ptah#2315)"))
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -187,7 +187,7 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -233,7 +233,7 @@ func TestGenerateDownMigrationSQL_ModifiedViewRollbackDropsInsteadOfReplacing(t 
 	c.Assert(upDiff.ViewsModified, qt.HasLen, 1)
 	c.Assert(upDiff.ViewsModified[0].ViewName, qt.Equals, "rev_active_users")
 
-	upSQL, err := generateUpMigrationSQL(
+	upSQL, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		upDiff, schema, "postgres",
 	)
@@ -242,7 +242,7 @@ func TestGenerateDownMigrationSQL_ModifiedViewRollbackDropsInsteadOfReplacing(t 
 	// the up direction keeps the dependency-preserving replace.
 	c.Assert(legacyRenderedSQL(upSQL), qt.Contains, "CREATE OR REPLACE VIEW rev_active_users")
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -296,7 +296,7 @@ func TestGenerateDownMigrationSQL_ModifiedViewKeepsLegalReplace(t *testing.T) {
 	))
 	c.Assert(upDiff.ViewsModified, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -337,7 +337,7 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 	c.Assert(upDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(upDiff.TriggersModified, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)

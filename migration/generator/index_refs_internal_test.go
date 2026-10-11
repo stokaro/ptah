@@ -242,7 +242,7 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 		},
 	}
 
-	sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	sql, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		diff,
 		desired,
 		database,
