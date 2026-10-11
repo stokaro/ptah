@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
+	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -63,6 +64,10 @@ func tableFacetReversalProvider() engine.Provider {
 
 func TestTableFacetReversalProjectsAcceptedStateIntoRollback(t *testing.T) {
 	c := qt.New(t)
+	// The fake provider plans its facet on the ydb target, whose common
+	// statements the YDB planner plans. migration/planner links no owner, so
+	// the planner is there only once something registers it.
+	c.Assert(ydbplanner.RegisterPlanner(), qt.IsNil)
 	runtime := mustRuntime(c, tableFacetReversalProvider())
 	desired, current := facetSchemas()
 	desired.Fields = []schemamodel.Field{{StructName: "Orders", Name: "id", Type: "uint64", Primary: true}}

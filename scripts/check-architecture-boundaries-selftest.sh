@@ -207,16 +207,17 @@ require_refusal "a neutral package transitively linking a concrete feature"
 rm -f "$tree/core/astbuilder/boundaries_selftest_defect.go"
 require_acceptance "the repaired neutral package"
 
-# A neutral package that already carries owner debt must not take another
-# owner. core/goschema links several dialects today; a ratchet counting
-# packages rather than owners would pass this.
+# A source frontend in the neutral layer must not link an owner either.
+# core/goschema carried owner debt until stokaro/ptah#4140 took the rule to
+# zero, so no package carries any now; the case stays as a refusal in a second
+# import graph, apart from core/astbuilder's.
 cat >"$tree/core/goschema/boundaries_selftest_defect.go" <<'GO'
 package goschema
 
 import _ "ptah.run/internal/boundaryfixture"
 GO
 (cd "$tree" && go build ./core/goschema)
-require_refusal "a source frontend with owner debt linking one more owner"
+require_refusal "a source frontend linking an owner"
 rm -f "$tree/core/goschema/boundaries_selftest_defect.go"
 require_acceptance "the repaired source frontend"
 

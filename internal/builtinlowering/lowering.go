@@ -5,6 +5,7 @@ package builtinlowering
 
 import (
 	"context"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgeffects"
+	"ptah.run/internal/ydbacl"
 )
 
 // ForTarget binds the explicit runtime to local common-object metadata. Missing
@@ -25,6 +27,7 @@ func ForTarget(ctx context.Context, runtime featureplan.DeclarationRuntime, targ
 	switch {
 	case platform.NormalizeDialect(target) == platform.YDB:
 		result.CommonMetadata = ydbMetadata
+		result.GrantPath = ydbGrantPath
 	case platform.IsPostgresFamily(target):
 		result.CommonMetadata = postgresMetadata(target)
 	}
@@ -43,6 +46,18 @@ func postgresMetadata(target string) func(context.Context, []ast.Node) ([]featur
 		}
 		return result, ctx.Err()
 	}
+}
+
+// ydbGrantPath is how a YDB render of a description a live read made names a
+// grant's object: by its absolute path where the object needs one on some
+// line -- the database itself, and an object at the database root -- so the
+// render does not depend on the line. Every other grant keeps its name.
+func ydbGrantPath(objectType, objectName, databasePath string) string {
+	path, err := ydbacl.StatementPath(objectType, objectName, databasePath, nil)
+	if err != nil || !strings.HasPrefix(path, "/") {
+		return objectName
+	}
+	return path
 }
 
 func ydbMetadata(ctx context.Context, nodes []ast.Node) ([]featureplan.CommonStep, error) {

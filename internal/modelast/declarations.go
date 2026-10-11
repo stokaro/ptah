@@ -29,10 +29,24 @@ type Lowering struct {
 	Capabilities   capability.Capabilities
 	CommonMetadata func(context.Context, []ast.Node) ([]featureplan.CommonStep, error)
 	// DatabasePath is the absolute path of the database a lowered description
-	// was read from, such as /local, and empty for a declaration. On YDB a
-	// grant on the database itself, and on its older lines one on an object at
-	// the database root, is named by its absolute path when it is known.
+	// was read from, such as /local, and empty for a declaration.
 	DatabasePath string
+	// GrantPath names a grant's object in the render of a description read
+	// from the database at databasePath, such as YDB's absolute path for a
+	// grant on the database itself. It is called only where DatabasePath is
+	// known. Nil keeps every grant's name, as every target but YDB does.
+	GrantPath func(objectType, objectName, databasePath string) string
+}
+
+// grantName binds GrantPath to the lowering's database path, and is nil where
+// either is missing.
+func (l Lowering) grantName() grantName {
+	if l.GrantPath == nil || l.DatabasePath == "" {
+		return nil
+	}
+	return func(objectType, objectName string) string {
+		return l.GrantPath(objectType, objectName, l.DatabasePath)
+	}
 }
 
 // DeclarationServiceError identifies a failed owner call. Schema adapters must
@@ -52,7 +66,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		return err
 	}
 	if len(objects) == 0 {
-		return walkCommonDatabase(database, target, lowering.DatabasePath, visit)
+		return walkCommonDatabase(database, target, lowering.grantName(), visit)
 	}
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
@@ -61,7 +75,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	// position before, between, or after them; streaming SQL before scheduling
 	// would make a late conflict leave a successful prefix.
 	var nodes []ast.Node
-	if err := walkCommonDatabase(tables, target, lowering.DatabasePath, func(node ast.Node) error {
+	if err := walkCommonDatabase(tables, target, lowering.grantName(), func(node ast.Node) error {
 		nodes = append(nodes, node)
 		return lowering.Context.Err()
 	}); err != nil {
