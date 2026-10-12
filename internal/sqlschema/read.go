@@ -105,23 +105,14 @@ func ReadWith(
 		if err != nil {
 			return schemamodel.Database{}, nil, err
 		}
-		if err := OwnRowSecurity(&loaded.Database, dialect); err != nil {
-			return schemamodel.Database{}, nil, err
-		}
 		return loaded.Database, nil, nil
 	}
-	alone := document == nil
 	database, statements, err := convert(ctx, data, dialect, document, opts.Owners, opts.Relations)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
 	if err := describe(&database, data, dialect, opts); err != nil {
 		return schemamodel.Database{}, nil, err
-	}
-	if alone {
-		if err := OwnRowSecurity(&database, dialect); err != nil {
-			return schemamodel.Database{}, nil, err
-		}
 	}
 	schemamodel.Finalize(&database)
 	return database, statements, nil

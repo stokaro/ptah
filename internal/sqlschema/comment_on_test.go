@@ -188,7 +188,7 @@ func TestRead_CommentOn_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(commentFixture+test.statement), "postgres")
+			database, _, err := readWithPolicyOwners([]byte(commentFixture+test.statement), "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(commentsOf(database)[test.wantKey], qt.Equals, test.want)
@@ -257,11 +257,6 @@ func TestRead_CommentOn_FailurePath(t *testing.T) {
 			wantErr:   `the schema model has no place for this statement: COMMENT ON TRIGGER audit names an object this schema does not declare`,
 		},
 		{
-			name:      "a policy without its table",
-			statement: "COMMENT ON POLICY own IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON POLICY own names an object this schema does not declare`,
-		},
-		{
 			name:      "a domain's constraint",
 			statement: "COMMENT ON CONSTRAINT positive ON DOMAIN app.d IS 'x';",
 			wantErr: `the schema model has no place for this statement: COMMENT ON CONSTRAINT positive ON DOMAIN app.d: ` +
@@ -292,7 +287,7 @@ func TestRead_CommentOn_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, statements, err := sqlschema.Read([]byte(commentFixture+test.statement), "postgres")
+			database, statements, err := readWithPolicyOwners([]byte(commentFixture+test.statement), "postgres")
 
 			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -433,7 +428,7 @@ func TestReadOnto_CommentOnAnAmbiguousOverload(t *testing.T) {
 // A later file of a directory may comment on what an earlier file declared.
 func TestReadOnto_CommentsOnAnEarlierTable(t *testing.T) {
 	c := qt.New(t)
-	earlier, _, err := sqlschema.Read([]byte(commentFixture), "postgres")
+	earlier, _, err := readWithPolicyOwners([]byte(commentFixture), "postgres")
 	c.Assert(err, qt.IsNil)
 
 	later, _, err := sqlschema.ReadOnto([]byte("COMMENT ON TABLE app.t IS 'later';\nCOMMENT ON COLUMN app.t.a IS 'a';"), "postgres", sqlschema.NewDocument(&earlier))

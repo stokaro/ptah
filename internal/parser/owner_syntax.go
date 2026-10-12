@@ -295,7 +295,7 @@ func (p *Parser) readOwnerClaims(ctx context.Context) error {
 	for _, claim := range p.ownerClaims {
 		matches = append(matches, claim.match)
 	}
-	values, err := p.owners.Parse(ctx, p.dialect, matches, p.declared)
+	values, err := p.owners.Parse(ctx, p.dialect, matches, sqlext.Document{Declared: p.declared, DroppedTables: p.droppedTables})
 	if err != nil {
 		return err
 	}
@@ -378,6 +378,8 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 		}
 		statement.Payload = value.Statement
 		note.Objects, note.Replaces, note.TableFacets = value.Objects, value.Replaces, value.TableFacets
+		note.TableReferences, note.UnmodeledReason = value.TableReferences, value.UnmodeledReason
+		note.DescribedBy = value.DescribedBy
 		return nil
 	})
 	if !claimed {
@@ -471,6 +473,12 @@ func (p *Parser) DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.I
 // OwnerStatement is what an owner's statement of a parsed document declares
 // and amends, and the statement as the document writes it.
 type OwnerStatement struct {
+	// DescribedBy identifies the later claim carrying this statement's model.
+	DescribedBy int
+	// TableReferences must resolve when the schema applies this statement.
+	TableReferences []string
+	// UnmodeledReason is the owner's refusal to describe this statement.
+	UnmodeledReason string
 	// Objects are the objects the statement declares; see
 	// [sqlext.Value.Objects].
 	Objects []schemaext.Object

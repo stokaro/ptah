@@ -36,10 +36,18 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 	if !owned {
 		return false, nil
 	}
+	if note.UnmodeledReason != "" {
+		return true, fmt.Errorf("%w: %s", ErrUnmodeledStatement, note.UnmodeledReason)
+	}
 	if changesUndeclared(statement, note) {
 		return true, fmt.Errorf("%w: %s", ErrUnmodeledStatement, firstLine(note.Text))
 	}
 	databases := declaringDatabases(database, document.base)
+	for _, name := range note.TableReferences {
+		if _, err := requiredOwnerTable(databases, name, note.Text, sourcePlatform); err != nil {
+			return true, err
+		}
+	}
 	for _, object := range note.Objects {
 		object.Ref = declaredChild(databases, object.Ref, sourcePlatform)
 		objects, err := database.FeatureObjects.Declare(object)
@@ -64,7 +72,7 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 // without declared objects, replacements or table facets, such as DROP
 // EXTENSION. A schema document has no representation for that change.
 func changesUndeclared(statement *ast.ExtensionStatement, note parser.OwnerStatement) bool {
-	if len(note.Objects) > 0 || len(note.Replaces) > 0 || note.TableFacets != nil {
+	if len(note.Objects) > 0 || len(note.Replaces) > 0 || note.TableFacets != nil || note.DescribedBy != 0 {
 		return false
 	}
 	reporter, ok := statement.Payload.(ast.ExtensionChangeReporter)
@@ -120,19 +128,28 @@ func declaredOwnerTable(databases []*schemamodel.Database, ref objectidentity.ID
 	return resolveTable(databases, normalizeSQLTableReference("", ref.Name.Source), sourcePlatform)
 }
 
+// requiredOwnerTable resolves a table a statement requires at this point in
+// the script, including a statement whose final facets stand on a later claim.
+func requiredOwnerTable(databases []*schemamodel.Database, writtenName, statement, sourcePlatform string) (*schemamodel.Table, error) {
+	schema, name := normalizeSQLTableIdentifier(sourcePlatform, writtenName)
+	ref := objectidentity.NewBuilder(identifier.ForDialect(sourcePlatform)).TablePartsVerbatim(schema, name)
+	if table := declaredOwnerTable(databases, ref, sourcePlatform); table != nil {
+		return table, nil
+	}
+	return nil, undeclared(statementRefusal{
+		text: fmt.Sprintf("%s: table %q is not declared in this schema", statementExcerpt(statement), writtenName),
+		err:  ErrUnmodeledStatement,
+	})
+}
+
 // setTableFacets merges an owner's facets into the table the schema declares
 // under the name the statement writes, and refuses a table it does not
 // declare and a facet the table already holds. written is the statement,
 // which a refusal names first.
 func setTableFacets(databases []*schemamodel.Database, facets sqlext.TableFacets, written, sourcePlatform string) error {
-	schema, name := normalizeSQLTableIdentifier(sourcePlatform, facets.Name)
-	ref := objectidentity.NewBuilder(identifier.ForDialect(sourcePlatform)).TablePartsVerbatim(schema, name)
-	table := declaredOwnerTable(databases, ref, sourcePlatform)
-	if table == nil {
-		return undeclared(statementRefusal{
-			text: fmt.Sprintf("%s: table %q is not declared in this schema", statementExcerpt(written), facets.Name),
-			err:  ErrUnmodeledStatement,
-		})
+	table, err := requiredOwnerTable(databases, facets.Name, written, sourcePlatform)
+	if err != nil {
+		return err
 	}
 	merged, err := table.Facets.Merge(facets.Facets)
 	if err != nil {

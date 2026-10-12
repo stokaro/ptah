@@ -1,4 +1,4 @@
-package parser_test
+package pgpolicysource_test
 
 import (
 	"testing"
@@ -7,6 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/parser"
 )
 
@@ -15,33 +17,35 @@ import (
 // that forces an already enabled table enables nothing.
 func TestParse_ForceRowLevelSecurity_HappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		sql       string
-		wantTable string
+		name       string
+		sql        string
+		wantSchema string
 	}{
-		{name: "bare", sql: `ALTER TABLE sites FORCE ROW LEVEL SECURITY;`, wantTable: "sites"},
-		{name: "only and qualified", sql: `ALTER TABLE ONLY "public"."sites" FORCE ROW LEVEL SECURITY;`, wantTable: `"public"."sites"`},
-		{name: "lower case", sql: `alter table sites force row level security;`, wantTable: "sites"},
+		{name: "bare", sql: `ALTER TABLE sites FORCE ROW LEVEL SECURITY;`, wantSchema: ""},
+		{name: "only and qualified", sql: `ALTER TABLE ONLY "public"."sites" FORCE ROW LEVEL SECURITY;`, wantSchema: "public"},
+		{name: "lower case", sql: `alter table sites force row level security;`, wantSchema: ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithSQL(builtintest.Runtime().SQL()), parser.WithDialect(platform.Postgres)).Parse()
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
-			force, isForce := statements.Statements[0].(*ast.AlterTableForceRLSNode)
-			c.Assert(isForce, qt.IsTrue)
-			c.Assert(force.Table, qt.Equals, test.wantTable)
-			c.Assert(force.NoForce, qt.IsFalse)
+			owned, ok := statements.Statements[0].(*ast.ExtensionStatement)
+			c.Assert(ok, qt.IsTrue)
+			force, ok := owned.Payload.(*pgpolicy.TableStateOperation)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(force.Table, qt.Equals, "sites")
+			c.Assert(force.Schema, qt.Equals, test.wantSchema)
+			c.Assert(force.Change.After, qt.DeepEquals, &pgpolicy.DesiredTableState{Forced: true})
 		})
 	}
 }
 
 // TestParse_ForceRowLevelSecurity_FailurePath refuses the forms that take a
-// protection away, and keeps NO in front of anything but FORCE refused as it
-// was.
+// protection away, and refuses unsupported operations beside them.
 func TestParse_ForceRowLevelSecurity_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -51,7 +55,7 @@ func TestParse_ForceRowLevelSecurity_FailurePath(t *testing.T) {
 		{
 			name:    "no force",
 			sql:     `ALTER TABLE sites NO FORCE ROW LEVEL SECURITY;`,
-			wantErr: `unsupported ALTER operation: NO FORCE ROW LEVEL SECURITY at position \d+`,
+			wantErr: `unsupported ALTER operation: NO at position \d+`,
 		},
 		{
 			name:    "no followed by something else",
@@ -68,7 +72,7 @@ func TestParse_ForceRowLevelSecurity_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithSQL(builtintest.Runtime().SQL()), parser.WithDialect(platform.Postgres)).Parse()
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(statements, qt.IsNil)
@@ -91,13 +95,15 @@ func TestParse_PolicyAs_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithSQL(builtintest.Runtime().SQL()), parser.WithDialect(platform.Postgres)).Parse()
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
-			policy, isPolicy := statements.Statements[0].(*ast.CreatePolicyNode)
-			c.Assert(isPolicy, qt.IsTrue)
-			c.Assert(policy.Restrictive, qt.Equals, test.wantRestrictive)
+			owned, ok := statements.Statements[0].(*ast.ExtensionStatement)
+			c.Assert(ok, qt.IsTrue)
+			policy, ok := owned.Payload.(*pgpolicy.PolicyOperation)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(policy.Change.After.Composition == pgpolicy.Restrictive, qt.Equals, test.wantRestrictive)
 		})
 	}
 }
@@ -108,8 +114,8 @@ func TestParse_PolicyAs_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := parser.NewParser(`CREATE POLICY p ON t AS SOMETIMES USING (true);`,
-		parser.WithDialect(platform.Postgres)).Parse()
+		parser.WithSQL(builtintest.Runtime().SQL()), parser.WithDialect(platform.Postgres)).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `.*expected PERMISSIVE or RESTRICTIVE after AS, got SOMETIMES at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `.*expected PERMISSIVE or RESTRICTIVE after AS at position \d+`)
 	c.Assert(statements, qt.IsNil)
 }

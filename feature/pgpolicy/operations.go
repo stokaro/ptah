@@ -247,6 +247,11 @@ func (v *TableStateOperation) AccessEffect() schemaext.AccessEffect {
 	return v.Change.Access
 }
 
+// SchemaChange reports the table modification made by a switch operation.
+func (v *TableStateOperation) SchemaChange() ast.ExtensionChange {
+	return ast.ExtensionChange{Action: ast.ExtensionModify, Name: v.QualifiedTable()}
+}
+
 func qualified(schema, name string) string {
 	if strings.TrimSpace(schema) == "" {
 		return name

@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlschema"
@@ -265,7 +266,7 @@ func TestSchemaRenderCreatesRoutinesInAnOrderPostgreSQLAcceptsLive(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			target, _ := scratchReplayDatabase(c)
-			database, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 			c.Assert(err, qt.IsNil)
 			statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
 			c.Assert(err, qt.IsNil)

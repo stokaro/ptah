@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -124,7 +125,7 @@ func TestGenerateSchemaDiffSQL_CreatesRoutinesAfterWhatTheyName(t *testing.T) {
 	for _, test := range routineOrderCases {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
+			desired, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 			c.Assert(err, qt.IsNil)
 
 			sql, err := planner.GenerateSchemaDiffSQL(

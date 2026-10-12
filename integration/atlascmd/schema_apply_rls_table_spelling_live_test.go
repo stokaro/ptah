@@ -161,9 +161,9 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	out, err := runCompatSchemaApply(targetURL, devURL, schemaPath)
 
 	// The row-security owner reads the switch against the tables the file
-	// declares, so the file is refused when it is loaded, naming the relation
-	// as PostgreSQL does, and the target keeps no policy on either spelling.
-	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: relation "orders" does not exist in the document.*`)
+	// declares. An undeclared table is refused during loading, and the target
+	// keeps no policy on either spelling.
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: table "orders" is not declared in this schema.*`)
 	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(rlsPolicyRows(t, targetURL), qt.DeepEquals, make([]string, 0))
 }

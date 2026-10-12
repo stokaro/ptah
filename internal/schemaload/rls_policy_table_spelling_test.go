@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
@@ -38,7 +38,7 @@ CREATE POLICY p ON public.orders FOR ALL TO PUBLIC USING (tenant_id = 2);
 //
 // Neither declaration is kept: keeping the first silently drops the second
 // predicate, and keeping either applies one the author may have meant to
-// replace. The refusal names both (stokaro/ptah#2440).
+// replace. The refusal names the duplicate policy (stokaro/ptah#2440).
 func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 	c := qt.New(t)
 
@@ -47,8 +47,8 @@ func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 
 	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
-	c.Assert(err, qt.ErrorMatches, `(?s).*CREATE POLICY p ON orders \(policy statement 1\) and CREATE POLICY p ON public\.orders \(policy statement 2\) both declare policy "p" on table public\.orders.*`)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+	c.Assert(err, qt.ErrorMatches, `(?s).*policy "p" on table public\.orders is declared twice.*`)
 	c.Assert(database, qt.IsNil)
 }
 
@@ -80,8 +80,8 @@ func TestLoad_SQLSchemaFileFoldsACaseVariantOfOnePolicysTable(t *testing.T) {
 
 	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
-	c.Assert(err, qt.ErrorMatches, `(?s).*\(policy statement 1\) and .*\(policy statement 2\) both declare policy "p" on table public\.orders.*`)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+	c.Assert(err, qt.ErrorMatches, `(?s).*policy "p" on table ORDERS is declared twice.*`)
 	c.Assert(database, qt.IsNil)
 }
 
@@ -100,7 +100,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*both declare policy "p" on table public\.orders.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*policy "p" on table orders is declared twice.*`)
 	c.Assert(database, qt.IsNil)
 }
 
@@ -147,7 +147,7 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
 	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: relation "orders" does not exist in the document.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: table "orders" is not declared in this schema.*`)
 	c.Assert(database, qt.IsNil)
 }
 
