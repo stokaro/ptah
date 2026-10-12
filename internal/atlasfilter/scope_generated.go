@@ -31,14 +31,15 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 		return nil, err
 	}
 
-	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage)
-	if err != nil {
-		return nil, err
-	}
 	out.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok
 	})
+	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage,
+		generatedFieldTypeSet(out.Fields))
+	if err != nil {
+		return nil, err
+	}
 	out.EmbeddedFields = keep(db.EmbeddedFields, func(field schemamodel.EmbeddedField) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok

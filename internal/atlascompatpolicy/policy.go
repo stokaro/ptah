@@ -643,9 +643,9 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "functions", present: containsFunction(database.Functions)},
 		{name: "procedures", present: containsProcedure(database.Functions)},
 		{name: "standalone sequences", present: len(database.Sequences) > 0},
-		{name: "domains", present: len(database.Domains) > 0},
-		{name: "composite types", present: len(database.CompositeTypes) > 0},
-		{name: "range types", present: len(database.Ranges) > 0},
+		{name: "domains", present: len(database.Domains) > 0 || definesType(database, objectidentity.KindDomain)},
+		{name: "composite types", present: len(database.CompositeTypes) > 0 || definesType(database, objectidentity.KindComposite)},
+		{name: "range types", present: len(database.Ranges) > 0 || definesType(database, objectidentity.KindRange)},
 		{name: "views", present: len(database.Views) > 0},
 		{name: "materialized views", present: len(database.MaterializedViews) > 0},
 		{name: "triggers", present: len(database.Triggers) > 0},
@@ -676,6 +676,15 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 // PostgreSQL extension owner.
 func hasExtensions(database *schemamodel.Database) bool {
 	return len(database.Extensions) > 0 || len(pgextension.Names(database.FeatureObjects)) > 0
+}
+
+// definesType reports an owner's object that defines a type of the common
+// kind, such as a domain the PostgreSQL type owner declares; see
+// [schemaext.TypeDefiner].
+func definesType(database *schemamodel.Database, kind objectidentity.Kind) bool {
+	return slices.ContainsFunc(schemaext.DefinedTypes(database.FeatureObjects), func(defined schemaext.DefinedType) bool {
+		return defined.ID.Kind == kind
+	})
 }
 
 // hasRowSecurityPolicies reports a policy in the common model or of the

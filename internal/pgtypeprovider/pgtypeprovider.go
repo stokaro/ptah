@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/engine"
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/pgtype/typecompare"
@@ -44,6 +45,8 @@ func Provider() engine.Provider {
 			{Header: coverage.Composite, Model: pgtype.CompositeKind, Names: typeNames},
 			{Header: coverage.Range, Model: pgtype.RangeKind, Names: typeNames},
 		},
+		// A scope names a type with the selector type of the common one.
+		Selections: []selectext.Extension{pgtype.Selections()},
 		// A type on a target outside the family is refused, naming the scope
 		// that keeps it to the targets that host it: a column declared with
 		// the type would otherwise name something the server has no

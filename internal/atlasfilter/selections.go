@@ -121,9 +121,13 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 // selectOwnerFeatures keeps the owners' objects that the scope's selectors
 // name under their type, in the schema universe, and the objects the kept
 // ones require, which the owners name in one call: a resource pool a kept
-// classifier routes to. A required object comes back only when the side
+// classifier routes to. It keeps as well an owner's type a kept column
+// names, as the common types are kept; referenced holds the kept columns'
+// type names. A required or referenced object comes back only when the side
 // holds it, with its knowledge.
-func (s *scopeSelection) selectOwnerFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage, error) {
+func (s *scopeSelection) selectOwnerFeatures(
+	objects schemaext.Objects, coverage schemaext.Coverage, referenced map[string]struct{},
+) (schemaext.Objects, schemaext.Coverage, error) {
 	originalObjects, originalCoverage := objects, coverage
 	selections := s.vocabulary.selections.Selections()
 	for _, selection := range selections {
@@ -141,12 +145,15 @@ func (s *scopeSelection) selectOwnerFeatures(objects schemaext.Objects, coverage
 	if err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
 	}
-	if len(result.Requires) == 0 {
-		return objects, coverage, nil
+	required, err := referencedTypes(originalObjects, referenced)
+	if err != nil {
+		return schemaext.Objects{}, schemaext.Coverage{}, err
 	}
-	required := make(map[objectidentity.Key]bool, len(result.Requires))
 	for _, ref := range result.Requires {
 		required[ref.Key()] = true
+	}
+	if len(required) == 0 {
+		return objects, coverage, nil
 	}
 	kept := make(map[objectidentity.Key]bool)
 	for _, ref := range objects.Refs() {
@@ -175,4 +182,55 @@ func selectNamedFeatures(objects schemaext.Objects, coverage schemaext.Coverage,
 		return ref.Kind != objectidentity.Kind(kind) || keepNode(ref.Schema.Authored(), ref.Name.Source)
 	}
 	return objects.Select(keep), coverage.SelectSubjects(keep)
+}
+
+// referencedTypes names the objects that define a type a kept column names,
+// read through [schemaext.TypeDefiner] so the filter imports no owner.
+func referencedTypes(objects schemaext.Objects, referenced map[string]struct{}) (map[objectidentity.Key]bool, error) {
+	all, err := objects.All()
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[objectidentity.Key]bool)
+	for _, object := range all {
+		definer, ok := object.Value.(schemaext.TypeDefiner)
+		if !ok {
+			continue
+		}
+		defined := definer.DefinedType(object.Ref)
+		if typeNameReferenced(referenced, defined.ID.Schema.Authored(), defined.ID.Name.Source) {
+			keys[object.Ref.Key()] = true
+		}
+	}
+	return keys, nil
+}
+
+// definedTypeLabels name a common type kind the way a scope's refusal does.
+var definedTypeLabels = map[objectidentity.Kind]string{
+	objectidentity.KindDomain:    "domain",
+	objectidentity.KindComposite: "composite type",
+	objectidentity.KindRange:     "range type",
+}
+
+// reportDroppedOwnerTypes asks report about every owner's type original
+// defines that final no longer holds, under the label of its common kind.
+func reportDroppedOwnerTypes(original, final schemaext.Objects, report func(kind, schema, name string)) {
+	held := make(map[objectidentity.Key]bool)
+	for _, ref := range final.Refs() {
+		held[ref.Key()] = true
+	}
+	all, err := original.All()
+	if err != nil {
+		return
+	}
+	for _, object := range all {
+		definer, ok := object.Value.(schemaext.TypeDefiner)
+		if !ok || held[object.Ref.Key()] {
+			continue
+		}
+		defined := definer.DefinedType(object.Ref)
+		if label, known := definedTypeLabels[defined.ID.Kind]; known {
+			report(label, defined.ID.Schema.Authored(), defined.ID.Name.Source)
+		}
+	}
 }
