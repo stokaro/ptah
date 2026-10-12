@@ -757,11 +757,9 @@ Table captures own their nested mutable definitions and catalog metadata. The
 model tables, fields, constraints, indexes, enums, and triggers provide the same
 isolation to callers.
 
-`SchemaDiff.ExtensionsModified` contains `ExtensionDiff` values with the name
-and `FromSchema`/`ToSchema` placement. Default-schema normalization follows the
-diff's identifier semantics. PostgreSQL extension moves currently return
-`ptaherr.ErrInvalidSchemaDiff` before any AST is emitted; creates and drops are
-still planned.
+A PostgreSQL extension's installation, removal, version update, move and
+comment are the extension owner's changes in `SchemaDiff.FeatureChanges`; the
+diff has no list of its own for them.
 
 Row-level security policies use the same shape. `RLSPoliciesAdded` and
 `RLSPoliciesRemoved` are `[]RLSPolicyRef`, `RLSPoliciesModified` is

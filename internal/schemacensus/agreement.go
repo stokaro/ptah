@@ -234,5 +234,19 @@ func SurfaceDifferences() []SurfaceDifference {
 				"reads the same declaration, applies the capability and that exclusion, and " +
 				"hands the planner the refs that survive (stokaro/ptah#3042)",
 		},
+		{
+			Field: "schemamodel.Extension.Comment", RenderOnly: true,
+			Reason: "the shared extension list: no source produces it, because every source hands an extension " +
+				"to its owner, and the comparison does not read it, so a plan never sees it while the render " +
+				"writes it. The list itself goes next under stokaro/ptah#4140",
+		},
+		{
+			Field: "schemamodel.Extension.IfNotExists", RenderOnly: true,
+			Reason: "the shared extension list, for the same reason",
+		},
+		{
+			Field: "schemamodel.Extension.Version", RenderOnly: true,
+			Reason: "the shared extension list, for the same reason",
+		},
 	}
 }

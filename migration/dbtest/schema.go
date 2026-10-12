@@ -263,7 +263,6 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 	}
 	diff.EnumsModified = enumDiffs
 	diff.IndexesRemoved = matchingIndexRefs(diff.IndexesRemoved, diff.IndexAdditions(), semantics)
-	diff.ExtensionsRemoved = nil
 	diff.FunctionsRemoved = nil
 	diff.SequencesRemoved = nil
 	diff.DomainsRemoved = nil

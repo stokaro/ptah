@@ -177,9 +177,6 @@ func compareReportingUndecidedAdditions(
 		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules.Indexes,
 	)
 
-	// Compare PostgreSQL extensions with configuration options
-	compare.ExtensionsWithSemantics(desired, database, diff, opts, cov, identifierSemantics)
-
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.FunctionsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.RoutineArguments, rules.Routines)
 

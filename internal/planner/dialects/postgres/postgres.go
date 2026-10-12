@@ -578,29 +578,15 @@ func (p *Planner) addSchemaPreconditions(
 	return result
 }
 
-// placedSchemas are the schemas the plan puts extensions and owners' objects
-// into. The addition carries the extension, so the inner search over the
-// desired schema is gone (stokaro/ptah#2315). A move names the schema it goes
-// to the same way: ALTER EXTENSION ... SET SCHEMA into a schema nothing
-// created answers `schema "ext" does not exist`, measured on PostgreSQL 18. A
-// move carries the schema resolved under the connection's default, so a
-// declaration that left the schema to that default names it here; like an
-// addition that names no schema, it needs no precondition. An owner's change
-// that places its object, such as an extension the owner installs or moves,
-// contributes its schema under the same rule.
+// placedSchemas are the schemas the plan puts owners' objects into, such as
+// an extension the owner installs or moves; see [schemaext.SchemaPlacement].
+// ALTER EXTENSION ... SET SCHEMA into a schema nothing created answers
+// `schema "ext" does not exist`, measured on PostgreSQL 18. A change carries
+// its schema resolved under the connection's default, and one that names the
+// default, like one that names no schema, needs no precondition.
 func (p *Planner) placedSchemas(diff *difftypes.SchemaDiff) []string {
-	schemas := make([]string, 0, len(diff.ExtensionsAdded)+len(diff.ExtensionsModified))
-	for _, extension := range diff.ExtensionsAdded {
-		schemas = append(schemas, extension.Schema)
-	}
+	var schemas []string
 	defaultSchema := diff.EffectiveIdentifierSemantics(p.targetDialect()).DefaultSchema
-	for _, change := range diff.ExtensionsModified {
-		if change.ToSchema != change.FromSchema && change.ToSchema != defaultSchema {
-			schemas = append(schemas, change.ToSchema)
-		}
-	}
-	// An owner's change names the schema it puts its object into the same
-	// way; see [schemaext.SchemaPlacement].
 	for _, change := range diff.FeatureChanges {
 		if placed, ok := change.Value.(schemaext.SchemaPlacement); ok {
 			if schema := placed.PlacementSchema(change.Subject); schema != defaultSchema {
@@ -1871,16 +1857,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	var result []ast.Node
-	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
-		return nil, err
-	}
-	// The extension alterations are planned here, so a refusal ends the plan
-	// before anything else is planned, and joined after the schema
-	// preconditions below, which create the schema a move goes to.
-	alterations, err := p.planExtensionChanges(nil, diff)
-	if err != nil {
-		return nil, err
-	}
+	var err error
 	// One set of identifier rules for the whole plan. Every question of the form
 	// "do these two spellings name the same object" is answered with it, so the
 	// resolvers below and the statements that accompany what they resolve cannot
@@ -1924,13 +1901,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// created in them. Every phase below can name a schema, so this cannot sit
 	// inside one of them.
 	result = p.addSchemaPreconditions(result, diff)
-
-	// 0a. Update and move the extensions that stay, before anything that may
-	// use what they supply.
-	result = append(result, alterations...)
-
-	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
-	result = p.addNewExtensions(result, diff)
 
 	// Feature operations of the prerequisite phase that create or change an
 	// object join the plan here: after the schemas they read and before every
@@ -2157,40 +2127,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeUserTypes(result, diff)
 	result = p.removeEnums(result, diff)
 
-	// 16. Remove extensions (dangerous!)
-	result = p.removeExtensions(result, diff)
-
 	prerequisites.Removal = len(result)
 	windows.Prerequisites = prerequisites
 	windows.Types = types
 	return result, nil
-}
-
-func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDiff) error {
-	if p.targetDialect() == platform.Postgres || p.targetDialect() == platform.YugabyteDB || diff == nil {
-		return nil
-	}
-	for _, extension := range diff.ExtensionsAdded {
-		if extension.Schema != "" {
-			return fmt.Errorf(
-				"%w: %s does not support PostgreSQL extension installation schema %q for extension %q",
-				ptaherr.ErrUnsupportedFeature,
-				p.targetDialect(),
-				extension.Schema,
-				extension.Name,
-			)
-		}
-	}
-	if len(diff.ExtensionsModified) > 0 {
-		change := diff.ExtensionsModified[0]
-		return fmt.Errorf(
-			"%w: %s does not support PostgreSQL extension installation schema placement for extension %q",
-			ptaherr.ErrUnsupportedFeature,
-			p.targetDialect(),
-			change.Name,
-		)
-	}
-	return nil
 }
 
 func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -2448,45 +2388,6 @@ func defaultPrivilegeRevokeNode(ref difftypes.DefaultPrivilegeRef) *ast.RevokeDe
 		ref.Grantee,
 		[]string{ref.Privilege},
 	)
-}
-
-func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// No search: the change carries the extension (stokaro/ptah#2315), so one
-	// the desired schema does not declare still plans its statement.
-	for _, extension := range diff.ExtensionsAdded {
-		result = append(result, modelast.FromExtension(extension))
-	}
-	return result
-}
-
-func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// Generate DROP EXTENSION statements with comprehensive safety warnings
-	// Extension removal is potentially dangerous and requires careful consideration
-	for i, extension := range diff.ExtensionsRemoved {
-		extensionName := extension.Name
-		// Add comprehensive warning comments before each DROP EXTENSION statement
-		warningComment1 := ast.NewComment(fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extensionName))
-		warningComment2 := ast.NewComment("Consider reviewing all database objects that use this extension before proceeding")
-		warningComment3 := ast.NewComment("Extension removal may cascade to dependent objects - review carefully")
-
-		result = append(result, warningComment1)
-		result = append(result, warningComment2)
-		result = append(result, warningComment3)
-
-		// Create DROP EXTENSION statement with IF EXISTS for safety
-		dropExtension := ast.NewDropExtension(extensionName).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Remove extension '%s' as it's no longer required by the schema", extensionName))
-
-		result = append(result, dropExtension)
-
-		// Add blank line for readability between extension removals (not after the last one)
-		if i < len(diff.ExtensionsRemoved)-1 {
-			blankLine := ast.NewComment("")
-			result = append(result, blankLine)
-		}
-	}
-	return result
 }
 
 // modifiedFunctionNodes is the statements that replace one routine: CREATE OR

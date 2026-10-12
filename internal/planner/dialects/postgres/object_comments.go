@@ -16,7 +16,6 @@ var objectCommentStatements = map[difftypes.CommentedObjectKind]ast.CommentedObj
 	difftypes.CommentedDomain:        ast.CommentedDomain,
 	difftypes.CommentedCompositeType: ast.CommentedType,
 	difftypes.CommentedRangeType:     ast.CommentedType,
-	difftypes.CommentedExtension:     ast.CommentedExtension,
 	difftypes.CommentedEnumType:      ast.CommentedType,
 	difftypes.CommentedFunction:      ast.CommentedFunction,
 	difftypes.CommentedProcedure:     ast.CommentedProcedure,

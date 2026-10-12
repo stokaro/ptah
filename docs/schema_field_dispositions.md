@@ -116,7 +116,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-87 known gaps: a conversion or the comparison drops each one on the dialects named.
+93 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -134,12 +134,18 @@ migration nobody asked for.
 | `schemamodel.CompositeType.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.Facets` | `mysql` | from-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.NotValid` | `cockroachdb`, `postgres`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Database.Extensions` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Enum.Schema` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
+| `schemamodel.Extension.Comment` | `postgres`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
 | `schemamodel.Extension.Dialects` | `spanner`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Extension.Dialects` | `spanner`, `ydb` | from-catalog | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
+| `schemamodel.Extension.Name` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
+| `schemamodel.Extension.Schema` | `postgres`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
+| `schemamodel.Extension.Version` | `postgres`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
 | `schemamodel.Field.AutoInc` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |

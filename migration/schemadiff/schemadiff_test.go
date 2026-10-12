@@ -17,24 +17,16 @@ import (
 func TestCompare_DefaultBehavior(t *testing.T) {
 	c := qt.New(t)
 
-	// Setup test data with plpgsql in database but not in generated schema
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-		},
-	}
+	// plpgsql in the database and not in the declaration.
+	desired := declaringOwnerExtensions("pg_trgm")
+	database := holdingOwnerExtensions("pg_catalog", "plpgsql")
 
-	// Test default behavior (should ignore plpgsql)
-	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
-	// plpgsql should be ignored by default, so no extensions should be removed
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
+	// plpgsql is ignored by default, so no extension is removed.
+	installed, dropped := installedAndDropped(diff)
+	c.Assert(installed, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(dropped, qt.HasLen, 0)
 }
 
 func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
@@ -1145,156 +1137,83 @@ func sqliteColumnDatabaseSchema(columnType string) *catalog.Database {
 
 func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 	c := qt.New(t)
+	desired := declaringOwnerExtensions("pg_trgm")
+	database := holdingOwnerExtensions("public", "plpgsql", "adminpack")
 
-	// Setup test data
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-		},
-	}
+	// A custom list replaces the defaults: adminpack is ignored, plpgsql is not.
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database,
+		onPostgres(config.WithIgnoredExtensions("adminpack")), must.Must(builtin.New())))
 
-	// Test with custom ignore list (ignore adminpack but not plpgsql)
-	opts := config.WithIgnoredExtensions("adminpack")
-	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
-
-	// adminpack should be ignored, plpgsql should be marked for removal
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"plpgsql"})
+	installed, dropped := installedAndDropped(diff)
+	c.Assert(installed, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(dropped, qt.DeepEquals, []string{"plpgsql"})
 }
 
 func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
 	c := qt.New(t)
+	desired := declaringOwnerExtensions("pg_trgm")
+	database := holdingOwnerExtensions("public", "plpgsql", "adminpack")
 
-	// Setup test data
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-		},
-	}
+	// An empty list manages every extension.
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database,
+		onPostgres(config.WithIgnoredExtensions()), must.Must(builtin.New())))
 
-	// Test with no ignored extensions (manage all extensions)
-	opts := config.WithIgnoredExtensions() // Empty list
-	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
-
-	// All database extensions should be marked for removal
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"adminpack", "plpgsql"})
+	installed, dropped := installedAndDropped(diff)
+	c.Assert(installed, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(dropped, qt.DeepEquals, []string{"adminpack", "plpgsql"})
 }
 
 func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
 	c := qt.New(t)
+	desired := declaringOwnerExtensions("pg_trgm")
+	database := holdingOwnerExtensions("public", "plpgsql", "adminpack", "pg_stat_statements")
 
-	// Setup test data
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-			{Name: "pg_stat_statements", Version: "1.9", Schema: "public"},
-		},
-	}
+	// The defaults and adminpack are ignored, so only pg_stat_statements goes.
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database,
+		onPostgres(config.WithAdditionalIgnoredExtensions("adminpack")), must.Must(builtin.New())))
 
-	// Test with additional ignored extensions (default + adminpack)
-	opts := config.WithAdditionalIgnoredExtensions("adminpack")
-	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
-
-	// plpgsql and adminpack should be ignored, only pg_stat_statements should be removed
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pg_stat_statements"})
+	installed, dropped := installedAndDropped(diff)
+	c.Assert(installed, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(dropped, qt.DeepEquals, []string{"pg_stat_statements"})
 }
 
-func TestCompareWithOptions_NilOptions(t *testing.T) {
+func TestCompareWithOptions_DefaultOptions(t *testing.T) {
 	c := qt.New(t)
+	desired := declaringOwnerExtensions("pg_trgm")
+	database := holdingOwnerExtensions("public", "plpgsql")
 
-	// Setup test data
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-		},
-	}
+	// Without a list of its own the comparison ignores plpgsql.
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
-	// Test with nil options (should use defaults)
-	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, nil, must.Must(builtin.New())))
-
-	// Should behave the same as Compare() - ignore plpgsql by default
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
+	installed, dropped := installedAndDropped(diff)
+	c.Assert(installed, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(dropped, qt.HasLen, 0)
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
-	// Example data
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-			{Name: "btree_gin", IfNotExists: true},
-		},
+	desired := declaringOwnerExtensions("pg_trgm", "btree_gin")
+	database := holdingOwnerExtensions("public", "plpgsql", "pg_trgm")
+	tests := []struct {
+		name        string
+		options     *config.CompareOptions
+		wantDropped []string
+	}{
+		{name: "simple usage with defaults", options: config.DefaultCompareOptions()},
+		{name: "custom ignore list", options: config.WithIgnoredExtensions("plpgsql", "adminpack")},
+		{name: "manage all extensions", options: config.WithIgnoredExtensions(), wantDropped: []string{"plpgsql"}},
+		{name: "add to default ignore list", options: config.WithAdditionalIgnoredExtensions("uuid-ossp")},
 	}
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
-		},
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, onPostgres(test.options), must.Must(builtin.New())))
+
+			installed, dropped := installedAndDropped(diff)
+			c.Assert(installed, qt.DeepEquals, []string{"btree_gin"})
+			c.Assert(dropped, qt.DeepEquals, test.wantDropped)
+		})
 	}
-
-	t.Run("simple usage with defaults", func(t *testing.T) {
-		// Most common usage - just compare with defaults
-		c := qt.New(t)
-		diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
-
-		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0)) // plpgsql ignored
-	})
-
-	t.Run("custom ignore list", func(t *testing.T) {
-		// User wants to ignore specific extensions
-		c := qt.New(t)
-		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-		diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
-
-		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
-	})
-
-	t.Run("manage all extensions", func(t *testing.T) {
-		// User wants to manage all extensions (no ignoring)
-		c := qt.New(t)
-		opts := config.WithIgnoredExtensions()
-		diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
-
-		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"plpgsql"})
-	})
-
-	t.Run("add to default ignore list", func(t *testing.T) {
-		// User wants defaults plus additional ignored extensions
-		c := qt.New(t)
-		opts := config.WithAdditionalIgnoredExtensions("uuid-ossp")
-		diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
-
-		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
-	})
 }
 
 // TestCompareWithDialect_SpannerStringSpellingsAreOneType pins that Spanner's

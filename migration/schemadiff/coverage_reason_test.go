@@ -33,14 +33,14 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 	}{
 		{
 			name:           "a read the server refused",
-			notDescribed:   coverage.Set{}.With(coverage.Refused(coverage.Extension)),
+			notDescribed:   coverage.Set{}.With(coverage.Refused(coverage.Sequence)),
 			wantReason:     coverage.NotInspected,
 			wantProvenance: coverage.Observed,
 		},
 		{
 			name: "a target that cannot report the kind",
 			notDescribed: coverage.Set{}.With(coverage.Object{
-				Kind:       coverage.Extension,
+				Kind:       coverage.Sequence,
 				Reason:     coverage.Unsupported,
 				Provenance: coverage.DerivedFromTarget,
 			}),
@@ -50,7 +50,7 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 		{
 			name: "a selection that ruled the kind out",
 			notDescribed: coverage.Set{}.With(coverage.Object{
-				Kind:       coverage.Extension,
+				Kind:       coverage.Sequence,
 				Reason:     coverage.OutsideScope,
 				Provenance: coverage.Configured,
 			}),
@@ -61,7 +61,7 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 			// A hand-authored directive names no reason, and the record must
 			// not invent one: the document declined the kind and said no more.
 			name:           "a document that gave no reason",
-			notDescribed:   coverage.Set{}.WithKind(coverage.Extension),
+			notDescribed:   coverage.Set{}.WithKind(coverage.Sequence),
 			wantReason:     coverage.ReasonUnspecified,
 			wantProvenance: coverage.ProvenanceUnspecified,
 		},
@@ -70,19 +70,16 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-				Name:   "citext",
-				Schema: "extensions",
-			}}}
+			desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			current := &catalog.Database{NotDescribed: test.notDescribed}
 
 			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
+			c.Assert(diff.SequencesAdded.Names(), qt.HasLen, 0)
 			c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
-				Kind:       coverage.Extension,
-				Name:       "citext",
+				Kind:       coverage.Sequence,
+				Name:       "public.s1",
 				Reason:     test.wantReason,
 				Provenance: test.wantProvenance,
 			}})
@@ -124,25 +121,22 @@ func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 // a user needs.
 func TestWithheldAdditionCarriesTheReasonOfTheRecordThatCoveredIt(t *testing.T) {
 	c := qt.New(t)
-	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name:   "citext",
-		Schema: "extensions",
-	}}}
+	desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 	current := &catalog.Database{NotDescribed: coverage.Set{}.
 		With(coverage.Object{
-			Kind:       coverage.Extension,
-			Name:       "citext",
+			Kind:       coverage.Sequence,
+			Name:       "public.s1",
 			Reason:     coverage.SuppressedByPolicy,
 			Provenance: coverage.Defaulted,
 		}).
-		With(coverage.Refused(coverage.Extension))}
+		With(coverage.Refused(coverage.Sequence))}
 
 	_, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
-		Kind:       coverage.Extension,
-		Name:       "citext",
+		Kind:       coverage.Sequence,
+		Name:       "public.s1",
 		Reason:     coverage.NotInspected,
 		Provenance: coverage.Observed,
 	}})

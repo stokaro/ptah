@@ -21,13 +21,16 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {
@@ -202,12 +205,9 @@ func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	c := qt.New(t)
 	database := &catalog.Database{
-		Extensions: []catalog.Extension{{
-			Name:    "pgcrypto",
-			Schema:  "extensions",
-			Version: "1.3",
-		}},
-		NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
+		FeatureObjects:  installedExtensions(installedExtension("pgcrypto", "extensions", "1.3")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
+		NotDescribed:    coverage.Set{}.WithKind(coverage.Sequence),
 	}
 	state := diffDatabaseState(database)
 
@@ -218,10 +218,8 @@ func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	}, "--from schema", "postgres", must.Must(builtin.New()))
 	c.Assert(matched.err, qt.IsNil)
 	c.Assert(matched.selectionErr, qt.IsNil)
-	c.Assert(matched.database.Extensions, qt.DeepEquals, database.Extensions)
-	c.Assert(matched.schema.Extensions, qt.HasLen, 1)
-	c.Assert(matched.schema.Extensions[0].Name, qt.Equals, "pgcrypto")
-	c.Assert(matched.schema.Extensions[0].Schema, qt.Equals, "extensions")
+	c.Assert(pgextension.Names(matched.database.FeatureObjects), qt.DeepEquals, []string{"pgcrypto"})
+	c.Assert(extensionPlacements(c, matched.schema.FeatureObjects), qt.DeepEquals, map[string]string{"pgcrypto": "extensions"})
 	c.Assert(matched.schema.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence))
 
 	missed := scopeDiffState(t.Context(), state, atlasfilter.Scope{
@@ -245,11 +243,12 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 				Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext",
 			}},
 		}},
-		Extensions: []catalog.Extension{
-			{Name: "pgcrypto"},
-			{Schema: "extensions", Name: "citext"},
-			{Schema: "other", Name: "unrelated"},
-		},
+		FeatureObjects: installedExtensions(
+			installedExtension("pgcrypto", "", ""),
+			installedExtension("citext", "extensions", ""),
+			installedExtension("unrelated", "other", ""),
+		),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
 	state := diffDatabaseState(database)
 
@@ -262,17 +261,15 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
-	c.Assert(got.database.Extensions, qt.DeepEquals, database.Extensions)
-	c.Assert(got.schema.Extensions, qt.DeepEquals, []schemamodel.Extension{
-		{Schema: "extensions", Name: "citext", IfNotExists: true},
-		{Name: "pgcrypto", IfNotExists: true},
-		{Schema: "other", Name: "unrelated", IfNotExists: true},
-	})
+	c.Assert(pgextension.Names(got.database.FeatureObjects), qt.DeepEquals, []string{"citext", "pgcrypto", "unrelated"})
+	c.Assert(extensionPlacements(c, got.schema.FeatureObjects), qt.DeepEquals,
+		map[string]string{"citext": "extensions", "pgcrypto": "", "unrelated": "other"})
 	c.Assert(got.selection.NonExtensionMatched, qt.IsTrue)
 	c.Assert(got.schema.Fields, qt.HasLen, 1)
 	c.Assert(got.schema.Fields[0].Type, qt.Equals, "extensions.citext")
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), got.schema, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
+	empty := &catalog.Database{FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed))}
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), got.schema, empty, platform.Postgres, must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		context.Background(), must.Must(builtin.New()),
 		diff, platform.Postgres,
@@ -288,15 +285,14 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T) {
 	c := qt.New(t)
 	current := &catalog.Database{
-		Tables: []catalog.Table{{Schema: "app", Name: "users"}},
-		Extensions: []catalog.Extension{
-			{Schema: "extensions", Name: "citext"},
-			{Name: "pgcrypto"},
-		},
+		Tables:          []catalog.Table{{Schema: "app", Name: "users"}},
+		FeatureObjects:  installedExtensions(installedExtension("citext", "extensions", ""), installedExtension("pgcrypto", "", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
 	desired := &schemamodel.Database{
-		Tables:     []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []schemamodel.Extension{{Schema: "extensions", Name: "citext"}},
+		Tables:          []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		FeatureObjects:  declaredExtensions(declaredExtension("citext", "extensions")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}, DefaultSchema: "public"}
 
@@ -309,8 +305,8 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 
 	c.Assert(from.err, qt.IsNil)
 	c.Assert(to.err, qt.IsNil)
-	c.Assert(from.database.Extensions, qt.DeepEquals, current.Extensions)
-	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
+	c.Assert(pgextension.Names(from.database.FeatureObjects), qt.DeepEquals, []string{"citext", "pgcrypto"})
+	c.Assert(pgextension.Names(to.schema.FeatureObjects), qt.DeepEquals, []string{"citext"})
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	c.Assert(to.schema.NotDescribed, qt.DeepEquals, coverage.Set{}.With(coverage.Object{
 		Kind:       coverage.Extension,
@@ -318,21 +314,24 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 		Provenance: coverage.Configured,
 	}))
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.HasLen, 0)
+	c.Assert(removed, qt.HasLen, 0)
 }
 
 func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.T) {
 	c := qt.New(t)
 	current := &catalog.Database{
-		Tables:     []catalog.Table{{Schema: "app", Name: "users"}},
-		Extensions: []catalog.Extension{{Name: "pgcrypto"}},
+		Tables:          []catalog.Table{{Schema: "app", Name: "users"}},
+		FeatureObjects:  installedExtensions(installedExtension("pgcrypto", "", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
 	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
 		t.Context(), diffDatabaseState(current),
-		atlassource.State{Schema: &schemamodel.Database{}, DefaultSchema: "public"},
+		atlassource.State{Schema: &schemamodel.Database{FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired))},
+			DefaultSchema: "public"},
 		scope,
 		"postgres", must.Must(builtin.New()),
 	)
@@ -344,15 +343,17 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 1)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	_, removed := extensionChanges(diff)
+	c.Assert(removed, qt.HasLen, 0)
 }
 
 func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &catalog.Database{}
+	current := &catalog.Database{FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed))}
 	desired := &schemamodel.Database{
-		Tables:     []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []schemamodel.Extension{{Schema: "extensions", Name: "citext"}},
+		Tables:          []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		FeatureObjects:  declaredExtensions(declaredExtension("citext", "extensions")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"app.users"}, DefaultSchema: "public"}
 
@@ -365,27 +366,26 @@ func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 
 	c.Assert(from.err, qt.IsNil)
 	c.Assert(to.err, qt.IsNil)
-	c.Assert(from.database.Extensions, qt.DeepEquals, current.Extensions)
-	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
+	c.Assert(pgextension.Names(from.database.FeatureObjects), qt.HasLen, 0)
+	c.Assert(pgextension.Names(to.schema.FeatureObjects), qt.DeepEquals, []string{"citext"})
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"citext"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.DeepEquals, []string{"citext"})
+	c.Assert(removed, qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }
 
 func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &catalog.Database{Extensions: []catalog.Extension{
-		{Schema: "extensions", Name: "citext"},
-		{Name: "pgcrypto"},
-	}}
+	current := &catalog.Database{
+		FeatureObjects:  installedExtensions(installedExtension("citext", "extensions", ""), installedExtension("pgcrypto", "", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
+	}
 	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []schemamodel.Extension{
-			{Schema: "extensions", Name: "citext"},
-			{Name: "pgcrypto"},
-		},
+		Tables:          []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		FeatureObjects:  declaredExtensions(declaredExtension("citext", "extensions"), declaredExtension("pgcrypto", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 	scope := atlasfilter.Scope{
 		Selections:    ownerSelections(),
@@ -402,19 +402,23 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 
 	c.Assert(from.err, qt.IsNil)
 	c.Assert(to.err, qt.IsNil)
-	c.Assert(from.database.Extensions, qt.DeepEquals, current.Extensions)
-	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
+	c.Assert(pgextension.Names(from.database.FeatureObjects), qt.DeepEquals, []string{"citext", "pgcrypto"})
+	c.Assert(pgextension.Names(to.schema.FeatureObjects), qt.DeepEquals, []string{"citext", "pgcrypto"})
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.HasLen, 0)
+	c.Assert(removed, qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }
 
 func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto"}}}
-	desired := &schemamodel.Database{}
+	current := &catalog.Database{
+		FeatureObjects:  installedExtensions(installedExtension("pgcrypto", "", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
+	}
+	desired := &schemamodel.Database{FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired))}
 	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"pgcrypto"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
@@ -431,8 +435,9 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	c.Assert(to.schema.NotDescribed.IsZero(), qt.IsTrue)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.HasLen, 0)
+	c.Assert(removed, qt.DeepEquals, []string{"pgcrypto"})
 }
 
 func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
@@ -559,4 +564,54 @@ func diffDatabaseState(current *catalog.Database) atlassource.State {
 		DB:            current,
 		DefaultSchema: "public",
 	}
+}
+
+// installedExtension is an extension a PostgreSQL read hands to the extension
+// owner.
+func installedExtension(name, schema, version string) schemaext.Object {
+	return must.Must(pgextension.ObservedObject(pgextension.Ref(name), pgextension.ObservedExtension{Schema: schema, Version: version}))
+}
+
+func installedExtensions(objects ...schemaext.Object) schemaext.Objects {
+	return must.Must(schemaext.NewObjects(objects...))
+}
+
+// declaredExtension is an extension a source declares to the extension owner.
+func declaredExtension(name, schema string) schemaext.Object {
+	return must.Must(pgextension.DesiredObject(pgextension.Ref(name), pgextension.DesiredExtension{Schema: schema}))
+}
+
+func declaredExtensions(objects ...schemaext.Object) schemaext.Objects {
+	return must.Must(schemaext.NewObjects(objects...))
+}
+
+// extensionPlacements is the installation schema of each declared extension,
+// by name.
+func extensionPlacements(c *qt.C, objects schemaext.Objects) map[string]string {
+	c.Helper()
+	all, err := objects.All()
+	c.Assert(err, qt.IsNil)
+	placements := make(map[string]string)
+	for _, object := range all {
+		if extension, ok := object.Value.(*pgextension.DesiredExtension); ok {
+			placements[pgextension.Name(object.Ref)] = extension.Schema
+		}
+	}
+	return placements
+}
+
+// extensionChanges names the extensions a diff installs and drops, from the
+// extension owner's changes.
+func extensionChanges(diff *difftypes.SchemaDiff) (added, removed []string) {
+	for _, record := range diff.FeatureChanges {
+		change, ok := record.Value.(*pgextension.Change)
+		switch {
+		case !ok:
+		case change.Before == nil:
+			added = append(added, pgextension.Name(record.Subject))
+		case change.After == nil:
+			removed = append(removed, pgextension.Name(record.Subject))
+		}
+	}
+	return added, removed
 }

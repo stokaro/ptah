@@ -109,9 +109,10 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 // of DECLARED object kinds and excludes namespaces on purpose.
 var derivedNodeKinds = []string{"CreateSchemaNode"}
 
-// sharedRowSecurityKinds are the routed kinds of the shared row-level
-// security declarations, which the PostgreSQL family leaves to its owner.
-var sharedRowSecurityKinds = []string{"AlterTableEnableRLSNode", "CreatePolicyNode"}
+// ownedSharedKinds are the routed kinds of the shared declarations the
+// PostgreSQL family leaves to their owners: row-level security, and the
+// extension.
+var ownedSharedKinds = []string{"AlterTableEnableRLSNode", "CreatePolicyNode", "ExtensionNode"}
 
 // assertRenderAndPlanAgree is the per-dialect body.
 //
@@ -123,8 +124,10 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	desired := routingFixture()
 	// The PostgreSQL family holds row-level security in its owner's models,
 	// and both surfaces refuse the shared declarations the fixture carries
-	// for the other targets.
+	// for the other targets. Extensions are their owner's too: no source
+	// produces the shared list, and the comparison does not read it.
 	desired.RLSPolicies, desired.RLSEnabledTables = nil, nil
+	desired.Extensions = nil
 
 	// A target that cannot create a domain refuses the whole schema before
 	// SQL, on BOTH surfaces, because they share one validation -- the render
@@ -157,7 +160,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds)-len(sharedRowSecurityKinds),
+	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds)-len(ownedSharedKinds),
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,

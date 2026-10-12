@@ -10,8 +10,10 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -21,11 +23,11 @@ import (
 func unhostableSchema() *schemamodel.Database {
 	start := int64(1000)
 	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
-		Sequences:  []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
-		Roles:      []schemamodel.Role{{Name: "app_role"}},
-		Functions:  []schemamodel.Function{{Name: "bump", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
-		Tables:     []schemamodel.Table{{StructName: "T", Name: "t"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{})))),
+		Sequences:      []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
+		Roles:          []schemamodel.Role{{Name: "app_role"}},
+		Functions:      []schemamodel.Function{{Name: "bump", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
+		Tables:         []schemamodel.Table{{StructName: "T", Name: "t"}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "n", Type: "INTEGER", Nullable: true, Check: "n > 0"},
@@ -50,7 +52,6 @@ func unhostableSchema() *schemamodel.Database {
 // addition.
 func unhostableCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		ExtensionsAdded:        difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesAdded:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		RolesAdded:             difftypes.RoleChanges{{Name: "app_role"}},
 		FunctionsAdded:         difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
@@ -75,6 +76,15 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 			},
 		}},
 	}
+}
+
+// clickhouseCreationDiff is unhostableCreationDiff as a ClickHouse comparison
+// computes it: the extension is its owner's, and the comparison records that
+// the target skips it.
+func clickhouseCreationDiff() *difftypes.SchemaDiff {
+	diff := unhostableCreationDiff()
+	diff.SkippedFeatures = []schemaext.SkippedObject{{Subject: pgextension.Ref("pg_trgm"), Label: "PostgreSQL extension", Target: platform.ClickHouse}}
+	return diff
 }
 
 // diagnosticLines returns every line of the joined SQL that is a
@@ -132,13 +142,13 @@ func renderStatements(c *qt.C, desired *schemamodel.Database, dialect string) []
 func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse), "\n")
+	planned := strings.Join(planStatements(c, clickhouseCreationDiff(), unhostableSchema(), platform.ClickHouse), "\n")
 
 	tests := []struct {
 		name string
 		want string
 	}{
-		{name: "extension", want: `-- CLICKHOUSE: CREATE EXTENSION "pg_trgm" is not supported`},
+		{name: "extension", want: `-- CLICKHOUSE: PostgreSQL extension pg_trgm is not supported by this target; skipped.`},
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: "CREATE ROLE IF NOT EXISTS `app_role`"},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
@@ -172,7 +182,7 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	c := qt.New(t)
 
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
-	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
+	planned := diagnosticLines(planStatements(c, clickhouseCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
 	// Four: extensions, sequences, functions and triggers, which this target
 	// does not host. Roles and grants left this list when ClickHouse gained
@@ -207,7 +217,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ExtensionsRemoved:        difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesRemoved:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		DomainsRemoved:           difftypes.DomainChanges{{Name: "email"}},
 		CompositeTypesRemoved:    difftypes.CompositeTypeChanges{{Name: "addr"}},
@@ -228,7 +237,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "extension", want: `-- CLICKHOUSE: DROP EXTENSION "pg_trgm" is not supported`},
 		{name: "sequence", want: `-- CLICKHOUSE: DROP SEQUENCE "order_number_seq" is not supported`},
 		// The three user types were the collections nobody walked: #1628 closed
 		// with grants and row-level security fixed and these still dropped in
@@ -273,7 +281,6 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "extension", want: `CREATE EXTENSION`},
 		{name: "sequence", want: `CREATE SEQUENCE`},
 		{name: "role", want: `CREATE ROLE`},
 		{name: "function", want: `CREATE FUNCTION`},
@@ -297,51 +304,49 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 }
 
 // mysqlFamilySchema declares the two object kinds #931 items 5 and 8 moved on
-// the render side: a standalone extension and a standalone sequence.
+// the render side: a standalone extension, declared to its owner, and a
+// standalone sequence.
 func mysqlFamilySchema() *schemamodel.Database {
 	start := int64(1000)
 	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
-		Sequences:  []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
-		Tables:     []schemamodel.Table{{StructName: "T", Name: "t"}},
-		Fields:     []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{})))),
+		Sequences:      []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
+		Tables:         []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields:         []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 }
 
 func mysqlFamilyCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
-		SequencesAdded:  difftypes.SequenceChanges{{Name: "order_number_seq"}},
-		TablesAdded:     difftypes.TableChanges{{Name: "t"}},
+		SequencesAdded: difftypes.SequenceChanges{{Name: "order_number_seq"}},
+		TablesAdded:    difftypes.TableChanges{{Name: "t"}},
 	}
 }
 
-// TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost is the same
-// blocker as the ClickHouse one, on the other two dialects #931 touched.
+// TestPlan_MySQLFamilyNamesTheSequenceItCannotHost is the same blocker as the
+// ClickHouse one, on the other two dialects #931 touched.
 //
-// Items 5 and 8 moved render alone: `schema render --dialect mysql` names both
-// objects, while `schema apply --dry-run` against live MySQL 9.7 and live
-// MariaDB 10.11.18 planned the CREATE TABLE and said nothing about either.
-func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) {
+// Items 5 and 8 moved render alone: `schema render --dialect mysql` names the
+// object, while `schema apply --dry-run` against live MySQL 9.7 and live
+// MariaDB 10.11.18 planned the CREATE TABLE and said nothing about it. The
+// extension is its owner's, and both surfaces skip it through the off-target
+// policy; see TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension.
+func TestPlan_MySQLFamilyNamesTheSequenceItCannotHost(t *testing.T) {
 	tests := []struct {
-		dialect       string
-		wantExtension string
-		wantSequence  string
+		dialect      string
+		wantSequence string
 	}{
 		{
-			dialect:       platform.MySQL,
-			wantExtension: "-- Extension pg_trgm not supported in MySQL",
-			wantSequence:  "-- CREATE SEQUENCE order_number_seq not supported in mysql",
+			dialect:      platform.MySQL,
+			wantSequence: "-- CREATE SEQUENCE order_number_seq not supported in mysql",
 		},
 		{
-			// MariaDB hosts sequences now, so only the extension is named here.
-			// The sequence half of this row moved to the test below rather than
-			// being deleted: the plan and the render still have to agree about
-			// it, and that agreement is what this test is for
-			// (stokaro/ptah#1759).
-			dialect:       platform.MariaDB,
-			wantExtension: "-- Extension pg_trgm not supported in MariaDB",
-			wantSequence:  "",
+			// MariaDB hosts sequences now, so it names none. The sequence half
+			// of this row moved to the test below rather than being deleted:
+			// the plan and the render still have to agree about it, and that
+			// agreement is what this test is for (stokaro/ptah#1759).
+			dialect:      platform.MariaDB,
+			wantSequence: "",
 		},
 	}
 
@@ -351,8 +356,6 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), test.dialect), "\n")
 			rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), test.dialect), "\n")
 
-			c.Assert(planned, qt.Contains, test.wantExtension)
-			c.Assert(rendered, qt.Contains, test.wantExtension)
 			c.Assert(sequenceDiagnosticIn(planned, test.wantSequence), qt.IsTrue)
 			c.Assert(sequenceDiagnosticIn(rendered, test.wantSequence), qt.IsTrue)
 		})
@@ -422,93 +425,6 @@ func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 	}
 }
 
-func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T) {
-	diff := &difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{{
-		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
-	}}}
-
-	tests := []struct {
-		dialect string
-		want    string
-	}{
-		{dialect: platform.MySQL, want: "-- Extension pgcrypto not supported in MySQL"},
-		{dialect: platform.MariaDB, want: "-- Extension pgcrypto not supported in MariaDB"},
-		{dialect: platform.ClickHouse, want: `-- CLICKHOUSE: CREATE EXTENSION "pgcrypto" is not supported`},
-	}
-
-	for _, test := range tests {
-		t.Run(test.dialect, func(t *testing.T) {
-			c := qt.New(t)
-			planned := strings.Join(planStatements(c, diff, &schemamodel.Database{}, test.dialect), "\n")
-			c.Assert(planned, qt.Contains, test.want)
-		})
-	}
-}
-
-func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	// The installation schema travels WITH the change now, which is what
-	// the precondition and the WITH SCHEMA clause are both planned from
-	// (stokaro/ptah#2315).
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
-		{Name: "pgcrypto", Schema: "extensions"},
-	}}
-	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				context.Background(), must.Must(builtin.New()),
-				diff, dialect,
-			)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, []string{
-				"CREATE SCHEMA IF NOT EXISTS \"extensions\"",
-				"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \"extensions\"",
-			})
-		})
-	}
-}
-
-func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	// The installation schema travels WITH the addition, which is what the
-	// comparison produces: the planner refuses from the change rather than
-	// from a schema handed to it beside the change (stokaro/ptah#2315).
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto", Schema: "extensions"}}}
-	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(
-				context.Background(), must.Must(builtin.New()),
-				diff, dialect,
-			)
-
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `.*`+dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
-			c.Assert(nodes, qt.IsNil)
-		})
-	}
-}
-
-func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	// The installation schema travels WITH the addition, which is what the
-	// comparison produces: the planner refuses from the change rather than
-	// from a schema handed to it beside the change (stokaro/ptah#2315).
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto", Schema: " "}}}
-	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(
-				context.Background(), must.Must(builtin.New()),
-				diff, dialect,
-			)
-
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `.*`+dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
-			c.Assert(nodes, qt.IsNil)
-		})
-	}
-}
-
 // TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension pins the two
 // answers a hold-out would replace.
 //
@@ -528,7 +444,12 @@ func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBef
 func TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
+	// The comparison records the extension the target skips; the plan writes
+	// that record as the skip line, and the render scopes the object out the
+	// same way.
+	diff := mysqlFamilyCreationDiff()
+	diff.SkippedFeatures = []schemaext.SkippedObject{{Subject: pgextension.Ref("pg_trgm"), Label: "PostgreSQL extension", Target: platform.SQLServer}}
+	planned := strings.Join(planStatements(c, diff, mysqlFamilySchema(), platform.SQLServer), "\n")
 	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
 	// Exactly one, not at least one. The two halves that can answer for a
@@ -542,7 +463,7 @@ func TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension(t *testing.
 	c.Assert(countCreateSequence(executableSQL(rendered)), qt.Equals, 1)
 	c.Assert(planned, qt.Not(qt.Contains), `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated`)
 
-	extension := `-- SQLSERVER: extensions "pg_trgm" is not generated for this target; skipped.`
+	extension := `-- SQLSERVER: PostgreSQL extension pg_trgm is not supported by this target; skipped.`
 	c.Assert(planned, qt.Contains, extension)
 	c.Assert(rendered, qt.Contains, extension)
 }

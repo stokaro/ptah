@@ -13,24 +13,24 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/migration/schemadiff"
 )
 
 func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &catalog.Database{Extensions: []catalog.Extension{
-		{Schema: "extensions", Name: "citext"},
-		{Name: "pgcrypto"},
-	}}
+	current := &catalog.Database{
+		FeatureObjects:  installedExtensions(installedExtension("citext", "extensions", ""), installedExtension("pgcrypto", "", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
+	}
 	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []schemamodel.Extension{
-			{Schema: "extensions", Name: "citext"},
-			{Name: "pgcrypto"},
-		},
+		Tables:          []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		FeatureObjects:  declaredExtensions(declaredExtension("citext", "extensions"), declaredExtension("pgcrypto", "")),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 	scope := atlasfilter.Scope{
 		Selections:    ownerSelections(),
@@ -42,15 +42,16 @@ func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 
 	c.Assert(got.currentErr, qt.IsNil)
 	c.Assert(got.desiredErr, qt.IsNil)
-	c.Assert(got.current.Extensions, qt.DeepEquals, current.Extensions)
-	c.Assert(got.desired.Extensions, qt.DeepEquals, desired.Extensions)
+	c.Assert(pgextension.Names(got.current.FeatureObjects), qt.DeepEquals, []string{"citext", "pgcrypto"})
+	c.Assert(pgextension.Names(got.desired.FeatureObjects), qt.DeepEquals, []string{"citext", "pgcrypto"})
 	applyExtensionSupportCoverage(
 		got.desired,
 		got.currentReports.Selection,
 		got.desiredReports.Selection,
 	)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), got.desired, got.current, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.HasLen, 0)
+	c.Assert(removed, qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }

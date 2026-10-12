@@ -11,17 +11,21 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // The extensions a server puts in every database survive both paths that
-// could remove them: a comparison of an empty declaration plans no DROP
-// EXTENSION, and the realm cleanup leaves each one installed. Both read the one
+// could remove them: a comparison of a declaration that claims to declare
+// every extension and declares none plans no DROP EXTENSION, and the realm
+// cleanup leaves each one installed. Both read the one
 // list in internal/serverobjects, so an extension a later line adds to its
 // template fails both halves of this test until the list names it, rather than
 // one of them.
@@ -45,9 +49,10 @@ func TestServerExtensions_LiveSurviveTheComparisonAndTheCleanup(t *testing.T) {
 			live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
 			c.Assert(err, qt.IsNil)
 
-			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, live, conn.Info(), nil, must.Must(builtin.New()))
+			declared := &schemamodel.Database{FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired))}
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, live, conn.Info(), nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
-			c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0, qt.Commentf("installed: %v", installed))
+			c.Assert(droppedServerExtensions(diff), qt.HasLen, 0, qt.Commentf("installed: %v", installed))
 
 			c.Assert(postgres.NewPostgreSQLWriter(liveDatabase.db, "public").DropDatabaseRealm(ctx), qt.IsNil)
 			c.Assert(postgresWriterLiveExtensionNames(c, ctx, liveDatabase.db), qt.DeepEquals, installed)
@@ -64,4 +69,16 @@ func engineURLFor(c *qt.C, engine dbtarget.Engine, database string) string {
 	parsed.Path = "/" + database
 	parsed.RawPath = ""
 	return parsed.String()
+}
+
+// droppedServerExtensions names the extensions a diff drops, from the
+// extension owner's changes.
+func droppedServerExtensions(diff *difftypes.SchemaDiff) []string {
+	var names []string
+	for _, record := range diff.FeatureChanges {
+		if change, ok := record.Value.(*pgextension.Change); ok && change.After == nil {
+			names = append(names, pgextension.Name(record.Subject))
+		}
+	}
+	return names
 }

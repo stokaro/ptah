@@ -8,127 +8,74 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// declaringExtension is a desired schema that declares one extension to the
+// extension owner and claims that it declares every extension.
+func declaringExtension(name string, extension pgextension.DesiredExtension) *schemamodel.Database {
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref(name), extension)))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
+	}
+}
+
+// TestExtensionMigration_EndToEnd pins the up migration a comparison plans
+// for the extension owner's changes, rendered as a migration file renders it.
+// The down migrations are pinned with the generator's own reversal in
+// TestMigrationFileGeneration_ExtensionSQL.
 func TestExtensionMigration_EndToEnd(t *testing.T) {
 	tests := []struct {
-		name              string
-		generatedSchema   *schemamodel.Database
-		databaseSchema    *catalog.Database
-		expectedUpSQL     []string
-		expectedDownSQL   []string
-		unexpectedUpSQL   []string
-		unexpectedDownSQL []string
+		name            string
+		generatedSchema *schemamodel.Database
+		databaseSchema  *catalog.Database
+		expectedUpSQL   []string
+		unexpectedUpSQL []string
 	}{
 		{
-			name: "add single extension",
-			generatedSchema: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-				},
-			},
-			databaseSchema: &catalog.Database{
-				Extensions: make([]catalog.Extension, 0),
-			},
+			name:            "add single extension",
+			generatedSchema: declaringExtension("pg_trgm", pgextension.DesiredExtension{IfNotExists: true, Comment: "Enable trigram similarity search"}),
+			databaseSchema:  holdingExtensions(),
 			expectedUpSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 				"COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';",
 			},
-			expectedDownSQL: []string{
-				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
-				"DROP EXTENSION IF EXISTS pg_trgm;",
-			},
-			unexpectedUpSQL: []string{
-				"DROP EXTENSION",
-			},
-			unexpectedDownSQL: []string{
-				"CREATE EXTENSION",
-			},
+			unexpectedUpSQL: []string{"DROP EXTENSION"},
 		},
 		{
-			name: "add multiple extensions",
-			generatedSchema: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
-				},
-			},
-			databaseSchema: &catalog.Database{
-				Extensions: make([]catalog.Extension, 0),
-			},
+			name:            "add multiple extensions",
+			generatedSchema: declaringExtensions("pg_trgm", "btree_gin"),
+			databaseSchema:  holdingExtensions(),
 			expectedUpSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 				"CREATE EXTENSION IF NOT EXISTS btree_gin;",
 			},
-			expectedDownSQL: []string{
-				"DROP EXTENSION IF EXISTS pg_trgm;",
-				"DROP EXTENSION IF EXISTS btree_gin;",
-			},
-			unexpectedUpSQL: []string{
-				"DROP EXTENSION",
-			},
-			unexpectedDownSQL: []string{
-				"CREATE EXTENSION",
-			},
+			unexpectedUpSQL: []string{"DROP EXTENSION"},
 		},
 		{
-			name: "remove extension",
-			generatedSchema: &schemamodel.Database{
-				Extensions: make([]schemamodel.Extension, 0),
-			},
-			databaseSchema: &catalog.Database{
-				Extensions: []catalog.Extension{
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
-				},
-			},
+			name:            "remove extension",
+			generatedSchema: declaringExtensions(),
+			databaseSchema:  holdingExtensions(installedExtension{"pg_trgm", "public", "1.6"}),
 			expectedUpSQL: []string{
+				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
 				"DROP EXTENSION IF EXISTS pg_trgm;",
 			},
-			// The down migration recreates the extension WHERE AND AS it was:
-			// the removal carries the extension the catalog reported, schema
-			// and version included (stokaro/ptah#2315). A planner reading the
-			// definition out of the stripped-down schema this test builds below
-			// emits a bare CREATE instead, which is an artifact of the fixture
-			// rather than the intent -- internal/convert/dbschematogo carries
-			// the version too, so a real down migration looks like this.
-			expectedDownSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public VERSION '1.6';",
-			},
-			unexpectedUpSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
-			},
-			unexpectedDownSQL: []string{
-				"DROP EXTENSION",
-			},
+			unexpectedUpSQL: []string{"CREATE EXTENSION"},
 		},
 		{
-			name: "extension with version",
-			generatedSchema: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
-				},
-			},
-			databaseSchema: &catalog.Database{
-				Extensions: make([]catalog.Extension, 0),
-			},
+			name:            "extension with version",
+			generatedSchema: declaringExtension("postgis", pgextension.DesiredExtension{Version: "3.0", IfNotExists: true, Comment: "Geographic data support"}),
+			databaseSchema:  holdingExtensions(),
 			expectedUpSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';",
 				"COMMENT ON EXTENSION postgis IS 'Geographic data support';",
 			},
-			expectedDownSQL: []string{
-				"DROP EXTENSION IF EXISTS postgis;",
-			},
-			unexpectedUpSQL: []string{
-				"DROP EXTENSION",
-			},
-			unexpectedDownSQL: []string{
-				"CREATE EXTENSION",
-			},
+			unexpectedUpSQL: []string{"DROP EXTENSION"},
 		},
 	}
 
@@ -136,64 +83,22 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			// 1. Calculate schema diff
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 				tt.generatedSchema, tt.databaseSchema, "postgres", must.Must(builtin.New()),
 			))
 			c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("Expected schema changes to be detected"))
 
-			// 2. Generate up migration SQL
-			upSQL, err := planner.GenerateSchemaDiffSQL(
-				context.Background(), must.Must(builtin.New()),
-				diff, "postgres",
-			)
+			upSQL, err := planner.GenerateSchemaDiffSQL(context.Background(), must.Must(builtin.New()), diff, "postgres")
 			c.Assert(err, qt.IsNil)
 			upSQL = legacyRenderedSQL(upSQL)
 
-			// 3. Generate down migration SQL by reversing the diff
-			reverseDiff := &difftypes.SchemaDiff{
-				ExtensionsAdded:   diff.ExtensionsRemoved,
-				ExtensionsRemoved: diff.ExtensionsAdded,
-			}
-
-			// For down migrations, we need to convert database schema to go schema format
-			dbAsGoSchema := &schemamodel.Database{
-				Extensions: make([]schemamodel.Extension, len(tt.databaseSchema.Extensions)),
-			}
-			for i, ext := range tt.databaseSchema.Extensions {
-				dbAsGoSchema.Extensions[i] = schemamodel.Extension{
-					Name:        ext.Name,
-					IfNotExists: true, // Default for down migrations
-				}
-			}
-
-			downSQL, err := planner.GenerateSchemaDiffSQL(
-				context.Background(), must.Must(builtin.New()),
-				reverseDiff, "postgres",
-			)
-			c.Assert(err, qt.IsNil)
-			downSQL = legacyRenderedSQL(downSQL)
-
-			// 4. Verify up migration SQL
 			for _, expected := range tt.expectedUpSQL {
 				c.Assert(upSQL, qt.Contains, expected,
 					qt.Commentf("Expected up SQL to contain: %s\nActual up SQL:\n%s", expected, upSQL))
 			}
-
 			for _, unexpected := range tt.unexpectedUpSQL {
 				c.Assert(upSQL, qt.Not(qt.Contains), unexpected,
 					qt.Commentf("Expected up SQL to NOT contain: %s\nActual up SQL:\n%s", unexpected, upSQL))
-			}
-
-			// 5. Verify down migration SQL
-			for _, expected := range tt.expectedDownSQL {
-				c.Assert(downSQL, qt.Contains, expected,
-					qt.Commentf("Expected down SQL to contain: %s\nActual down SQL:\n%s", expected, downSQL))
-			}
-
-			for _, unexpected := range tt.unexpectedDownSQL {
-				c.Assert(downSQL, qt.Not(qt.Contains), unexpected,
-					qt.Commentf("Expected down SQL to NOT contain: %s\nActual down SQL:\n%s", unexpected, downSQL))
 			}
 		})
 	}
@@ -202,41 +107,21 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	c := qt.New(t)
 
-	// Test a complete up/down migration cycle
-	generatedSchema := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-			{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
-		},
-	}
-
-	databaseSchema := &catalog.Database{
-		Extensions: make([]catalog.Extension, 0),
-	}
-
-	// 1. Calculate initial diff (should add extensions)
+	// 1. The up comparison installs both extensions.
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
-		generatedSchema, databaseSchema, "postgres", must.Must(builtin.New()),
+		declaringExtensions("pg_trgm", "btree_gin"), holdingExtensions(), "postgres", must.Must(builtin.New()),
 	))
-	c.Assert(upDiff.ExtensionsAdded.Names(), qt.HasLen, 2)
-	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	upAdded, upRemoved := extensionChanges(upDiff)
+	c.Assert(upAdded, qt.DeepEquals, []string{"btree_gin", "pg_trgm"})
+	c.Assert(upRemoved, qt.HasLen, 0)
 
-	// 2. Simulate applying the up migration (database now has extensions)
-	simulatedDatabaseAfterUp := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},
-		},
-	}
-
-	// 3. Calculate down diff (should remove extensions)
+	// 2. After the up migration the database holds them, and a schema that
+	// declares none drops both.
+	afterUp := holdingExtensions(installedExtension{"pg_trgm", "public", "1.6"}, installedExtension{"btree_gin", "public", "1.3"})
 	downDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
-		&schemamodel.Database{Extensions: make([]schemamodel.Extension, 0)}, simulatedDatabaseAfterUp, "postgres", must.Must(builtin.New()),
+		declaringExtensions(), afterUp, "postgres", must.Must(builtin.New()),
 	))
-	c.Assert(downDiff.ExtensionsAdded.Names(), qt.HasLen, 0)
-	c.Assert(downDiff.ExtensionsRemoved.Names(), qt.HasLen, 2)
-
-	// 4. Verify the cycle is complete
-	c.Assert(upDiff.ExtensionsAdded.Names(), qt.DeepEquals, downDiff.ExtensionsRemoved.Names())
-	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.DeepEquals, downDiff.ExtensionsAdded.Names())
+	downAdded, downRemoved := extensionChanges(downDiff)
+	c.Assert(downAdded, qt.HasLen, 0)
+	c.Assert(downRemoved, qt.DeepEquals, upAdded)
 }

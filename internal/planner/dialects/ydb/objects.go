@@ -65,8 +65,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 			keyed(capability.CompositeTypes, "composite type", "the plan changes a composite type")},
 		{len(diff.RangesAdded)+len(diff.RangesRemoved)+len(diff.RangesModified) > 0,
 			keyed(capability.RangeTypes, "range type", "the plan changes a range type")},
-		{len(diff.ExtensionsAdded)+len(diff.ExtensionsRemoved)+len(diff.ExtensionsModified) > 0,
-			func() error { return refuseFact("the plan changes an extension", "YDB has no extensions") }},
 		{len(diff.FunctionsAdded)+len(diff.FunctionsRemoved)+len(diff.ProceduresRemoved)+len(diff.FunctionsModified) > 0,
 			keyed(capability.Functions, "routine", "the plan changes a function or a procedure")},
 		{len(diff.SequencesAdded)+len(diff.SequencesRemoved)+len(diff.SequencesModified) > 0,

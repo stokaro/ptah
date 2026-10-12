@@ -59,13 +59,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func main() {
@@ -84,12 +88,18 @@ func run(ctx context.Context) error {
 	fmt.Println()
 
 	// Create sample data for demonstration
-	desired := createSampleGeneratedSchema()
-	database := createSampleDatabaseSchema()
+	desired, err := createSampleGeneratedSchema()
+	if err != nil {
+		return err
+	}
+	database, err := createSampleDatabaseSchema()
+	if err != nil {
+		return err
+	}
 
 	fmt.Println("Sample Data:")
-	fmt.Printf("Generated schema extensions: %v\n", getExtensionNames(desired.Extensions))
-	fmt.Printf("Database schema extensions: %v\n", getDatabaseExtensionNames(database.Extensions))
+	fmt.Printf("Generated schema extensions: %v\n", pgextension.Names(desired.FeatureObjects))
+	fmt.Printf("Database schema extensions: %v\n", pgextension.Names(database.FeatureObjects))
 	fmt.Println()
 
 	// Demonstrate different configuration options
@@ -104,39 +114,78 @@ func run(ctx context.Context) error {
 	return nil
 }
 
-func createSampleGeneratedSchema() *schemamodel.Database {
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true, Comment: "Trigram similarity search"},
-			{Name: "btree_gin", IfNotExists: true, Comment: "GIN indexes for btree types"},
-		},
+// createSampleGeneratedSchema declares two extensions to the extension owner,
+// as a Go //ptah:schema:extension annotation does, and claims that it
+// declares every extension.
+func createSampleGeneratedSchema() (*schemamodel.Database, error) {
+	var objects []schemaext.Object
+	for name, comment := range map[string]string{"pg_trgm": "Trigram similarity search", "btree_gin": "GIN indexes for btree types"} {
+		object, err := pgextension.DesiredObject(pgextension.Ref(name), pgextension.DesiredExtension{IfNotExists: true, Comment: comment})
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, object)
 	}
+	declared, err := schemaext.NewObjects(objects...)
+	if err != nil {
+		return nil, err
+	}
+	known, err := pgextension.CompleteCoverage(schemaext.Desired)
+	if err != nil {
+		return nil, err
+	}
+	return &schemamodel.Database{FeatureObjects: declared, FeatureCoverage: known}, nil
 }
 
-func createSampleDatabaseSchema() *catalog.Database {
-	return &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
-		},
+// createSampleDatabaseSchema holds three installed extensions, as the
+// PostgreSQL reader hands them to the extension owner.
+func createSampleDatabaseSchema() (*catalog.Database, error) {
+	var objects []schemaext.Object
+	for _, installed := range []struct{ name, version, schema string }{
+		{"plpgsql", "1.0", "pg_catalog"}, {"adminpack", "2.1", "public"}, {"pg_trgm", "1.6", "public"},
+	} {
+		object, err := pgextension.ObservedObject(pgextension.Ref(installed.name),
+			pgextension.ObservedExtension{Version: installed.version, Schema: installed.schema})
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, object)
 	}
+	read, err := schemaext.NewObjects(objects...)
+	if err != nil {
+		return nil, err
+	}
+	known, err := pgextension.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return nil, err
+	}
+	return &catalog.Database{FeatureObjects: read, FeatureCoverage: known}, nil
 }
 
-func getExtensionNames(extensions []schemamodel.Extension) []string {
-	names := make([]string, len(extensions))
-	for i, ext := range extensions {
-		names[i] = ext.Name
+// extensionChanges names the extensions a diff installs and drops, from the
+// extension owner's changes.
+func extensionChanges(diff *difftypes.SchemaDiff) (added, removed []string) {
+	for _, record := range diff.FeatureChanges {
+		change, ok := record.Value.(*pgextension.Change)
+		if !ok {
+			continue
+		}
+		switch {
+		case change.Before == nil:
+			added = append(added, pgextension.Name(record.Subject))
+		case change.After == nil:
+			removed = append(removed, pgextension.Name(record.Subject))
+		}
 	}
-	return names
+	slices.Sort(added)
+	slices.Sort(removed)
+	return added, removed
 }
 
-func getDatabaseExtensionNames(extensions []catalog.Extension) []string {
-	names := make([]string, len(extensions))
-	for i, ext := range extensions {
-		names[i] = ext.Name
-	}
-	return names
+func printChanges(diff *difftypes.SchemaDiff) {
+	added, removed := extensionChanges(diff)
+	fmt.Printf("   Extensions to add: %v\n", added)
+	fmt.Printf("   Extensions to remove: %v\n", removed)
 }
 
 func demonstrateDefaultBehavior(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) error {
@@ -148,8 +197,7 @@ func demonstrateDefaultBehavior(ctx context.Context, desired *schemamodel.Databa
 		return err
 	}
 
-	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
-	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
+	printChanges(diff)
 	fmt.Println("   Note: 'plpgsql' is ignored by default, so it won't be removed")
 	fmt.Println()
 	return nil
@@ -166,8 +214,7 @@ func demonstrateCustomIgnoreList(ctx context.Context, desired *schemamodel.Datab
 		return err
 	}
 
-	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
-	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
+	printChanges(diff)
 	fmt.Println("   Note: 'adminpack' is ignored, but 'plpgsql' will be removed")
 	fmt.Println()
 	return nil
@@ -184,8 +231,7 @@ func demonstrateAdditionalIgnoredExtensions(ctx context.Context, desired *schema
 		return err
 	}
 
-	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
-	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
+	printChanges(diff)
 	fmt.Println("   Note: Both 'plpgsql' and 'adminpack' are ignored")
 	fmt.Println()
 	return nil
@@ -202,8 +248,7 @@ func demonstrateManageAllExtensions(ctx context.Context, desired *schemamodel.Da
 		return err
 	}
 
-	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
-	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
+	printChanges(diff)
 	fmt.Println("   Note: All extensions are managed, including 'plpgsql'")
 	fmt.Println()
 	return nil

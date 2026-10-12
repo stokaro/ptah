@@ -10,7 +10,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -83,13 +85,15 @@ func TestClassifySchemaDiff_ExtensionPlacementIsAWarning(t *testing.T) {
 	c := qt.New(t)
 
 	findings := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{
-		ExtensionsModified: []difftypes.ExtensionDiff{{
-			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
-		}},
+		FeatureChanges: []schemaext.ChangeRecord{{Subject: pgextension.Ref("pgcrypto"), Value: &pgextension.Change{
+			Before: &pgextension.ObservedExtension{Schema: "public", Relocatable: true},
+			After:  &pgextension.DesiredExtension{Schema: "extensions"},
+			Schema: "extensions",
+		}}},
 	})
 
 	c.Assert(findings, qt.DeepEquals, []safety.Finding{{
-		Category: "extensions_modified",
+		Category: "feature_changes:" + string(pgextension.ChangeKind),
 		Count:    1,
 		Severity: safety.Warning,
 	}})

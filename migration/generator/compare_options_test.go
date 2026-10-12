@@ -9,9 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
@@ -69,29 +67,15 @@ func TestGenerateMigrationOptions_CompareOptions_Initialization(t *testing.T) {
 func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *testing.T) {
 	c := qt.New(t)
 
-	// Create test schemas
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
+	desired := declaringExtensions("pg_trgm")
+	database := holdingExtensions(installedExtension{"plpgsql", "pg_catalog", "1.0"}, installedExtension{"adminpack", "public", "2.1"})
 
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-		},
-	}
+	// Without options the comparison uses the defaults, which ignore plpgsql.
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
-	// Test schema comparison with nil options (should use defaults)
-	diff := must.Must(schemadiff.CompareWithOptions(t.Context(),
-		desired, database, nil, must.Must(builtin.New()),
-	))
-
-	// With nil options, should use defaults (ignore plpgsql)
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 1) // adminpack should be removed
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.Contains, "adminpack")
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(removed, qt.DeepEquals, []string{"adminpack"})
 }
 
 // TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions tests behavior when
@@ -99,29 +83,17 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *
 func TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions(t *testing.T) {
 	c := qt.New(t)
 
-	// Create test schemas
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true},
-		},
-	}
+	desired := declaringExtensions("pg_trgm")
+	database := holdingExtensions(installedExtension{"plpgsql", "pg_catalog", "1.0"}, installedExtension{"adminpack", "public", "2.1"})
 
-	database := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-		},
-	}
-
-	// Test schema comparison with custom options
+	// Custom options ignore both plpgsql and adminpack.
 	compareOptions := config.WithIgnoredExtensions("plpgsql", "adminpack")
-	diff := must.Must(schemadiff.CompareWithOptions(t.Context(),
-		desired, database, compareOptions, must.Must(builtin.New()),
-	))
+	compareOptions.Dialect = "postgres"
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, compareOptions, must.Must(builtin.New())))
 
-	// With custom options ignoring both plpgsql and adminpack
-	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0) // both should be ignored
+	added, removed := extensionChanges(diff)
+	c.Assert(added, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(removed, qt.HasLen, 0)
 }
 
 // TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation tests that
@@ -185,26 +157,17 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 			}
 
 			// Test schema comparison with these options
-			desired := &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true},
-				},
-			}
+			desired := declaringExtensions("pg_trgm")
+			database := holdingExtensions(installedExtension{"plpgsql", "pg_catalog", "1.0"}, installedExtension{"adminpack", "public", "2.1"})
+			options := *tt.compareOptions
+			options.Dialect = "postgres"
 
-			database := &catalog.Database{
-				Extensions: []catalog.Extension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-					{Name: "adminpack", Version: "2.1", Schema: "public"},
-				},
-			}
+			diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, &options, must.Must(builtin.New())))
 
-			diff := must.Must(schemadiff.CompareWithOptions(t.Context(),
-				desired, database, tt.compareOptions, must.Must(builtin.New()),
-			))
-
-			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, tt.expectedAddedCount,
+			added, removed := extensionChanges(diff)
+			c.Assert(added, qt.HasLen, tt.expectedAddedCount,
 				qt.Commentf("Expected %d extensions to be added", tt.expectedAddedCount))
-			c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, tt.expectedRemovedCount,
+			c.Assert(removed, qt.HasLen, tt.expectedRemovedCount,
 				qt.Commentf("Expected %d extensions to be removed", tt.expectedRemovedCount))
 		})
 	}

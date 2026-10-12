@@ -116,7 +116,6 @@ var commentKinds = map[difftypes.CommentedObjectKind]capability.Capability{
 	difftypes.CommentedCompositeType: capability.TypeComments,
 	difftypes.CommentedRangeType:     capability.TypeComments,
 	difftypes.CommentedEnumType:      capability.TypeComments,
-	difftypes.CommentedExtension:     capability.ExtensionComments,
 	difftypes.CommentedFunction:      capability.FunctionComments,
 	difftypes.CommentedProcedure:     capability.ProcedureComments,
 	difftypes.CommentedMatView:       capability.MaterializedViewComments,

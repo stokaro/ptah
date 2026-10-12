@@ -55,9 +55,6 @@ func ObjectComments(
 		changes = append(changes, rangeComments(desired, database, semantics)...)
 		changes = append(changes, enumComments(desired, database, semantics)...)
 	}
-	if caps.Has(capability.ExtensionComments) {
-		changes = append(changes, extensionComments(desired, database, opts)...)
-	}
 	if caps.Has(capability.MaterializedViewComments) {
 		changes = append(changes, materializedViewComments(desired, database, semantics)...)
 	}
@@ -254,32 +251,6 @@ func rangeComments(
 		}
 		if change, changed := commentTransition(
 			difftypes.CommentedRangeType, rangeType.QualifiedName(), rangeType.Comment, current.Comment,
-		); changed {
-			changes = append(changes, change)
-		}
-	}
-	return changes
-}
-
-func extensionComments(
-	desired *schemamodel.Database, database *catalog.Database, opts *config.CompareOptions,
-) []difftypes.ObjectCommentChange {
-	reported := make(map[string]catalog.Extension, len(database.Extensions))
-	for _, extension := range database.Extensions {
-		reported[extension.Name] = extension
-	}
-	var changes []difftypes.ObjectCommentChange
-	for _, extension := range desired.Extensions {
-		current, exists := reported[extension.Name]
-		if !exists || strings.TrimSpace(extension.Comment) == "" || opts.IsExtensionIgnored(extension.Name) {
-			continue
-		}
-		var currentComment string
-		if current.Comment != nil {
-			currentComment = *current.Comment
-		}
-		if change, changed := commentTransition(
-			difftypes.CommentedExtension, extension.Name, extension.Comment, currentComment,
 		); changed {
 			changes = append(changes, change)
 		}

@@ -10,10 +10,13 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A Go schema can say what it does not describe.
@@ -108,16 +111,20 @@ type _ struct{}
 }
 
 // TestParseSource_NotDescribed_WithholdsTheRemoval is what the directive is
-// for. Parsing it is not the claim; the comparison reading it is.
+// for. Parsing it is not the claim; the comparison reading it is. The
+// extension owner reads the claim, so the parse selects it.
 func TestParseSource_NotDescribed_WithholdsTheRemoval(t *testing.T) {
 	c := qt.New(t)
+	runtime := must.Must(builtin.New())
 	live := &catalog.Database{
-		Extensions: []catalog.Extension{{Name: "pg_trgm", Schema: "public"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.ObservedObject(pgextension.Ref("pg_trgm"),
+			pgextension.ObservedExtension{Schema: "public", Version: "1.6"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
 
-	declining, err := goschema.ParseSource(noOwners, "entities.go", notDescribedSource)
+	declining, err := goschema.ParseSource(runtime.Annotations(), "entities.go", notDescribedSource)
 	c.Assert(err, qt.IsNil)
-	silent, err := goschema.ParseSource(noOwners, "entities.go", `package entities
+	silent, err := goschema.ParseSource(runtime.Annotations(), "entities.go", `package entities
 
 //ptah:schema:table name="notes"
 type Note struct {
@@ -127,12 +134,24 @@ type Note struct {
 `)
 	c.Assert(err, qt.IsNil)
 
-	withheld := must.Must(schemadiff.CompareWithDialect(t.Context(), &declining, live, "postgres", must.Must(builtin.New())))
+	withheld := must.Must(schemadiff.CompareWithDialect(t.Context(), &declining, live, "postgres", runtime))
 	// The control: the same comparison from a schema that declines nothing.
-	planned := must.Must(schemadiff.CompareWithDialect(t.Context(), &silent, live, "postgres", must.Must(builtin.New())))
+	planned := must.Must(schemadiff.CompareWithDialect(t.Context(), &silent, live, "postgres", runtime))
 
-	c.Assert(withheld.ExtensionsRemoved, qt.HasLen, 0, qt.Commentf("removed: %#v", withheld.ExtensionsRemoved))
-	c.Assert(planned.ExtensionsRemoved, qt.HasLen, 1, qt.Commentf("removed: %#v", planned.ExtensionsRemoved))
+	c.Assert(droppedExtensions(withheld), qt.HasLen, 0)
+	c.Assert(droppedExtensions(planned), qt.DeepEquals, []string{"pg_trgm"})
+}
+
+// droppedExtensions names the extensions a diff drops, from the extension
+// owner's changes.
+func droppedExtensions(diff *difftypes.SchemaDiff) []string {
+	var names []string
+	for _, record := range diff.FeatureChanges {
+		if change, ok := record.Value.(*pgextension.Change); ok && change.After == nil {
+			names = append(names, pgextension.Name(record.Subject))
+		}
+	}
+	return names
 }
 
 // TestParseSource_NotDescribed_AgreesWithTheSerializedSpelling holds the two
@@ -141,14 +160,17 @@ type Note struct {
 // cannot tell them apart.
 func TestParseSource_NotDescribed_AgreesWithTheSerializedSpelling(t *testing.T) {
 	c := qt.New(t)
+	runtime := must.Must(builtin.New())
 	live := &catalog.Database{
-		Extensions: []catalog.Extension{{Name: "pg_trgm", Schema: "public"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.ObservedObject(pgextension.Ref("pg_trgm"),
+			pgextension.ObservedExtension{Schema: "public", Version: "1.6"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
 
-	annotated, err := goschema.ParseSource(noOwners, "entities.go", notDescribedSource)
+	annotated, err := goschema.ParseSource(runtime.Annotations(), "entities.go", notDescribedSource)
 	c.Assert(err, qt.IsNil)
 
-	byHeader, err := goschema.ParseSource(noOwners, "entities.go", `package entities
+	byHeader, err := goschema.ParseSource(runtime.Annotations(), "entities.go", `package entities
 
 //ptah:schema:table name="notes"
 type Note struct {
@@ -159,10 +181,11 @@ type Note struct {
 	c.Assert(err, qt.IsNil)
 	byHeader.NotDescribed = byHeader.NotDescribed.WithObject(coverage.Extension, "pg_trgm")
 
-	fromAnnotation := must.Must(schemadiff.CompareWithDialect(t.Context(), &annotated, live, "postgres", must.Must(builtin.New())))
-	fromHeader := must.Must(schemadiff.CompareWithDialect(t.Context(), &byHeader, live, "postgres", must.Must(builtin.New())))
+	fromAnnotation := must.Must(schemadiff.CompareWithDialect(t.Context(), &annotated, live, "postgres", runtime))
+	fromHeader := must.Must(schemadiff.CompareWithDialect(t.Context(), &byHeader, live, "postgres", runtime))
 
-	c.Assert(fromAnnotation.ExtensionsRemoved, qt.DeepEquals, fromHeader.ExtensionsRemoved)
+	c.Assert(droppedExtensions(fromAnnotation), qt.DeepEquals, droppedExtensions(fromHeader))
+	c.Assert(droppedExtensions(fromHeader), qt.HasLen, 0)
 }
 
 // ownerKindSource declines one named object of an owner's coverage kind.

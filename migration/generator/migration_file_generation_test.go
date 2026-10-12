@@ -8,8 +8,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -26,15 +28,11 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 	}{
 		{
 			name: "extension addition generates correct up and down SQL",
-			generatedSchema: &schemamodel.Database{
-				Extensions: []schemamodel.Extension{
-					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
-				},
-			},
-			databaseSchema: &catalog.Database{
-				Extensions: make([]catalog.Extension, 0),
-			},
+			generatedSchema: ownerDeclaring(
+				ownerExtension{name: "pg_trgm", comment: "Enable trigram similarity search"},
+				ownerExtension{name: "btree_gin", comment: "Enable GIN indexes on btree types"},
+			),
+			databaseSchema: ownerHolding(),
 			expectedUpSQL: []string{
 				"-- Direction: UP",
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
@@ -57,15 +55,9 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			},
 		},
 		{
-			name: "extension removal generates correct up and down SQL",
-			generatedSchema: &schemamodel.Database{
-				Extensions: make([]schemamodel.Extension, 0),
-			},
-			databaseSchema: &catalog.Database{
-				Extensions: []catalog.Extension{
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
-				},
-			},
+			name:            "extension removal generates correct up and down SQL",
+			generatedSchema: ownerDeclaring(),
+			databaseSchema:  ownerHolding(ownerExtension{name: "pg_trgm", version: "1.6", schema: "public"}),
 			expectedUpSQL: []string{
 				"-- Direction: UP",
 				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
@@ -84,10 +76,8 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 		},
 		{
 			name:            "nondefault extension removal restores its schema on rollback",
-			generatedSchema: &schemamodel.Database{},
-			databaseSchema: &catalog.Database{Extensions: []catalog.Extension{{
-				Name: "pgcrypto", Version: "1.3", Schema: "Extension Store",
-			}}},
+			generatedSchema: ownerDeclaring(),
+			databaseSchema:  ownerHolding(ownerExtension{name: "pgcrypto", version: "1.3", schema: "Extension Store"}),
 			expectedUpSQL: []string{
 				"DROP EXTENSION IF EXISTS pgcrypto;",
 			},
@@ -150,41 +140,12 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 	}
 }
 
-func TestReverseSchemaDiff_ExtensionFieldsPresent(t *testing.T) {
-	c := qt.New(t)
-
-	// Test that the reverseSchemaDiff function properly handles extension fields
-	originalDiff := &difftypes.SchemaDiff{
-		ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
-		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "postgis"}},
-	}
-
-	reversedDiff := reverseForTest(t,
-		originalDiff, nil, nil, "postgres",
-	)
-
-	// Verify that extension fields are properly reversed
-	c.Assert(reversedDiff.ExtensionsAdded.Names(), qt.DeepEquals, originalDiff.ExtensionsRemoved.Names())
-	c.Assert(reversedDiff.ExtensionsRemoved.Names(), qt.DeepEquals, originalDiff.ExtensionsAdded.Names())
-
-	// Verify the specific values
-	c.Assert(reversedDiff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"postgis"})
-	c.Assert(reversedDiff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pg_trgm", "btree_gin"})
-}
-
 func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c := qt.New(t)
 
 	// Test the complete flow: schema with extensions -> empty database -> up migration -> down migration
-	generatedSchema := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
-		},
-	}
-
-	emptyDatabase := &catalog.Database{
-		Extensions: make([]catalog.Extension, 0),
-	}
+	generatedSchema := ownerDeclaring(ownerExtension{name: "pg_trgm", comment: "Enable trigram similarity search"})
+	emptyDatabase := ownerHolding()
 
 	// 1. Generate up migration (should create extension)
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
@@ -199,11 +160,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
 	// 2. Simulate database state after up migration
-	databaseAfterUp := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
-		},
-	}
+	databaseAfterUp := ownerHolding(ownerExtension{name: "pg_trgm", version: "1.6", schema: "public"})
 
 	// 3. Generate down migration (should drop extension)
 	// For down migration, we use the original upDiff and reverse it
@@ -214,8 +171,56 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm;")
 
 	// 4. Verify the cycle is complete
-	c.Assert(upDiff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.HasLen, 0)
+	added, removed := ownerChanges(upDiff)
+	c.Assert(added, qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(removed, qt.HasLen, 0)
+}
+
+// ownerExtension is one extension a fixture declares or holds.
+type ownerExtension struct{ name, schema, version, comment string }
+
+// ownerDeclaring is a desired schema that declares each extension to the
+// extension owner and claims that it declares every extension.
+func ownerDeclaring(extensions ...ownerExtension) *schemamodel.Database {
+	objects := make([]schemaext.Object, 0, len(extensions))
+	for _, extension := range extensions {
+		objects = append(objects, must.Must(pgextension.DesiredObject(pgextension.Ref(extension.name),
+			pgextension.DesiredExtension{IfNotExists: true, Schema: extension.schema, Version: extension.version, Comment: extension.comment})))
+	}
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
+	}
+}
+
+// ownerHolding is a read that holds each extension, as the PostgreSQL reader
+// hands them to the extension owner, and describes every extension.
+func ownerHolding(extensions ...ownerExtension) *catalog.Database {
+	objects := make([]schemaext.Object, 0, len(extensions))
+	for _, extension := range extensions {
+		objects = append(objects, must.Must(pgextension.ObservedObject(pgextension.Ref(extension.name),
+			pgextension.ObservedExtension{Schema: extension.schema, Version: extension.version})))
+	}
+	return &catalog.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
+	}
+}
+
+// ownerChanges names the extensions a diff installs and drops, from the
+// extension owner's changes.
+func ownerChanges(diff *difftypes.SchemaDiff) (added, removed []string) {
+	for _, record := range diff.FeatureChanges {
+		change, ok := record.Value.(*pgextension.Change)
+		switch {
+		case !ok:
+		case change.Before == nil:
+			added = append(added, pgextension.Name(record.Subject))
+		case change.After == nil:
+			removed = append(removed, pgextension.Name(record.Subject))
+		}
+	}
+	return added, removed
 }
 
 // TestMigrationFileGeneration_EmptyDiffPrevention tests the fix for issue #36

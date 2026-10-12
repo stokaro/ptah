@@ -11,7 +11,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -61,9 +63,12 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())
-			desired, _, err := sqlschema.Read([]byte(test.sql), test.info.Dialect)
+			desired, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), test.info.Dialect, nil, sqlschema.Options{Owners: runtime.SQL()})
 			c.Assert(err, qt.IsNil)
-			diff, err := schemadiff.CompareWithDialect(t.Context(), &desired, &catalog.Database{}, test.info.Dialect, runtime)
+			// An empty target that a read describes completely, extensions
+			// included, so the extension owner plans the creation.
+			empty := &catalog.Database{FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed))}
+			diff, err := schemadiff.CompareWithDialect(t.Context(), &desired, empty, test.info.Dialect, runtime)
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				t.Context(), runtime, diff, test.info.Dialect, planner.Options{Capabilities: test.info.Capabilities},

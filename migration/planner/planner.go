@@ -816,10 +816,12 @@ func GenerateSchemaDiffRenderedPlan(
 	// `CREATE EXTENSION "timescaledb"` and then skip the create_hypertable that
 	// needs it (stokaro/ptah#1026).
 	//
-	// The names come from the change rather than from the desired schema
-	// because installing is what makes them available: an extension the schema
-	// declares and the target already has is already in the capability set the
-	// connection reported (stokaro/ptah#2315).
+	// The extensions come from the owner's changes rather than from the
+	// desired schema because installing is what makes them available: an
+	// extension the schema declares and the target already has is already in
+	// the capability set the connection reported (stokaro/ptah#2315). An
+	// owner's change answers for its own direction; see
+	// [schemaext.CapabilityProvider].
 	astNodes, err := GenerateSchemaDiffASTWithOptions(
 		ctx, runtime,
 		diff, dialect, opts,
@@ -827,10 +829,7 @@ func GenerateSchemaDiffRenderedPlan(
 	if err != nil {
 		return RenderedPlan{}, err
 	}
-	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
-	// An owner's object the plan creates provides what it provides the same
-	// way; the change answers for its own direction.
-	caps = schemaext.ProvidedByChanges(caps, diff.FeatureChanges)
+	caps := schemaext.ProvidedByChanges(opts.CapabilitiesFor(dialect), diff.FeatureChanges)
 	// The planner resolves built-in transport spellings before selecting a
 	// target. Rendering must use that same target, not reinterpret the spelling.
 	target := platform.NormalizeDialect(dialect)
@@ -918,10 +917,10 @@ func GenerateSchemaDiffSQL(ctx context.Context, runtime Runtime, diff *difftypes
 // planning options.
 //
 // Rendering capabilities are widened with the extensions this plan itself
-// installs (diff.ExtensionsAdded): such an extension is in place before the
-// statements that need it, so those statements render even when the
-// capability set was resolved from a server that does not have the extension
-// yet (stokaro/ptah#1026).
+// installs, read from the owner's changes in diff.FeatureChanges: such an
+// extension is in place before the statements that need it, so those
+// statements render even when the capability set was resolved from a server
+// that does not have the extension yet (stokaro/ptah#1026).
 //
 // Planning failures come back as *ptaherr.PlanError (see
 // GenerateSchemaDiffASTWithOptions); rendering failures as

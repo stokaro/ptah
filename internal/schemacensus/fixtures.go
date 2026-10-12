@@ -1476,17 +1476,22 @@ func hypertableFixture() schemamodel.Database {
 	hypertable := &tsschema.DesiredHypertable{Column: "at", ChunkInterval: "1 day", IfNotExists: true, Comment: "time series"}
 	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(hypertable))},
 		schemamodel.Field{StructName: "T", FieldName: "At", Name: "at", Type: "TIMESTAMP", Nullable: true})
-	db.Extensions = []schemamodel.Extension{{Name: "timescaledb"}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(timescaleExtension()))
 	db.FeatureCoverage = must.Must(tsschema.CompleteCoverage(schemaext.Desired))
 	return db
+}
+
+// timescaleExtension declares the extension a hypertable and a continuous
+// aggregate need to its owner, so a plan installs it ahead of them.
+func timescaleExtension() schemaext.Object {
+	return must.Must(pgextension.DesiredObject(pgextension.Ref("timescaledb"), pgextension.DesiredExtension{}))
 }
 
 func continuousAggregateFixture() schemamodel.Database {
 	hypertable := &tsschema.DesiredHypertable{Column: "at"}
 	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(hypertable))},
 		schemamodel.Field{StructName: "T", FieldName: "At", Name: "at", Type: "TIMESTAMP", Nullable: true})
-	db.Extensions = []schemamodel.Extension{{Name: "timescaledb"}}
-	db.FeatureObjects = must.Must(schemaext.NewObjects(tsschema.DesiredContinuousAggregateObject("public", "t_hourly",
+	db.FeatureObjects = must.Must(schemaext.NewObjects(timescaleExtension(), tsschema.DesiredContinuousAggregateObject("public", "t_hourly",
 		tsschema.DesiredContinuousAggregate{StructName: "CA", Body: "SELECT id FROM t", MaterializedOnly: new(true), Comment: "hourly"})))
 	db.FeatureCoverage = must.Must(tsschema.CompleteCoverage(schemaext.Desired))
 	return db

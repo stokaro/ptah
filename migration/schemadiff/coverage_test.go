@@ -43,21 +43,6 @@ type coverageCase struct {
 func coverageCases() []coverageCase {
 	return []coverageCase{
 		{
-			// The destructive one. `ptah-compat schema inspect` omits every
-			// extension block nothing else in the document names, so applying
-			// its own output back to the database it came from planned
-			// DROP EXTENSION for an extension that database has.
-			name:    "an undescribed extension kind is not a dropped extension",
-			desired: func() *schemamodel.Database { return &schemamodel.Database{} },
-			database: func() *catalog.Database {
-				return &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
-			},
-			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
-			onDesired:    true,
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsRemoved.Names() },
-			wantWithout:  []string{"pgcrypto"},
-		},
-		{
 			name:    "an undescribed sequence kind is not a dropped sequence",
 			desired: func() *schemamodel.Database { return &schemamodel.Database{} },
 			database: func() *catalog.Database {
@@ -134,27 +119,27 @@ func TestNoCoverageStillPlansTheChange(t *testing.T) {
 // TestCoverageOnTheWrongSideSuppressesNothing pins the asymmetry. The desired
 // state's limits gate removals and the read's limits gate additions, and a
 // record on the other side must not suppress anything: a document that does not
-// describe extensions still says nothing about whether one should be CREATED,
+// describe sequences still says nothing about whether one should be CREATED,
 // and that question is the read's to answer.
 func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 	t.Run("a desired-state record does not suppress an addition", func(t *testing.T) {
 		c := qt.New(t)
-		desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pgcrypto"}}}
-		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
+		desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq", Schema: "public"}}}
+		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
 		diff := must.Must(schemadiff.Compare(t.Context(), desired, &catalog.Database{}, must.Must(builtin.New())))
 
-		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pgcrypto"})
+		c.Assert(diff.SequencesAdded.Names(), qt.DeepEquals, []string{"public.order_seq"})
 	})
 
 	t.Run("a read record does not suppress a removal", func(t *testing.T) {
 		c := qt.New(t)
-		database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
-		database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
+		database := &catalog.Database{Sequences: []catalog.Sequence{{Name: "order_seq", Schema: "public"}}}
+		database.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
 		diff := must.Must(schemadiff.Compare(t.Context(), &schemamodel.Database{}, database, must.Must(builtin.New())))
 
-		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
+		c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, []string{"public.order_seq"})
 	})
 }
 
@@ -166,15 +151,15 @@ func TestCoverageNamesOneObjectOnly(t *testing.T) {
 	c := qt.New(t)
 
 	desired := &schemamodel.Database{}
-	desired.NotDescribed = coverage.Set{}.WithObject(coverage.Extension, "pgcrypto")
-	database := &catalog.Database{Extensions: []catalog.Extension{
-		{Name: "pgcrypto", Schema: "public"},
-		{Name: "postgis", Schema: "public"},
+	desired.NotDescribed = coverage.Set{}.WithObject(coverage.Sequence, "public.order_seq")
+	database := &catalog.Database{Sequences: []catalog.Sequence{
+		{Name: "order_seq", Schema: "public"},
+		{Name: "invoice_seq", Schema: "public"},
 	}}
 
 	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
-	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"postgis"})
+	c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, []string{"public.invoice_seq"})
 }
 
 // TestUndescribedPolicyIsNotADroppedPolicy is the same pair as the table rows

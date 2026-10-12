@@ -322,37 +322,6 @@ func (e EnumChanges) Names() []string {
 	return names
 }
 
-// ExtensionChanges is a set of extensions one change applies to, carrying each
-// one's declaration and not only its name.
-//
-// See [RangeChanges] for why both sides carry the operand and why the wire
-// shape is a list of names.
-//
-// An extension is named globally rather than per schema, so the name here is
-// the bare one, which is what the comparator has always keyed on.
-type ExtensionChanges []schemamodel.Extension
-
-// MarshalJSON writes the names alone, the shape `extensions_added` and
-// `extensions_removed` have always had.
-func (e ExtensionChanges) MarshalJSON() ([]byte, error) {
-	if e == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(e.Names())
-}
-
-// Names is the extension names this change applies to.
-func (e ExtensionChanges) Names() []string {
-	if e == nil {
-		return nil
-	}
-	names := make([]string, 0, len(e))
-	for _, extension := range e {
-		names = append(names, extension.Name)
-	}
-	return names
-}
-
 // SequenceChanges is a set of sequences one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -997,21 +966,6 @@ type SchemaDiff struct {
 	// comment differs. COMMENT ON INDEX changes it in place.
 	IndexCommentsChanged []IndexCommentChange `json:"index_comments_changed,omitempty"`
 
-	// ExtensionsAdded is the PostgreSQL extensions that exist in the target
-	// schema and not in the current database, each carrying its declaration;
-	// see [ExtensionChanges].
-	ExtensionsAdded ExtensionChanges `json:"extensions_added"`
-
-	// ExtensionsRemoved is the PostgreSQL extensions that exist in the current
-	// database and not in the target schema (potentially dangerous - may break
-	// existing functionality), each carrying its declaration; see
-	// [ExtensionChanges].
-	ExtensionsRemoved ExtensionChanges `json:"extensions_removed"`
-
-	// ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
-	// PostgreSQL extension names are database-wide identities; schema is placement, not identity.
-	ExtensionsModified []ExtensionDiff `json:"extensions_modified"`
-
 	// FunctionsAdded is the routines that exist in the target schema and not
 	// in the current database, each carrying its declaration and drop
 	// identity; see [FunctionChanges].
@@ -1538,7 +1492,6 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasTableChanges() ||
 		d.hasEnumChanges() ||
 		d.hasIndexChanges() ||
-		d.hasExtensionChanges() ||
 		d.hasFunctionChanges() ||
 		d.hasSequenceChanges() ||
 		d.hasUserTypeChanges() ||
@@ -1749,13 +1702,6 @@ func sortedIndexRefs(refs []IndexRef) []IndexRef {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return sorted
-}
-
-// hasExtensionChanges returns true if there are any extension-related changes
-func (d *SchemaDiff) hasExtensionChanges() bool {
-	return len(d.ExtensionsAdded) > 0 ||
-		len(d.ExtensionsRemoved) > 0 ||
-		len(d.ExtensionsModified) > 0
 }
 
 // hasFunctionChanges returns true if there are any function-related changes
@@ -2070,7 +2016,6 @@ const (
 	CommentedDomain        CommentedObjectKind = "domain"
 	CommentedCompositeType CommentedObjectKind = "composite_type"
 	CommentedRangeType     CommentedObjectKind = "range_type"
-	CommentedExtension     CommentedObjectKind = "extension"
 	CommentedEnumType      CommentedObjectKind = "enum_type"
 	CommentedFunction      CommentedObjectKind = "function"
 	CommentedProcedure     CommentedObjectKind = "procedure"
@@ -2386,31 +2331,6 @@ type SequenceDiff struct {
 	//
 	// It stays off the wire. The change map is the change; this is the operand.
 	Desired schemamodel.Sequence `json:"-"`
-}
-
-// ExtensionDiff represents a PostgreSQL extension installation-schema change.
-type ExtensionDiff struct {
-	Name       string `json:"name"`
-	FromSchema string `json:"from_schema"`
-	ToSchema   string `json:"to_schema"`
-	// FromVersion and ToVersion carry a declared version change. The version is
-	// the one attribute of an extension that moves over time, so it is compared
-	// rather than only rendered on the create: a version rendered and never
-	// compared reports a synced schema to a team that raised the pin against a
-	// database still running the older one (stokaro/ptah#1718).
-	//
-	// Both are empty when the declaration names no version, which is the common
-	// case and means "whatever the server installs".
-	FromVersion string `json:"from_version,omitempty"`
-	ToVersion   string `json:"to_version,omitempty"`
-	// Relocatable reports whether the installed extension may be moved between
-	// schemas at all. It is a fact about the extension rather than the target,
-	// read from pg_extension.extrelocatable, and it rides on the diff because
-	// the planner is handed the desired schema and this diff -- never the live
-	// description that knows it. `ALTER EXTENSION plpgsql SET SCHEMA ext` is
-	// `extension "plpgsql" does not support SET SCHEMA`, measured on
-	// PostgreSQL 18.
-	Relocatable bool `json:"relocatable"`
 }
 
 // ViewDiff represents changes to a view definition.

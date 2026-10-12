@@ -90,13 +90,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 			ValuesAdded:   []string{"missing_value"},
 			ValuesRemoved: []string{"extra_value"},
 		}},
-		IndexesAdded:      difftypes.IndexChanges{{Index: schemamodel.Index{Name: "missing_index", Fields: []string{"email"}}, TableName: "users"}},
-		IndexesRemoved:    []difftypes.IndexRef{{TableName: "users", Name: "extra_index"}},
-		ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "missing_extension"}},
-		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "extra_extension"}},
-		ExtensionsModified: []difftypes.ExtensionDiff{{
-			Name: "changed_extension", FromSchema: "public", ToSchema: "extensions",
-		}},
+		IndexesAdded:              difftypes.IndexChanges{{Index: schemamodel.Index{Name: "missing_index", Fields: []string{"email"}}, TableName: "users"}},
+		IndexesRemoved:            []difftypes.IndexRef{{TableName: "users", Name: "extra_index"}},
 		FunctionsAdded:            difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "missing_function"}}},
 		FunctionsRemoved:          difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "extra_function"}}},
 		FunctionsModified:         []difftypes.FunctionDiff{{FunctionName: "changed_function", Changes: changes}},
@@ -163,9 +158,6 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		"extra_enum_value",
 		"missing_index",
 		"extra_index",
-		"missing_extension",
-		"extra_extension",
-		"extension_mismatch",
 		"missing_function",
 		"extra_function",
 		"function_mismatch",
@@ -212,14 +204,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c.Assert(mismatches[len(mismatches)-2].Table, qt.Equals, "accounts")
 	c.Assert(mismatches[len(mismatches)-1].Object, qt.Equals, "accounts.extra_global_constraint")
 	c.Assert(mismatches[len(mismatches)-1].Table, qt.Equals, "accounts")
-	c.Assert(mismatches[49], qt.DeepEquals, Mismatch{
+	c.Assert(mismatches[46], qt.DeepEquals, Mismatch{
 		Kind: "missing_role_membership", Object: "app in readers", Message: "missing membership app in readers",
-	})
-	c.Assert(mismatches[15], qt.DeepEquals, Mismatch{
-		Kind:    "extension_mismatch",
-		Object:  "changed_extension",
-		Changes: map[string]string{"schema": "public -> extensions"},
-		Message: "extension mismatch changed_extension: schema public -> extensions",
 	})
 }
 
