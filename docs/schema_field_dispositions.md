@@ -98,7 +98,7 @@ None.
 
 ### Round trips that plan a change
 
-10 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+9 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
@@ -106,7 +106,6 @@ migration nobody asked for.
 | `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again |
 | `index-mysql-parser` | `mariadb`, `mysql` | to-catalog | a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again |
 | `matview-refresh` | `clickhouse` | both | goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete |
-| `enum` | `clickhouse` | to-catalog | a standalone enum reaches the ClickHouse comparison, which has only inline Enum8 and Enum16 columns |
 | `function-planner-properties` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to PostgreSQL facets, which the conversion already carries |
 | `function-procedure` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
 | `grant-routine` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |

@@ -43,7 +43,6 @@ const (
 	lossPrimaryKeyFacets  = "a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again"
 	lossIndexParser       = "a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again"
 	lossRefreshCoverage   = "goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete"
-	lossClickHouseEnum    = "a standalone enum reaches the ClickHouse comparison, which has only inline Enum8 and Enum16 columns"
 	lossRoutineAttributes = "goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to " +
 		"PostgreSQL facets, which the conversion already carries"
 	lossRoutineKind           = "goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION"
@@ -193,7 +192,6 @@ var roundTripLosses = []RecordedLoss{
 	},
 	{Fixtures: []string{"index-mysql-parser"}, Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{ToCatalog}, Reason: lossIndexParser},
 	{Fixtures: []string{"matview-refresh"}, Dialects: []string{"clickhouse"}, Directions: nil, Reason: lossRefreshCoverage},
-	{Fixtures: []string{"enum"}, Dialects: []string{"clickhouse"}, Directions: []Direction{ToCatalog}, Reason: lossClickHouseEnum},
 	{
 		Fixtures:   []string{"function-planner-properties"},
 		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},

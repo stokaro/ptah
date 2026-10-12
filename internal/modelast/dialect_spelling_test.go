@@ -154,11 +154,23 @@ func TestCollectDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 	// what the predicate did.
 	c.Assert(len(want) > 1, qt.IsTrue, qt.Commentf("fixture emits %d nodes for postgres", len(want)))
 
-	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
-		t.Run(dialect, func(t *testing.T) {
+	// Spanner has no enum type and builds an enum column inline, as text with
+	// a CHECK, so it emits every kind but the enum's own node.
+	withoutEnumTypes := slices.DeleteFunc(slices.Clone(want), func(kind string) bool { return kind == "*ast.EnumNode" })
+	c.Assert(withoutEnumTypes, qt.HasLen, len(want)-1, qt.Commentf("the fixture declares one enum type"))
+	tests := []struct {
+		dialect string
+		want    []string
+	}{
+		{dialect: platform.CockroachDB, want: want},
+		{dialect: platform.YugabyteDB, want: want},
+		{dialect: platform.Spanner, want: withoutEnumTypes},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(nodeKinds(database, dialect), qt.DeepEquals, want)
+			c.Assert(nodeKinds(database, test.dialect), qt.DeepEquals, test.want)
 		})
 	}
 }

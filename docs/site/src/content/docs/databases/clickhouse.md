@@ -15,8 +15,10 @@ disposition: keep
 ---
 
 ClickHouse support is capability-limited. The preset models enums as inline
-`Enum8`/`Enum16` column types; foreign keys and enforced `CHECK` constraints
-are outside the preset. Roles and grants are managed declaratively, within the
+`Enum8`/`Enum16` column types: a column typed with a declared enum, or typed
+`ENUM` with its values, is written as `Enum8('draft' = 1, 'live' = 2)`, numbered
+from 1 in declaration order, and as `Enum16` past 127 values. Foreign keys and
+enforced `CHECK` constraints are outside the preset. Roles and grants are managed declaratively, within the
 boundaries [Roles and grants](#roles-and-grants) states.
 Review generated SQL and the
 [capability gates](../../reference/capabilities/) before adopting a workflow

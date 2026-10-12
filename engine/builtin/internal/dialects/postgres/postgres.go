@@ -1011,7 +1011,7 @@ func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard str
 func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) (lines, refused []string, err error) {
 	lines = make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, column := range node.Columns {
-		line, err := r.renderColumn(column)
+		line, err := r.renderColumn(r.namedColumnCheck(node.Name, column))
 		if err != nil {
 			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
 		}
@@ -1170,13 +1170,9 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
-			line, err := r.renderColumn(op.Column)
-			if err != nil {
-				return fmt.Errorf("error rendering add column: %w", err)
+			if err := r.writeAddColumn(node.Name, op); err != nil {
+				return err
 			}
-			// Remove the leading spaces from column rendering for ALTER
-			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(node.Name), addColumnClause(op), line)
 		case *ast.AddConstraintOperation:
 			if err := r.writeAddConstraint(node.Name, op.Constraint); err != nil {
 				return err
@@ -1882,6 +1878,64 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	}
 
 	return strings.Join(parts, " "), nil
+}
+
+// writeAddColumn writes ALTER TABLE ... ADD COLUMN for op.
+//
+// Spanner refuses a CHECK inside ADD COLUMN ("Check constraint creation is
+// not supported in <ALTER TABLE ADD COLUMN> statement", measured on the
+// emulator behind PGAdapter v0.56.1) and accepts the same CHECK as a
+// constraint added next, so there the column is added without it and the
+// check follows under the name namedColumnCheck gives it.
+func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) error {
+	column := r.namedColumnCheck(table, op.Column)
+	var check *ast.ColumnNode
+	if r.dialect == platform.Spanner && column != nil && column.Check != "" {
+		check = column
+		bare := *column
+		bare.Check, bare.CheckName, bare.CheckNotEnforced = "", "", false
+		column = &bare
+	}
+	line, err := r.renderColumn(column)
+	if err != nil {
+		return fmt.Errorf("error rendering add column: %w", err)
+	}
+	// Remove the leading spaces from column rendering for ALTER
+	line = strings.TrimPrefix(line, "  ")
+	r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(table), addColumnClause(op), line)
+	if check == nil {
+		return nil
+	}
+	clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
+		r.escapeQualifiedIdentifier(table), r.escapeIdentifier(check.CheckName), check.Check)
+	if check.CheckNotEnforced {
+		clause += " NOT ENFORCED"
+	}
+	r.w.WriteLinef("%s;", clause)
+	return nil
+}
+
+// namedColumnCheck gives an unnamed column CHECK on Spanner the name the
+// comparison looks for, <table>_<column>_check (see
+// schemaprep.ColumnCheckNames).
+//
+// PostgreSQL names an inline CHECK by its own convention, which the
+// comparison predicts. Spanner names it CK_<table>_<hash>_<n>, measured on
+// the emulator behind PGAdapter v0.56.1, so an unnamed check reads back under
+// a name the declaration does not carry, and the next plan drops it and adds
+// it again under the expected name. A declaration that names its own check
+// keeps that name.
+func (r *Renderer) namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
+	if r.dialect != platform.Spanner || column == nil || column.Check == "" || column.CheckName != "" {
+		return column
+	}
+	leaf := table
+	if dot := strings.LastIndexByte(leaf, '.'); dot >= 0 {
+		leaf = leaf[dot+1:]
+	}
+	named := *column
+	named.CheckName = leaf + "_" + column.Name + "_check"
+	return &named
 }
 
 func (r *Renderer) renderIdentity(column *ast.ColumnNode) (string, error) {
