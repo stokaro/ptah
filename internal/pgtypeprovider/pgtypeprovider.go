@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -21,6 +22,7 @@ import (
 	"ptah.run/feature/pgtype/typeprobe"
 	"ptah.run/feature/pgtype/typereport"
 	"ptah.run/feature/pgtype/typereverse"
+	"ptah.run/internal/pgtypesource"
 )
 
 // Targets are the targets the services are registered for: every target of
@@ -47,6 +49,7 @@ func Provider() engine.Provider {
 		},
 		// A scope names a type with the selector type of the common one.
 		Selections: []selectext.Extension{pgtype.Selections()},
+		HCL:        []hclext.Extension{pgtypesource.HCL()},
 		// A type on a target outside the family is refused, naming the scope
 		// that keeps it to the targets that host it: a column declared with
 		// the type would otherwise name something the server has no

@@ -2722,6 +2722,12 @@ and a declaration that a server spelled predicts its observation in that
 spelling. The bundled runtime selects the owner on every PostgreSQL-family
 target, without its reports, which count under the metric names the common
 schema statistics still report; nothing produces the owner's objects yet.
+
+The HCL writer writes a declared type as the `domain`, `composite` or `range`
+block it writes for the common type, byte for byte, among the types
+(`hclext.UserTypes`), and refuses a type it cannot write rather than leaving
+it out.
+
 `Selections` names the three kinds to a command's scope with the selector
 types of the common types: `domain`, `composite_type` and `range`. The
 scope, the strict compatibility policy, the declared schema list, schema
