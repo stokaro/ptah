@@ -113,7 +113,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-80 known gaps: a conversion or the comparison drops each one on the dialects named.
+79 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -134,7 +134,6 @@ migration nobody asked for.
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Enum.Schema` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Field.AutoInc` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
