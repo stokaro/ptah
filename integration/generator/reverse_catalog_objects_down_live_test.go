@@ -114,9 +114,9 @@ func TestReverseCatalogObjects_DownRoundTrip_Integration(t *testing.T) {
 				"FUNCTION " + revCatFunction,
 				"ALTER SEQUENCE " + revCatSequence + " INCREMENT BY 2",
 				"ALTER ROLE " + revCatRole + " NOLOGIN",
-				"CREATE POLICY " + revCatPolicy + " ON " + revCatTable,
+				"ALTER POLICY " + revCatPolicy + " ON " + revCatTable,
 			},
-			downLacks:     []string{"DROP TABLE"},
+			downLacks:     []string{"DROP TABLE", "DROP POLICY", "CREATE POLICY"},
 			roleAfterDown: true,
 		},
 	}
