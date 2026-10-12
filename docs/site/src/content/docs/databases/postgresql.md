@@ -501,7 +501,11 @@ with the declared comment.
 An extension's comment is compared only when the declaration states one.
 `CREATE EXTENSION` gives every extension the comment its control file carries,
 so a declaration without a comment is not read as asking for none. The version
-of an extension follows the same rule.
+of an extension follows the same rule, and so does a schema's comment:
+PostgreSQL creates every database with `public` commented
+`standard public schema`, and an Atlas HCL document declares
+`schema "public" {}` before any table can name it, so a schema declared
+without a comment keeps the one it holds.
 
 The other engines of the family take fewer of these statements. Ptah writes and
 compares a comment only where the server stores it and reports it back, which

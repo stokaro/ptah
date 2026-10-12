@@ -127,7 +127,9 @@ func applyCommentedObjects(c *qt.C, dev devDialectDatabase, role, comment string
 }
 
 // TestSchemaApplyChangesObjectCommentsInPlaceE2E applies the objects with one
-// comment, then with another, then with none, and reads each back.
+// comment, then with another, then with none, and reads each back. A schema's
+// comment is compared only where the declaration states one, so the last
+// apply leaves the schema's in place and removes the others.
 func TestSchemaApplyChangesObjectCommentsInPlaceE2E(t *testing.T) {
 	for _, engine := range commentEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -142,7 +144,8 @@ func TestSchemaApplyChangesObjectCommentsInPlaceE2E(t *testing.T) {
 			c.Assert(heldComments(c, dev, role), qt.DeepEquals, slices.Repeat([]string{"second"}, engine.commented))
 
 			applyCommentedObjects(c, dev, role, "")
-			c.Assert(heldComments(c, dev, role), qt.DeepEquals, slices.Repeat([]string{""}, engine.commented))
+			c.Assert(heldComments(c, dev, role), qt.DeepEquals,
+				append([]string{"second"}, slices.Repeat([]string{""}, engine.commented-1)...))
 		})
 	}
 }

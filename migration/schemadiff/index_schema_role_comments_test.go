@@ -140,3 +140,27 @@ func TestCompare_SchemaAndRoleComments_Synced(t *testing.T) {
 		})
 	}
 }
+
+// TestCompare_SchemaComment_LeftOutIsNotCompared leaves a schema's comment
+// alone when the declaration states none. An Atlas HCL document declares
+// `schema "public" {}` before any table may name the schema, and PostgreSQL
+// creates every database with `public` commented, so the block is not a
+// request to remove the comment. A role's comment the declaration leaves out
+// is still removed: CREATE ROLE gives a role none.
+func TestCompare_SchemaComment_LeftOutIsNotCompared(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}},
+		Roles:   []schemamodel.Role{{Name: "r", Inherit: true}},
+	}
+	current := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "public", Comment: "standard public schema"}},
+		Roles:   []catalog.Role{{Name: "r", Comment: "old", Inherit: true}},
+	}
+
+	diff := compareForDialect(platform.Postgres, desired, current)
+
+	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, []difftypes.ObjectCommentChange{
+		{Kind: difftypes.CommentedRole, Name: "r", Current: "old", Desired: ""},
+	})
+}

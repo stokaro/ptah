@@ -101,6 +101,15 @@ func commentTransition(
 // and the read reports. A read reports the schemas it was asked to read, so a
 // declared schema it was not asked about is not compared, and one the plan
 // creates takes its comment from CREATE SCHEMA.
+//
+// A schema's comment is compared only when the declaration states one, as an
+// extension's is. A declaration that names a schema says little about its
+// comment: an Atlas HCL document has to declare `schema "public" {}` before
+// any of its tables can name the schema, and PostgreSQL creates every
+// database with `public` commented "standard public schema". Read as a
+// request to remove that comment, the block planned COMMENT ON SCHEMA "public"
+// IS NULL against every PostgreSQL database. A comment the declaration states
+// is set; one it leaves out is left as the server holds it.
 func schemaComments(
 	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
 ) []difftypes.ObjectCommentChange {
@@ -111,7 +120,7 @@ func schemaComments(
 	var changes []difftypes.ObjectCommentChange
 	for _, schema := range desired.Schemas {
 		current, exists := reported[semantics.TableIdentityKey(schema.Name)]
-		if !exists {
+		if !exists || strings.TrimSpace(schema.Comment) == "" {
 			continue
 		}
 		if change, changed := commentTransition(
