@@ -2720,8 +2720,12 @@ byte as the common path renders the same statements. A change that creates a
 type places it in the schema its identity names (`schemaext.SchemaPlacement`),
 and a declaration that a server spelled predicts its observation in that
 spelling. The bundled runtime selects the owner on every PostgreSQL-family
-target, without its reports, which count under the metric names the common
-schema statistics still report; nothing produces the owner's objects yet.
+target, with its reports; nothing produces the owner's objects yet. A metric
+counts its objects whoever owns them: the schema statistics add the owner's
+`domains`, `composite_types` and `range_types` to the common metrics of those
+names and that help text, and refuse a type both models hold rather than
+counting it twice. Any other metric name an owner shares with a common metric
+is refused.
 
 The HCL writer writes a declared type as the `domain`, `composite` or `range`
 block it writes for the common type, byte for byte, among the types

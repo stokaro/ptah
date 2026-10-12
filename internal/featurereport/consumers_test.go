@@ -172,7 +172,10 @@ func TestStats_RefusesCollidingOrOverflowingFeatureCounts(t *testing.T) {
 		metric string
 		want   error
 	}{
-		{metric: "tables", want: schemaext.ErrDuplicate}, {metric: "tuning_units", want: schemaext.ErrInvalidValue},
+		// A type metric whose help says another thing is refused as any
+		// other name a common metric holds.
+		{metric: "tables", want: schemaext.ErrDuplicate}, {metric: "domains", want: schemaext.ErrDuplicate},
+		{metric: "tuning_units", want: schemaext.ErrInvalidValue},
 	} {
 		t.Run(test.metric, func(t *testing.T) {
 			c := qt.New(t)
