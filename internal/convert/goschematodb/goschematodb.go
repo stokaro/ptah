@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgprivilege"
@@ -391,10 +392,21 @@ func toDBIndexes(
 // carries how the index is maintained, synchronously or not, and the YDB
 // comparison reads that from Method on the current side.
 func indexAccessMethod(indexType, dialect string) string {
-	if !platform.IsPostgresFamily(dialect) && platform.NormalizeDialect(dialect) != platform.YDB {
+	switch {
+	case platform.IsPostgresFamily(dialect), platform.NormalizeDialect(dialect) == platform.YDB:
+		return indexType
+	case platform.NormalizeDialect(dialect) == platform.MySQL, platform.NormalizeDialect(dialect) == platform.MariaDB:
+		// A MySQL-family read reports INDEX_TYPE here, and the comparison
+		// reads the index's kind and method from it through mysqlindex. Left
+		// empty, a declared FULLTEXT or SPATIAL index compared with its own
+		// conversion read as a plain one and was dropped and added again.
+		if kind := mysqlindex.KindOf(indexType); kind != mysqlindex.Plain {
+			return string(kind)
+		}
+		return mysqlindex.Method(indexType)
+	default:
 		return ""
 	}
-	return indexType
 }
 
 // toDBIndexParts converts structured key parts, resolving the index-level

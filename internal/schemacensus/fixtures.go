@@ -172,6 +172,7 @@ func corpus() []Fixture {
 		{Name: "index-clickhouse-settings", Schema: indexClickHouseSettingsFixture()},
 		{Name: "index-fulltext", Schema: indexFullTextFixture()},
 		{Name: "index-mysql-parser", Schema: indexMySQLParserFixture()},
+		{Name: "index-hash", Schema: indexHashFixture()},
 		{Name: "index-invisible", Schema: indexInvisibleFixture()},
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
 		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
@@ -1300,6 +1301,17 @@ func indexMySQLParserFixture() schemamodel.Database {
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, Type: "FULLTEXT",
 		Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndex{Parser: "ngram"})),
+	}}
+	return db
+}
+
+// indexHashFixture declares a HASH index. MariaDB records the method on every
+// storage engine, so its comparison reads the method back; see
+// mysqlindex.MethodSatisfiedBy.
+func indexHashFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, Type: "HASH",
 	}}
 	return db
 }
