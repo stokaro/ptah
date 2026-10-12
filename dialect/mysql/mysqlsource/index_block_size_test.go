@@ -134,6 +134,60 @@ func TestParseSource_PrimaryKeyBlockSize_FailurePath(t *testing.T) {
 	}
 }
 
+// TestParseSource_ConstraintBlockSize_HappyPath reads a PRIMARY KEY
+// constraint's key_block_size in any spelling of the type, and a constraint
+// of another type that states no hint as one without it: the owner reads the
+// type of every constraint and adds nothing to one that has no hint.
+func TestParseSource_ConstraintBlockSize_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name, constraint string
+		size             uint64
+	}{
+		{"a primary key in lower case", `//ptah:schema:constraint name="pk" type="primary key" columns="a" key_block_size="4"`, 4},
+		{"a primary key with spaces", `//ptah:schema:constraint name="pk" type=" PRIMARY KEY " columns="a" key_block_size="2"`, 2},
+		{"a UNIQUE constraint without a hint", `//ptah:schema:constraint name="u" type="UNIQUE" columns="a"`, 0},
+		{"a UNIQUE constraint with a hint of zero", `//ptah:schema:constraint name="u" type="UNIQUE" columns="a" key_block_size="0"`, 0},
+		{"a foreign key", `//ptah:schema:constraint name="fk" type="FOREIGN KEY" columns="a" foreign_table="t" foreign_column="a"`, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := parseKeySource(c, ``, test.constraint)
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Constraints, qt.HasLen, 1)
+			size, err := blockSizeOf(db.Constraints[0].Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(size, qt.Equals, test.size)
+			c.Assert(db.Constraints[0].Facets.Len(), qt.Equals, map[bool]int{true: 1, false: 0}[test.size != 0])
+		})
+	}
+}
+
+// TestParseSource_ConstraintBlockSize_FailurePath refuses a key_block_size on
+// a constraint other than a PRIMARY KEY with the text the renderer gives:
+// MySQL keeps a UNIQUE key's hint on the unique index it is, so a unique index
+// declares it.
+func TestParseSource_ConstraintBlockSize_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name, constraint, wantErr string
+	}{
+		{"a UNIQUE constraint", `//ptah:schema:constraint name="u" type="UNIQUE" columns="a" key_block_size="8"`,
+			`unsupported feature: KEY_BLOCK_SIZE on UNIQUE constraint "u" is not supported; declare a unique index for a UNIQUE key on //ptah:schema:constraint at T`},
+		{"a type in lower case", `//ptah:schema:constraint name="u" type="unique" columns="a" key_block_size="8"`,
+			`unsupported feature: KEY_BLOCK_SIZE on UNIQUE constraint "u" is not supported; declare a unique index for a UNIQUE key on //ptah:schema:constraint at T`},
+		{"a foreign key", `//ptah:schema:constraint name="fk" type="FOREIGN KEY" columns="a" foreign_table="t" foreign_column="a" key_block_size="2"`,
+			`unsupported feature: KEY_BLOCK_SIZE on FOREIGN KEY constraint "fk" is not supported; declare a unique index for a UNIQUE key on //ptah:schema:constraint at T`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := parseKeySource(c, ``, test.constraint)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db.Constraints, qt.HasLen, 0)
+		})
+	}
+}
+
 // blockSizeOf is the hint facets hold, zero for none.
 func blockSizeOf(facets schemaext.Facets) (uint64, error) {
 	size, _, err := mysqlschema.IndexBlockSize(facets)

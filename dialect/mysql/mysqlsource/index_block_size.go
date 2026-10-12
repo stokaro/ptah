@@ -3,11 +3,13 @@ package mysqlsource
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/mysqlindex"
 )
 
 // BlockSizeAttribute is the attribute of the Go index and constraint
@@ -35,14 +37,18 @@ const primaryKeyHint = "MySQL-family primary index block-size hint."
 
 // Annotations returns the owner's extension of the Go annotation frontend:
 // the [BlockSizeAttribute] of the index and constraint directives, read as
-// the hint of the index or of the PRIMARY KEY constraint, the
+// the hint of the index or of the PRIMARY KEY constraint and refused on any
+// other constraint, as the renderer refuses it, the
 // [PrimaryKeyBlockSizeAttribute] of the table directive, read as the hint of
 // the table's primary key, and the claim that a Go source describes every
-// hint, so an index or a key declared without the attribute has none.
+// hint, so an index or a key declared without the attribute has none. Its
+// encoder writes the hints back, and a column's settings and an index's
+// parser as the platform properties the owner's property decoding reads, so
+// it declares those models too. Their coverage stays the properties'.
 func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner: mysqlschema.Owner,
-		Kinds: []schemaext.Kind{mysqlschema.IndexBlockSizeKind},
+		Kinds: []schemaext.Kind{mysqlschema.IndexBlockSizeKind, mysqlschema.ColumnSettingsKind, mysqlschema.IndexKind},
 		Attributes: []annotation.DirectiveAttributes{
 			{
 				Directive: indexDirective,
@@ -53,7 +59,8 @@ func Annotations() annotation.Extension {
 			{
 				Directive:  constraintDirective,
 				Attributes: []annotation.Attribute{{Name: BlockSizeAttribute, Value: "string", Description: primaryKeyHint}},
-				Decode:     decodeBlockSize(BlockSizeAttribute),
+				Reads:      []string{"type", "name"},
+				Decode:     decodeConstraintBlockSize,
 			},
 			{
 				Directive:  tableDirective,
@@ -63,6 +70,8 @@ func Annotations() annotation.Extension {
 			},
 		},
 		Coverage: annotation.Unlimited(BlockSizeCoverage),
+		Encoder:  annotationEncoder{},
+		Encodes:  []schemaext.Kind{mysqlschema.IndexBlockSizeKind, mysqlschema.ColumnSettingsKind, mysqlschema.IndexKind},
 	}
 }
 
@@ -82,6 +91,29 @@ func YAML() yamlext.Extension {
 // a key such a source declares without a hint requests none.
 func BlockSizeCoverage() (schemaext.Coverage, error) {
 	return mysqlschema.IndexBlockSizeCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+}
+
+// decodeConstraintBlockSize reads a constraint's [BlockSizeAttribute] as the
+// owner's facet, and refuses one on a constraint other than a PRIMARY KEY, as
+// the renderer does: MySQL keeps a UNIQUE key's hint on the unique index it
+// is, so a unique index declares it. The directive's type and name are read
+// for every constraint, so one without the attribute declares nothing.
+func decodeConstraintBlockSize(values map[string]string) (schemaext.Facets, error) {
+	if _, written := values[BlockSizeAttribute]; !written {
+		return schemaext.Facets{}, nil
+	}
+	facets, err := decodeBlockSize(BlockSizeAttribute)(values)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	size, _, err := mysqlschema.IndexBlockSize(facets)
+	if err == nil {
+		err = mysqlindex.ConstraintBlockSize(strings.ToUpper(values["type"]), values["name"], size)
+	}
+	if err != nil {
+		return schemaext.Facets{}, &annotation.DeclarationError{Attribute: BlockSizeAttribute, Err: err}
+	}
+	return facets, nil
 }
 
 // decodeBlockSize reads the attribute a declaration wrote as the owner's

@@ -273,7 +273,7 @@ type renderContext struct {
 	// they add to a declaration of the frontend's own.
 	owned           ownerSlots
 	ownerDirectives map[ownerPlace][]string
-	ownerAttributes map[annotationext.Slot][]attr
+	ownerAttributes map[ownerSlot][]attr
 	// extensions are the declared extensions in name order, from the common
 	// model and from the extension owner alike.
 	extensions          []extensionDeclaration
@@ -536,7 +536,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			{name: "name", value: view.Name, set: true},
 			{name: "body", value: view.Body, set: true},
 			{name: "comment", value: view.Comment, set: view.Comment != ""},
-		}, ctx.ownerAttributes[annotationext.Slot{Directive: matviewDirective, Name: view.Name}]...)
+		}, ctx.ownerAttrs(annotationext.Slot{Directive: matviewDirective, Name: view.Name}, annotationext.WithOwnAttributes)...)
 		w.writeComment(annotation("ptah:schema:matview", append(attrs, dialectsAttr(view.Dialects))...))
 	}
 	for _, comment := range ctx.topicAnnotations {
@@ -618,10 +618,12 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, trigger := range ctx.triggersByTable[table.QualifiedName()] {
 		w.writeComment(triggerAnnotation(trigger))
 	}
+	declared := ctx.owned.tables[table.StructName]
 	for _, constraint := range ctx.constraintsByTable[table.StructName] {
-		w.writeComment(constraintAnnotation(constraint))
+		slot := constraintSlot(declared, constraint)
+		w.writeComment(constraintAnnotation(constraint, ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)))
 	}
-	w.writeComment(tableAnnotation(table, ctx.partitioningByTable[table.QualifiedName()], ctx.storesByTable[table.QualifiedName()]))
+	w.writeComment(ctx.tableAnnotation(table))
 	// The YDB owner's column families and changefeeds, which this package
 	// still writes, follow the other owners' directives, as its name orders
 	// it.
@@ -640,12 +642,15 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	usedNames := make(map[string]struct{})
 	for _, field := range ctx.fieldsByTable[table.StructName] {
 		fieldName := ctx.fieldIdentifier(field, usedNames)
-		w.writeComment("\t" + annotation("ptah:schema:field", fieldAttrs(field)...))
+		slot := annotationext.Slot{Directive: fieldDirective, Table: declared, Name: field.Name}
+		w.writeComment("\t" + annotation("ptah:schema:field", append(fieldAttrs(field), ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)...)...))
 		w.writeLine("\t" + fieldName + " " + ctx.goType(field) + structTags(field, ctx.opts))
 	}
 	for _, index := range ctx.indexesByTable[table.StructName] {
 		partitioning := ctx.partitioningByIndex[indexKey{table: index.StructName, name: index.Name}]
-		w.writeComment("\t" + annotation("ptah:schema:index", indexAttrs(index, partitioning)...))
+		slot := annotationext.Slot{Directive: indexDirective, Table: declared, Name: index.Name}
+		w.writeComment("\t" + annotation("ptah:schema:index", indexAttrs(index, partitioning,
+			ctx.ownerAttrs(slot, annotationext.WithOwnAttributes), ctx.ownerAttrs(slot, annotationext.AfterProperties))...))
 		w.writeLine("\t_ struct{}")
 	}
 	w.writeLine("}")
@@ -712,22 +717,31 @@ func dialectsAttr(scope []string) attr {
 	}
 }
 
-// tableAnnotation writes a table's directive, with the YDB settings
-// partitioning states and the column storage store declares, or none.
-func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TablePartitioning, store *ydbschema.DesiredColumnStore) string {
+// tableAnnotation writes a table's directive: its own attributes, the
+// owners' settings of its primary key beside the key's, the owners' settings
+// of the table, its YDB column storage, its platform properties, then the
+// owners' settings that follow them and its YDB partitioning.
+func (ctx *renderContext) tableAnnotation(table schemamodel.Table) string {
+	declared := sourceTable(table)
+	slot := annotationext.Slot{Directive: tableDirective, Table: declared}
 	attrs := []attr{
 		{name: "name", value: table.Name, set: true},
 		{name: "schema", value: table.Schema, set: table.Schema != ""},
 		{name: "engine", value: table.Engine, set: table.Engine != ""},
 		{name: "collate", value: table.Collate, set: table.Collate != ""},
 		{name: "primary_key_comment", value: table.PrimaryKeyComment, set: table.PrimaryKeyComment != ""},
-		blockSizeAttr("primary_key_block_size", table.PrimaryKeyFacets),
-		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
-		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
-	attrs = append(attrs, columnStoreAttrs(store)...)
+	// The owners' settings of the primary key stand with the key's own.
+	attrs = append(attrs, ctx.ownerAttrs(annotationext.Slot{Directive: tableDirective, Table: declared, PrimaryKey: true}, annotationext.WithOwnAttributes)...)
+	attrs = append(attrs,
+		attr{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
+		attr{name: "comment", value: table.Comment, set: table.Comment != ""},
+	)
+	attrs = append(attrs, ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)...)
+	attrs = append(attrs, columnStoreAttrs(ctx.storesByTable[table.QualifiedName()])...)
 	attrs = append(attrs, propertyAttrs(table.Overrides)...)
-	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(partitioning)...)...)
+	attrs = append(attrs, ctx.ownerAttrs(slot, annotationext.AfterProperties)...)
+	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(ctx.partitioningByTable[table.QualifiedName()])...)...)
 }
 
 // columnFamilyAttrs writes a YDB column family as the attributes the
@@ -810,7 +824,7 @@ func switchValue(on *bool) string {
 }
 
 func fieldAttrs(field schemamodel.Field) []attr {
-	return append([]attr{
+	return []attr{
 		{name: "name", value: field.Name, set: true},
 		{name: "type", value: field.Type, set: true},
 		{name: "not_null", value: strconv.FormatBool(!field.Nullable), set: !field.Nullable},
@@ -833,14 +847,17 @@ func fieldAttrs(field schemamodel.Field) []attr {
 		{name: "generated", value: field.GeneratedExpression, set: field.GeneratedExpression != ""},
 		{name: "generated_kind", value: field.GeneratedKind, set: field.GeneratedKind != ""},
 		{name: "comment", value: field.Comment, set: field.Comment != ""},
-	}, columnSettingsAttrs(field.Facets)...)
+	}
 }
 
-func indexAttrs(index schemamodel.Index, partitioning *ydbschema.IndexPartitioning) []attr {
-	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(partitioning)...)
+func indexAttrs(index schemamodel.Index, partitioning *ydbschema.IndexPartitioning, owned, afterProperties []attr) []attr {
+	attrs := append(indexDefinitionAttrs(index), owned...)
+	attrs = append(attrs, partitioningAttrs(partitioning)...)
 	attrs = append(attrs, propertyAttrs(index.Overrides)...)
+	// The YDB full-text options, which this package still writes, stand with
+	// the platform properties.
 	attrs = append(attrs, fullTextAttrs(index)...)
-	attrs = append(attrs, mysqlIndexOptionAttrs(index.Facets)...)
+	attrs = append(attrs, afterProperties...)
 	return append(attrs, vectorAttrs(index.Facets)...)
 }
 
@@ -895,7 +912,6 @@ func indexDefinitionAttrs(index schemamodel.Index) []attr {
 		{name: "table", value: index.TableName, set: index.TableName != ""},
 		{name: "comment", value: index.Comment, set: index.Comment != ""},
 		{name: "invisible", value: strconv.FormatBool(index.Invisible), set: index.Invisible},
-		blockSizeAttr("key_block_size", index.Facets),
 	}
 }
 
@@ -910,26 +926,29 @@ func nullsDistinctAttr(value *bool) attr {
 	return attr{name: "nulls_distinct", value: strconv.FormatBool(*value), set: true}
 }
 
-func constraintAnnotation(constraint schemamodel.Constraint) string {
-	return annotation("ptah:schema:constraint",
-		attr{name: "name", value: constraint.Name, set: true},
-		attr{name: "type", value: constraint.Type, set: true},
-		attr{name: "table", value: constraint.Table, set: constraint.Table != ""},
-		attr{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
-		attr{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
+func constraintAnnotation(constraint schemamodel.Constraint, owned []attr) string {
+	attrs := []attr{
+		{name: "name", value: constraint.Name, set: true},
+		{name: "type", value: constraint.Type, set: true},
+		{name: "table", value: constraint.Table, set: constraint.Table != ""},
+		{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
+		{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
 		nullsDistinctAttr(constraint.NullsDistinct),
-		blockSizeAttr("key_block_size", constraint.Facets),
-		attr{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
-		attr{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
-		attr{name: "condition", value: constraint.WhereCondition, set: constraint.WhereCondition != ""},
-		attr{name: "check", value: constraint.CheckExpression, set: constraint.CheckExpression != ""},
-		attr{name: "foreign_table", value: constraint.ForeignTable, set: constraint.ForeignTable != ""},
-		attr{name: "foreign_column", value: constraint.ForeignColumn, set: constraint.ForeignColumn != "" && len(constraint.ForeignColumns) <= 1},
-		attr{name: "foreign_columns", value: strings.Join(constraint.ForeignColumns, ","), set: len(constraint.ForeignColumns) > 1},
-		attr{name: "on_delete", value: constraint.OnDelete, set: constraint.OnDelete != ""},
-		attr{name: "on_update", value: constraint.OnUpdate, set: constraint.OnUpdate != ""},
-		attr{name: "comment", value: constraint.Comment, set: constraint.Comment != ""},
-	)
+	}
+	// The owners' settings of the key stand after its column lists.
+	attrs = append(attrs, owned...)
+	return annotation("ptah:schema:constraint", append(attrs, []attr{
+		{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
+		{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
+		{name: "condition", value: constraint.WhereCondition, set: constraint.WhereCondition != ""},
+		{name: "check", value: constraint.CheckExpression, set: constraint.CheckExpression != ""},
+		{name: "foreign_table", value: constraint.ForeignTable, set: constraint.ForeignTable != ""},
+		{name: "foreign_column", value: constraint.ForeignColumn, set: constraint.ForeignColumn != "" && len(constraint.ForeignColumns) <= 1},
+		{name: "foreign_columns", value: strings.Join(constraint.ForeignColumns, ","), set: len(constraint.ForeignColumns) > 1},
+		{name: "on_delete", value: constraint.OnDelete, set: constraint.OnDelete != ""},
+		{name: "on_update", value: constraint.OnUpdate, set: constraint.OnUpdate != ""},
+		{name: "comment", value: constraint.Comment, set: constraint.Comment != ""},
+	}...)...)
 }
 
 // functionAnnotation writes a routine under the directive its kind names.

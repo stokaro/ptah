@@ -2,7 +2,6 @@ package goschematogo
 
 import (
 	"ptah.run/core/schemaext"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbfamily"
 )
@@ -44,12 +43,10 @@ func validateVectorDeclaration(facets schemaext.Facets) error {
 
 // isAnnotatedIndexFacet reports an index facet the export writes as
 // attributes of the index annotation rather than through the selected target's
-// property encoding: a YDB vector index's settings, a YDB index's
-// partitioning, and the MySQL index options, which it writes for every target
-// they are bound to.
+// property encoding: a YDB vector index's settings and a YDB index's
+// partitioning.
 func isAnnotatedIndexFacet(kind schemaext.Kind) bool {
-	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind || kind == mysqlschema.IndexKind ||
-		kind == mysqlschema.IndexBlockSizeKind
+	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind
 }
 
 // captureTablePartitioning validates the YDB settings each table carries and
