@@ -40,8 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossPrimaryKeyDeclaredTwice = "the comparison plans ADD PRIMARY KEY on MySQL and MariaDB for a key declared both " +
-		"on its field and as an equal PRIMARY KEY constraint. Both conversions carry the key, so the defect is in the comparison"
 	lossRoutineAttributes = "goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to " +
 		"PostgreSQL facets, which the conversion already carries"
 	lossRoutineKind           = "goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION"
@@ -185,12 +183,6 @@ func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
 	{
-		Fixtures:   []string{"constraint-pk-options"},
-		Dialects:   []string{"mariadb", "mysql"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossPrimaryKeyDeclaredTwice,
-	},
-	{
 		Fixtures:   []string{"function-planner-properties"},
 		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
@@ -245,7 +237,7 @@ var roundTripGaps = []Unreached{
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Constraint.Facets", Dialects: []string{"mysql"}, Directions: []Direction{FromCatalog}, Reason: gapComparison},
+	{Field: "schemamodel.Constraint.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Schemas",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "spanner", "sqlserver"},
@@ -359,13 +351,13 @@ var roundTripGaps = []Unreached{
 	},
 	{
 		Field:      "schemamodel.IndexPart.Desc",
-		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Expr",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -377,7 +369,6 @@ var roundTripGaps = []Unreached{
 	},
 	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.IndexPart.Prefix", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.MaterializedView.Dialects",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "ydb"},

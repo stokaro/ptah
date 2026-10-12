@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/constraintowner"
 )
 
 // buildTablePrimaryKeyColumnSets maps each generated table to the set of
@@ -88,11 +89,20 @@ func isFieldLevelConstraint(
 		//
 		// A deferrable key is never the column's own: the column spelling has
 		// no deferral, so the key is compared as the table's (liveKeyDefers).
+		//
+		// A key the declaration also states as a PRIMARY KEY constraint is the
+		// constraint's, which the comparison pairs with this one. Excused as
+		// the column's here, the declared constraint met no database key and
+		// was added on top of the one the table holds: measured on MySQL 26.7
+		// and MariaDB 12.3, a table whose key is declared both on its column
+		// and as a constraint named PRIMARY planned ADD PRIMARY KEY on every
+		// run.
 		column := getConstraintColumn(dbConstraint)
 		key := newTableMemberKey(dbConstraint.QualifiedTableName(), column, semantics)
 		if field, exists := fieldMap[key]; exists && field.Primary && !dbConstraint.Deferrable {
 			pkKey := newQualifiedTableIdentity(dbConstraint.QualifiedTableName(), semantics)
-			if _, synthesized := tablePKColumns[pkKey][column]; !synthesized {
+			if _, synthesized := tablePKColumns[pkKey][column]; !synthesized &&
+				!declaresPrimaryKeyConstraint(desired, pkKey, semantics) {
 				return true
 			}
 		}
@@ -124,6 +134,21 @@ func isFieldLevelConstraint(
 		// all flow through the standard Constraints() comparison path.
 	}
 
+	return false
+}
+
+// declaresPrimaryKeyConstraint reports whether the declaration states a
+// PRIMARY KEY constraint on the table table names.
+func declaresPrimaryKeyConstraint(desired *schemamodel.Database, table tableIdentity, semantics identifier.Semantics) bool {
+	for _, constraint := range desired.Constraints {
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+			continue
+		}
+		owner := constraintowner.TableName(constraint, desired.Tables)
+		if newQualifiedTableIdentity(owner, semantics) == table {
+			return true
+		}
+	}
 	return false
 }
 

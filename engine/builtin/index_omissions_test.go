@@ -468,9 +468,12 @@ func TestGetOrderedCreateStatementsReportingOmissions_AnOrdinaryIndexReportsNoth
 		{name: "clickhouse", dialect: platform.ClickHouse},
 	}
 
+	// The part names the column. Written as an expression, `title` renders
+	// as a functional key part on the MySQL family, which MySQL 26.7 refuses
+	// over a bare column and MariaDB 12.3 refuses outright.
 	database := indexSchema(schemamodel.Index{
 		Fields: []string{"title"},
-		Parts:  []schemamodel.IndexPart{{Expr: "title"}},
+		Parts:  []schemamodel.IndexPart{{Name: "title"}},
 	})
 
 	for _, test := range tests {

@@ -585,6 +585,9 @@ func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) ([]str
 	if err != nil {
 		return nil, err
 	}
+	if err := mysqlrender.ValidateIndexParts(r.dialect, index); err != nil {
+		return nil, err
+	}
 	return mysqlrender.IndexDefinition(r.dialect, index, placement), nil
 }
 

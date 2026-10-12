@@ -1086,8 +1086,8 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]catalog.Enum, 
 // `Error 1072 (42000): Key column 'a' doesn't exist in table` where the pinned
 // community binary v1.3.0 reported "Schema is synced" (issue #1245).
 //
-// It also reads the index's COMMENT and whether the optimizer uses it; see
-// [Reader.indexInvisibleExpr].
+// It also reads the index's COMMENT and whether the optimizer uses it, and
+// the expression of a functional key part; see [Reader.statisticsProjections].
 const indexKeyPartsQuery = `
 		SELECT
 			s.INDEX_NAME,
@@ -1108,6 +1108,9 @@ const indexKeyPartsQuery = `
 			-- changed direction from one that did not (stokaro/ptah#2816).
 			s.COLLATION,
 			COALESCE(s.INDEX_COMMENT, ''),
+			%s,
+			-- The expression of a functional key part, NULL for a column key
+			-- part; see [Reader.indexKeyExpressionColumn].
 			%s
 		FROM information_schema.STATISTICS s
 		WHERE s.TABLE_SCHEMA = ?
@@ -1116,11 +1119,11 @@ const indexKeyPartsQuery = `
 
 // readIndexes reads all indexes, assembling each key from its parts.
 func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Index, error) {
-	invisible, err := r.indexInvisibleExpr(ctx)
+	invisible, expression, err := r.statisticsProjections(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(indexKeyPartsQuery, invisible), dbName)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(indexKeyPartsQuery, invisible, expression), dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -1142,9 +1145,10 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 			collation  sql.NullString
 			comment    sql.NullString
 			hidden     sql.NullInt64
+			expr       sql.NullString
 		)
 		err := rows.Scan(
-			&name, &tableName, &columnName, &nonUnique, &indexType, &subPart, &collation, &comment, &hidden,
+			&name, &tableName, &columnName, &nonUnique, &indexType, &subPart, &collation, &comment, &hidden, &expr,
 		)
 		if err != nil {
 			return nil, err
@@ -1164,7 +1168,7 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 			})
 			indexTypes = append(indexTypes, indexType)
 		}
-		addIndexKeyPart(&indexes[position], columnName, subPart, collation)
+		addIndexKeyPart(&indexes[position], indexKeyPartRow{column: columnName, subPart: subPart, collation: collation, expression: expr})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1192,64 +1196,80 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 	return indexes, nil
 }
 
-// indexInvisibleExpr is the projection that reads whether the optimizer uses an
-// index, 1 for one it does not. MySQL 8.4.11 reports it in
-// STATISTICS.IS_VISIBLE, NO for an INVISIBLE index, and MariaDB 11.8.9 in
-// STATISTICS.IGNORED, YES for an IGNORED one. MySQL 5.7 and MariaDB before
-// 10.6 have neither column, so the catalog is asked which it has rather than
-// the dialect: a projection naming a column the server lacks refuses the whole
-// read.
-func (r *Reader) indexInvisibleExpr(ctx context.Context) (string, error) {
+// statisticsProjections are the projections of STATISTICS columns a server
+// may lack, read only where it has them: a projection naming a column the
+// server lacks refuses the whole read, so the catalog is asked which it has
+// rather than the dialect.
+//
+// invisible reads whether the optimizer uses an index, 1 for one it does not.
+// MySQL 8.4.11 reports it in STATISTICS.IS_VISIBLE, NO for an INVISIBLE index,
+// and MariaDB 11.8.9 in STATISTICS.IGNORED, YES for an IGNORED one. MySQL 5.7
+// and MariaDB before 10.6 have neither column.
+//
+// expression reads the expression of a functional key part, which MySQL
+// 8.0.13 and later keep in STATISTICS.EXPRESSION in the server's spelling,
+// such as lower(`a`). MariaDB has no functional key part and no such column.
+func (r *Reader) statisticsProjections(ctx context.Context) (invisible, expression string, err error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT COLUMN_NAME FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'STATISTICS'
-		AND COLUMN_NAME IN ('IS_VISIBLE', 'IGNORED')`)
+		AND COLUMN_NAME IN ('IS_VISIBLE', 'IGNORED', 'EXPRESSION')`)
 	if err != nil {
-		return "", fmt.Errorf("failed to ask which index visibility column the server has: %w", err)
+		return "", "", fmt.Errorf("failed to ask which index statistics columns the server has: %w", err)
 	}
 	defer rows.Close()
-	expr := "0"
+	invisible, expression = "0", "NULL"
 	for rows.Next() {
 		var column string
 		if err := rows.Scan(&column); err != nil {
-			return "", err
+			return "", "", err
 		}
 		switch strings.ToUpper(column) {
 		case "IS_VISIBLE":
-			expr = "CASE WHEN s.IS_VISIBLE = 'NO' THEN 1 ELSE 0 END"
+			invisible = "CASE WHEN s.IS_VISIBLE = 'NO' THEN 1 ELSE 0 END"
 		case "IGNORED":
-			expr = "CASE WHEN s.IGNORED = 'YES' THEN 1 ELSE 0 END"
+			invisible = "CASE WHEN s.IGNORED = 'YES' THEN 1 ELSE 0 END"
+		case "EXPRESSION":
+			expression = "s.EXPRESSION"
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return expr, nil
+	return invisible, expression, nil
+}
+
+// indexKeyPartRow is what one STATISTICS row says about a key part.
+type indexKeyPartRow struct {
+	column     sql.NullString
+	subPart    sql.NullInt64
+	collation  sql.NullString
+	expression sql.NullString
 }
 
 // addIndexKeyPart records one key part of an index.
 //
 // A NULL COLUMN_NAME is a functional key part -- `KEY idx ((b + 1))` on MySQL
-// 8.0.13 and later -- whose expression lives in a STATISTICS column MariaDB
-// does not have, so this reader cannot name it. It is recorded as a part that
-// is missing from Columns rather than dropped silently: a comparison that read
-// Columns as the whole key would plan a rebuild of a key that never changed.
-// See [catalog.Index.KeyPartsIncomplete].
-func addIndexKeyPart(
-	index *catalog.Index,
-	columnName sql.NullString,
-	subPart sql.NullInt64,
-	collation sql.NullString,
-) {
-	if !columnName.Valid {
-		index.KeyPartsIncomplete = true
+// 8.0.13 and later. Its expression is recorded where the server reports it in
+// STATISTICS.EXPRESSION. A server that does not is recorded as having a part
+// missing from Columns rather than dropping it silently: a comparison that
+// read Columns as the whole key would plan a rebuild of a key that never
+// changed. See [catalog.Index.KeyPartsIncomplete].
+func addIndexKeyPart(index *catalog.Index, row indexKeyPartRow) {
+	desc := indexKeyIsDescending(row.collation)
+	if !row.column.Valid {
+		if !row.expression.Valid || strings.TrimSpace(row.expression.String) == "" {
+			index.KeyPartsIncomplete = true
+			return
+		}
+		index.Parts = append(index.Parts, catalog.IndexPart{Expr: row.expression.String, Desc: desc})
 		return
 	}
-	index.Columns = append(index.Columns, columnName.String)
+	index.Columns = append(index.Columns, row.column.String)
 	index.Parts = append(index.Parts, catalog.IndexPart{
-		Name:   columnName.String,
-		Prefix: indexKeyPrefix(subPart),
-		Desc:   indexKeyIsDescending(collation),
+		Name:   row.column.String,
+		Prefix: indexKeyPrefix(row.subPart),
+		Desc:   desc,
 	})
 }
 
@@ -1274,7 +1294,7 @@ func indexKeyIsDescending(collation sql.NullString) bool {
 // the index that Columns cannot carry.
 func dropUninformativeParts(index *catalog.Index) {
 	for _, part := range index.Parts {
-		if part.Prefix != "" || part.Desc {
+		if part.Prefix != "" || part.Desc || part.Expr != "" {
 			return
 		}
 	}

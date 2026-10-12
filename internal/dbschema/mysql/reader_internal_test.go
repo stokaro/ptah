@@ -32,6 +32,7 @@ var statisticsColumns = []string{
 	"COLLATION",
 	"INDEX_COMMENT",
 	"INVISIBLE",
+	"EXPRESSION",
 }
 
 // wideKeyColumnNames is a 16-part key of 64-character column names: 1039 bytes
@@ -563,4 +564,87 @@ func enumColumnsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
 		c.Assert(queried, qt.IsTrue, qt.Commentf("query: %s", query))
 		return dbtest.QueryResult{Columns: enumColumnsColumns, Rows: rows}, nil
 	})
+}
+
+// TestReadIndexes_ReadsAFunctionalKeyPart reads the expression of a functional
+// key part where the server reports it in STATISTICS.EXPRESSION, as MySQL
+// 8.0.13 and later do, in the server's spelling. The key is then complete, so
+// a comparison reads it whole; a server without the column leaves the part
+// unread and the key incomplete.
+func TestReadIndexes_ReadsAFunctionalKeyPart(t *testing.T) {
+	tests := []struct {
+		name       string
+		statistics []string
+		collation  string
+		want       catalog.Index
+	}{
+		{
+			name:       "a server with the column",
+			statistics: []string{"IS_VISIBLE", "EXPRESSION"},
+			collation:  "D",
+			want: catalog.Index{
+				Name: "idx_lower", TableName: "orders", Method: "BTREE", Columns: []string{"id"},
+				Parts:      []catalog.IndexPart{{Name: "id"}, {Expr: "lower(`code`)", Desc: true}},
+				Definition: "BTREE INDEX idx_lower ON orders (id)",
+			},
+		},
+		{
+			name:       "an ascending expression",
+			statistics: []string{"IS_VISIBLE", "EXPRESSION"},
+			collation:  "A",
+			want: catalog.Index{
+				Name: "idx_lower", TableName: "orders", Method: "BTREE", Columns: []string{"id"},
+				Parts:      []catalog.IndexPart{{Name: "id"}, {Expr: "lower(`code`)"}},
+				Definition: "BTREE INDEX idx_lower ON orders (id)",
+			},
+		},
+		{
+			name:       "a server without it",
+			statistics: []string{"IS_VISIBLE"},
+			collation:  "D",
+			want: catalog.Index{
+				Name: "idx_lower", TableName: "orders", Method: "BTREE", Columns: []string{"id"},
+				Definition: "BTREE INDEX idx_lower ON orders (id)", KeyPartsIncomplete: true,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := NewMySQLReader(functionalKeyPartDB(c, test.statistics, test.collation).SQL, "app")
+
+			indexes, err := reader.readIndexes(t.Context(), "app")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(indexes, qt.DeepEquals, []catalog.Index{test.want})
+		})
+	}
+}
+
+// functionalKeyPartDB answers the question which STATISTICS columns the server
+// has with statistics, and the index query with a key over id and lower(code)
+// in the direction collation reports, the expression only where the
+// projection asks for it.
+func functionalKeyPartDB(c *qt.C, statistics []string, collation string) *dbtest.DB {
+	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		columns := strings.Contains(query, "FROM information_schema.COLUMNS")
+		expression := map[bool]driver.Value{true: "lower(`code`)", false: nil}[strings.Contains(query, "s.EXPRESSION")]
+		answers := map[bool]dbtest.QueryResult{
+			true: {Columns: []string{"COLUMN_NAME"}, Rows: rowsOf(statistics)},
+			false: {Columns: statisticsColumns, Rows: [][]driver.Value{
+				{"idx_lower", "orders", "id", int64(1), "BTREE", nil, "A", "", int64(0), nil},
+				{"idx_lower", "orders", nil, int64(1), "BTREE", nil, collation, "", int64(0), expression},
+			}},
+		}
+		return answers[columns], nil
+	})
+}
+
+// rowsOf is one single-column row per value.
+func rowsOf(values []string) [][]driver.Value {
+	rows := make([][]driver.Value, 0, len(values))
+	for _, value := range values {
+		rows = append(rows, []driver.Value{value})
+	}
+	return rows
 }

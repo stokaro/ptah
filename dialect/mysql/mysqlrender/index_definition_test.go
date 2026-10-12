@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -143,4 +144,40 @@ func TestValidateConstraintFacets(t *testing.T) {
 	c.Assert(mysqlrender.ValidateConstraintFacets(hint), qt.IsNil)
 	c.Assert(mysqlrender.ValidateConstraintFacets(observed), qt.IsNil)
 	c.Assert(mysqlrender.ValidateConstraintFacets(table), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+}
+
+// functionalIndex is t_lower over the expression lower(code).
+var functionalIndex = mysqlast.Index{Name: "t_lower", Parts: []mysqlast.IndexPart{{Expression: "lower(code)"}}}
+
+// TestValidateIndexParts_FailurePath refuses a functional key part on
+// MariaDB, which answers ERROR 1064 to one, naming the index and the
+// expression.
+func TestValidateIndexParts_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	err := mysqlrender.ValidateIndexParts(platform.MariaDB, functionalIndex)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: mariadb: index t_lower indexes the expression lower\(code\), `+
+		`and MariaDB has no functional key part; index a generated column that computes it instead`)
+}
+
+// TestValidateIndexParts_HappyPath accepts a functional key part on MySQL,
+// which builds one, and a column key part on MariaDB.
+func TestValidateIndexParts_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		index   mysqlast.Index
+	}{
+		{name: "a functional key part on MySQL", dialect: platform.MySQL, index: functionalIndex},
+		{name: "a column key part on MariaDB", dialect: platform.MariaDB,
+			index: mysqlast.Index{Name: "t_code", Parts: []mysqlast.IndexPart{{Column: "code", Prefix: "10", Descending: true}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(mysqlrender.ValidateIndexParts(test.dialect, test.index), qt.IsNil)
+		})
+	}
 }

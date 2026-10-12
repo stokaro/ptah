@@ -131,6 +131,25 @@ func IndexDefinition(dialect string, index mysqlast.Index, placement string) []s
 	return parts
 }
 
+// ValidateIndexParts refuses an index whose key parts dialect cannot write: a
+// functional key part on MariaDB, which has none. Measured on MariaDB 12.3,
+// `ADD INDEX k ((lower(a)))` answers ERROR 1064, a syntax error, where MySQL
+// 8.0.13 and later build the index; MariaDB indexes an expression through a
+// generated column instead. A refusal names the index before a plan reaches
+// the server.
+func ValidateIndexParts(dialect string, index mysqlast.Index) error {
+	if platform.NormalizeDialect(dialect) != platform.MariaDB {
+		return nil
+	}
+	for _, part := range index.Parts {
+		if part.Expression != "" {
+			return fmt.Errorf("%w: mariadb: index %s indexes the expression %s, and MariaDB has no functional key part; "+
+				"index a generated column that computes it instead", ptaherr.ErrUnsupportedFeature, index.Name, part.Expression)
+		}
+	}
+	return nil
+}
+
 func keyPart(part mysqlast.IndexPart, quoteColumn func(string) string) string {
 	if part.Expression != "" {
 		spec := "(" + part.Expression + ")"
@@ -188,6 +207,9 @@ func renderReplaceIndex(ctx renderer.ExtensionContext, op *mysqlast.ReplaceIndex
 	algorithm := ctx.Parent.Algorithm
 	if op.TableCopy {
 		algorithm = "COPY"
+	}
+	if err := ValidateIndexParts(ctx.Target, op.Index); err != nil {
+		return nil, err
 	}
 	drop := "INDEX " + QuoteIdentifier(op.Index.Name)
 	if op.Index.Primary {

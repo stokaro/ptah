@@ -98,12 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-7 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+6 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | the comparison plans ADD PRIMARY KEY on MySQL and MariaDB for a key declared both on its field and as an equal PRIMARY KEY constraint. Both conversions carry the key, so the defect is in the comparison |
 | `function-planner-properties` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to PostgreSQL facets, which the conversion already carries |
 | `function-procedure` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
 | `grant-routine` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
@@ -129,7 +128,7 @@ migration nobody asked for.
 | `mysqlschema.DesiredTable.Charset` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `mysqlschema.DesiredTable.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.CompositeType.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Constraint.Facets` | `mysql` | from-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Constraint.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -161,12 +160,11 @@ migration nobody asked for.
 | `schemamodel.Index.StorageParams` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Type` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Unique` | `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Desc` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Expr` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Desc` | `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Expr` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.IndexPart.Name` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.IndexPart.NullsOrder` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.IndexPart.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Prefix` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PartitionPart.Expr` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
