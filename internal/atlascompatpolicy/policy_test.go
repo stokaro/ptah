@@ -16,6 +16,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -206,6 +207,13 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "domains", database: &schemamodel.Database{Domains: []schemamodel.Domain{{}}}},
 		{name: "composite types", database: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{}}}},
 		{name: "range types", database: &schemamodel.Database{Ranges: []schemamodel.Range{{}}}},
+		{name: "domains", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+			must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.DomainKind, "", "email"), &pgtype.DesiredDomain{BaseType: "text"}))))}},
+		{name: "composite types", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+			must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+				&pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}))))}},
+		{name: "range types", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+			must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "", "span"), &pgtype.DesiredRange{Subtype: "int4"}))))}},
 		{name: "views", database: &schemamodel.Database{Views: []schemamodel.View{{}}}},
 		{name: "materialized views", database: &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{}}}},
 		{name: "triggers", database: &schemamodel.Database{Triggers: []schemamodel.Trigger{{}}}},

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
@@ -171,19 +172,32 @@ func domainRepresented(removal removedLine, _, exportedDB *schemamodel.Database)
 	return slices.ContainsFunc(exportedDB.Domains, func(domain schemamodel.Domain) bool {
 		return sameSchemaObject(domain.Schema, domain.Name, removal.values["schema"], removal.values["name"]) &&
 			domain.BaseType == removal.values["type"]
-	})
+	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindDomain, removal.values["type"])
 }
 
 func compositeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
 	return slices.ContainsFunc(exportedDB.CompositeTypes, func(composite schemamodel.CompositeType) bool {
 		return sameSchemaObject(composite.Schema, composite.Name, removal.values["schema"], removal.values["name"])
-	})
+	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindComposite, "")
 }
 
 func rangeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
 	return slices.ContainsFunc(exportedDB.Ranges, func(rangeType schemamodel.Range) bool {
 		return sameSchemaObject(rangeType.Schema, rangeType.Name, removal.values["schema"], removal.values["name"]) &&
 			rangeType.Subtype == removal.values["subtype"]
+	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindRange, removal.values["subtype"])
+}
+
+// ownerTypeRepresented reports whether the export holds, as an owner's
+// object, the type of the common kind the removed annotation named, and,
+// where the annotation names one, the type it is over: a domain's base type
+// or a range's subtype, which an owner's type names first among the types it
+// references; see [schemaext.TypeDefiner].
+func ownerTypeRepresented(removal removedLine, exportedDB *schemamodel.Database, kind objectidentity.Kind, over string) bool {
+	return slices.ContainsFunc(schemaext.DefinedTypes(exportedDB.FeatureObjects), func(defined schemaext.DefinedType) bool {
+		return defined.ID.Kind == kind &&
+			sameSchemaObject(defined.ID.Schema.Authored(), defined.ID.Name.Source, removal.values["schema"], removal.values["name"]) &&
+			(over == "" || len(defined.References) > 0 && defined.References[0] == over)
 	})
 }
 

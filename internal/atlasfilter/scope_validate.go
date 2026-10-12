@@ -222,6 +222,7 @@ func validateGeneratedTypes(
 			report("range type", item.Schema, item.Name)
 		}
 	}
+	reportDroppedOwnerTypes(original.FeatureObjects, final.FeatureObjects, report)
 }
 
 func generatedEnumKept(enums []schemamodel.Enum, schema, name string) bool {
@@ -326,6 +327,7 @@ func validateDatabaseTypes(
 			report("range type", item.Schema, item.Name)
 		}
 	}
+	reportDroppedOwnerTypes(original.FeatureObjects, final.FeatureObjects, report)
 }
 
 func databaseEnumKept(enums []catalog.Enum, schema, name string) bool {

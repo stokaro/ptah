@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbreset"
@@ -748,7 +749,7 @@ func domainObjects(schema *catalog.Database) []Object {
 			Name:   domain.Name,
 		})
 	}
-	return objects
+	return append(objects, ownerTypeObjects(schema, objectidentity.KindDomain, ObjectTypeDomain)...)
 }
 
 func compositeObjects(schema *catalog.Database) []Object {
@@ -760,7 +761,7 @@ func compositeObjects(schema *catalog.Database) []Object {
 			Name:   composite.Name,
 		})
 	}
-	return objects
+	return append(objects, ownerTypeObjects(schema, objectidentity.KindComposite, ObjectTypeComposite)...)
 }
 
 func rangeObjects(schema *catalog.Database) []Object {
@@ -771,6 +772,19 @@ func rangeObjects(schema *catalog.Database) []Object {
 			Schema: rangeType.Schema,
 			Name:   rangeType.Name,
 		})
+	}
+	return append(objects, ownerTypeObjects(schema, objectidentity.KindRange, ObjectTypeRange)...)
+}
+
+// ownerTypeObjects reports the types of the common kind an owner's
+// observations define, such as a domain the PostgreSQL type owner holds, as
+// the plan rows of the common type; see [schemaext.TypeDefiner].
+func ownerTypeObjects(schema *catalog.Database, kind objectidentity.Kind, objectType string) []Object {
+	var objects []Object
+	for _, defined := range schemaext.DefinedTypes(schema.FeatureObjects) {
+		if defined.ID.Kind == kind {
+			objects = append(objects, Object{Type: objectType, Schema: defined.ID.Schema.Authored(), Name: defined.ID.Name.Source})
+		}
 	}
 	return objects
 }

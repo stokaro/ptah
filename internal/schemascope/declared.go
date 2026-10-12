@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -48,6 +49,11 @@ func DeclaredSchemaNames(desired *schemamodel.Database) []string {
 	}
 	for _, rangeType := range desired.Ranges {
 		add(rangeType.Schema)
+	}
+	// An owner's type names its schema as a common one does; see
+	// [schemaext.TypeDefiner].
+	for _, defined := range schemaext.DefinedTypes(desired.FeatureObjects) {
+		add(defined.ID.Schema.Authored())
 	}
 	for _, privilege := range desired.DefaultPrivileges {
 		add(privilege.Schema)

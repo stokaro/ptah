@@ -2667,6 +2667,12 @@ and a declaration that a server spelled predicts its observation in that
 spelling. The bundled runtime selects the owner on every PostgreSQL-family
 target, without its reports, which count under the metric names the common
 schema statistics still report; nothing produces the owner's objects yet.
+`Selections` names the three kinds to a command's scope with the selector
+types of the common types: `domain`, `composite_type` and `range`. The
+scope, the strict compatibility policy, the declared schema list, schema
+cleanup and annotation cleanup read an owner's type as the common type of its
+kind, through `schemaext.TypeDefiner`, and a scope keeps one a kept column
+names.
 
 `feature/pgtype/typecompare` compares types by kind, schema and name. Type
 spellings are compared in the form format_type reports, a composite type's

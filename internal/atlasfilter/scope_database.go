@@ -32,7 +32,8 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return nil, err
 	}
 
-	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage,
+		databaseColumnTypeSet(out.Tables))
 	if err != nil {
 		return nil, err
 	}
