@@ -147,12 +147,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
-	// Objects of other engines.
-	case *ast.ExtensionNode:
-		return refuseFact("extension "+n.Name, "YDB has no extensions")
-	case *ast.DropExtensionNode:
-		return refuseFact("DROP EXTENSION "+n.Name, "YDB has no extensions")
-
 	// An upsert node carries the match columns, update assignments and
 	// predicates of a MERGE as SQL fragments. YDB's own upsert, UPSERT INTO,
 	// matches on the primary key and writes the values it inserts, so it

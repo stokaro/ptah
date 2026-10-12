@@ -439,8 +439,6 @@ func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
 		node ast.Node
 	}{
 		{"enum", ast.NewEnum("status", "a", "b")},
-		{"extension", ast.NewExtension("pg_trgm")},
-		{"drop extension", &ast.DropExtensionNode{Name: "pg_trgm"}},
 		{"create function", &ast.CreateFunctionNode{Name: "fn"}},
 		{"drop function", &ast.DropFunctionNode{Name: "fn"}},
 		// The shared row-level security nodes are deliberately absent: a row

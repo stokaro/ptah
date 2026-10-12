@@ -145,12 +145,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.renderAlterTableForceRLS(n)
 
-	// This group belongs to another engine and is named and skipped.
-	case *ast.ExtensionNode:
-		return r.renderExtension(n)
-	case *ast.DropExtensionNode:
-		return r.renderDropExtension(n)
-
 	// Data manipulation.
 	case *ast.UpsertNode:
 		return r.renderUpsert(n)

@@ -397,8 +397,6 @@ func prepareNode(
 		return prepareColumnNode(dialect, caps, "", typed)
 	case *ast.IndexNode:
 		return prepareIndexNode(dialect, caps, typed)
-	case *ast.ExtensionNode:
-		return prepareExtensionNode(dialect, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
@@ -532,44 +530,6 @@ func prepareCreateMaterializedViewNode(
 	cloned := *node
 	cloned.Facets = facets
 	return &cloned, nil
-}
-
-func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {
-	if node == nil {
-		return nil, &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     ptaherr.ErrInvalidSchemaDiff,
-			Message: "extension node is nil",
-		}
-	}
-	if !extensionInstallationSchemaRejected(dialect) || node.Schema == "" {
-		return new(*node), nil
-	}
-	return nil, unsupportedExtensionInstallationSchema(dialect, node.Name, node.Schema)
-}
-
-func extensionInstallationSchemaRejected(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.CockroachDB, platform.Spanner:
-		return true
-	default:
-		return false
-	}
-}
-
-func unsupportedExtensionInstallationSchema(dialect, name, schema string) error {
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: "PostgreSQL extension installation schemas",
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf(
-			"%s does not support PostgreSQL extension installation schema %q for extension %q",
-			normalized,
-			schema,
-			name,
-		),
-	}
 }
 
 func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.IndexNode) (*ast.IndexNode, error) {

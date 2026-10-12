@@ -235,7 +235,7 @@ func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *te
 		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"})))),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
-	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: "extensions"}
+	node := &ast.ExtensionStatement{Payload: &pgextension.Operation{Name: "pgcrypto", Action: pgextension.Create, Schema: "extensions"}}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailB
 		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: " "})))),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
-	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: " "}
+	node := &ast.ExtensionStatement{Payload: &pgextension.Operation{Name: "pgcrypto", Action: pgextension.Create, Schema: " "}}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {

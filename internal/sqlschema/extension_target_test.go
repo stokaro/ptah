@@ -39,8 +39,8 @@ func TestRead_ACreateExtensionOutsideTheFamily_FailurePath(t *testing.T) {
 }
 
 // TestRead_ACreateExtensionWithoutItsOwner_FailurePath pins that a read which
-// selected no extension owner refuses CREATE EXTENSION on a target that could
-// host it: the model has no place for an extension except the owner's.
+// selects no extension owner refuses CREATE EXTENSION on a target that could
+// host it: an extension is only its owner's object.
 func TestRead_ACreateExtensionWithoutItsOwner_FailurePath(t *testing.T) {
 	for _, test := range []struct{ name, target string }{
 		{name: "postgres", target: platform.Postgres}, {name: "cockroachdb", target: platform.CockroachDB}, {name: "no target"},
@@ -50,8 +50,8 @@ func TestRead_ACreateExtensionWithoutItsOwner_FailurePath(t *testing.T) {
 
 			db, statements, err := sqlschema.Read([]byte(extensionDocument), test.target)
 
-			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-			c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: CREATE EXTENSION pg_trgm: this read selected no owner that reads extensions`)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `CREATE EXTENSION pg_trgm needs the PostgreSQL extension owner, which this read did not select`)
 			c.Assert(db.Tables, qt.HasLen, 0)
 			c.Assert(statements, qt.IsNil)
 		})

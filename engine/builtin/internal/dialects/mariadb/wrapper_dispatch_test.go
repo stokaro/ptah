@@ -13,7 +13,7 @@ import (
 	"ptah.run/internal/renderdiag"
 )
 
-// wrapperOwnedRow is one of the four node kinds the MariaDB wrapper answers
+// wrapperOwnedRow is one of the two node kinds the MariaDB wrapper answers
 // itself instead of forwarding, with the text every public entry point
 // produces.
 type wrapperOwnedRow struct {
@@ -27,20 +27,10 @@ type wrapperOwnedRow struct {
 	want string
 }
 
-// mariadbWrapperOwnedKinds is the four node kinds mariadb.Renderer answers with
+// mariadbWrapperOwnedKinds is the two node kinds mariadb.Renderer answers with
 // a body of its own. Everything else it forwards.
 func mariadbWrapperOwnedKinds() []wrapperOwnedRow {
 	return []wrapperOwnedRow{
-		{
-			kind: "ExtensionNode",
-			node: ast.NewExtension("pg_trgm"),
-			want: "-- Extension pg_trgm not supported in MariaDB\n",
-		},
-		{
-			kind: "DropExtensionNode",
-			node: ast.NewDropExtension("pg_trgm"),
-			want: "-- DROP EXTENSION pg_trgm not supported in MariaDB\n",
-		},
 		{
 			kind: "CreatePolicyNode",
 			node: ast.NewCreatePolicy("p1", "users"),
@@ -190,7 +180,7 @@ func TestMariaDBWrapper_PolicyHalvesReportDifferently(t *testing.T) {
 // writes into the buffer its Output reads.
 //
 // The wrapper holds the shared renderer's bufwriter by pointer on purpose.
-// Holding it by value gives the wrapper a copy: its four own methods then write
+// Holding it by value gives the wrapper a copy: its two own methods then write
 // into a buffer nothing reads, Output returns only what the forwards produced,
 // and the render exits 0 with the refusal lines missing. Interleaving the two
 // kinds of write and asserting the whole buffer is what separates one buffer
@@ -202,11 +192,11 @@ func TestMariaDBWrapper_OwnAndForwardedWritesShareOneBuffer(t *testing.T) {
 	r := mariadb.New()
 
 	c.Assert(ast.NewCreateSchema("app").Accept(r), qt.IsNil)
-	c.Assert(ast.NewExtension("pg_trgm").Accept(r), qt.IsNil)
+	c.Assert(ast.NewCreatePolicy("p1", "users").Accept(r), qt.IsNil)
 	c.Assert(ast.NewDropTable("users").Accept(r), qt.IsNil)
 
 	c.Assert(r.Output(), qt.Equals, "CREATE SCHEMA `app`;\n"+
-		"-- Extension pg_trgm not supported in MariaDB\n"+
+		"-- CREATE POLICY p1 not supported in MariaDB\n"+
 		"DROP TABLE `users`;\n")
 }
 
@@ -217,8 +207,8 @@ func TestMariaDBWrapper_ResetClearsWhatTheWrapperWrote(t *testing.T) {
 	c := qt.New(t)
 
 	r := mariadb.New()
-	c.Assert(ast.NewExtension("pg_trgm").Accept(r), qt.IsNil)
-	c.Assert(r.Output(), qt.Equals, "-- Extension pg_trgm not supported in MariaDB\n")
+	c.Assert(ast.NewAlterTableEnableRLS("users").Accept(r), qt.IsNil)
+	c.Assert(r.Output(), qt.Equals, "-- ALTER TABLE users ENABLE ROW LEVEL SECURITY not supported in MariaDB\n")
 
 	r.Reset()
 	c.Assert(r.Output(), qt.Equals, "")

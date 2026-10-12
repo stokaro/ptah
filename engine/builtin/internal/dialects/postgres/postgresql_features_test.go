@@ -281,105 +281,11 @@ func TestPostgreSQLRenderer_RejectsNullsDistinctOnNonUniqueIndex(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `postgresql NULLS DISTINCT is only valid for unique indexes`)
 }
 
-func TestPostgreSQLRenderer_VisitExtension(t *testing.T) {
-	tests := []struct {
-		name      string
-		extension *ast.ExtensionNode
-		expected  string
-	}{
-		{
-			name: "basic extension",
-			extension: &ast.ExtensionNode{
-				Name: "pg_trgm",
-			},
-			expected: "CREATE EXTENSION pg_trgm;\n",
-		},
-		{
-			name: "extension with IF NOT EXISTS",
-			extension: &ast.ExtensionNode{
-				Name:        "pg_trgm",
-				IfNotExists: true,
-			},
-			expected: "CREATE EXTENSION IF NOT EXISTS pg_trgm;\n",
-		},
-		{
-			name: "extension with version",
-			extension: &ast.ExtensionNode{
-				Name:    "postgis",
-				Version: "3.0",
-			},
-			expected: "CREATE EXTENSION postgis VERSION '3.0';\n",
-		},
-		{
-			name: "extension with schema and version",
-			extension: &ast.ExtensionNode{
-				Name:    `uuid-ossp`,
-				Schema:  `Extension Store`,
-				Version: "1.1",
-			},
-			expected: `CREATE EXTENSION "uuid-ossp" WITH SCHEMA "Extension Store" VERSION '1.1';` + "\n",
-		},
-		{
-			name: "extension and schema may have the same name",
-			extension: &ast.ExtensionNode{
-				Name:   "pgcrypto",
-				Schema: "pgcrypto",
-			},
-			expected: "CREATE EXTENSION pgcrypto WITH SCHEMA pgcrypto;\n",
-		},
-		{
-			name: "extension name containing a literal dot is one identifier",
-			extension: &ast.ExtensionNode{
-				Name:   "audit.tools",
-				Schema: "extensions",
-			},
-			expected: "CREATE EXTENSION \"audit.tools\" WITH SCHEMA extensions;\n",
-		},
-		{
-			name: "extension with comment",
-			extension: &ast.ExtensionNode{
-				Name:    "btree_gin",
-				Comment: "Enable GIN indexes on btree types",
-			},
-			expected: "CREATE EXTENSION btree_gin;\nCOMMENT ON EXTENSION btree_gin IS 'Enable GIN indexes on btree types';\n",
-		},
-		{
-			name: "extension with all features",
-			extension: &ast.ExtensionNode{
-				Name:        "postgis",
-				IfNotExists: true,
-				Version:     "3.0",
-				Comment:     "Geographic data support",
-			},
-			expected: "CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';\nCOMMENT ON EXTENSION postgis IS 'Geographic data support';\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			renderer := postgres.New()
-			sql, err := renderer.Render(tt.extension)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(legacyPostgresSQL(sql), qt.Equals, tt.expected)
-		})
-	}
-}
-
 func TestPostgreSQLRenderer_CompleteSchema(t *testing.T) {
 	c := qt.New(t)
 
-	// Create a complete schema with extensions, tables, and indexes
+	// Create a complete schema with tables and indexes
 	renderer := postgres.New()
-
-	// Extension
-	extension := &ast.ExtensionNode{
-		Name:        "pg_trgm",
-		IfNotExists: true,
-		Comment:     "Enable trigram similarity search",
-	}
 
 	// Table
 	table := ast.NewCreateTable("products").
@@ -426,9 +332,6 @@ func TestPostgreSQLRenderer_CompleteSchema(t *testing.T) {
 	}
 
 	// Render each component
-	extensionSQL, err := renderer.Render(extension)
-	c.Assert(err, qt.IsNil)
-
 	tableSQL, err := renderer.Render(table)
 	c.Assert(err, qt.IsNil)
 
@@ -442,9 +345,6 @@ func TestPostgreSQLRenderer_CompleteSchema(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Verify the generated SQL
-	c.Assert(legacyPostgresSQL(extensionSQL), qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm")
-	c.Assert(legacyPostgresSQL(extensionSQL), qt.Contains, "COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';")
-
 	c.Assert(legacyPostgresSQL(tableSQL), qt.Contains, "CREATE TABLE products")
 	c.Assert(legacyPostgresSQL(tableSQL), qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")
 	c.Assert(legacyPostgresSQL(tableSQL), qt.Contains, "tags JSONB")
@@ -452,68 +352,6 @@ func TestPostgreSQLRenderer_CompleteSchema(t *testing.T) {
 	c.Assert(legacyPostgresSQL(ginIndexSQL), qt.Equals, "CREATE INDEX idx_products_tags ON products USING GIN (tags);\n")
 	c.Assert(legacyPostgresSQL(partialIndexSQL), qt.Equals, "CREATE INDEX idx_active_products ON products (status) WHERE deleted_at IS NULL;\n")
 	c.Assert(legacyPostgresSQL(trigramIndexSQL), qt.Equals, "CREATE INDEX idx_products_name_trgm ON products USING GIN (name gin_trgm_ops);\n")
-}
-
-func TestPostgreSQLRenderer_VisitDropExtension(t *testing.T) {
-	tests := []struct {
-		name     string
-		dropExt  *ast.DropExtensionNode
-		expected string
-	}{
-		{
-			name: "basic drop extension",
-			dropExt: &ast.DropExtensionNode{
-				Name: "pg_trgm",
-			},
-			expected: "DROP EXTENSION pg_trgm;\n",
-		},
-		{
-			name: "drop extension with IF EXISTS",
-			dropExt: &ast.DropExtensionNode{
-				Name:     "pg_trgm",
-				IfExists: true,
-			},
-			expected: "DROP EXTENSION IF EXISTS pg_trgm;\n",
-		},
-		{
-			name: "drop extension with CASCADE",
-			dropExt: &ast.DropExtensionNode{
-				Name:    "postgis",
-				Cascade: true,
-			},
-			expected: "DROP EXTENSION postgis CASCADE;\n",
-		},
-		{
-			name: "drop extension with comment",
-			dropExt: &ast.DropExtensionNode{
-				Name:    "btree_gin",
-				Comment: "Remove unused extension",
-			},
-			expected: "-- Remove unused extension\nDROP EXTENSION btree_gin;\n",
-		},
-		{
-			name: "drop extension with all features",
-			dropExt: &ast.DropExtensionNode{
-				Name:     "postgis",
-				IfExists: true,
-				Cascade:  true,
-				Comment:  "Remove geographic data support",
-			},
-			expected: "-- Remove geographic data support\nDROP EXTENSION IF EXISTS postgis CASCADE;\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			renderer := postgres.New()
-			sql, err := renderer.Render(tt.dropExt)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(legacyPostgresSQL(sql), qt.Equals, tt.expected)
-		})
-	}
 }
 
 func TestPostgreSQLRenderer_VisitCreateFunction(t *testing.T) {

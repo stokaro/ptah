@@ -19,7 +19,7 @@ import (
 // otherwise read as success. Growth is expected and lands in nodeCensus below;
 // a drop is a decision, and lowering this number is how that decision is
 // recorded.
-const nodeKindFloor = 83
+const nodeKindFloor = 82
 
 // censusRow is one node kind the census accepts.
 //
@@ -65,7 +65,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.CreateTypeNode{}},
 	{node: &ast.CreateViewNode{}},
 	{node: &ast.DefaultPrivilegeNode{}},
-	{node: &ast.DropExtensionNode{}},
 	{node: &ast.DropFunctionNode{}},
 	{node: &ast.DropIndexNode{}},
 	{node: &ast.DropMaterializedViewNode{}},
@@ -77,7 +76,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.DropTypeNode{}},
 	{node: &ast.DropViewNode{}},
 	{node: &ast.EnumNode{}},
-	{node: &ast.ExtensionNode{}},
 	{node: &ast.GrantPrivilegeNode{}},
 	{node: &ast.GrantRoleMembershipNode{}},
 	{node: &ast.IndexNode{}},

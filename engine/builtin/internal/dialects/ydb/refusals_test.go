@@ -298,8 +298,6 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 			wantErr: `CREATE DATABASE d: YDB has no CREATE DATABASE statement; a YDB database is created by the cluster's administrators`},
 		{name: "a dropped table with CASCADE", node: &ast.DropTableNode{Name: "t", Cascade: true},
 			wantErr: `DROP TABLE t CASCADE: YDB's DROP TABLE has no CASCADE; .*`},
-		{name: "an extension", node: &ast.ExtensionNode{Name: "pg_trgm"},
-			wantErr: `extension pg_trgm: YDB has no extensions`},
 	}
 
 	for _, test := range tests {

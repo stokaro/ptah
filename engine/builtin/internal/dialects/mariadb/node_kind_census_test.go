@@ -16,7 +16,7 @@ import (
 )
 
 // The MariaDB renderer is a thin wrapper: it holds the shared mysqllike
-// renderer in a named field, names four node kinds in its dispatch and hands
+// renderer in a named field, names two node kinds in its dispatch and hands
 // every other kind to that field. A case dropped from the dispatch still
 // renders, because the shared renderer answers the kind too -- with its own
 // lowercase dialect name, at exit 0, and only in the text.
@@ -159,12 +159,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			want: "-- MARIADB: default privilege app_role is not generated for this target; skipped.\n",
 		},
 		{
-			// Wrapper-owned.
-			kind: "DropExtensionNode",
-			node: ast.NewDropExtension("pg_trgm"),
-			want: "-- DROP EXTENSION pg_trgm not supported in MariaDB\n",
-		},
-		{
 			kind: "DropFunctionNode",
 			node: ast.NewDropFunction("touch"),
 			want: "DROP FUNCTION `touch`;\n",
@@ -215,12 +209,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			kind: "EnumNode",
 			node: ast.NewEnum("mood", "happy", "sad"),
 			want: "",
-		},
-		{
-			// Wrapper-owned.
-			kind: "ExtensionNode",
-			node: ast.NewExtension("pg_trgm"),
-			want: "-- Extension pg_trgm not supported in MariaDB\n",
 		},
 		{
 			kind: "GrantPrivilegeNode",
@@ -358,7 +346,7 @@ func TestMariaDBDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 43
+const censusKindFloor = 41
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mariadbCensusRow {

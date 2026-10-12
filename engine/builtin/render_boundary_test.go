@@ -17,9 +17,9 @@ import (
 // implements, and the promise that a render leaves the caller's AST alone.
 //
 // The renderer [renderer.NewRenderer] returns is a wrapper over a dialect
-// renderer. It preflights eight node kinds -- statement list, create table,
-// alter table, column, constraint, index, extension and create materialized
-// view -- and hands every other kind to the dialect renderer untouched. Every
+// renderer. It preflights seven node kinds -- statement list, create table,
+// alter table, column, constraint, index and create materialized view -- and
+// hands every other kind to the dialect renderer untouched. Every
 // AST-level refusal this package makes lives in that preflight, and two of the
 // preparations rewrite the node rather than refusing it, so nothing below the
 // wrapper reproduces them.
@@ -96,13 +96,6 @@ func interceptedRefusals() []boundaryFixture {
 			wantErr: `mysql does not support INCLUDE columns on index "idx_products_sku"; target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb`,
 		},
 		{
-			name:    "extension",
-			dialect: platform.CockroachDB,
-			node:    &ast.ExtensionNode{Name: "pgcrypto", Schema: "ext"},
-			wantIs:  ptaherr.ErrUnsupportedFeature,
-			wantErr: `cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pgcrypto"`,
-		},
-		{
 			name:    "create materialized view",
 			dialect: platform.Postgres,
 			node:    (*ast.CreateMaterializedViewNode)(nil),
@@ -112,7 +105,7 @@ func interceptedRefusals() []boundaryFixture {
 	}
 }
 
-// interceptedAcceptances is the control for interceptedRefusals: the same eight
+// interceptedAcceptances is the control for interceptedRefusals: the same seven
 // kinds, each carrying an input its preflight lets through. A preflight that
 // refused everything would pass the failure table on its own.
 func interceptedAcceptances() []boundaryFixture {
@@ -137,11 +130,6 @@ func interceptedAcceptances() []boundaryFixture {
 		{name: "column", dialect: platform.Postgres, node: ast.NewColumn("label", "INTEGER")},
 		{name: "constraint", dialect: platform.Postgres, node: uniqueConstraintWithInclude()},
 		{name: "index", dialect: platform.Postgres, node: indexWithInclude()},
-		{
-			name:    "extension",
-			dialect: platform.Postgres,
-			node:    &ast.ExtensionNode{Name: "pgcrypto", Schema: "ext"},
-		},
 		{
 			name:    "create materialized view",
 			dialect: platform.Postgres,
@@ -204,9 +192,9 @@ func indexWithInclude() *ast.IndexNode {
 // kind through Accept on the renderer and asserts the refusal the preflight
 // owns.
 //
-// These eight rows are the measure of whether the preflight still runs. A
+// These seven rows are the measure of whether the preflight still runs. A
 // renderer that dispatched every kind straight to its dialect handler would
-// accept all eight inputs and emit DDL for most of them, at exit 0.
+// accept all seven inputs and emit DDL for most of them, at exit 0.
 func TestRendererAccept_PreflightedKind_FailurePath(t *testing.T) {
 	for _, test := range interceptedRefusals() {
 		t.Run(test.name, func(t *testing.T) {

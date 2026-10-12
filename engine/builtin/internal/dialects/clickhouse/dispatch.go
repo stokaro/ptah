@@ -135,13 +135,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return fmt.Errorf("%w: %s: %T is shared row-level security; declare a ClickHouse row policy with //ptah:schema:rowpolicy",
 			ptaherr.ErrUnsupportedFeature, DialectName, node)
 
-	// Objects another engine owns. Each is named and skipped so the reader of
-	// a render sees what the target left out.
-	case *ast.ExtensionNode:
-		return r.renderExtension(n)
-	case *ast.DropExtensionNode:
-		return r.renderDropExtension(n)
-
 	// Data manipulation.
 	case *ast.UpsertNode:
 		return r.renderUpsert(n)
