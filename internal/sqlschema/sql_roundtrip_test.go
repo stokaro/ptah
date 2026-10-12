@@ -7,7 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
@@ -296,7 +295,6 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 		`"audit"."user""events"`,
 		"[event]]id]",
 	)
-	extension := ast.NewExtension(`"uuid-ossp"`).SetSchema(`"Extension Store"`)
 	enum := ast.NewEnum(`"audit"."event""kind"`, "created")
 
 	db, err := sqlschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{
@@ -319,37 +317,10 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c.Assert(db.Indexes[0].Name, qt.Equals, "event`lookup")
 	c.Assert(db.Indexes[0].TableName, qt.Equals, `audit."user""events"`)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"event]id"})
-	c.Assert(sqlschema.ToExtension(extension, ""), qt.DeepEquals, schemamodel.Extension{
-		Name:   "uuid-ossp",
-		Schema: "Extension Store",
-	})
 	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{{
 		Name:   `audit.event"kind`,
 		Values: []string{"created"},
 	}})
-}
-
-func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T) {
-	c := qt.New(t)
-
-	unquoted := parseToDatabaseAs(c, platform.Postgres, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
-	c.Assert(unquoted.Extensions, qt.DeepEquals, []schemamodel.Extension{{
-		Name:   "pgcrypto",
-		Schema: "extensions",
-	}})
-	unquotedSQL, err := builtin.RenderSQL("postgres", modelast.FromExtension(unquoted.Extensions[0]))
-	c.Assert(err, qt.IsNil)
-	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
-
-	quoted := parseToDatabaseAs(c, platform.Postgres, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
-	c.Assert(quoted.Extensions, qt.DeepEquals, []schemamodel.Extension{{
-		Name:   "PGCrypto",
-		Schema: " Extension Store ",
-	}})
-
-	rendered, err := builtin.RenderSQL("postgres", modelast.FromExtension(quoted.Extensions[0]))
-	c.Assert(err, qt.IsNil)
-	c.Assert(rendered, qt.Contains, `CREATE EXTENSION "PGCrypto" WITH SCHEMA " Extension Store ";`)
 }
 
 func TestToConstraint_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {

@@ -110,9 +110,8 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 var derivedNodeKinds = []string{"CreateSchemaNode"}
 
 // ownedSharedKinds are the routed kinds of the shared declarations the
-// PostgreSQL family leaves to their owners: row-level security, and the
-// extension.
-var ownedSharedKinds = []string{"AlterTableEnableRLSNode", "CreatePolicyNode", "ExtensionNode"}
+// PostgreSQL family leaves to their owner: row-level security.
+var ownedSharedKinds = []string{"AlterTableEnableRLSNode", "CreatePolicyNode"}
 
 // assertRenderAndPlanAgree is the per-dialect body.
 //
@@ -124,10 +123,8 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	desired := routingFixture()
 	// The PostgreSQL family holds row-level security in its owner's models,
 	// and both surfaces refuse the shared declarations the fixture carries
-	// for the other targets. Extensions are their owner's too: no source
-	// produces the shared list, and the comparison does not read it.
+	// for the other targets.
 	desired.RLSPolicies, desired.RLSEnabledTables = nil, nil
-	desired.Extensions = nil
 
 	// A target that cannot create a domain refuses the whole schema before
 	// SQL, on BOTH surfaces, because they share one validation -- the render

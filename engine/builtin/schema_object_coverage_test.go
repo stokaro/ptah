@@ -5,13 +5,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 )
 
 // enumSchema builds one table whose single non-key column is typed with a
@@ -128,11 +131,8 @@ func TestRender_PostgreSQLStillEmitsMaterializedViews(t *testing.T) {
 func TestRender_PostgreSQLExtensionCreatesItsInstallationSchemaFirst(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:        "pgcrypto",
-			Schema:      " Extension Store ",
-			IfNotExists: true,
-		}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: " Extension Store ", IfNotExists: true})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
@@ -147,7 +147,8 @@ func TestRender_PostgreSQLExtensionCreatesItsInstallationSchemaFirst(t *testing.
 func TestRender_PostgreSQLExtensionCreatesWhitespaceOnlyInstallationSchemaFirst(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: " "})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
@@ -162,10 +163,9 @@ func TestRender_PostgreSQLExtensionCreatesWhitespaceOnlyInstallationSchemaFirst(
 func TestRender_PostgreSQLExtensionKeepsDistinctWhitespaceInSchemaIdentity(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Schemas: []schemamodel.Schema{{Name: "Extension Store"}},
-		Extensions: []schemamodel.Extension{{
-			Name: "pgcrypto", Schema: " Extension Store ",
-		}},
+		Schemas:         []schemamodel.Schema{{Name: "Extension Store"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: " Extension Store "})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
@@ -181,8 +181,9 @@ func TestRender_PostgreSQLExtensionKeepsDistinctWhitespaceInSchemaIdentity(t *te
 func TestRender_PostgreSQLExtensionDoesNotDuplicateDeclaredSchema(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Schemas:    []schemamodel.Schema{{Name: "extensions"}},
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+		Schemas:         []schemamodel.Schema{{Name: "extensions"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
@@ -197,9 +198,8 @@ func TestRender_PostgreSQLExtensionDoesNotDuplicateDeclaredSchema(t *testing.T) 
 func TestRender_PostgreSQLExtensionDoesNotCreateSystemInstallationSchema(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
-		}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("plpgsql"), pgextension.DesiredExtension{Schema: "pg_catalog", Version: "1.0", IfNotExists: true})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
@@ -212,7 +212,8 @@ func TestRender_PostgreSQLExtensionDoesNotCreateSystemInstallationSchema(t *test
 
 func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
@@ -231,7 +232,8 @@ func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 
 func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: "extensions"}
 
@@ -253,7 +255,8 @@ func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *te
 
 func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: " "})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: " "}
 
@@ -276,25 +279,27 @@ func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailB
 func TestRender_UnsupportedExtensionDoesNotCreateItsPostgreSQLSchema(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "CREATE DATABASE")
-	c.Assert(strings.Join(statements, "\n"), qt.Contains, "Extension pgcrypto not supported in MySQL")
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "-- MYSQL: PostgreSQL extension pgcrypto is not supported by this target; skipped.")
 }
 
 // clickHouseSchema declares a plain view alongside the object kinds Ptah's
 // ClickHouse model cannot express, plus a table carrying a column CHECK.
 func clickHouseSchema() *schemamodel.Database {
 	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
-		Sequences:  []schemamodel.Sequence{{Name: "chk_seq"}},
-		Roles:      []schemamodel.Role{{Name: "chk_role"}},
-		Functions:  []schemamodel.Function{{Name: "chk_f", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
-		Tables:     []schemamodel.Table{{StructName: "T", Name: "t"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
+		Sequences:       []schemamodel.Sequence{{Name: "chk_seq"}},
+		Roles:           []schemamodel.Role{{Name: "chk_role"}},
+		Functions:       []schemamodel.Function{{Name: "chk_f", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
+		Tables:          []schemamodel.Table{{StructName: "T", Name: "t"}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "n", Type: "INTEGER", Nullable: true, Check: "n > 0"},
@@ -328,7 +333,7 @@ func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "extension", want: `-- CLICKHOUSE: CREATE EXTENSION "pg_trgm" is not supported`},
+		{name: "extension", want: `-- CLICKHOUSE: PostgreSQL extension pg_trgm is not supported by this target; skipped.`},
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "chk_seq" is not supported`},
 		{name: "role", want: "CREATE ROLE IF NOT EXISTS `chk_role`;"},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "chk_f" is not supported`},

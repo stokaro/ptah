@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -14,7 +15,7 @@ import (
 // against: objects in the connection's own schema come back from every reader
 // with an empty Schema field, objects in a second schema carry theirs.
 func defaultSchemaFixture() *catalog.Database {
-	return &catalog.Database{
+	return withReadExtensions(&catalog.Database{
 		Tables: []catalog.Table{
 			{Name: "users", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
 			{Schema: "app", Name: "orders", Columns: []catalog.Column{{Name: "id"}}},
@@ -31,11 +32,7 @@ func defaultSchemaFixture() *catalog.Database {
 			{Name: "mv_users"},
 			{Schema: "app", Name: "mv_orders"},
 		},
-		Extensions: []catalog.Extension{
-			{Schema: "public", Name: "pgcrypto", Version: "1.3"},
-			{Schema: "public", Name: "plpgsql", Version: "1.0"},
-		},
-	}
+	}, installed{schema: "public", name: "pgcrypto", version: "1.3"}, installed{schema: "public", name: "plpgsql", version: "1.0"})
 }
 
 func defaultSchemaMatViewNames(views []catalog.MaterializedView) []string {
@@ -46,12 +43,8 @@ func defaultSchemaMatViewNames(views []catalog.MaterializedView) []string {
 	return names
 }
 
-func defaultSchemaExtensionNames(extensions []catalog.Extension) []string {
-	names := make([]string, 0, len(extensions))
-	for _, extension := range extensions {
-		names = append(names, extension.Name)
-	}
-	return names
+func defaultSchemaExtensionNames(schema *catalog.Database) []string {
+	return append(make([]string, 0, schema.FeatureObjects.Len()), pgextension.Names(schema.FeatureObjects)...)
 }
 
 // defaultSchemaObjects is everything the fixture holds, by kind. A row states
@@ -81,7 +74,7 @@ func defaultSchemaObjectsOf(schema *catalog.Database) defaultSchemaObjects {
 		Indexes:    indexNames(schema.Indexes),
 		Views:      viewNames(schema.Views),
 		MatViews:   defaultSchemaMatViewNames(schema.MatViews),
-		Extensions: defaultSchemaExtensionNames(schema.Extensions),
+		Extensions: defaultSchemaExtensionNames(schema),
 	}
 }
 

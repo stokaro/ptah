@@ -71,7 +71,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed, dialect)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed, columnKeys.besideColumn)
 	clearColumnUniqueForNamedConstraints(database, dbSchema, tableStructNames)
-	convertExtensions(database, dbSchema.Extensions)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
 	convertSequences(database, dbSchema.Sequences)
@@ -141,7 +140,6 @@ func newDatabase() *schemamodel.Database {
 		Indexes:           make([]schemamodel.Index, 0),
 		Constraints:       make([]schemamodel.Constraint, 0),
 		Enums:             make([]schemamodel.Enum, 0),
-		Extensions:        make([]schemamodel.Extension, 0),
 		Functions:         make([]schemamodel.Function, 0),
 		Sequences:         make([]schemamodel.Sequence, 0),
 		Domains:           make([]schemamodel.Domain, 0),
@@ -368,28 +366,6 @@ func convertIndexParts(parts []catalog.IndexPart) []schemamodel.IndexPart {
 		}
 	}
 	return converted
-}
-
-func convertExtensions(database *schemamodel.Database, dbExtensions []catalog.Extension) {
-	for _, dbExtension := range dbExtensions {
-		extension := schemamodel.Extension{
-			Name:        dbExtension.Name,
-			Schema:      dbExtension.Schema,
-			IfNotExists: true, // Default to true for down migrations for safety
-			Version:     dbExtension.Version,
-			// Carried rather than recomputed: only the reader has the catalog,
-			// and the Atlas-compatible renderer needs it to tell an extension
-			// nothing depends on from one a column type still needs.
-			Provides: dbExtension.Provides,
-		}
-
-		// Set comment if available
-		if dbExtension.Comment != nil {
-			extension.Comment = *dbExtension.Comment
-		}
-
-		database.Extensions = append(database.Extensions, extension)
-	}
 }
 
 func convertRLSPolicies(

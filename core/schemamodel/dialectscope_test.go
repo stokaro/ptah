@@ -51,13 +51,6 @@ func scopedKinds() []scopedKind {
 			count: func(db *schemamodel.Database) int { return db.FeatureObjects.Len() },
 		},
 		{
-			name: "Extensions",
-			declare: func(db *schemamodel.Database, scope []string) {
-				db.Extensions = []schemamodel.Extension{{Name: "pgcrypto", Dialects: scope}}
-			},
-			count: func(db *schemamodel.Database) int { return len(db.Extensions) },
-		},
-		{
 			name: "Functions",
 			declare: func(db *schemamodel.Database, scope []string) {
 				db.Functions = []schemamodel.Function{{
@@ -300,9 +293,9 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			schemaext.Object{Ref: policyRef("tenant"), Value: &policyValue{}, Targets: []string{"cockroachdb", "postgres"}},
 			schemaext.Object{Ref: policyRef("everyone"), Value: &policyValue{}},
 		)),
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Dialects: []string{"postgres"}}},
 		Functions: []schemamodel.Function{
 			{StructName: "Scoped", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
+			{StructName: "Strict", Name: "pg_strict", Dialects: []string{"postgres"}},
 			{StructName: "Shared", Name: "everywhere"},
 		},
 	}
@@ -317,8 +310,8 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			dialect: "mysql",
 			want: []schemamodel.ScopedObject{
 				{Kind: "example.org/policy", Name: "public.orders.tenant", Dialects: []string{"cockroachdb", "postgres"}, Ref: policyRef("tenant")},
-				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
 				{Kind: "function", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
+				{Kind: "function", Name: "pg_strict", Dialects: []string{"postgres"}},
 			},
 		},
 		{
@@ -330,7 +323,7 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			name:    "a partially named target hears only about what it lost",
 			dialect: "cockroachdb",
 			want: []schemamodel.ScopedObject{
-				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
+				{Kind: "function", Name: "pg_strict", Dialects: []string{"postgres"}},
 			},
 		},
 		{
@@ -338,8 +331,8 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			dialect: "custom",
 			want: []schemamodel.ScopedObject{
 				{Kind: "example.org/policy", Name: "public.orders.tenant", Dialects: []string{"cockroachdb", "postgres"}, Ref: policyRef("tenant")},
-				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
 				{Kind: "function", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
+				{Kind: "function", Name: "pg_strict", Dialects: []string{"postgres"}},
 			},
 		},
 	}

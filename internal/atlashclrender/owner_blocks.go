@@ -137,7 +137,7 @@ func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 // document names the block or something it supplies.
 func (r *renderer) omitOwnerBlock(block hclext.EncodedBlock) bool {
 	if block.Type == blockExtension {
-		return r.omitRefusedExtension(block.Path, extensionBlock{name: block.Name, provides: block.Provides})
+		return r.omitRefusedExtension(block.Path, block.Name, block.Provides)
 	}
 	return r.omitRefusedBlock(block.Path, block.Type, append([]string{block.Name}, block.Provides...)...)
 }

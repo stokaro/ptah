@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -56,12 +58,9 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 			Name:   "status_type",
 			Values: []string{"active", "inactive"},
 		}},
-		Extensions: []schemamodel.Extension{{
-			Name:        "pgcrypto",
-			Schema:      "extensions",
-			IfNotExists: true,
-			Version:     "1.3",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"),
+			pgextension.DesiredExtension{Schema: "extensions", IfNotExists: true, Version: "1.3"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Indexes: []schemamodel.Index{{
 			StructName:     "OrderItem",
 			Name:           "idx_order_items_status",
@@ -142,7 +141,9 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Enums, qt.DeepEquals, db.Enums)
-	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, map[string]pgextension.DesiredExtension{
+		"pgcrypto": {Schema: "extensions", IfNotExists: true, Version: "1.3"},
+	})
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].Name, qt.Equals, "order_items")
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})
@@ -568,18 +569,15 @@ func TestRenderRolesRoundTripThroughParser(t *testing.T) {
 	c.Assert(after.RevokedGrants, qt.DeepEquals, before.RevokedGrants)
 }
 
-// parsedExtensions lists the extensions a parsed source holds as the
-// extension owner's objects, in name order and in the shape a declaration
-// renders them from, so a round trip compares like with like.
-func parsedExtensions(c *qt.C, db *schemamodel.Database) []schemamodel.Extension {
+// parsedExtensions is the declaration of each extension a parsed source holds
+// as the extension owner's objects, keyed by name.
+func parsedExtensions(c *qt.C, db *schemamodel.Database) map[string]pgextension.DesiredExtension {
 	c.Helper()
-	var extensions []schemamodel.Extension
+	extensions := make(map[string]pgextension.DesiredExtension)
 	for _, name := range pgextension.Names(db.FeatureObjects) {
 		object, _, err := db.FeatureObjects.Get(pgextension.Ref(name))
 		c.Assert(err, qt.IsNil)
-		value := object.Value.(*pgextension.DesiredExtension)
-		extensions = append(extensions, schemamodel.Extension{Name: name, Schema: value.Schema, Version: value.Version,
-			Comment: value.Comment, IfNotExists: value.IfNotExists})
+		extensions[name] = *object.Value.(*pgextension.DesiredExtension)
 	}
 	return extensions
 }

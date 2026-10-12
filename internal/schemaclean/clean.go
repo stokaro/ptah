@@ -107,15 +107,9 @@ func SnapshotWithinWriterScope(
 		writerSchema = "public"
 	}
 	owned := *schema
-	owned.Extensions = slices.DeleteFunc(
-		slices.Clone(schema.Extensions),
-		func(extension catalog.Extension) bool {
-			return strings.TrimSpace(extension.Schema) != writerSchema
-		},
-	)
-	// The extension owner's observations are scoped the same way. One that
-	// is not an observation names no schema to keep it by and stays, so the
-	// snapshot's validation still sees it.
+	// The extension owner's observations are kept when they are installed in
+	// the writer's schema. One that is not an observation names no schema to
+	// keep it by and stays, so the snapshot's validation still sees it.
 	owned.FeatureObjects = schema.FeatureObjects.Select(func(ref objectidentity.ID) bool {
 		if ref.Kind != objectidentity.Kind(pgextension.ExtensionKind) {
 			return true

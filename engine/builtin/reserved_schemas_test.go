@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 )
 
 func TestGetOrderedCreateStatementsRefusesDeclaredPostgresSystemSchemas(t *testing.T) {
@@ -40,8 +43,9 @@ func TestGetOrderedCreateStatementsRefusesAnExplicitSystemSchemaBesideAnExtensio
 
 	statements, err := builtin.GetOrderedCreateStatements(
 		&schemamodel.Database{
-			Schemas:    []schemamodel.Schema{{Name: "pg_catalog"}},
-			Extensions: []schemamodel.Extension{{Name: "plpgsql", Schema: "pg_catalog"}},
+			Schemas:         []schemamodel.Schema{{Name: "pg_catalog"}},
+			FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("plpgsql"), pgextension.DesiredExtension{Schema: "pg_catalog"})))),
+			FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		},
 		"postgres",
 	)

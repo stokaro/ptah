@@ -139,12 +139,6 @@ func isPLpgSQL(name string) bool {
 
 func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catalog.Database {
 	inspected := *current
-	inspected.Extensions = slices.DeleteFunc(
-		slices.Clone(current.Extensions),
-		func(extension catalog.Extension) bool {
-			return isPLpgSQL(extension.Name)
-		},
-	)
 	inspected.FeatureObjects = pgextension.Select(current.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) })
 	inspected.Grants = slices.DeleteFunc(
 		slices.Clone(current.Grants),
@@ -166,12 +160,6 @@ func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catal
 
 func schemaWithoutInspectedPostgresBaselines(database *schemamodel.Database) schemamodel.Database {
 	inspected := *database
-	inspected.Extensions = slices.DeleteFunc(
-		slices.Clone(database.Extensions),
-		func(extension schemamodel.Extension) bool {
-			return isPLpgSQL(extension.Name)
-		},
-	)
 	inspected.FeatureObjects = pgextension.Select(database.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) })
 	// PostgreSQL creates public with PUBLIC USAGE on current releases. The
 	// ordinary reader preserves that baseline because full inspection must be
@@ -672,10 +660,9 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 	}
 }
 
-// hasExtensions reports an extension in the common model or of the
-// PostgreSQL extension owner.
+// hasExtensions reports an extension of the PostgreSQL extension owner.
 func hasExtensions(database *schemamodel.Database) bool {
-	return len(database.Extensions) > 0 || len(pgextension.Names(database.FeatureObjects)) > 0
+	return len(pgextension.Names(database.FeatureObjects)) > 0
 }
 
 // definesType reports an owner's object that defines a type of the common

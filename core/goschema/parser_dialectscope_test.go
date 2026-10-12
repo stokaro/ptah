@@ -29,12 +29,6 @@ func TestParse_DialectsIsAcceptedOnEveryStandaloneObjectDirective(t *testing.T) 
 		scope func(db schemamodel.Database) []string
 	}{
 		{
-			name: "extension",
-			code: `//ptah:schema:extension name="pgcrypto" dialects="postgresql"
-type Ext struct{}`,
-			scope: func(db schemamodel.Database) []string { return db.Extensions[0].Dialects },
-		},
-		{
 			name: "function",
 			code: `//ptah:schema:function name="tenant_id" returns="TEXT" language="plpgsql" body="BEGIN RETURN 'x'; END;" dialects="postgresql"
 type Fn struct{}`,

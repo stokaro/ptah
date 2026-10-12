@@ -66,9 +66,6 @@ func FilterGeneratedWithDefaultSchema(
 	filtered.Schemas = keep(db.Schemas, func(schema schemamodel.Schema) bool {
 		return schemaAllowed(allowed, effectiveSchema(schema.Name, defaultSchema))
 	})
-	// Extensions are database-wide identities. Their schema is installation
-	// placement, not ownership, so a schema allow-list must retain them: a
-	// selected table may depend on an extension installed in another schema.
 	filtered.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		if _, ok := keptStructs[field.StructName]; !ok {
 			return false
@@ -108,7 +105,10 @@ func FilterGeneratedWithDefaultSchema(
 		return tableReferenceAllowed(keptTables, table.Table)
 	})
 	// A table's feature children, such as its row-level security policies,
-	// follow the table.
+	// follow the table. An object with no parent stays: an extension is a
+	// database-wide identity whose schema is installation placement, not
+	// ownership, and a selected table may depend on one installed in another
+	// schema.
 	filtered.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
 		return ref.Parent.Empty() || tableReferenceAllowed(keptTables, childTable(ref))
 	})
@@ -171,9 +171,6 @@ func FilterDatabaseWithDefaultSchema(
 		return constraint.ForeignSchema == "" ||
 			schemaAllowed(allowed, effectiveSchema(constraint.ForeignSchema, defaultSchema))
 	})
-	// Keep every extension for the same database-wide identity reason as the
-	// generated projection above. Filtering only one side invents additions or
-	// removals when a selected object uses an extension placed elsewhere.
 	filtered.Views = keep(db.Views, func(view catalog.View) bool {
 		return schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema))
 	})
@@ -187,6 +184,9 @@ func FilterDatabaseWithDefaultSchema(
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		return dbTableReferenceAllowed(keptTables, policy.Table)
 	})
+	// Every extension stays, for the database-wide identity reason the
+	// declared projection gives. Filtering only one side invents additions or
+	// removals when a selected object uses an extension placed elsewhere.
 	filtered.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
 		return ref.Parent.Empty() || dbTableReferenceAllowed(keptTables, childTable(ref))
 	})

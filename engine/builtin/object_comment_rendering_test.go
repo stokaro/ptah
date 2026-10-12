@@ -5,12 +5,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 )
 
 // objectCommentSchema declares one object of every kind whose comment is a
@@ -27,8 +30,9 @@ func objectCommentSchema() *schemamodel.Database {
 		CompositeTypes: []schemamodel.CompositeType{{
 			Name: "point2", Fields: []schemamodel.CompositeField{{Name: "x", Type: "integer"}}, Comment: "composite note",
 		}},
-		Ranges:     []schemamodel.Range{{Name: "span", Subtype: "integer", Comment: "range note"}},
-		Extensions: []schemamodel.Extension{{Name: "hstore", Comment: "extension note"}},
+		Ranges:          []schemamodel.Range{{Name: "span", Subtype: "integer", Comment: "range note"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("hstore"), pgextension.DesiredExtension{Comment: "extension note"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 }
 

@@ -129,7 +129,6 @@ func excludeDatabase(
 	filtered.Ranges = state.filterRanges(filtered.Ranges)
 	filtered.Indexes = state.filterIndexes(filtered.Indexes)
 	filtered.Constraints = state.filterConstraints(filtered.Constraints)
-	filtered.Extensions = state.filterExtensions(filtered.Extensions)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
 		return nil, ExcludeReport{}, err
@@ -253,7 +252,6 @@ func excludeGenerated(
 	filtered.Domains = state.filterGeneratedDomains(filtered.Domains)
 	filtered.CompositeTypes = state.filterGeneratedCompositeTypes(filtered.CompositeTypes)
 	filtered.Ranges = state.filterGeneratedRanges(filtered.Ranges)
-	filtered.Extensions = state.filterGeneratedExtensions(filtered.Extensions)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
 		return nil, ExcludeReport{}, err
@@ -1096,21 +1094,6 @@ func (s *exclusionState) filterConstraints(constraints []catalog.Constraint) []c
 	})
 }
 
-func (s *exclusionState) filterExtensions(extensions []catalog.Extension) []catalog.Extension {
-	result := make([]catalog.Extension, 0, len(extensions))
-	for _, extension := range extensions {
-		names := extensionNameCandidates(s.effectiveExtensionSchema(extension.Schema), extension.Name)
-		if s.matches("extension", names...) || s.extensionSchemaExcluded(extension.Schema) {
-			continue
-		}
-		if s.matchesField("extension", "version", names...) {
-			extension.Version = ""
-		}
-		result = append(result, extension)
-	}
-	return result
-}
-
 func (s *exclusionState) filterFunctions(functions []catalog.Function) []catalog.Function {
 	return keep(functions, func(function catalog.Function) bool {
 		named := s.matches("function", s.nameCandidates(function.Schema, function.Name)...)
@@ -1473,21 +1456,6 @@ func (s *exclusionState) filterGeneratedRanges(ranges []schemamodel.Range) []sch
 	})
 }
 
-func (s *exclusionState) filterGeneratedExtensions(extensions []schemamodel.Extension) []schemamodel.Extension {
-	result := make([]schemamodel.Extension, 0, len(extensions))
-	for _, extension := range extensions {
-		names := extensionNameCandidates(s.effectiveExtensionSchema(extension.Schema), extension.Name)
-		if s.matches("extension", names...) || s.extensionSchemaExcluded(extension.Schema) {
-			continue
-		}
-		if s.matchesField("extension", "version", names...) {
-			extension.Version = ""
-		}
-		result = append(result, extension)
-	}
-	return result
-}
-
 func (s *exclusionState) filterGeneratedFunctions(functions []schemamodel.Function) []schemamodel.Function {
 	return keep(functions, func(function schemamodel.Function) bool {
 		named := s.matches("function", s.qualifiedNameCandidatesFor(function.Name)...)
@@ -1791,7 +1759,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Enums:             slices.Clone(schema.Enums),
 		Indexes:           slices.Clone(schema.Indexes),
 		Constraints:       slices.Clone(schema.Constraints),
-		Extensions:        slices.Clone(schema.Extensions),
 		Functions:         slices.Clone(schema.Functions),
 		Sequences:         slices.Clone(schema.Sequences),
 		Domains:           slices.Clone(schema.Domains),
@@ -1843,7 +1810,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Constraints = slices.Clone(schema.Constraints)
 	filtered.Enums = slices.Clone(schema.Enums)
 	filtered.EmbeddedFields = slices.Clone(schema.EmbeddedFields)
-	filtered.Extensions = slices.Clone(schema.Extensions)
 	filtered.Functions = slices.Clone(schema.Functions)
 	filtered.Sequences = slices.Clone(schema.Sequences)
 	filtered.Domains = slices.Clone(schema.Domains)

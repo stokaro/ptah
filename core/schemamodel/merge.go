@@ -11,7 +11,6 @@ func NewDatabase() *Database {
 		Constraints:       make([]Constraint, 0),
 		Enums:             make([]Enum, 0),
 		EmbeddedFields:    make([]EmbeddedField, 0),
-		Extensions:        make([]Extension, 0),
 		Functions:         make([]Function, 0),
 		Sequences:         make([]Sequence, 0),
 		Domains:           make([]Domain, 0),
@@ -72,7 +71,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.Enums = append(dst.Enums, src.Enums...)
 	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedFields...)
 	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedSources.Definitions...)
-	dst.Extensions = append(dst.Extensions, src.Extensions...)
 	dst.Functions = append(dst.Functions, src.Functions...)
 	dst.Sequences = append(dst.Sequences, src.Sequences...)
 	dst.Domains = append(dst.Domains, src.Domains...)

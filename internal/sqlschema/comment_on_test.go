@@ -21,7 +21,6 @@ const commentFixture = "CREATE SCHEMA app;\nCREATE TABLE app.u (id int PRIMARY K
 	"CREATE TYPE app.k AS (n int);\nCREATE TYPE app.c AS (n int);\n" +
 	"CREATE TYPE app.x AS RANGE (subtype = int4);\nCREATE TYPE app.r AS RANGE (subtype = int8);\n" +
 	"CREATE TYPE app.calm AS ENUM ('ok');\nCREATE TYPE app.mood AS ENUM ('ok');\n" +
-	"CREATE EXTENSION hstore;\nCREATE EXTENSION pgcrypto;\n" +
 	"CREATE MATERIALIZED VIEW app.mu AS SELECT id FROM app.u;\nCREATE MATERIALIZED VIEW app.mt AS SELECT id FROM app.t;\n" +
 	"CREATE FUNCTION app.f(a int, b text DEFAULT 'x') RETURNS int LANGUAGE sql AS 'SELECT 2';\n" +
 	"CREATE FUNCTION app.g() RETURNS int LANGUAGE sql AS 'SELECT 3';\n" +
@@ -76,9 +75,6 @@ func commentsOf(database schemamodel.Database) map[string]string {
 	}
 	for _, rangeType := range database.Ranges {
 		comments["range "+rangeType.QualifiedName()] = rangeType.Comment
-	}
-	for _, extension := range database.Extensions {
-		comments["extension "+extension.Name] = extension.Comment
 	}
 	for _, enum := range database.Enums {
 		comments["enum "+enum.QualifiedName()] = enum.Comment
@@ -144,8 +140,6 @@ func TestRead_CommentOn_HappyPath(t *testing.T) {
 		{name: "a domain", statement: "COMMENT ON DOMAIN app.d IS 'the domain';", wantKey: "domain app.d", want: "the domain"},
 		{name: "a composite type", statement: "COMMENT ON TYPE app.c IS 'the composite';", wantKey: "composite app.c", want: "the composite"},
 		{name: "a range type", statement: "COMMENT ON TYPE app.r IS 'the range';", wantKey: "range app.r", want: "the range"},
-		{name: "an extension", statement: "COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';", wantKey: "extension pgcrypto", want: "cryptographic functions"},
-		{name: "a quoted extension", statement: `COMMENT ON EXTENSION "pgcrypto" IS 'quoted';`, wantKey: "extension pgcrypto", want: "quoted"},
 		{name: "an enum type", statement: "COMMENT ON TYPE app.mood IS 'the enum';", wantKey: "enum app.mood", want: "the enum"},
 		{
 			name: "a materialized view", statement: "COMMENT ON MATERIALIZED VIEW app.mt IS 'the matview';",
@@ -293,11 +287,6 @@ func TestRead_CommentOn_FailurePath(t *testing.T) {
 			statement: "COMMENT ON TYPE public.c IS 'x';",
 			wantErr:   `the schema model has no place for this statement: COMMENT ON TYPE public.c names an object this schema does not declare`,
 		},
-		{
-			name:      "an extension the document does not declare",
-			statement: "COMMENT ON EXTENSION citext IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON EXTENSION citext names an object this schema does not declare`,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -335,16 +324,17 @@ func TestRead_CommentOn_FoldsAnUnquotedNameAsTheCreateDid(t *testing.T) {
 }
 
 // The objects whose comment is a statement of its own fold the same way: the
-// view, the sequence, the domain, the two types and the extension below are
-// each named once in upper and once in lower case (stokaro/ptah#3627).
+// view, the sequence, the domain and the two types below are each named once
+// in upper and once in lower case (stokaro/ptah#3627). An extension's comment
+// is its owner's, which folds the name the same way.
 func TestRead_CommentOn_FoldsTheNameOfEveryObjectKind(t *testing.T) {
 	c := qt.New(t)
 	const file = "CREATE SCHEMA App;\nCREATE TABLE App.T (Id int PRIMARY KEY);\n" +
 		"CREATE VIEW App.V AS SELECT Id FROM App.T;\nCREATE SEQUENCE App.S;\nCREATE DOMAIN App.D AS int;\n" +
-		"CREATE TYPE App.C AS (N int);\nCREATE TYPE App.R AS RANGE (subtype = int4);\nCREATE EXTENSION HStore;\n" +
+		"CREATE TYPE App.C AS (N int);\nCREATE TYPE App.R AS RANGE (subtype = int4);\n" +
 		"COMMENT ON VIEW App.v IS 'the view';\nCOMMENT ON SEQUENCE APP.S IS 'the sequence';\n" +
 		"COMMENT ON DOMAIN app.D IS 'the domain';\nCOMMENT ON TYPE APP.c IS 'the composite';\n" +
-		"COMMENT ON TYPE app.R IS 'the range';\nCOMMENT ON EXTENSION HSTORE IS 'the extension';"
+		"COMMENT ON TYPE app.R IS 'the range';"
 
 	database, _, err := sqlschema.Read([]byte(file), "postgres")
 
@@ -355,7 +345,6 @@ func TestRead_CommentOn_FoldsTheNameOfEveryObjectKind(t *testing.T) {
 	c.Assert(comments["domain app.d"], qt.Equals, "the domain")
 	c.Assert(comments["composite app.c"], qt.Equals, "the composite")
 	c.Assert(comments["range app.r"], qt.Equals, "the range")
-	c.Assert(comments["extension hstore"], qt.Equals, "the extension")
 }
 
 // A COMMENT ON reaches a view by the rule a table is reached by: exact after

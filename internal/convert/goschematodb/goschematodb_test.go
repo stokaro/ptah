@@ -8,8 +8,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 )
@@ -17,13 +19,11 @@ import (
 func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Schemas: []schemamodel.Schema{{Name: "app", Comment: "Application"}},
-		Tables:  []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
-		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-		Extensions: []schemamodel.Extension{{
-			Name:   "pgcrypto",
-			Schema: "app",
-		}},
+		Schemas:         []schemamodel.Schema{{Name: "app", Comment: "Application"}},
+		Tables:          []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:          []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "app"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Sequences: []schemamodel.Sequence{{
 			Name:      "order_seq",
 			Schema:    "app",
@@ -63,7 +63,10 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
 	c.Assert(got.Tables[0].RLSEnabled, qt.IsTrue)
-	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{Name: "pgcrypto", Schema: "app"}})
+	extension, found, err := got.FeatureObjects.Get(pgextension.Ref("pgcrypto"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(extension.Value.(*pgextension.ObservedExtension).Schema, qt.Equals, "app")
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Sequences[0].Increment, qt.DeepEquals, new(int64(2)))
 	c.Assert(got.Domains, qt.HasLen, 1)

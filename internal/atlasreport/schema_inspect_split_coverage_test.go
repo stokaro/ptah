@@ -240,8 +240,9 @@ func coverageSplitReport(c *qt.C) *atlasreport.SchemaInspectReport {
 			Fields: []schemamodel.Field{
 				{StructName: "Ticket", Name: "id", Type: "INTEGER", Primary: true},
 			},
-			Extensions: []schemamodel.Extension{{Name: "pgcrypto", IfNotExists: true}},
-			Sequences:  []schemamodel.Sequence{{Name: "ticket_seq", Schema: "public"}},
+			FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{IfNotExists: true})))),
+			FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
+			Sequences:       []schemamodel.Sequence{{Name: "ticket_seq", Schema: "public"}},
 			RLSPolicies: []schemamodel.RLSPolicy{
 				{Name: "ticket_read", Table: "ticket", PolicyFor: "SELECT", UsingExpression: "true"},
 			},

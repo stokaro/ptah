@@ -37,23 +37,9 @@ func schemaWithEveryReportableKind() *catalog.Database {
 	}
 }
 
-func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *testing.T) {
-	c := qt.New(t)
-	schema := &catalog.Database{Extensions: []catalog.Extension{
-		{Name: "plpgsql", Schema: "pg_catalog"},
-		{Name: "pgcrypto", Schema: "app"},
-	}}
-
-	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
-
-	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{
-		{Name: "pgcrypto", Schema: "app"},
-	})
-	c.Assert(schema.Extensions, qt.HasLen, 2)
-}
-
 // TestSnapshotWithinWriterScopeKeepsOnlySchemaOwnedOwnerExtensions pins the
-// same scope over the extension owner's observations.
+// writer's scope over the extension owner's observations: the extensions
+// installed in the writer's schema stay, and the server's plpgsql leaves.
 func TestSnapshotWithinWriterScopeKeepsOnlySchemaOwnedOwnerExtensions(t *testing.T) {
 	c := qt.New(t)
 	schema := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(

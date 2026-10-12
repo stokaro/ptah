@@ -1687,18 +1687,6 @@ func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]stri
 	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
 
-// declaredExtensionNames is what a document says the target will have.
-func declaredExtensionNames(r *schemamodel.Database) []string {
-	if r == nil {
-		return nil
-	}
-	names := make([]string, 0, len(r.Extensions))
-	for _, extension := range r.Extensions {
-		names = append(names, extension.Name)
-	}
-	return names
-}
-
 // ValidateSchema validates a complete schema against the default capability
 // preset for dialect without rendering SQL. It applies the schema-level
 // validation GetOrderedCreateStatements applies before it emits anything, and
@@ -1858,11 +1846,9 @@ func orderedCreateStatements(
 		}
 	}
 	// A render has no connection to ask which extensions the target has, and
-	// the schema in front of it declares them. Without this a document that
-	// declares the timescaledb extension and a hypertable rendered the CREATE
-	// EXTENSION and then skipped the call that needs it. The owners' objects
-	// say the same about themselves.
-	caps = capability.WithDeclaredExtensions(caps, declaredExtensionNames(r))
+	// the owners' objects in front of it declare them. Without this a document
+	// that declares the timescaledb extension and a hypertable rendered the
+	// CREATE EXTENSION and then skipped the call that needs it.
 	caps, err := schemaext.ProvidedByObjects(caps, r.FeatureObjects)
 	if err != nil {
 		return nil, err
@@ -2010,9 +1996,6 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredColumns(dialect, database); err != nil {
-		return err
-	}
-	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
 		return err
 	}
 	if err := validateDeclaredRoleNames(dialect, caps, database); err != nil {
@@ -2649,18 +2632,6 @@ func routineNamesAreCaseInsensitive(dialect string) bool {
 	default:
 		return false
 	}
-}
-
-func validateExtensionInstallationSchemas(dialect string, extensions []schemamodel.Extension) error {
-	if !extensionInstallationSchemaRejected(dialect) {
-		return nil
-	}
-	for _, extension := range extensions {
-		if extension.Schema != "" {
-			return unsupportedExtensionInstallationSchema(dialect, extension.Name, extension.Schema)
-		}
-	}
-	return nil
 }
 
 func validateDeclaredIndexIncludes(

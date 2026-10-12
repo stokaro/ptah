@@ -18,10 +18,9 @@ import (
 func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 	c := qt.New(t)
 	database := schemamodel.Database{
-		Schemas:    []schemamodel.Schema{{Name: "app"}},
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto"}},
-		Sequences:  []schemamodel.Sequence{{Name: "order_number_seq"}},
-		Enums:      []schemamodel.Enum{{Name: "order_status", Values: []string{"open", "closed"}}},
+		Schemas:   []schemamodel.Schema{{Name: "app"}},
+		Sequences: []schemamodel.Sequence{{Name: "order_number_seq"}},
+		Enums:     []schemamodel.Enum{{Name: "order_status", Values: []string{"open", "closed"}}},
 		Tables: []schemamodel.Table{
 			{StructName: "Customer", Name: "customers"},
 			{StructName: "Order", Name: "orders"},
@@ -51,7 +50,6 @@ func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 	}
 	c.Assert(types, qt.DeepEquals, []string{
 		"*ast.CreateSchemaNode",
-		"*ast.ExtensionNode",
 		"*ast.CreateSequenceNode",
 		"*ast.EnumNode",
 		"*ast.CreateTableNode",

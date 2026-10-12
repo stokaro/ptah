@@ -1,12 +1,15 @@
 package atlasfilter_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -329,33 +332,23 @@ func TestExcludeDatabase_UnsupportedSelector(t *testing.T) {
 
 func TestExcludeDatabase_ExtensionVersionFieldSelector(t *testing.T) {
 	c := qt.New(t)
-	schema := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "pg_trgm", Schema: "public", Version: "1.6"},
-			{Name: "citext", Schema: "public", Version: "1.6"},
-		},
-	}
+	schema := withReadExtensions(&catalog.Database{}, installed{schema: "public", name: "pg_trgm", version: "1.6"}, installed{schema: "public", name: "citext", version: "1.6"})
 
 	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"pg_trgm[type=extension].version"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pg_trgm:", "citext:1.6"})
-	c.Assert(extensionVersions(schema.Extensions), qt.DeepEquals, []string{"pg_trgm:1.6", "citext:1.6"})
+	c.Assert(extensionVersions(got), qt.DeepEquals, []string{"citext:1.6", "pg_trgm:"})
+	c.Assert(extensionVersions(schema), qt.DeepEquals, []string{"citext:1.6", "pg_trgm:1.6"})
 }
 
 func TestExcludeDatabase_SchemaQualifiedExtensionVersionFieldSelector(t *testing.T) {
 	c := qt.New(t)
-	schema := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "pg_trgm", Schema: "public", Version: "1.6"},
-			{Name: "citext", Schema: "audit", Version: "1.6"},
-		},
-	}
+	schema := withReadExtensions(&catalog.Database{}, installed{schema: "public", name: "pg_trgm", version: "1.6"}, installed{schema: "audit", name: "citext", version: "1.6"})
 
 	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"public.*[type=extension].version"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pg_trgm:", "citext:1.6"})
+	c.Assert(extensionVersions(got), qt.DeepEquals, []string{"citext:1.6", "pg_trgm:"})
 }
 
 // TestExcludeGenerated_ExtensionVersionFieldSelector pins that the
@@ -364,22 +357,12 @@ func TestExcludeDatabase_SchemaQualifiedExtensionVersionFieldSelector(t *testing
 // inspection.
 func TestExcludeGenerated_ExtensionVersionFieldSelector(t *testing.T) {
 	c := qt.New(t)
-	schema := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", Version: "1.6"},
-			{Name: "citext", Version: "1.6"},
-		},
-	}
+	schema := withDeclaredExtensions(&schemamodel.Database{}, installed{name: "pg_trgm", version: "1.6"}, installed{name: "citext", version: "1.6"})
 
 	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"pg_trgm[type=extension].version"})
 
 	c.Assert(err, qt.IsNil)
-	versions := make([]string, 0, len(got.Extensions))
-	for _, extension := range got.Extensions {
-		versions = append(versions, extension.Name+":"+extension.Version)
-	}
-	// Finalize sorts generated extensions by name.
-	c.Assert(versions, qt.DeepEquals, []string{"citext:1.6", "pg_trgm:"})
+	c.Assert(declaredExtensions(got), qt.DeepEquals, []string{".citext:1.6", ".pg_trgm:"})
 }
 
 func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
@@ -682,11 +665,14 @@ func viewNames(views []catalog.View) []string {
 	return names
 }
 
-func extensionVersions(extensions []catalog.Extension) []string {
-	names := make([]string, 0, len(extensions))
-	for _, extension := range extensions {
-		names = append(names, extension.Name+":"+extension.Version)
+// extensionVersions lists a read's extensions as name:version in name order,
+// so an empty tail is a cleared version rather than a dropped extension.
+func extensionVersions(schema *catalog.Database) []string {
+	names := make([]string, 0, schema.FeatureObjects.Len())
+	for _, object := range must.Must(schema.FeatureObjects.All()) {
+		names = append(names, pgextension.Name(object.Ref)+":"+object.Value.(*pgextension.ObservedExtension).Version)
 	}
+	slices.Sort(names)
 	return names
 }
 

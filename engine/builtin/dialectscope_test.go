@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 )
 
 // scopedSchema is one table every target can host plus one PostgreSQL-only
@@ -15,11 +18,10 @@ import (
 // scoped to postgres.
 func scopedSchema() *schemamodel.Database {
 	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Tenant", Name: "tenants"}},
-		Fields: []schemamodel.Field{{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true}},
-		Extensions: []schemamodel.Extension{
-			{Name: "pgcrypto", Dialects: []string{"postgres"}},
-		},
+		Tables:          []schemamodel.Table{{StructName: "Tenant", Name: "tenants"}},
+		Fields:          []schemamodel.Field{{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true}},
+		FeatureObjects:  pgcryptoFor("postgres"),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Functions: []schemamodel.Function{{
 			StructName: "Fn",
 			Name:       "get_current_tenant_id",
@@ -32,6 +34,14 @@ func scopedSchema() *schemamodel.Database {
 			{StructName: "Rol", Name: "app_reader", Inherit: true, Dialects: []string{"postgres"}},
 		},
 	}
+}
+
+// pgcryptoFor declares pgcrypto to the extension owner, scoped to targets
+// when it names any.
+func pgcryptoFor(targets ...string) schemaext.Objects {
+	extension := must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{}))
+	extension.Targets = targets
+	return must.Must(schemaext.NewObjects(extension))
 }
 
 // TestGetOrderedCreateStatements_AScopedObjectIsAbsentFromTargetsItDoesNotName
@@ -87,7 +97,7 @@ func TestGetOrderedCreateStatements_AnUnscopedSchemaRendersAsItAlwaysDid(t *test
 	c := qt.New(t)
 
 	unscoped := scopedSchema()
-	unscoped.Extensions[0].Dialects = nil
+	unscoped.FeatureObjects = pgcryptoFor()
 	unscoped.Functions[0].Dialects = nil
 	unscoped.Roles = nil
 
@@ -113,7 +123,7 @@ func TestGetOrderedCreateStatements_AnUnscopedRoleReachesTheMySQLFamily(t *testi
 	c := qt.New(t)
 
 	unscoped := scopedSchema()
-	unscoped.Extensions[0].Dialects = nil
+	unscoped.FeatureObjects = pgcryptoFor()
 	unscoped.Functions[0].Dialects = nil
 	unscoped.Roles[0].Dialects = nil
 

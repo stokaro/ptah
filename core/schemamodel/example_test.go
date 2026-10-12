@@ -128,16 +128,17 @@ func ExampleScopeToTarget() {
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 		},
-		Extensions: []schemamodel.Extension{
-			{Name: "pg_trgm", IfNotExists: true, Dialects: []string{"postgres"}},
-		},
+		Functions: []schemamodel.Function{{
+			Name: "tenant_id", Returns: "TEXT", Language: "plpgsql",
+			Body: "BEGIN RETURN current_setting('app.tenant'); END;", Dialects: []string{"postgres"},
+		}},
 	}
 
 	for _, dialect := range []string{"postgres", "mysql"} {
 		selected := must.Must(schemaext.NewTargetSelection(dialect))
 		scoped := must.Must(schemamodel.ScopeToTarget(db, selected))
-		fmt.Printf("%s: %d table(s), %d extension(s)\n",
-			dialect, len(scoped.Tables), len(scoped.Extensions))
+		fmt.Printf("%s: %d table(s), %d function(s)\n",
+			dialect, len(scoped.Tables), len(scoped.Functions))
 		for _, omitted := range must.Must(schemamodel.OmissionsForTarget(db, selected)) {
 			fmt.Printf("%s omits %s %s (scoped to %v)\n",
 				dialect, omitted.Kind, omitted.Name, omitted.Dialects)
@@ -145,9 +146,9 @@ func ExampleScopeToTarget() {
 	}
 
 	// Output:
-	// postgres: 1 table(s), 1 extension(s)
-	// mysql: 1 table(s), 0 extension(s)
-	// mysql omits extension pg_trgm (scoped to [postgres])
+	// postgres: 1 table(s), 1 function(s)
+	// mysql: 1 table(s), 0 function(s)
+	// mysql omits function tenant_id (scoped to [postgres])
 }
 
 // ExampleQualifyTableName pins the canonical qualified-reference rule that

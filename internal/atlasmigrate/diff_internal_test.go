@@ -27,6 +27,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -127,18 +128,12 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	conn := connectDiffComparisonSQLite(c)
 	schemas := []string{"app"}
 	current := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{Name: "pgcrypto", Schema: "public"},
-			{Name: "citext", Schema: "extensions"},
-			{Name: "unrelated", Schema: "other"},
-		},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.ObservedObject(pgextension.Ref("pgcrypto"), pgextension.ObservedExtension{Schema: "public"})), must.Must(pgextension.ObservedObject(pgextension.Ref("citext"), pgextension.ObservedExtension{Schema: "extensions"})), must.Must(pgextension.ObservedObject(pgextension.Ref("unrelated"), pgextension.ObservedExtension{Schema: "other"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
 	desired := schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{
-		Extensions: []schemamodel.Extension{
-			{Name: "pgcrypto", Schema: "public"},
-			{Name: "citext", Schema: "extensions"},
-			{Name: "unrelated", Schema: "other"},
-		},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "public"})), must.Must(pgextension.DesiredObject(pgextension.Ref("citext"), pgextension.DesiredExtension{Schema: "extensions"})), must.Must(pgextension.DesiredObject(pgextension.Ref("unrelated"), pgextension.DesiredExtension{Schema: "other"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}, schemas, "public")
 	runtime := diffRuntime{
 		readDevSchema: func(
@@ -157,7 +152,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
+	c.Assert(replayed.FeatureObjects.Refs(), qt.DeepEquals, current.FeatureObjects.Refs())
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 }
 

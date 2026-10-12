@@ -18,10 +18,7 @@ func (r *Reader) readExtensionObjects(ctx context.Context, schema *catalog.Datab
 		return err
 	}
 	for _, extension := range extensions {
-		object, err := pgextension.ObservedObject(pgextension.Ref(extension.Name), pgextension.ObservedExtension{
-			Schema: extension.Schema, Version: extension.Version, Relocatable: extension.Relocatable,
-			Comment: extension.Comment, Provides: extension.Provides,
-		})
+		object, err := pgextension.ObservedObject(pgextension.Ref(extension.name), extension.observed)
 		if err != nil {
 			return err
 		}

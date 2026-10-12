@@ -388,9 +388,6 @@ func (p *parser) documentDeclarations(policy redeclarationPolicy) []declaration 
 	for _, sequence := range db.Sequences {
 		objects = append(objects, declare(kindSequence, sequence.QualifiedName()))
 	}
-	for _, extension := range db.Extensions {
-		objects = append(objects, declare(kindExtension, extension.Name))
-	}
 	for _, trigger := range db.Triggers {
 		objects = append(objects, declare(kindTrigger, qualifyWithOwner(trigger.Table, trigger.Name)))
 	}

@@ -50,7 +50,6 @@ func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedO
 	}
 
 	filtered := *current
-	filtered.Extensions = keepUnscoped(current.Extensions, names["extension"], func(v catalog.Extension) (string, string) { return v.Schema, v.Name })
 	filtered.Functions = keepUnscoped(current.Functions, names["function"], func(v catalog.Function) (string, string) { return v.Schema, v.Name })
 	filtered.Sequences = keepUnscoped(current.Sequences, names["sequence"], func(v catalog.Sequence) (string, string) { return v.Schema, v.Name })
 	filtered.Domains = keepUnscoped(current.Domains, names["domain"], func(v catalog.Domain) (string, string) { return v.Schema, v.Name })

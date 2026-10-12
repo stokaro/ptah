@@ -74,10 +74,21 @@ func withoutVersion(object schemaext.Object) schemaext.Object {
 	return object
 }
 
-// selectExtensionFeatures is the scope's projection of the common extension
-// list over the extension owner's objects: every extension rides along when
-// the scope keeps extensions as support or a non-extension resource matched,
-// and otherwise only the extensions the selectors name stay.
+// projectExtensions projects the extension owner's objects and their
+// coverage in place, and returns the installation schemas of the extensions
+// it kept.
+func (s *scopeSelection) projectExtensions(objects *schemaext.Objects, coverage *schemaext.Coverage) ([]string, error) {
+	var err error
+	if *objects, *coverage, err = s.selectExtensionFeatures(*objects, *coverage); err != nil {
+		return nil, err
+	}
+	return s.ownedExtensionSchemas(*objects)
+}
+
+// selectExtensionFeatures is the scope's projection of the extension owner's
+// objects: every extension rides along when the scope keeps extensions as
+// support or a non-extension resource matched, and otherwise only the
+// extensions the selectors name stay.
 func (s *scopeSelection) selectExtensionFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage, error) {
 	owned, err := ownedExtensions(objects)
 	if err != nil {

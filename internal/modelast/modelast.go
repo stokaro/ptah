@@ -76,7 +76,10 @@ func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
 	return platform.IsPostgresFamily(targetPlatform)
 }
 
-func supportsExtensionInstallationSchema(targetPlatform string) bool {
+// namesSchemasForDefaultPrivileges reports whether the render creates the
+// schema a default privilege names: on PostgreSQL and YugabyteDB, whose
+// planners create it too.
+func namesSchemasForDefaultPrivileges(targetPlatform string) bool {
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.Postgres, platform.YugabyteDB:
 		return true
@@ -1153,73 +1156,6 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	return indexNode
 }
 
-// FromExtension converts a schemamodel.Extension to an ast.ExtensionNode for PostgreSQL extension creation.
-//
-// This function transforms extension metadata into an AST node that can be rendered
-// as CREATE EXTENSION statements for PostgreSQL databases.
-//
-// # Parameters
-//
-//   - extension: The schema extension definition containing extension metadata
-//
-// # Extension Features
-//
-//   - Extension name specification (pg_trgm, postgis, etc.)
-//   - PostgreSQL installation schema
-//   - IF NOT EXISTS clause support
-//   - Version specification for specific extension versions
-//   - Extension comments for documentation
-//
-// # Examples
-//
-// Basic extension:
-//
-//	extension := schemamodel.Extension{
-//		Name:        "pg_trgm",
-//		IfNotExists: true,
-//		Comment:     "Enable trigram similarity search",
-//	}
-//	extensionNode := FromExtension(extension)
-//
-// Extension with version:
-//
-//	extension := schemamodel.Extension{
-//		Name:        "postgis",
-//		Schema:      "extensions",
-//		Version:     "3.0",
-//		IfNotExists: true,
-//		Comment:     "Geographic data support",
-//	}
-//	extensionNode := FromExtension(extension)
-//
-// # Return Value
-//
-// Returns a fully configured *ast.ExtensionNode ready for SQL generation.
-// The node contains the extension name, installation schema, version, and all specified options.
-func FromExtension(extension schemamodel.Extension) *ast.ExtensionNode {
-	extensionNode := ast.NewExtension(extension.Name)
-	if extension.Schema != "" {
-		extensionNode.SetSchema(extension.Schema)
-	}
-
-	// Set IF NOT EXISTS
-	if extension.IfNotExists {
-		extensionNode.SetIfNotExists()
-	}
-
-	// Set version
-	if extension.Version != "" {
-		extensionNode.SetVersion(extension.Version)
-	}
-
-	// Set comment
-	if extension.Comment != "" {
-		extensionNode.SetComment(extension.Comment)
-	}
-
-	return extensionNode
-}
-
 // FromEnum converts a schemamodel.Enum to an ast.EnumNode for database enum type creation.
 //
 // This function transforms a global enum definition into an AST node that can be rendered
@@ -2024,12 +1960,6 @@ func appendPreTableStatements(
 		return err
 	}
 
-	for _, extension := range database.Extensions {
-		if err := visit(FromExtension(extension)); err != nil {
-			return err
-		}
-	}
-
 	// A sequence may back a column DEFAULT. Its OWNED BY association is emitted
 	// later, after the referenced table and column exist.
 	for _, sequence := range database.Sequences {
@@ -2644,13 +2574,13 @@ func appendSchemaStatements(visit func(ast.Node) error, schemas []schemamodel.Sc
 // schemasForRender is every schema the render has to create, which is more than
 // the ones a document declares.
 //
-// An extension and a default privilege each NAME a schema without declaring it,
-// so a document carrying only one of those renders a statement into a schema
-// that does not exist. The planner already emits the precondition for both, and
-// a render that did not would disagree with the plan about the same document --
-// which internal/modelast's render-and-plan agreement test is what measures.
-// An owner's object that names its schema, as an extension the owner holds
-// does, contributes it too, unless it is the target's default schema; see
+// A default privilege NAMES a schema without declaring it, so a document
+// carrying only one renders a statement into a schema that does not exist. The
+// planner already emits the precondition, and a render that did not would
+// disagree with the plan about the same document -- which internal/modelast's
+// render-and-plan agreement test is what measures. An owner's object that names
+// its schema, as an extension the extension owner holds does, contributes it
+// too, unless it is the target's default schema; see
 // [schemaext.SchemaPlacement].
 func schemasForRender(database schemamodel.Database, targetPlatform string) ([]schemamodel.Schema, error) {
 	schemas := slices.Clone(database.Schemas)
@@ -2658,10 +2588,7 @@ func schemasForRender(database schemamodel.Database, targetPlatform string) ([]s
 	if err != nil {
 		return nil, err
 	}
-	if supportsExtensionInstallationSchema(targetPlatform) {
-		for _, extension := range database.Extensions {
-			named = append(named, extension.Schema)
-		}
+	if namesSchemasForDefaultPrivileges(targetPlatform) {
 		for _, privilege := range database.DefaultPrivileges {
 			named = append(named, privilege.Schema)
 		}

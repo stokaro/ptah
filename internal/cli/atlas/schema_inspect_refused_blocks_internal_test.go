@@ -13,10 +13,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/envbool/envbooltest"
@@ -188,7 +191,8 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 func refusedBlockGateDatabase() *schemamodel.Database {
 	start := int64(1)
 	return &schemamodel.Database{
-		Extensions:       []schemamodel.Extension{{Name: "pgcrypto", Version: "1.3"}},
+		FeatureObjects:   must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Version: "1.3"})))),
+		FeatureCoverage:  must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Sequences:        []schemamodel.Sequence{{Name: "lonely_seq", AsType: "bigint", Start: &start}},
 		Tables:           []schemamodel.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
 		Fields:           []schemamodel.Field{{StructName: "Account", Name: "id", Type: "bigint"}},

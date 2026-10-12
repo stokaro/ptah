@@ -514,74 +514,25 @@ func toSchemaIndexParts(parts []ast.IndexPart, sourcePlatform string) []schemamo
 	return schemaParts
 }
 
-// refuseUnhostedExtension refuses a CREATE EXTENSION in a document read for a
-// named target outside the PostgreSQL family, whose owner does not read the
-// statement there. The target's own server refuses the statement, and an
+// refuseExtension refuses a CREATE EXTENSION the extension owner did not
+// claim. On a named target outside the PostgreSQL family the owner does not
+// read the statement. The target's own server refuses it, and an
 // Atlas-compatible apply runs the document on the dev database, which fails
 // there too, so skipping it would make the read looser than both. A document
 // that names no target is different: the extension owner reads its
 // statements, and a target that cannot host the extension skips it, as it
-// does an extension declared without a scope in any other source.
-func refuseUnhostedExtension(node *ast.ExtensionNode, sourcePlatform string) error {
+// does an extension declared without a scope in any other source. Anywhere
+// else the statement reaches this package only when the read selected no
+// extension owner, and the model has no other place for an extension.
+func refuseExtension(node *ast.ExtensionNode, sourcePlatform string) error {
 	target := sqlplatform.NormalizeDialect(sourcePlatform)
 	if target == "" || sqlplatform.IsPostgresFamily(target) {
-		return nil
+		return fmt.Errorf("%w: CREATE EXTENSION %s: this read selected no owner that reads extensions",
+			ErrUnmodeledStatement, node.Name)
 	}
 	return statementRefusal{
 		text: fmt.Sprintf("CREATE EXTENSION %s: an extension is a PostgreSQL object, and %s refuses the statement", node.Name, target),
 		err:  ptaherr.ErrUnsupportedFeature,
-	}
-}
-
-// ToExtension converts an ast.ExtensionNode to a schemamodel.Extension for database extension definitions.
-//
-// This function extracts extension metadata from an AST node, including the extension name,
-// installation schema, version requirements, and configuration options.
-//
-// # Parameters
-//
-//   - extension: The AST extension node containing extension metadata
-//
-// # Extension Features
-//
-//   - Extension name extraction (pg_trgm, postgis, etc.)
-//   - PostgreSQL installation schema
-//   - IF NOT EXISTS clause handling
-//   - Version specification support
-//   - Extension comments for documentation
-//
-// # Examples
-//
-// Basic extension:
-//
-//	extension := ast.NewExtension("pg_trgm").SetIfNotExists()
-//	extensionSchema := ToExtension(extension)
-//	// Results in: schemamodel.Extension{
-//	//   Name: "pg_trgm", IfNotExists: true
-//	// }
-//
-// Extension with version:
-//
-//	extension := ast.NewExtension("postgis").
-//		SetSchema("extensions").
-//		SetVersion("3.0").
-//		SetComment("Geographic data support")
-//	extensionSchema := ToExtension(extension)
-//	// Results in: schemamodel.Extension{
-//	//   Name: "postgis", Schema: "extensions", Version: "3.0",
-//	//   Comment: "Geographic data support"
-//	// }
-//
-// # Return Value
-//
-// Returns a schemamodel.Extension with all extension attributes extracted from the AST node.
-func ToExtension(extension *ast.ExtensionNode, sourcePlatform string) schemamodel.Extension {
-	return schemamodel.Extension{
-		Name:        identifierPart(sourcePlatform, strings.TrimSpace(extension.Name)),
-		Schema:      identifierPart(sourcePlatform, strings.TrimSpace(extension.Schema)),
-		IfNotExists: extension.IfNotExists,
-		Version:     extension.Version,
-		Comment:     extension.Comment,
 	}
 }
 
@@ -755,10 +706,7 @@ func appendStatement(
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.ExtensionNode:
-		if err := refuseUnhostedExtension(node, sourcePlatform); err != nil {
-			return err
-		}
-		database.Extensions = append(database.Extensions, ToExtension(node, sourcePlatform))
+		return refuseExtension(node, sourcePlatform)
 	case *ast.CreateFunctionNode:
 		database.Functions = append(database.Functions, toFunction(node, sourcePlatform))
 	case *ast.CreateTriggerNode:

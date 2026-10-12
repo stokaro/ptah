@@ -70,7 +70,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 
 	s.projectGeneratedTopLevel(db, out)
 	s.projectGeneratedSupport(db, out)
-	extensionSchemas, err := s.projectGeneratedExtensions(db, out)
+	extensionSchemas, err := s.projectExtensions(&out.FeatureObjects, &out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
@@ -128,26 +128,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 		return generatedGrantRoleReferenced(out.Grants, role.Name) ||
 			generatedDefaultPrivilegeRoleReferenced(out.DefaultPrivileges, role.Name)
 	})
-}
-
-// projectGeneratedExtensions is [scopeSelection.projectDatabaseExtensions]
-// for a declared schema.
-func (s *scopeSelection) projectGeneratedExtensions(db, out *schemamodel.Database) ([]string, error) {
-	var err error
-	if out.FeatureObjects, out.FeatureCoverage, err = s.selectExtensionFeatures(out.FeatureObjects, out.FeatureCoverage); err != nil {
-		return nil, err
-	}
-	if s.extensionSupport || s.nonExtensionMatched {
-		for _, extension := range db.Extensions {
-			s.selectedExtension(extension.Schema, extension.Name)
-		}
-		out.Extensions = slices.Clone(db.Extensions)
-	} else {
-		out.Extensions = keep(db.Extensions, func(extension schemamodel.Extension) bool {
-			return s.selectedExtension(extension.Schema, extension.Name)
-		})
-	}
-	return s.ownedExtensionSchemas(out.FeatureObjects)
 }
 
 // projectGeneratedSupport retains type objects used by selected tables even
@@ -285,9 +265,6 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, ext
 	for _, enum := range out.Enums {
 		schema, _ := enumIdentity(enum.Schema, enum.Name)
 		owning[s.effectiveSchema(schema)] = struct{}{}
-	}
-	for _, extension := range out.Extensions {
-		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
 	}
 	for _, schema := range extensionSchemas {
 		owning[schema] = struct{}{}

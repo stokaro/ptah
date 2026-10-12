@@ -25,7 +25,7 @@ const (
 // SQL is the extension owner's contribution to the SQL frontend: the CREATE
 // EXTENSION and COMMENT ON EXTENSION statements of a document that names a
 // PostgreSQL-family target, or names none. A document of another target
-// reads them through the shared grammar.
+// reads them through the shared grammar, which refuses them.
 //
 // A CREATE declares an extension, with no target scope, as a declaration
 // that names none in any other source. A COMMENT amends the extension a

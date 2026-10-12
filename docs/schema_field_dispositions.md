@@ -79,14 +79,14 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-640 fields are reachable from the desired schema, and each one carries
+632 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 536 | reaches rendered SQL on at least one target |
+| `ddl` | 529 | reaches rendered SQL on at least one target |
 | `comparison` | 28 | read when two schemas are compared, and written into no statement |
-| `planning` | 11 | read while a change set is assembled or ordered |
+| `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 32 | identifies the source text the declaration was read from |
 | `export` | 12 | what a generated document carries, or reports that it cannot |
@@ -114,7 +114,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-90 known gaps: a conversion or the comparison drops each one on the dialects named.
+83 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -131,18 +131,11 @@ migration nobody asked for.
 | `mysqlschema.DesiredTable.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.CompositeType.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.Facets` | `mysql` | from-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Database.Extensions` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Enum.Schema` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.Extension.Comment` | `postgres`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
-| `schemamodel.Extension.Dialects` | `spanner`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Extension.Dialects` | `spanner`, `ydb` | from-catalog | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
-| `schemamodel.Extension.Name` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
-| `schemamodel.Extension.Schema` | `postgres`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
-| `schemamodel.Extension.Version` | `postgres`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
 | `schemamodel.Field.AutoInc` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
@@ -211,7 +204,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-44 exemptions, each with the reason it is right.
+43 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -236,7 +229,6 @@ migration nobody asked for.
 | `schemamodel.Domain.Check` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
 | `schemamodel.Domain.Default` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
 | `schemamodel.Domain.DefaultExpr` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
-| `schemamodel.Extension.IfNotExists` | `postgres`, `yugabytedb` | both | IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it |
 | `schemamodel.Field.Primary` | `clickhouse` | both | every fixture's only key column is its primary one, and a ClickHouse MergeTree table without a sorting key is refused |
 | `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
 | `schemamodel.Grant.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver` | both | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
@@ -444,7 +436,6 @@ migration nobody asked for.
 | `schemamodel.Database.EmbeddedFields` | `ddl` | — |
 | `schemamodel.Database.EmbeddedSources` | `ddl` | — |
 | `schemamodel.Database.Enums` | `ddl` | — |
-| `schemamodel.Database.Extensions` | `ddl` | — |
 | `schemamodel.Database.Facets` | `ddl` | — |
 | `schemamodel.Database.FeatureCoverage` | `comparison` | records source knowledge for exact feature models and subjects; limits which state can be compared or reconstructed |
 | `schemamodel.Database.FeatureObjects` | `ddl` | — |
@@ -507,13 +498,6 @@ migration nobody asked for.
 | `schemamodel.Enum.Name` | `ddl` | — |
 | `schemamodel.Enum.Schema` | `ddl` | — |
 | `schemamodel.Enum.Values` | `ddl` | — |
-| `schemamodel.Extension.Comment` | `ddl` | — |
-| `schemamodel.Extension.Dialects` | `ddl` | — |
-| `schemamodel.Extension.IfNotExists` | `ddl` | — |
-| `schemamodel.Extension.Name` | `ddl` | — |
-| `schemamodel.Extension.Provides` | `planning` | what the extension supplies, so a declaration depending on it can be ordered after it |
-| `schemamodel.Extension.Schema` | `ddl` | — |
-| `schemamodel.Extension.Version` | `ddl` | — |
 | `schemamodel.Field.APIExpose` | `export` | whether the column reaches an exported API contract, and in which direction; Ptah emits no runtime that could enforce it |
 | `schemamodel.Field.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Field.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |

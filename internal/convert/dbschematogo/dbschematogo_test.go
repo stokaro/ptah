@@ -17,102 +17,67 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 )
 
+// extensionRead is a PostgreSQL read whose extensions are the extension
+// owner's observations, keyed by name.
+func extensionRead(db *catalog.Database, extensions map[string]pgextension.ObservedExtension) *catalog.Database {
+	objects := make([]schemaext.Object, 0, len(extensions))
+	for name, extension := range extensions {
+		objects = append(objects, must.Must(pgextension.ObservedObject(pgextension.Ref(name), extension)))
+	}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(objects...))
+	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Observed))
+	return db
+}
+
+// convertedExtensions is the declaration the conversion made of each
+// extension, keyed by name.
+func convertedExtensions(db *schemamodel.Database) map[string]pgextension.DesiredExtension {
+	declared := make(map[string]pgextension.DesiredExtension)
+	for _, object := range must.Must(db.FeatureObjects.All()) {
+		if extension, ok := object.Value.(*pgextension.DesiredExtension); ok {
+			declared[pgextension.Name(object.Ref)] = *extension
+		}
+	}
+	return declared
+}
+
+// TestConvertDBSchemaToGoSchema_Extensions pins the declaration a read
+// extension becomes: its schema, version and comment as read, guarded by IF
+// NOT EXISTS so a rollback that recreates it does not fail on a server that
+// still has it.
 func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 	tests := []struct {
 		name     string
-		dbSchema *catalog.Database
-		expected []schemamodel.Extension
+		read     map[string]pgextension.ObservedExtension
+		expected map[string]pgextension.DesiredExtension
 	}{
 		{
-			name: "single extension without comment",
-			dbSchema: &catalog.Database{
-				Extensions: []catalog.Extension{
-					{
-						Name:    "pg_trgm",
-						Version: "1.6",
-						Schema:  "public",
-					},
-				},
-			},
-			expected: []schemamodel.Extension{
-				{
-					Name:        "pg_trgm",
-					Schema:      "public",
-					IfNotExists: true,
-					Version:     "1.6",
-					Comment:     "",
-				},
-			},
+			name:     "single extension without comment",
+			read:     map[string]pgextension.ObservedExtension{"pg_trgm": {Schema: "public", Version: "1.6"}},
+			expected: map[string]pgextension.DesiredExtension{"pg_trgm": {Schema: "public", Version: "1.6", IfNotExists: true}},
 		},
 		{
 			name: "single extension with comment",
-			dbSchema: &catalog.Database{
-				Extensions: []catalog.Extension{
-					{
-						Name:    "postgis",
-						Version: "3.0",
-						Schema:  "public",
-						Comment: new("Geographic data support"),
-					},
-				},
-			},
-			expected: []schemamodel.Extension{
-				{
-					Name:        "postgis",
-					Schema:      "public",
-					IfNotExists: true,
-					Version:     "3.0",
-					Comment:     "Geographic data support",
-				},
+			read: map[string]pgextension.ObservedExtension{"postgis": {Schema: "public", Version: "3.0", Comment: new("Geographic data support")}},
+			expected: map[string]pgextension.DesiredExtension{
+				"postgis": {Schema: "public", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
 			},
 		},
 		{
 			name: "multiple extensions",
-			dbSchema: &catalog.Database{
-				Extensions: []catalog.Extension{
-					{
-						Name:    "pg_trgm",
-						Version: "1.6",
-						Schema:  "public",
-					},
-					{
-						Name:    "btree_gin",
-						Version: "1.3",
-						Schema:  "public",
-						Comment: new("Enable GIN indexes on btree types"),
-					},
-				},
+			read: map[string]pgextension.ObservedExtension{
+				"pg_trgm":   {Schema: "public", Version: "1.6"},
+				"btree_gin": {Schema: "public", Version: "1.3", Comment: new("Enable GIN indexes on btree types")},
 			},
-			expected: []schemamodel.Extension{
-				{
-					Name:        "pg_trgm",
-					Schema:      "public",
-					IfNotExists: true,
-					Version:     "1.6",
-					Comment:     "",
-				},
-				{
-					Name:        "btree_gin",
-					Schema:      "public",
-					IfNotExists: true,
-					Version:     "1.3",
-					Comment:     "Enable GIN indexes on btree types",
-				},
+			expected: map[string]pgextension.DesiredExtension{
+				"pg_trgm":   {Schema: "public", Version: "1.6", IfNotExists: true},
+				"btree_gin": {Schema: "public", Version: "1.3", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 			},
 		},
 		{
-			name: "no extensions",
-			dbSchema: &catalog.Database{
-				Extensions: make([]catalog.Extension, 0),
-			},
-			expected: make([]schemamodel.Extension, 0),
-		},
-		{
-			name: "nil extensions",
-			dbSchema: &catalog.Database{
-				Extensions: nil,
-			},
-			expected: make([]schemamodel.Extension, 0),
+			name:     "no extensions",
+			read:     make(map[string]pgextension.ObservedExtension),
+			expected: make(map[string]pgextension.DesiredExtension),
 		},
 	}
 
@@ -120,17 +85,9 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), tt.dbSchema, "postgres", must.Must(builtin.New())))
+			result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), extensionRead(&catalog.Database{}, tt.read), "postgres", must.Must(builtin.New())))
 
-			c.Assert(result.Extensions, qt.HasLen, len(tt.expected))
-			for i, expectedExt := range tt.expected {
-				actualExt := result.Extensions[i]
-				c.Assert(actualExt.Name, qt.Equals, expectedExt.Name)
-				c.Assert(actualExt.Schema, qt.Equals, expectedExt.Schema)
-				c.Assert(actualExt.IfNotExists, qt.Equals, expectedExt.IfNotExists)
-				c.Assert(actualExt.Version, qt.Equals, expectedExt.Version)
-				c.Assert(actualExt.Comment, qt.Equals, expectedExt.Comment)
-			}
+			c.Assert(convertedExtensions(result), qt.DeepEquals, tt.expected)
 		})
 	}
 }
@@ -139,7 +96,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that extensions are properly converted alongside other schema elements
-	dbSchema := &catalog.Database{
+	dbSchema := extensionRead(&catalog.Database{
 		Tables: []catalog.Table{
 			{
 				Name: "users",
@@ -151,28 +108,20 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 				},
 			},
 		},
-		Extensions: []catalog.Extension{
-			{
-				Name:    "pg_trgm",
-				Version: "1.6",
-				Schema:  "public",
-			},
-		},
 		Enums: []catalog.Enum{
 			{
 				Name:   "status_type",
 				Values: []string{"active", "inactive"},
 			},
 		},
-	}
+	}, map[string]pgextension.ObservedExtension{"pg_trgm": {Schema: "public", Version: "1.6"}})
 
 	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "postgres", must.Must(builtin.New())))
 
 	// Verify extensions are converted
-	c.Assert(result.Extensions, qt.HasLen, 1)
-	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
-	c.Assert(result.Extensions[0].IfNotExists, qt.IsTrue)
-	c.Assert(result.Extensions[0].Version, qt.Equals, "1.6")
+	c.Assert(convertedExtensions(result), qt.DeepEquals, map[string]pgextension.DesiredExtension{
+		"pg_trgm": {Schema: "public", Version: "1.6", IfNotExists: true},
+	})
 
 	// Verify other elements are also converted
 	c.Assert(result.Tables, qt.HasLen, 1)
@@ -1115,34 +1064,6 @@ func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].TableName, qt.Equals, `"tenant.data".payload`)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "lookup")
-}
-
-func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
-	c := qt.New(t)
-
-	// Test that extensions get proper default values
-	dbSchema := &catalog.Database{
-		Extensions: []catalog.Extension{
-			{
-				Name:    "test_extension",
-				Version: "1.0",
-				Schema:  "public",
-				// Comment is nil
-			},
-		},
-	}
-
-	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "postgres", must.Must(builtin.New())))
-
-	c.Assert(result.Extensions, qt.HasLen, 1)
-	ext := result.Extensions[0]
-
-	// Verify default values
-	c.Assert(ext.Name, qt.Equals, "test_extension")
-	c.Assert(ext.Schema, qt.Equals, "public")
-	c.Assert(ext.IfNotExists, qt.IsTrue) // Should default to true for safety
-	c.Assert(ext.Version, qt.Equals, "1.0")
-	c.Assert(ext.Comment, qt.Equals, "") // Should be empty string when nil
 }
 
 // TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames

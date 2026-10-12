@@ -46,7 +46,6 @@ type Database struct {
 	Constraints                []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
 	Enums                      []Enum
 	EmbeddedFields             []EmbeddedField
-	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
 	Functions                  []Function                     // PostgreSQL custom functions
 	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
 	Domains                    []Domain                       // PostgreSQL domain types (CREATE DOMAIN)
@@ -628,57 +627,6 @@ func (c Constraint) NarrowsDeleteAction() bool {
 		}
 	}
 	return false
-}
-
-// Extension represents a PostgreSQL extension definition parsed from Go struct annotations.
-// Extensions enable additional functionality in PostgreSQL databases.
-//
-// Extension is created by parsing //ptah:schema:extension annotations:
-//
-//	// Enable trigram similarity search
-//	//ptah:schema:extension name="pg_trgm" if_not_exists="true"
-//	type DatabaseExtensions struct{}
-//
-//	// Enable PostGIS for geographic data
-//	//ptah:schema:extension name="postgis" schema="extensions" version="3.0" if_not_exists="true"
-//	type GeoExtensions struct{}
-type Extension struct {
-	Name        string // Extension name (pg_trgm, postgis, etc.)
-	Schema      string // PostgreSQL installation schema (optional; empty selects the connection default)
-	IfNotExists bool   // Whether to use IF NOT EXISTS clause
-	Version     string // Specific version requirement (optional)
-	Comment     string // Extension comment/description
-
-	// Provides lists the catalog names this extension supplies -- types,
-	// functions, relations, operator classes and operator families. It is filled
-	// in when the schema was read from a live PostgreSQL catalog and answers
-	// "what stops resolving without this extension", which is almost never the
-	// extension's own name: `isn` supplies the type `isbn`.
-	//
-	// Names the extension supplies that pg_catalog also supplies are excluded,
-	// because those keep resolving with the extension dropped. Contrib
-	// extensions mostly supply overloads of core functions, so the unfiltered
-	// list is full of ordinary words -- `citext` supplies `max`, `strpos` and
-	// `replace` -- and treating those as evidence would tie the extension to
-	// every schema that happens to use them.
-	//
-	// A function name that is a SQL keyword is excluded for the same reason, but
-	// only when this list also carries a type of the same extension that appears
-	// in that function's signature: `hstore` supplies three functions named
-	// `delete`, and a caller reading identifiers out of SQL text cannot tell
-	// `DELETE FROM audit` from `delete(h, 'k')`, while a genuine call needs an
-	// `hstore` value and the type entry is what keeps the extension here. Where
-	// no such type entry exists -- an extension supplying `merge(text, text)`
-	// and no type at all -- the name is the only evidence there is and it stays.
-	//
-	// Empty means not measured. Annotation and YAML sources have no catalog to
-	// ask and leave it unset.
-	Provides []string
-
-	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToTarget] for what an empty scope means and why the JSON tag is
-	// load-bearing.
-	Dialects []string `json:",omitempty"`
 }
 
 // Table represents a database table configuration parsed from Go struct annotations.

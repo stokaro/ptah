@@ -84,12 +84,6 @@ func TestMerge_RejectsEveryConflictingNamedObject(t *testing.T) {
 			wantErr: `conflicting embedded field "Metadata" definitions on table "users"`,
 		},
 		{
-			name:    "extension",
-			first:   &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "postgis", Version: "3.5"}}},
-			second:  &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "postgis", Version: "3.6"}}},
-			wantErr: `conflicting extension "postgis" definitions`,
-		},
-		{
 			name:    "function",
 			first:   &schemamodel.Database{Functions: []schemamodel.Function{{Name: "active_user", Returns: "BOOLEAN", Body: "SELECT true"}}},
 			second:  &schemamodel.Database{Functions: []schemamodel.Function{{Name: "active_user", Returns: "boolean", Body: "SELECT false"}}},
@@ -228,7 +222,6 @@ func TestMerge_DeduplicatesEveryIdenticalNamedObject(t *testing.T) {
 		Constraints:       []schemamodel.Constraint{{StructName: "User", Name: "users_id_check", Type: "CHECK", CheckExpression: "id > 0"}},
 		Enums:             []schemamodel.Enum{{Name: "status", Values: []string{"active"}}},
 		EmbeddedFields:    []schemamodel.EmbeddedField{{StructName: "User", EmbeddedTypeName: "Metadata", Mode: "skip"}},
-		Extensions:        []schemamodel.Extension{{Name: "pg_trgm"}},
 		Functions:         []schemamodel.Function{{Name: "active_user", Returns: "BOOLEAN", Body: "SELECT true"}},
 		Sequences:         []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 		Domains:           []schemamodel.Domain{{Name: "email", BaseType: "TEXT"}},
@@ -256,7 +249,6 @@ func TestMerge_DeduplicatesEveryIdenticalNamedObject(t *testing.T) {
 	c.Assert(merged.Constraints, qt.HasLen, 1)
 	c.Assert(merged.Enums, qt.HasLen, 1)
 	c.Assert(merged.EmbeddedFields, qt.HasLen, 1)
-	c.Assert(merged.Extensions, qt.HasLen, 1)
 	c.Assert(merged.Functions, qt.HasLen, 1)
 	c.Assert(merged.Sequences, qt.HasLen, 1)
 	c.Assert(merged.Domains, qt.HasLen, 1)

@@ -9,10 +9,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"oras.land/oras-go/v2/content/memory"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaartifact"
 )
@@ -118,9 +121,8 @@ func TestCapture_FailurePath(t *testing.T) {
 
 func TestCapturePreservesSystemExtensionPlacementWithoutDeclaringIt(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
-	}}}
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("plpgsql"), pgextension.DesiredExtension{Schema: "pg_catalog", Version: "1.0", IfNotExists: true})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired))}
 
 	snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNil)

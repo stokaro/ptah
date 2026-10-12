@@ -53,7 +53,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 
 	s.projectDatabaseTopLevel(db, out, keptTables)
 	s.projectDatabaseSupport(db, out)
-	extensionSchemas, err := s.projectDatabaseExtensions(db, out)
+	extensionSchemas, err := s.projectExtensions(&out.FeatureObjects, &out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
@@ -119,27 +119,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 		return databaseGrantRoleReferenced(out.Grants, role.Name) ||
 			databaseDefaultPrivilegeRoleReferenced(out.DefaultPrivileges, role.Name)
 	})
-}
-
-// projectDatabaseExtensions projects the common extension list and the
-// extension owner's objects, and returns the installation schemas of the
-// owner's extensions it kept.
-func (s *scopeSelection) projectDatabaseExtensions(db, out *catalog.Database) ([]string, error) {
-	var err error
-	if out.FeatureObjects, out.FeatureCoverage, err = s.selectExtensionFeatures(out.FeatureObjects, out.FeatureCoverage); err != nil {
-		return nil, err
-	}
-	if s.extensionSupport || s.nonExtensionMatched {
-		for _, extension := range db.Extensions {
-			s.selectedExtension(extension.Schema, extension.Name)
-		}
-		out.Extensions = slices.Clone(db.Extensions)
-	} else {
-		out.Extensions = keep(db.Extensions, func(extension catalog.Extension) bool {
-			return s.selectedExtension(extension.Schema, extension.Name)
-		})
-	}
-	return s.ownedExtensionSchemas(out.FeatureObjects)
 }
 
 // projectDatabaseSupport retains type objects referenced by kept columns:
@@ -221,9 +200,6 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, extensio
 	}
 	for _, enum := range out.Enums {
 		owning[s.effectiveSchema(enum.Schema)] = struct{}{}
-	}
-	for _, extension := range out.Extensions {
-		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
 	}
 	for _, schema := range extensionSchemas {
 		owning[schema] = struct{}{}

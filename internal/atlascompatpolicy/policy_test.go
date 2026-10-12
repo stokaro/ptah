@@ -197,9 +197,6 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		name     string
 		database *schemamodel.Database
 	}{
-		{name: "extensions", database: &schemamodel.Database{Extensions: []schemamodel.Extension{{
-			Name: "pgcrypto", Schema: "extensions",
-		}}}},
 		{name: "extensions", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 			must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"}))))}},
 		{name: "functions", database: &schemamodel.Database{Functions: []schemamodel.Function{{}}}},
@@ -259,33 +256,10 @@ func TestStrictCEValidatesInspectedSchemaExtensions(t *testing.T) {
 	)
 }
 
+// TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension pins the carve-out
+// strict mode makes for the server's procedural language: plpgsql read from a
+// server passes, and any other extension, or a declared plpgsql, is refused.
 func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
-	c := qt.New(t)
-	policy := atlascompatpolicy.StrictCE()
-	c.Assert(policy.ValidateInspectedSchema(&schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "plpgsql"}},
-	}), qt.IsNil)
-	c.Assert(policy.ValidateSchemaCleanSnapshot(&schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "plpgsql"}},
-	}), qt.IsNil)
-
-	err := policy.ValidateInspectedSchema(&schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "plpgsql"}, {Name: "citext"}},
-	})
-	c.Assert(err, qt.ErrorMatches,
-		`Atlas Community Edition strict compatibility does not support inspected schema extensions`)
-
-	err = policy.ValidateDesiredSchema(&schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "plpgsql"}},
-	})
-	c.Assert(err, qt.ErrorMatches,
-		`Atlas Community Edition strict compatibility does not support desired schema extensions`)
-}
-
-// TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlOwnedExtension is the same
-// carve-out over the extension owner's objects: plpgsql read from a server
-// passes, and any other extension, or a declared plpgsql, is refused.
-func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlOwnedExtension(t *testing.T) {
 	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
 	declared := func(names ...string) *schemamodel.Database {
@@ -377,7 +351,9 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
 	baseline := &catalog.Database{
-		Extensions: []catalog.Extension{{Name: "plpgsql"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.ObservedObject(pgextension.Ref("plpgsql"),
+			pgextension.ObservedExtension{Schema: "pg_catalog", Version: "1.0"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 		Grants: []catalog.Grant{{
 			Role:       "PUBLIC",
 			Privilege:  "USAGE",
@@ -390,22 +366,22 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), baseline, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(prepared, qt.Not(qt.Equals), baseline)
-	c.Assert(prepared.Extensions, qt.HasLen, 0)
+	c.Assert(prepared.FeatureObjects.Len(), qt.Equals, 0)
 	c.Assert(prepared.Grants, qt.HasLen, 0)
-	c.Assert(baseline.Extensions, qt.HasLen, 1)
+	c.Assert(baseline.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(baseline.Grants, qt.HasLen, 1)
 
 	full, err := atlascompatpolicy.Full().PrepareInspectedSchema(t.Context(), baseline, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(full, qt.Equals, baseline)
-	c.Assert(full.Extensions, qt.HasLen, 1)
+	c.Assert(full.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(full.Grants, qt.HasLen, 1)
 }
 
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "citext"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("citext"), pgextension.DesiredExtension{})))),
 		Tables: []schemamodel.Table{{
 			Partition: &schemamodel.PartitionSpec{Type: "RANGE"},
 		}},
