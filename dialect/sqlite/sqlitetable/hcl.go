@@ -7,14 +7,16 @@ import (
 	"ptah.run/core/schemaext"
 )
 
-// HCL returns the owner's extension of the HCL frontend. It reads no block
-// and makes no claim. Its encoder writes a table's options into the writer's
-// table block as `strict` and `without_rowid`, the spelling the community
-// binary reads, each only when set. It writes nothing for a virtual table's
-// module declaration, which no HCL block carries; the inspect command reports
-// that loss with the module.
+// HCL returns the owner's extension of the HCL frontend. It reads no block.
+// Its claim is that a table's options are the ones its table block states:
+// every block can carry `strict` and `without_rowid`, so a table without them
+// has neither. Its encoder writes a table's options into the writer's table
+// block in that spelling, the one the community binary reads, each only when
+// set. It writes nothing for a virtual table's module declaration, which no
+// HCL block carries; the inspect command reports that loss with the module.
 func HCL() hclext.Extension {
-	return hclext.Extension{Owner: Owner, Kinds: []schemaext.Kind{TableKind, VirtualKind}, Encoder: hclEncoder{}}
+	return hclext.Extension{Owner: Owner, Kinds: []schemaext.Kind{TableKind, VirtualKind}, Encoder: hclEncoder{},
+		Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) { return OptionsCoverage() }}
 }
 
 // hclEncoder writes the owner's table options into the HCL writer's table

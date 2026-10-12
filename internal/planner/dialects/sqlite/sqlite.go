@@ -75,7 +75,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseSerialSequenceChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseFeatureChanges(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(DialectName, withoutTableOptionsChanges(diff)); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
@@ -163,6 +163,23 @@ func withRebuildForeignKeySession(plan []ast.Node, rebuilds tableRebuilds) []ast
 		ast.NewComment("Restore foreign-key enforcement after the table rebuild"),
 		ast.NewRawSQL(sqliteforeignkeys.EnableStatement),
 	)
+}
+
+// withoutTableOptionsChanges is diff without the feature changes this planner
+// converges by rebuilding their table ([sqliterebuild.TableRebuild]), such as
+// a change of a table's options, so that every other named feature change is
+// still refused for want of a handler.
+func withoutTableOptionsChanges(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
+	if diff == nil {
+		return nil
+	}
+	filtered := *diff
+	filtered.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
+	for position, table := range diff.TablesModified {
+		table.FeatureChanges = slices.DeleteFunc(slices.Clone(table.FeatureChanges), sqliterebuild.IsTableRebuildChange)
+		filtered.TablesModified[position] = table
+	}
+	return &filtered
 }
 
 func rejectUnsupportedChanges(diff *difftypes.SchemaDiff) error {

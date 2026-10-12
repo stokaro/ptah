@@ -115,30 +115,67 @@ func TestTableCodecs_RefusesAnOptionWrittenAsFalse(t *testing.T) {
 	c.Assert(decoded, qt.IsNil)
 }
 
-// TestCompareService_PlansNoChange returns the declarations as they were and
-// no change: SQLite has no statement that turns either option on or off for a
-// table that exists.
-func TestCompareService_PlansNoChange(t *testing.T) {
-	c := qt.New(t)
-	table := objectidentity.ID{Kind: objectidentity.KindTable, Name: objectidentity.Part{Source: "t", Normalized: "t"}}
-	desired := schemaext.FacetState{Records: []schemaext.FacetRecord{{Subject: table,
-		Values: must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: true}}))}}}
-	current := schemaext.FacetState{Records: []schemaext.FacetRecord{{Subject: table,
-		Values: must.Must(schemaext.NewFacets(&sqlitetable.ObservedTable{}))}}}
+// TestCompareService_CompareFacets reports a change for a table both sides
+// hold whose options differ. A side with no value says the table has neither
+// option only where its coverage describes the options.
+func TestCompareService_CompareFacets(t *testing.T) {
+	strict := sqlitetable.Options{Strict: true}
+	tests := []struct {
+		name            string
+		desired         schemaext.Value
+		desiredCoverage schemaext.Coverage
+		current         schemaext.Value
+		currentCoverage schemaext.Coverage
+		wantChange      *sqlitetable.Change
+	}{
+		{name: "the same options", desired: &sqlitetable.DesiredTable{Options: strict},
+			current: &sqlitetable.ObservedTable{Options: strict}},
+		{name: "an option turned on", desired: &sqlitetable.DesiredTable{Options: strict}, current: &sqlitetable.ObservedTable{},
+			wantChange: &sqlitetable.Change{Before: &sqlitetable.ObservedTable{}, After: &sqlitetable.DesiredTable{Options: strict}}},
+		{name: "options over a read that found none", desired: &sqlitetable.DesiredTable{Options: strict},
+			currentCoverage: optionsCoverage(schemaext.Observed),
+			wantChange:      &sqlitetable.Change{Before: &sqlitetable.ObservedTable{}, After: &sqlitetable.DesiredTable{Options: strict}}},
+		{name: "options over a side that did not look", desired: &sqlitetable.DesiredTable{Options: strict}},
+		{name: "no options declared by a source that states them", desiredCoverage: optionsCoverage(schemaext.Desired),
+			current:    &sqlitetable.ObservedTable{Options: strict},
+			wantChange: &sqlitetable.Change{Before: &sqlitetable.ObservedTable{Options: strict}, After: &sqlitetable.DesiredTable{}}},
+		{name: "a source with no syntax for them", current: &sqlitetable.ObservedTable{Options: strict}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := schemaext.FacetComparisonRequest{
+				Target: platform.SQLite, Kinds: []schemaext.Kind{sqlitetable.TableKind},
+				Desired: docsState(test.desired, test.desiredCoverage),
+				Current: docsState(test.current, test.currentCoverage),
+				Owners:  []schemaext.ParentState{{Subject: docsTable, Desired: true, Current: true}},
+			}
 
-	result, err := sqlitetable.CompareService{}.CompareFacets(c.Context(), schemaext.FacetComparisonRequest{
-		Target: platform.SQLite, Kinds: []schemaext.Kind{sqlitetable.TableKind}, Desired: desired, Current: current,
-	})
+			result, err := sqlitetable.CompareService{}.CompareFacets(c.Context(), request)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(result.Complete, qt.IsTrue)
-	c.Assert(result.Changes, qt.HasLen, 0)
-	c.Assert(result.Desired.Records, qt.HasLen, 1)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Complete, qt.IsTrue)
+			c.Assert(changeValues(result.Changes), qt.DeepEquals, wantOptionsChanges(test.wantChange))
+		})
+	}
+}
+
+// optionsCoverage is a side's claim that it describes every table's options.
+func optionsCoverage(representation schemaext.Representation) schemaext.Coverage {
+	return must.Must(sqlitetable.TableCoverage(representation, schemaext.Knowledge{State: schemaext.Complete}, nil))
+}
+
+func wantOptionsChanges(change *sqlitetable.Change) []schemaext.ChangeValue {
+	if change == nil {
+		return make([]schemaext.ChangeValue, 0)
+	}
+	return []schemaext.ChangeValue{change}
 }
 
 // TestPlanService_AccountsForEveryTableAction gives a table the options ride
-// with a receipt for each common action, and refuses a change, which no
-// comparison produces.
+// with a receipt for each common action, and refuses a change: the SQLite
+// planner converges one by rebuilding the table rather than through this
+// service.
 func TestPlanService_AccountsForEveryTableAction(t *testing.T) {
 	c := qt.New(t)
 	table := objectidentity.ID{Kind: objectidentity.KindTable, Name: objectidentity.Part{Source: "t", Normalized: "t"}}

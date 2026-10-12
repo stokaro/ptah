@@ -125,11 +125,16 @@ func (PropertyService) EncodeProperties(ctx context.Context, request schemaext.P
 // ready for concurrent use.
 type CompareService struct{}
 
-// CompareFacets returns a complete comparison with no change and the
-// declarations as they were. SQLite has no statement that changes either
-// option of a table that exists, so no plan changes them, as no plan ever
-// has. Each value is validated. Invalid input and cancellation return a zero
-// result.
+// CompareFacets returns a complete comparison with a change for each table
+// both sides hold whose options differ. SQLite has no statement that turns
+// either option on or off for a table that exists, so the change is planned by
+// rebuilding the table, which creates it again with the declared options.
+//
+// A side with no options value for a table says the table has neither option
+// only where that side's coverage describes the options: a read that looked,
+// or a source that states them. A source with no syntax for them says
+// nothing, and its tables are left with the options they hold. Each value is
+// validated. Invalid input and cancellation return a zero result.
 func (CompareService) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
 	if err := checkTarget(ctx, request.Target, "comparison"); err != nil {
 		return schemaext.FacetComparisonResult{}, err
@@ -142,26 +147,71 @@ func (CompareService) CompareFacets(ctx context.Context, request schemaext.Facet
 			return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: SQLite table options attach to a table, not %s", schemaext.ErrInvalidValue, owner.Subject)
 		}
 	}
+	declared := make(map[objectidentity.Key]*DesiredTable, len(request.Desired.Records))
 	for _, record := range request.Desired.Records {
-		if _, _, err := schemaext.FacetAs[*DesiredTable](record.Values, TableKind); err != nil {
+		value, found, err := schemaext.FacetAs[*DesiredTable](record.Values, TableKind)
+		if err != nil {
 			return schemaext.FacetComparisonResult{}, err
 		}
+		if found {
+			declared[record.Subject.Key()] = value
+		}
 	}
+	held := make(map[objectidentity.Key]*ObservedTable, len(request.Current.Records))
 	for _, record := range request.Current.Records {
-		if _, _, err := schemaext.FacetAs[*ObservedTable](record.Values, TableKind); err != nil {
+		value, found, err := schemaext.FacetAs[*ObservedTable](record.Values, TableKind)
+		if err != nil {
 			return schemaext.FacetComparisonResult{}, err
+		}
+		if found {
+			held[record.Subject.Key()] = value
 		}
 	}
 	result := schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired}
 	result.Desired.Records = slices.Clone(result.Desired.Records)
+	for _, owner := range request.Owners {
+		if !owner.Desired || !owner.Current || !request.Includes(TableKind, owner.Subject) {
+			continue
+		}
+		change, changed := optionsChange(declared[owner.Subject.Key()], held[owner.Subject.Key()], request, owner.Subject)
+		if !changed {
+			continue
+		}
+		result.Changes = append(result.Changes, schemaext.FacetChange{Kind: TableKind,
+			Change: schemaext.ChangeRecord{Subject: owner.Subject, Value: change}})
+	}
 	return result, ctx.Err()
+}
+
+// optionsChange answers the change between the options a declaration states
+// for a table and the options the table holds, where both are known and they
+// differ. A missing value is a table with neither option where its side's
+// coverage describes the options, and unknown otherwise.
+func optionsChange(declared *DesiredTable, held *ObservedTable, request schemaext.FacetComparisonRequest, table objectidentity.ID) (*Change, bool) {
+	if declared == nil && describesOptions(request.Desired.Coverage, table) {
+		declared = &DesiredTable{}
+	}
+	if held == nil && describesOptions(request.Current.Coverage, table) {
+		held = &ObservedTable{}
+	}
+	if declared == nil || held == nil || declared.Options == held.Options {
+		return nil, false
+	}
+	return &Change{Before: new(*held), After: new(*declared)}, true
+}
+
+func describesOptions(coverage schemaext.Coverage, table objectidentity.ID) bool {
+	state := coverage.Lookup(TableKind, table).State
+	return state == schemaext.Complete || state == schemaext.Absent
 }
 
 // PlanService accounts for table options through the common table
 // operations. It plans no change of its own: CREATE TABLE writes the options,
 // a table that survives keeps the ones it holds, a rebuild creates the new
-// table with the declared ones, and DROP TABLE removes them with the table.
-// Its zero value is ready for concurrent use.
+// table with the declared ones, and DROP TABLE removes them with the table. A
+// change of the options is converged by the SQLite planner's rebuild and
+// never reaches this service, which refuses one. Its zero value is ready for
+// concurrent use.
 type PlanService struct{}
 
 // PlanFeatures returns a receipt for every table with a parent action, or a

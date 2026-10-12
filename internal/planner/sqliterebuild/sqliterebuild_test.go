@@ -6,6 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -72,6 +76,39 @@ func TestNeedsTableRebuildReadsEveryChangeField(t *testing.T) {
 			table: difftypes.TableDiff{TableName: "users"},
 			want:  false,
 		},
+		{
+			// SQLite stores no comment, so a rebuild for one creates the same
+			// table again and the next comparison finds the same difference.
+			name: "a column whose comment alone changed is not rebuilt",
+			table: difftypes.TableDiff{
+				TableName: "users",
+				ColumnsModified: []difftypes.ColumnDiff{{
+					ColumnName: "name", CommentChange: &difftypes.CommentChange{Current: "", Desired: "full name"},
+				}},
+			},
+			want: false,
+		},
+		{
+			name: "a column whose comment changed beside its type is rebuilt",
+			table: difftypes.TableDiff{
+				TableName: "users",
+				ColumnsModified: []difftypes.ColumnDiff{{
+					ColumnName: "name", Changes: map[string]string{"type": "TEXT -> INTEGER"},
+					CommentChange: &difftypes.CommentChange{Current: "", Desired: "full name"},
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "a change of the table's options rebuilds",
+			table: difftypes.TableDiff{TableName: "users", FeatureChanges: []schemaext.ChangeRecord{{
+				Subject: objectidentity.NewBuilder(identifier.ForDialect("sqlite")).Table("users"),
+				Value: &sqlitetable.Change{
+					Before: &sqlitetable.ObservedTable{}, After: &sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: true}},
+				},
+			}}},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -105,8 +142,10 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		"ColumnsModified":    true,
 		"ConstraintsAdded":   true,
 		"ConstraintsRemoved": true,
-		// Named feature changes require an owning planning handler. The
-		// SQLite planner refuses them before deciding whether to rebuild.
+		// Named feature changes require an owning planning handler, and the
+		// SQLite planner refuses them before deciding whether to rebuild. A
+		// change of the table's own options is the exception, which a row
+		// of TestNeedsTableRebuildReadsEveryChangeField holds.
 		"FeatureChanges": false,
 		// SQLite has no comments: no CREATE TABLE clause, no COMMENT ON
 		// statement, and nothing in the catalog to read one back from. The
