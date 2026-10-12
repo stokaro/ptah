@@ -122,6 +122,8 @@ var commentKinds = map[difftypes.CommentedObjectKind]capability.Capability{
 	difftypes.CommentedMatView:       capability.MaterializedViewComments,
 	difftypes.CommentedTrigger:       capability.TriggerComments,
 	difftypes.CommentedPolicy:        capability.PolicyComments,
+	difftypes.CommentedSchema:        capability.SchemaComments,
+	difftypes.CommentedRole:          capability.RoleComments,
 }
 
 // refuseComments refuses, before anything is planned, a comment change the

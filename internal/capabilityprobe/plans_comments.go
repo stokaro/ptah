@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path"
+	"slices"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -27,6 +28,7 @@ func withObjectComments(p plan, dialect string) plan {
 		t := postgresFamilySpelling(dialect)
 		p.experiments = append(p.experiments, objectCommentExperiments(t)...)
 		p.experiments = append(p.experiments, routineCommentExperiments(t)...)
+		p.experiments = append(p.experiments, indexComment(t), roleComment())
 	case platform.SQLServer:
 		p.experiments = append(p.experiments, objectCommentRefusals("T-SQL has no COMMENT ON statement at all; "+
 			"SQL Server carries a comment as an extended property, which this key does not name")...)
@@ -34,9 +36,19 @@ func withObjectComments(p plan, dialect string) plan {
 		p.experiments = append(p.experiments, objectCommentRefusals("SQLite has no COMMENT ON statement at all")...)
 	case platform.YDB:
 		p.experiments = append(p.experiments, ydbViewComment(ydbSpelling))
-		p.experiments = append(p.experiments, objectCommentRefusalsBut(capability.ViewComments, "YQL has no "+
+		p.experiments = append(p.experiments, objectCommentRefusalsBut("YQL has no "+
 			"COMMENT statement, and Ptah's own COMMENT ON names a table, a column, an index or a view: YDB "+
-			"answers this one with its parse error, and has no such object to keep a comment on")...)
+			"answers this one with its parse error, and has no such object to keep a comment on",
+			capability.ViewComments, capability.IndexComments, capability.RoleComments)...)
+		p.experiments = append(p.experiments, acceptanceNote(capability.RoleComments, nil,
+			"COMMENT ON ROLE rcm IS 'probe'", "YQL has no COMMENT statement, Ptah's own COMMENT ON has no ROLE "+
+				"form, and YDB keeps no comment on a user or a group"))
+		if p.undecided == nil {
+			p.undecided = make(map[capability.Capability]string)
+		}
+		p.undecided[capability.IndexComments] = "YDB keeps an index's comment as an attribute of its table, " +
+			"which CommentAttributes names, and Ptah's COMMENT ON INDEX there is Ptah's own statement, so no " +
+			"answer would be about a comment the index keeps apart from its table"
 	case platform.MySQL, platform.MariaDB:
 		p.undecided = withObjectCommentsUndecided(p.undecided, "MySQL and MariaDB have no COMMENT ON statement; "+
 			"a comment lives in a table or column clause, and neither renderer writes one for these "+
@@ -162,6 +174,48 @@ func routineCommentExperiments(t tableSpelling) []experiment {
 	}
 }
 
+// indexComment decides IndexComments: an index is commented in place, apart
+// from its definition, and the comment is read back through obj_description of
+// the index relation, which is where Ptah's reader looks.
+func indexComment(t tableSpelling) experiment {
+	return objectComment(capability.IndexComments, nil,
+		[]string{t.table("icm_t", "n int, m int", "n"), "CREATE INDEX icm ON icm_t (m)"},
+		[]string{"COMMENT ON INDEX icm IS '" + probeComment + "'"},
+		"SELECT COUNT(*) WHERE obj_description('icm'::regclass, 'pg_class') = '"+probeComment+"'",
+	)
+}
+
+// roleComment decides RoleComments and registers the role it created for
+// cleanup: a role is cluster-scoped, so dropping the probe schema does not
+// remove it. The comment is read back through shobj_description, which is
+// where Ptah's reader looks.
+func roleComment() experiment {
+	const role = "ptah_capprobe_rcm"
+	return experiment{
+		decides:  []capability.Capability{capability.RoleComments},
+		requires: []capability.Capability{capability.RoleManagement},
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, "CREATE ROLE "+role)
+			attempts := []Attempt{created}
+			if !created.Accepted {
+				return verdicts{capability.RoleComments: cannotDecide(
+					"CREATE ROLE %s was refused (%s), so there was no role to comment on",
+					role, collapse(created.ServerErr),
+				)}, attempts
+			}
+			s.roles = append(s.roles, role)
+			commented := s.exec(ctx, "COMMENT ON ROLE "+role+" IS '"+probeComment+"'")
+			attempts = append(attempts, commented)
+			if !commented.Accepted {
+				return verdicts{capability.RoleComments: decided(false)}, attempts
+			}
+			stored, read := s.query(ctx, "SELECT COUNT(*) FROM pg_roles WHERE rolname = '"+role+
+				"' AND shobj_description(oid, 'pg_authid') = '"+probeComment+"'")
+			return verdicts{capability.RoleComments: objectCommentObservation(read, stored)}, append(attempts, read)
+		},
+	}
+}
+
 // objectComment decides one object-comment key by writing a comment and
 // reading it back through obj_description, the function Ptah's reader uses.
 //
@@ -223,6 +277,8 @@ var objectCommentStatements = []struct {
 	{capability.MaterializedViewComments, "COMMENT ON MATERIALIZED VIEW mvcm IS 'probe'"},
 	{capability.TriggerComments, "COMMENT ON TRIGGER tgcm ON tgcm_t IS 'probe'"},
 	{capability.PolicyComments, "COMMENT ON POLICY plcm ON plcm_t IS 'probe'"},
+	{capability.IndexComments, "COMMENT ON INDEX icm IS 'probe'"},
+	{capability.RoleComments, "COMMENT ON ROLE rcm IS 'probe'"},
 }
 
 // objectCommentRefusals asks a dialect with no COMMENT ON statement at all
@@ -230,15 +286,15 @@ var objectCommentStatements = []struct {
 // rather than values a preset asserted. The statement names no object that
 // exists because the grammar is what is refused, not the name.
 func objectCommentRefusals(note string) []experiment {
-	return objectCommentRefusalsBut("", note)
+	return objectCommentRefusalsBut(note)
 }
 
-// objectCommentRefusalsBut is [objectCommentRefusals] without the question
-// of the key asked, which the dialect answers with an experiment of its own.
-func objectCommentRefusalsBut(asked capability.Capability, note string) []experiment {
+// objectCommentRefusalsBut is [objectCommentRefusals] without the questions
+// of the keys asked, which the dialect answers in a way of its own.
+func objectCommentRefusalsBut(note string, asked ...capability.Capability) []experiment {
 	experiments := make([]experiment, 0, len(objectCommentStatements))
 	for _, form := range objectCommentStatements {
-		if form.key == asked {
+		if slices.Contains(asked, form.key) {
 			continue
 		}
 		experiments = append(experiments, acceptanceNote(form.key, nil, form.statement, note))

@@ -87,10 +87,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "the comparison pairs a removed index with an added one only on a target with index_rename, which is YDB's, so a PostgreSQL plan reaches a rename only through a diff built by hand, and planning nothing would leave the index under its old name",
 		diff: &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "users", From: "a", To: "b"}}},
 	},
-	"IndexCommentsChanged": {
-		why:  "the comparison records an index comment apart from the index only on a target with comment_attributes, which is YDB's; planning nothing would report a comment written that is not",
-		diff: &difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "users", Name: "a", Desired: "x"}}},
-	},
 	"RLSPolicyIdentityConflicts": {
 		why: "row-level security on this family belongs to its owner, and two declared policies that resolve to one identity are refused by the source that read them (stokaro/ptah#2440)",
 		diff: &difftypes.SchemaDiff{RLSPolicyIdentityConflicts: []difftypes.RLSPolicyConflict{{
@@ -458,6 +454,13 @@ func diffCategoryFixtures() []categoryFixture {
 			"IndexVisibilityChanged",
 			&difftypes.SchemaDiff{IndexVisibilityChanged: []difftypes.IndexVisibilityChange{{
 				TableName: "t", Name: "t_idx", Invisible: true,
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			"IndexCommentsChanged",
+			&difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{
+				TableName: "t", Name: "t_idx", Current: "old", Desired: "new",
 			}}},
 			&schemamodel.Database{},
 		},

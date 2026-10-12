@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/routineargs"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -21,6 +23,30 @@ var objectCommentStatements = map[difftypes.CommentedObjectKind]ast.CommentedObj
 	difftypes.CommentedMatView:       ast.CommentedMaterializedView,
 	difftypes.CommentedTrigger:       ast.CommentedTrigger,
 	difftypes.CommentedPolicy:        ast.CommentedPolicy,
+	difftypes.CommentedSchema:        ast.CommentedSchema,
+	difftypes.CommentedRole:          ast.CommentedRole,
+}
+
+// refuseIndexChangesInPlace refuses an index rename, which this planner never
+// plans, and an index comment written in place on a target without
+// [capability.IndexComments], such as the Spanner PostgreSQL interface, where
+// the comparison records none and only a diff built by hand carries one.
+func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
+	if p.capabilities().Has(capability.IndexComments) {
+		return schemaprecondition.RefuseIndexRenames(p.targetDialect(), diff)
+	}
+	return schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff)
+}
+
+// changeIndexComments sets the comment of each index the plan keeps whose
+// comment the comparison found changed. The comparison records one only for
+// an index both sides hold and the plan neither drops nor creates, so each
+// change is one COMMENT ON INDEX, written in the index's table's schema.
+func changeIndexComments(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, change := range diff.IndexCommentsChanged {
+		result = append(result, ast.NewObjectComment(ast.CommentedIndex, change.Name, change.Desired).SetTable(change.TableName))
+	}
+	return result
 }
 
 // changeObjectComments sets the comment of each existing object whose

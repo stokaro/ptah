@@ -1419,22 +1419,20 @@ The fixture that pins it puts a *different* comment on the table, because the
 index row joins both relations and `obj_description(t.oid, 'pg_class')` is the
 same function on the same catalog reaching the wrong object.
 
-The comment reaches the HCL surface and the live target, and it does not reach
-the `.sql` one: `COMMENT ON INDEX` parses as a statement but the AST-to-IR
-converter does not attach it back to the index, so a `.sql` document written by
-`schema inspect` describes an index with no comment. Nothing observable follows
-from that today — the comparator does not compare index comments either, so the
-document still plans nothing against the database it came from, measured — but
-it is a real hole in the same surface enumeration and it is recorded here rather
-than left implicit. Closing it means the comparator arm below and the converter
-hop together.
+The comment reaches the HCL surface, the `.sql` surface and the live target: a
+`.sql` document written by `schema inspect` carries `COMMENT ON INDEX`, and the
+SQL reader attaches it to its index.
 
-What is **not** closed on PostgreSQL is a comment *change* on an index that
-already exists: the index comparator does not compare a PostgreSQL index's
-comment, so `schema apply` plans nothing for `'a'` -> `'b'` where CE plans a
-`COMMENT ON INDEX`. That is left open deliberately — the comparator's only
-transition for an index is DROP plus CREATE, and planning a rebuild for a
-comment would be a strictly worse answer than planning nothing.
+A comment *change* on an index that already exists is one `COMMENT ON INDEX`,
+as CE plans it. The comparison compares the comment of an index both sides hold
+and the plan keeps, on a target that stores the comment apart from the index
+(`index_comments`): PostgreSQL, CockroachDB and YugabyteDB. An index the plan
+creates writes its comment after the `CREATE INDEX`, and one it drops takes the
+comment with it, so neither needs the statement. Measured on PostgreSQL 18.6,
+CockroachDB v26.3.2 and YugabyteDB 2026.1.2: `'first'` -> `'second'` -> none
+plans one `COMMENT ON INDEX` each, and the diff after each apply is in sync. The
+Spanner PostgreSQL interface answers `Unknown statement` to `COMMENT ON INDEX`,
+so its render names the comment as skipped.
 
 The MySQL family is the other case. There the comment is part of the index
 definition, kept in `STATISTICS.INDEX_COMMENT`, and no statement changes it in
@@ -1460,7 +1458,6 @@ same statement.
 | --- | --- | --- | --- | --- |
 | Per-key collation, `(name COLLATE "C")` | `pg_index.indcollation` | Dropped | Dropped | Not a parity gap. The Atlas HCL surface has no per-key collation attribute — CE inspects the fixture as a bare `columns = [column.name]`. Adding one would emit a document CE cannot read, trading a silent index difference for a loud interop break |
 | Index storage parameters other than `pages_per_range` | `pg_class.reloptions` | Dropped | Dropped | Not a parity gap. Same reason: no HCL slot, so a recorded value would churn forever. See above |
-| A comment *change* on an existing index | `obj_description` of the index relation | Plans `COMMENT ON INDEX` | Plans nothing | **A parity gap.** The value is now read and written; only the comparator arm is missing, and the comparator's sole transition for an index is a rebuild |
 | Table and column comments | `obj_description` / `col_description` | Emits `COMMENT ON TABLE` / `COMMENT ON COLUMN` | Emits an SQL line comment | **A parity gap**, wider than the index family and predating it: the PostgreSQL renderer has no `COMMENT ON` statement for either object |
 
 `pg_index` has four per-key vectors — `indkey`, `indclass`, `indoption` and

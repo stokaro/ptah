@@ -898,8 +898,10 @@ func appendIndexDifferences(
 				Invisible: generatedEntry.index.Invisible,
 			})
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
+			appendKeptIndexCommentChange(diff, comparison, databaseEntry.ref, generatedEntry.index.Comment, databaseEntry.index.Comment)
 		default:
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
+			appendKeptIndexCommentChange(diff, comparison, databaseEntry.ref, generatedEntry.index.Comment, databaseEntry.index.Comment)
 		}
 	}
 	slices.SortFunc(diff.IndexVisibilityChanged, func(a, b difftypes.IndexVisibilityChange) int {
@@ -960,6 +962,28 @@ func appendIndexCommentChange(
 		TableName: ref.TableName,
 		Name:      ref.Name,
 		From:      from,
+		Current:   current,
+		Desired:   desired,
+	})
+}
+
+// appendKeptIndexCommentChange records the comment an index both sides hold,
+// and the plan keeps, has to take, on a target that comments an index in place
+// with a statement of its own ([capability.IndexComments]): the PostgreSQL
+// family's COMMENT ON INDEX. There the comment belongs to the index, so an
+// index the plan creates writes its own and one it drops takes its comment
+// with it; only a kept index needs a change.
+func appendKeptIndexCommentChange(diff *difftypes.SchemaDiff, comparison indexComparison, ref difftypes.IndexRef, desired, current string) {
+	if !comparison.caps.Has(capability.IndexComments) {
+		return
+	}
+	desired, current = strings.TrimSpace(desired), strings.TrimSpace(current)
+	if desired == current {
+		return
+	}
+	diff.IndexCommentsChanged = append(diff.IndexCommentsChanged, difftypes.IndexCommentChange{
+		TableName: ref.TableName,
+		Name:      ref.Name,
 		Current:   current,
 		Desired:   desired,
 	})

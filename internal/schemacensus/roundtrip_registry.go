@@ -248,7 +248,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Constraint.NotValid", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Schemas",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "postgres", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql", "spanner", "sqlserver"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -336,12 +336,6 @@ var roundTripGaps = []Unreached{
 		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
 		Directions: []Direction{FromCatalog},
 		Reason:     gapRoutineAttributes,
-	},
-	{
-		Field:      "schemamodel.Index.Comment",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
@@ -433,8 +427,6 @@ var roundTripGaps = []Unreached{
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Role.Comment", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.Schema.Comment", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Schema.Name",
 		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "postgres", "spanner", "sqlserver", "yugabytedb"},

@@ -294,6 +294,8 @@ func measuredLines() map[string]measuredLine {
 				capability.TriggerComments:          routineCommentCarried,
 				capability.PolicyComments:           routineCommentCarried,
 				capability.ConstraintComments:       constraintCommentCarried,
+				capability.IndexComments:            indexRoleCommentCarried,
+				capability.RoleComments:             indexRoleCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -481,6 +483,8 @@ func measuredLines() map[string]measuredLine {
 				capability.TriggerComments:          routineCommentCarried,
 				capability.PolicyComments:           routineCommentCarried,
 				capability.ConstraintComments:       mysqlConstraintCommentCarried,
+				capability.IndexComments:            mysqlIndexRoleCommentCarried,
+				capability.RoleComments:             mysqlIndexRoleCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -669,6 +673,8 @@ func measuredLines() map[string]measuredLine {
 				capability.TriggerComments:          routineCommentCarried,
 				capability.PolicyComments:           routineCommentCarried,
 				capability.ConstraintComments:       mysqlConstraintCommentCarried,
+				capability.IndexComments:            mysqlIndexRoleCommentCarried,
+				capability.RoleComments:             mysqlIndexRoleCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -743,6 +749,18 @@ const constraintCommentCarried = "this run predates the key and sent no COMMENT 
 const mysqlConstraintCommentCarried = "this run predates the key and sent no COMMENT ON CONSTRAINT. " +
 	"MySQL and MariaDB have no statement that comments a constraint, so the key is false for the " +
 	"family (stokaro/ptah#3678)"
+
+// indexRoleCommentCarried is the reason a PostgreSQL line carries the index
+// and the role comment keys: its run predates them.
+const indexRoleCommentCarried = "this run predates the keys and sent no COMMENT ON INDEX or COMMENT ON ROLE. " +
+	"The keys were measured on 2026-10-12 against PostgreSQL 18.6, YugabyteDB 2026.1.2, CockroachDB v26.3.2 " +
+	"and the Spanner emulator behind PGAdapter 0.56.1, and carried here from those runs"
+
+// mysqlIndexRoleCommentCarried is the same for a MySQL-family line, where the
+// keys are false because the grammar is absent.
+const mysqlIndexRoleCommentCarried = "this run predates the keys and sent no COMMENT ON INDEX or COMMENT ON " +
+	"ROLE. MySQL and MariaDB write an index's comment into its definition and have no statement that " +
+	"comments a role, so the keys are false for the family"
 
 // enforcementAndMatchCarried is the reason a line carries the NOT ENFORCED
 // and MATCH keys: its run predates them.

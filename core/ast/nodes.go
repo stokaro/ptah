@@ -1521,11 +1521,16 @@ const (
 	// index name is unique only within its table, and its comment is kept on
 	// the table.
 	CommentedIndex CommentedObject = "INDEX"
+	// CommentedSchema is a schema, whose name is never qualified.
+	CommentedSchema CommentedObject = "SCHEMA"
+	// CommentedRole is a role, whose name is cluster-wide and never
+	// qualified.
+	CommentedRole CommentedObject = "ROLE"
 )
 
 // ObjectCommentNode sets or removes the comment of an existing view,
 // sequence, domain, type, extension, function, procedure, materialized view,
-// trigger, policy or index.
+// trigger, policy, index, schema or role.
 //
 // It is a statement rather than a field of the node that creates the object:
 // a create node carries the comment the object is created with, and this node
@@ -1541,8 +1546,8 @@ type ObjectCommentNode struct {
 	// Object is the kind of object Name names.
 	Object CommentedObject
 	// Name is the object's name, schema-qualified where the object has a
-	// schema. An extension's name is database-wide and is never split on a
-	// dot. A trigger's and a policy's name is scoped to Table and is never
+	// schema. An extension's, a schema's and a role's name is never split on
+	// a dot. A trigger's and a policy's name is scoped to Table and is never
 	// qualified.
 	Name string
 	// Table is the table a trigger, a policy or an index belongs to, which

@@ -51,12 +51,7 @@ func TestCompare_IndexOptions_Synced(t *testing.T) {
 	}{
 		{name: "a comment", dialect: platform.MySQL, desired: optionedIndexTable("x", false), live: liveOptionedIndexTable("x", false)},
 		{name: "an invisible index", dialect: platform.MariaDB, desired: optionedIndexTable("", true), live: liveOptionedIndexTable("", true)},
-		{
-			// PostgreSQL keeps an index comment as an object comment, which
-			// this comparison does not read.
-			name: "a PostgreSQL comment", dialect: platform.Postgres,
-			desired: optionedIndexTable("x", false), live: liveOptionedIndexTable("y", false),
-		},
+		{name: "a PostgreSQL comment", dialect: platform.Postgres, desired: optionedIndexTable("x", false), live: liveOptionedIndexTable("x", false)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

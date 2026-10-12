@@ -479,11 +479,13 @@ validated: nothing can mark it `NOT VALID` again short of dropping it.
 ## Object comments
 
 Ptah writes the comment of a view, a materialized view, a sequence, a domain, a
-composite, range or enum type, an extension, a function, a procedure, a trigger
-and a row-level security policy with `COMMENT ON`, reads it back and compares
-it, as it does a table's and a column's. The comment is written right after the
-statement that creates the object, and a changed comment is planned as one
-`COMMENT ON` for the object, not as a drop and a create.
+composite, range or enum type, an extension, a function, a procedure, a
+trigger, a row-level security policy, an index, a schema and a role with
+`COMMENT ON`, reads it back and compares it, as it does a table's and a
+column's. The comment is written right after the statement that creates the
+object, and a changed comment is planned as one `COMMENT ON` for the object,
+not as a drop and a create. An index whose definition changed is dropped and
+created again, and the comment follows its `CREATE INDEX`.
 
 A function or a procedure is named by the argument list the server records, so
 the statement addresses one overload. A trigger and a policy are named `ON`
@@ -506,12 +508,14 @@ compares a comment only where the server stores it and reports it back, which
 each statement's capability key records: `view_comments`,
 `materialized_view_comments`, `sequence_comments`, `type_comments`,
 `domain_comments`, `extension_comments`, `function_comments`,
-`procedure_comments`, `trigger_comments` and `policy_comments`. Where a key is
+`procedure_comments`, `trigger_comments`, `policy_comments`,
+`index_comments`, `schema_comments` and `role_comments`. Where a key is
 false, the render names the comment it left out. CockroachDB accepts
 `COMMENT ON TYPE` and then reports no comment for the type, so its
 `type_comments` key is false. CockroachDB 26.3 stores a function's and a
 procedure's comment and refuses the statement for a materialized view, a
-trigger and a policy. The Spanner PostgreSQL interface refuses every
+trigger and a policy. CockroachDB stores an index's and a schema's comment and
+has no `COMMENT ON ROLE`. The Spanner PostgreSQL interface refuses every
 `COMMENT ON`.
 
 ### Constraint comments
