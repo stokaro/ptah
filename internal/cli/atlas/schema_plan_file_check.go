@@ -10,6 +10,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/migrator"
 )
@@ -94,6 +95,7 @@ func verifyAtlasSchemaPlanFile(
 		SQL:                   runtime.SQL(),
 		HCL:                   runtime.HCL(),
 		CoverageVocabulary:    runtime.CoverageVocabulary(),
+		Relations:             featureselect.RelationsOf(runtime),
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,
 		SchemaScope:           schemaScope,

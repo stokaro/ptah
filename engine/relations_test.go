@@ -248,6 +248,23 @@ func TestRelationsRefuseMalformedReplies(t *testing.T) {
 		{name: "duplicate dependency", adjust: func(r *schemaext.RelationResult) {
 			r.Values[0].Dependencies = append(r.Values[0].Dependencies, r.Values[0].Dependencies[0])
 		}},
+		{name: "invalid attachment", adjust: func(r *schemaext.RelationResult) {
+			r.Values[0].Attachment = objectidentity.ID{Kind: objectidentity.KindTable}
+		}},
+		{name: "attachment that is not a table", adjust: func(r *schemaext.RelationResult) {
+			r.Values[0].Attachment = objectidentity.NewBuilder(identifier.ForDialect("postgres")).Column("orders", "tenant")
+		}},
+		{name: "attachment that is a function", adjust: func(r *schemaext.RelationResult) {
+			r.Values[0].Attachment = objectidentity.NewBuilder(identifier.ForDialect("postgres")).Function("security.permitted", "integer")
+		}},
+		{name: "attachment that is a table's child", adjust: func(r *schemaext.RelationResult) {
+			table := objectidentity.NewBuilder(identifier.ForDialect("postgres")).Table("public.orders")
+			table.Parent = table.Name
+			r.Values[0].Attachment = table
+		}},
+		{name: "attachment that is also a dependency", adjust: func(r *schemaext.RelationResult) {
+			r.Values[0].Attachment = r.Values[0].Dependencies[0]
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -350,4 +367,63 @@ func TestRelationKinds_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 	c.Assert(kinds, qt.IsNil)
+}
+
+// TestRelationsCaptureFollowsAttachments pins that the table a value is
+// attached to is part of its relations: the record carries it, and the
+// context around the table holds the value and requires the table.
+func TestRelationsCaptureFollowsAttachments(t *testing.T) {
+	c := qt.New(t)
+	b := objectidentity.NewBuilder(identifier.ForDialect("postgres"))
+	table, other := b.Table("public.orders"), b.Table("public.other")
+	attached := relationObject(conversionFirst, "attached")
+	unrelated := relationObject(conversionFirst, "unrelated")
+	runtime := mustRuntime(c, relationProvider(relationsFunc(func(_ context.Context, r schemaext.RelationRequest) (schemaext.RelationResult, error) {
+		reply := relationReply(r)
+		reply.Values[0].Attachment, reply.Values[1].Attachment = table, other
+		return reply, nil
+	})))
+
+	snapshot, err := runtime.CaptureRelations(t.Context(), relationRequest(runtime, attached, unrelated))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(snapshot.Records()[0].Attachment, qt.Equals, table)
+	related, err := snapshot.CaptureRelated(t.Context(), []objectidentity.ID{table})
+	c.Assert(err, qt.IsNil)
+	c.Assert(related.Values, qt.DeepEquals, []schemaext.RelationValue{attached})
+	c.Assert(related.Required, qt.DeepEquals, []objectidentity.ID{table})
+}
+
+// TestRelationsRefuseAnAttachmentOnAnOwnedValue pins that a child, which names
+// its table as its parent, and a facet, which is its table's own, take no
+// attachment: their owner already places them.
+func TestRelationsRefuseAnAttachmentOnAnOwnedValue(t *testing.T) {
+	b := objectidentity.NewBuilder(identifier.ForDialect("postgres"))
+	table := b.Table("public.orders")
+	child := relationObject(conversionFirst, "child")
+	child.Subject.Subject.Schema, child.Subject.Subject.Parent = table.Schema, table.Name
+	facet := schemaext.RelationValue{Subject: schemaext.RelationSubject{
+		Kind: conversionSecond, Placement: schemaext.FacetPlacement, Subject: table}, Value: &linkedValue{Model: conversionSecond}}
+	for _, test := range []struct {
+		name  string
+		value schemaext.RelationValue
+	}{
+		{name: "a child", value: child},
+		{name: "a facet", value: facet},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := mustRuntime(c, relationProvider(relationsFunc(func(_ context.Context, r schemaext.RelationRequest) (schemaext.RelationResult, error) {
+				reply := relationReply(r)
+				reply.Values[0].Attachment = b.Table("public.other")
+				return reply, nil
+			})))
+
+			snapshot, err := runtime.CaptureRelations(t.Context(), relationRequest(runtime, test.value))
+
+			c.Assert(err, qt.ErrorMatches, `.*takes no attachment`)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(snapshot.Records(), qt.HasLen, 0)
+		})
+	}
 }

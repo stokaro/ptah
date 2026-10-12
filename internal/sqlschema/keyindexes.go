@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/parser"
 )
 
@@ -28,6 +29,10 @@ type Document struct {
 	// no node carries, and nil for an AST that came without one; see
 	// [parseNotes].
 	notes parseNotes
+	// relations says which table the standalone objects of the file being
+	// read are attached to, and is nil when its read has no runtime; see
+	// [Options.Relations].
+	relations featureselect.RelationRuntime
 }
 
 // parseNotes is what a parse of one file found about the AST it returned that

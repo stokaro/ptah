@@ -26,6 +26,7 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
@@ -340,7 +341,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary()), command)
+	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations()), command)
 }
 
 func commandDisplay(command schemasource.Command) string {
@@ -509,6 +510,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		SQL:                o.sql(),
 		HCL:                o.hcl(),
 		CoverageVocabulary: o.vocabulary(),
+		Relations:          o.relations(),
 		Vars:               o.Vars,
 		VarValues:          o.VarValues,
 	})
@@ -664,6 +666,12 @@ func (o Options) vocabulary() coverage.Vocabulary {
 		return coverage.Vocabulary{}
 	}
 	return o.Owners.CoverageVocabulary()
+}
+
+// relations is the relation discovery of the load's owners, nil when they
+// have none; see [schemafile.Options.Relations].
+func (o Options) relations() featureselect.RelationRuntime {
+	return featureselect.RelationsOf(o.Owners)
 }
 
 // yaml is the YAML owners of the load, or the zero set, which a YAML parse

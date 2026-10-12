@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
@@ -726,6 +727,7 @@ func loadDesiredApplySchema(
 			SQL:                   opts.Runtime.SQL(),
 			HCL:                   opts.Runtime.HCL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
+			Relations:             featureselect.RelationsOf(opts.Runtime),
 			DatabaseURL:           conn.Info().URL,
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,

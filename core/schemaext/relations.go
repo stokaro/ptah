@@ -45,15 +45,36 @@ type RelationRequest struct {
 	Coverage       Coverage
 }
 
-// ValueRelations records references beyond a value's exclusive owner. Named
-// child objects already identify their table through Subject.Parent; a facet
-// already identifies its common owner through Subject. Dependencies must not
-// duplicate those ownership facts. They may name several tables or functions
-// without giving the value several parents. Complete confirms that the list is
-// exhaustive for this value; false requires a Reason and is never an empty-set
-// claim. This says nothing about uncaptured members of the model namespace.
+// ValueRelations records how a value relates to common objects beyond its
+// exclusive owner. A value relates to a table in one of three ways, and each
+// says what the server does when the table is dropped, what a scope does with
+// the value, and who plans the value's changes:
+//
+//   - A child names its table in Subject.Parent, and a facet is the common
+//     owner's own. The model holds a child only with its table, a scope keeps
+//     it with its table, and the table's transition claims its changes unless
+//     its owner declares them. What the server does with a child on DROP
+//     TABLE is the owner's: ClickHouse 25.8 keeps a row policy.
+//   - A Dependency is an object the value references. The server refuses to
+//     drop it while the value references it, as SQL Server refuses a table a
+//     security policy binds (Msg 3729), a scope that keeps some of the
+//     value's tables and not the others is refused, and the value's owner
+//     plans its changes after its dependencies.
+//   - An Attachment is the table the value hangs off without being its child.
+//     The server drops the value with the table, as SQL Server drops an
+//     extended property, a scope keeps or leaves the value with the table,
+//     and the value's owner plans its changes alone.
+//
+// Dependencies and Attachment must not repeat Subject.Parent or a facet's
+// owner, and a child has no Attachment. Dependencies may name several tables
+// or functions without giving the value several parents; Attachment names one
+// table, and is the zero value for a value attached to none. Complete confirms
+// that the record is exhaustive for this value; false requires a Reason and is
+// never an empty-set claim. This says nothing about uncaptured members of the
+// model namespace.
 type ValueRelations struct {
 	Subject      RelationSubject
+	Attachment   objectidentity.ID
 	Dependencies []objectidentity.ID
 	Complete     bool
 	Reason       string

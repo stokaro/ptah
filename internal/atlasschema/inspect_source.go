@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemafile"
@@ -359,6 +360,7 @@ func inspectOnDev(
 			SQL:                   opts.Runtime.SQL(),
 			HCL:                   opts.Runtime.HCL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
+			Relations:             featureselect.RelationsOf(opts.Runtime),
 			DatabaseURL:           devURL,
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,

@@ -1,16 +1,18 @@
 package sqlschema
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/featureselect"
 )
 
 // applyDropTable removes each table a DROP TABLE names, with what the server
@@ -24,6 +26,12 @@ import (
 // leaves no table a, and Atlas CE v1.3.0 reports the file synced with the
 // database it builds (stokaro/ptah#3876).
 //
+// A feature object attached to a dropped table goes with it, as the server
+// drops it, such as a SQL Server extended property; the read's relation
+// runtime says which table an object is attached to (see
+// [Options.Relations]). Without one, a DROP TABLE in a document whose model
+// holds a standalone feature object is refused.
+//
 // What the servers refuse is refused, before anything is removed:
 //
 //   - a table no file declares, unless the statement says IF EXISTS;
@@ -35,7 +43,9 @@ import (
 //
 // CASCADE is refused as it is on DROP COLUMN: it drops objects the file does
 // not list.
-func applyDropTable(database, base *schemamodel.Database, document *Document, node *ast.DropTableNode, sourcePlatform string) error {
+func applyDropTable(
+	ctx context.Context, database, base *schemamodel.Database, document *Document, node *ast.DropTableNode, sourcePlatform string,
+) error {
 	names := node.Names
 	if len(names) == 0 {
 		names = []string{node.Name}
@@ -67,10 +77,46 @@ func applyDropTable(database, base *schemamodel.Database, document *Document, no
 			return fmt.Errorf("DROP TABLE %s: %s still refers to the table", target.written, reference)
 		}
 	}
+	if len(targets) == 0 {
+		return nil
+	}
+	if err := detachFromDropped(ctx, document, targets, sourcePlatform); err != nil {
+		return fmt.Errorf("DROP TABLE %s: %w", strings.Join(names, ", "), err)
+	}
 	for _, target := range targets {
 		target.keys = &document.keys
 		target.document = document
 		removeTable(target)
+	}
+	return nil
+}
+
+// detachFromDropped removes the feature objects attached to a dropped table
+// from every database of the targets, before the tables go, since an
+// attachment is matched by resolving the table name it carries. Their owners'
+// relation discovery says which table an object is attached to, once for the
+// whole statement. Relation discovery is registered per target, so a document
+// that names no target detaches nothing.
+func detachFromDropped(ctx context.Context, document *Document, targets []alterTarget, sourcePlatform string) error {
+	targetName := ownerTarget(sourcePlatform)
+	if targetName == "" {
+		return nil
+	}
+	databases := targets[0].databases
+	sides := make([]featureselect.Side, 0, len(databases))
+	for _, database := range databases {
+		sides = append(sides, featureselect.Side{Representation: schemaext.Desired, Objects: database.FeatureObjects, Coverage: database.FeatureCoverage})
+	}
+	bindings, err := featureselect.CaptureBindings(ctx, document.relations, targetName, identifier.ForDialect(sourcePlatform), sides...)
+	if err != nil {
+		return err
+	}
+	dropped := func(schema, table string) bool {
+		qualified := schemamodel.QualifyTableName(schema, table)
+		return slices.ContainsFunc(targets, func(target alterTarget) bool { return target.reachesTable(qualified) })
+	}
+	for _, database := range databases {
+		database.FeatureObjects, database.FeatureCoverage = bindings.Detach(database.FeatureObjects, database.FeatureCoverage, dropped)
 	}
 	return nil
 }
@@ -140,10 +186,6 @@ func removeTable(target alterTarget) {
 		})
 		database.Grants = slices.DeleteFunc(database.Grants, func(grant schemamodel.Grant) bool {
 			return grant.OnTable != "" && target.reachesTable(grant.OnTable)
-		})
-		database.FeatureObjects = database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
-			address, property := mssqlproperty.RefAddress(ref)
-			return !property || address.Table == "" || !target.reachesTable(schemamodel.QualifyTableName(address.Schema, address.Table))
 		})
 		database.ManagedData = slices.DeleteFunc(database.ManagedData, func(data schemamodel.ManagedData) bool {
 			return target.reachesTable(schemamodel.QualifyTableName(data.Schema, data.Table))

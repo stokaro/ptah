@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/parser"
 )
 
@@ -64,6 +65,15 @@ type Options struct {
 	// header may name beside the common ones, usually the vocabulary of the
 	// runtime the caller compares with, such as a YDB changefeed.
 	Vocabulary schemacoverage.Vocabulary
+	// Relations says which table a standalone feature object is attached to,
+	// usually the runtime the caller compares with. A DROP TABLE removes the
+	// objects attached to the table, as the server drops them with it, such as
+	// a SQL Server extended property. Without it, a DROP TABLE in a document
+	// whose model holds a standalone object is refused, since the read cannot
+	// tell whether the object goes with the table. Relation discovery is
+	// registered per target, so a document that names no target detaches
+	// nothing and is never refused for it.
+	Relations featureselect.RelationRuntime
 }
 
 // ReadWith is [ReadOnto] with the owners and the coverage vocabulary the
@@ -101,7 +111,7 @@ func ReadWith(
 		return loaded.Database, nil, nil
 	}
 	alone := document == nil
-	database, statements, err := convert(ctx, data, dialect, document, opts.Owners)
+	database, statements, err := convert(ctx, data, dialect, document, opts.Owners, opts.Relations)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
@@ -134,6 +144,7 @@ func refuseFeatureCoverageHeader(data []byte) error {
 // converts its statements onto document, a fresh one for a file read alone.
 func convert(
 	ctx context.Context, data []byte, dialect string, document *Document, owners sqlext.Set,
+	relations featureselect.RelationRuntime,
 ) (schemamodel.Database, *ast.StatementList, error) {
 	if document == nil {
 		document = NewDocument(nil)
@@ -147,9 +158,9 @@ func convert(
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	document.notes = parsed
-	defer func() { document.notes = nil }()
-	database, err := toDatabase(statements, dialect, document)
+	document.notes, document.relations = parsed, relations
+	defer func() { document.notes, document.relations = nil, nil }()
+	database, err := toDatabase(ctx, statements, dialect, document)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}

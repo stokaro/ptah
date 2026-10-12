@@ -33,6 +33,8 @@ func mssqlPropertyProvider() engine.Provider {
 			Service: mssqlproperty.PlanService{}}},
 	}
 	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Relations = append(provider.Relations, engine.RelationDiscovery{Target: target,
+			Representation: representation, Kinds: models, Service: mssqlproperty.RelationService{}})
 		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation,
 			Definitions: mssqlproperty.Definitions(), Service: mssqlproperty.ReportService{}})
 	}

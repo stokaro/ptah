@@ -26,6 +26,14 @@ type RelationRuntime interface {
 	RelationKinds(target string, representation schemaext.Representation) ([]schemaext.Kind, error)
 }
 
+// RelationsOf returns runtime's relation discovery, and nil when runtime
+// describes no relations, which every reader of the result treats as knowing
+// none: a capture over standalone objects refuses it.
+func RelationsOf(runtime any) RelationRuntime {
+	relations, _ := runtime.(RelationRuntime)
+	return relations
+}
+
 // Side is one captured state whose standalone feature objects may bind
 // tables: the desired or the current side of a comparison.
 type Side struct {
@@ -34,11 +42,13 @@ type Side struct {
 	Coverage       schemaext.Coverage
 }
 
-// Bindings records the tables each standalone feature object binds, as its
-// owner's relation discovery reports them, over every side it was captured
-// from. A standalone object belongs to no table, such as a SQL Server security
-// policy, which binds predicates to several. The zero value records nothing,
-// and selecting with it keeps every standalone object, as [Tables] does.
+// Bindings records the tables each standalone feature object binds, and the
+// table it is attached to, as its owner's relation discovery reports them,
+// over every side it was captured from. A standalone object belongs to no
+// table: a SQL Server security policy binds predicates to several, and an
+// extended property on a table is attached to it. The zero value records
+// nothing, and selecting with it keeps every standalone object, as [Tables]
+// does.
 type Bindings struct {
 	objects map[objectidentity.Key]binding
 }
@@ -46,6 +56,7 @@ type Bindings struct {
 type binding struct {
 	ref        objectidentity.ID
 	tables     []objectidentity.ID
+	attachment objectidentity.ID
 	references []objectidentity.ID
 	incomplete string
 }
@@ -93,7 +104,7 @@ func CaptureBindings(ctx context.Context, runtime RelationRuntime, target string
 			continue
 		}
 		if runtime == nil {
-			return Bindings{}, fmt.Errorf("%w: no runtime can say which tables the standalone feature objects bind", ptaherr.ErrUnsupportedFeature)
+			return Bindings{}, fmt.Errorf("%w: no runtime can say which tables the standalone feature objects bind or are attached to", ptaherr.ErrUnsupportedFeature)
 		}
 		kinds, err := runtime.RelationKinds(target, side.Representation)
 		if err != nil {
@@ -131,6 +142,9 @@ func (b Bindings) add(record schemaext.ValueRelations) {
 	}
 	if !record.Complete && found.incomplete == "" {
 		found.incomplete = record.Reason
+	}
+	if record.Attachment != (objectidentity.ID{}) {
+		found.attachment = record.Attachment
 	}
 	for _, dependency := range record.Dependencies {
 		if !slices.ContainsFunc(found.references, func(reference objectidentity.ID) bool { return reference.Key() == dependency.Key() }) {
@@ -193,6 +207,20 @@ func (b Bindings) Select(objects schemaext.Objects, coverage schemaext.Coverage,
 		return keepOwned(ref, keepTable)
 	}
 	return objects.Select(keep), coverage.SelectSubjects(keep), nil
+}
+
+// Detach removes the objects attached to a table dropped names, with their
+// knowledge, as the server drops them with the table. It decides nothing about
+// the tables an object binds, which the server refuses to drop while the
+// object binds them. Inputs remain unchanged.
+func (b Bindings) Detach(
+	objects schemaext.Objects, coverage schemaext.Coverage, dropped func(schema, table string) bool,
+) (schemaext.Objects, schemaext.Coverage) {
+	keep := func(ref objectidentity.ID) bool {
+		attachment := b.objects[ref.Key()].attachment
+		return attachment == (objectidentity.ID{}) || !dropped(attachment.Schema.Source, attachment.Name.Source)
+	}
+	return objects.Select(keep), coverage.SelectSubjects(keep)
 }
 
 // standalone reports an object that belongs to no table.

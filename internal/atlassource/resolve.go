@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
@@ -360,6 +361,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 			SQL:                   opts.Runtime.SQL(),
 			HCL:                   opts.Runtime.HCL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
+			Relations:             featureselect.RelationsOf(opts.Runtime),
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.ReportIgnored,
 			SchemaScope:           opts.SchemaScope,
@@ -435,7 +437,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context, opts ResolveOptions) (Stat
 func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	command := s.Sources[0].Command
 	command.Dialect = opts.Dialect
-	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML(), opts.Runtime.SQL(), opts.Runtime.HCL(), opts.Runtime.CoverageVocabulary()), command)
+	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML(), opts.Runtime.SQL(), opts.Runtime.HCL(), opts.Runtime.CoverageVocabulary(), featureselect.RelationsOf(opts.Runtime)), command)
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)
 	}

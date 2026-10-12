@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemamerge"
 	"ptah.run/internal/schemaselection"
@@ -59,6 +60,11 @@ type Options struct {
 	// only, so a header naming an owner's kind, such as a YDB changefeed, is
 	// refused.
 	CoverageVocabulary coverage.Vocabulary
+	// Relations says which table a standalone feature object is attached to,
+	// usually the runtime the caller compares with, so a DROP TABLE in a SQL
+	// file removes the objects the server drops with the table. Without it, a
+	// DROP TABLE in a load whose model holds a standalone object is refused.
+	Relations featureselect.RelationRuntime
 	// IgnoreUnknownHCLNames accepts and drops HCL names Ptah's schema HCL
 	// parser does not model instead of refusing the file.
 	//
@@ -863,7 +869,7 @@ func readSQLFile(
 	// The loaders take no context yet. The owners read their syntax in
 	// process, so the parse bounds the read.
 	db, statements, err := sqlschema.ReadWith(context.Background(), data, opts.Dialect, earlier,
-		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary})
+		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}
