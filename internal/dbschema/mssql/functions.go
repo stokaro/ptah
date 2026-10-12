@@ -6,37 +6,23 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlroutine"
 	"ptah.run/dialect/mssql/mssqlschema"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
-// readFunctions recovers the functions the connected database declares.
+// readFunctions reads routine signatures and options from the catalog. Bodies
+// and explicit INLINE settings come from the stored definition. A routine
+// whose options cannot be preserved is refused before comparison.
 //
-// The issue this closes assumed the header would have to be parsed out of
-// sys.sql_modules.definition, which returns the whole original `CREATE`
-// statement as one string. It does not. SQL Server publishes the header in the
-// catalog the same way MySQL's information_schema.ROUTINES does, and measured
-// on SQL Server 2025 (RTM-CU8), 17.0.4075.5:
-//
-//	SPECIFIC_NAME | ORDINAL_POSITION | PARAMETER_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
-//	fn_scalar     | 0                | NULL           | varchar   | 100
-//	fn_scalar     | 1                | @a             | int       | NULL
-//	fn_scalar     | 2                | @b             | varchar   | 50
-//
-// Ordinal 0 is the return value and the rest are the arguments in order, so
-// the name, the parameter list and the return type all come from
-// INFORMATION_SCHEMA.PARAMETERS. Only the BODY has to be taken out of the
-// definition text, which is a much narrower problem than a header parser: the
-// header's end is the last `AS` outside brackets and quotes, and everything
-// after it is the body.
-//
-// What the catalog does not carry is a parameter's DEFAULT.
-// `@b varchar(50) = 'x'` reports has_default_value = 0 in sys.parameters,
-// because SQL Server records defaults for CLR parameters only. A declaration
-// carrying one therefore reads back without it and would be replanned forever,
-// which is why the renderer refuses that shape up front instead.
+// SQL Server records parameter defaults in sys.parameters for CLR routines
+// only. The renderer refuses defaults in T-SQL routines because a declaration
+// with one cannot converge against that catalog signature.
 func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) {
 	parameters, returns, err := r.readRoutineSignatures(ctx)
 	if err != nil {
@@ -44,10 +30,12 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 	}
 
 	query := `
-		SELECT s.name, o.name, o.type, m.definition,
+		SELECT s.name, o.name, o.type, ISNULL(m.definition, ''),
+			   CASE WHEN m.definition IS NULL THEN 1 ELSE 0 END AS encrypted,
 			   ISNULL(CONVERT(varchar(30), m.execute_as_principal_id), 'CALLER') AS execute_as,
 			   CASE WHEN m.execute_as_principal_id > 0 THEN ISNULL(USER_NAME(m.execute_as_principal_id), '') ELSE '' END AS principal,
-			   ISNULL(OBJECTPROPERTY(o.object_id, 'IsDeterministic'), 0) AS is_deterministic
+			   m.is_schema_bound, m.is_recompiled, m.null_on_null_input,
+			   m.uses_native_compilation, ISNULL(m.inline_type, 0), ISNULL(m.is_inlineable, 0)
 		FROM sys.objects AS o
 		JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 		JOIN sys.sql_modules AS m ON m.object_id = o.object_id
@@ -62,13 +50,18 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 
 	var functions []catalog.Function
 	for rows.Next() {
-		var schema, name, objectType, definition, executeAs, principal string
-		var deterministic int
-		if err := rows.Scan(&schema, &name, &objectType, &definition,
-			&executeAs, &principal, &deterministic); err != nil {
+		var row routineOptionsRow
+		var schema, name, objectType, definition string
+		if err := rows.Scan(&schema, &name, &objectType, &definition, &row.encrypted, &row.executeAs, &row.principal,
+			&row.schemaBound, &row.recompiled, &row.nullOnNullInput, &row.nativelyCompiled, &row.inlined, &row.inlineable); err != nil {
 			return nil, err
 		}
-		facets, err := executeAsFacets(name, executeAs, principal)
+		word := "function"
+		if isProcedureObjectType(objectType) {
+			word = schemamodel.FunctionKindProcedure
+		}
+		row.inlineOption = routineInlineOption(definition, objectType)
+		facets, err := row.facets(word, schema+"."+name)
 		if err != nil {
 			return nil, err
 		}
@@ -88,15 +81,14 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 			// is nothing to read, and reporting the owner's language is what
 			// lets a declaration that says the same, or nothing, compare equal.
 			Language: mssqlroutine.Language,
-			// Both of these are read rather than assumed, because the catalog
-			// carries them and a default written in here would be a claim about
-			// somebody else's function. execute_as_principal_id is NULL for
-			// EXECUTE AS CALLER, -2 for OWNER and the principal's id for a named
-			// one, which the facets above carry; IsDeterministic is the
-			// engine's own verdict on the body, which is where T-SQL keeps the
-			// fact PostgreSQL spells as volatility.
-			Security:   functionSecurity(executeAs),
-			Volatility: functionVolatility(deterministic),
+			// The security mode is read rather than assumed, because the
+			// catalog carries it and a default written in here would be a
+			// claim about somebody else's function. execute_as_principal_id is
+			// NULL for EXECUTE AS CALLER, -2 for OWNER and the principal's id
+			// for a named one, which the facets above carry. T-SQL has no
+			// volatility clause; see mssqlroutine.Volatility.
+			Security:   functionSecurity(row.executeAs),
+			Volatility: mssqlroutine.Volatility,
 			Body:       routineBody(objectType, definition),
 		})
 	}
@@ -476,21 +468,58 @@ func isWordByte(b byte) bool {
 		(b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
-// executeAsFacets returns the SQL Server owner's EXECUTE AS facet of a routine
-// that runs as a named principal, and none for one that runs as its caller or
-// its owner. Measured on SQL Server 2025 RTM-CU9, execute_as_principal_id is
-// the principal's own id for EXECUTE AS 'name', and for EXECUTE AS SELF the id
-// of the principal that created the routine, which is reported by that name.
-// A routine that runs as a principal the read cannot name is refused, since
-// reporting it as one that runs as its owner would hide a principal change.
-func executeAsFacets(routine, executeAs, principal string) (schemaext.Facets, error) {
-	if executeAs == "CALLER" || executeAs == "-2" {
+// routineOptionsRow is what sys.sql_modules reports of a routine's header.
+type routineOptionsRow struct {
+	encrypted               int
+	executeAs, principal    string
+	schemaBound, recompiled bool
+	nullOnNullInput         bool
+	nativelyCompiled        bool
+	inlined, inlineable     bool
+	inlineOption            string
+}
+
+// facets returns the SQL Server owner's routine options facet of a routine,
+// and none for one whose header states no option the facet holds. Measured on
+// SQL Server 2025 RTM-CU9, execute_as_principal_id is the principal's own id
+// for EXECUTE AS 'name', and for EXECUTE AS SELF the id of the principal that
+// created the routine, which is reported by that name; is_schema_bound,
+// is_recompiled and null_on_null_input report SCHEMABINDING, RECOMPILE and
+// RETURNS NULL ON NULL INPUT.
+//
+// An option the facet cannot hold is refused by name rather than read as
+// absent, since a routine read without it would be replaced without it:
+// ENCRYPTION, which leaves sys.sql_modules no definition, NATIVE_COMPILATION,
+// and an explicit INLINE setting. The definition names INLINE even when
+// the function cannot be inlined and the catalog flags are both zero. A routine that runs as a principal the read cannot name is refused
+// too, since reporting it as one that runs as its owner would hide a
+// principal change.
+func (row routineOptionsRow) facets(kind, routine string) (schemaext.Facets, error) {
+	refuse := func(option, why string) error {
+		return fmt.Errorf("%w: sqlserver %s %s is created WITH %s, %s; Ptah can neither compare nor replace it",
+			ptaherr.ErrUnsupportedFeature, kind, routine, option, why)
+	}
+	switch {
+	case row.encrypted == 1:
+		return schemaext.Facets{}, refuse("ENCRYPTION", "and sys.sql_modules holds no definition of it")
+	case row.nativelyCompiled:
+		return schemaext.Facets{}, refuse("NATIVE_COMPILATION", "which Ptah cannot write")
+	case row.inlineOption != "":
+		return schemaext.Facets{}, refuse(row.inlineOption, "which Ptah cannot write")
+	case row.inlineable && !row.inlined:
+		return schemaext.Facets{}, refuse("INLINE = OFF", "which Ptah cannot write")
+	}
+	options := mssqlschema.RoutineOptions{SchemaBinding: row.schemaBound, Recompile: row.recompiled, ReturnsNullOnNullInput: row.nullOnNullInput}
+	if row.executeAs != "CALLER" && row.executeAs != "-2" {
+		if strings.TrimSpace(row.principal) == "" {
+			return schemaext.Facets{}, fmt.Errorf("routine %q runs as principal id %s, which USER_NAME does not name", routine, row.executeAs)
+		}
+		options.Principal = row.principal
+	}
+	if options.IsZero() {
 		return schemaext.Facets{}, nil
 	}
-	if strings.TrimSpace(principal) == "" {
-		return schemaext.Facets{}, fmt.Errorf("routine %q runs as principal id %s, which USER_NAME does not name", routine, executeAs)
-	}
-	return mssqlschema.WithObservedExecuteAs(schemaext.Facets{}, principal)
+	return mssqlschema.WithObservedRoutineOptions(schemaext.Facets{}, options)
 }
 
 // functionSecurity spells the principal a function runs as.
@@ -503,20 +532,6 @@ func functionSecurity(executeAs string) string {
 		return "INVOKER"
 	}
 	return "DEFINER"
-}
-
-// functionVolatility maps the engine's determinism verdict onto the shared
-// vocabulary.
-//
-// T-SQL has no volatility clause: determinism is inferred from the body, and
-// SCHEMABINDING is what usually makes it true. A function Ptah wrote is not
-// schema-bound and reports false, which is the VOLATILE a declaration defaults
-// to -- so the two agree without either side pretending.
-func functionVolatility(deterministic int) string {
-	if deterministic == 1 {
-		return "IMMUTABLE"
-	}
-	return "VOLATILE"
 }
 
 // functionReturns spells what a function gives back.
@@ -647,4 +662,36 @@ func precededByExecute(upper string, i int) bool {
 
 func isSpaceByte(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+// routineInlineOption reads an explicit INLINE setting from the stored header.
+// Catalog inlineability flags do not distinguish an explicit OFF setting on a
+// function that cannot be inlined from the same function without that setting.
+func routineInlineOption(definition, objectType string) string {
+	body := routineBody(objectType, definition)
+	trimmed := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition), ";"))
+	header, found := strings.CutSuffix(trimmed, body)
+	if !found || header == "" {
+		return ""
+	}
+	start := headerWith(header)
+	if start < 0 {
+		return ""
+	}
+	for _, option := range splitTopLevel(header[start:]) {
+		scan := lexer.NewLexerWithOptions(option, dialectlexer.Options(platform.SQLServer))
+		var words []string
+		for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+			if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
+				words = append(words, strings.ToUpper(token.Value))
+			}
+		}
+		if len(words) > 0 && words[0] == "INLINE" {
+			if len(words) >= 3 {
+				return strings.Join(words[:3], " ")
+			}
+			return "INLINE"
+		}
+	}
+	return ""
 }

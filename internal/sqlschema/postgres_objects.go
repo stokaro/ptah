@@ -370,11 +370,12 @@ func toPostgresRoutine(node *ast.PostgresRoutineNode, sourcePlatform string) sch
 // toSQLServerRoutine converts a routine the SQL Server routine parser modelled.
 //
 // EXECUTE AS CALLER is the security mode INVOKER, and every other EXECUTE AS
-// is DEFINER, as the reader reports them. A named principal is the SQL Server
-// owner's to read, and reaches the model as the facet its SQL syntax gives the
-// routine. EXECUTE AS SELF is refused: the catalog records the principal that
-// ran the CREATE in its place, so it would compare back only against whichever
-// account applied it. Every other option the header writes is refused by
+// is DEFINER, as the reader reports them. A named principal, SCHEMABINDING,
+// RECOMPILE and RETURNS NULL ON NULL INPUT are the SQL Server owner's to read,
+// and reach the model as the facet its SQL syntax gives the routine. EXECUTE
+// AS SELF is refused: the catalog records the principal that ran the CREATE in
+// its place, so it would compare back only against whichever account applied
+// it. Every other option the header writes, such as ENCRYPTION, is refused by
 // name too: the model has no place for it, so it could be neither written nor
 // compared back, and keeping the routine without it would create one the
 // author did not write.
@@ -393,6 +394,9 @@ func toSQLServerRoutine(node *ast.SQLServerRoutineNode, sourcePlatform string) (
 				ErrUnmodeledStatement, node.Kind, node.Name)
 		case option.Read && strings.HasPrefix(option.Text, "EXECUTE AS "):
 			security = "DEFINER"
+		case option.Read:
+			// An option the owner's facet holds, such as SCHEMABINDING; the
+			// facet below carries it.
 		case option.Text == "CALLED ON NULL INPUT":
 			// The default, and what the catalog reports for a routine that
 			// writes nothing.

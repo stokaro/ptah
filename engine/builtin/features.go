@@ -346,7 +346,7 @@ func prepareMaterializedViewFacets(dialect string, facets schemaext.Facets) (sch
 }
 
 // prepareRoutineFacets projects a routine's facets onto the target. SQL Server
-// interprets the principal a routine runs as; any other active value, and
+// interprets the options a routine's header writes; any other active value, and
 // every value on another target, is refused rather than rendered without it.
 func prepareRoutineFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
 	projected, err := projectFacets(dialect, facets)
@@ -356,10 +356,10 @@ func prepareRoutineFacets(dialect string, facets schemaext.Facets) (schemaext.Fa
 	if platform.NormalizeDialect(dialect) != platform.SQLServer {
 		return refuseActiveFacets(dialect, projected)
 	}
-	if _, _, err := mssqlschema.ExecuteAsPrincipal(projected); err != nil {
+	if _, _, err := mssqlschema.RoutineOptionsOf(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
-	if _, err := refuseActiveFacets(dialect, projected.Without(mssqlschema.ExecuteAsKind)); err != nil {
+	if _, err := refuseActiveFacets(dialect, projected.Without(mssqlschema.RoutineOptionsKind)); err != nil {
 		return schemaext.Facets{}, err
 	}
 	return projected, nil

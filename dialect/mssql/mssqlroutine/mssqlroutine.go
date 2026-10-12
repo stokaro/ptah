@@ -28,6 +28,14 @@ const Language = "sql"
 // caller's rights.
 const Security = "INVOKER"
 
+// Volatility is the volatility the reader reports for every SQL Server
+// routine. T-SQL has no volatility clause: the engine judges a function
+// deterministic from its body and SCHEMABINDING, and OBJECTPROPERTY reports
+// that verdict, which no declaration states. Reported as volatility, a
+// schema-bound function would differ from its own declaration on every
+// comparison.
+const Volatility = "VOLATILE"
+
 // Reader reads the routine bodies of SQL Server. Its zero value is ready to
 // use.
 type Reader struct{}

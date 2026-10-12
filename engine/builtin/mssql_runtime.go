@@ -55,29 +55,29 @@ func mssqlProvider() engine.Provider {
 }
 
 // registerSQLServerRoutineServices gives the SQL Server target's provider the
-// principal a routine runs as: the facet's codecs, its conversion, its
+// options a routine's header writes: the facet's codecs, its conversion, its
 // comparison, the reversal of its change, and the SQL syntax that reads it.
 // A change of it replaces the routine, which the host plans as the routine's
 // CREATE OR ALTER, so no owner plan is registered for it.
 func registerSQLServerRoutineServices(provider *engine.Provider) {
 	target := platform.SQLServer
-	provider.Codecs = slices.Concat(provider.Codecs, mssqlschema.ExecuteAsCodecs(), []schemaext.Codec{mssqldiff.ExecuteAsCodec()})
+	provider.Codecs = slices.Concat(provider.Codecs, mssqlschema.RoutineOptionsCodecs(), []schemaext.Codec{mssqldiff.RoutineOptionsCodec()})
 	provider.Conversions = append(provider.Conversions, engine.Conversion{
 		Target:  target,
-		Kinds:   []schemaext.Kind{mssqlschema.ExecuteAsKind},
+		Kinds:   []schemaext.Kind{mssqlschema.RoutineOptionsKind},
 		Service: mssqlconvert.Service{},
 	})
 	provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{
 		Target:      target,
 		OwnerKinds:  []objectidentity.Kind{objectidentity.KindFunction, objectidentity.KindProcedure},
-		Kinds:       []schemaext.Kind{mssqlschema.ExecuteAsKind},
-		ChangeKinds: []schemaext.Kind{mssqldiff.ExecuteAsKind},
-		Service:     mssqlcompare.ExecuteAsService{},
+		Kinds:       []schemaext.Kind{mssqlschema.RoutineOptionsKind},
+		ChangeKinds: []schemaext.Kind{mssqldiff.RoutineOptionsKind},
+		Service:     mssqlcompare.RoutineOptionsService{},
 	})
 	provider.Reversals = append(provider.Reversals, engine.Reversal{
 		Target:  target,
-		Kinds:   []schemaext.Kind{mssqldiff.ExecuteAsKind},
-		Service: mssqlreverse.ExecuteAsService{},
+		Kinds:   []schemaext.Kind{mssqldiff.RoutineOptionsKind},
+		Service: mssqlreverse.RoutineOptionsService{},
 	})
 	provider.SQL = append(provider.SQL, mssqlroutinesource.SQL())
 }

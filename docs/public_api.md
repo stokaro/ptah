@@ -2908,27 +2908,36 @@ skipped.
   rolls the creation back. A probe the server refuses leaves the declaration
   unanswered.
 
-The principal a SQL Server routine runs as is a routine facet of the same
-package, owned by `RoutineOwner`. `DesiredExecuteAs` and `ObservedExecuteAs`
-of `ExecuteAsKind` hold a user's name, as `WITH EXECUTE AS 'name'` writes it
-and `sys.sql_modules.execute_as_principal_id` reports it. A routine with no
-facet runs as its caller or its owner, which its common security mode states:
-`INVOKER` is `EXECUTE AS CALLER`, and `DEFINER` is `EXECUTE AS OWNER`. A named
-principal is a `DEFINER` routine, and the renderer refuses one beside
-`INVOKER`.
+The options a SQL Server routine's header writes are a routine facet of the
+same package, owned by `RoutineOwner`. `DesiredRoutineOptions` and
+`ObservedRoutineOptions` of `RoutineOptionsKind` hold `RoutineOptions`: the
+user the routine runs as, as `WITH EXECUTE AS 'name'` writes it, and
+`SCHEMABINDING`, `RECOMPILE` and `RETURNS NULL ON NULL INPUT`, each as
+`sys.sql_modules` reports it. A facet states at least one option. A routine
+with no named principal runs as its caller or its owner, which its common
+security mode states: `INVOKER` is `EXECUTE AS CALLER`, and `DEFINER` is
+`EXECUTE AS OWNER`. A named principal is a `DEFINER` routine, and the renderer
+refuses one beside `INVOKER`.
 
-`WithExecuteAs`, `WithObservedExecuteAs` and `ExecuteAsPrincipal`
-add and read the facet. `SamePrincipal` compares spelling without trailing
-spaces and preserves case. The comparison uses the catalog's resolved name
-equivalence. `ExecuteAsCoverage` claims a source describes the clause. Only a SQL document and the reader describe it; a
-source that does not, such as a Go annotation, leaves the routine's principal
-unmanaged.
+`WithRoutineOptions`, `WithObservedRoutineOptions` and `RoutineOptionsOf` add
+and read the facet. `RoutineOptions.Same` compares two sets of options, the
+principals as `SamePrincipal` compares them: preserving letter case and
+ignoring trailing spaces. Live comparison resolves principal names under the
+target catalog collation. Both facet values implement `IdentifierValue` so
+the comparison includes those names. `RoutineOptionsCoverage` claims
+a source describes the options. Only a SQL document and the reader describe
+them; a source that does not, such as a Go annotation, leaves the routine's
+options unmanaged.
 
-- `mssqlcompare.ExecuteAsService` reports an `mssqldiff.ExecuteAs` for a
-  routine both sides hold whose principals differ. A change replaces the
-  routine, and `mssqlreverse.ExecuteAsService` reverses it to the principal
-  the routine ran as.
+- `mssqlcompare.RoutineOptionsService` reports an `mssqldiff.RoutineOptions`
+  for a routine both sides hold whose options differ. A change replaces the
+  routine, and `mssqlreverse.RoutineOptionsService` reverses it to the options
+  the routine held.
 - `mssqlconvert` converts the facet between its representations.
+
+`dialect/mssql/mssqlroutine.Volatility` is the volatility the reader reports for
+every SQL Server routine. T-SQL has no volatility clause, and the engine's
+determinism verdict is no declaration's to state.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
@@ -3059,7 +3068,8 @@ A `RoutineOption` is one option of the `WITH` list of a T-SQL CREATE FUNCTION
 or CREATE PROCEDURE, between the signature and the AS that opens the body. The
 reader splits the list at its top-level commas, so a span is one whole option,
 and an option no owner claims is refused by the reader. The SQL Server owner
-claims `EXECUTE AS` there.
+claims `EXECUTE AS`, `SCHEMABINDING`, `RECOMPILE` and `RETURNS NULL ON NULL
+INPUT` there, and answers the options of one routine as one facet.
 
 A `ColumnOption` or `IndexOption` span ends where the element's next option
 begins: a clause or key option the reader parses itself, or the opening word
@@ -4346,7 +4356,7 @@ function converge, and rendering from that copy would write Ptah's
 normalization into the user's DDL.
 
 `FunctionDiff.FeatureChanges` carries the changes an owner reports for a
-routine's facets, such as the principal a SQL Server routine runs as. Each one
+routine's facets, such as the options of a SQL Server routine's header. Each one
 replaces the routine, so the entry's CREATE writes it from `Desired`, and a
 comparison adds an entry for a routine whose facets alone changed. A
 replacement of a routine that holds a facet the declaration's source has no way

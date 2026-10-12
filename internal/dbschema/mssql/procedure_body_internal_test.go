@@ -150,7 +150,32 @@ func TestFunctionBody_SkipsTheExecuteAsClause(t *testing.T) {
 	c.Assert(body, qt.Equals, "BEGIN RETURN 1; END")
 }
 
-// A function's optional AS does not become part of its catalog body.
+// TestFunctionBody_SkipsEveryOptionOfTheWithList reads the definitions SQL
+// Server 2025 RTM-CU9 stored for functions created with every option the
+// routine options facet holds, in either order. RETURNS NULL ON NULL INPUT
+// repeats the word RETURNS, and EXECUTE AS carries an AS of its own.
+func TestFunctionBody_SkipsEveryOptionOfTheWithList(t *testing.T) {
+	for _, definition := range []string{
+		"CREATE FUNCTION dbo.f_all(@a int) RETURNS int WITH SCHEMABINDING, RETURNS NULL ON NULL INPUT, EXECUTE AS N'auditor' AS BEGIN RETURN @a; END",
+		"CREATE FUNCTION dbo.f_rev(@a int) RETURNS int WITH EXECUTE AS N'auditor', RETURNS NULL ON NULL INPUT, SCHEMABINDING AS BEGIN RETURN @a; END",
+	} {
+		t.Run(definition, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(functionBody(definition), qt.Equals, "BEGIN RETURN @a; END")
+		})
+	}
+}
+
+// TestProcedureBody_SkipsEveryOptionOfTheWithList is the procedure's half.
+func TestProcedureBody_SkipsEveryOptionOfTheWithList(t *testing.T) {
+	c := qt.New(t)
+
+	body := procedureBody("CREATE PROCEDURE dbo.p_all WITH RECOMPILE, EXECUTE AS N'auditor' AS BEGIN SELECT 1; END")
+
+	c.Assert(body, qt.Equals, "BEGIN SELECT 1; END")
+}
+
 func TestFunctionBody_OptionalAS(t *testing.T) {
 	for _, test := range []struct{ name, definition, body string }{
 		{"scalar", "CREATE FUNCTION dbo.f() RETURNS INT WITH EXECUTE AS OWNER BEGIN RETURN 1; END;", "BEGIN RETURN 1; END"},

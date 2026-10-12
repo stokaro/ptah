@@ -27,16 +27,16 @@ func TestPlanBidirectionalSchemaDiff_ARoutinesPrincipalRollsBack(t *testing.T) {
 	desired := &schemamodel.Database{
 		Functions: []schemamodel.Function{{
 			Name: "dbo.audit_it", Returns: "int", Language: "sql", Security: "DEFINER", Volatility: "VOLATILE",
-			Body: "BEGIN RETURN 1; END", Facets: must.Must(mssqlschema.WithExecuteAs(schemaext.Facets{}, "reviewer")),
+			Body: "BEGIN RETURN 1; END", Facets: must.Must(mssqlschema.WithRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: "reviewer"})),
 		}},
-		FeatureCoverage: must.Must(mssqlschema.ExecuteAsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		FeatureCoverage: must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
 	current := &catalog.Database{
 		Functions: []catalog.Function{{
 			Schema: "dbo", Name: "audit_it", Returns: "int", Language: "sql", Security: "DEFINER", Volatility: "VOLATILE",
-			Body: "BEGIN RETURN 1; END", Facets: must.Must(mssqlschema.WithObservedExecuteAs(schemaext.Facets{}, "auditor")),
+			Body: "BEGIN RETURN 1; END", Facets: must.Must(mssqlschema.WithObservedRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: "auditor", SchemaBinding: true, ReturnsNullOnNullInput: true})),
 		}},
-		FeatureCoverage: must.Must(mssqlschema.ExecuteAsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		FeatureCoverage: must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.SQLServer, runtime))
 
@@ -54,15 +54,15 @@ func TestPlanBidirectionalSchemaDiff_ARoutinesPrincipalRollsBack(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(forward, qt.Contains, "WITH EXECUTE AS N'reviewer'")
-	c.Assert(reverse, qt.Contains, "WITH EXECUTE AS N'auditor'")
+	c.Assert(reverse, qt.Contains, "WITH SCHEMABINDING, RETURNS NULL ON NULL INPUT, EXECUTE AS N'auditor'")
 	c.Assert(plan.Reverse.Diff.FunctionsModified, qt.HasLen, 1)
 	c.Assert(plan.Reverse.Diff.FunctionsModified[0].FeatureChanges, qt.HasLen, 1)
-	c.Assert(plan.Reverse.Diff.FunctionsModified[0].FeatureChanges[0].Value, qt.DeepEquals, &mssqldiff.ExecuteAs{
-		Before: &mssqlschema.ObservedExecuteAs{Principal: "reviewer"},
-		After:  &mssqlschema.DesiredExecuteAs{Principal: "auditor"},
+	c.Assert(plan.Reverse.Diff.FunctionsModified[0].FeatureChanges[0].Value, qt.DeepEquals, &mssqldiff.RoutineOptions{
+		Before: &mssqlschema.ObservedRoutineOptions{Principal: "reviewer"},
+		After:  &mssqlschema.DesiredRoutineOptions{Principal: "auditor", SchemaBinding: true, ReturnsNullOnNullInput: true},
 	})
-	c.Assert(diff.FunctionsModified[0].FeatureChanges[0].Value, qt.DeepEquals, &mssqldiff.ExecuteAs{
-		Before: &mssqlschema.ObservedExecuteAs{Principal: "auditor"},
-		After:  &mssqlschema.DesiredExecuteAs{Principal: "reviewer"},
+	c.Assert(diff.FunctionsModified[0].FeatureChanges[0].Value, qt.DeepEquals, &mssqldiff.RoutineOptions{
+		Before: &mssqlschema.ObservedRoutineOptions{Principal: "auditor", SchemaBinding: true, ReturnsNullOnNullInput: true},
+		After:  &mssqlschema.DesiredRoutineOptions{Principal: "reviewer"},
 	}, qt.Commentf("the reversal must not write through to the forward diff"))
 }

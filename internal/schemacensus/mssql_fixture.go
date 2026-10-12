@@ -27,16 +27,20 @@ func securityPolicyFixture() schemamodel.Database {
 	return db
 }
 
-// routineExecuteAsFixture declares a SQL Server function that runs as a named
-// principal, so removing the principal changes what is rendered: EXECUTE AS
-// OWNER in place of EXECUTE AS N'auditor'.
-func routineExecuteAsFixture() schemamodel.Database {
+// routineOptionsFixture declares a SQL Server function that states every
+// option of the routine options facet, so removing one changes what is
+// rendered: EXECUTE AS OWNER in place of EXECUTE AS N'auditor', and a WITH list
+// without the option. RECOMPILE is a procedure's option, which the server
+// refuses on a function; the census only renders.
+func routineOptionsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Functions = []schemamodel.Function{{
 		StructName: "F", Name: "dbo.audit_it", Returns: "int", Language: "sql", Security: "DEFINER",
-		Body:   "BEGIN RETURN 1; END",
-		Facets: must.Must(mssqlschema.WithExecuteAs(schemaext.Facets{}, "auditor")),
+		Body: "BEGIN RETURN 1; END",
+		Facets: must.Must(mssqlschema.WithRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{
+			Principal: "auditor", SchemaBinding: true, Recompile: true, ReturnsNullOnNullInput: true,
+		})),
 	}}
-	db.FeatureCoverage = must.Must(mssqlschema.ExecuteAsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	db.FeatureCoverage = must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }

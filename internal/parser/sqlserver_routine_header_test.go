@@ -102,3 +102,14 @@ func TestParse_ASQLServerRoutineHeaderEndsWhereItsBodyBegins(t *testing.T) {
 		})
 	}
 }
+
+// Empty WITH entries must not disappear when the routine is rendered.
+func TestParseSQLServerRoutine_EmptyOptions(t *testing.T) {
+	for _, options := range []string{"", ", RECOMPILE", "RECOMPILE,", "RECOMPILE,, EXECUTE AS OWNER", "/* empty */"} {
+		t.Run(options, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := parser.NewParser("CREATE PROCEDURE dbo.p WITH "+options+" AS BEGIN SELECT 1; END", parser.WithDialect("sqlserver")).Parse()
+			c.Assert(err, qt.ErrorMatches, `.*WITH list contains an empty option.*`)
+		})
+	}
+}
