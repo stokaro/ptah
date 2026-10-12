@@ -50,6 +50,9 @@ func appendFeatureMetrics(ctx context.Context, db *schemamodel.Database, target 
 				positions[metric.Name] = i
 				continue
 			}
+			if i, exists := positions[metric.Name]; exists && metrics[i].Help == metric.Help {
+				continue
+			}
 			if _, exists := positions[metric.Name]; exists || reservedName(reserved, metric.Name) {
 				return nil, fmt.Errorf("%w: feature metric conflicts with %q", schemaext.ErrDuplicate, metric.Name)
 			}

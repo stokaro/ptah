@@ -29,9 +29,9 @@ func TestSelections_HappyPath(t *testing.T) {
 	empty, emptyErr := engine.New()
 
 	c.Assert(err, qt.IsNil)
-	selection, found := runtime.Selections().Selection("widget")
-	c.Assert(found, qt.IsTrue)
-	c.Assert(selection.Kind, qt.Equals, conversionFirst)
+	selections := runtime.Selections().ForType("widget")
+	c.Assert(selections, qt.HasLen, 1)
+	c.Assert(selections[0].Kind, qt.Equals, conversionFirst)
 	c.Assert(emptyErr, qt.IsNil)
 	c.Assert(empty.Selections().Selected(), qt.IsTrue)
 	c.Assert(empty.Selections().Selections(), qt.HasLen, 0)

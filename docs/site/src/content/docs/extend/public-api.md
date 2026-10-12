@@ -299,6 +299,13 @@ A known empty namespace alone does not require target support for its model.
 runtime construction. `Runtime.ReportFeatures` validates each batch, calls each
 service once, and preserves order. Missing handlers and malformed replies fail.
 Reporting needs no target; an optional target supplies source context only.
+Models may share a metric name when its help text agrees. Schema statistics sum
+the contributions into one metric. A conflicting definition is refused.
+
+Scope selections may share a selector type when their naming, relation behavior,
+and fields agree. `selectext.Set.ForType` returns every matching model, ordered
+by kind. Include and exclude selectors apply to each model; the owner still
+clears its own fields.
 Metrics count captured values, including disabled YDB changefeeds and consumers.
 Zero does not establish inspected absence. Statistics and DBML/JSON omission
 reports use these services.

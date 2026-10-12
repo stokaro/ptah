@@ -970,7 +970,10 @@ for different engines.
 each model representation. `Runtime.ReportFeatures` validates and snapshots the
 whole request before calling one service per registration. It preserves value
 order and rejects undeclared metrics, negative counts, and partial replies.
-Metadata is frozen at registration. Errors or cancellation discard the report.
+Metadata is frozen at registration. Distinct models may contribute to the same
+metric when its name and help agree. The schema statistics sum their counts and
+publish one metric. Conflicting definitions and repeated names within one model
+are refused. Errors or cancellation discard the report.
 
 Reporting needs model ownership, not a target registration. Its optional target
 is source context, so an export from Go declarations can report omitted values
@@ -1073,7 +1076,13 @@ the resource pool a kept classifier routes to, which a scope keeps and an
 exclusion ignores.
 
 `engine.Provider.Selections` registers an `Extension`, and
-`engine.Runtime.Selections` returns the frozen `Set`, ordered by selector type;
+`engine.Runtime.Selections` returns the frozen `Set`, ordered by selector type
+then model kind. `Set.ForType` returns every model named by a selector type.
+Models may share a type when its naming, relation behavior, and fields agree.
+A selector applies to every matching model; field clearing stays with each
+model's owner. Returned selections and field lists are independent copies.
+Conflicting definitions and duplicate model registrations are refused.
+
 `engine.SchemaRuntime` includes `selectext.Runtime`. The zero set is refused
 with `selectext.ErrUnselected`, and `selectext.None` names the common objects
 alone. The YDB owner names its standalone objects in their directory and its

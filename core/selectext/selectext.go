@@ -48,7 +48,8 @@ type Selection struct {
 	// Kind is the owner's model.
 	Kind schemaext.Kind
 	// Type is the selector type that names an object of Kind, such as
-	// "topic" in `*[type=topic]`. A type names one kind.
+	// "topic" in `*[type=topic]`. Several models may share a selector type
+	// when its naming, relation behavior, and fields agree.
 	Type string
 	// Naming is how a selector reads the object's name.
 	Naming Naming
@@ -138,12 +139,13 @@ func None() Set {
 
 // NewSet freezes extensions into a set. It refuses an extension without an
 // owner, a selection without a kind or a type, of an unknown naming, or
-// naming a field twice, a kind or a type two selections claim, and a
+// naming a field twice, a kind two selections claim, conflicting definitions
+// of a shared selector type, and a
 // selection with fields in an extension without a service.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true}
 	kinds := make(map[schemaext.Kind]string)
-	types := make(map[string]string)
+	types := make(map[string]Selection)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
 			return Set{}, fmt.Errorf("scope selection extension %d names no owner", index)
@@ -155,17 +157,23 @@ func NewSet(extensions ...Extension) (Set, error) {
 			if owner, claimed := kinds[selection.Kind]; claimed {
 				return Set{}, fmt.Errorf("%w: model %q is selected by %s and %s", schemaext.ErrDuplicate, selection.Kind, owner, extension.Owner)
 			}
-			if owner, claimed := types[selection.Type]; claimed {
-				return Set{}, fmt.Errorf("%w: selector type %q is claimed by %s and %s", schemaext.ErrDuplicate, selection.Type, owner, extension.Owner)
-			}
-			kinds[selection.Kind], types[selection.Type] = extension.Owner, extension.Owner
 			selection.Fields = slices.Clone(selection.Fields)
+			slices.Sort(selection.Fields)
+			if existing, claimed := types[selection.Type]; claimed && !sameSelector(existing, selection) {
+				return Set{}, fmt.Errorf("%w: selector type %q has conflicting definitions", schemaext.ErrDuplicate, selection.Type)
+			}
+			kinds[selection.Kind], types[selection.Type] = extension.Owner, selection
 			set.selections = append(set.selections, selection)
 		}
-		extension.Selections = slices.Clone(extension.Selections)
+		extension.Selections = cloneSelections(extension.Selections)
 		set.extensions = append(set.extensions, extension)
 	}
-	slices.SortFunc(set.selections, func(a, b Selection) int { return strings.Compare(a.Type, b.Type) })
+	slices.SortFunc(set.selections, func(a, b Selection) int {
+		if compared := strings.Compare(a.Type, b.Type); compared != 0 {
+			return compared
+		}
+		return strings.Compare(string(a.Kind), string(b.Kind))
+	})
 	return set, nil
 }
 
@@ -192,19 +200,31 @@ func (s Set) Selected() bool {
 	return s.selected
 }
 
-// Selections returns the set's selections, ordered by selector type, in a
-// new slice.
-func (s Set) Selections() []Selection {
-	return slices.Clone(s.selections)
+// Selections returns independent selections, ordered by selector type then kind.
+func (s Set) Selections() []Selection { return cloneSelections(s.selections) }
+
+// ForType returns every model named by a selector type, ordered by kind.
+// The returned slice and fields are independent. An unknown type returns nil.
+func (s Set) ForType(selectorType string) []Selection {
+	var result []Selection
+	for _, selection := range s.selections {
+		if selection.Type == selectorType {
+			result = append(result, selection)
+		}
+	}
+	return cloneSelections(result)
 }
 
-// Selection returns the selection of a selector type.
-func (s Set) Selection(selectorType string) (Selection, bool) {
-	index := slices.IndexFunc(s.selections, func(selection Selection) bool { return selection.Type == selectorType })
-	if index < 0 {
-		return Selection{}, false
+func sameSelector(a, b Selection) bool {
+	return a.Naming == b.Naming && a.Relation == b.Relation && slices.Equal(a.Fields, b.Fields)
+}
+
+func cloneSelections(selections []Selection) []Selection {
+	result := slices.Clone(selections)
+	for i := range result {
+		result[i].Fields = slices.Clone(result[i].Fields)
 	}
-	return s.selections[index], true
+	return result
 }
 
 // SelectObjects hands each extension with a service the kept objects of its

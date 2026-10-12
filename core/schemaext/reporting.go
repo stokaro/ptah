@@ -8,7 +8,9 @@ type ModelRuntime interface {
 	Codecs() Registry
 }
 
-// MetricDefinition describes an object-count metric owned by a feature model.
+// MetricDefinition describes an object-count metric contributed by a feature model.
+// Models share a metric only when both its name and help agree. Each value
+// contributes independently to its total.
 // Name is a lowercase ASCII metric suffix; Help is a single-line description.
 // Counts describe captured schema values, not the contents of a live database.
 type MetricDefinition struct {
