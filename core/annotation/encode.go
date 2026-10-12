@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -39,6 +40,10 @@ type EncodeRequest struct {
 	Slots []SlotFacets
 	// Coverage is what the schema knows of the extension's Kinds.
 	Coverage schemaext.Coverage
+	// Fields are every field of the schema, in the schema's order. An owner
+	// may give one a Go type of the target's own (see
+	// [EncodeResult.FieldTypes]).
+	Fields []FieldDeclaration
 	// Target is the target the source is written for, as
 	// platform.NormalizeDialect spells it, or empty when the export names
 	// none. An owner may leave out what only another target reads, such as
@@ -75,6 +80,41 @@ type SlotFacets struct {
 	Slot Slot
 	// Facets are the facets.
 	Facets schemaext.Facets
+	// Options are the declaration's options, such as an index's WITH
+	// options, keyed by name. An owner whose attributes of the directive
+	// spell options (see [DirectiveAttributes.Parameters]) is handed them,
+	// and claims the ones it writes in [SlotAttributes.Options]. A
+	// declaration is handed to an owner that reads one of its options or its
+	// attributes even where it holds none of the owner's facets.
+	Options map[string]string
+	// Reads are the attributes of the frontend's own that the declaration
+	// writes and the owner reads beside its own (see
+	// [DirectiveAttributes.Reads]), such as an index's type, keyed by name.
+	Reads map[string]string
+}
+
+// FieldDeclaration is one field the writer writes, as an owner may type it.
+type FieldDeclaration struct {
+	// Slot is the field's declaration.
+	Slot Slot
+	// Type is the field's type as the schema names it.
+	Type string
+	// Nullable reports a field that holds NULL.
+	Nullable bool
+	// Key reports a field of its table's primary key.
+	Key bool
+}
+
+// FieldType is the Go type an owner gives a field.
+type FieldType struct {
+	// Slot is the field's declaration, one of [EncodeRequest.Fields].
+	Slot Slot
+	// Name is the type as the source spells it, such as "uint64" or
+	// "types.Decimal". The writer writes a pointer to it for a nullable
+	// field whose type is not a slice.
+	Name string
+	// Import is the package the type needs, or empty.
+	Import string
 }
 
 // EncodeResult is an owner's writing of an [EncodeRequest].
@@ -92,6 +132,9 @@ type EncodeResult struct {
 	// it generates, owner by owner in the order of the owners' names, so a
 	// file read alone claims no more than the whole source does.
 	Limits []EncodedLimit
+	// FieldTypes are the Go types the owner gives fields of its target, in
+	// place of the writer's own reading of their types.
+	FieldTypes []FieldType
 }
 
 // EncodedLimit is one not-described declaration an owner writes.
@@ -119,6 +162,10 @@ type SlotAttributes struct {
 	// source back hands it to the owner, or a platform property written
 	// platform.<target>.<key>, which the owner's property decoding reads.
 	Attributes []EncodedAttribute
+	// Options are the declaration's options the attributes spell, which
+	// reading the source back hands to the owner as the declaration's
+	// options again. The writer refuses an option no owner claims.
+	Options []string
 }
 
 // Position is where in one of the frontend's own directives the attributes an
@@ -231,7 +278,10 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // declaration the extension was not handed or added twice, and an attribute
 // without a name, written twice, or one the extension does not add to the
 // declaration's directive. It refuses a limit of a kind reading the source
-// back does not hand to the extension, and one written twice. Every owner is
+// back does not hand to the extension, and one written twice. An option claim
+// must name an option the extension receives, and each option has one writer.
+// A field type must name a field the request holds and a nonempty Go type;
+// each field has at most one type writer. Every owner is
 // handed the request's Target. An encoder's own error is returned
 // as it is: it refuses the export, as a value the owner cannot write would
 // otherwise be written wrong.
@@ -245,6 +295,8 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 	slices.SortStableFunc(order, func(a, b int) int { return cmp.Compare(s.extensions[a].Owner, s.extensions[b].Owner) })
 	var encoded EncodeResult
 	writers := make(map[slotAttribute]string)
+	claims := make(map[slotOption]string)
+	typed := make(map[Slot]string)
 	for _, index := range order {
 		extension := s.extensions[index]
 		request := extension.selectRequest(schema)
@@ -266,11 +318,66 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 		if err := s.checkLimits(index, result.Limits); err != nil {
 			return EncodeResult{}, err
 		}
+		if err := s.checkOptions(index, request, result.Attributes, claims); err != nil {
+			return EncodeResult{}, err
+		}
+		if err := s.checkFieldTypes(index, request, result.FieldTypes, typed); err != nil {
+			return EncodeResult{}, err
+		}
 		encoded.Directives = append(encoded.Directives, result.Directives...)
 		encoded.Attributes = append(encoded.Attributes, result.Attributes...)
 		encoded.Limits = append(encoded.Limits, result.Limits...)
+		encoded.FieldTypes = append(encoded.FieldTypes, result.FieldTypes...)
 	}
 	return encoded, nil
+}
+
+// slotOption is one option of one declaration.
+type slotOption struct {
+	slot Slot
+	name string
+}
+
+// checkOptions refuses an option the extension at index claims that its
+// declaration does not hold, or that another extension claims too. claims
+// records which extension claims each option.
+func (s Set) checkOptions(index int, request EncodeRequest, slots []SlotAttributes, claims map[slotOption]string) error {
+	owner := s.extensions[index].Owner
+	for _, slot := range slots {
+		at := slices.IndexFunc(request.Slots, func(entry SlotFacets) bool { return entry.Slot == slot.Slot })
+		for _, name := range slot.Options {
+			if _, held := request.Slots[at].Options[name]; !held {
+				return fmt.Errorf("%w: Go annotation encoder of %s claimed option %q of %s, which it was not handed",
+					schemaext.ErrInvalidValue, owner, name, slot.Slot)
+			}
+			key := slotOption{slot: slot.Slot, name: name}
+			if claimer, taken := claims[key]; taken {
+				return fmt.Errorf("%w: Go annotation encoders of %s and %s both claim option %q of %s",
+					schemaext.ErrDuplicate, claimer, owner, name, slot.Slot)
+			}
+			claims[key] = owner
+		}
+	}
+	return nil
+}
+
+// checkFieldTypes refuses a Go type the extension at index gives a field
+// the request does not hold, one without a name, and one another extension
+// gives the field too. typed records which extension types each field.
+func (s Set) checkFieldTypes(index int, request EncodeRequest, types []FieldType, typed map[Slot]string) error {
+	owner := s.extensions[index].Owner
+	for _, fieldType := range types {
+		held := slices.ContainsFunc(request.Fields, func(field FieldDeclaration) bool { return field.Slot == fieldType.Slot })
+		if !held || strings.TrimSpace(fieldType.Name) == "" {
+			return fmt.Errorf("%w: Go annotation encoder of %s typed %s, which it was not handed, or gave it no type",
+				schemaext.ErrInvalidValue, owner, fieldType.Slot)
+		}
+		if typer, taken := typed[fieldType.Slot]; taken {
+			return fmt.Errorf("%w: Go annotation encoders of %s and %s both type %s", schemaext.ErrDuplicate, typer, owner, fieldType.Slot)
+		}
+		typed[fieldType.Slot] = owner
+	}
+	return nil
 }
 
 // checkLimits refuses a limit of the extension at index that reading the
@@ -299,17 +406,43 @@ func (e Extension) selectRequest(schema EncodeRequest) EncodeRequest {
 		}
 	}
 	for _, slot := range schema.Slots {
-		facets := slot.Facets
-		for _, kind := range facets.Kinds() {
-			if !slices.Contains(e.Encodes, kind) {
-				facets = facets.Without(kind)
-			}
-		}
-		if facets.Len() > 0 {
-			request.Slots = append(request.Slots, SlotFacets{Slot: slot.Slot, Facets: facets})
+		selected := e.selectSlot(slot)
+		if selected.Facets.Len() > 0 || len(selected.Options) > 0 || len(selected.Reads) > 0 {
+			request.Slots = append(request.Slots, selected)
 		}
 	}
+	// A field is any owner's to type, so every owner is handed every field.
+	request.Fields = slices.Clone(schema.Fields)
 	return request
+}
+
+// selectSlot copies the facets, options and frontend attributes the extension
+// reads from one declaration.
+func (e Extension) selectSlot(slot SlotFacets) SlotFacets {
+	facets := slot.Facets
+	for _, kind := range facets.Kinds() {
+		if !slices.Contains(e.Encodes, kind) {
+			facets = facets.Without(kind)
+		}
+	}
+	selected := SlotFacets{Slot: slot.Slot, Facets: facets}
+	for _, group := range e.Attributes {
+		if group.Directive != slot.Slot.Directive {
+			continue
+		}
+		if group.Parameters != nil && len(slot.Options) > 0 {
+			selected.Options = maps.Clone(slot.Options)
+		}
+		for _, name := range group.Reads {
+			if value, found := slot.Reads[name]; found {
+				if selected.Reads == nil {
+					selected.Reads = make(map[string]string, len(group.Reads))
+				}
+				selected.Reads[name] = value
+			}
+		}
+	}
+	return selected
 }
 
 // checkEncodedDirective refuses a directive the writer cannot write for the
