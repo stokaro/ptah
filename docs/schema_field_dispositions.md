@@ -98,12 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-12 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+11 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `table-pk-include` | `postgres`, `yugabytedb` | to-catalog | a primary key's INCLUDE columns do not survive goschematodb, so the key is dropped and added again |
 | `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again |
 | `index-mysql-parser` | `mariadb`, `mysql` | to-catalog | a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again |
 | `index-fulltext` | `postgres` | to-catalog | a GIN index's operator class does not survive goschematodb, so the index is dropped and created again |
@@ -118,7 +117,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-92 known gaps: a conversion or the comparison drops each one on the dialects named.
+91 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -199,7 +198,6 @@ migration nobody asked for.
 | `schemamodel.Table.Overrides` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.Partition` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.PrimaryKeyFacets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Table.PrimaryKeyInclude` | `postgres`, `yugabytedb` | from-catalog | goschematodb drops a primary key's INCLUDE columns; the other direction is a recorded loss |
 | `schemamodel.Table.PrimaryKeyMethod` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.PrimaryKeyName` | `cockroachdb`, `oracle`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.PrimaryKeyParts` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |

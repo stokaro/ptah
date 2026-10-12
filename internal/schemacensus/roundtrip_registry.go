@@ -40,7 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossPrimaryKeyInclude = "a primary key's INCLUDE columns do not survive goschematodb, so the key is dropped and added again"
 	lossPrimaryKeyFacets  = "a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again"
 	lossIndexParser       = "a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again"
 	lossOperatorClass     = "a GIN index's operator class does not survive goschematodb, so the index is dropped and created again"
@@ -60,7 +59,6 @@ const (
 	gapComparison        = "both conversions carry it, and the comparison plans nothing when it changes"
 	gapRoutineAttributes = "goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet"
 	gapRoutineKind       = "the conversions drop a routine's kind; the other direction is a recorded loss"
-	gapPrimaryKeyInclude = "goschematodb drops a primary key's INCLUDE columns; the other direction is a recorded loss"
 )
 
 // The reasons a compared field does not reach the plan by design.
@@ -183,12 +181,6 @@ func Alternates() []string {
 func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
-	{
-		Fixtures:   []string{"table-pk-include"},
-		Dialects:   []string{"postgres", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossPrimaryKeyInclude,
-	},
 	{
 		Fixtures:   []string{"constraint-pk-options"},
 		Dialects:   []string{"mariadb", "mysql"},
@@ -469,12 +461,6 @@ var roundTripGaps = []Unreached{
 		Reason:     gapToCatalog,
 	},
 	{Field: "schemamodel.Table.PrimaryKeyFacets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
-	{
-		Field:      "schemamodel.Table.PrimaryKeyInclude",
-		Dialects:   []string{"postgres", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapPrimaryKeyInclude,
-	},
 	{Field: "schemamodel.Table.PrimaryKeyMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Table.PrimaryKeyName",

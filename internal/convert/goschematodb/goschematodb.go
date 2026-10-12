@@ -472,10 +472,13 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 			Type:        "PRIMARY KEY",
 			ColumnNames: append([]string(nil), table.PrimaryKey...),
 			ColumnName:  first(table.PrimaryKey),
-			Deferrable:  table.PrimaryKeyDeferrable,
-			Initially:   table.PrimaryKeyInitially,
-			UsingMethod: optionalStringPtr(table.PrimaryKeyMethod),
-			Comment:     table.PrimaryKeyComment,
+			// The key's INCLUDE payload, which a read reports beside its
+			// columns and the comparison compares.
+			IncludeColumns: slices.Clone(table.PrimaryKeyInclude),
+			Deferrable:     table.PrimaryKeyDeferrable,
+			Initially:      table.PrimaryKeyInitially,
+			UsingMethod:    optionalStringPtr(table.PrimaryKeyMethod),
+			Comment:        table.PrimaryKeyComment,
 		})
 	}
 	for _, constraint := range constraints {
