@@ -45,7 +45,11 @@ matching preset automatically.
   backing index, so Ptah does not require an input unique/index declaration.
   Participating columns must have compatible key-capable types; JSON and array
   columns fail before rendering.
-  The preset excludes enums, standalone sequences, row-level security, `XML`
+  Spanner has no enum type, so an enum column is written as `TEXT` with a
+  `CHECK (column IN (...))` constraint named `<table>_<column>_check`; a column
+  added later takes that check as a separate `ADD CONSTRAINT`, because Spanner
+  refuses a `CHECK` inside `ADD COLUMN`.
+  The preset excludes standalone sequences, row-level security, `XML`
   columns, advisory locks, and concurrent indexes. Foreign key actions are
   limited to `ON DELETE NO ACTION` or `CASCADE`; `ON UPDATE` fails before
   rendering.

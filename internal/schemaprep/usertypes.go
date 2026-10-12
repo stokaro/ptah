@@ -163,20 +163,15 @@ func isArrayDimension(text string) bool {
 }
 
 // EmitsStandaloneEnumDefinitions reports whether the target represents enums
-// as schema objects instead of lowering their values into each column.
+// as schema objects instead of lowering their values into each column. It is
+// the complement of [InlineEnumDialect].
+//
+// YDB models an enum neither way: it has no enum column type, no CREATE TYPE
+// and no CHECK to emulate one with. The enum stays a declaration of its own
+// there so the YDB renderer meets it before any column that names it, and
+// refuses it by name.
 func EmitsStandaloneEnumDefinitions(targetPlatform string) bool {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
-		return false
-	case platform.YDB:
-		// YDB models an enum neither way: it has no enum column type, no
-		// CREATE TYPE and no CHECK to emulate one with. The enum stays a
-		// declaration of its own here so the YDB renderer meets it before any
-		// column that names it, and refuses it by name.
-		return true
-	default:
-		return true
-	}
+	return !InlineEnumDialect(targetPlatform)
 }
 
 // namesABuiltInType guards the dangerous side of an ambiguous bare name. A

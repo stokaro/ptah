@@ -40,9 +40,10 @@ func declaredEnumSchema() *schemamodel.Database {
 // TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline pins the
 // column each dialect without standalone enums builds from the values the
 // column carries. The comparison lowers the column to the same model
-// (schemaprep.LowerInlineEnums), so a render that wrote the bare type ENUM
-// built a column MySQL, MariaDB, SQL Server and Oracle refuse, and on SQLite a
-// TEXT column without the CHECK the comparison expects.
+// (schemaprep.LowerInlineEnums), so the bare type ENUM, which each of these
+// servers refuses, or SQLite's TEXT without the CHECK, would not converge.
+// Spanner names the CHECK the way the comparison expects, because the server
+// names an unnamed one CK_<table>_<hash>_<n>.
 func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T) {
 	tests := []struct {
 		dialect string
@@ -68,6 +69,15 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 			dialect: platform.Oracle,
 			want:    "CREATE TABLE t (\n  id NUMBER(19) NOT NULL PRIMARY KEY,\n  s VARCHAR2(255) CONSTRAINT t_s_check CHECK (s IN ('draft', 'live'))\n);\n",
 		},
+		{
+			dialect: platform.ClickHouse,
+			want:    "CREATE TABLE t (\n  id Int64,\n  s Nullable(Enum8('draft' = 1, 'live' = 2))\n) ENGINE = MergeTree ORDER BY (id);\n\n",
+		},
+		{
+			dialect: platform.Spanner,
+			want: "-- SPANNER TABLE: t --\nCREATE TABLE \"t\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL,\n" +
+				"  \"s\" TEXT CONSTRAINT \"t_s_check\" CHECK (s IN ('draft', 'live'))\n);\n\n",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -85,7 +95,10 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 // control on the same dialects: a column carrying its values and a column
 // naming a declared enum with those values build one table.
 func TestGetOrderedCreateStatements_AValuedEnumColumnMatchesADeclaredEnum(t *testing.T) {
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle} {
+	for _, dialect := range []string{
+		platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle,
+		platform.ClickHouse, platform.Spanner,
+	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -100,9 +113,9 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnMatchesADeclaredEnum(t *tes
 }
 
 // TestGetOrderedCreateStatements_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath
-// covers the targets that cannot build the column from its values. Rendered
-// as it stands it is the bare type ENUM, which each of them refuses at apply
-// time, so the render refuses it first and says what to declare instead.
+// covers the PostgreSQL family, which cannot build the column from its values.
+// Rendered as it stands it is the bare type ENUM, which each server refuses at
+// apply time, so the render refuses it first and says what to declare instead.
 func TestGetOrderedCreateStatements_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath(t *testing.T) {
 	const prefix = `column "s" of table "t" is typed ENUM with the values \("draft", "live"\) and names no declared enum, which `
 	const namedEnum = `declare a named enum with these values \(//ptah:schema:enum in Go, an enums entry in YAML, ` +
@@ -114,15 +127,6 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnWithNoInlineFormIsRefused_F
 		{dialect: platform.Postgres, wantErr: prefix + `postgres cannot create: ` + namedEnum},
 		{dialect: platform.CockroachDB, wantErr: prefix + `cockroachdb cannot create: ` + namedEnum},
 		{dialect: platform.YugabyteDB, wantErr: prefix + `yugabytedb cannot create: ` + namedEnum},
-		{
-			dialect: platform.Spanner,
-			wantErr: prefix + `spanner cannot create: Spanner has no enum type; type the column with one it has`,
-		},
-		{
-			dialect: platform.ClickHouse,
-			wantErr: prefix + `clickhouse cannot create: ClickHouse has no named enum type; ` +
-				`type the column Enum8 or Enum16 with these values instead`,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {

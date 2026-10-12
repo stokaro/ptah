@@ -1,6 +1,7 @@
 package schemaprep
 
 import (
+	"strconv"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -10,7 +11,8 @@ import (
 
 // InlineEnumDialect reports whether dialect builds an enum column inline,
 // with no standalone enum type: MySQL and MariaDB as an ENUM column type,
-// SQLite, SQL Server and Oracle as a text column with a CHECK.
+// ClickHouse as an Enum8 or Enum16 column type, and SQLite, SQL Server,
+// Oracle and Spanner as a text column with a CHECK.
 //
 // YDB has no enum, inline or standalone, and the renderer and the planner
 // refuse one; it is classed with the standalone dialects to agree with
@@ -18,7 +20,8 @@ import (
 // own for that refusal to meet.
 func InlineEnumDialect(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
+	case platform.MySQL, platform.MariaDB, platform.ClickHouse,
+		platform.SQLite, platform.SQLServer, platform.Oracle, platform.Spanner:
 		return true
 	default:
 		return false
@@ -100,7 +103,9 @@ func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dial
 		switch platform.NormalizeDialect(dialect) {
 		case platform.MySQL, platform.MariaDB:
 			field.Type = mysqlInlineEnumType(field.Enum)
-		case platform.SQLite:
+		case platform.ClickHouse:
+			field.Type = ClickHouseEnumType(field.Enum)
+		case platform.SQLite, platform.Spanner:
 			field.Type = "TEXT"
 			field.Check = inlineEnumCheck(*field, field.Name)
 		case platform.SQLServer:
@@ -126,6 +131,24 @@ func inlineEnumCheck(field schemamodel.Field, column string) string {
 		return "(" + field.Check + ") AND " + enumCheck
 	}
 	return enumCheck
+}
+
+// ClickHouseEnumType is the ClickHouse column type an enum with values is
+// built as: Enum8('draft' = 1, 'live' = 2), numbered from 1 in declaration
+// order, and Enum16 when there are more values than an Enum8 holds. Both the
+// renderer and [LowerInlineEnums] write it, so a render builds the type a
+// comparison expects the server to report.
+func ClickHouseEnumType(values []string) string {
+	family := "Enum8"
+	if len(values) > 127 {
+		family = "Enum16"
+	}
+	elements := make([]string, len(values))
+	for i, value := range values {
+		literal := strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", `\'`)
+		elements[i] = "'" + literal + "' = " + strconv.Itoa(i+1)
+	}
+	return family + "(" + strings.Join(elements, ", ") + ")"
 }
 
 func mysqlInlineEnumType(values []string) string {

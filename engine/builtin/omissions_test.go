@@ -366,7 +366,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_FailurePath(t *testing.T) 
 
 // enumBackedTable declares an enum and a column typed by it.
 //
-// Five dialects have no CREATE TYPE and model the values on the column instead.
+// Seven dialects have no CREATE TYPE and model the values on the column instead.
 // That is a supported alternate representation, not a loss, and telling the two
 // apart is what keeps this check from failing every schema with an enum.
 func enumBackedTable() *schemamodel.Database {
@@ -399,6 +399,8 @@ func TestGetOrderedCreateStatementsReportingOmissions_AnInlineEnumIsNotALoss(t *
 		{name: "sqlite", dialect: platform.SQLite},
 		{name: "sql server", dialect: platform.SQLServer},
 		{name: "oracle", dialect: platform.Oracle},
+		{name: "clickhouse", dialect: platform.ClickHouse},
+		{name: "spanner", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {
@@ -419,14 +421,14 @@ func TestGetOrderedCreateStatementsReportingOmissions_AnInlineEnumIsNotALoss(t *
 // TestGetOrderedCreateStatementsReportingOmissions_AnEnumWithNoInlineFormIsALoss
 // is that control's other half.
 //
-// Every assertion above is satisfied by a check that never reports an enum.
-// ClickHouse has no inline lowering for one, so the type is skipped and the
-// author does lose it.
+// Every assertion above is satisfied by a check that never reports an enum. A
+// PostgreSQL-family target without enum types has no inline lowering for one,
+// so the type is skipped and the author does lose it.
 func TestGetOrderedCreateStatementsReportingOmissions_AnEnumWithNoInlineFormIsALoss(t *testing.T) {
 	c := qt.New(t)
 
 	_, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(
-		enumBackedTable(), platform.ClickHouse, capability.ClickHouse24())
+		enumBackedTable(), platform.Postgres, capability.ForDialect(platform.Postgres).With(capability.EnumCustomType, false))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(omissions, qt.HasLen, 1)

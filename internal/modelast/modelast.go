@@ -171,7 +171,9 @@ func applyInlineEnumModel(field schemamodel.Field, values []string, targetPlatfo
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB:
 		newField.Type = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
-	case platform.SQLite:
+	case platform.ClickHouse:
+		newField.Type = schemaprep.ClickHouseEnumType(values)
+	case platform.SQLite, platform.Spanner:
 		newField.Type = "TEXT"
 		enumCheck := fmt.Sprintf("%s IN (%s)", field.Name, strings.Join(quotedValues, ", "))
 		if field.Check != "" {

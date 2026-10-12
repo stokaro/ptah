@@ -1,6 +1,7 @@
 package schemaprep_test
 
 import (
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -45,6 +46,16 @@ func TestLowerInlineEnums(t *testing.T) {
 			name: "oracle", dialect: "oracle",
 			field:    schemamodel.Field{Name: "s", Type: "status"},
 			wantType: "VARCHAR2(255)", wantCheck: "s IN ('a', 'b')",
+		},
+		{
+			name: "clickhouse", dialect: "clickhouse",
+			field:    schemamodel.Field{Name: "s", Type: "status"},
+			wantType: "Enum8('a' = 1, 'b' = 2)",
+		},
+		{
+			name: "spanner", dialect: "spanner",
+			field:    schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{"a", "it's"}},
+			wantType: "TEXT", wantCheck: "s IN ('a', 'it''s')",
 		},
 		{
 			name: "a standalone-enum dialect", dialect: "postgres",
@@ -191,6 +202,51 @@ func TestEnumColumnValues(t *testing.T) {
 
 			c.Assert(values, qt.DeepEquals, test.wantValues)
 			c.Assert(declared, qt.Equals, test.wantDeclared)
+		})
+	}
+}
+
+// TestClickHouseEnumType pins the column type a ClickHouse enum is built as,
+// which has to be what the server reports for the column: values numbered
+// from 1 in declaration order, with a quote and a backslash escaped.
+func TestClickHouseEnumType(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []string
+		want   string
+	}{
+		{name: "two values", values: []string{"draft", "live"}, want: "Enum8('draft' = 1, 'live' = 2)"},
+		{name: "a quote and a backslash", values: []string{"it's", `a\b`}, want: `Enum8('it\'s' = 1, 'a\\b' = 2)`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(schemaprep.ClickHouseEnumType(test.values), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestClickHouseEnumType_Width pins Enum16 from the 128th value, which an Enum8
+// cannot number.
+func TestClickHouseEnumType_Width(t *testing.T) {
+	values := make([]string, 128)
+	for i := range values {
+		values[i] = strconv.Itoa(i)
+	}
+	tests := []struct {
+		name  string
+		count int
+		want  string
+	}{
+		{name: "127 values", count: 127, want: `Enum8\('0' = 1, .*, '126' = 127\)`},
+		{name: "128 values", count: 128, want: `Enum16\('0' = 1, .*, '127' = 128\)`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(schemaprep.ClickHouseEnumType(values[:test.count]), qt.Matches, test.want)
 		})
 	}
 }
