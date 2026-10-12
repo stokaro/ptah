@@ -10,7 +10,6 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/internal/annotationmeta"
@@ -102,15 +101,12 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 			return nil, err
 		}
 	}
-	// A setting a selected owner encodes, such as a hypertable, and YDB column
-	// families have annotations of their own, written beside the table, and
-	// no property spelling; YDB index partitioning is written as attributes of
-	// the index directive.
+	// A setting a selected owner encodes, such as a hypertable or a YDB
+	// index's partitioning, is the owner's to write, as a directive of its
+	// own or as attributes of the frontend's, and has no property spelling.
 	owned := opts.Annotations.Encodes
-	properties, annotated := facetsplit.SetAside(db, func(kind schemaext.Kind) bool { return owned(kind) || isAnnotatedFacet(kind) })
-	properties, annotatedIndexes := facetsplit.SetAsideIndexes(properties, func(kind schemaext.Kind) bool {
-		return owned(kind) || isAnnotatedIndexFacet(kind)
-	})
+	properties, annotated := facetsplit.SetAside(db, owned)
+	properties, annotatedIndexes := facetsplit.SetAsideIndexes(properties, owned)
 	if slices.ContainsFunc(properties.Tables, func(table schemamodel.Table) bool { return !table.Facets.IsZero() }) {
 		var err error
 		properties, err = schemaproperties.EncodeTables(requestContext, properties, opts.Dialect, opts.Runtime)

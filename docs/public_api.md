@@ -379,6 +379,18 @@ models, models without an encoder, and a model the extension does not declare.
   to another owner or to none, and one written twice.
 - `AfterViews` places a directive among the standalone objects after the
   views and materialized views and before the roles, such as a YDB topic.
+- A `SlotFacets` also carries the declaration's `Options`, such as an index's
+  WITH options, and its `Reads`, the attributes of the frontend's own that the
+  owner reads beside its own, such as an index's type. An owner whose
+  attributes of the directive spell options is handed them, and claims the
+  ones it writes in `SlotAttributes.Options`. The writer refuses an option no
+  owner claims. `Set.Encode` refuses a claim of an option the declaration does
+  not hold, and one two owners make.
+- `EncodeRequest.Fields` lists every field the writer writes as a
+  `FieldDeclaration`, and an owner returns `EncodeResult.FieldTypes`: the Go
+  type of a field of its target, such as a YDB `Uint64` as `uint64`.
+  `Set.Encode` refuses a type of a field the request does not hold, one
+  without a name, and two owners typing one field.
 - The writer reports no losses. A value an owner cannot write is the owner's
   to refuse with an error, which refuses the export.
 - `Table.QualifiedName` is the spelling a `table` attribute names a table by,

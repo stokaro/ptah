@@ -21,13 +21,14 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbfamily"
 )
 
 // encodedKinds are the owner's models its Go annotation encoder writes: its
-// standalone objects, a table's changefeeds and its column families.
+// standalone objects, a table's changefeeds, column families, partitioning
+// and column storage, and an index's partitioning and vector settings.
 var encodedKinds = []schemaext.Kind{
 	ydbschema.ChangefeedKind, ydbschema.ColumnFamiliesKind,
+	ydbschema.TablePartitioningKind, ydbschema.ColumnStoreKind, ydbschema.IndexPartitioningKind, ydbschema.VectorIndexKind,
 	ydbcoordination.Kind, ydbstreaming.Kind, ydbworkload.PoolKind, ydbworkload.ClassifierKind,
 	ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind,
 	ydbreplication.ReplicationKind, ydbreplication.TransferKind,
@@ -49,12 +50,16 @@ type annotationEncoder struct{}
 //   - after the default privileges, each resource pool and classifier, and
 //     then each coordination node;
 //   - beside each table, its column families and then its changefeeds with
-//     their consumers.
+//     their consumers;
+//   - the settings of a table and of an index as attributes of their
+//     directives (see slotSettings);
+//   - for a YDB export, the Go type of each field whose type YDB names (see
+//     fieldTypes).
 //
 // Each family is written in the order of the objects' identities. A value
 // that is not a valid declaration, a changefeed whose table the schema does
 // not declare, a disabled changefeed and one that keeps a replication's
-// binding, a column family on a declaration other than a table, and a
+// binding, a setting on a declaration with no spelling for it, and a
 // coverage record a source cannot carry are refused rather than left out.
 func (annotationEncoder) EncodeAnnotations(ctx context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
 	limits, err := exportLimits(request.Coverage)
@@ -67,8 +72,12 @@ func (annotationEncoder) EncodeAnnotations(ctx context.Context, request annotati
 			result.Limits = append(result.Limits, annotation.EncodedLimit{Kind: string(limit.Kind), Name: limit.Name})
 		}
 	}
-	families, err := encodeFamilies(request.Slots)
+	families, attributes, err := slotSettings(request.Slots)
 	if err != nil {
+		return annotation.EncodeResult{}, err
+	}
+	result.Attributes = attributes
+	if result.FieldTypes, err = fieldTypes(request); err != nil {
 		return annotation.EncodeResult{}, err
 	}
 	var sorted objectDirectives
@@ -395,43 +404,6 @@ func encodeCoordinationNode(schema, name string, spec ydbcoordination.Spec) anno
 		attrs.add(setting[0], setting[1])
 	}
 	return attrs.directive(directiveCoordinationNode, annotation.AfterPrivileges)
-}
-
-// encodeFamilies are the column families of each table slot, beside its
-// table: every family but a default one that holds what YDB gives a family
-// stating nothing (see [ydbfamily.Stated]), so a table nobody gave families
-// exports none. Families on any other declaration, and an invalid value, are
-// refused.
-func encodeFamilies(slots []annotation.SlotFacets) ([]annotation.EncodedDirective, error) {
-	var directives []annotation.EncodedDirective
-	for _, slot := range slots {
-		if slot.Slot.Directive != directiveTable || slot.Slot.PrimaryKey {
-			return nil, fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, ydbschema.ColumnFamiliesKind)
-		}
-		value, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](slot.Facets, ydbschema.ColumnFamiliesKind)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			continue
-		}
-		if err := ydbschema.ValidateDesiredColumnFamilies(value); err != nil {
-			return nil, err
-		}
-		table := slot.Slot.Table
-		for _, family := range ydbfamily.Stated(value.Families) {
-			var attrs encodedAttrs
-			attrs.add(ydbfamily.AttributeName, family.Name)
-			attrs.text(ydbfamily.AttributeData, family.Data)
-			attrs.text(ydbfamily.AttributeCompression, family.Compression)
-			attrs.text(ydbfamily.AttributeCacheMode, family.CacheMode)
-			attrs.text(ydbfamily.AttributeFields, strings.Join(family.Columns, ","))
-			directive := attrs.directive(directiveColumnFamily, annotation.AfterTable)
-			directive.Table = &table
-			directives = append(directives, directive)
-		}
-	}
-	return directives, nil
 }
 
 // encodeChangefeed are a changefeed and its consumers beside each

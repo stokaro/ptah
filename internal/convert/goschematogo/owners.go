@@ -3,6 +3,7 @@ package goschematogo
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -39,7 +40,7 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 		return err
 	}
 	encoded, err := ctx.opts.Annotations.Encode(requestContext, annotationext.EncodeRequest{
-		Objects: objects, Tables: ctx.sourceTables(), Slots: ctx.owned.slots, Coverage: ctx.db.FeatureCoverage,
+		Objects: objects, Tables: ctx.sourceTables(), Slots: ctx.owned.slots, Fields: ctx.owned.fields, Coverage: ctx.db.FeatureCoverage,
 		Target: platform.NormalizeDialect(ctx.opts.Dialect),
 	})
 	if err != nil {
@@ -66,6 +67,7 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 			attr{name: "kind", value: limit.Kind, set: true}, attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
 	ctx.ownerAttributes = make(map[ownerSlot][]attr)
+	claimed := make(map[annotationext.Slot][]string)
 	for _, slot := range encoded.Attributes {
 		if err := checkOwnerAttributes(catalog, slot); err != nil {
 			return err
@@ -73,6 +75,26 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 		place := ownerSlot{slot: slot.Slot, position: slot.Position}
 		for _, attribute := range slot.Attributes {
 			ctx.ownerAttributes[place] = append(ctx.ownerAttributes[place], attr{name: attribute.Name, value: attribute.Value, set: true})
+		}
+		claimed[slot.Slot] = append(claimed[slot.Slot], slot.Options...)
+	}
+	ctx.fieldTypes = make(map[annotationext.Slot]annotationext.FieldType, len(encoded.FieldTypes))
+	for _, fieldType := range encoded.FieldTypes {
+		ctx.fieldTypes[fieldType.Slot] = fieldType
+	}
+	return ctx.refuseUnclaimedOptions(claimed)
+}
+
+// refuseUnclaimedOptions refuses an index's WITH options no owner writes, such
+// as PostgreSQL's fillfactor: left out, the comparator would plan a rebuild
+// without them wherever the source is applied.
+func (ctx *renderContext) refuseUnclaimedOptions(claimed map[annotationext.Slot][]string) error {
+	for _, slot := range ctx.owned.slots {
+		for name := range slot.Options {
+			if !slices.Contains(claimed[slot.Slot], name) {
+				return fmt.Errorf("%w: index %q has WITH options %s, which a Go annotation cannot represent",
+					ptaherr.ErrUnsupportedFeature, slot.Slot.Name, strings.Join(slices.Sorted(maps.Keys(slot.Options)), ", "))
+			}
 		}
 	}
 	return nil
@@ -210,6 +232,9 @@ const (
 type ownerSlots struct {
 	slots  []annotationext.SlotFacets
 	handed map[*schemaext.Facets]bool
+	// fields are every field of the schema, in its order, as an owner may
+	// type it.
+	fields []annotationext.FieldDeclaration
 	// tables names, by struct, the table a struct's fields, indexes and
 	// constraints are handed under.
 	tables map[string]annotationext.Table
@@ -255,7 +280,7 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 		}
 		for i := range db.Indexes {
 			if indexOwner(db.Indexes[i]) == name {
-				add(annotationext.Slot{Directive: indexDirective, Table: table, Name: db.Indexes[i].Name}, &db.Indexes[i].Facets)
+				collected.addIndex(annotationext.Slot{Directive: indexDirective, Table: table, Name: db.Indexes[i].Name}, &db.Indexes[i])
 			}
 		}
 		for i := range db.Constraints {
@@ -274,8 +299,44 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 	for _, i := range views {
 		add(annotationext.Slot{Directive: matviewDirective, Name: db.MaterializedViews[i].Name}, &db.MaterializedViews[i].Facets)
 	}
+	collected.fields = ownerFieldDeclarations(db, declared)
 	collected.tables = declared
 	return collected
+}
+
+// ownerFieldDeclarations describes field types and nullability independently
+// of whether a field holds any owner facets.
+func ownerFieldDeclarations(db *schemamodel.Database, declared map[string]annotationext.Table) []annotationext.FieldDeclaration {
+	keys := make(map[string][]string, len(db.Tables))
+	for _, table := range db.Tables {
+		keys[table.StructName] = table.PrimaryKey
+	}
+	var fields []annotationext.FieldDeclaration
+	for _, field := range db.Fields {
+		table, found := declared[field.StructName]
+		if !found {
+			table = annotationext.Table{Struct: field.StructName}
+		}
+		fields = append(fields, annotationext.FieldDeclaration{
+			Slot: annotationext.Slot{Directive: fieldDirective, Table: table, Name: field.Name}, Type: field.Type,
+			Nullable: field.Nullable, Key: field.Primary || slices.Contains(keys[field.StructName], field.Name)})
+	}
+	return fields
+}
+
+// addIndex hands an index's declaration with its facets, its options, and
+// the attributes of its own an owner may read beside its own, such as its
+// type, so an owner can write the options it reads back as the index's.
+func (o *ownerSlots) addIndex(slot annotationext.Slot, index *schemamodel.Index) {
+	o.handed[&index.Facets] = true
+	reads := make(map[string]string)
+	for _, attribute := range indexDefinitionAttrs(*index) {
+		if attribute.set {
+			reads[attribute.name] = attribute.value
+		}
+	}
+	o.slots = append(o.slots, annotationext.SlotFacets{Slot: slot, Facets: index.Facets,
+		Options: maps.Clone(index.StorageParams), Reads: reads})
 }
 
 // constraintSlot is the declaration of constraint in the struct of table. A
