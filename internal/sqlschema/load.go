@@ -129,7 +129,7 @@ func ReadScript(ctx context.Context, request sqlext.GrammarRequest) (sqlext.Gram
 	for _, file := range request.Files {
 		// A grammar target consults no owner's patterns, so the shared
 		// grammar alone reads what the owners' sets would.
-		database, statements, err := convert(ctx, []byte(file.Text), request.Target, document, sqlext.None())
+		database, statements, err := convert(ctx, []byte(file.Text), request.Target, document, sqlext.None(), nil)
 		if err != nil {
 			return sqlext.GrammarResult{}, &sqlext.FileError{Path: file.Path, Err: err}
 		}

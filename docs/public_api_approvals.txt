@@ -735,3 +735,9 @@ v0.13.0 ptah.run/migration/safety
 # Runtime adds SplitStatements and AnnotateStatements. Pre-v1, so no
 # compatibility is owed.
 v0.13.0 ptah.run/migration/generator
+
+# #4140: sourceformats.New takes the relation discovery a SQL document's DROP
+# TABLE asks which objects go with the table, replacing the reader's own
+# knowledge of SQL Server extended properties. Pre-v1, so no compatibility is
+# owed.
+v0.13.0 ptah.run/sourceformats

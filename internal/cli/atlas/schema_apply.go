@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
@@ -896,6 +897,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			SQL:                   opts.runtime.SQL(),
 			HCL:                   opts.runtime.HCL(),
 			CoverageVocabulary:    opts.runtime.CoverageVocabulary(),
+			Relations:             featureselect.RelationsOf(opts.runtime),
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
 			SchemaScope:           schemaScope,

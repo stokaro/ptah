@@ -996,6 +996,16 @@ references; source coverage remains unchanged. `runtime.RelationKinds` names the
 kinds that have relation discovery for a target and representation, so a caller
 can ask about those values only.
 
+A `schemaext.ValueRelations` receipt says how a value relates to tables in three
+ways, and its declaration lists them side by side. A child names its table as
+its identity's parent. A `Dependencies` entry is an object the value references,
+which the server refuses to drop while the value references it. `Attachment` is
+the one table the value hangs off without being its child: the server drops the
+value with it, a scope keeps or leaves the value with it, and the value's owner
+plans its changes alone, as for a SQL Server extended property. A receipt that
+gives an attachment to a child or a facet, names something other than a table,
+or repeats a dependency is refused.
+
 `RelationSnapshot.CaptureRelated` captures the connected feature context around
 structured object references. It retains each multi-table object once, with its
 complete definition, and includes other values sharing its dependencies.
@@ -3923,6 +3933,11 @@ a `schemasource.Formats`, the readers of each output format, because the SQL
 and HCL readers decode owner syntax and the package links no owner:
 `sourceformats.New` returns the bundled readers, with YAML, SQL and HCL read by
 the owners it is given.
+
+`sourceformats.Relations`, the last argument of `sourceformats.New`, says which
+table a SQL document's standalone objects are attached to, so a DROP TABLE
+removes them with the table. With none, a DROP TABLE in a document whose model
+holds a standalone object is refused.
 
 `migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning

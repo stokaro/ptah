@@ -183,7 +183,33 @@ func acceptValueRelations(value ValueRelations) (ValueRelations, error) {
 	}
 	slices.SortFunc(dependencies, CompareRefs)
 	value.Dependencies = dependencies
+	if err := validateAttachment(value, owned, seen); err != nil {
+		return ValueRelations{}, err
+	}
 	return value, nil
+}
+
+// validateAttachment refuses an attachment that is not a table, one given to a
+// child or a facet, which their owner already places, and one that repeats a
+// dependency, since the server cannot both drop the value with the table and
+// refuse to drop the table for it.
+func validateAttachment(value ValueRelations, owned bool, dependencies map[objectidentity.Key]bool) error {
+	attachment := value.Attachment
+	if attachment == (objectidentity.ID{}) {
+		return nil
+	}
+	if err := validateRelationReference(attachment); err != nil {
+		return err
+	}
+	switch {
+	case attachment.Kind != objectidentity.KindTable || !attachment.Parent.Empty():
+		return fmt.Errorf("%w: an attachment names a table, not %s", ErrInvalidValue, attachment)
+	case owned:
+		return fmt.Errorf("%w: %s has an owner and takes no attachment", ErrInvalidValue, value.Subject.Subject)
+	case dependencies[attachment.Key()]:
+		return fmt.Errorf("%w: %s is both the attachment and a dependency of %s", ErrInvalidValue, attachment, value.Subject.Subject)
+	}
+	return nil
 }
 
 func relationOwner(subject RelationSubject) (objectidentity.ID, bool) {

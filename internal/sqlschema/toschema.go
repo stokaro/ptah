@@ -19,6 +19,7 @@
 package sqlschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -643,14 +644,14 @@ func ToEnum(enum *ast.EnumNode, sourcePlatform string) schemamodel.Enum {
 func ToDatabase(
 	statements *ast.StatementList, sourcePlatform string,
 ) (schemamodel.Database, error) {
-	return toDatabase(statements, sourcePlatform, NewDocument(nil))
+	return toDatabase(context.Background(), statements, sourcePlatform, NewDocument(nil))
 }
 
 // toDatabase is [ToDatabase] read against the objects earlier files of the
 // same document declared; see [Document]. The document's model is nil for a
 // file that stands alone.
 func toDatabase(
-	statements *ast.StatementList, sourcePlatform string, document *Document,
+	ctx context.Context, statements *ast.StatementList, sourcePlatform string, document *Document,
 ) (schemamodel.Database, error) {
 	database := schemamodel.Database{
 		Schemas: make([]schemamodel.Schema, 0),
@@ -662,7 +663,7 @@ func toDatabase(
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
-		if err := appendStatement(&database, document, stmt, sourcePlatform); err != nil {
+		if err := appendStatement(ctx, &database, document, stmt, sourcePlatform); err != nil {
 			return schemamodel.Database{}, err
 		}
 	}
@@ -691,9 +692,9 @@ func toDatabase(
 // this package deliberately does not model says so in a case of its own rather
 // than by not appearing.
 func appendStatement(
-	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
+	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) error {
-	if handled, err := appendFamilyStatement(database, document, stmt, sourcePlatform); handled {
+	if handled, err := appendFamilyStatement(ctx, database, document, stmt, sourcePlatform); handled {
 		return err
 	}
 	switch node := stmt.(type) {
@@ -738,7 +739,7 @@ func appendStatement(
 // object, a view, a namespace, or a change to an earlier declaration. handled
 // is false for any other statement, which [appendStatement] converts itself.
 func appendFamilyStatement(
-	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
+	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
 	if handled, err := applyOwnerStatement(database, document, stmt); handled {
 		return true, err
@@ -758,7 +759,7 @@ func appendFamilyStatement(
 	if appendView(database, stmt, sourcePlatform) || appendNamespace(database, stmt, sourcePlatform) {
 		return true, nil
 	}
-	return changeDeclared(database, document, stmt, sourcePlatform)
+	return changeDeclared(ctx, database, document, stmt, sourcePlatform)
 }
 
 // changeDeclared applies a statement that changes or removes an object an
@@ -766,7 +767,7 @@ func appendFamilyStatement(
 // INDEX, COMMENT ON, DROP TABLE and DROP INDEX. handled is false for any other
 // statement.
 func changeDeclared(
-	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
+	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
 	switch node := stmt.(type) {
 	case *ast.AlterTableNode:
@@ -776,7 +777,7 @@ func changeDeclared(
 	case *ast.CommentNode:
 		return true, applyComment(database, document.base, node, sourcePlatform)
 	case *ast.DropTableNode:
-		return true, applyDropTable(database, document.base, document, node, sourcePlatform)
+		return true, applyDropTable(ctx, database, document.base, document, node, sourcePlatform)
 	case *ast.DropIndexNode:
 		return true, applyDropIndex(database, document.base, document, node, sourcePlatform)
 	default:

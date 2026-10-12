@@ -180,8 +180,7 @@ func scopeBindings(ctx context.Context, runtime any, dialect string, scope atlas
 	if !scope.Positive() && len(scope.Exclude) == 0 {
 		return featureselect.Bindings{}, nil
 	}
-	relations, _ := runtime.(featureselect.RelationRuntime)
-	bindings, err := featureselect.CaptureBindings(ctx, relations, dialect, identifier.ForDialect(dialect), sides...)
+	bindings, err := featureselect.CaptureBindings(ctx, featureselect.RelationsOf(runtime), dialect, identifier.ForDialect(dialect), sides...)
 	if err != nil {
 		return featureselect.Bindings{}, fmt.Errorf("capture the tables feature objects bind: %w", err)
 	}

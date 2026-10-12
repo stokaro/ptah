@@ -159,7 +159,10 @@ so `--schema` neither selects nor removes it — the same rule an extension
 follows, where placement is not ownership.
 
 A changed value plans `sp_updateextendedproperty` rather than a drop and an
-add, so the property is never absent partway through a script. Properties are
+add, so the property is never absent partway through a script. A `DROP TABLE`
+in a SQL schema file removes the properties on the table and its columns, as
+SQL Server drops them with the table, and a scope that leaves a table out
+leaves its properties out. Properties are
 emitted after every object one can hang off, and dropped before the objects
 they belong to.
 

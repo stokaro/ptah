@@ -31,7 +31,7 @@ func ExampleRun() {
 	// is one element and no quoting or expansion is applied. The first two
 	// environment entries select the fixture's behavior; GORACE keeps a
 	// race-instrumented run from sleeping at exit.
-	db, err := schemasource.Run(context.Background(), sourceformats.New(runtime.YAML(), runtime.SQL(), runtime.HCL(), coverage.Vocabulary{}), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), sourceformats.New(runtime.YAML(), runtime.SQL(), runtime.HCL(), coverage.Vocabulary{}, runtime), schemasource.Command{
 		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
 		Env: []string{
 			"GO_WANT_HELPER_PROCESS=1",

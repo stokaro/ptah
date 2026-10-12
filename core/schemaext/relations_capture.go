@@ -15,8 +15,9 @@ var ErrIncompleteRelations = errors.New("feature relationships are incomplete")
 
 // RelatedFeatures is captured context, not a request to modify its members.
 // Values retains complete definitions, including every binding of a multi-table
-// object. Required names their common owners and explicit dependencies. Those
-// references do not prove the referenced objects exist or were inspected.
+// object. Required names their common owners, attachments and explicit
+// dependencies. Those references do not prove the referenced objects exist or
+// were inspected.
 type RelatedFeatures struct {
 	Values   []RelationValue
 	Required []objectidentity.ID
@@ -130,6 +131,9 @@ func relationTargets(value ValueRelations) []objectidentity.ID {
 	result := slices.Clone(value.Dependencies)
 	if owner, owned := relationOwner(value.Subject); owned {
 		result = append(result, owner)
+	}
+	if value.Attachment != (objectidentity.ID{}) {
+		result = append(result, value.Attachment)
 	}
 	return result
 }
