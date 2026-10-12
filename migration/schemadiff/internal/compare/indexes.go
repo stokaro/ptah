@@ -1168,7 +1168,7 @@ func indexDefinitionsChanged(
 	// as the key columns are.
 	if rules != nil {
 		return desired.Unique != database.IsUnique ||
-			indexKeyPartsChanged(desired, database, semantics) ||
+			ruledIndexKeysChanged(generatedIndexWithResolvedExpression(desired, resolved), database, semantics) ||
 			postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
 			!rules.OptionsEqual(desired, database)
 	}
@@ -1673,6 +1673,34 @@ func indexKeyPartsChanged(
 		if semantics.ColumnIdentityKey(generatedPart.Name) !=
 			semantics.ColumnIdentityKey(databasePart.Name) ||
 			generatedPart.Desc != databasePart.Desc {
+			return true
+		}
+	}
+	return false
+}
+
+// ruledIndexKeysChanged compares the keys of an index on a target that
+// registers index rules: each key's column, its direction and its expression,
+// in order. A key is a column or an expression and never both, so a column
+// key and an expression key differ, as two expressions with different text
+// do. An expression is compared in the server's spelling where the server
+// answered ([generatedIndexWithResolvedExpression]), and otherwise normalized
+// the way a predicate is, so spacing and keyword case do not make a new index.
+func ruledIndexKeysChanged(
+	desired schemamodel.Index,
+	database catalog.Index,
+	semantics identifier.Semantics,
+) bool {
+	generatedParts := effectiveGeneratedIndexParts(desired)
+	databaseParts := effectiveDatabaseIndexParts(database)
+	if len(generatedParts) != len(databaseParts) {
+		return true
+	}
+	for position, generatedPart := range generatedParts {
+		databasePart := databaseParts[position]
+		generatedColumn, generatedExpr := postgresIndexKeyTarget(generatedPart.Name, generatedPart.Expr, semantics)
+		databaseColumn, databaseExpr := postgresIndexKeyTarget(databasePart.Name, databasePart.Expr, semantics)
+		if generatedColumn != databaseColumn || generatedExpr != databaseExpr || generatedPart.Desc != databasePart.Desc {
 			return true
 		}
 	}

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -189,6 +190,10 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(pgextension.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	// Every table block can state the SQLite options, strict and
+	// without_rowid.
+	combined, err = combined.Combine(must.Must(sqlitetable.OptionsCoverage()))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

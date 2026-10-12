@@ -7,8 +7,8 @@
 //
 // Both options apply when a table is created. SQLite has no statement that
 // turns either on or off for a table that exists, so the owner's comparison
-// plans no change of an existing table's options, as no plan ever has; a
-// table created from a declaration is created with them.
+// reports a changed option and the SQLite planner converges it by rebuilding
+// the table, which creates it again with the declared options.
 //
 // A virtual table's declaration defines the table
 // ([ptah.run/core/schemaext.TableDefinition]): SQLite has no ALTER VIRTUAL

@@ -32,12 +32,14 @@ const VirtualDirective coverage.Kind = "virtual_table"
 // as the text between the module's outer parentheses: they are the module's,
 // not a column list, and SQLite stores and compares them as written.
 //
-// The second is a SQLite document's claim about virtual tables. SQLite SQL
-// spells a virtual table as CREATE VIRTUAL TABLE, so a table declared with
-// CREATE TABLE is an ordinary one, and a document that leaves a live virtual
-// table out asks for it to go, unless its header declines virtual tables with
-// [VirtualDirective]. A document that names no target reads the syntax but
-// makes no claim, so the claim is an extension of its own, with no syntax.
+// The second is a SQLite document's claim about virtual tables and table
+// options. SQLite SQL spells a virtual table as CREATE VIRTUAL TABLE, so a
+// table declared with CREATE TABLE is an ordinary one, and a document that
+// leaves a live virtual table out asks for it to go, unless its header
+// declines virtual tables with [VirtualDirective]. Every CREATE TABLE can end
+// in STRICT and WITHOUT ROWID, so a table declared without them has neither.
+// A document that names no target reads the syntax but makes no claim, so the
+// claim is an extension of its own, with no syntax.
 func SQL() []sqlext.Extension {
 	return []sqlext.Extension{
 		{
@@ -50,9 +52,24 @@ func SQL() []sqlext.Extension {
 			Owner:    Owner,
 			Targets:  []string{platform.SQLite},
 			Header:   []coverage.Kind{VirtualDirective},
-			Coverage: virtualClaim,
+			Coverage: documentClaim,
 		},
 	}
+}
+
+// documentClaim is a SQLite document's claim about its tables: what
+// [virtualClaim] says about virtual tables, and that a table's options are
+// the ones its CREATE TABLE states.
+func documentClaim(limits []coverage.Object) (schemaext.Coverage, error) {
+	virtual, err := virtualClaim(limits)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	options, err := OptionsCoverage()
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	return virtual.Combine(options)
 }
 
 // virtualClaim is a SQLite document's claim about virtual tables: complete,

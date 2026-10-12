@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine"
+	"ptah.run/internal/sqlitecomparison"
 )
 
 // registerSQLiteServices assembles the SQLite owner on the sqlite target's
@@ -17,9 +18,14 @@ import (
 // TABLE and a SQLite document's claim about virtual tables.
 func registerSQLiteServices(provider *engine.Provider) {
 	target := platform.SQLite
+	// The shared comparison reads a SQLite index's whole definition through
+	// SQLite's own rules.
+	provider.Targets[0].Comparison.Indexes = sqlitecomparison.Rules().Indexes
 	tables := []schemaext.Kind{sqlitetable.TableKind}
 	virtual := []schemaext.Kind{sqlitetable.VirtualKind}
 	provider.HCL = append(provider.HCL, sqlitetable.HCL())
+	provider.Annotations = append(provider.Annotations, sqlitetable.Annotations())
+	provider.YAML = append(provider.YAML, sqlitetable.YAML())
 	provider.SQL = append(provider.SQL, sqlitetable.SQL()...)
 	provider.Codecs = append(provider.Codecs, append(sqlitetable.TableCodecs(), sqlitetable.ChangeCodec())...)
 	provider.Codecs = append(provider.Codecs, append(sqlitetable.VirtualCodecs(), sqlitetable.VirtualChangeCodec())...)

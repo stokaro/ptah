@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/hclext"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/sqlite/sqlitetable"
 )
@@ -45,7 +47,8 @@ func TestHCL_EncodeHCL_HappyPath(t *testing.T) {
 }
 
 // TestHCL_EncodesTheOwnersKinds writes the table options and accounts for a
-// virtual table's module, and reads no block.
+// virtual table's module, reads no block, and claims every table's options:
+// a table block without them describes a table with neither.
 func TestHCL_EncodesTheOwnersKinds(t *testing.T) {
 	c := qt.New(t)
 
@@ -54,5 +57,8 @@ func TestHCL_EncodesTheOwnersKinds(t *testing.T) {
 	c.Assert(extension.Owner, qt.Equals, sqlitetable.Owner)
 	c.Assert(extension.Kinds, qt.DeepEquals, []schemaext.Kind{sqlitetable.TableKind, sqlitetable.VirtualKind})
 	c.Assert(extension.Blocks, qt.IsNil)
-	c.Assert(extension.Coverage, qt.IsNil)
+	claim, err := extension.Coverage(hclext.CoverageRequest{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(claim.Lookup(sqlitetable.TableKind, objectidentity.NewBuilder(identifier.ForDialect("sqlite")).Table("t")).State,
+		qt.Equals, schemaext.Complete)
 }

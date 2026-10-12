@@ -69,9 +69,9 @@ func shape(object schemaext.ObjectShape) func(json.RawMessage) error {
 
 // ChangeKind identifies a change to a surviving table's options.
 //
-// No comparison produces one: SQLite has no statement that changes either
-// option of a table that exists. The kind is the change vocabulary the
-// owner's comparison declares, and no planner accepts it.
+// SQLite has no statement that changes either option of a table that exists,
+// so the SQLite planner converges the change by rebuilding the table
+// ([Change.RebuildsSQLiteTable]).
 const ChangeKind schemaext.Kind = "ptah.run/sqlite/table-change"
 
 // Change retains the options a table holds and the options a declaration
@@ -83,6 +83,11 @@ type Change struct {
 
 // Kind returns the owned change identity.
 func (*Change) Kind() schemaext.Kind { return ChangeKind }
+
+// RebuildsSQLiteTable reports that rebuilding the table converges the change:
+// the rebuilt table is created with the declared options. The SQLite planner
+// reads it through internal/planner/sqliterebuild.TableRebuild.
+func (*Change) RebuildsSQLiteTable() bool { return true }
 
 // CloneChange returns independent operands. A nil receiver remains typed nil.
 func (v *Change) CloneChange() schemaext.ChangeValue { return v.Copy() }

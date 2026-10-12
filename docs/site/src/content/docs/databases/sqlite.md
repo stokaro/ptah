@@ -53,14 +53,17 @@ The SQLite renderer and planner support:
   with inline `PRIMARY KEY`, `UNIQUE`, `CHECK`, and `FOREIGN KEY` constraints.
   The options belong to the SQLite owner: a Go annotation states them as
   `platform.sqlite.strict="true"` and `platform.sqlite.without_rowid="true"`,
-  HCL as the table's `strict` and `without_rowid` attributes, and another
-  target leaves them out. They apply when a table is created; SQLite has no
-  statement that turns either on or off for a table that exists, so a plan
-  never changes them on one.
+  YAML in the table's `sqlite` platform group, HCL as the table's `strict` and
+  `without_rowid` attributes, SQL after the column list, and another target
+  leaves them out. A table declared without them has neither. SQLite has no
+  statement that turns either on or off for a table that exists, so a changed
+  option rebuilds the table, as below.
 - Enum annotations as `TEXT` columns plus a generated
   `CHECK (<column> IN (...))` constraint.
-- `CREATE INDEX`, including unique and partial indexes, and
-  `DROP INDEX IF EXISTS` / `DROP TABLE IF EXISTS`.
+- `CREATE INDEX`, including unique, descending, expression and partial
+  indexes, and `DROP INDEX IF EXISTS` / `DROP TABLE IF EXISTS`. SQLite changes
+  nothing about an index in place, so an index whose uniqueness, columns, key
+  directions, expressions or predicate changed is dropped and created again.
 - `ALTER TABLE ... ADD COLUMN`, `RENAME COLUMN`, and `RENAME TO`.
 - Column and constraint changes ALTER TABLE cannot express, through a
   generated table-rebuild plan: create a rebuilt table in its desired shape,
@@ -68,7 +71,9 @@ The SQLite renderer and planner support:
   triggers when their metadata round-trips safely. One rebuild covers column
   drops, column type, nullability, default and generated-expression changes,
   added and removed table constraints (including enum-backed `CHECK`
-  constraints), and a column drop combined with a column addition. A column the
+  constraints), a changed `STRICT` or `WITHOUT ROWID` option, and a column
+  drop combined with a column addition. SQLite stores no comment, so a
+  column whose comment alone changed is left as it is. A column the
   desired schema makes `NOT NULL` with a default is backfilled in the copy with
   `IFNULL(<column>, <default>)`, so rows already holding `NULL` survive.
 - Column **additions** ALTER TABLE cannot express, through the same rebuild.
