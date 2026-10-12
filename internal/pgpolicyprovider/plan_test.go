@@ -91,7 +91,7 @@ func TestPlanPolicies_Steps(t *testing.T) {
 		{name: "a drop", change: policyChange("tenant", &restrictiveObserved, nil, false), strategy: "drop the policy",
 			want: []string{"policy/000000 *pgpolicy.PolicyOperation drop " + policy + ", read " + table + " allowed dependent"}},
 		{name: "a replacement", change: policyChange("tenant", &permissiveObserved, &selectOnly, false),
-			strategy: "drop the policy and create it again in one transaction; PostgreSQL alters neither its command nor its composition in place",
+			strategy: "drop the policy and create it again in one transaction; its command or composition changes, or a clause is removed",
 			want:     []string{"policy/000000 *pgpolicy.PolicyOperation alter " + policy + ", read " + table + ", read role reader required dependent"}},
 		{name: "a comment alone", change: policyChange("tenant", &restrictiveObserved, &commented, true), strategy: "set the policy's comment",
 			want: []string{"policy/000000/comment *pgpolicy.PolicyCommentOperation alter " + policy + ", read " + table + " allowed dependent"}},

@@ -2530,13 +2530,14 @@ value encodes to the same bytes nested as alone. A refused value is a
 
 `feature/pgpolicy/policyrender` renders the payloads for the PostgreSQL
 family. CREATE POLICY writes only what the declaration names, so PostgreSQL
-applies its own defaults; a change drops the policy and creates it again; and
-ENABLE precedes FORCE. The TO list is written in the canonical role order, and
-`CreateStatement` is the one place the statement is written. `LowerTableFacets`
+applies its own defaults. `PolicyChange.CanAlter` selects ALTER POLICY when the
+effective command and composition agree and no clause is removed. Other
+definition changes use DROP and CREATE. ENABLE precedes FORCE. The TO list is
+written in the canonical role order, and `CreateStatement` is the one place
+the statement is written. `LowerTableFacets`
 turns a new table's declared switches into the statements that follow its
 CREATE TABLE. The builtin runtime registers the change and operation codecs and
-composes the handlers on every PostgreSQL-family target. No source or planner
-produces these payloads.
+composes the handlers on every PostgreSQL-family target.
 
 A declaration can carry a connected server's spelling of itself,
 `DesiredPolicy.Normalized`: the role list and clauses as `pg_policy` would
@@ -2570,12 +2571,14 @@ not an error.
 `feature/pgpolicy/policyplan` plans the changes of surviving tables and the
 policies of a table the plan creates. Every operation asks for the dependent
 phase. A statement names its table as the source spelled it, so a table the
-source left in the default schema is named without one. A policy that changes
-is dropped and created again in one step that requires a transaction, a
-declared comment is set after the policy is created, and a table's switches are
-written under `TableStateSubject`, apart from the table the host alters. The
-steps of one table run in access order: what can only narrow access first, what
-can widen it last, and a change of unknown effect between, so a plan without a
+source left in the default schema is named without one. ALTER POLICY needs no
+transaction and keeps the policy's comment; a separate comment step is planned
+only when that comment changes. A change that needs DROP and CREATE requires
+one transaction, and a declared comment is set after creation. A table's switches
+are written under `TableStateSubject`, apart from the table the host alters.
+
+The steps of one table run in access order: what can only narrow access first,
+what can widen it last, and a change of unknown effect between, so a plan without a
 transaction never admits more than its start or its end. A table the host drops
 takes its policies and switches with it, and one it alters keeps them; a
 rebuild is refused.

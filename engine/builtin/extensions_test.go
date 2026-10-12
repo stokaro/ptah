@@ -858,8 +858,8 @@ func TestRowSecurityPayloadsRenderAfterTheRuntimeRoundTrip(t *testing.T) {
 }
 
 // TestRowSecurityPolicyTransitionsRender pins the statements of a removal and
-// of a change: a change drops the policy and creates it again, because ALTER
-// POLICY changes neither the command nor the composition.
+// of a command change: PostgreSQL requires DROP and CREATE to change the
+// command a policy covers.
 func TestRowSecurityPolicyTransitionsRender(t *testing.T) {
 	observed := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Composition: pgpolicy.Permissive}
 	declared := &pgpolicy.DesiredPolicy{Command: pgpolicy.CommandInsert, WithCheck: new("owner_id = 7")}

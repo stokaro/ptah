@@ -493,9 +493,11 @@ their table.
 
 An object the plan writes again ends with the comment the declaration states.
 `CREATE OR REPLACE` keeps the comment a function, a procedure or a trigger had,
-so a removed comment is cleared after the replacement. A materialized view and
-a policy are dropped and created again, and an enum that loses a value is
-renamed, created again and the old type dropped; each new object is written
+so a removed comment is cleared after the replacement. ALTER POLICY also keeps
+its comment; a comment change gets a separate COMMENT ON POLICY. A materialized
+view, and a policy that needs DROP and CREATE, get their declared comments
+after creation. An enum that loses a value is renamed, created again and the
+old type dropped; each new object is written
 with the declared comment.
 
 An extension's comment is compared only when the declaration states one.
@@ -1135,9 +1137,14 @@ RESTRICTIVE`.
 FORCE is compared on its own as well. A table that stays enabled while your
 schema adds or drops FORCE gets `ALTER TABLE ... FORCE ROW LEVEL SECURITY` or
 `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`. FORCE survives `DISABLE`, so a
-table that is enabled again without it also gets `NO FORCE`. A policy whose
-kind changes is dropped and created again, because PostgreSQL cannot alter a
-policy's kind in place.
+table that is enabled again without it also gets `NO FORCE`.
+
+Changes to a policy's roles, or additions and edits of its `USING` and
+`WITH CHECK` clauses, use `ALTER POLICY`. This step needs no transaction and
+preserves the policy's identity and comment. A comment change gets its own
+`COMMENT ON POLICY`, including `IS NULL` to clear it. Changing the command or
+the permissive/restrictive composition, or removing either clause, requires
+DROP and CREATE in one transaction.
 
 A migration creates a policy after the views, the role changes and the
 enablement it may name. It drops a policy your schema no longer declares after
@@ -1179,9 +1186,9 @@ The comparison reads the role list as a set: the order of the roles and the
 spacing between them do not count, and a list that names `PUBLIC` beside other
 roles is `PUBLIC`, since every role is a member of it. A declaration that names
 a role where the database has `PUBLIC`, or the other way round, is still a
-change. Ptah renders the clause you wrote, so a policy declared without `TO`
-keeps rendering without one. CockroachDB and YugabyteDB report roles the same
-way.
+change. CREATE POLICY leaves an omitted `TO` clause out. ALTER POLICY writes
+`TO PUBLIC` for it, because omitting `TO` there keeps the existing role list.
+CockroachDB and YugabyteDB report roles the same way.
 
 Which table a policy belongs to is decided under the target's identifier rules
 rather than by spelling, so a policy declared on `orders` and a table created

@@ -24,13 +24,13 @@ const (
 )
 
 // PolicyOperation carries one policy transition through the common AST
-// extension envelope: CREATE POLICY, DROP POLICY, or a replacement that drops
-// the policy and creates it again. Schema, Table and Name are the names as the
-// source spelled them; Schema is empty when the source left the table in the
-// default schema. The change holds both operands and the access assessment the
-// plan reports for the statements this operation renders. A policy's comment is
-// a [PolicyCommentOperation] of its own, because a target can hold policies and
-// not their comments.
+// extension envelope: CREATE POLICY, ALTER POLICY, DROP POLICY, or a
+// replacement that drops the policy and creates it again. Schema, Table and
+// Name are the names as the source spelled them; Schema is empty when the
+// source left the table in the default schema. The change holds both operands
+// and the access assessment the plan reports for the statements this operation
+// renders. A policy's comment is a [PolicyCommentOperation] of its own, because
+// a target can hold policies and not their comments.
 type PolicyOperation struct {
 	Schema string       `json:"schema"`
 	Table  string       `json:"table"`
