@@ -31,8 +31,8 @@ import (
 // `owner = 'x'` is stored as `((owner)::text = 'x'::text)` over a varchar
 // column and unchanged over text. It also records the role a CURRENT_ROLE,
 // CURRENT_USER or SESSION_USER keyword resolved to. A declaration compared as
-// written would drop and recreate a policy nobody changed on every run, which
-// takes a security control away and puts it back (stokaro/ptah#2049).
+// written would plan a policy change on every run even when the server holds
+// the same definition (stokaro/ptah#2049).
 //
 // The declaration is put through the same server: a temporary copy of the
 // policy's table is created with CREATE TEMPORARY TABLE ... (LIKE ...), which

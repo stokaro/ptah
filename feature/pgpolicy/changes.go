@@ -54,6 +54,17 @@ func (v *PolicyChange) Copy() *PolicyChange {
 // policy.
 func (v *PolicyChange) RemovesState() bool { return v != nil && v.After == nil }
 
+// CanAlter reports whether a valid definition change can use ALTER POLICY.
+// It requires both operands, the same effective command and composition, and
+// no removed clause. A nil receiver, an invalid change or a comment-only
+// change returns false. Planning and rendering share this predicate so the
+// transaction requirement always agrees with the emitted statements.
+func (v *PolicyChange) CanAlter() bool {
+	return v != nil && v.Before != nil && v.After != nil && !v.CommentOnly && v.Validate() == nil &&
+		v.Before.Command == v.After.EffectiveCommand() && v.Before.Composition == v.After.EffectiveComposition() &&
+		(v.Before.Using == nil || v.After.Using != nil) && (v.Before.WithCheck == nil || v.After.WithCheck != nil)
+}
+
 // AccessEffect returns the recorded assessment.
 func (v *PolicyChange) AccessEffect() schemaext.AccessEffect {
 	if v == nil {

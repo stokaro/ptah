@@ -129,14 +129,19 @@ func validateComment(ctx renderer.ExtensionContext, value *pgpolicy.PolicyCommen
 	return nil
 }
 
-// renderPolicy writes a policy transition: CREATE POLICY, DROP POLICY, or for
-// a change the drop and the create. ALTER POLICY changes neither the command
-// nor the composition and cannot remove a clause, so a change is a
-// replacement; the plan runs both statements in its transaction, so no other
-// session sees the table without the policy.
+// renderPolicy changes roles and clauses in place where ALTER POLICY can
+// express the transition. Other definition changes use DROP and CREATE in
+// the transaction required by the plan.
 func renderPolicy(_ renderer.ExtensionContext, value *pgpolicy.PolicyOperation) ([]string, error) {
 	name := quotePart(value.Name)
 	table := qualifiedIdentifier(value.Schema, value.Table)
+	if value.Change.CanAlter() {
+		policy := value.Change.After
+		// An omitted TO clause means PUBLIC in a declaration, but retaining
+		// the existing role list in ALTER POLICY, so write the effective list.
+		lines := []string{"ALTER POLICY " + name + " ON " + table + " TO " + roleList(policy.EffectiveRoles())}
+		return []string{policyClauses(lines, policy)}, nil
+	}
 	var statements []string
 	if value.Change.Before != nil {
 		statements = append(statements, "DROP POLICY "+name+" ON "+table+";")
@@ -165,7 +170,10 @@ func CreateStatement(name, table string, policy *pgpolicy.DesiredPolicy) string 
 	if policy.Roles != nil {
 		head = append(head, "TO", roleList(policy.Roles))
 	}
-	lines := []string{strings.Join(head, " ")}
+	return policyClauses([]string{strings.Join(head, " ")}, policy)
+}
+
+func policyClauses(lines []string, policy *pgpolicy.DesiredPolicy) string {
 	if policy.Using != nil {
 		lines = append(lines, "    USING ("+*policy.Using+")")
 	}

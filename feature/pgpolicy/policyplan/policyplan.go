@@ -25,10 +25,11 @@ import (
 //
 // Every operation asks for [featureplan.PhaseDependent]: a policy names
 // tables, columns, routines and roles, and nothing common reads it. A policy
-// that changes is dropped and created again in one step, which requires a
-// transaction, because PostgreSQL alters neither a policy's command nor its
-// composition in place. A comment the declaration holds is set after the
-// policy is created, since a creation or a replacement starts without one.
+// that changes uses ALTER POLICY when its command and composition stay the
+// same and no clause is removed. That step needs no transaction and preserves
+// its comment. Other definition changes drop and create the policy in one
+// step that requires a transaction. A creation or replacement starts without
+// a comment, so a declared comment is set after it.
 //
 // The owner orders the steps of one table by the access each can change: a
 // step that can only narrow access runs before one whose effect is unknown,
@@ -208,6 +209,8 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 			action, transaction = plangraph.Create, plangraph.TransactionAllowed
 		case change.After == nil:
 			action, transaction = plangraph.Drop, plangraph.TransactionAllowed
+		case change.CanAlter():
+			transaction = plangraph.TransactionAllowed
 		}
 		result.steps = append(result.steps, plangraph.Step[featureplan.Operation]{ID: main,
 			Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: phase, Payload: &pgpolicy.PolicyOperation{
@@ -216,9 +219,7 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 		})
 		result.main = main
 	}
-	// A creation and a replacement start without a comment, so a declared one
-	// is set after them; a comment-only change sets it, or clears it, alone.
-	if change.After != nil && (change.CommentOnly || change.After.Comment != "") {
+	if needsPolicyComment(change) {
 		comment := plangraph.StepID{Owner: pgpolicy.Owner, Name: name + "/comment"}
 		result.steps = append(result.steps, plangraph.Step[featureplan.Operation]{ID: comment,
 			Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: phase, Payload: &pgpolicy.PolicyCommentOperation{
@@ -237,6 +238,22 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 		result.plan.Steps = append(result.plan.Steps, step.ID)
 	}
 	return result, nil
+}
+
+// needsPolicyComment accounts for the comment retained by ALTER POLICY and
+// the empty comment of a newly created policy. Clearing a retained comment
+// needs an explicit COMMENT ON POLICY ... IS NULL.
+func needsPolicyComment(change *pgpolicy.PolicyChange) bool {
+	if change.After == nil {
+		return false
+	}
+	if change.CommentOnly {
+		return true
+	}
+	if change.CanAlter() {
+		return change.Before.Comment != change.After.Comment
+	}
+	return change.After.Comment != ""
 }
 
 // roleReads names the roles a policy's TO list reads. A keyword names no role
@@ -259,8 +276,10 @@ func policyStrategy(change *pgpolicy.PolicyChange) string {
 		return "create the policy"
 	case change.After == nil:
 		return "drop the policy"
+	case change.CanAlter():
+		return "alter the policy's roles and clauses in place"
 	default:
-		return "drop the policy and create it again in one transaction; PostgreSQL alters neither its command nor its composition in place"
+		return "drop the policy and create it again in one transaction; its command or composition changes, or a clause is removed"
 	}
 }
 
