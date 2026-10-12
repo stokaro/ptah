@@ -102,6 +102,10 @@ type Parser struct {
 	// ownerTables are the tables owners' statements declare, each standing
 	// where its statement stood once the owners have read the document.
 	ownerTables map[*ast.ExtensionStatement]*ast.CreateTableNode
+	// declinedStatements are the owners' statements their owners declined,
+	// each read again by the shared grammar where it stood; see
+	// [Parser.placeDeclinedStatements].
+	declinedStatements map[*ast.ExtensionStatement]OwnerStatement
 	// definitions counts the column definitions and keys read so far, which
 	// numbers the claims of owners' column and index options; see
 	// [sqlext.Claim.Definition].

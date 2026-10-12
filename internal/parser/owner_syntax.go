@@ -49,6 +49,13 @@ func (p *Parser) ownerCandidate(site sqlext.Site) (sqlext.Candidate, bool) {
 	}
 	words := p.upcomingWords(longest)
 	for _, candidate := range candidates {
+		if len(candidate.Pattern.AfterName) > 0 {
+			before, after, named := p.namedWords(len(candidate.Pattern.Words), len(candidate.Pattern.AfterName)+1)
+			if named && candidate.MatchesNamed(before, after) {
+				return candidate, true
+			}
+			continue
+		}
 		if candidate.Matches(words) {
 			return candidate, true
 		}
@@ -56,21 +63,114 @@ func (p *Parser) ownerCandidate(site sqlext.Site) (sqlext.Candidate, bool) {
 	return sqlext.Candidate{}, false
 }
 
+// tokenScan reads the significant tokens ahead of the cursor without moving
+// the parser.
+type tokenScan struct {
+	token lexer.Token
+	lexer lexer.Lexer
+}
+
+func (p *Parser) scanAhead() *tokenScan {
+	return &tokenScan{token: p.current, lexer: *p.lexer}
+}
+
+// next returns the next significant token, or the end of the document.
+func (s *tokenScan) next() lexer.Token {
+	for {
+		token := s.token
+		if token.Type == lexer.TokenEOF {
+			return token
+		}
+		s.token = s.lexer.NextToken()
+		switch token.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
+		default:
+			return token
+		}
+	}
+}
+
+// identifier reports whether first opens an identifier as
+// [Parser.expectIdentifier] reads one, a word, a double-quoted name or a
+// bracketed one, and steps over the rest of a bracketed one.
+func (s *tokenScan) identifier(first lexer.Token) bool {
+	switch {
+	case first.Type == lexer.TokenIdentifier || isDoubleQuotedIdentifierToken(first):
+		return true
+	case first.MatchOperatorValue("["):
+		for {
+			token := s.next()
+			switch {
+			case token.Type == lexer.TokenEOF:
+				return false
+			case !token.MatchOperatorValue("]"):
+				continue
+			}
+			probe := *s
+			if closing := probe.next(); !closing.MatchOperatorValue("]") {
+				return true
+			}
+			*s = probe
+		}
+	default:
+		return false
+	}
+}
+
 // upcomingWords answers the values of the next count significant tokens from
 // the cursor, the current one included, and leaves the parser where it is.
 func (p *Parser) upcomingWords(count int) []string {
 	words := make([]string, 0, count)
-	token := p.current
-	scan := *p.lexer
-	for len(words) < count && token.Type != lexer.TokenEOF {
-		switch token.Type {
-		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
-		default:
-			words = append(words, token.Value)
+	scan := p.scanAhead()
+	for len(words) < count {
+		token := scan.next()
+		if token.Type == lexer.TokenEOF {
+			break
 		}
-		token = scan.NextToken()
+		words = append(words, token.Value)
 	}
 	return words
+}
+
+// namedWords answers the opening significant tokens from the cursor, as many
+// as opening, and the following ones after the qualified name that stands
+// next, as many as following, and leaves the parser where it is. The name is
+// read as [Parser.parseQualifiedIdentifier] reads one: an identifier, then a
+// dot and an identifier as often as the document writes them. It reports
+// false where the opening tokens are not there or no identifier follows
+// them.
+func (p *Parser) namedWords(opening, following int) (before, after []string, named bool) {
+	scan := p.scanAhead()
+	before = make([]string, 0, opening)
+	for range opening {
+		token := scan.next()
+		if token.Type == lexer.TokenEOF {
+			return nil, nil, false
+		}
+		before = append(before, token.Value)
+	}
+	if !scan.identifier(scan.next()) {
+		return nil, nil, false
+	}
+	for {
+		probe := *scan
+		if dot := probe.next(); dot.Type != lexer.TokenOperator || dot.Value != "." {
+			break
+		}
+		if !probe.identifier(probe.next()) {
+			break
+		}
+		*scan = probe
+	}
+	after = make([]string, 0, following)
+	for len(after) < following {
+		token := scan.next()
+		if token.Type == lexer.TokenEOF {
+			break
+		}
+		after = append(after, token.Value)
+	}
+	return before, after, true
 }
 
 // claimOwnerSyntax reads the span of an owner's syntax at the cursor, when an
@@ -256,6 +356,14 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 	statement := &ast.ExtensionStatement{}
 	note := &OwnerStatement{}
 	claimed := p.claimOwnerSyntax(sqlext.Statement, "", func(value sqlext.Value) error {
+		if value.Declined {
+			if p.declinedStatements == nil {
+				p.declinedStatements = make(map[*ast.ExtensionStatement]OwnerStatement)
+			}
+			p.declinedStatements[statement] = *note
+			delete(p.ownerStatements, statement)
+			return nil
+		}
 		if value.Table != nil {
 			table := ast.NewCreateTable(value.Table.Name)
 			if value.Table.IfNotExists {
@@ -276,6 +384,7 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 		return statement, false
 	}
 	note.Text = p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Text
+	note.offset = p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Offset
 	if p.ownerStatements == nil {
 		p.ownerStatements = make(map[*ast.ExtensionStatement]*OwnerStatement)
 	}
@@ -371,6 +480,8 @@ type OwnerStatement struct {
 	// Text is the statement as the document writes it, without the
 	// semicolon that ends it, so a refusal can name it.
 	Text string
+	// offset is where the statement opens in the document.
+	offset int
 }
 
 // OwnerStatement returns what an owner's statement of the parsed document
@@ -412,5 +523,38 @@ func (p *Parser) ParseContext(ctx context.Context) (*ast.StatementList, error) {
 		return nil, err
 	}
 	p.placeOwnerTables(statements)
+	if err := p.placeDeclinedStatements(statements); err != nil {
+		return nil, err
+	}
 	return statements, nil
+}
+
+// placeDeclinedStatements reads each statement an owner declined by itself
+// with the shared grammar, as if no pattern had matched it, and puts what it
+// reads where the statement stood. The shared grammar reads a statement
+// without the state the statements before it left, so reading one alone reads
+// it as the whole document would have.
+func (p *Parser) placeDeclinedStatements(statements *ast.StatementList) error {
+	if len(p.declinedStatements) == 0 {
+		return nil
+	}
+	placed := make([]ast.Node, 0, len(statements.Statements))
+	for _, node := range statements.Statements {
+		statement, ok := node.(*ast.ExtensionStatement)
+		claim, declined := p.declinedStatements[statement]
+		if !ok || !declined {
+			placed = append(placed, node)
+			continue
+		}
+		// The span ends at the last token before the semicolon, so its text
+		// is one statement without one.
+		read, err := NewParser(claim.Text, WithDialect(p.dialect), WithCapabilities(p.capabilities), WithTimeout(p.timeout),
+			WithSQL(sqlext.None())).parseStatements()
+		if err != nil {
+			return fmt.Errorf("statement at position %d: %w", claim.offset, err)
+		}
+		placed = append(placed, read.Statements...)
+	}
+	statements.Statements = placed
+	return nil
 }
