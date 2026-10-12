@@ -506,7 +506,27 @@ const (
 	// ordinary table where the author declared a partitioned one, so every row
 	// lands in the same place and a partition-wise plan is not available.
 	PartitionProperty = "partition"
+	// UnloggedProperty is a table whose writes skip the write-ahead log.
+	// Losing it produces an ordinary, logged table where the author declared
+	// one the server may truncate after a crash.
+	UnloggedProperty = "unlogged"
 )
+
+// RecordLostUnlogged records an unlogged table the target creates as an
+// ordinary one.
+func (s *Sink) RecordLostUnlogged(table string) {
+	s.RecordLostProperty(TableKind, table, UnloggedProperty, "UNLOGGED")
+}
+
+// RecordLostTableStorage records the partitioning and the unlogged storage a
+// CREATE TABLE declares, for a target that keeps neither: the two properties
+// say how the server stores the table's rows rather than what the rows are.
+func (s *Sink) RecordLostTableStorage(node *ast.CreateTableNode) {
+	s.RecordLostPartition(node.Name, node.Partition)
+	if node.Unlogged {
+		s.RecordLostUnlogged(node.Name)
+	}
+}
 
 // RecordLostPartition records a table partitioning the target does not carry.
 // A table declaring none records nothing.

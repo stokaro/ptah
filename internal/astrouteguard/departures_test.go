@@ -57,7 +57,7 @@ func TestBaseline_HappyPath(t *testing.T) {
 		departed = append(departed, departure.Node)
 	}
 
-	c.Assert(names, qt.HasLen, 126)
+	c.Assert(names, qt.HasLen, 127)
 	c.Assert(slices.IsSorted(names), qt.IsTrue)
 	c.Assert(slices.Compact(slices.Clone(names)), qt.DeepEquals, names)
 	c.Assert(slices.IsSorted(departed), qt.IsTrue)

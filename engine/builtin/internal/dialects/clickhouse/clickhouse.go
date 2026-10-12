@@ -639,7 +639,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	// ClickHouse has a PARTITION BY clause of its own, and this renderer does
 	// not read the declared spec, so the table is created unpartitioned.
-	r.sink.RecordLostPartition(node.Name, node.Partition)
+	r.sink.RecordLostTableStorage(node)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"

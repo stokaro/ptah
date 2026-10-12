@@ -548,3 +548,23 @@ func (op *SetConstraintCommentOperation) Accept(visitor Visitor) error {
 }
 
 func (op *SetConstraintCommentOperation) alterOperation() {}
+
+// SetUnloggedOperation changes an existing table between logged and unlogged:
+// whether its writes skip the write-ahead log. PostgreSQL spells it
+// `ALTER TABLE ... SET UNLOGGED` and `SET LOGGED`, and rewrites the table to
+// do it. A renderer for a target that creates no unlogged table refuses it.
+type SetUnloggedOperation struct {
+	// Unlogged is what the table becomes: true for SET UNLOGGED, false for
+	// SET LOGGED.
+	Unlogged bool
+}
+
+// Accept implements the Node interface for SetUnloggedOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method;
+// this stub exists to satisfy the Node interface.
+func (op *SetUnloggedOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(op)
+}
+
+func (op *SetUnloggedOperation) alterOperation() {}

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/unloggedtable"
 	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -255,6 +256,7 @@ func TablesAndColumnsWithTableContext(
 			// different things about what the table is for -- on every run,
 			// with nothing able to fix it (stokaro/ptah#2168).
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
+			tableDiff.UnloggedChange = unloggedChange(genTable, dbTable, dialect)
 			if tableChanged(tableDiff) {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
@@ -315,7 +317,20 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 		len(tableDiff.ColumnsModified) > 0 ||
 		tableDiff.CommentChange != nil ||
+		tableDiff.UnloggedChange != nil ||
 		len(tableDiff.FeatureChanges) > 0
+}
+
+// unloggedChange answers a table's change between logged and unlogged, or nil
+// where the two sides agree or the target creates no unlogged table. On such
+// a target the renderer reports the declaration lost and the reader reports
+// every table logged, so comparing there would plan the change on every run;
+// [unloggedtable.Supported] is the one answer all three read.
+func unloggedChange(desired schemamodel.Table, current catalog.Table, dialect string) *difftypes.UnloggedChange {
+	if desired.Unlogged == current.Unlogged || !unloggedtable.Supported(dialect) {
+		return nil
+	}
+	return &difftypes.UnloggedChange{Current: current.Unlogged, Desired: desired.Unlogged}
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

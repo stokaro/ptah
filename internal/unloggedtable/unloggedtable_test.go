@@ -8,11 +8,12 @@ import (
 	"ptah.run/internal/unloggedtable"
 )
 
-// TestSupported_AnswersPerDialect pins the set, because both ends of the round
-// trip read it: the renderer writes the keyword where this is true, and the
-// reader asks pg_class for relpersistence where this is true. A dialect that
-// moved into the set on one end alone would render a table the next read
-// describes as logged.
+// TestSupported_AnswersPerDialect pins the set, because every end of the round
+// trip reads it: the renderer writes the keyword where this is true, the
+// reader asks pg_class for relpersistence where this is true, and the
+// comparison plans a change of it where this is true. A dialect that moved
+// into the set on one end alone would render a table the next read describes
+// as logged.
 func TestSupported_AnswersPerDialect(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -21,7 +22,7 @@ func TestSupported_AnswersPerDialect(t *testing.T) {
 	}{
 		{name: "postgres", dialect: "postgres", want: true},
 		{name: "postgresql spelling", dialect: "postgresql", want: true},
-		{name: "yugabytedb", dialect: "yugabytedb", want: true},
+		{name: "yugabytedb takes the keyword and creates an ordinary table", dialect: "yugabytedb", want: false},
 		{name: "cockroachdb speaks the wire protocol and has no unlogged table", dialect: "cockroachdb", want: false},
 		{name: "spanner speaks the wire protocol and has no unlogged table", dialect: "spanner", want: false},
 		{name: "mysql", dialect: "mysql", want: false},

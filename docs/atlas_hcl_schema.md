@@ -40,11 +40,12 @@ current schema IR:
   `custom`,
   `api_name`, `openapi_name`, `graphql_name`, `proto_name`, and nested
   `platform` parity extensions. `unlogged = true` renders
-  `CREATE UNLOGGED TABLE` on PostgreSQL and YugabyteDB, whose writes skip the
+  `CREATE UNLOGGED TABLE` on PostgreSQL, whose writes skip the
   write-ahead log; the table is truncated after a crash and is not replicated,
   so it suits a cache and nothing whose contents have to survive. Other
   dialects render an ordinary table: CockroachDB and Spanner reach Ptah over
-  the same wire protocol and neither creates one. `depends_on` takes table references --
+  the same wire protocol and neither creates one, and YugabyteDB takes the
+  keyword and creates an ordinary table. `depends_on` takes table references --
   `[table.t]` -- and orders this table after each one. The ordering already
   reads every foreign key; a declared edge is for a dependency no reference
   states, such as a default that calls a function reading another table. A name

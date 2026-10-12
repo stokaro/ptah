@@ -297,6 +297,9 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"SetConstraintCommentOperation": func() ast.Node {
 			return &ast.SetConstraintCommentOperation{Constraint: "ck_c", Comment: "positive"}
 		},
+		"SetUnloggedOperation": func() ast.Node {
+			return &ast.SetUnloggedOperation{Unlogged: true}
+		},
 		"ValidateConstraintOperation": func() ast.Node {
 			return &ast.ValidateConstraintOperation{ConstraintName: "ck_c"}
 		},

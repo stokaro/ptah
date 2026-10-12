@@ -323,6 +323,7 @@ var extractionBaseline = []BaselineKind{
 	{Name: "SetIndexPartitioningOperation", Marker: AlterOperationMarker},
 	{Name: "SetRowDeletionPolicyOperation", Marker: AlterOperationMarker},
 	{Name: "SetRowTTLOperation", Marker: AlterOperationMarker},
+	{Name: "SetUnloggedOperation", Marker: AlterOperationMarker},
 	{Name: "SetYDBColumnFamiliesOperation", Marker: AlterOperationMarker},
 	{Name: "SetYDBTablePartitioningOperation", Marker: AlterOperationMarker},
 	{Name: "StatementList", Marker: Unmarked},
