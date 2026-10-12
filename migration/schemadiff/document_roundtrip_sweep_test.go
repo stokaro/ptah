@@ -23,7 +23,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
-	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
@@ -58,15 +57,6 @@ func roundTripRows() []roundTripRow {
 				d.Enums = append(d.Enums, schemamodel.Enum{Name: "mood", Values: []string{"a", "b"}})
 			},
 			count: func(d *schemamodel.Database) int { return len(d.Enums) },
-		},
-		{
-			field: "Extensions",
-			seed: func(d *schemamodel.Database) {
-				d.Extensions = append(d.Extensions, schemamodel.Extension{Name: "citext"})
-			},
-			// The document's extension block reads back as the extension
-			// owner's object.
-			count: func(d *schemamodel.Database) int { return len(d.Extensions) + len(pgextension.Names(d.FeatureObjects)) },
 		},
 		{
 			field: "Functions",

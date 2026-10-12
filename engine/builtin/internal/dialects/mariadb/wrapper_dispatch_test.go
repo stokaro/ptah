@@ -95,13 +95,13 @@ func TestMariaDBWrapper_TheShippedSpellingIsTheWrappers(t *testing.T) {
 	c := qt.New(t)
 
 	database := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{Name: "p1", Table: "users", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "true"}},
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.MariaDB)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.DeepEquals, []string{"-- Extension pg_trgm not supported in MariaDB\n"})
+	c.Assert(statements, qt.DeepEquals, []string{"-- CREATE POLICY p1 not supported in MariaDB\n"})
 }
 
 // policyHalfRow is one half of an RLS declaration, with the line it writes and

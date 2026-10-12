@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 )
 
 // twoHostCandidates is two tables, so a declaration that names no host cannot be
@@ -32,7 +33,8 @@ func twoHostCandidates() schemamodel.Database {
 			Name: "touch", Returns: "trigger", Language: "plpgsql",
 			Body: "BEGIN RETURN NEW; END;",
 		}},
-		Extensions: []schemamodel.Extension{{Name: "timescaledb"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("timescaledb"), pgextension.DesiredExtension{})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 }
 

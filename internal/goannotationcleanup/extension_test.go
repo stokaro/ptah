@@ -14,34 +14,27 @@ import (
 	"ptah.run/internal/goannotationcleanup"
 )
 
-// TestValidateParsed_AcceptsAnExtensionEitherModelHolds pins the cleanup of
-// an extension annotation: the export may hold the extension in the common
-// model or as the extension owner's object, and either one represents it.
-func TestValidateParsed_AcceptsAnExtensionEitherModelHolds(t *testing.T) {
-	tests := []struct {
-		name     string
-		exported *schemamodel.Database
-	}{
-		{name: "the common model", exported: &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm"}}}},
-		{name: "the owner's object", exported: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
-			must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{}))))}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			plan := extensionPlan(c)
-
-			err := plan.ValidateParsed(&schemamodel.Database{}, test.exported)
-
-			c.Assert(err, qt.IsNil)
-		})
-	}
-}
-
-func TestValidateParsed_RefusesAnExtensionNeitherModelHolds(t *testing.T) {
+// TestValidateParsed_AcceptsAnExtensionTheOwnerHolds pins the cleanup of an
+// extension annotation: the export holds the extension as the owner's object,
+// which represents the annotation.
+func TestValidateParsed_AcceptsAnExtensionTheOwnerHolds(t *testing.T) {
 	c := qt.New(t)
 	plan := extensionPlan(c)
-	exported := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}, FeatureObjects: must.Must(schemaext.NewObjects(
+	exported := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{}))))}
+
+	err := plan.ValidateParsed(&schemamodel.Database{}, exported)
+
+	c.Assert(err, qt.IsNil)
+}
+
+// TestValidateParsed_RefusesAnExtensionTheOwnerDoesNotHold is the control: an
+// export that holds another name, here one that differs only in case, does not
+// represent the annotation.
+func TestValidateParsed_RefusesAnExtensionTheOwnerDoesNotHold(t *testing.T) {
+	c := qt.New(t)
+	plan := extensionPlan(c)
+	exported := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		must.Must(pgextension.DesiredObject(pgextension.Ref("PG_TRGM"), pgextension.DesiredExtension{}))))}
 
 	err := plan.ValidateParsed(&schemamodel.Database{}, exported)

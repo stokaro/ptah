@@ -488,8 +488,8 @@ const extensionDirective = "ptah:schema:extension"
 // refuseUnhostedScope refuses a scope that names a target no selected owner
 // reads declarations of directive for, naming the targets one does. It
 // refuses nothing when no selected owner reads the directive at all: the
-// declaration then stays in the shared model, as it did before an owner
-// read it.
+// parse then reads no declaration of it, as it reads no directive of an owner
+// it did not select.
 func (s *schemaParseState) refuseUnhostedScope(directive string, scope []string) error {
 	if len(scope) == 0 || !slices.Contains(s.annotations.TargetScopedDirectives(), directive) {
 		return nil
@@ -544,21 +544,16 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	if err != nil {
 		return s.targetScopeError(ctx, dialectscope.Attribute, err)
 	}
-	if owned {
-		// The extension is the declaration's subject wherever it is written,
-		// so a refusal names it there, as the shared model's does.
-		return s.handToOwner(extensionDirective, kv, kv["name"], scope, ctx)
+	if !owned {
+		// No selected owner reads extensions, so the parse claims nothing
+		// about them, as it claims nothing about the directives of an owner
+		// it did not select. Every scope an owner could refuse was refused
+		// above, so this is a parse without the extension owner.
+		return nil
 	}
-
-	s.extensions = append(s.extensions, schemamodel.Extension{
-		Name:        kv["name"],
-		Schema:      kv["schema"],
-		IfNotExists: kv["if_not_exists"] == "true",
-		Version:     kv["version"],
-		Comment:     kv["comment"],
-		Dialects:    scope,
-	})
-	return nil
+	// The extension is the declaration's subject wherever it is written, so a
+	// refusal names it there.
+	return s.handToOwner(extensionDirective, kv, kv["name"], scope, ctx)
 }
 
 // parseNotDescribedComment records an object family, or one object in it, that
@@ -722,7 +717,6 @@ type schemaParseState struct {
 	schemaIndexes         []schemamodel.Index
 	schemaConstraints     []schemamodel.Constraint
 	tableDirectives       []schemamodel.Table
-	extensions            []schemamodel.Extension
 	functions             []schemamodel.Function
 	sequences             []schemamodel.Sequence
 	domains               []schemamodel.Domain
@@ -1068,11 +1062,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 		enums = append(enums, state.globalEnumsMap[k])
 	}
 
-	// Sort extensions alphabetically for consistent output
-	sort.Slice(state.extensions, func(i, j int) bool {
-		return state.extensions[i].Name < state.extensions[j].Name
-	})
-
 	result := schemamodel.Database{
 		FeatureObjects:    state.featureObjects,
 		FeatureCoverage:   state.featureCoverage,
@@ -1083,7 +1072,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 		Constraints:       state.schemaConstraints,
 		Enums:             enums,
 		EmbeddedFields:    state.embeddedFields,
-		Extensions:        state.extensions,
 		Functions:         state.functions,
 		Sequences:         state.sequences,
 		Domains:           state.domains,

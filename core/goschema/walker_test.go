@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/goannotationsource"
 )
 
@@ -71,17 +72,15 @@ type ProductIndexes struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse directory
-	result, err := goschema.ParseDir(rowSecurityOwners, modelsDir)
+	result, err := goschema.ParseDir(extensionOwners, modelsDir)
 	c.Assert(err, qt.IsNil)
 
-	// Verify extensions are merged correctly (sorted alphabetically)
-	c.Assert(result.Extensions, qt.HasLen, 2)
-	c.Assert(result.Extensions[0].Name, qt.Equals, "btree_gin")
-	c.Assert(result.Extensions[0].IfNotExists, qt.IsTrue)
-	c.Assert(result.Extensions[0].Comment, qt.Equals, "Enable GIN indexes on btree types")
-	c.Assert(result.Extensions[1].Name, qt.Equals, "pg_trgm")
-	c.Assert(result.Extensions[1].IfNotExists, qt.IsTrue)
-	c.Assert(result.Extensions[1].Comment, qt.Equals, "Enable trigram similarity search")
+	// Verify the extensions of both files reach their owner
+	c.Assert(pgextension.Names(result.FeatureObjects), qt.DeepEquals, []string{"btree_gin", "pg_trgm"})
+	c.Assert(declaredExtension(c, result, "btree_gin"), qt.DeepEquals,
+		&pgextension.DesiredExtension{IfNotExists: true, Comment: "Enable GIN indexes on btree types"})
+	c.Assert(declaredExtension(c, result, "pg_trgm"), qt.DeepEquals,
+		&pgextension.DesiredExtension{IfNotExists: true, Comment: "Enable trigram similarity search"})
 
 	// Verify other entities are also merged
 	c.Assert(result.Tables, qt.HasLen, 1)
@@ -227,12 +226,11 @@ type Product struct {
 	}
 
 	// Parse directory recursively
-	result, err := goschema.ParseDir(rowSecurityOwners, tmpDir)
+	result, err := goschema.ParseDir(extensionOwners, tmpDir)
 	c.Assert(err, qt.IsNil)
 
 	// Verify all entity types are merged correctly
-	c.Assert(result.Extensions, qt.HasLen, 1)
-	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
+	c.Assert(pgextension.Names(result.FeatureObjects), qt.DeepEquals, []string{"pg_trgm"})
 
 	c.Assert(result.Enums, qt.HasLen, 1)
 	c.Assert(result.Enums[0].Name, qt.Equals, "enum_user_status") // Auto-generated enum name
@@ -285,7 +283,7 @@ func TestParseDir_ErrorHandling(t *testing.T) {
 				c.Assert(result, qt.IsNotNil)
 				// Empty directory should return empty but valid result
 				c.Assert(result.Tables, qt.HasLen, 0)
-				c.Assert(result.Extensions, qt.HasLen, 0)
+				c.Assert(result.FeatureObjects.Len(), qt.Equals, 0)
 				c.Assert(result.Dependencies, qt.IsNotNil)
 			}
 		})
@@ -1301,24 +1299,19 @@ type User struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(rowSecurityOwners, fsys, ".")
+			result, err := goschema.ParseFS(extensionOwners, fsys, ".")
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
 			// Check PostgreSQL features
-			c.Assert(result.Extensions, qt.HasLen, tt.expectedExtensions)
+			c.Assert(pgextension.Names(result.FeatureObjects), qt.HasLen, tt.expectedExtensions)
 			c.Assert(result.Functions, qt.HasLen, tt.expectedFunctions)
 			c.Assert(ownerPolicies(c, result), qt.HasLen, tt.expectedRLSPolicies)
 			c.Assert(result.Roles, qt.HasLen, tt.expectedRoles)
 
 			// Verify specific content
 			if tt.expectedExtensions > 0 {
-				extensionNames := make(map[string]bool)
-				for _, ext := range result.Extensions {
-					extensionNames[ext.Name] = true
-				}
-				c.Assert(extensionNames["uuid-ossp"], qt.IsTrue)
-				c.Assert(extensionNames["pg_trgm"], qt.IsTrue)
+				c.Assert(pgextension.Names(result.FeatureObjects), qt.DeepEquals, []string{"pg_trgm", "uuid-ossp"})
 			}
 
 			if tt.expectedFunctions > 0 {
@@ -1534,7 +1527,7 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 
 	fixtureDir := "../../integration/internal/fixtures/entities/023-go-annotations-objects"
 
-	result, err := goschema.ParseDir(rowSecurityOwners, fixtureDir)
+	result, err := goschema.ParseDir(extensionOwners, fixtureDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.IsNotNil)
 
@@ -1548,8 +1541,7 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 	c.Assert(result.Enums[0].Name, qt.Equals, "enum_user_status")
 	c.Assert(result.EmbeddedFields, qt.HasLen, 1)
 	c.Assert(result.EmbeddedFields[0].EmbeddedTypeName, qt.Equals, "UserMetadata")
-	c.Assert(result.Extensions, qt.HasLen, 1)
-	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
+	c.Assert(pgextension.Names(result.FeatureObjects), qt.DeepEquals, []string{"pg_trgm"})
 	c.Assert(result.Functions, qt.HasLen, 1)
 	c.Assert(result.Functions[0].Name, qt.Equals, "get_fixture_tenant_id")
 

@@ -5,11 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
@@ -75,10 +78,11 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 	c := qt.New(t)
 	report := newInspectReport(c,
 		&schemamodel.Database{
-			Schemas:    []schemamodel.Schema{{Name: "public"}},
-			Tables:     []schemamodel.Table{{StructName: "User", Name: "users", Schema: "public"}},
-			Fields:     []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-			Extensions: []schemamodel.Extension{{Name: "pgcrypto"}},
+			Schemas:         []schemamodel.Schema{{Name: "public"}},
+			Tables:          []schemamodel.Table{{StructName: "User", Name: "users", Schema: "public"}},
+			Fields:          []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+			FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{})))),
+			FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},
@@ -108,8 +112,9 @@ func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 	c := qt.New(t)
 	report := newInspectReport(c,
 		&schemamodel.Database{
-			Schemas:    []schemamodel.Schema{{Name: "public"}},
-			Extensions: []schemamodel.Extension{{Name: "pgcrypto"}},
+			Schemas:         []schemamodel.Schema{{Name: "public"}},
+			FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{})))),
+			FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},

@@ -57,8 +57,6 @@ const (
 	gapComparison        = "both conversions carry it, and the comparison plans nothing when it changes"
 	gapRoutineAttributes = "goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet"
 	gapRoutineKind       = "the conversions drop a routine's kind; the other direction is a recorded loss"
-	gapSharedExtensions  = "the comparison does not read the shared extension list: every source hands an extension to " +
-		"its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140"
 )
 
 // The reasons a compared field does not reach the plan by design.
@@ -248,12 +246,6 @@ var roundTripGaps = []Unreached{
 	},
 	{Field: "schemamodel.Constraint.Facets", Dialects: []string{"mysql"}, Directions: []Direction{FromCatalog}, Reason: gapComparison},
 	{
-		Field:      "schemamodel.Database.Extensions",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapSharedExtensions,
-	},
-	{
 		Field:      "schemamodel.Database.Schemas",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "spanner", "sqlserver"},
 		Directions: nil,
@@ -268,17 +260,6 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"cockroachdb", "sqlite"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Enum.Schema", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.Extension.Comment", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: gapSharedExtensions},
-	{Field: "schemamodel.Extension.Dialects", Dialects: []string{"spanner", "ydb"}, Directions: []Direction{ToCatalog}, Reason: gapComparison},
-	{Field: "schemamodel.Extension.Dialects", Dialects: []string{"spanner", "ydb"}, Directions: []Direction{FromCatalog}, Reason: gapSharedExtensions},
-	{
-		Field:      "schemamodel.Extension.Name",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapSharedExtensions,
-	},
-	{Field: "schemamodel.Extension.Schema", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: gapSharedExtensions},
-	{Field: "schemamodel.Extension.Version", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: gapSharedExtensions},
 	{
 		Field:      "schemamodel.Field.AutoInc",
 		Dialects:   []string{"mariadb", "mysql", "oracle", "sqlite", "sqlserver"},
@@ -532,7 +513,6 @@ var roundTripExemptions = []Unreached{
 		Directions: nil,
 		Reason:     exemptDomainNormalized,
 	},
-	{Field: "schemamodel.Extension.IfNotExists", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptIfNotExists},
 	{Field: "schemamodel.Field.Primary", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptClickHouseKey},
 	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
 	{

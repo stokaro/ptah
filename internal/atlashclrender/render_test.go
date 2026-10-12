@@ -53,9 +53,9 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 
 func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{Extensions: []schemamodel.Extension{{
-		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
-	}}}
+	plpgsql := pgextension.DesiredExtension{Schema: "pg_catalog", Version: "1.0", IfNotExists: true}
+	db := declaring(func() *schemamodel.Database { return &schemamodel.Database{} }, "plpgsql", plpgsql)
+	want := map[string]pgextension.DesiredExtension{"plpgsql": plpgsql}
 
 	neutral, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
@@ -65,7 +65,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	parsedNeutral, err := atlashcl.ParseWithOptions(neutral.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", neutral.Data))
 	c.Assert(parsedNeutral.Schemas, qt.HasLen, 0)
-	c.Assert(parsedExtensions(c, parsedNeutral), qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsedNeutral), qt.DeepEquals, want)
 
 	inspected, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
@@ -76,7 +76,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	parsedInspected, err := atlashcl.ParseWithOptions(inspected.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", inspected.Data))
 	c.Assert(parsedInspected.Schemas, qt.HasLen, 0)
-	c.Assert(parsedExtensions(c, parsedInspected), qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsedInspected), qt.DeepEquals, want)
 
 	authored, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
@@ -86,19 +86,14 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	parsed, err := atlashcl.ParseWithOptions(authored.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", authored.Data))
 	c.Assert(parsed.Schemas, qt.HasLen, 0)
-	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, want)
 }
 
 func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:        "pgcrypto",
-			Schema:      "Extension Store",
-			IfNotExists: true,
-			Version:     "1.3",
-		}},
-	}
+	pgcrypto := pgextension.DesiredExtension{Schema: "Extension Store", IfNotExists: true, Version: "1.3"}
+	db := declaring(func() *schemamodel.Database { return &schemamodel.Database{} }, "pgcrypto", pgcrypto)
+	want := map[string]pgextension.DesiredExtension{"pgcrypto": pgcrypto}
 
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
@@ -107,14 +102,14 @@ func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
 
 	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", rendered.Data))
-	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, want)
 }
 
 func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
-	}
+	pgcrypto := pgextension.DesiredExtension{Schema: " "}
+	db := declaring(func() *schemamodel.Database { return &schemamodel.Database{} }, "pgcrypto", pgcrypto)
+	want := map[string]pgextension.DesiredExtension{"pgcrypto": pgcrypto}
 
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
@@ -123,7 +118,7 @@ func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) 
 
 	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", rendered.Data))
-	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, db.Extensions)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, want)
 }
 
 func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
@@ -365,10 +360,9 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 
 	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
-	c.Assert(parsedExtensions(c, parsed), qt.HasLen, 1)
-	c.Assert(parsedExtensions(c, parsed)[0].Name, qt.Equals, "pg_trgm")
-	c.Assert(parsedExtensions(c, parsed)[0].Comment, qt.Equals, "Fixture extension")
-	c.Assert(parsedExtensions(c, parsed)[0].IfNotExists, qt.IsTrue)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, map[string]pgextension.DesiredExtension{
+		"pg_trgm": {IfNotExists: true, Comment: "Fixture extension"},
+	})
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Sequences[0].Name, qt.Equals, "fixture_order_seq")
 	c.Assert(parsed.Domains, qt.HasLen, 1)
@@ -936,18 +930,15 @@ func columnOrder(rendered string) []string {
 	return names
 }
 
-// parsedExtensions lists the extensions a parsed document holds as the
-// extension owner's objects, in name order and in the shape a declaration
-// renders them from, so a round trip compares like with like.
-func parsedExtensions(c *qt.C, db *schemamodel.Database) []schemamodel.Extension {
+// parsedExtensions is the declaration of each extension a parsed document
+// holds as the extension owner's objects, keyed by name.
+func parsedExtensions(c *qt.C, db *schemamodel.Database) map[string]pgextension.DesiredExtension {
 	c.Helper()
-	var extensions []schemamodel.Extension
+	extensions := make(map[string]pgextension.DesiredExtension)
 	for _, name := range pgextension.Names(db.FeatureObjects) {
 		object, _, err := db.FeatureObjects.Get(pgextension.Ref(name))
 		c.Assert(err, qt.IsNil)
-		value := object.Value.(*pgextension.DesiredExtension)
-		extensions = append(extensions, schemamodel.Extension{Name: name, Schema: value.Schema, Version: value.Version,
-			Comment: value.Comment, IfNotExists: value.IfNotExists})
+		extensions[name] = *object.Value.(*pgextension.DesiredExtension)
 	}
 	return extensions
 }

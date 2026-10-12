@@ -10,89 +10,8 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 )
-
-func TestParseExtensionComment(t *testing.T) {
-	tests := []struct {
-		name     string
-		comment  string
-		expected schemamodel.Extension
-	}{
-		{
-			name:    "basic extension",
-			comment: "//ptah:schema:extension name=\"pg_trgm\"",
-			expected: schemamodel.Extension{
-				Name:        "pg_trgm",
-				IfNotExists: false,
-				Version:     "",
-				Comment:     "",
-			},
-		},
-		{
-			name:    "extension with if_not_exists",
-			comment: "//ptah:schema:extension name=\"pg_trgm\" if_not_exists=\"true\"",
-			expected: schemamodel.Extension{
-				Name:        "pg_trgm",
-				IfNotExists: true,
-				Version:     "",
-				Comment:     "",
-			},
-		},
-		{
-			name:    "extension with version",
-			comment: "//ptah:schema:extension name=\"postgis\" version=\"3.0\" if_not_exists=\"true\"",
-			expected: schemamodel.Extension{
-				Name:        "postgis",
-				IfNotExists: true,
-				Version:     "3.0",
-				Comment:     "",
-			},
-		},
-		{
-			name:    "extension with installation schema",
-			comment: "//ptah:schema:extension name=\"postgis\" schema=\"extensions\" version=\"3.0\"",
-			expected: schemamodel.Extension{
-				Name:    "postgis",
-				Schema:  "extensions",
-				Version: "3.0",
-			},
-		},
-		{
-			name:    "extension with comment",
-			comment: "//ptah:schema:extension name=\"btree_gin\" comment=\"Enable GIN indexes on btree types\"",
-			expected: schemamodel.Extension{
-				Name:        "btree_gin",
-				IfNotExists: false,
-				Version:     "",
-				Comment:     "Enable GIN indexes on btree types",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			// Create a temporary Go file with the extension annotation
-			content := `package test
-
-` + tt.comment + `
-type TestExtensions struct{}
-`
-
-			// Write to a temporary file and parse it
-			database := parseStringAsGoFile(c, content)
-
-			c.Assert(database.Extensions, qt.HasLen, 1)
-			ext := database.Extensions[0]
-			c.Assert(ext.Name, qt.Equals, tt.expected.Name)
-			c.Assert(ext.Schema, qt.Equals, tt.expected.Schema)
-			c.Assert(ext.IfNotExists, qt.Equals, tt.expected.IfNotExists)
-			c.Assert(ext.Version, qt.Equals, tt.expected.Version)
-			c.Assert(ext.Comment, qt.Equals, tt.expected.Comment)
-		})
-	}
-}
 
 func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 	tests := []struct {
@@ -309,44 +228,10 @@ type TestEntity struct {
 	}
 }
 
-func TestParseMultipleExtensions(t *testing.T) {
-	c := qt.New(t)
-
-	content := `package test
-
-//ptah:schema:extension name="pg_trgm" if_not_exists="true"
-//ptah:schema:extension name="btree_gin" if_not_exists="true"
-//ptah:schema:extension name="postgis" version="3.0"
-type DatabaseExtensions struct{}
-`
-
-	database := parseStringAsGoFile(c, content)
-
-	c.Assert(database.Extensions, qt.HasLen, 3)
-
-	// Extensions are sorted alphabetically: btree_gin, pg_trgm, postgis
-
-	// Check btree_gin (first alphabetically)
-	c.Assert(database.Extensions[0].Name, qt.Equals, "btree_gin")
-	c.Assert(database.Extensions[0].IfNotExists, qt.IsTrue)
-
-	// Check pg_trgm (second alphabetically)
-	c.Assert(database.Extensions[1].Name, qt.Equals, "pg_trgm")
-	c.Assert(database.Extensions[1].IfNotExists, qt.IsTrue)
-
-	// Check postgis (third alphabetically)
-	c.Assert(database.Extensions[2].Name, qt.Equals, "postgis")
-	c.Assert(database.Extensions[2].Version, qt.Equals, "3.0")
-}
-
 func TestParseCompletePostgreSQLSchema(t *testing.T) {
 	c := qt.New(t)
 
 	content := `package test
-
-//ptah:schema:extension name="pg_trgm" if_not_exists="true"
-//ptah:schema:extension name="btree_gin" if_not_exists="true"
-type DatabaseExtensions struct{}
 
 //ptah:schema:table name="products"
 type Product struct {
@@ -377,11 +262,6 @@ type Product struct {
 `
 
 	database := parseStringAsGoFile(c, content)
-
-	// Check extensions (sorted alphabetically)
-	c.Assert(database.Extensions, qt.HasLen, 2)
-	c.Assert(database.Extensions[0].Name, qt.Equals, "btree_gin")
-	c.Assert(database.Extensions[1].Name, qt.Equals, "pg_trgm")
 
 	// Check tables
 	c.Assert(database.Tables, qt.HasLen, 1)
@@ -433,4 +313,30 @@ func writeFile(filename, content string) error {
 
 	_, err = file.WriteString(content)
 	return err
+}
+
+// TestParseSource_AnExtensionIsItsOwnersDeclaration pins that the parse reads
+// an extension only for its owner. With the owner selected the declaration
+// is the owner's object; without it the parse declares nothing, as it reads
+// no directive of an owner it did not select, and the rest of the source
+// still parses.
+func TestParseSource_AnExtensionIsItsOwnersDeclaration(t *testing.T) {
+	c := qt.New(t)
+	const source = `package models
+
+//ptah:schema:extension name="pg_trgm" version="1.6"
+//ptah:schema:table name="docs"
+type Doc struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+}
+`
+	owned, err := goschema.ParseSource(extensionOwners, "docs.go", source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaredExtension(c, &owned, "pg_trgm"), qt.DeepEquals, &pgextension.DesiredExtension{Version: "1.6"})
+
+	unowned, err := goschema.ParseSource(noOwners, "docs.go", source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(unowned.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(unowned.Tables, qt.HasLen, 1)
 }

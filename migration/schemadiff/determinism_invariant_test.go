@@ -39,7 +39,6 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 	current := func() *catalog.Database {
 		return &catalog.Database{
 			Sequences:  []catalog.Sequence{{Name: "s_b"}, {Name: "s_a"}},
-			Extensions: []catalog.Extension{{Name: "e_b"}, {Name: "e_a"}},
 			Domains:    []catalog.Domain{{Name: "d_b"}, {Name: "d_a"}},
 			Composites: []catalog.CompositeType{{Name: "c_b"}, {Name: "c_a"}},
 			Ranges:     []catalog.Range{{Name: "r_b"}, {Name: "r_a"}},
@@ -49,7 +48,6 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 		db := current()
 		for _, swap := range []func(){
 			func() { db.Sequences[0], db.Sequences[1] = db.Sequences[1], db.Sequences[0] },
-			func() { db.Extensions[0], db.Extensions[1] = db.Extensions[1], db.Extensions[0] },
 			func() { db.Domains[0], db.Domains[1] = db.Domains[1], db.Domains[0] },
 			func() { db.Composites[0], db.Composites[1] = db.Composites[1], db.Composites[0] },
 			func() { db.Ranges[0], db.Ranges[1] = db.Ranges[1], db.Ranges[0] },

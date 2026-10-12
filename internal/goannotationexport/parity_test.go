@@ -7,10 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -87,7 +90,8 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 
 	after, err := atlashcl.ParseFileWithOptions(output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
-	c.Assert(after.Extensions, qt.DeepEquals, before.Extensions)
+	c.Assert(declaredExtensions(after), qt.DeepEquals, declaredExtensions(before))
+	c.Assert(declaredExtensions(before), qt.Not(qt.HasLen), 0)
 	c.Assert(after.Sequences, qt.DeepEquals, withoutSequenceProvenance(before.Sequences))
 	c.Assert(after.Domains, qt.DeepEquals, withoutDomainProvenance(before.Domains))
 	c.Assert(after.CompositeTypes, qt.DeepEquals, withoutCompositeProvenance(before.CompositeTypes))
@@ -172,6 +176,17 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stable.Diagnostics, qt.HasLen, 0)
 	c.Assert(stable.Data, qt.DeepEquals, hclData)
+}
+
+// declaredExtensions is the declaration of each extension db holds as the
+// extension owner's objects, keyed by name.
+func declaredExtensions(db *schemamodel.Database) map[string]pgextension.DesiredExtension {
+	extensions := make(map[string]pgextension.DesiredExtension)
+	extensionsOnly := db.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgextension.ExtensionKind) })
+	for _, object := range must.Must(extensionsOnly.All()) {
+		extensions[pgextension.Name(object.Ref)] = *object.Value.(*pgextension.DesiredExtension)
+	}
+	return extensions
 }
 
 func withoutSequenceProvenance(values []schemamodel.Sequence) []schemamodel.Sequence {

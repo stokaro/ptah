@@ -97,7 +97,6 @@ var convertedFamilies = map[string]string{
 	"Enums":             "Enums",
 	"Indexes":           "Indexes",
 	"Constraints":       "Constraints",
-	"Extensions":        "Extensions",
 	"Functions":         "Functions",
 	"Sequences":         "Sequences",
 	"Domains":           "Domains",

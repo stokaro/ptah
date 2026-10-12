@@ -39,7 +39,6 @@ var routedKinds = []routedKind{
 	{name: "view", want: 1, count: countNodes[*ast.CreateViewNode]},
 	{name: "materialized view", want: 1, count: countNodes[*ast.CreateMaterializedViewNode]},
 	{name: "trigger", want: 1, count: countNodes[*ast.CreateTriggerNode]},
-	{name: "extension", want: 1, count: countNodes[*ast.ExtensionNode]},
 	{name: "rls enable", want: 1, count: countNodes[*ast.AlterTableEnableRLSNode]},
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
@@ -68,7 +67,6 @@ func countNodes[T ast.Node](statements []ast.Node) int {
 func routingFixture() schemamodel.Database {
 	start := int64(1000)
 	return schemamodel.Database{
-		Extensions:     []schemamodel.Extension{{Name: "pgcrypto"}},
 		Sequences:      []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
 		Domains:        []schemamodel.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
 		CompositeTypes: []schemamodel.CompositeType{{Name: "composite_probe", Fields: []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}}}},

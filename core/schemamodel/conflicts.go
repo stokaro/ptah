@@ -292,7 +292,6 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.constraints,
 		validator.enums,
 		validator.embeddedFields,
-		validator.extensions,
 		validator.functions,
 		validator.sequences,
 		validator.domains,
@@ -410,17 +409,6 @@ func (v compositeDefinitionValidator) embeddedFields() error {
 				unscopedGoTypeIdentity(field.EmbeddedTypeName),
 				scope,
 			)
-		},
-	)
-}
-
-func (v compositeDefinitionValidator) extensions() error {
-	return validateNamedDefinitions(
-		v.database.Extensions,
-		func(extension Extension) string { return extension.Name },
-		func(extension Extension) Extension { return extension },
-		func(extension Extension, _ string) error {
-			return fmt.Errorf("conflicting extension %q definitions", extension.Name)
 		},
 	)
 }

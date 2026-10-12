@@ -85,8 +85,6 @@ func WithoutKeptState(current, env, declared *catalog.Database, defaultSchema st
 		})
 	filtered.ObjectOwners = subtract(current.ObjectOwners, env.ObjectOwners, declared.ObjectOwners,
 		func(v catalog.ObjectOwner) string { return v.Kind + "\x00" + q(v.Schema, v.Name) })
-	filtered.Extensions = subtract(current.Extensions, env.Extensions, declared.Extensions,
-		func(v catalog.Extension) string { return v.Name })
 	filtered.DefaultPrivileges = subtract(current.DefaultPrivileges, env.DefaultPrivileges, declared.DefaultPrivileges,
 		func(v catalog.DefaultPrivilege) string {
 			return strings.Join([]string{v.Grantor, v.Schema, strings.ToUpper(v.ObjectType), v.Grantee,

@@ -22,30 +22,13 @@ import (
 // document in front of it declares them. Without that rule, a schema declaring
 // the timescaledb extension and a hypertable rendered the CREATE EXTENSION and
 // then skipped the call that needs it — a script that installs an extension and
-// refuses to use it (stokaro/ptah#1026).
+// refuses to use it (stokaro/ptah#1026). The extension owner's object says what
+// it provides, and the render installs it before the table and partitions the
+// table after it.
 func TestRender_ADeclaredExtensionIsTheOfflineEvidence(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := builtin.GetOrderedCreateStatements(hypertableDocumentDeclaringTheExtension(), platform.Postgres)
-
-	c.Assert(err, qt.IsNil)
-	script := strings.Join(statements, "\n")
-	c.Assert(script, qt.Contains, `CREATE EXTENSION "timescaledb"`)
-	c.Assert(script, qt.Contains, `SELECT create_hypertable('"public"."readings"'`)
-	c.Assert(script, qt.Not(qt.Contains), "hypertable public.readings is not supported")
-}
-
-// TestRender_AnOwnedExtensionIsTheOfflineEvidence pins the same rule for an
-// extension its owner declares: the object says what it provides, and the
-// render installs it before the table and partitions the table after it.
-func TestRender_AnOwnedExtensionIsTheOfflineEvidence(t *testing.T) {
-	c := qt.New(t)
-	database := hypertableDocument()
-	database.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("timescaledb"),
-		pgextension.DesiredExtension{}))))
-	database.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
-
-	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	script := strings.Join(statements, "\n")
@@ -79,7 +62,9 @@ func TestRender_WithoutTheExtensionTheCallIsSkipped(t *testing.T) {
 // extension that makes the call available.
 func hypertableDocumentDeclaringTheExtension() *schemamodel.Database {
 	database := hypertableDocument()
-	database.Extensions = []schemamodel.Extension{{Name: "timescaledb"}}
+	database.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("timescaledb"),
+		pgextension.DesiredExtension{}))))
+	database.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
 	return database
 }
 
@@ -102,9 +87,9 @@ func hypertableDocument() *schemamodel.Database {
 func TestRender_AnAggregateComesBetweenItsTableAndTheViewsThatReadIt(t *testing.T) {
 	c := qt.New(t)
 	database := hypertableDocumentDeclaringTheExtension()
-	database.FeatureObjects = must.Must(schemaext.NewObjects(tsschema.DesiredContinuousAggregateObject("public", "hourly",
+	database.FeatureObjects = must.Must(database.FeatureObjects.With(tsschema.DesiredContinuousAggregateObject("public", "hourly",
 		tsschema.DesiredContinuousAggregate{Body: "SELECT time_bucket('1 hour', time) AS bucket FROM public.readings GROUP BY bucket"})))
-	database.FeatureCoverage = must.Must(tsschema.CompleteCoverage(schemaext.Desired))
+	database.FeatureCoverage = must.Must(database.FeatureCoverage.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired))))
 	database.Views = []schemamodel.View{{StructName: "Recent", Name: "public.recent", Body: "SELECT bucket FROM public.hourly"}}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)

@@ -79,16 +79,6 @@ func tableStatementIndexByName(statements *ast.StatementList, name string) int {
 	return -1
 }
 
-func extensionStatementIndexByName(statements *ast.StatementList, name string) int {
-	for i, stmt := range statements.Statements {
-		extension, ok := stmt.(*ast.ExtensionNode)
-		if ok && extension.Name == name {
-			return i
-		}
-	}
-	return -1
-}
-
 func functionStatementIndexByName(statements *ast.StatementList, name string) int {
 	for i, stmt := range statements.Statements {
 		function, ok := stmt.(*ast.CreateFunctionNode)
@@ -1040,40 +1030,6 @@ func TestCollectDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 	c.Assert(addProfilesFK.Constraint.Reference.Table, qt.Equals, "accounts")
 	c.Assert(addProfilesFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
 	c.Assert(addProfilesFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
-}
-
-func TestCollectDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
-	c := qt.New(t)
-
-	db := schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "citext", IfNotExists: true}},
-		Tables: []schemamodel.Table{{
-			StructName: "User",
-			Name:       "users",
-		}},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
-			{StructName: "User", Name: "email", Type: "CITEXT"},
-		},
-		Indexes: []schemamodel.Index{{
-			StructName: "User",
-			Name:       "uq_users_email",
-			Fields:     []string{"email"},
-			Unique:     true,
-		}},
-	}
-
-	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
-
-	extension := extensionStatementIndexByName(result, "citext")
-	table := tableStatementIndexByName(result, "users")
-	index := indexStatementIndexByName(result, "uq_users_email")
-
-	c.Assert(extension, qt.Not(qt.Equals), -1)
-	c.Assert(table, qt.Not(qt.Equals), -1)
-	c.Assert(index, qt.Not(qt.Equals), -1)
-	c.Assert(extension < table, qt.IsTrue)
-	c.Assert(extension < index, qt.IsTrue)
 }
 
 func TestCollectDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {

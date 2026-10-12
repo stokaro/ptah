@@ -19,7 +19,7 @@ import (
 // qualified spelling before this change, so a regression that reached them
 // would show up here rather than being attributed to enums and functions.
 func qualifiedKindsFixture() *catalog.Database {
-	return &catalog.Database{
+	return withReadExtensions(&catalog.Database{
 		Tables: []catalog.Table{
 			{Name: "users", Columns: []catalog.Column{{Name: "id"}}},
 			{Schema: "app", Name: "orders", Columns: []catalog.Column{{Name: "id"}}},
@@ -36,10 +36,7 @@ func qualifiedKindsFixture() *catalog.Database {
 			{Name: "v_users"},
 			{Schema: "app", Name: "v_orders"},
 		},
-		Extensions: []catalog.Extension{
-			{Schema: "public", Name: "pgcrypto", Version: "1.3"},
-		},
-	}
+	}, installed{schema: "public", name: "pgcrypto", version: "1.3"})
 }
 
 // The fixture's four object lists as they stand before any selector runs. A row
@@ -246,7 +243,7 @@ func TestExcludeDatabase_EnumsAndFunctionsKeepBareOnlyCandidatesWithoutDefault(t
 // installation schema separately; enums and functions retain their established
 // identity representations.
 func generatedQualifiedKindsFixture() *schemamodel.Database {
-	return &schemamodel.Database{
+	return withDeclaredExtensions(&schemamodel.Database{
 		Enums: []schemamodel.Enum{
 			{Name: "mood", Values: []string{"a", "b"}},
 			{Name: "app.color", Values: []string{"r"}},
@@ -255,38 +252,23 @@ func generatedQualifiedKindsFixture() *schemamodel.Database {
 			{Name: "fn_audit", Returns: "integer"},
 			{Name: "app.fn_app", Returns: "integer"},
 		},
-		Extensions: []schemamodel.Extension{
-			{Name: "pgcrypto", Version: "1.3"},
-			{Name: "postgis", Schema: "app", Version: "3.4"},
-		},
-	}
+	}, installed{name: "pgcrypto", version: "1.3"}, installed{schema: "app", name: "postgis", version: "3.4"})
 }
 
 // The desired-side lists before any selector runs, in the order
-// [schemamodel.Finalize] leaves them: it sorts functions and extensions and leaves
-// enums in declaration order.
+// [schemamodel.Finalize] leaves them: it sorts functions and leaves enums in
+// declaration order. Extensions are listed in name order, as
+// [declaredExtensions] writes them.
 var (
 	allGeneratedFixtureEnums      = []string{"mood", "app.color"}
 	allGeneratedFixtureFunctions  = []string{"app.fn_app", "fn_audit"}
-	allGeneratedFixtureExtensions = []string{"pgcrypto", "app.postgis"}
+	allGeneratedFixtureExtensions = []string{".pgcrypto:1.3", "app.postgis:3.4"}
 )
 
 func generatedFunctionNames(functions []schemamodel.Function) []string {
 	names := make([]string, 0, len(functions))
 	for _, function := range functions {
 		names = append(names, function.Name)
-	}
-	return names
-}
-
-func generatedExtensionNames(extensions []schemamodel.Extension) []string {
-	names := make([]string, 0, len(extensions))
-	for _, extension := range extensions {
-		if extension.Schema == "" {
-			names = append(names, extension.Name)
-		} else {
-			names = append(names, extension.Schema+"."+extension.Name)
-		}
 	}
 	return names
 }
@@ -354,21 +336,21 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 			pattern:        "public.pgcrypto",
 			wantEnums:      allGeneratedFixtureEnums,
 			wantFunctions:  allGeneratedFixtureFunctions,
-			wantExtensions: []string{"app.postgis"},
+			wantExtensions: []string{"app.postgis:3.4"},
 		},
 		{
 			name:           "extension, qualified with a non-default schema",
 			pattern:        "app.postgis",
 			wantEnums:      allGeneratedFixtureEnums,
 			wantFunctions:  allGeneratedFixtureFunctions,
-			wantExtensions: []string{"pgcrypto"},
+			wantExtensions: []string{".pgcrypto:1.3"},
 		},
 		{
 			name:           "extension, bare name stays supported",
 			pattern:        "pgcrypto",
 			wantEnums:      allGeneratedFixtureEnums,
 			wantFunctions:  allGeneratedFixtureFunctions,
-			wantExtensions: []string{"app.postgis"},
+			wantExtensions: []string{"app.postgis:3.4"},
 		},
 		{
 			name:           "extension, qualified with an absent schema matches nothing",
@@ -389,23 +371,19 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 			c.Assert(err, qt.IsNil)
 			c.Assert(generatedEnumNames(got.Enums), qt.DeepEquals, test.wantEnums)
 			c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, test.wantFunctions)
-			c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, test.wantExtensions)
+			c.Assert(declaredExtensions(got), qt.DeepEquals, test.wantExtensions)
 		})
 	}
 }
 
 func TestScopeDatabase_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testing.T) {
 	c := qt.New(t)
-	database := &catalog.Database{
+	database := withReadExtensions(&catalog.Database{
 		Schemas: []catalog.Schema{
 			{Name: "Extension Store"},
 			{Name: " Extension Store "},
 		},
-		Extensions: []catalog.Extension{
-			{Schema: "Extension Store", Name: "citext"},
-			{Schema: " Extension Store ", Name: "pgcrypto"},
-		},
-	}
+	}, installed{schema: "Extension Store", name: "citext"}, installed{schema: " Extension Store ", name: "pgcrypto"})
 
 	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
 		Selections: ownerSelections(),
@@ -413,24 +391,18 @@ func TestScopeDatabase_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testi
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{
-		Schema: " Extension Store ", Name: "pgcrypto",
-	}})
+	c.Assert(readExtensions(got), qt.DeepEquals, []string{" Extension Store .pgcrypto:"})
 	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: " Extension Store "}})
 }
 
 func TestScopeGenerated_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testing.T) {
 	c := qt.New(t)
-	database := &schemamodel.Database{
+	database := withDeclaredExtensions(&schemamodel.Database{
 		Schemas: []schemamodel.Schema{
 			{Name: "Extension Store"},
 			{Name: " Extension Store "},
 		},
-		Extensions: []schemamodel.Extension{
-			{Schema: "Extension Store", Name: "citext"},
-			{Schema: " Extension Store ", Name: "pgcrypto"},
-		},
-	}
+	}, installed{schema: "Extension Store", name: "citext"}, installed{schema: " Extension Store ", name: "pgcrypto"})
 
 	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
 		Selections: ownerSelections(),
@@ -438,21 +410,15 @@ func TestScopeGenerated_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *test
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []schemamodel.Extension{{
-		Schema: " Extension Store ", Name: "pgcrypto",
-	}})
+	c.Assert(declaredExtensions(got), qt.DeepEquals, []string{" Extension Store .pgcrypto:"})
 	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: " Extension Store "}})
 }
 
 func TestScopeDatabase_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
 	c := qt.New(t)
-	database := &catalog.Database{
+	database := withReadExtensions(&catalog.Database{
 		Schemas: []catalog.Schema{{Name: " "}, {Name: "public"}},
-		Extensions: []catalog.Extension{
-			{Schema: " ", Name: "pgcrypto"},
-			{Schema: "public", Name: "citext"},
-		},
-	}
+	}, installed{schema: " ", name: "pgcrypto"}, installed{schema: "public", name: "citext"})
 
 	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
 		Selections: ownerSelections(),
@@ -460,21 +426,15 @@ func TestScopeDatabase_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{
-		Schema: " ", Name: "pgcrypto",
-	}})
+	c.Assert(readExtensions(got), qt.DeepEquals, []string{" .pgcrypto:"})
 	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: " "}})
 }
 
 func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
 	c := qt.New(t)
-	database := &schemamodel.Database{
+	database := withDeclaredExtensions(&schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: " "}, {Name: "public"}},
-		Extensions: []schemamodel.Extension{
-			{Schema: " ", Name: "pgcrypto"},
-			{Schema: "public", Name: "citext"},
-		},
-	}
+	}, installed{schema: " ", name: "pgcrypto"}, installed{schema: "public", name: "citext"})
 
 	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
 		Selections: ownerSelections(),
@@ -482,30 +442,22 @@ func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []schemamodel.Extension{{
-		Schema: " ", Name: "pgcrypto",
-	}})
+	c.Assert(declaredExtensions(got), qt.DeepEquals, []string{" .pgcrypto:"})
 	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: " "}})
 }
 
 func TestScopeExtensionSchemasWithInternalWhitespaceUseQuotedCandidates(t *testing.T) {
 	c := qt.New(t)
 	scope := atlasfilter.Scope{Selections: ownerSelections(), Include: []string{`"Extension Store".pgcrypto`}}
-	database, err := atlasfilter.ScopeDatabase(&catalog.Database{
-		Schemas:    []catalog.Schema{{Name: "Extension Store"}},
-		Extensions: []catalog.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},
-	}, scope)
+	database, err := atlasfilter.ScopeDatabase(withReadExtensions(&catalog.Database{
+		Schemas: []catalog.Schema{{Name: "Extension Store"}},
+	}, installed{schema: "Extension Store", name: "pgcrypto"}), scope)
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Extensions, qt.DeepEquals, []catalog.Extension{{
-		Schema: "Extension Store", Name: "pgcrypto",
-	}})
+	c.Assert(readExtensions(database), qt.DeepEquals, []string{"Extension Store.pgcrypto:"})
 
-	desired, err := atlasfilter.ScopeGenerated(&schemamodel.Database{
-		Schemas:    []schemamodel.Schema{{Name: "Extension Store"}},
-		Extensions: []schemamodel.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},
-	}, scope)
+	desired, err := atlasfilter.ScopeGenerated(withDeclaredExtensions(&schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "Extension Store"}},
+	}, installed{schema: "Extension Store", name: "pgcrypto"}), scope)
 	c.Assert(err, qt.IsNil)
-	c.Assert(desired.Extensions, qt.DeepEquals, []schemamodel.Extension{{
-		Schema: "Extension Store", Name: "pgcrypto",
-	}})
+	c.Assert(declaredExtensions(desired), qt.DeepEquals, []string{"Extension Store.pgcrypto:"})
 }

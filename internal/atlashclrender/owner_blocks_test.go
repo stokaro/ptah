@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
@@ -446,20 +445,4 @@ func TestRenderInspectedForAtlasCLI_KeepsAnOwnersBlockTheDocumentNeeds(t *testin
 	c.Assert(string(result.Data), qt.Contains, "extension \"isn\" {\n  schema = schema.app\n}\n")
 	c.Assert(result.Diagnostics, qt.HasLen, 1)
 	c.Assert(result.Diagnostics[0].Message, qt.Matches, `kept in Atlas-compatible schema inspect output because another object in this document depends on it.*`)
-}
-
-// TestRender_RefusesAnExtensionDeclaredTwice refuses an extension the common
-// model declares and an owner writes too: the document could write one block
-// for it, and nothing says which declaration is meant.
-func TestRender_RefusesAnExtensionDeclaredTwice(t *testing.T) {
-	c := qt.New(t)
-	db := refsDocument()
-	db.Extensions = []schemamodel.Extension{{Name: "citext"}}
-	blocks := []hclext.EncodedBlock{{Type: "extension", Placement: hclext.BeforeTypes, Name: "citext", SchemaRole: hclext.SchemaPlacement}}
-
-	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(blocksEncoder{blocks: blocks})})
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `.*extension "citext" is declared twice`)
-	c.Assert(result.Data, qt.IsNil)
 }

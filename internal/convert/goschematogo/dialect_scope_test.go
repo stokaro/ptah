@@ -6,8 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -27,6 +30,14 @@ var notExportedAtAll = map[string]string{
 	"Sequence":      "no ptah:schema:sequence annotation is written",
 }
 
+// pgcryptoFor declares pgcrypto to the extension owner, scoped to targets
+// when it names any.
+func pgcryptoFor(targets ...string) schemaext.Objects {
+	extension := must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{}))
+	extension.Targets = targets
+	return must.Must(schemaext.NewObjects(extension))
+}
+
 // scopedDatabase declares one object of every family that carries a dialect
 // scope, each scoped to a dialect that is not the default, so a dropped scope
 // is visible as an absent attribute rather than as a value that happens to
@@ -38,8 +49,9 @@ func scopedDatabase() *schemamodel.Database {
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true},
 		},
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Dialects: scope}},
-		Views:      []schemamodel.View{{StructName: "V", Name: "v", Body: "SELECT 1", Dialects: scope}},
+		FeatureObjects:  pgcryptoFor(scope...),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
+		Views:           []schemamodel.View{{StructName: "V", Name: "v", Body: "SELECT 1", Dialects: scope}},
 		MaterializedViews: []schemamodel.MaterializedView{
 			{StructName: "M", Name: "m", Body: "SELECT 1", Dialects: scope},
 		},
@@ -116,7 +128,7 @@ func TestRender_AnUnscopedObjectWritesNoDialectsAttribute(t *testing.T) {
 	c := qt.New(t)
 
 	db := scopedDatabase()
-	db.Extensions[0].Dialects = nil
+	db.FeatureObjects = pgcryptoFor()
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
@@ -152,7 +164,6 @@ func TestRender_EveryTypeCarryingADialectScopeIsAccountedFor(t *testing.T) {
 // keeps the list from being the only statement: a family that gains a dialect
 // scope and is missing here fails rather than passing quietly.
 var exportedWithTheirScope = map[string]bool{
-	"Extension":        true,
 	"View":             true,
 	"MaterializedView": true,
 	"Function":         true,

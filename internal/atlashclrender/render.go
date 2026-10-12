@@ -234,9 +234,6 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 	if r.slots, err = collectSlots(encoded.Attributes); err != nil {
 		return Result{}, err
 	}
-	if err := r.refuseRepeatedExtensions(); err != nil {
-		return Result{}, err
-	}
 	r.render()
 	return Result{
 		Data:         []byte(r.builder.String()),
@@ -474,20 +471,6 @@ func (r *renderer) documentResolvesTableRef(schema, name string) bool {
 func (r *renderer) schemaFor(schema string) string {
 	if strings.TrimSpace(schema) != "" {
 		return schema
-	}
-	return r.defaultSchema
-}
-
-// extensionSchemaFor preserves the extension model's exact placement contract:
-// only the empty string selects the connection default. A quoted PostgreSQL
-// identifier consisting entirely of whitespace is still a real schema name.
-//
-// System-owned placement is rendered as a string rather than a schema block
-// reference by [renderer.renderExtensions], so preserving it cannot synthesize
-// a CREATE SCHEMA the server refuses.
-func (r *renderer) extensionSchemaFor(extension extensionBlock) string {
-	if extension.schema != "" {
-		return extension.schema
 	}
 	return r.defaultSchema
 }

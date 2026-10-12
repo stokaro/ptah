@@ -1324,7 +1324,6 @@ func deduplicateDatabase(
 		return enum.QualifiedName()
 	})
 	r.EmbeddedFields = deduplicateEmbeddedFields(r.EmbeddedFields, resolver, resolveScope)
-	r.Extensions = deduplicateExtensions(r.Extensions)
 	r.Functions = deduplicateFunctions(r.Functions)
 
 	deduplicateSchemaObjects(r)
@@ -1356,23 +1355,6 @@ func deduplicateEmbeddedFields(
 		scope := resolveScope(resolver, field.StructName, "")
 		return scope + "." + field.EmbeddedTypeName
 	})
-}
-
-func deduplicateExtensions(extensions []Extension) []Extension {
-	byName := make(map[string]Extension, len(extensions))
-	for _, extension := range extensions {
-		byName[extension.Name] = extension
-	}
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	deduplicated := make([]Extension, 0, len(names))
-	for _, name := range names {
-		deduplicated = append(deduplicated, byName[name])
-	}
-	return deduplicated
 }
 
 // rlsTableSemantics are the identifier rules the owning table of a row-level

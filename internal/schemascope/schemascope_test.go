@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/schemascope"
 )
 
@@ -18,16 +21,35 @@ func TestSplitNames(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, []string{"auth", "billing", "metrics"})
 }
 
+// declaredExtensions gives db the extensions as the owner's declarations,
+// each keyed by its name and installed in the given schema.
+func declaredExtensions(db *schemamodel.Database, schemas map[string]string) *schemamodel.Database {
+	objects := make([]schemaext.Object, 0, len(schemas))
+	for name, schema := range schemas {
+		objects = append(objects, must.Must(pgextension.DesiredObject(pgextension.Ref(name), pgextension.DesiredExtension{Schema: schema})))
+	}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(objects...))
+	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
+	return db
+}
+
+// readExtensions is [declaredExtensions] for a read.
+func readExtensions(db *catalog.Database, schemas map[string]string) *catalog.Database {
+	objects := make([]schemaext.Object, 0, len(schemas))
+	for name, schema := range schemas {
+		objects = append(objects, must.Must(pgextension.ObservedObject(pgextension.Ref(name), pgextension.ObservedExtension{Schema: schema})))
+	}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(objects...))
+	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Observed))
+	return db
+}
+
 func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{
+	db := declaredExtensions(&schemamodel.Database{
 		Schemas: []schemamodel.Schema{
 			{Name: "auth"},
 			{Name: "billing"},
-		},
-		Extensions: []schemamodel.Extension{
-			{Schema: "auth", Name: "pgcrypto"},
-			{Schema: "billing", Name: "citext"},
 		},
 		Tables: []schemamodel.Table{
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
@@ -84,13 +106,13 @@ func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 			"auth.users":       {"billing.invoices"},
 			"billing.invoices": nil,
 		},
-	}
+	}, map[string]string{"pgcrypto": "auth", "citext": "billing"})
 
 	got := schemascope.FilterGenerated(db, []string{"auth"})
 
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
 	c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{"auth"})
-	c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"auth.pgcrypto", "billing.citext"})
+	c.Assert(generatedExtensionNames(got), qt.DeepEquals, []string{"billing.citext", "auth.pgcrypto"})
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"id", "status", "invoice_id"})
 	c.Assert(got.Fields[2].Foreign, qt.Equals, "")
 	c.Assert(got.Fields[2].ForeignKeyName, qt.Equals, "")
@@ -139,24 +161,19 @@ func TestFilterGeneratedWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testin
 
 func TestFilterGeneratedKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{
+	db := declaredExtensions(&schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Extensions: []schemamodel.Extension{
-			{Name: "pgcrypto"},
-			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
-			{Name: "unrelated", Schema: "other"},
-		},
-		Tables: []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "extensions.citext"},
 		},
-	}
+	}, map[string]string{"pgcrypto": "", "citext": "extensions", "unrelated": "other"})
 
 	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"app"}, "public")
 
 	c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{"app"})
-	c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals,
-		[]string{"pgcrypto", "extensions.citext", "other.unrelated"})
+	c.Assert(generatedExtensionNames(got), qt.DeepEquals,
+		[]string{"extensions.citext", "pgcrypto", "other.unrelated"})
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"email"})
 }
 
@@ -182,7 +199,7 @@ func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
 func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "billing.invoices"
-	db := &catalog.Database{
+	db := readExtensions(&catalog.Database{
 		Tables: []catalog.Table{
 			{
 				Schema: "auth",
@@ -212,10 +229,6 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 			{Schema: "auth", TableName: "users", Name: "users_invoice_fk", Type: "FOREIGN KEY", ForeignTable: &foreignTable, ForeignSchema: "billing"},
 			{Schema: "billing", TableName: "invoices", Name: "invoices_status_check", Type: "CHECK"},
 		},
-		Extensions: []catalog.Extension{
-			{Schema: "auth", Name: "pg_trgm"},
-			{Schema: "billing", Name: "btree_gin"},
-		},
 		Views: []catalog.View{
 			{Schema: "auth", Name: "active_users"},
 			{Schema: "billing", Name: "open_invoices"},
@@ -237,7 +250,7 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 			{ObjectType: "SCHEMA", ObjectName: "billing", Role: "app_role"},
 			{ObjectType: "TABLE", Schema: "auth", ObjectName: "users", Role: "app_role"},
 		},
-	}
+	}, map[string]string{"pg_trgm": "auth", "btree_gin": "billing"})
 
 	got := schemascope.FilterDatabase(db, []string{"auth"})
 
@@ -245,7 +258,7 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 	c.Assert(databaseEnumNames(got.Enums), qt.DeepEquals, []string{"user_status"})
 	c.Assert(databaseIndexNames(got.Indexes), qt.DeepEquals, []string{"idx_users_status"})
 	c.Assert(databaseConstraintNames(got.Constraints), qt.DeepEquals, []string{"users_status_check"})
-	c.Assert(databaseExtensionNames(got.Extensions), qt.DeepEquals, []string{"auth.pg_trgm", "billing.btree_gin"})
+	c.Assert(databaseExtensionNames(got), qt.DeepEquals, []string{"billing.btree_gin", "auth.pg_trgm"})
 	c.Assert(databaseViewNames(got.Views), qt.DeepEquals, []string{"auth.active_users"})
 	c.Assert(databaseMatViewNames(got.MatViews), qt.DeepEquals, []string{"auth.user_stats"})
 	c.Assert(databaseTriggerNames(got.Triggers), qt.DeepEquals, []string{"users_updated_at"})
@@ -295,7 +308,7 @@ func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing
 
 func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
 	c := qt.New(t)
-	db := &catalog.Database{
+	db := readExtensions(&catalog.Database{
 		Tables: []catalog.Table{
 			{
 				Schema: "app",
@@ -305,18 +318,13 @@ func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testi
 				},
 			},
 		},
-		Extensions: []catalog.Extension{
-			{Name: "pgcrypto", Schema: "public"},
-			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
-			{Name: "unrelated", Schema: "other"},
-		},
-	}
+	}, map[string]string{"pgcrypto": "public", "citext": "extensions", "unrelated": "other"})
 
 	got := schemascope.FilterDatabaseWithDefaultSchema(db, []string{"app"}, "public")
 
 	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"app.users"})
-	c.Assert(databaseExtensionNames(got.Extensions), qt.DeepEquals,
-		[]string{"public.pgcrypto", "extensions.citext", "other.unrelated"})
+	c.Assert(databaseExtensionNames(got), qt.DeepEquals,
+		[]string{"extensions.citext", "public.pgcrypto", "other.unrelated"})
 }
 
 func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
@@ -354,10 +362,12 @@ func generatedSchemaNames(schemas []schemamodel.Schema) []string {
 	return names
 }
 
-func generatedExtensionNames(extensions []schemamodel.Extension) []string {
-	names := make([]string, 0, len(extensions))
-	for _, extension := range extensions {
-		names = append(names, catalog.QualifyTableName(extension.Schema, extension.Name))
+// generatedExtensionNames lists the owner's extensions as schema.name, in
+// identity order.
+func generatedExtensionNames(db *schemamodel.Database) []string {
+	names := make([]string, 0, db.FeatureObjects.Len())
+	for _, object := range must.Must(db.FeatureObjects.All()) {
+		names = append(names, catalog.QualifyTableName(object.Value.(*pgextension.DesiredExtension).Schema, pgextension.Name(object.Ref)))
 	}
 	return names
 }
@@ -481,10 +491,11 @@ func databaseConstraintNames(constraints []catalog.Constraint) []string {
 	return names
 }
 
-func databaseExtensionNames(extensions []catalog.Extension) []string {
-	names := make([]string, 0, len(extensions))
-	for _, extension := range extensions {
-		names = append(names, catalog.QualifyTableName(extension.Schema, extension.Name))
+// databaseExtensionNames is [generatedExtensionNames] for a read.
+func databaseExtensionNames(db *catalog.Database) []string {
+	names := make([]string, 0, db.FeatureObjects.Len())
+	for _, object := range must.Must(db.FeatureObjects.All()) {
+		names = append(names, catalog.QualifyTableName(object.Value.(*pgextension.ObservedExtension).Schema, pgextension.Name(object.Ref)))
 	}
 	return names
 }

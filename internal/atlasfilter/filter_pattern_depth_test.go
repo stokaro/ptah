@@ -233,7 +233,7 @@ func TestExcludeDatabaseWithDefaultSchema_SchemaRelativeChildrenStayAddressable(
 			c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
 			c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, test.wantColumns)
 			c.Assert(indexNames(got.Indexes), qt.DeepEquals, test.wantIndexes)
-			c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, test.wantExtensions)
+			c.Assert(extensionVersions(got), qt.DeepEquals, test.wantExtensions)
 		})
 	}
 }

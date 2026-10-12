@@ -95,7 +95,6 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		Enums:       toDBEnums(db.Enums),
 		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
 		Constraints: toDBConstraints(db, tableByStruct, dialect),
-		Extensions:  toDBExtensions(db.Extensions),
 		Functions:   toDBFunctions(db.Functions),
 		Sequences:   toDBSequences(db.Sequences),
 		Domains:     toDBDomains(db.Domains),
@@ -701,21 +700,6 @@ func splitTableIdentity(value string) (name, schema string) {
 		return value, ""
 	}
 	return ref.Name, ref.Schema
-}
-
-func toDBExtensions(extensions []schemamodel.Extension) []catalog.Extension {
-	out := make([]catalog.Extension, 0, len(extensions))
-	for _, extension := range extensions {
-		out = append(out, catalog.Extension{
-			Name:    extension.Name,
-			Schema:  extension.Schema,
-			Version: extension.Version,
-			Comment: optionalStringPtr(
-				extension.Comment,
-			),
-		})
-	}
-	return out
 }
 
 func toDBSequences(sequences []schemamodel.Sequence) []catalog.Sequence {

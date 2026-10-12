@@ -335,9 +335,7 @@ func (b Baseline) kept() dbreset.Kept {
 // reset can put the extension back (stokaro/ptah#4070). One the other side
 // declares is left in, and matches.
 //
-// An extension is left out whether the read holds it in the common list or as
-// the extension owner's object. current is not changed; the result shares
-// everything but its extensions. A nil current, or a baseline that keeps no
+// current is not changed; the result shares everything but its extensions. A nil current, or a baseline that keeps no
 // extension, comes back as it is.
 func (b Baseline) WithoutEnvironment(current *catalog.Database, declared map[string]bool) *catalog.Database {
 	return WithoutKeptExtensions(current, b.extensions, declared)
@@ -351,13 +349,6 @@ func WithoutKeptExtensions(current *catalog.Database, kept []string, declared ma
 	}
 	environment := func(name string) bool { return slices.Contains(kept, name) && !declared[name] }
 	filtered := *current
-	filtered.Extensions = nil
-	for _, extension := range current.Extensions {
-		if environment(extension.Name) {
-			continue
-		}
-		filtered.Extensions = append(filtered.Extensions, extension)
-	}
 	filtered.FeatureObjects = pgextension.Select(current.FeatureObjects, func(name string) bool { return !environment(name) })
 	return &filtered
 }

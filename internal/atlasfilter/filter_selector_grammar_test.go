@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -16,7 +18,7 @@ import (
 // one of each in "app", where readers report the schema. It is the shape the
 // live PostgreSQL reproduction of stokaro/ptah#933 uses.
 func grammarFixture() *catalog.Database {
-	return &catalog.Database{
+	return withReadExtensions(&catalog.Database{
 		Schemas: []catalog.Schema{{Name: "public"}, {Name: "app"}},
 		Tables: []catalog.Table{
 			{Name: "users", Comment: "a users comment", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
@@ -54,10 +56,6 @@ func grammarFixture() *catalog.Database {
 			{Name: "rng_pub", Subtype: "int4"},
 			{Schema: "app", Name: "rng_app", Subtype: "int4"},
 		},
-		Extensions: []catalog.Extension{
-			{Schema: "public", Name: "pgcrypto", Version: "1.3"},
-			{Schema: "app", Name: "hstore", Version: "1.8"},
-		},
 		Indexes: []catalog.Index{
 			{TableName: "users", Name: "users_name_idx", Columns: []string{"name"}},
 			{Schema: "app", TableName: "orders", Name: "orders_id_idx", Columns: []string{"id"}},
@@ -78,7 +76,7 @@ func grammarFixture() *catalog.Database {
 		Grants: []catalog.Grant{
 			{Role: "app_reader", ObjectType: "TABLE", ObjectName: "orders", Schema: "app", Privilege: "SELECT"},
 		},
-	}
+	}, installed{schema: "public", name: "pgcrypto", version: "1.3"}, installed{schema: "app", name: "hstore", version: "1.8"})
 }
 
 // grammarCensus renders every object the exclude filter walks as
@@ -118,8 +116,8 @@ func grammarCensus(schema *catalog.Database) []string {
 	for _, value := range schema.Ranges {
 		add("range", value.QualifiedName())
 	}
-	for _, value := range schema.Extensions {
-		add("extension", value.Name)
+	for _, name := range pgextension.Names(schema.FeatureObjects) {
+		add("extension", name)
 	}
 	for _, value := range schema.Indexes {
 		add("index", value.Name)
@@ -166,8 +164,8 @@ func grammarFieldCensus(schema *catalog.Database) []string {
 	for _, value := range schema.MatViews {
 		add("materialized_view", value.QualifiedName(), "comment", value.Comment)
 	}
-	for _, value := range schema.Extensions {
-		add("extension", value.Name, "version", value.Version)
+	for _, object := range must.Must(schema.FeatureObjects.All()) {
+		add("extension", pgextension.Name(object.Ref), "version", object.Value.(*pgextension.ObservedExtension).Version)
 	}
 	slices.Sort(out)
 	return out

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
@@ -21,9 +20,8 @@ type extensionVersion struct {
 }
 
 // extensionControlComments reads, from the dev server, the comment CREATE
-// EXTENSION sets for each extension of current that carries a comment, in the
-// common list or as the extension owner's object: the one the control file of
-// the version the rebuild installs gives it. An extension the dev server does
+// EXTENSION sets for each extension of current that carries a comment: the one
+// the control file of the version the rebuild installs gives it. An extension the dev server does
 // not offer gets no entry, so its comment is kept. A target without extension
 // comments reads nothing.
 func extensionControlComments(
@@ -53,16 +51,10 @@ func extensionControlComments(
 	return defaults, nil
 }
 
-// commentedExtensions lists each extension of current that carries a comment,
-// with its version, from the common list and from the extension owner's
-// objects.
+// commentedExtensions lists each of the extension owner's observations in
+// current that carries a comment, with its version.
 func commentedExtensions(current *catalog.Database) ([]extensionVersion, error) {
 	var commented []extensionVersion
-	for _, extension := range current.Extensions {
-		if extension.Comment != nil {
-			commented = append(commented, extensionVersion{name: extension.Name, version: extension.Version})
-		}
-	}
 	objects, err := current.FeatureObjects.All()
 	if err != nil {
 		return nil, err
@@ -94,8 +86,7 @@ func extensionControlComment(ctx context.Context, devConn *dbschema.DatabaseConn
 // does not own, since the cleanup does not restore a comment. A comment that
 // differs from the control file's is kept and meets the baseline guard, and so
 // is the comment of an extension the dev database already holds, which held
-// names and the rebuild does not create. The common list and the extension
-// owner's objects are treated alike.
+// names and the rebuild does not create.
 func omitControlComments(target *schemamodel.Database, held map[string]bool, defaults map[extensionVersion]string) error {
 	if target == nil || len(defaults) == 0 {
 		return nil
@@ -106,12 +97,6 @@ func omitControlComments(target *schemamodel.Database, held map[string]bool, def
 		}
 		control, found := defaults[extensionVersion{name: name, version: version}]
 		return found && control == comment
-	}
-	target.Extensions = slices.Clone(target.Extensions)
-	for i, extension := range target.Extensions {
-		if omitted(extension.Name, extension.Version, extension.Comment) {
-			target.Extensions[i].Comment = ""
-		}
 	}
 	objects, err := target.FeatureObjects.All()
 	if err != nil {

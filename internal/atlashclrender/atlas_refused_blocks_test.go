@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
@@ -314,7 +316,7 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			name: "a column type is the type the extension supplies",
 			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []schemamodel.Extension{{Name: "citext", Provides: []string{"citext"}}}
+				db = withExtension(db, "citext", pgextension.DesiredExtension{Provides: []string{"citext"}})
 				db.Fields = append(db.Fields, schemamodel.Field{
 					StructName: "Order", Name: "label", Type: "citext",
 				})
@@ -333,10 +335,7 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			name: "a column type is supplied by an extension spelled differently",
 			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []schemamodel.Extension{{
-					Name:     "isn",
-					Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"},
-				}}
+				db = withExtension(db, "isn", pgextension.DesiredExtension{Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"}})
 				db.Fields = append(db.Fields, schemamodel.Field{
 					StructName: "Order", Name: "code", Type: "isbn",
 				})
@@ -353,10 +352,7 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			name: "a column default calls a function the extension supplies",
 			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []schemamodel.Extension{{
-					Name:     "pgcrypto",
-					Provides: []string{"crypt", "digest", "gen_salt", "hmac"},
-				}}
+				db = withExtension(db, "pgcrypto", pgextension.DesiredExtension{Provides: []string{"crypt", "digest", "gen_salt", "hmac"}})
 				db.Fields = append(db.Fields, schemamodel.Field{
 					StructName: "Order", Name: "salt", Type: "text",
 					DefaultExpr: "gen_salt('bf'::text)",
@@ -401,6 +397,15 @@ func TestRenderInspectedForAtlasCLIOmitsAnUnreferencedSequence(t *testing.T) {
 		"omitted from Atlas-compatible schema inspect output")
 }
 
+// withExtension returns db with the named extension as the owner's object
+// beside the ones it already holds.
+func withExtension(db *schemamodel.Database, name string, extension pgextension.DesiredExtension) *schemamodel.Database {
+	objects := must.Must(db.FeatureObjects.With(must.Must(pgextension.DesiredObject(pgextension.Ref(name), extension))))
+	db.FeatureObjects = objects
+	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
+	return db
+}
+
 // TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn is the control
 // that keeps the provides-aware rule from collapsing into "never omit an
 // extension", which would throw away what stokaro/ptah#1266 bought.
@@ -413,10 +418,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T
 	c := qt.New(t)
 
 	db := standaloneSequenceDatabase()
-	db.Extensions = []schemamodel.Extension{{
-		Name:     "isn",
-		Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"},
-	}}
+	db = withExtension(db, "isn", pgextension.DesiredExtension{Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"}})
 	db.Fields = append(db.Fields, schemamodel.Field{
 		StructName: "Order", Name: "label", Type: "text",
 	})
@@ -791,11 +793,7 @@ func standaloneSequenceDatabase() *schemamodel.Database {
 // siblings -- pg_catalog also supplies. So no document can name anything here,
 // which is what makes the name scan the wrong instrument for this dependency.
 func implicitOpclassIndexDatabase() *schemamodel.Database {
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:     "btree_gin",
-			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
-		}},
+	return withExtension(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "public"}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "integer", Primary: true},
@@ -808,7 +806,7 @@ func implicitOpclassIndexDatabase() *schemamodel.Database {
 			Type:       "gin",
 			Requires:   []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))},
 		}},
-	}
+	}, "btree_gin", pgextension.DesiredExtension{Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"}})
 }
 
 // implicitOpclassConstraintDatabase is the same dependency arriving through an
@@ -816,11 +814,7 @@ func implicitOpclassIndexDatabase() *schemamodel.Database {
 // an integer column, which needs btree_gist for the integer half and prints
 // only the operator.
 func implicitOpclassConstraintDatabase() *schemamodel.Database {
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:     "btree_gist",
-			Provides: []string{"gbt_int4_compress", "gbt_int4_consistent", "gbtreekey8"},
-		}},
+	return withExtension(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Booking", Name: "booking", Schema: "public"}},
 		Fields: []schemamodel.Field{
 			{StructName: "Booking", Name: "id", Type: "integer", Primary: true},
@@ -836,7 +830,7 @@ func implicitOpclassConstraintDatabase() *schemamodel.Database {
 			ExcludeElements: "room WITH =, during WITH &&",
 			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 		}},
-	}
+	}, "btree_gist", pgextension.DesiredExtension{Provides: []string{"gbt_int4_compress", "gbt_int4_consistent", "gbtreekey8"}})
 }
 
 // printedOpclassIndexDatabase is the same catalog edge on an index that DOES
@@ -852,11 +846,7 @@ func implicitOpclassConstraintDatabase() *schemamodel.Database {
 // or not the class is printed. Both answers are therefore available for this
 // fixture, which is exactly what makes it the test of which one is reported.
 func printedOpclassIndexDatabase() *schemamodel.Database {
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:     "pg_trgm",
-			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
-		}},
+	return withExtension(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "W", Name: "w", Schema: "public"}},
 		Fields: []schemamodel.Field{
 			{StructName: "W", Name: "id", Type: "integer", Primary: true},
@@ -869,7 +859,7 @@ func printedOpclassIndexDatabase() *schemamodel.Database {
 			Parts:      []schemamodel.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
 			Requires:   []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
 		}},
-	}
+	}, "pg_trgm", pgextension.DesiredExtension{Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"}})
 }
 
 // printedOpclassConstraintDatabase is the constraint arm of the same shape:
@@ -877,11 +867,7 @@ func printedOpclassIndexDatabase() *schemamodel.Database {
 // prints with the class because gist_trgm_ops is not the default gist class for
 // text either. The class lands in the rendered `elements` string.
 func printedOpclassConstraintDatabase() *schemamodel.Database {
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:     "pg_trgm",
-			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
-		}},
+	return withExtension(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Y", Name: "y", Schema: "public"}},
 		Fields: []schemamodel.Field{
 			{StructName: "Y", Name: "id", Type: "integer", Primary: true},
@@ -896,7 +882,7 @@ func printedOpclassConstraintDatabase() *schemamodel.Database {
 			ExcludeElements: "txt gist_trgm_ops WITH =",
 			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
 		}},
-	}
+	}, "pg_trgm", pgextension.DesiredExtension{Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"}})
 }
 
 // orphanOpclassIndexDatabase is implicitOpclassIndexDatabase's dependency
@@ -909,11 +895,7 @@ func printedOpclassConstraintDatabase() *schemamodel.Database {
 // the view is not a table: renderTables finds nothing to write the index into
 // and reports it as an orphan.
 func orphanOpclassIndexDatabase() *schemamodel.Database {
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{
-			Name:     "btree_gin",
-			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
-		}},
+	return withExtension(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Src", Name: "src", Schema: "public"}},
 		Fields: []schemamodel.Field{
 			{StructName: "Src", Name: "id", Type: "integer", Primary: true},
@@ -932,7 +914,7 @@ func orphanOpclassIndexDatabase() *schemamodel.Database {
 			Type:       "gin",
 			Requires:   []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))},
 		}},
-	}
+	}, "btree_gin", pgextension.DesiredExtension{Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"}})
 }
 
 // orphanOpclassConstraintDatabase is the constraint arm of the same shape:
@@ -963,10 +945,9 @@ func orphanOpclassConstraintDatabase() *schemamodel.Database {
 // unreferenced, not because of their block type alone.
 func inspectedRichDatabase() *schemamodel.Database {
 	start := int64(1)
-	return &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Version: "1.3"}},
-		Sequences:  []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint", Start: &start}},
-		Domains:    []schemamodel.Domain{{Name: "positive", BaseType: "integer"}},
+	return withExtension(&schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint", Start: &start}},
+		Domains:   []schemamodel.Domain{{Name: "positive", BaseType: "integer"}},
 		CompositeTypes: []schemamodel.CompositeType{{
 			Name:   "pair",
 			Fields: []schemamodel.CompositeField{{Name: "a", Type: "integer"}},
@@ -1011,7 +992,7 @@ func inspectedRichDatabase() *schemamodel.Database {
 			Privileges: []string{"SELECT"},
 		}},
 		ManagedData: []schemamodel.ManagedData{{Table: "accounts", Keys: []string{"id"}, File: "accounts.csv"}},
-	}
+	}, "pgcrypto", pgextension.DesiredExtension{Version: "1.3"})
 }
 
 // TestRenderInspectedForAtlasCLIKeepsTheSQLServerBlocks pins that the two

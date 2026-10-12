@@ -63,7 +63,6 @@ type Database struct {
 	Enums       []Enum             `json:"enums"`
 	Indexes     []Index            `json:"indexes"`
 	Constraints []Constraint       `json:"constraints"`
-	Extensions  []Extension        `json:"extensions"` // PostgreSQL extensions
 	Functions   []Function         `json:"functions"`  // PostgreSQL custom functions
 	Sequences   []Sequence         `json:"sequences"`  // PostgreSQL standalone sequences
 	Domains     []Domain           `json:"domains"`    // PostgreSQL domain types
@@ -981,46 +980,6 @@ func (c Constraint) ForeignColumnsOrDefault() []string {
 		return []string{*c.ForeignColumn}
 	}
 	return nil
-}
-
-// Extension represents a PostgreSQL extension installed in the database
-type Extension struct {
-	Name             string  `json:"name"`              // Extension name (pg_trgm, postgis, etc.)
-	Version          string  `json:"version"`           // Installed version
-	Schema           string  `json:"schema"`            // Schema where extension is installed
-	Relocatable      bool    `json:"relocatable"`       // Whether extension can be moved between schemas
-	Comment          *string `json:"comment"`           // Extension comment/description
-	DefaultVersion   *string `json:"default_version"`   // Default version available
-	InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
-
-	// Provides lists the catalog names this extension supplies -- its types,
-	// functions, relations, operator classes and operator families -- read from
-	// pg_depend. It answers "what would stop resolving if this extension were
-	// not here", which is a different question from the extension's own name and
-	// usually a disjoint set of words: `isn` supplies the type `isbn`, and
-	// `pgcrypto` supplies the function `gen_salt`.
-	//
-	// Names pg_catalog also supplies are excluded, because a document using one
-	// resolves it with the extension dropped. This matters because contrib
-	// extensions mostly supply overloads of core functions: unfiltered, `citext`
-	// contributes `max`, `min`, `strpos`, `replace` and `split_part`, and
-	// `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
-	// PostgreSQL 13.
-	//
-	// A function name pg_get_keywords() reports as a SQL keyword is excluded too,
-	// because a name read out of SQL text carries no position: `hstore` supplies
-	// three functions named `delete`, and `DELETE FROM audit` in a plpgsql body
-	// is indistinguishable from a call to `delete(h, 'k')`. That exclusion is
-	// conditional on the redundancy that makes it free -- the same extension
-	// must also contribute to this list a type appearing in that function's
-	// signature, so a genuine call spells the type and the type entry answers
-	// for it. An extension supplying `merge(text, text)` and no type has its
-	// only evidence in the name, and the name is kept.
-	//
-	// Empty means not measured rather than "supplies nothing" -- every extension
-	// supplies something, and readers that do not consult a catalog (Go
-	// annotations, YAML) leave this unset.
-	Provides []string `json:"provides,omitempty"`
 }
 
 // Sequence represents a standalone PostgreSQL sequence read from the database.

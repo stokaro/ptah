@@ -73,7 +73,6 @@ func (ctx *renderContext) captureFeatureObjects(requestContext context.Context) 
 		return err
 	}
 	ctx.changefeedsByTable = make(map[objectidentity.Key][]ydbschema.ChangefeedSpec)
-	ctx.captureCommonExtensions()
 	for _, object := range objects {
 		if err := ctx.captureFeatureObject(object, parents); err != nil {
 			return err

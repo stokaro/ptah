@@ -1492,7 +1492,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 //
 // Both arms are unconditional on opcdefault, so a printed class is recorded
 // here as well as an unprinted one. A printed class is also matchable by name
-// through [schemamodel.Extension.Provides] wherever the renderer's reference scan
+// through the extension's Provides list wherever the renderer's reference scan
 // reads the attribute it lands in, and that is the answer preferred when both
 // are available, because a name can be looked up in the document; see
 // [ptah.run/internal/atlashclrender] omitRefusedExtension. This projection
@@ -2658,7 +2658,14 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 	return constraints, nil
 }
 
-func (r *Reader) readExtensions(ctx context.Context) ([]catalog.Extension, error) {
+// installedExtension is one row of pg_extension, as the extension owner
+// observes it.
+type installedExtension struct {
+	name     string
+	observed pgextension.ObservedExtension
+}
+
+func (r *Reader) readExtensions(ctx context.Context) ([]installedExtension, error) {
 	// Use a simpler query that only relies on pg_extension and pg_namespace
 	// These are core system catalogs that are consistent across PostgreSQL versions
 	extensionsQuery := `
@@ -2678,30 +2685,24 @@ func (r *Reader) readExtensions(ctx context.Context) ([]catalog.Extension, error
 	}
 	defer rows.Close()
 
-	var extensions []catalog.Extension
+	var extensions []installedExtension
 	for rows.Next() {
-		var ext catalog.Extension
+		var ext installedExtension
 		var comment sql.NullString
 
 		err := rows.Scan(
-			&ext.Name,
-			&ext.Version,
-			&ext.Schema,
-			&ext.Relocatable,
+			&ext.name,
+			&ext.observed.Version,
+			&ext.observed.Schema,
+			&ext.observed.Relocatable,
 			&comment,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan extension: %w", err)
 		}
-
-		// Set optional fields
 		if comment.Valid {
-			ext.Comment = &comment.String
+			ext.observed.Comment = &comment.String
 		}
-
-		// Set installed version (same as version for installed extensions)
-		ext.InstalledVersion = &ext.Version
-
 		extensions = append(extensions, ext)
 	}
 	if err := rows.Err(); err != nil {
@@ -2713,7 +2714,7 @@ func (r *Reader) readExtensions(ctx context.Context) ([]catalog.Extension, error
 		return nil, err
 	}
 	for i := range extensions {
-		extensions[i].Provides = provides[extensions[i].Name]
+		extensions[i].observed.Provides = provides[extensions[i].name]
 	}
 
 	return extensions, nil

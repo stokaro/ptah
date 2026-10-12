@@ -521,11 +521,12 @@ and refuses a second YAML document in the same stream, so a misspelled
 attribute cannot pass as an intentional setting. Use `core/schemasource` when
 the YAML is written by an external program rather than held in a file.
 
-`schemamodel.Extension.Schema` is the PostgreSQL installation namespace.
-`ast.ExtensionNode.Schema` and `SetSchema` preserve it through SQL rendering;
-the renderer emits `CREATE EXTENSION ... WITH SCHEMA ...` in PostgreSQL's
-required clause order. Empty means the target's default schema. Preserve the
-field in custom schema codecs so an extension is not relocated silently.
+An extension is the extension owner's object, `pgextension.DesiredExtension`,
+and `schemamodel.Database` has no extension list of its own. Its `Schema` is
+the PostgreSQL installation namespace, which the owner renders as `CREATE
+EXTENSION ... WITH SCHEMA ...` in PostgreSQL's required clause order. Empty
+means the target's default schema. Preserve the field in custom codecs so an
+extension is not relocated silently.
 
 `schemamodel.Finalize` can be called again after mutating schema input. It
 rebuilds materialized embedded fields and marks them with

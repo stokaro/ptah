@@ -7,6 +7,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/feature/pgextension"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -23,20 +25,41 @@ func TestRead_ACreateExtensionOutsideTheFamily_FailurePath(t *testing.T) {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, statements, err := sqlschema.Read([]byte(extensionDocument), target)
+			db, statements, err := sqlschema.ReadWith(c.Context(), []byte(extensionDocument), target, nil,
+				sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and `+target+` refuses the statement`)
 			c.Assert(db.Tables, qt.HasLen, 0)
-			c.Assert(db.Extensions, qt.HasLen, 0)
+			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestRead_ACreateExtensionWithoutItsOwner_FailurePath pins that a read which
+// selected no extension owner refuses CREATE EXTENSION on a target that could
+// host it: the model has no place for an extension except the owner's.
+func TestRead_ACreateExtensionWithoutItsOwner_FailurePath(t *testing.T) {
+	for _, test := range []struct{ name, target string }{
+		{name: "postgres", target: platform.Postgres}, {name: "cockroachdb", target: platform.CockroachDB}, {name: "no target"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, statements, err := sqlschema.Read([]byte(extensionDocument), test.target)
+
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+			c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: CREATE EXTENSION pg_trgm: this read selected no owner that reads extensions`)
+			c.Assert(db.Tables, qt.HasLen, 0)
 			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
 
 // TestRead_ACreateExtensionOutsideTheFamily_HappyPath is the control: a
-// PostgreSQL-family document, and one read for no named target, still read
-// the statement.
+// PostgreSQL-family document, and one read for no named target, hand the
+// statement to the extension owner.
 func TestRead_ACreateExtensionOutsideTheFamily_HappyPath(t *testing.T) {
 	for _, test := range []struct{ name, target string }{
 		{name: "postgres", target: platform.Postgres}, {name: "cockroachdb", target: platform.CockroachDB},
@@ -45,11 +68,11 @@ func TestRead_ACreateExtensionOutsideTheFamily_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, _, err := sqlschema.Read([]byte(extensionDocument), test.target)
+			db, _, err := sqlschema.ReadWith(c.Context(), []byte(extensionDocument), test.target, nil,
+				sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Extensions, qt.HasLen, 1)
-			c.Assert(db.Extensions[0].Name, qt.Equals, "pg_trgm")
+			c.Assert(pgextension.Names(db.FeatureObjects), qt.DeepEquals, []string{"pg_trgm"})
 		})
 	}
 }

@@ -55,7 +55,7 @@ func loadDirectory(c *qt.C, files map[string]string) (*schemamodel.Database, err
 // document, or one that names no target: each CREATE EXTENSION is an
 // extension, with every option the statement may write, a plain name folded
 // as the target folds one, and a COMMENT ON EXTENSION amends the extension a
-// CREATE before it declared. None of it stays in the shared model.
+// CREATE before it declared.
 func TestSQL_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -93,7 +93,6 @@ func TestSQL_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(ownedExtensions(c, db), qt.DeepEquals, test.want)
-			c.Assert(db.Extensions, qt.HasLen, 0)
 			c.Assert(db.FeatureCoverage.Lookup(pgextension.ExtensionKind, pgextension.Ref("citext")).State, qt.Equals, schemaext.Complete)
 		})
 	}
@@ -118,7 +117,7 @@ func TestSQL_StatementsStandAsTheOwnersOperations(t *testing.T) {
 // TestSQL_AnotherTargetRefusesTheStatement is the control: the owner does not
 // read CREATE EXTENSION in a document that names a target outside the family,
 // and the read refuses the statement there, because that target refuses it
-// too, rather than keep it in the shared model.
+// too.
 func TestSQL_AnotherTargetRefusesTheStatement(t *testing.T) {
 	c := qt.New(t)
 
@@ -127,7 +126,6 @@ func TestSQL_AnotherTargetRefusesTheStatement(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and mysql refuses the statement`)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
-	c.Assert(db.Extensions, qt.HasLen, 0)
 	c.Assert(statements, qt.IsNil)
 }
 

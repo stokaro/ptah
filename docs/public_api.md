@@ -2629,6 +2629,10 @@ it by the off-target policy. A scope is different: a Go declaration whose
 `dialects` names a target outside the family is refused, and so is a CREATE
 EXTENSION in a SQL document read for one, which that target refuses as well.
 
+The schema model has no extension list of its own: `schemamodel.Database` and
+`catalog.Database` hold an extension only as this owner's object. A Go parse
+that does not select the owner declares nothing for an extension directive.
+
 `feature/pgextension/extensioncompare` compares extensions by name. The
 installation schema is compared under the target's default schema, the version
 only where the declaration names one, and the comment only where the
@@ -3170,12 +3174,12 @@ owner's claim is made. `ParseAtlasHCLWithOptions` takes
 the owners in `ParseHCLOptions.HCL`, usually a runtime's HCL set. This changes
 behavior; pre-v1, so no compatibility is owed.
 
-`schemamodel.Extension.Schema` records a PostgreSQL extension's installation
-schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
-SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
-`IF NOT EXISTS` clause and before `VERSION`. An empty schema means the target's
-default schema. Embedders should preserve the field when converting or copying
-schema IR; dropping it can move an extension into the wrong namespace.
+`pgextension.DesiredExtension.Schema` records a PostgreSQL extension's
+installation schema, and the owner renders it as `CREATE EXTENSION ... WITH
+SCHEMA ...` after any `IF NOT EXISTS` clause and before `VERSION`. An empty
+schema means the target's default schema. Embedders should preserve the field
+when converting or copying an extension object; dropping it can move an
+extension into the wrong namespace.
 
 `core/coverage` carries what a schema description does **not** claim to
 describe. `schemamodel.Database.NotDescribed` and

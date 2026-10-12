@@ -186,8 +186,9 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
-	c.Assert(parsedExtensions(c, parsed), qt.HasLen, 1)
-	c.Assert(parsedExtensions(c, parsed)[0].IfNotExists, qt.IsTrue)
+	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, map[string]pgextension.DesiredExtension{
+		"pg_trgm": {IfNotExists: true, Comment: "Fixture extension"},
+	})
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Domains, qt.HasLen, 1)
 	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
@@ -529,18 +530,15 @@ type User struct {
 	return path
 }
 
-// parsedExtensions lists the extensions a parsed source holds as the
-// extension owner's objects, in name order and in the shape a declaration
-// renders them from, so a round trip compares like with like.
-func parsedExtensions(c *qt.C, db *schemamodel.Database) []schemamodel.Extension {
+// parsedExtensions is the declaration of each extension a parsed source holds
+// as the extension owner's objects, keyed by name.
+func parsedExtensions(c *qt.C, db *schemamodel.Database) map[string]pgextension.DesiredExtension {
 	c.Helper()
-	var extensions []schemamodel.Extension
+	extensions := make(map[string]pgextension.DesiredExtension)
 	for _, name := range pgextension.Names(db.FeatureObjects) {
 		object, _, err := db.FeatureObjects.Get(pgextension.Ref(name))
 		c.Assert(err, qt.IsNil)
-		value := object.Value.(*pgextension.DesiredExtension)
-		extensions = append(extensions, schemamodel.Extension{Name: name, Schema: value.Schema, Version: value.Version,
-			Comment: value.Comment, IfNotExists: value.IfNotExists})
+		extensions[name] = *object.Value.(*pgextension.DesiredExtension)
 	}
 	return extensions
 }

@@ -58,16 +58,13 @@ func TestReaders_OneDeclarationDecodesAlikeFromGoAndYAML(t *testing.T) {
 	want := &pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true}
 	c.Assert(extension(c, fromGo, "pg_trgm"), qt.DeepEquals, want)
 	c.Assert(extension(c, fromYAML, "pg_trgm"), qt.DeepEquals, want)
-	c.Assert(fromGo.Extensions, qt.HasLen, 0)
-	c.Assert(fromYAML.Extensions, qt.HasLen, 0)
 	c.Assert(fromGo.FeatureCoverage.Lookup(pgextension.ExtensionKind, pgextension.Ref("citext")).State, qt.Equals, schemaext.Complete)
 	c.Assert(fromYAML.FeatureCoverage.Lookup(pgextension.ExtensionKind, pgextension.Ref("citext")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestReaders_ScopeDecidesTheOwner_HappyPath pins which declarations the
 // owner reads: one with no scope and one scoped to the PostgreSQL family are
-// its objects, with the scope they were written with, and none stays in the
-// shared model.
+// its objects, with the scope they were written with.
 func TestReaders_ScopeDecidesTheOwner_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
@@ -78,7 +75,6 @@ func TestReaders_ScopeDecidesTheOwner_HappyPath(t *testing.T) {
 	scoped, _, err := db.FeatureObjects.Get(pgextension.Ref("citext"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(scoped.Targets, qt.DeepEquals, []string{"cockroachdb", "postgres"})
-	c.Assert(db.Extensions, qt.HasLen, 0)
 }
 
 // TestReaders_ScopeDecidesTheOwner_FailurePath pins that a scope naming a
@@ -106,7 +102,6 @@ func TestReaders_ScopeDecidesTheOwner_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.want+`; scope the declaration to cockroachdb,postgres,spanner,yugabytedb, `+
 				`or leave dialects out to declare it for every target`)
 			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
-			c.Assert(db.Extensions, qt.HasLen, 0)
 		})
 	}
 }

@@ -93,6 +93,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
@@ -674,8 +675,8 @@ func boundaryObjectIDs(db *schemamodel.Database, defaultSchema string) []string 
 	for _, schema := range db.Schemas {
 		ids = append(ids, "schema:"+schema.Name)
 	}
-	for _, extension := range db.Extensions {
-		ids = append(ids, "extension:"+extension.Name)
+	for _, name := range pgextension.Names(db.FeatureObjects) {
+		ids = append(ids, "extension:"+name)
 	}
 	tableByStruct := make(map[string]string)
 	for _, table := range db.Tables {

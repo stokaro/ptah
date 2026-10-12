@@ -36,7 +36,6 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	}
 
 	scoped := *db
-	scoped.Extensions = keepScoped(db.Extensions, target, func(v Extension) []string { return v.Dialects })
 	scoped.Functions = keepScoped(db.Functions, target, func(v Function) []string { return v.Dialects })
 	scoped.Sequences = keepScoped(db.Sequences, target, func(v Sequence) []string { return v.Dialects })
 	scoped.Domains = keepScoped(db.Domains, target, func(v Domain) []string { return v.Dialects })
@@ -152,9 +151,6 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 			Dialects: slices.Clone(scope),
 		})
 	}
-	for _, v := range db.Extensions {
-		collect("extension", v.Name, v.Dialects)
-	}
 	for _, v := range db.Functions {
 		collect("function", v.Name, v.Dialects)
 	}
@@ -212,8 +208,7 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 
 // hasDialectScope reports whether any object in db carries a scope at all.
 func hasDialectScope(db *Database) bool {
-	return anyScoped(db.Extensions, func(v Extension) []string { return v.Dialects }) ||
-		anyScoped(db.Functions, func(v Function) []string { return v.Dialects }) ||
+	return anyScoped(db.Functions, func(v Function) []string { return v.Dialects }) ||
 		anyScoped(db.Sequences, func(v Sequence) []string { return v.Dialects }) ||
 		anyScoped(db.Domains, func(v Domain) []string { return v.Dialects }) ||
 		anyScoped(db.CompositeTypes, func(v CompositeType) []string { return v.Dialects }) ||

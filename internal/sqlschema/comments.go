@@ -93,8 +93,6 @@ func commentTarget(
 		return domainCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
 	case "TYPE":
 		return typeCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
-	case "EXTENSION":
-		return extensionCommentTarget(databases, identifierPart(sourcePlatform, statement.name), sourcePlatform)
 	case "MATERIALIZED VIEW":
 		return materializedViewCommentTarget(databases,
 			normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
@@ -177,20 +175,6 @@ func typeCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatf
 		}
 	}
 	return resolvedCommentTarget(sourcePlatform, qualified, targets, names)
-}
-
-// extensionCommentTarget finds an extension by its name, which is
-// database-wide and carries no schema.
-func extensionCommentTarget(databases []*schemamodel.Database, name, sourcePlatform string) (*string, bool) {
-	var targets []*string
-	var names []string
-	for _, database := range databases {
-		for i := range database.Extensions {
-			targets = append(targets, &database.Extensions[i].Comment)
-			names = append(names, database.Extensions[i].Name)
-		}
-	}
-	return resolvedCommentTarget(sourcePlatform, name, targets, names)
 }
 
 // tableCommentTarget finds the table a comment names by the rule an ALTER TABLE

@@ -192,7 +192,6 @@ func corpus() []Fixture {
 		{Name: "composite", Schema: compositeFixture()},
 		{Name: "range", Schema: rangeFixture()},
 		{Name: "sequence", Schema: sequenceFixture()},
-		{Name: "extension", Schema: extensionFixture()},
 		{Name: "view", Schema: viewFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
 		{Name: "matview", Schema: matViewFixture()},
@@ -1120,7 +1119,8 @@ func constraintPrimaryKeyFixture() schemamodel.Database {
 func constraintExcludeFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"},
 		schemamodel.Field{StructName: "T", FieldName: "S", Name: "s", Type: "VARCHAR(32)", Nullable: true})
-	db.Extensions = []schemamodel.Extension{{Name: "btree_gist"}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(declaredExtension("btree_gist")))
+	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
 	db.Constraints = []schemamodel.Constraint{{
 		StructName: "T", Table: "t", Name: "t_excl", Type: "EXCLUDE",
 		ExcludeElements: "s WITH =", UsingMethod: "gist", WhereCondition: "s IS NOT NULL",
@@ -1318,7 +1318,8 @@ func indexHashFixture() schemamodel.Database {
 
 func indexFullTextFixture() schemamodel.Database {
 	db := indexedTable()
-	db.Extensions = []schemamodel.Extension{{Name: "pg_trgm"}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(declaredExtension("pg_trgm")))
+	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
 		Type: "GIN", Operator: "gin_trgm_ops",
@@ -1380,16 +1381,6 @@ func sequenceFixture() schemamodel.Database {
 		StructName: "S", Name: "order_seq", Schema: "public", AsType: "bigint",
 		Start: new(int64(5)), Increment: new(int64(2)), MinValue: new(int64(1)), MaxValue: new(int64(999)), Cache: new(int64(4)),
 		Cycle: true, IfNotExists: true, OwnedBy: "t.id", Comment: "order numbers",
-	}}
-	return db
-}
-
-func extensionFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Extensions = []schemamodel.Extension{{
-		Name: "postgis", Schema: "public", Version: "3.4", IfNotExists: true,
-		Comment: "geo", Provides: []string{"geometry"},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db
 }
@@ -1496,7 +1487,14 @@ func hypertableFixture() schemamodel.Database {
 // timescaleExtension declares the extension a hypertable and a continuous
 // aggregate need to its owner, so a plan installs it ahead of them.
 func timescaleExtension() schemaext.Object {
-	return must.Must(pgextension.DesiredObject(pgextension.Ref("timescaledb"), pgextension.DesiredExtension{}))
+	return declaredExtension("timescaledb")
+}
+
+// declaredExtension declares the named extension to its owner with no
+// setting of its own, as an index's or a constraint's operator class needs
+// it.
+func declaredExtension(name string) schemaext.Object {
+	return must.Must(pgextension.DesiredObject(pgextension.Ref(name), pgextension.DesiredExtension{}))
 }
 
 func continuousAggregateFixture() schemamodel.Database {

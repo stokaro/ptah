@@ -11,8 +11,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
@@ -45,13 +47,11 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.hcl")
 	db := &schemamodel.Database{
-		Schemas: []schemamodel.Schema{{Name: "app"}},
-		Tables:  []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
-		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-		Extensions: []schemamodel.Extension{{
-			Name:   "pgcrypto",
-			Schema: "app",
-		}},
+		Schemas:         []schemamodel.Schema{{Name: "app"}},
+		Tables:          []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:          []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "app"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Sequences: []schemamodel.Sequence{{
 			Name:   "order_seq",
 			Schema: "app",

@@ -270,12 +270,6 @@ func (s State) WithoutEnvironment(declared map[string]bool) State {
 	if s.Schema != nil {
 		kept := devclean.ReadExtensions(filtered)
 		schema := *s.Schema
-		schema.Extensions = nil
-		for _, extension := range s.Schema.Extensions {
-			if kept[extension.Name] {
-				schema.Extensions = append(schema.Extensions, extension)
-			}
-		}
 		schema.FeatureObjects = pgextension.Select(s.Schema.FeatureObjects, func(name string) bool { return kept[name] })
 		s.Schema = &schema
 	}

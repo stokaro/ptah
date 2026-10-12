@@ -118,9 +118,6 @@ func objects(db *schemamodel.Database) []sqlext.Declaration {
 	for _, sequence := range db.Sequences {
 		listed = append(listed, declaration(Sequence, schemamodel.QualifyTableName(sequence.Schema, sequence.Name)))
 	}
-	for _, extension := range db.Extensions {
-		listed = append(listed, declaration(Extension, extension.Name))
-	}
 	for _, role := range db.Roles {
 		listed = append(listed, declaration(Role, role.Name))
 	}
