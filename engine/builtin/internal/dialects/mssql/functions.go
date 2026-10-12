@@ -77,7 +77,7 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 			routineWord(node), node.Name)
 		return nil
 	}
-	clause, err := executeAsClause(node)
+	clause, err := withClause(node)
 	if err != nil {
 		return err
 	}
@@ -118,39 +118,44 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	return nil
 }
 
-// executeAsClause returns the EXECUTE AS clause of a routine's header, or the
-// empty string for one that runs as its caller.
+// withClause returns the WITH list of a routine's header, or the empty string
+// for one that states no option and runs as its caller.
 //
-// SECURITY DEFINER has a T-SQL spelling: `WITH EXECUTE AS OWNER`, which the
+// SECURITY DEFINER has a T-SQL spelling: `EXECUTE AS OWNER`, which the
 // catalog reports back as a principal id on
-// sys.sql_modules.execute_as_principal_id. A routine that runs as a named
-// principal states it in the owner's EXECUTE AS facet, and is written `WITH
-// EXECUTE AS N'auditor'`. CALLER is the default and needs no clause, which is
-// what INVOKER means, so a named principal beside INVOKER contradicts itself
-// and is refused. A setting this target has no clause for is refused too,
-// rather than created without it.
-func executeAsClause(node *ast.CreateFunctionNode) (string, error) {
+// sys.sql_modules.execute_as_principal_id. The SQL Server owner's routine
+// options facet states the rest: a named principal, written `EXECUTE AS
+// N'auditor'`, SCHEMABINDING, RETURNS NULL ON NULL INPUT and RECOMPILE.
+// CALLER is the default and needs no clause, which is what INVOKER means, so
+// a named principal beside INVOKER contradicts itself and is refused. A
+// setting this target has no clause for is refused too, rather than created
+// without it.
+func withClause(node *ast.CreateFunctionNode) (string, error) {
 	for _, kind := range node.Facets.Kinds() {
-		if kind != mssqlschema.ExecuteAsKind {
+		if kind != mssqlschema.RoutineOptionsKind {
 			return "", fmt.Errorf("%w: %s %q carries %q, which SQL Server has no clause for",
 				ptaherr.ErrUnsupportedFeature, routineWord(node), node.Name, kind)
 		}
 	}
-	principal, named, err := mssqlschema.ExecuteAsPrincipal(node.Facets)
+	options, _, err := mssqlschema.RoutineOptionsOf(node.Facets)
 	if err != nil {
 		return "", err
 	}
+	clauses := options.Clauses()
 	security := strings.ToUpper(strings.TrimSpace(node.Security))
 	switch {
-	case named && security == "INVOKER":
+	case options.Principal != "" && security == "INVOKER":
 		return "", fmt.Errorf("%w: %s %q runs as its caller and as %q at once; a named principal is a definer's rights",
-			ptaherr.ErrUnsupportedFeature, routineWord(node), node.Name, principal)
-	case named:
-		return "WITH EXECUTE AS N'" + strings.ReplaceAll(principal, "'", "''") + "'", nil
+			ptaherr.ErrUnsupportedFeature, routineWord(node), node.Name, options.Principal)
+	case options.Principal != "":
+		clauses = append(clauses, "EXECUTE AS N'"+strings.ReplaceAll(options.Principal, "'", "''")+"'")
 	case security == "DEFINER":
-		return "WITH EXECUTE AS OWNER", nil
+		clauses = append(clauses, "EXECUTE AS OWNER")
 	}
-	return "", nil
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return "WITH " + strings.Join(clauses, ", "), nil
 }
 
 // renderDropFunction renders a T-SQL DROP FUNCTION.

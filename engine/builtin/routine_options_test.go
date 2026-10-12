@@ -29,7 +29,7 @@ func routineSchema(facets schemaext.Facets) *schemamodel.Database {
 // Server owner's principal reaches the routine's header.
 func TestRenderSQL_ARoutineRunsAsItsPrincipalOnSQLServer(t *testing.T) {
 	c := qt.New(t)
-	facets := must.Must(mssqlschema.WithExecuteAs(schemaext.Facets{}, "auditor"))
+	facets := must.Must(mssqlschema.WithRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: "auditor"}))
 
 	statements, _, err := builtin.GetOrderedCreateStatementsReportingOmissions(
 		routineSchema(facets), platform.SQLServer, capability.ForDialect(platform.SQLServer))
@@ -45,13 +45,13 @@ func TestRenderSQL_RefusesARoutinesPrincipalElsewhere(t *testing.T) {
 	for _, dialect := range []string{platform.Postgres, platform.MySQL, platform.MariaDB, platform.Oracle} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			facets := must.Must(mssqlschema.WithExecuteAs(schemaext.Facets{}, "auditor"))
+			facets := must.Must(mssqlschema.WithRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: "auditor"}))
 
 			statements, _, err := builtin.GetOrderedCreateStatementsReportingOmissions(
 				routineSchema(facets), dialect, capability.ForDialect(dialect))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `(?s).*feature facet "ptah.run/mssql/routine-execute-as" is not registered for target.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*feature facet "ptah.run/mssql/routine-options" is not registered for target.*`)
 			c.Assert(statements, qt.IsNil)
 		})
 	}

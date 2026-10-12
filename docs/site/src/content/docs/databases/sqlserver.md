@@ -62,7 +62,8 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   rendered, introspected from `sys.extended_properties`, and diffed (see
   below).
 - Schemas the declared objects live in, created before them (see below).
-- Scalar functions and procedures, with the principal they run as (see below).
+- Scalar functions and procedures, with the principal they run as and the
+  other options of their header (see below).
 - Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
@@ -280,7 +281,7 @@ an administrative act outside what a schema migration owns.
 
 ## Identifier collation
 
-SQL Server compares object identifiers using catalog collation rules — case,
+SQL Server compares object identifiers and routine execution principals using catalog collation rules — case,
 accent, locale, kana, and width sensitivity all depend on the target catalog.
 Ptah does not reproduce those rules locally; the live catalog is the source of
 truth. When comparing against a live database, Ptah asks SQL Server to resolve
@@ -349,39 +350,42 @@ leaves the default where it is.
 
 ## Routines
 
-A function or a procedure is written `CREATE OR ALTER`. Its header states the
-principal the routine runs as, which T-SQL spells `WITH EXECUTE AS`, and
-`sys.sql_modules.execute_as_principal_id` reports it back:
+A function or a procedure is written `CREATE OR ALTER`. Its header's `WITH`
+list states how it runs, and `sys.sql_modules` reports each option back:
 
-| Header | `execute_as_principal_id` | Ptah |
+| Header | `sys.sql_modules` | Ptah |
 | --- | --- | --- |
-| none, or `EXECUTE AS CALLER` | `NULL` | security `INVOKER` |
-| `EXECUTE AS OWNER` | -2 | security `DEFINER` |
-| `EXECUTE AS 'auditor'` | the user's id | security `DEFINER`, principal `auditor` |
+| none, or `EXECUTE AS CALLER` | `execute_as_principal_id` `NULL` | security `INVOKER` |
+| `EXECUTE AS OWNER` | `execute_as_principal_id` -2 | security `DEFINER` |
+| `EXECUTE AS 'auditor'` | `execute_as_principal_id` the user's id | security `DEFINER`, principal `auditor` |
+| `SCHEMABINDING` | `is_schema_bound` 1 | kept |
+| `RETURNS NULL ON NULL INPUT` | `null_on_null_input` 1 | kept |
+| `RECOMPILE` | `is_recompiled` 1 | kept |
 
-A function may omit `AS` before its body. A procedure requires it.
-
-Principal names use the connected catalog's comparison rules, including
-case-sensitive collations.
-
-A named principal is read from a SQL schema file and from a connected
-database, compared, and planned. A routine declared to run as `reviewer`,
-where the database runs it as `auditor`, is replaced with the new clause, and
-the rollback writes `auditor` back. A Go annotation and an Atlas HCL block have
-no way to state a principal, so a routine declared there keeps the one it runs
-as. A plan that would replace such a routine, for example for a new body, is
-refused, because the replacement would run as the owner instead.
+The options Ptah keeps are read from a SQL schema file and from a connected
+database, compared, and planned. A routine whose options change is replaced
+with the declared `WITH` list, and the rollback writes the options it held. A
+SQL schema file states every option a routine has, so a routine declared there
+without `SCHEMABINDING` loses it. A Go annotation and an Atlas HCL block have
+no way to state these options, so a routine declared there keeps the ones it
+has. A plan that would replace such a routine, for example for a new body, is
+refused, because the replacement would drop them.
 
 `EXECUTE AS SELF` is refused when a SQL schema file is read. It means the
 account that runs the `CREATE`, which can be a different user each time the
 schema is applied. Write `EXECUTE AS 'name'` with that user instead.
 
-In a SQL schema file, every other option of the `WITH` list is refused by
-name, because Ptah cannot
-write it and compare it back: `ENCRYPTION`, `SCHEMABINDING`, `RECOMPILE`,
-`NATIVE_COMPILATION`, `RETURNS NULL ON NULL INPUT`, `INLINE` and `FOR
-REPLICATION` among them. `CALLED ON NULL INPUT` is the default and is
-accepted.
+Every other option is refused by name, because Ptah cannot write it and compare
+it back: `ENCRYPTION`, `NATIVE_COMPILATION`, `INLINE` and `FOR REPLICATION`
+among them. A SQL schema file that writes one is refused when it is read, and
+a database that holds a routine created with `ENCRYPTION`,
+`NATIVE_COMPILATION` or an explicit `INLINE` setting is refused when it is
+read, naming the routine. This includes `INLINE = OFF` on a function that
+cannot be inlined. `CALLED ON NULL INPUT` is the default and is accepted.
+
+T-SQL has no volatility clause. SQL Server judges a function deterministic
+from its body and `SCHEMABINDING`, and no declaration states that verdict, so
+the reader reports every routine `VOLATILE`.
 
 ## Limitations
 

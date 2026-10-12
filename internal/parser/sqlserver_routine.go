@@ -19,7 +19,10 @@ func (p *Parser) parseCreateSQLServerRoutineStatement(statementStart int, kind a
 	if err != nil {
 		return nil, err
 	}
-	routine, options := parseSQLServerRoutineSQL(sql, p.dialect, kind)
+	routine, options, err := parseSQLServerRoutineSQL(sql, p.dialect, kind)
+	if err != nil {
+		return nil, err
+	}
 	p.claimOwnerRoutineOptions(routine, options, statementStart+leadingSpace(p.input[statementStart:]))
 	return routine, nil
 }
@@ -30,18 +33,21 @@ func leadingSpace(text string) int {
 	return len(text) - len(strings.TrimLeft(text, " \t\r\n"))
 }
 
-func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.SQLServerRoutineNode, []routineOptionSpan) {
+func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.SQLServerRoutineNode, []routineOptionSpan, error) {
 	tokens := newSQLServerRoutineTokenizer(sql).tokens()
 	routine := ast.NewSQLServerRoutine(sql, dialect, kind)
 	asIdx := findSQLServerRoutineBodyBoundary(tokens, kind)
-	headerEnd, options := parseSQLServerRoutineOptions(sql, tokens, kind, asIdx)
+	headerEnd, options, err := parseSQLServerRoutineOptions(sql, tokens, kind, asIdx)
+	if err != nil {
+		return nil, nil, err
+	}
 	routine.Name, routine.Parameters, routine.Returns = parseSQLServerRoutineHeader(sql, tokens, kind, headerEnd)
 	for _, option := range options {
 		routine.Options = append(routine.Options, ast.SQLServerRoutineOption{Text: option.text})
 	}
 	routine.Form = classifySQLServerRoutineForm(routine)
 	routine.Body = parseSQLServerRoutineBody(sql, tokens, asIdx)
-	return routine, options
+	return routine, options, nil
 }
 
 // routineOptionSpan is one option of a routine header: its normalized text,
@@ -91,9 +97,9 @@ func (p *Parser) claimOwnerRoutineOptions(routine *ast.SQLServerRoutineNode, opt
 // signature and the AS that opens its body: a WITH list, such as `WITH
 // RECOMPILE, EXECUTE AS OWNER`, and FOR REPLICATION. It returns where the
 // signature ends and each option. A header with neither ends at asIdx.
-func parseSQLServerRoutineOptions(sql string, tokens []lexer.Token, kind ast.RoutineKind, asIdx int) (headerEnd int, options []routineOptionSpan) {
+func parseSQLServerRoutineOptions(sql string, tokens []lexer.Token, kind ast.RoutineKind, asIdx int) (headerEnd int, options []routineOptionSpan, err error) {
 	if asIdx == -1 {
-		return -1, nil
+		return -1, nil, nil
 	}
 	start := sqlServerRoutineSignatureStart(tokens, kind)
 	withIdx, forIdx := -1, -1
@@ -125,13 +131,16 @@ func parseSQLServerRoutineOptions(sql string, tokens []lexer.Token, kind ast.Rou
 		if forIdx != -1 {
 			end = forIdx
 		}
-		options = sqlServerRoutineOptionList(sql, tokens, withIdx+1, end)
+		options, err = sqlServerRoutineOptionList(sql, tokens, withIdx+1, end)
+		if err != nil {
+			return 0, nil, err
+		}
 	}
 	if forIdx != -1 {
 		options = append(options, routineOptionSpan{text: "FOR REPLICATION", source: "FOR REPLICATION",
 			words: []string{"FOR", "REPLICATION"}, start: tokens[forIdx].Start})
 	}
-	return headerEnd, options
+	return headerEnd, options, nil
 }
 
 // sqlServerRoutineSignatureStart returns the index of the routine's name, the
@@ -146,17 +155,19 @@ func sqlServerRoutineSignatureStart(tokens []lexer.Token, kind ast.RoutineKind) 
 
 // sqlServerRoutineOptionList splits the WITH list between start and end at its
 // commas.
-func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int) []routineOptionSpan {
+func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int) ([]routineOptionSpan, error) {
 	var options []routineOptionSpan
 	var current routineOptionSpan
 	first, last := -1, -1
-	flush := func() {
-		if len(current.words) > 0 {
-			current.source = sql[tokens[first].Start:tokens[last].End]
-			current.start = tokens[first].Start
-			options = append(options, current)
+	flush := func() error {
+		if len(current.words) == 0 {
+			return fmt.Errorf("SQL Server routine WITH list contains an empty option")
 		}
+		current.source = sql[tokens[first].Start:tokens[last].End]
+		current.start = tokens[first].Start
+		options = append(options, current)
 		current, first, last = routineOptionSpan{}, -1, -1
+		return nil
 	}
 	for i := start; i < end; i++ {
 		tok := tokens[i]
@@ -164,7 +175,9 @@ func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int
 		case isSQLServerRoutineTrivia(tok), tok.Type == lexer.TokenEOF:
 			continue
 		case tok.MatchOperatorValue(","):
-			flush()
+			if err := flush(); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if first == -1 {
@@ -178,8 +191,10 @@ func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int
 		}
 		current.text = strings.TrimSpace(current.text + " " + word)
 	}
-	flush()
-	return options
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return options, nil
 }
 
 type sqlServerRoutineTokenizer struct {

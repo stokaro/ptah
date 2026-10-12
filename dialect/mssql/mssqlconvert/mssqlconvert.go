@@ -1,5 +1,5 @@
-// Package mssqlconvert projects SQL Server security policies, and the
-// principal a routine runs as, between their desired and observed
+// Package mssqlconvert projects SQL Server security policies, and the options
+// a routine's header writes, between their desired and observed
 // representations. A projection is a prediction, never a claim that a server
 // was inspected; source coverage travels separately.
 package mssqlconvert
@@ -61,11 +61,11 @@ func convert(from schemaext.Representation, value schemaext.Value) (schemaext.Va
 		if from == schemaext.Observed {
 			return typed.Desired()
 		}
-	case *mssqlschema.DesiredExecuteAs:
+	case *mssqlschema.DesiredRoutineOptions:
 		if from == schemaext.Desired {
 			return typed.Observed()
 		}
-	case *mssqlschema.ObservedExecuteAs:
+	case *mssqlschema.ObservedRoutineOptions:
 		if from == schemaext.Observed {
 			return typed.Desired()
 		}

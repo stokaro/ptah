@@ -4,13 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
 )
@@ -46,11 +44,11 @@ func TestToDatabase_ASQLServerRoutineRunsAsItsHeaderSays(t *testing.T) {
 }
 
 // TestToDatabase_ASQLServerRoutineRunsAsItsHeaderSays_FailurePath refuses,
-// by name, each option the model has no place for. Each was measured on SQL
-// Server 2025 RTM-CU9: the server accepts it, and the catalog reports it
-// (ENCRYPTION by keeping no definition at all), so a routine kept without it
-// would be one the author did not write, and would compare as changed or never
-// be compared.
+// by name, each option the model has no place for without the SQL Server
+// owner, which reads some of them. Each was measured on SQL Server 2025
+// RTM-CU9: the server accepts it, and the catalog reports it (ENCRYPTION by
+// keeping no definition at all), so a routine kept without it would be one the
+// author did not write, and would compare as changed or never be compared.
 func TestToDatabase_ASQLServerRoutineRunsAsItsHeaderSays_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -92,23 +90,95 @@ func TestToDatabase_ASQLServerRoutineRunsAsItsHeaderSays_FailurePath(t *testing.
 	}
 }
 
-// A user the routine runs as is the SQL Server owner's to read: with the
-// bundled owners selected, the routine is a definer routine whose facet names
-// the user, and the document claims to describe the clause.
-func TestReadWith_ASQLServerRoutineRunsAsTheUserItNames(t *testing.T) {
+// The options the SQL Server owner reads reach the routine as one facet, and
+// the document claims to describe them: a user the routine runs as makes it a
+// definer routine, and SCHEMABINDING, RECOMPILE and RETURNS NULL ON NULL INPUT
+// are kept beside it.
+func TestReadWith_ASQLServerRoutineKeepsTheOptionsItsOwnerReads(t *testing.T) {
+	builder := objectidentity.NewBuilder(identifier.ForDialect("sqlserver"))
+	for _, test := range []struct {
+		name         string
+		sql          string
+		subject      objectidentity.ID
+		wantSecurity string
+		want         mssqlschema.RoutineOptions
+	}{
+		{name: "a user", sql: "CREATE PROCEDURE dbo.p WITH EXECUTE AS N'auditor' AS BEGIN SELECT 1; END;\nGO\n",
+			subject: builder.Procedure("dbo.p", ""), wantSecurity: "DEFINER", want: mssqlschema.RoutineOptions{Principal: "auditor"}},
+		{name: "recompile", sql: "CREATE PROCEDURE dbo.p WITH RECOMPILE AS BEGIN SELECT 1; END;\nGO\n",
+			subject: builder.Procedure("dbo.p", ""), want: mssqlschema.RoutineOptions{Recompile: true}},
+		{name: "schema binding", sql: "CREATE FUNCTION dbo.f() RETURNS INT WITH SCHEMABINDING AS BEGIN RETURN 1; END;\nGO\n",
+			subject: builder.Function("dbo.f", ""), want: mssqlschema.RoutineOptions{SchemaBinding: true}},
+		{name: "every option of a function", subject: builder.Function("dbo.f", "int"), wantSecurity: "DEFINER",
+			sql:  "CREATE FUNCTION dbo.f(@a INT) RETURNS INT WITH SCHEMABINDING, RETURNS NULL ON NULL INPUT, EXECUTE AS 'auditor' AS BEGIN RETURN @a; END;\nGO\n",
+			want: mssqlschema.RoutineOptions{Principal: "auditor", SchemaBinding: true, ReturnsNullOnNullInput: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := readWithOwners([]byte(test.sql), "sqlserver")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Functions, qt.HasLen, 1)
+			options, found, err := mssqlschema.RoutineOptionsOf(database.Functions[0].Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(options, qt.Equals, test.want)
+			c.Assert(database.Functions[0].Security, qt.Equals, test.wantSecurity)
+			c.Assert(database.FeatureCoverage.Lookup(mssqlschema.RoutineOptionsKind, test.subject).State, qt.Equals, schemaext.Complete)
+		})
+	}
+}
+
+// Each routine of a document gets the options its own header writes, however
+// many routines the document declares.
+func TestReadWith_EachSQLServerRoutineKeepsItsOwnOptions(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.ReadWith(c.Context(),
-		[]byte("CREATE PROCEDURE dbo.p WITH EXECUTE AS N'auditor' AS BEGIN SELECT 1; END;\nGO\n"), "sqlserver", nil,
-		sqlschema.Options{Owners: must.Must(builtin.New()).SQL()})
+	database, _, err := readWithOwners([]byte("CREATE FUNCTION dbo.f() RETURNS INT WITH SCHEMABINDING, EXECUTE AS 'auditor' AS BEGIN RETURN 1; END;\nGO\n"+
+		"CREATE PROCEDURE dbo.p WITH RECOMPILE, EXECUTE AS 'reviewer' AS BEGIN SELECT 1; END;\nGO\n"), "sqlserver")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Functions, qt.HasLen, 1)
-	principal, found, err := mssqlschema.ExecuteAsPrincipal(database.Functions[0].Facets)
-	c.Assert(err, qt.IsNil)
-	c.Assert([]any{database.Functions[0].Security, principal, found}, qt.DeepEquals, []any{"DEFINER", "auditor", true})
-	c.Assert(database.FeatureCoverage.Lookup(mssqlschema.ExecuteAsKind, objectidentity.NewBuilder(identifier.ForDialect("sqlserver")).Procedure("dbo.p", "")).State,
-		qt.Equals, schemaext.Complete)
+	c.Assert(database.Functions, qt.HasLen, 2)
+	got := make(map[string]mssqlschema.RoutineOptions)
+	for _, function := range database.Functions {
+		options, _, err := mssqlschema.RoutineOptionsOf(function.Facets)
+		c.Assert(err, qt.IsNil)
+		got[function.Name] = options
+	}
+	c.Assert(got, qt.DeepEquals, map[string]mssqlschema.RoutineOptions{
+		"dbo.f": {Principal: "auditor", SchemaBinding: true},
+		"dbo.p": {Principal: "reviewer", Recompile: true},
+	})
+}
+
+// With the owner selected, an option it does not read is refused by name as
+// it is without one.
+func TestReadWith_ASQLServerRoutineKeepsTheOptionsItsOwnerReads_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{name: "encryption", sql: "CREATE PROCEDURE dbo.p WITH ENCRYPTION, RECOMPILE AS SELECT 1 AS a;\nGO\n",
+			wantErr: `.*the sqlserver procedure dbo.p states ENCRYPTION, which Ptah can neither write nor compare back.*`},
+		{name: "inline", sql: "CREATE FUNCTION dbo.f() RETURNS INT WITH SCHEMABINDING, INLINE = OFF AS BEGIN RETURN 1; END;\nGO\n",
+			wantErr: `.*the sqlserver function dbo.f states INLINE = OFF, .*`},
+		{name: "for replication", sql: "CREATE PROCEDURE dbo.p WITH RECOMPILE FOR REPLICATION AS SELECT 1 AS a;\nGO\n",
+			wantErr: `.*the sqlserver procedure dbo.p states FOR REPLICATION, .*`},
+		{name: "self", sql: "CREATE PROCEDURE dbo.p WITH EXECUTE AS SELF AS SELECT 1 AS a;\nGO\n",
+			wantErr: `.*the sqlserver procedure dbo.p states EXECUTE AS SELF.*write EXECUTE AS 'name'.*`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := readWithOwners([]byte(test.sql), "sqlserver")
+
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(database.Functions, qt.HasLen, 0)
+		})
+	}
 }
 
 // Routine claims keep distinct principals when one document declares several routines.
@@ -119,10 +189,27 @@ func TestReadWith_EachSQLServerRoutineKeepsItsPrincipal(t *testing.T) {
 	c.Assert(database.Functions, qt.HasLen, 2)
 	got := make(map[string]string)
 	for _, function := range database.Functions {
-		principal, found, err := mssqlschema.ExecuteAsPrincipal(function.Facets)
+		options, found, err := mssqlschema.RoutineOptionsOf(function.Facets)
 		c.Assert(err, qt.IsNil)
 		c.Assert(found, qt.IsTrue)
-		got[function.Name] = principal
+		got[function.Name] = options.Principal
 	}
 	c.Assert(got, qt.DeepEquals, map[string]string{"dbo.f": "auditor", "dbo.p": "reviewer"})
+}
+
+// Null-input rules occupy one header slot even when a rule states the default.
+func TestReadWith_SQLServerNullInputRules_FailurePath(t *testing.T) {
+	for _, options := range []string{
+		"CALLED ON NULL INPUT, RETURNS NULL ON NULL INPUT",
+		"RETURNS NULL ON NULL INPUT, CALLED ON NULL INPUT",
+		"CALLED ON NULL INPUT, CALLED ON NULL INPUT",
+		"RETURNS NULL ON NULL INPUT, RETURNS NULL ON NULL INPUT",
+	} {
+		t.Run(options, func(t *testing.T) {
+			c := qt.New(t)
+			database, _, err := readWithOwners([]byte("CREATE FUNCTION dbo.f(@a INT) RETURNS INT WITH "+options+" AS BEGIN RETURN @a; END;"), "sqlserver")
+			c.Assert(err, qt.ErrorMatches, `.*states the option twice.*`)
+			c.Assert(database.Functions, qt.HasLen, 0)
+		})
+	}
 }

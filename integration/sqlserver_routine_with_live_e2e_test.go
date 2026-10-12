@@ -197,7 +197,7 @@ procedure "audit_it" {
 	out, err = runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", document, "--auto-approve")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(out, qt.Contains, `holds "ptah.run/mssql/routine-execute-as", which the declaration's source has no way to state`)
+	c.Assert(out, qt.Contains, `holds "ptah.run/mssql/routine-options", which the declaration's source has no way to state`)
 	c.Assert(runsAs(c, ctx, db), qt.Equals, "auditor")
 }
 
@@ -229,8 +229,105 @@ procedure "audit_it" {
 	c.Assert(runsAs(c, ctx, db), qt.Equals, "auditor")
 }
 
-// Principal changes follow the database collation: a spelling alias keeps its
-// user, while a case-sensitive name selects the distinct requested user.
+// optionRoutines are the routines of stokaro/ptah#4531 written in SQL: a
+// function WITH SCHEMABINDING and RETURNS NULL ON NULL INPUT, and a procedure
+// WITH RECOMPILE, each with the body given.
+func optionRoutines(functionBody, procedureBody string) string {
+	return fmt.Sprintf("CREATE FUNCTION dbo.f(@a INT) RETURNS INT WITH SCHEMABINDING, RETURNS NULL ON NULL INPUT AS BEGIN %s END;\nGO\n"+
+		"CREATE PROCEDURE dbo.p WITH RECOMPILE AS BEGIN %s END;\nGO\n", functionBody, procedureBody)
+}
+
+// heldOptions reads the options sys.sql_modules reports for dbo.f and dbo.p,
+// in that order: is_schema_bound, null_on_null_input and is_recompiled.
+func heldOptions(c *qt.C, ctx context.Context, db *sql.DB) []string {
+	c.Helper()
+	rows, err := db.QueryContext(ctx, "SELECT o.name, m.is_schema_bound, m.null_on_null_input, m.is_recompiled FROM sys.sql_modules m "+
+		"JOIN sys.objects o ON o.object_id = m.object_id WHERE o.name IN ('f', 'p') ORDER BY o.name")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	var held []string
+	for rows.Next() {
+		var name string
+		var schemaBound, nullOnNullInput, recompiled bool
+		c.Assert(rows.Scan(&name, &schemaBound, &nullOnNullInput, &recompiled), qt.IsNil)
+		held = append(held, fmt.Sprintf("%s schema_bound=%t null_on_null_input=%t recompiled=%t", name, schemaBound, nullOnNullInput, recompiled))
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return held
+}
+
+// TestSchemaApplyKeepsASQLServerRoutinesOptionsLiveE2E applies the routines
+// of stokaro/ptah#4531, then replaces their bodies. The catalog reports every
+// option after each apply, and the plan after each is empty: the read reports
+// the options as the SQL declares them, and a replacement writes them again.
+func TestSchemaApplyKeepsASQLServerRoutinesOptionsLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	url, db := principalDatabase(c, ctx)
+	want := []string{
+		"f schema_bound=true null_on_null_input=true recompiled=false",
+		"p schema_bound=false null_on_null_input=false recompiled=true",
+	}
+	for _, bodies := range [][2]string{{"RETURN @a;", "SELECT 1;"}, {"RETURN @a + 1;", "SELECT 2;"}} {
+		schema := writeSQLSchema(c, optionRoutines(bodies[0], bodies[1]))
+
+		out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", schema, "--auto-approve")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(heldOptions(c, ctx, db), qt.DeepEquals, want)
+		second, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", schema, "--dry-run")
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
+		c.Assert(second, qt.Contains, "Schema is synced")
+	}
+}
+
+// TestSchemaApplyRemovesASQLServerRoutinesOptionsLiveE2E declares the
+// routines of TestSchemaApplyKeepsASQLServerRoutinesOptionsLiveE2E without
+// their options. A SQL document states every option a routine has, so the
+// plan removes them, and the second plan is empty.
+func TestSchemaApplyRemovesASQLServerRoutinesOptionsLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	url, db := principalDatabase(c, ctx)
+	out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file",
+		writeSQLSchema(c, optionRoutines("RETURN @a;", "SELECT 1;")), "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	schema := writeSQLSchema(c, "CREATE FUNCTION dbo.f(@a INT) RETURNS INT AS BEGIN RETURN @a; END;\nGO\n"+
+		"CREATE PROCEDURE dbo.p AS BEGIN SELECT 1; END;\nGO\n")
+
+	out, err = runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", schema, "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(heldOptions(c, ctx, db), qt.DeepEquals, []string{
+		"f schema_bound=false null_on_null_input=false recompiled=false",
+		"p schema_bound=false null_on_null_input=false recompiled=false",
+	})
+	second, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", schema, "--dry-run")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
+	c.Assert(second, qt.Contains, "Schema is synced")
+}
+
+// TestSchemaApplyRefusesAnEncryptedSQLServerRoutineLiveE2E reads a database
+// holding a function created WITH ENCRYPTION, whose definition
+// sys.sql_modules does not hold. The read refuses it by name rather than read
+// it with no body, which a plan would replace without the option.
+func TestSchemaApplyRefusesAnEncryptedSQLServerRoutineLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	url, db := principalDatabase(c, ctx)
+	_, err := db.ExecContext(ctx, "CREATE FUNCTION dbo.f() RETURNS INT WITH ENCRYPTION AS BEGIN RETURN 1; END")
+	c.Assert(err, qt.IsNil)
+
+	out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file",
+		writeSQLSchema(c, "CREATE FUNCTION dbo.f() RETURNS INT AS BEGIN RETURN 1; END;\nGO\n"), "--dry-run")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "sqlserver function dbo.f is created WITH ENCRYPTION, and sys.sql_modules holds no definition of it")
+}
+
 func TestSchemaApplySQLServerPrincipalCaseLiveE2E(t *testing.T) {
 	for _, test := range []struct{ name, collation, users, want string }{
 		{"case insensitive", "SQL_Latin1_General_CP1_CI_AS", "CREATE USER auditor WITHOUT LOGIN", "auditor"},
@@ -255,6 +352,31 @@ func TestSchemaApplySQLServerPrincipalCaseLiveE2E(t *testing.T) {
 			second, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", desired, "--dry-run")
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
 			c.Assert(second, qt.Contains, "Schema is synced")
+		})
+	}
+}
+
+// Explicit INLINE settings must survive replacement or stop it, including on
+// a function whose body makes both catalog inlineability flags zero.
+func TestSchemaApplyRefusesSQLServerInlineLiveE2E(t *testing.T) {
+	for _, test := range []struct{ name, option, body string }{
+		{"inlineable off", "OFF", "RETURN 1;"},
+		{"not inlineable off", "OFF", "DECLARE @t TABLE (v int); RETURN 1;"},
+		{"explicit on", "ON", "RETURN 1;"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			url, db := principalDatabase(c, ctx)
+			_, err := db.ExecContext(ctx, "CREATE FUNCTION dbo.f() RETURNS INT WITH INLINE = "+test.option+" AS BEGIN "+test.body+" END")
+			c.Assert(err, qt.IsNil)
+			out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", writeSQLSchema(c, "CREATE FUNCTION dbo.f() RETURNS INT AS BEGIN RETURN 2; END;\nGO\n"), "--dry-run")
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(out, qt.Contains, "sqlserver function dbo.f is created WITH INLINE = "+test.option)
+			var definition string
+			c.Assert(db.QueryRowContext(ctx, "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.f'))").Scan(&definition), qt.IsNil)
+			c.Assert(definition, qt.Contains, test.body)
 		})
 	}
 }
