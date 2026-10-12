@@ -27,7 +27,11 @@ type DeclarationRequest struct {
 	Capabilities capability.Capabilities
 	Objects      []schemaext.Object
 	Tables       []schemacapture.TableDeclaration
-	CommonSteps  []CommonStep
+	// Types supplies declared type identities and references across owners,
+	// including types outside Objects. Order and SQL spelling are preserved.
+	// Each identity is unique; nil supplies no facts and implies no absence.
+	Types       []schemaext.DefinedType
+	CommonSteps []CommonStep
 }
 
 // DeclarationPlan accounts for one input object, in input order. Strategy

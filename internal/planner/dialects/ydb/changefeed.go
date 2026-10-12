@@ -21,7 +21,8 @@ func (p *Planner) planFeatureChanges(
 ) (featurehost.Result, error) {
 	names := make(map[objectidentity.Key]string)
 	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges),
-		CommonSteps: common, DatabasePath: diff.CurrentDatabasePath}
+		CommonSteps: common, DatabasePath: diff.CurrentDatabasePath,
+		Types: featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)}}
 	for _, table := range diff.TablesModified {
 		// A table's own facets are planned at the table's place in the plan;
 		// see [Planner.planTableFacets].

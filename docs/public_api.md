@@ -621,6 +621,20 @@ refuses such a change, each with `ErrInvalidValue`. A migration plan and a whole
 render create a routine whose signature names such a type after the type, as
 they do for an enum.
 
+`featureplan.Request.Types` supplies desired and observed type identities and
+references, including unchanged types and types owned by another provider.
+`DeclarationRequest.Types` supplies the declared side during whole-schema
+rendering. These records contain common data; a receiver needs no codec for
+another owner's model. References retain their SQL spelling for the receiving
+owner to interpret. Missing records do not establish absence or complete
+inspection of a namespace.
+
+The runtime preserves order and source spelling, refuses invalid or duplicate
+type identities on either side, and copies each reference list for every
+service call. A provider cannot mutate the caller's context or another
+provider's batch. `DefinedType.Validate` checks the common kind and name;
+`DefinedType.Clone` copies references without changing their order.
+
 `difftypes.UserTypeVocabulary.Defined` carries the types the declaration's
 owner objects define, and `UserTypeVocabularyOf` fills it, so a created
 table's column that names one is qualified with its schema as a column naming

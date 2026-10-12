@@ -59,7 +59,7 @@ func DefinedTypes(objects Objects) []DefinedType {
 	var result []DefinedType
 	for _, ref := range objects.Refs() {
 		if definer, ok := objects.values[ref.Key()].Value.(TypeDefiner); ok {
-			result = append(result, cloneDefinedType(definer.DefinedType(ref)))
+			result = append(result, definer.DefinedType(ref).Clone())
 		}
 	}
 	return result
@@ -73,7 +73,7 @@ func validDefinedObject(object Object) error {
 	if !ok {
 		return nil
 	}
-	if err := validDefinedType(definer.DefinedType(object.Ref)); err != nil {
+	if err := definer.DefinedType(object.Ref).Validate(); err != nil {
 		return fmt.Errorf("object %s: %w", object.Ref, err)
 	}
 	return nil
@@ -96,27 +96,32 @@ func CreatedTypes(changes []ChangeRecord) ([]DefinedType, error) {
 		if !found {
 			continue
 		}
-		if err := validDefinedType(created); err != nil {
+		if err := created.Validate(); err != nil {
 			return nil, fmt.Errorf("change of %s: %w", change.Subject, err)
 		}
-		result = append(result, cloneDefinedType(created))
+		result = append(result, created.Clone())
 	}
 	return result, nil
 }
 
 var definedTypeKinds = []objectidentity.Kind{objectidentity.KindDomain, objectidentity.KindComposite, objectidentity.KindRange}
 
-func validDefinedType(defined DefinedType) error {
-	if !slices.Contains(definedTypeKinds, defined.ID.Kind) {
-		return fmt.Errorf("%w: a defined type is a domain, a composite type or a range type, not %q", ErrInvalidValue, defined.ID.Kind)
+// Validate checks the common type kind and nonempty source and normalized
+// name. It returns [ErrInvalidValue] for the zero value or an invalid type.
+// It does not parse References or apply a target's type rules.
+func (d DefinedType) Validate() error {
+	if !slices.Contains(definedTypeKinds, d.ID.Kind) {
+		return fmt.Errorf("%w: a defined type is a domain, a composite type or a range type, not %q", ErrInvalidValue, d.ID.Kind)
 	}
-	if defined.ID.Name.Source == "" || defined.ID.Name.Normalized == "" {
+	if d.ID.Name.Source == "" || d.ID.Name.Normalized == "" {
 		return fmt.Errorf("%w: a defined type has a name", ErrInvalidValue)
 	}
 	return nil
 }
 
-func cloneDefinedType(defined DefinedType) DefinedType {
-	defined.References = slices.Clone(defined.References)
-	return defined
+// Clone returns independent reference spellings and preserves the identity.
+// It preserves reference order and a nil References slice, without validation.
+func (d DefinedType) Clone() DefinedType {
+	d.References = slices.Clone(d.References)
+	return d
 }

@@ -226,6 +226,12 @@ and cancellation also discard diagnostics. Call `Result.Err(request)` before
 lowering operations. Its `featureplan.RefusalError` preserves the report and error
 identities. Process adapters transfer diagnostic data instead of Go errors.
 
+`featureplan.Request.Types` carries desired and observed type identities and
+references, including unchanged types. `DeclarationRequest.Types` supplies the
+declared side during whole-schema rendering. Each provider receives independent
+copies, with source spelling and order preserved. Missing types do not establish
+absence, and duplicate identities are refused before dispatch.
+
 `Provider.Declarations` selects owners for `Runtime.PlanDeclarations`, which
 plans standalone creation from desired and operation codecs. Each object and
 operation is accounted for; refusals retain diagnostics indexed to input objects.
