@@ -72,7 +72,9 @@ SQL:
   accepts whatever the engine chose, and the asymmetry is the engines': `CREATE
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
-  on MySQL that MySQL immediately undoes.
+  on MySQL that MySQL immediately undoes. Spatial indexes report a bounding-box
+  size in `STATISTICS.SUB_PART`. Ptah keeps that size out of column prefixes,
+  so reading and planning an unchanged spatial index produces no migration.
 - `USING BTREE` and `USING HASH` are read on a `PRIMARY KEY`, `KEY`, `INDEX`
   or `UNIQUE KEY` and rendered back after the column list. A `UNIQUE KEY`
   asking for a method is read as a unique index, which is what the server

@@ -81,9 +81,9 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			// parsing DDL, and one that read neither reported a table with a
 			// BTREE index as satisfying a desired SPATIAL one
 			// (stokaro/ptah#2721).
-			name: "a spatial index keeps its access method",
+			name: "a spatial index keeps its method without a bounding-box prefix",
 			rows: [][]driver.Value{
-				{"sx_geo_location", "geo", "location", int64(1), "SPATIAL", nil, "A"},
+				{"sx_geo_location", "geo", "location", int64(1), "SPATIAL", int64(32), "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "sx_geo_location",

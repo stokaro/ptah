@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -502,7 +503,7 @@ func verifyImport() error {
 		if err != nil {
 			return err
 		}
-		configured, err := importer.WithRendering(parser, "custom", nil, runtime)
+		configured, err := importer.WithRendering(parser, "custom", capability.Capabilities{}, runtime)
 		if err != nil {
 			return err
 		}

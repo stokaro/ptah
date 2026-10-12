@@ -1168,7 +1168,7 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 			})
 			indexTypes = append(indexTypes, indexType)
 		}
-		addIndexKeyPart(&indexes[position], indexKeyPartRow{column: columnName, subPart: subPart, collation: collation, expression: expr})
+		addIndexKeyPart(&indexes[position], indexKeyPartRow{column: columnName, subPart: subPart, collation: collation, expression: expr}, indexType)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1255,7 +1255,7 @@ type indexKeyPartRow struct {
 // missing from Columns rather than dropping it silently: a comparison that
 // read Columns as the whole key would plan a rebuild of a key that never
 // changed. See [catalog.Index.KeyPartsIncomplete].
-func addIndexKeyPart(index *catalog.Index, row indexKeyPartRow) {
+func addIndexKeyPart(index *catalog.Index, row indexKeyPartRow, indexType string) {
 	desc := indexKeyIsDescending(row.collation)
 	if !row.column.Valid {
 		if !row.expression.Valid || strings.TrimSpace(row.expression.String) == "" {
@@ -1268,7 +1268,7 @@ func addIndexKeyPart(index *catalog.Index, row indexKeyPartRow) {
 	index.Columns = append(index.Columns, row.column.String)
 	index.Parts = append(index.Parts, catalog.IndexPart{
 		Name:   row.column.String,
-		Prefix: indexKeyPrefix(row.subPart),
+		Prefix: indexKeyPrefix(row.subPart, indexType),
 		Desc:   desc,
 	})
 }
@@ -1308,7 +1308,12 @@ func dropUninformativeParts(index *catalog.Index) {
 // partial list would be worse than none: the renderer reads Parts when it has
 // any, and a key whose second part was dropped would render as a key over the
 // first column alone.
-func indexKeyPrefix(subPart sql.NullInt64) string {
+func indexKeyPrefix(subPart sql.NullInt64, indexType string) string {
+	// SPATIAL reports its 32-byte bounding box as SUB_PART on MySQL 26.7
+	// and MariaDB 12.3. It is not a declared column prefix.
+	if strings.EqualFold(indexType, "SPATIAL") {
+		return ""
+	}
 	if !subPart.Valid || subPart.Int64 <= 0 {
 		return ""
 	}

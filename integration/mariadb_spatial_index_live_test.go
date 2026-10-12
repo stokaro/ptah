@@ -102,6 +102,7 @@ func TestMariaDBSpatialIndexIsNotSatisfiedByBTreeLive(t *testing.T) {
 	repaired, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(spatialIndexOf(c, repaired).Method, qt.Equals, "SPATIAL")
+	c.Assert(spatialIndexOf(c, repaired).Parts, qt.HasLen, 0)
 	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), desired, repaired, "mariadb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse,
 		qt.Commentf("the requested spatial index is what the server now has"))
 }
@@ -209,6 +210,7 @@ func TestMySQLPromotedSpatialIndexStaysSyncedLive(t *testing.T) {
 	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(spatialIndexOf(c, read).Method, qt.Equals, "SPATIAL")
+	c.Assert(spatialIndexOf(c, read).Parts, qt.HasLen, 0)
 
 	// The desired schema declares no index type, which is what an author writes
 	// for an ordinary index.
