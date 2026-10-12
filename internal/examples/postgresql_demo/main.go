@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -10,6 +12,15 @@ import (
 )
 
 func main() {
+	if err := run(os.Stdout); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run parses the PostgreSQL DDL below, then the EXCLUDE constraint
+// declarations in exclude_constraints_example.go, and writes what it found to
+// w.
+func run(w io.Writer) error {
 	// PostgreSQL-style DDL statements with advanced features
 	sql := `
 		CREATE TYPE status_enum AS ENUM ('pending', 'active', 'archived');
@@ -48,43 +59,43 @@ func main() {
 		COMMENT ON COLUMN public.full_demo.varchar_var IS 'Variable length string';
 	`
 
-	fmt.Println("Parsing PostgreSQL DDL statements:")
-	fmt.Println("==================================")
-	fmt.Println(sql)
-	fmt.Println()
+	fmt.Fprintln(w, "Parsing PostgreSQL DDL statements:")
+	fmt.Fprintln(w, "==================================")
+	fmt.Fprintln(w, sql)
+	fmt.Fprintln(w)
 
 	// Create parser and parse the SQL
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	if err != nil {
-		log.Fatalf("Parse error: %v", err)
+		return fmt.Errorf("parse error: %w", err)
 	}
 
-	fmt.Printf("Successfully parsed %d SQL statement(s):\n\n", len(statements.Statements))
+	fmt.Fprintf(w, "Successfully parsed %d SQL statement(s):\n\n", len(statements.Statements))
 
 	// Print detailed information about each parsed statement
 	for i, stmt := range statements.Statements {
-		fmt.Printf("Statement %d:\n", i+1)
+		fmt.Fprintf(w, "Statement %d:\n", i+1)
 
 		switch s := stmt.(type) {
 		case *ast.EnumNode:
-			fmt.Printf("  Type: CREATE TYPE (ENUM)\n")
-			fmt.Printf("  Name: %s\n", s.Name)
-			fmt.Printf("  Values: %v\n", s.Values)
+			fmt.Fprintf(w, "  Type: CREATE TYPE (ENUM)\n")
+			fmt.Fprintf(w, "  Name: %s\n", s.Name)
+			fmt.Fprintf(w, "  Values: %v\n", s.Values)
 
 		case *ast.CommentNode:
-			fmt.Printf("  Type: COMMENT/DOMAIN\n")
-			fmt.Printf("  Content: %s\n", s.Text)
+			fmt.Fprintf(w, "  Type: COMMENT/DOMAIN\n")
+			fmt.Fprintf(w, "  Content: %s\n", s.Text)
 
 		case *ast.CreateTableNode:
-			fmt.Printf("  Type: CREATE TABLE\n")
-			fmt.Printf("  Table: %s\n", s.Name)
-			fmt.Printf("  Columns: %d\n", len(s.Columns))
-			fmt.Printf("  Constraints: %d\n", len(s.Constraints))
+			fmt.Fprintf(w, "  Type: CREATE TABLE\n")
+			fmt.Fprintf(w, "  Table: %s\n", s.Name)
+			fmt.Fprintf(w, "  Columns: %d\n", len(s.Columns))
+			fmt.Fprintf(w, "  Constraints: %d\n", len(s.Constraints))
 
-			fmt.Println("\n  PostgreSQL Column Features:")
+			fmt.Fprintln(w, "\n  PostgreSQL Column Features:")
 			for j, col := range s.Columns {
-				fmt.Printf("    %d. %s %s", j+1, col.Name, col.Type)
+				fmt.Fprintf(w, "    %d. %s %s", j+1, col.Name, col.Type)
 
 				var features []string
 				if !col.Nullable {
@@ -118,53 +129,53 @@ func main() {
 				}
 
 				if len(features) > 0 {
-					fmt.Printf(" [%s]", fmt.Sprintf("%v", features))
+					fmt.Fprintf(w, " [%s]", fmt.Sprintf("%v", features))
 				}
-				fmt.Println()
+				fmt.Fprintln(w)
 			}
 
 			if len(s.Constraints) > 0 {
-				fmt.Println("\n  Table Constraints:")
+				fmt.Fprintln(w, "\n  Table Constraints:")
 				for j, constraint := range s.Constraints {
-					fmt.Printf("    %d. %s", j+1, constraint.Type.String())
+					fmt.Fprintf(w, "    %d. %s", j+1, constraint.Type.String())
 					if constraint.Name != "" {
-						fmt.Printf(" [%s]", constraint.Name)
+						fmt.Fprintf(w, " [%s]", constraint.Name)
 					}
 					if len(constraint.Columns) > 0 {
-						fmt.Printf(" (%v)", constraint.Columns)
+						fmt.Fprintf(w, " (%v)", constraint.Columns)
 					}
 					if constraint.Expression != "" {
-						fmt.Printf(" CHECK(%s)", constraint.Expression)
+						fmt.Fprintf(w, " CHECK(%s)", constraint.Expression)
 					}
-					fmt.Println()
+					fmt.Fprintln(w)
 				}
 			}
 
 		default:
-			fmt.Printf("  Type: Unknown (%T)\n", s)
+			fmt.Fprintf(w, "  Type: Unknown (%T)\n", s)
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 	}
 
-	fmt.Println("PostgreSQL parser demo completed successfully!")
-	fmt.Println("\nKey PostgreSQL features demonstrated:")
-	fmt.Println("- ENUM types with CREATE TYPE")
-	fmt.Println("- DOMAIN types with CHECK constraints")
-	fmt.Println("- Schema-qualified table names (public.table_name)")
-	fmt.Println("- SERIAL and BIGSERIAL auto-increment types")
-	fmt.Println("- UUID with gen_random_uuid() function")
-	fmt.Println("- Array types (TEXT[], INT[][])")
-	fmt.Println("- JSON and JSONB types with type casting ('{}'::jsonb)")
-	fmt.Println("- PostgreSQL-specific data types (TIMESTAMPTZ, BYTEA)")
-	fmt.Println("- GENERATED ALWAYS AS computed columns")
-	fmt.Println("- COLLATE specifications")
-	fmt.Println("- Complex CHECK constraints with functions")
-	fmt.Println("- Named table constraints")
-	fmt.Println("- COMMENT ON statements")
-	fmt.Println("- Foreign keys with CASCADE and SET NULL actions")
+	fmt.Fprintln(w, "PostgreSQL parser demo completed successfully!")
+	fmt.Fprintln(w, "\nKey PostgreSQL features demonstrated:")
+	fmt.Fprintln(w, "- ENUM types with CREATE TYPE")
+	fmt.Fprintln(w, "- DOMAIN types with CHECK constraints")
+	fmt.Fprintln(w, "- Schema-qualified table names (public.table_name)")
+	fmt.Fprintln(w, "- SERIAL and BIGSERIAL auto-increment types")
+	fmt.Fprintln(w, "- UUID with gen_random_uuid() function")
+	fmt.Fprintln(w, "- Array types (TEXT[], INT[][])")
+	fmt.Fprintln(w, "- JSON and JSONB types with type casting ('{}'::jsonb)")
+	fmt.Fprintln(w, "- PostgreSQL-specific data types (TIMESTAMPTZ, BYTEA)")
+	fmt.Fprintln(w, "- GENERATED ALWAYS AS computed columns")
+	fmt.Fprintln(w, "- COLLATE specifications")
+	fmt.Fprintln(w, "- Complex CHECK constraints with functions")
+	fmt.Fprintln(w, "- Named table constraints")
+	fmt.Fprintln(w, "- COMMENT ON statements")
+	fmt.Fprintln(w, "- Foreign keys with CASCADE and SET NULL actions")
 
-	fmt.Println("\n" + strings.Repeat("=", 50))
+	fmt.Fprintln(w, "\n"+strings.Repeat("=", 50))
 
 	// Run the EXCLUDE constraints example
-	runExcludeConstraintsExample()
+	return runExcludeConstraintsExample(w)
 }
