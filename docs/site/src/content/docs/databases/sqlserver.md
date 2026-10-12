@@ -351,6 +351,11 @@ list states how it runs, and `sys.sql_modules` reports each option back:
 | `RETURNS NULL ON NULL INPUT` | `null_on_null_input` 1 | kept |
 | `RECOMPILE` | `is_recompiled` 1 | kept |
 
+Parameter declarations accept the optional `AS`: `@amount AS DECIMAL(10, 2)`
+and `@amount DECIMAL(10,2)` compare as the same parameter. The SQL Server
+owner normalizes the list before comparison and routine-option matching.
+Parameter names, order, and type dimensions remain significant.
+
 The options Ptah keeps are read from a SQL schema file and from a connected
 database, compared, and planned. A routine whose options change is replaced
 with the declared `WITH` list, and the rollback writes the options it held. A

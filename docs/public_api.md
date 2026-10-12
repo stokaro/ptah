@@ -513,6 +513,12 @@ registers it on the sqlserver target. `Language` is the language of every SQL
 Server routine, as the reader reports it, and `Security` the mode one that
 states none runs with, INVOKER: `EXECUTE AS CALLER`.
 
+`mssqlroutine.NormalizeParameters` removes optional parameter `AS` tokens and
+formats separators as the catalog reports them. It preserves names, order,
+type dimensions, and quoted values, ignores comments, and is idempotent. The
+SQL Server lowering service applies it before comparison and moves
+subject-specific coverage to the normalized routine identity.
+
 `dialect/mssql/mssqllint` is the SQL Server owner's part of what reads
 migration SQL. `Splitter` splits a migration as the lint scanner does for the
 sqlserver target and judges PolyBase's `DROP EXTERNAL TABLE` and `DROP EXTERNAL
