@@ -128,6 +128,11 @@ const (
 	// blocks the rest of a document may depend on, such as an extension that
 	// supplies a type.
 	BeforeTypes Placement = "before-types"
+	// UserTypes places a block among the types a document declares, after
+	// the sequences and before the enums, such as a PostgreSQL domain. The
+	// writer orders the type blocks it writes itself among the owners' by
+	// the same rule: by type, schema and name.
+	UserTypes Placement = "user-types"
 	// AfterTables places a block after the tables: a block that stands for
 	// a table or is attached to one comes after the structure it points at.
 	AfterTables Placement = "after-tables"
@@ -164,6 +169,11 @@ type EncodedBlock struct {
 	// Attributes are the attributes the block writes, in order. An attribute
 	// the owner leaves out is not written.
 	Attributes []EncodedAttribute
+	// Children are blocks nested in the block, one level deep, such as the
+	// fields of a composite type. The writer writes them after the
+	// attributes, in the owner's order, and never sorts them. Only a
+	// top-level block takes children.
+	Children []EncodedChild
 	// Path names the block in a diagnostic: the writer reports Losses at it,
 	// and the Atlas-compatible surface's decision to leave the block out. It
 	// is the owner's display path, such as `rls_policies.users.tenant`, and
@@ -185,6 +195,18 @@ type EncodedBlock struct {
 	// writer reports any other scope as one HCL does not represent.
 	Object  objectidentity.ID
 	Targets []string
+}
+
+// EncodedChild is a block nested in an [EncodedBlock]. It writes one label,
+// its name, and its attributes in order, which may be none. No two children
+// of a block share a type and a name.
+type EncodedChild struct {
+	// Type is the child's type, such as "field".
+	Type string
+	// Name is its label.
+	Name string
+	// Attributes are the attributes it writes, of the kinds a block's take.
+	Attributes []EncodedAttribute
 }
 
 // SchemaRole is what an encoded block's schema means.
@@ -234,8 +256,10 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // returns every block and every attribute of the writer's blocks they write,
 // extension by extension. It refuses a block without a type, a name or a
 // known placement, an attribute without a name, written twice or of a kind
-// the writer cannot write, a block that writes an object of a kind its
-// extension does not claim, a header line that is empty or holds a line
+// the writer cannot write, a child of a block in a table, a child without a
+// type or a name, written twice or under an attribute's name, a child's
+// attribute refused as a block's is, a block that writes an object of a kind
+// its extension does not claim, a header line that is empty or holds a line
 // break, attributes for a block of the writer's the extension was not handed
 // or written for one block twice, and an attribute two extensions write to
 // one block. The header lines are returned in the order of the extensions.
@@ -437,6 +461,43 @@ func checkEncodedBlock(extension Extension, block EncodedBlock) error {
 				schemaext.ErrInvalidValue, extension.Owner, attribute.Name, block.Type, attribute.Value.Kind)
 		}
 	}
+	return checkEncodedChildren(extension, block, names)
+}
+
+// checkEncodedChildren refuses children of a block in a table, a child
+// without a type or a name, one written twice or whose type is the name of
+// one of the block's attributes, and a child's attribute the writer cannot
+// write. attributes are the names of the block's attributes.
+func checkEncodedChildren(extension Extension, block EncodedBlock, attributes map[string]bool) error {
+	if len(block.Children) > 0 && block.Placement == WithinTable {
+		return fmt.Errorf("%w: HCL encoder of %s wrote block %q in a table with children, which only a top-level block takes",
+			schemaext.ErrInvalidValue, extension.Owner, block.Type)
+	}
+	type key struct{ kind, name string }
+	written := make(map[key]bool, len(block.Children))
+	for _, child := range block.Children {
+		if strings.TrimSpace(child.Type) == "" || strings.TrimSpace(child.Name) == "" || attributes[child.Type] {
+			return fmt.Errorf("%w: HCL encoder of %s wrote block %q with child %q %q without a type or a name, or under an attribute's name",
+				schemaext.ErrInvalidValue, extension.Owner, block.Type, child.Type, child.Name)
+		}
+		if written[key{child.Type, child.Name}] {
+			return fmt.Errorf("%w: HCL encoder of %s wrote %s %q of block %q twice",
+				schemaext.ErrDuplicate, extension.Owner, child.Type, child.Name, block.Type)
+		}
+		written[key{child.Type, child.Name}] = true
+		names := make(map[string]bool, len(child.Attributes))
+		for _, attribute := range child.Attributes {
+			if strings.TrimSpace(attribute.Name) == "" || names[attribute.Name] {
+				return fmt.Errorf("%w: HCL encoder of %s wrote %s %q of block %q with attribute %q unnamed or twice",
+					schemaext.ErrInvalidValue, extension.Owner, child.Type, child.Name, block.Type, attribute.Name)
+			}
+			names[attribute.Name] = true
+			if !writable(attribute.Value) {
+				return fmt.Errorf("%w: HCL encoder of %s wrote attribute %q of %s %q of block %q as %q, which the writer cannot write",
+					schemaext.ErrInvalidValue, extension.Owner, attribute.Name, child.Type, child.Name, block.Type, attribute.Value.Kind)
+			}
+		}
+	}
 	return nil
 }
 
@@ -452,7 +513,7 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 			return fmt.Errorf("%w: HCL encoder of %s wrote block %q in a table without the table or with a name",
 				schemaext.ErrInvalidValue, extension.Owner, block.Type)
 		}
-	case block.Placement == BeforeTypes || block.Placement == AfterTables || block.Placement == AfterTriggers:
+	case block.Placement == BeforeTypes || block.Placement == UserTypes || block.Placement == AfterTables || block.Placement == AfterTriggers:
 		if block.Name == "" {
 			return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
 		}
@@ -471,7 +532,9 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 
 // writable reports whether the writer can write value: a string, a bool,
 // decimal digits, SQL text, a reference to a table, or a list of roles and of
-// names of no kind. The writer quotes any SQL text inside its sql() call.
+// names of no kind. The writer quotes any SQL text inside its sql() call. A
+// [Text] and a [TypeName] are what the reader reads, and an owner writes a
+// type as SQL.
 func writable(value Value) bool {
 	switch value.Kind {
 	case String, Bool, SQL:

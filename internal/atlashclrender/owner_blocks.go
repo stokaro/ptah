@@ -101,9 +101,9 @@ func (r *renderer) ownerSchema(block hclext.EncodedBlock) string {
 
 // writeOwnerBlock writes a block an owner encoded where it stands: first the
 // losses the owner reports about it, then, unless the block is unwritten or
-// the Atlas-compatible surface leaves it out, its label, its `schema` and its
-// attributes in the owner's order. A block in a table is indented one level
-// and takes no label.
+// the Atlas-compatible surface leaves it out, its label, its `schema`, its
+// attributes and then its children, each in the owner's order. A block in a
+// table is indented one level and takes no label.
 func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 	for _, loss := range block.Losses {
 		r.warn(block.Path, loss)
@@ -126,6 +126,13 @@ func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 	r.writeOwnerSchema(block, schema)
 	for _, attribute := range block.Attributes {
 		r.rawAttr(1, attribute.Name, r.ownerValue(attribute.Value))
+	}
+	for _, child := range block.Children {
+		r.linef("  %s %s {", child.Type, quote(child.Name))
+		for _, attribute := range child.Attributes {
+			r.rawAttr(2, attribute.Name, r.ownerValue(attribute.Value))
+		}
+		r.line("  }")
 	}
 	r.line("}")
 	r.line("")

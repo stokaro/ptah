@@ -2295,8 +2295,8 @@ func (p *parser) optionalRefName(attr *hclsyntax.Attribute) string {
 }
 
 // typeAttrString reads an attribute whose value names a type, resolving a
-// reference to a type the same document declares -- see
-// [userTypeBlockPrefixes]. A column is not the only position that names one: a
+// reference to a type -- see [parser.typeReferenceName]. A column is not the
+// only position that names one: a
 // domain's base type, a composite field, a range's subtype and a function
 // argument all accept the same traversal, and each of them wrote it through
 // verbatim (stokaro/ptah#2150).
@@ -2304,7 +2304,7 @@ func (p *parser) typeAttrString(attr *hclsyntax.Attribute) string {
 	if attr == nil {
 		return ""
 	}
-	if name, ok := userTypeReferenceName(p.rawExpr(attr)); ok {
+	if name, ok := p.typeReferenceName(p.rawExpr(attr)); ok {
 		return name
 	}
 	return p.exprString(attr)
@@ -2514,37 +2514,59 @@ func (p *parser) evaluatedText(expr hclsyntax.Expression) (string, bool) {
 	return converted.AsString(), true
 }
 
-// userTypeBlockPrefixes are the traversal roots a column's `type` can name: one
-// per top-level block that declares a type an engine can hold. The value under
-// each is the block's own label, which is the type's name.
-//
-// Every one of these is a block Ptah already parses -- enum, domain, composite
-// and range each build an object in the schema IR -- so a document that
-// references one is referencing something the same document declares. Only the
-// reference was resolved, and only for `enum`. The other three reached DDL as
-// written, and PostgreSQL read the block keyword as a schema qualifier:
+// ownTypeBlocks are the shapes of this package's own blocks whose labels name
+// a type. They are the roots a type position may name, with the top-level
+// shapes of the owners that declare types; see [parser.declaresType]. A block
+// keyword left unresolved reached DDL as written, and PostgreSQL read it as a
+// schema qualifier:
 //
 //	"d" domain.pos2 NOT NULL   ->  ERROR: schema "domain" does not exist
 //
 // which names nothing the operator wrote (stokaro/ptah#2150).
-//
-// The name is taken from the traversal rather than looked up among the declared
-// objects so that resolution does not depend on block order: a table may be
-// written above the type it uses, and a lookup would resolve the same document
-// two ways depending on where the type block sits. A name that no block
-// declares is left to the engine, which reports an unknown type against the
-// name the document actually wrote.
-var userTypeBlockPrefixes = []string{"enum.", "domain.", "composite.", "range."}
+var ownTypeBlocks = []hclext.Block{
+	{Site: hclext.TopLevel, Type: "enum", Naming: hclext.SchemaAndName, DeclaresType: true},
+	{Site: hclext.TopLevel, Type: "domain", Naming: hclext.SchemaAndName, DeclaresType: true},
+	{Site: hclext.TopLevel, Type: "composite", Naming: hclext.SchemaAndName, DeclaresType: true},
+	{Site: hclext.TopLevel, Type: "range", Naming: hclext.SchemaAndName, DeclaresType: true},
+}
 
-// userTypeReferenceName resolves a traversal naming a user-defined type to that
-// type's name, and reports whether the raw text was such a traversal.
-func userTypeReferenceName(rawType string) (string, bool) {
-	for _, prefix := range userTypeBlockPrefixes {
-		if name, ok := strings.CutPrefix(rawType, prefix); ok {
-			return name, true
-		}
+// declaresType reports whether the labels of a top-level block of type block
+// name a type: its shape, this package's own or an owner's, says so with
+// DeclaresType. The shapes are the one list of such blocks.
+func (p *parser) declaresType(block string) bool {
+	shape, found := p.typeShape(block)
+	return found && shape.DeclaresType
+}
+
+// typeShape returns the shape of a top-level block of type block that may
+// declare a type: one of [ownTypeBlocks], or else an owner's.
+func (p *parser) typeShape(block string) (hclext.Block, bool) {
+	if index := slices.IndexFunc(ownTypeBlocks, func(shape hclext.Block) bool { return shape.Type == block }); index >= 0 {
+		return ownTypeBlocks[index], true
 	}
-	return "", false
+	shape, owned := p.owners.Lookup(hclext.TopLevel, block)
+	return shape.Block, owned
+}
+
+// typeReferenceName resolves the raw text of a type position that names a
+// type as `<block>.<label>` or `<block>.<schema>.<label>`, where block
+// declares types, to the text after the block: the type's name, after its
+// schema where it has one. It reports false for any other text, which is then
+// read as the type it spells. Every type position reads a reference through
+// it: a column's `type`, the type attributes of this package's own blocks,
+// and an owner's [hclext.TypeName] attribute.
+//
+// The name is taken from the text rather than looked up among the declared
+// objects so that resolution does not depend on block order, nor on the file
+// of a schema directory that declares the type, since each file is read on
+// its own. A name no block declares is left to the engine, which reports an
+// unknown type against the name the document wrote.
+func (p *parser) typeReferenceName(raw string) (string, bool) {
+	block, name, found := strings.Cut(raw, ".")
+	if !found || !p.declaresType(block) {
+		return "", false
+	}
+	return name, true
 }
 
 // columnTypeName returns the column's type and whether it was written with
@@ -2558,7 +2580,7 @@ func userTypeReferenceName(rawType string) (string, bool) {
 // ("Unknown column.type; There is no type named \"USER_DEFINED\"").
 func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) (string, bool, error) {
 	rawType := p.rawExpr(attr)
-	if typeName, ok := userTypeReferenceName(rawType); ok {
+	if typeName, ok := p.typeReferenceName(rawType); ok {
 		return typeName, false, nil
 	}
 	_, rawSQL := p.sqlRawExprValue(attr.Expr)

@@ -3071,6 +3071,22 @@ a block inside a `table`, with no labels.
   reader produced, and a `Bool` is a bool: null reads as absent and any other
   value is refused, as the reader refuses one in its own blocks. Variables, locals, functions and the
   confinement of `file()` stay the reader's.
+- A `TypeName` attribute is a type, read as a column's `type` is read.
+  `<block>.<label>`, where the block declares types, reads as the label, with
+  its schema in front where the reference writes one. The reader's own `enum`
+  declares types, and so does an owner's top-level shape with `DeclaresType`.
+  The reference resolves whether or not the file declares the type, since a
+  schema directory is read one file at a time. Any other value reads as
+  `Text` reads it.
+- An `SQL` attribute reads an `sql()` call as its SQL, with `Kind` SQL, and
+  any other value as `Text` reads it, with `Kind` Text. An owner can then tell
+  an expression from a literal. `Number` is the writer's alone, and a shape
+  that lists one is refused.
+- A top-level shape may list `Children`: blocks nested in it one level deep,
+  each with one label and its own attribute list, which takes no reference.
+  The owner gets them in `Claim.Children` in document order. The reader
+  refuses a second child of one type and name, an attribute the child does not
+  list, and a nested block that is no child, positioned at it.
 - A `Ref` attribute is a required reference to an object of the type its
   `Refers` names, which the owner receives as a `Reference{Kind, Schema,
   Name}`. A reference to a `table` the document declares carries that table's
@@ -3122,13 +3138,21 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
   document that holds none of its kinds, since an owner may refuse a coverage
   limit it cannot write.
 - The encoder returns `EncodedBlock` values as data: type, `Placement`
-  (`BeforeTypes`, `AfterTables`, `AfterTriggers`, or `WithinTable` with the
-  block's `Table`),
+  (`BeforeTypes`, `UserTypes`, `AfterTables`, `AfterTriggers`, or
+  `WithinTable` with the block's `Table`),
   schema, name, `Scope`, and `EncodedAttribute` values. The writer quotes a
-  `String`, writes a `Bool` bare, a `Ref` to a table as the reference the
-  document resolves, and a `Refs` list of roles as role references where the
-  document declares the role. Within one placement it orders blocks by type,
-  schema, scope and name, so the order does not depend on registration.
+  `String`, writes a `Bool` bare, an `SQL` value as `sql("...")`, a `Ref` to
+  a table as the reference the document resolves, and a `Refs` list of roles
+  as role references where the document declares the role. Within one
+  placement it orders blocks by type, schema, scope and name, so the order
+  does not depend on registration. `UserTypes` stands after the sequences and
+  before the enums, and the writer's own domains, composite types and ranges
+  are ordered there with the owners' blocks by the same rule.
+- A top-level block may write `Children`, each an `EncodedChild` with a type,
+  one label and its attributes. The writer writes them after the block's
+  attributes in the owner's order and never sorts them. `Set.Encode` refuses
+  a child of a block in a table, a child without a type or a name, one
+  written twice, and one whose type is an attribute of the block.
 - A block's `Losses` are reported at its `Path`, the owner's display path, which
   nothing parses, before the block; an `Unwritten` block reports them and is
   left out. The Atlas-compatible surface leaves out an owner's block of a type

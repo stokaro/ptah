@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
@@ -58,35 +59,30 @@ func (r *renderer) renderSequences() {
 	}
 }
 
+// renderUserTypes writes the domains, composite types and ranges of the
+// common model and the type blocks owners place among them, ordered together
+// as every placement is: by type, schema and name; see [renderer.renderSlot].
+// Atlas writes none of these blocks, so no Atlas output fixes their order.
 func (r *renderer) renderUserTypes() {
-	domains := append([]schemamodel.Domain(nil), r.db.Domains...)
-	slices.SortFunc(domains, func(a, b schemamodel.Domain) int {
-		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
-	})
-	for _, domain := range domains {
-		r.renderDomain(domain)
+	entries := make([]slotEntry, 0, len(r.db.Domains)+len(r.db.CompositeTypes)+len(r.db.Ranges))
+	for _, domain := range r.db.Domains {
+		entries = append(entries, slotEntry{blockType: blockDomain, schema: r.schemaFor(domain.Schema), name: domain.Name,
+			write: func() { r.renderDomain(domain) }})
 	}
-
-	composites := append([]schemamodel.CompositeType(nil), r.db.CompositeTypes...)
-	slices.SortFunc(composites, func(a, b schemamodel.CompositeType) int {
-		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
-	})
-	for _, composite := range composites {
-		r.renderComposite(composite)
+	for _, composite := range r.db.CompositeTypes {
+		entries = append(entries, slotEntry{blockType: blockComposite, schema: r.schemaFor(composite.Schema), name: composite.Name,
+			write: func() { r.renderComposite(composite) }})
 	}
-
-	ranges := append([]schemamodel.Range(nil), r.db.Ranges...)
-	slices.SortFunc(ranges, func(a, b schemamodel.Range) int {
-		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
-	})
-	for _, rangeType := range ranges {
-		r.renderRange(rangeType)
+	for _, rangeType := range r.db.Ranges {
+		entries = append(entries, slotEntry{blockType: blockRange, schema: r.schemaFor(rangeType.Schema), name: rangeType.Name,
+			write: func() { r.renderRange(rangeType) }})
 	}
+	r.renderSlot(hclext.UserTypes, nil, entries...)
 }
 
 func (r *renderer) renderDomain(domain schemamodel.Domain) {
 	domain.Canonicalize()
-	r.linef(`domain %s {`, quote(domain.Name))
+	r.linef(`%s %s {`, blockDomain, quote(domain.Name))
 	if schema := r.schemaFor(domain.Schema); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
@@ -109,7 +105,7 @@ func (r *renderer) renderDomain(domain schemamodel.Domain) {
 
 func (r *renderer) renderComposite(composite schemamodel.CompositeType) {
 	composite.Canonicalize()
-	r.linef(`composite %s {`, quote(composite.Name))
+	r.linef(`%s %s {`, blockComposite, quote(composite.Name))
 	if schema := r.schemaFor(composite.Schema); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
@@ -125,7 +121,7 @@ func (r *renderer) renderComposite(composite schemamodel.CompositeType) {
 
 func (r *renderer) renderRange(rangeType schemamodel.Range) {
 	rangeType.Canonicalize()
-	r.linef(`range %s {`, quote(rangeType.Name))
+	r.linef(`%s %s {`, blockRange, quote(rangeType.Name))
 	if schema := r.schemaFor(rangeType.Schema); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -58,7 +59,8 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	if err != nil {
 		return err
 	}
-	if err := p.rejectNestedBlocks(block, block.Type); err != nil {
+	children, err := p.ownerChildren(block, shape, name)
+	if err != nil {
 		return err
 	}
 	if err := p.rejectUnsupportedAttrs(block, ownerAttributeNames(shape, shape.Block.Naming != hclext.JoinedName), block.Type); err != nil {
@@ -75,8 +77,75 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: -1, references: references,
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values,
-			At: blockAt(block)}}})
+			Children: children, At: blockAt(block)}}})
 	return nil
+}
+
+// ownerChildren reads the blocks nested in block whose type is one of the
+// shape's children, in the document's order: each takes one label, no block
+// nested in it, and only the attributes its child shape lists, each read as
+// its kind. A second child of one type and name is refused at it. Every other
+// nested block is an unknown name, refused or dropped as this package's own
+// are; name names the block in a refusal.
+func (p *parser) ownerChildren(block *hclsyntax.Block, shape hclext.Shape, name string) ([]hclext.ClaimChild, error) {
+	var children []hclext.ClaimChild
+	type key struct{ kind, name string }
+	read := make(map[key]bool)
+	for _, nested := range block.Body.Blocks {
+		index := slices.IndexFunc(shape.Block.Children, func(child hclext.Child) bool { return child.Type == nested.Type })
+		if index < 0 {
+			if err := p.rejectUnsupportedBlock(nested, block.Type); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		child := shape.Block.Children[index]
+		label := block.Type + " " + nested.Type
+		if len(nested.Labels) != 1 {
+			return nil, p.blockError(nested, "%s requires exactly one name label", label)
+		}
+		if read[key{nested.Type, nested.Labels[0]}] {
+			return nil, p.blockError(nested, "%s %q declares %s %q twice", block.Type, name, nested.Type, nested.Labels[0])
+		}
+		read[key{nested.Type, nested.Labels[0]}] = true
+		values, err := p.childValues(nested, child, label)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, hclext.ClaimChild{Type: nested.Type, Name: nested.Labels[0], Attributes: values, At: blockAt(nested)})
+	}
+	return children, nil
+}
+
+// childValues reads a child: it refuses a block nested in it and an attribute
+// its shape does not list, as this package refuses them in its own blocks,
+// and reads each attribute the child writes as its kind. label names the
+// child in a refusal, such as "composite field".
+func (p *parser) childValues(nested *hclsyntax.Block, child hclext.Child, label string) (map[string]hclext.Value, error) {
+	if err := p.rejectNestedBlocks(nested, label); err != nil {
+		return nil, err
+	}
+	supported := make(map[string]bool, len(child.Attributes))
+	for _, attribute := range child.Attributes {
+		supported[attribute.Name] = true
+	}
+	if err := p.rejectUnsupportedAttrs(nested, supported, label); err != nil {
+		return nil, err
+	}
+	values := make(map[string]hclext.Value, len(child.Attributes))
+	for _, attribute := range child.Attributes {
+		if nested.Body.Attributes[attribute.Name] == nil {
+			continue
+		}
+		value, present, err := p.ownerValue(nested, label, attribute)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			values[attribute.Name] = value
+		}
+	}
+	return values, nil
 }
 
 // ownerName reads the schema and the name a block's labels give the object,
@@ -277,7 +346,7 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 		}
 		// Each attribute is evaluated once: a print() call in it prints
 		// once, as it does in a block of this package's own.
-		value, present, err := p.ownerValue(block, attribute)
+		value, present, err := p.ownerValue(block, block.Type, attribute)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -290,15 +359,18 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 
 // ownerValue reads one attribute as its kind: a [hclext.String] through
 // stringAttr, a [hclext.Bool] through optionalBoolPtr, a [hclext.Refs]
-// through referenceList, and a [hclext.Text] through exprString.
-func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) (hclext.Value, bool, error) {
+// through referenceList, a [hclext.TypeName] through typeAttrString, as a
+// column's type is read, a [hclext.SQL] as the SQL of an sql() call or else
+// as Text, and a [hclext.Text] through exprString. label names the block in a
+// refusal.
+func (p *parser) ownerValue(block *hclsyntax.Block, label string, attribute hclext.Attribute) (hclext.Value, bool, error) {
 	attr := block.Body.Attributes[attribute.Name]
 	switch attribute.Kind {
 	case hclext.String:
-		text, err := p.stringAttr(block, attribute.Name, block.Type)
+		text, err := p.stringAttr(block, attribute.Name, label)
 		return hclext.Value{Kind: attribute.Kind, Text: text}, err == nil, err
 	case hclext.Bool:
-		value, err := p.optionalBoolPtr(block, attribute.Name, block.Type)
+		value, err := p.optionalBoolPtr(block, attribute.Name, label)
 		if err != nil || value == nil {
 			return hclext.Value{}, false, err
 		}
@@ -306,6 +378,13 @@ func (p *parser) ownerValue(block *hclsyntax.Block, attribute hclext.Attribute) 
 	case hclext.Refs:
 		references, err := p.referenceList(block, attr, attribute.Refers)
 		return hclext.Value{Kind: attribute.Kind, References: references}, err == nil, err
+	case hclext.TypeName:
+		return hclext.Value{Kind: attribute.Kind, Text: p.typeAttrString(attr)}, true, nil
+	case hclext.SQL:
+		if sql, ok := p.sqlExpression(attr); ok {
+			return hclext.Value{Kind: hclext.SQL, Text: sql}, true, nil
+		}
+		return hclext.Value{Kind: hclext.Text, Text: p.exprString(attr)}, true, nil
 	default:
 		return hclext.Value{Kind: attribute.Kind, Text: p.exprString(attr)}, true, nil
 	}
