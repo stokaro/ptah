@@ -35,9 +35,9 @@ type Command struct {
 	// Format is the stdout format: "sql", "hcl", or "yaml". Empty defaults to
 	// "sql"; "yml" is accepted as an alias for "yaml".
 	Format string
-	// Dialect is an optional dialect hint used when parsing SQL output; the
-	// other formats carry their own type information and need none. Empty
-	// parses the SQL without a dialect hint.
+	// Dialect selects the SQL grammar and the default owner of target-scoped
+	// HCL blocks. A block's explicit dialect takes precedence. YAML carries
+	// its own target scopes. Empty leaves selection to the format reader.
 	Dialect string
 	// Dir is the working directory for the program. Empty uses the current
 	// working directory. A non-empty Dir is also reflected in the program's
@@ -68,7 +68,8 @@ type Formats interface {
 	// ReadSQL reads SQL DDL statements. dialect is a hint, empty for none.
 	ReadSQL(data []byte, dialect string) (*schemamodel.Database, error)
 	// ReadHCL reads an Atlas HCL document, naming it filename in a refusal.
-	ReadHCL(data []byte, filename string) (*schemamodel.Database, error)
+	// dialect selects a scoped block's owner when the block names none.
+	ReadHCL(data []byte, filename, dialect string) (*schemamodel.Database, error)
 }
 
 // Run executes cmd and parses its standard output into a desired schema with
@@ -148,7 +149,7 @@ func parseOutput(formats Formats, data []byte, format, dialect string) (*schemam
 	case "sql":
 		return formats.ReadSQL(data, dialect)
 	case "hcl":
-		return formats.ReadHCL(data, "schema-command.hcl")
+		return formats.ReadHCL(data, "schema-command.hcl", dialect)
 	case "yaml", "yml":
 		return formats.ReadYAML(data)
 	default:

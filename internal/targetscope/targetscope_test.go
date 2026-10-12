@@ -106,3 +106,19 @@ func TestRoutes_Owner_NilRoutesReadNothing(t *testing.T) {
 	c.Assert(found, qt.IsFalse)
 	c.Assert(owner, qt.Equals, 0)
 }
+
+func TestRoutes_CustomTargetsStayDistinct(t *testing.T) {
+	c := qt.New(t)
+	routes := targetscope.New()
+	_, taken := routes.Claim(0, targetscope.Scope{Targets: []string{"custom-one"}, Unscoped: true})
+	c.Assert(taken, qt.IsFalse)
+	_, taken = routes.Claim(1, targetscope.Scope{Targets: []string{"custom-two"}})
+	c.Assert(taken, qt.IsFalse)
+	owner, found, err := routes.Owner([]string{"CUSTOM-TWO"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(owner, qt.Equals, 1)
+	_, found, err = routes.Owner([]string{"typo"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsFalse)
+}

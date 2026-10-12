@@ -3,17 +3,19 @@ package hclext_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 
 	"ptah.run/core/hclext"
 )
 
 // noteReader reads `note` blocks, and declares nothing: the example shows the
 // claims an owner receives.
-type noteReader struct{}
+type noteReader struct{ output io.Writer }
 
-func (noteReader) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
+func (r noteReader) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
 	for _, claim := range request.Claims {
-		fmt.Printf("%s %s.%s: %q\n", claim.Block, claim.Schema, claim.Name, claim.Attributes["text"].Text)
+		fmt.Fprintf(r.output, "%s %s.%s: %q\n", claim.Block, claim.Schema, claim.Name, claim.Attributes["text"].Text)
 	}
 	return hclext.Result{Declarations: make([]hclext.Declaration, len(request.Claims))}, nil
 }
@@ -26,7 +28,7 @@ func ExampleNewSet() {
 		Owner: "example.org/notes",
 		Blocks: []hclext.Block{{Site: hclext.TopLevel, Type: "note", Naming: hclext.SchemaAndName,
 			Attributes: []hclext.Attribute{{Name: "text", Kind: hclext.String}}}},
-		Decoder: noteReader{},
+		Decoder: noteReader{output: os.Stdout},
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -45,4 +47,25 @@ func ExampleNewSet() {
 	// Output:
 	// true
 	// note app.welcome: "hello"
+}
+
+// ExampleSet_ForDialect selects a custom target without changing the
+// unscoped view. Owners publish dialect names as data.
+func ExampleSet_ForDialect() {
+	set, err := hclext.NewSet(hclext.Extension{
+		Owner: "example.org/notes",
+		Blocks: []hclext.Block{{Site: hclext.TopLevel, Type: "note", Naming: hclext.SchemaAndName,
+			Dialects: []string{"custom"}, Attributes: []hclext.Attribute{{Name: "text", Kind: hclext.String}}}},
+		Decoder: noteReader{output: os.Stdout},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	selected := set.ForDialect("CUSTOM")
+	_, scoped := selected.Lookup(hclext.TopLevel, "note")
+	_, unscoped := set.Lookup(hclext.TopLevel, "note")
+	fmt.Println(selected.Dialect(), scoped, unscoped)
+	// Output:
+	// custom true false
 }

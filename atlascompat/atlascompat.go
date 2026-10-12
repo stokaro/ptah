@@ -65,6 +65,11 @@ func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
 
 // ParseHCLOptions configures [ParseAtlasHCLWithOptions].
 type ParseHCLOptions struct {
+	// Dialect selects the default owner of a target-scoped block. A block's
+	// explicit dialect attribute takes precedence. Empty uses the selected
+	// HCL set's default, which is unscoped for a fresh set.
+	Dialect string
+
 	// HCL selects the feature owners whose blocks the document may carry,
 	// usually the HCL set of the caller's runtime, such as a SQL Server
 	// synonym. The zero value selects none, as [ParseAtlasHCL] does.
@@ -78,7 +83,7 @@ func ParseAtlasHCLWithOptions(data []byte, filename string, opts ParseHCLOptions
 	if !owners.Selected() {
 		owners = hclext.None()
 	}
-	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{HCL: owners})
+	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{HCL: owners, Dialect: opts.Dialect})
 }
 
 // ParseSQLOptions configures ParseSQL.

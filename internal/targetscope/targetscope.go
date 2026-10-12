@@ -2,11 +2,12 @@
 // to the feature owner its target scope names: one owner per target, at most
 // one owner for the declarations that name no target, and a scope that names
 // one owner's targets beside others refused. The Go annotation contract,
-// ptah.run/core/annotation, and the YAML one, ptah.run/core/yamlext, both
-// route through it, so a declaration routes alike from either source.
+// ptah.run/core/annotation, the YAML one, ptah.run/core/yamlext, and the HCL
+// one, ptah.run/core/hclext, use the same target selection.
 package targetscope
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -36,7 +37,7 @@ type Conflict struct {
 }
 
 // Scope is what one owner claims: the targets whose declarations it reads,
-// compared as [platform.NormalizeDialect] names them, whether it reads the
+// compared as [Normalize] names them, whether it reads the
 // declarations that name no target, and the label that names its targets in
 // a refusal.
 type Scope struct {
@@ -49,15 +50,15 @@ type Scope struct {
 // claim another owner holds already, and records nothing then.
 func (r *Routes) Claim(owner int, scope Scope) (Conflict, bool) {
 	for _, target := range scope.Targets {
-		if previous, taken := r.targets[platform.NormalizeDialect(target)]; taken && previous != owner {
-			return Conflict{Owner: previous, Target: platform.NormalizeDialect(target)}, true
+		if previous, taken := r.targets[Normalize(target)]; taken && previous != owner {
+			return Conflict{Owner: previous, Target: Normalize(target)}, true
 		}
 	}
 	if scope.Unscoped && r.unscoped >= 0 && r.unscoped != owner {
 		return Conflict{Owner: r.unscoped}, true
 	}
 	for _, target := range scope.Targets {
-		r.targets[platform.NormalizeDialect(target)] = owner
+		r.targets[Normalize(target)] = owner
 	}
 	if scope.Unscoped {
 		r.unscoped = owner
@@ -84,7 +85,7 @@ func (r *Routes) Owner(targets []string) (int, bool, error) {
 	owner := -1
 	var owned, others []string
 	for _, target := range targets {
-		if index, taken := r.targets[platform.NormalizeDialect(target)]; taken && (owner < 0 || owner == index) {
+		if index, taken := r.targets[Normalize(target)]; taken && (owner < 0 || owner == index) {
 			owner = index
 			owned = append(owned, target)
 			continue
@@ -104,4 +105,11 @@ func (r *Routes) Owner(targets []string) (int, bool, error) {
 			label, strings.Join(owned, ","), strings.Join(others, ","))
 	}
 	return owner, true, nil
+}
+
+// Normalize folds built-in aliases to their canonical target name and keeps
+// a custom target's lowercase name. An unknown target must not become the
+// empty target: a spelling the host does not know may belong to a plugin.
+func Normalize(target string) string {
+	return cmp.Or(platform.NormalizeDialect(target), strings.ToLower(strings.TrimSpace(target)))
 }

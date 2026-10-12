@@ -34,6 +34,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/targetscope"
 )
 
 // ErrUnselected is returned for a [Set] nobody built: the zero value. A
@@ -190,6 +191,14 @@ type Block struct {
 	// type elsewhere may then name as `<type>.<label>`; see [TypeName]. Only
 	// a [TopLevel] block declares a type.
 	DeclaresType bool
+	// Dialects selects the targets whose declarations this shape reads.
+	// Empty, with Unscoped false, reads the block for every target. Scoped
+	// shapes may share a top-level block type when their dialects do not
+	// overlap. A scoped block reserves the dialect attribute for selection.
+	Dialects []string
+	// Unscoped also selects this shape when neither the caller nor the
+	// block names a dialect. At most one shape of a block type sets it.
+	Unscoped bool
 }
 
 // Child is the shape of a block nested in an owner's block. It takes one
@@ -233,6 +242,10 @@ type Reference struct {
 
 // Claim is one block of a document an owner's shape matched.
 type Claim struct {
+	// Dialect is the normalized dialect used to select the shape, or empty
+	// when the declaration names none. It selects the model's meaning and
+	// does not narrow the declared object's target scope.
+	Dialect string
 	// Block is the block's type.
 	Block string
 	// Schema is the schema its labels name, or empty for none.
@@ -377,7 +390,7 @@ type Extension struct {
 	CapturedCoverage bool
 	// Coverage is the knowledge every HCL document holds about Kinds, such
 	// as that a document without a synonym block describes a database
-	// without a synonym. An HCL document names no target, so the claim
+	// without a synonym. A document can mix block dialects, so the claim
 	// holds for every document. It is handed the document's header entries
 	// of the Header kinds, its captured header where CapturedCoverage is
 	// set, and the objects the document declares. It is optional; without
@@ -417,9 +430,10 @@ type CoverageRequest struct {
 type Set struct {
 	selected   bool
 	extensions []Extension
-	// blocks holds, for each site and block type, the extension index that
-	// reads it and the block's shape.
-	blocks map[blockKey]shape
+	// blocks holds the dialect routes and immutable shapes for each site
+	// and block type.
+	blocks  map[blockKey]*blockRoutes
+	dialect string
 }
 
 type blockKey struct {
@@ -427,9 +441,10 @@ type blockKey struct {
 	block string
 }
 
-type shape struct {
-	extension int
-	block     Block
+type blockRoutes struct {
+	shapes    map[int]Block
+	scopes    *targetscope.Routes
+	universal int
 }
 
 // None returns a selected set without owners. A parse with it reads the
@@ -444,10 +459,12 @@ func None() Set {
 // [Number] attribute, which only the writer takes, an attribute named twice or
 // named as the naming's own, children or a type declaration on a block that is
 // not top-level, a child without a type, declared twice or under an
-// attribute's name, a child's reference, a block type two extensions read at
-// one site, and an encoder without a model to encode.
+// attribute's name, a child's reference, and an encoder without a model to
+// encode. Shapes at one site may share a block type only with disjoint
+// Dialects and at most one Unscoped reader. Unscoped requires a concrete
+// dialect so exported blocks can select their reader explicitly.
 func NewSet(extensions ...Extension) (Set, error) {
-	set := Set{selected: true, blocks: make(map[blockKey]shape)}
+	set := Set{selected: true, blocks: make(map[blockKey]*blockRoutes)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
@@ -470,14 +487,12 @@ func NewSet(extensions ...Extension) (Set, error) {
 			if err := validateBlock(extension.Owner, block); err != nil {
 				return Set{}, err
 			}
-			key := blockKey{site: block.Site, block: block.Type}
-			if previous, claimed := set.blocks[key]; claimed {
-				return Set{}, fmt.Errorf("%w: HCL %s block %q is read by %s and %s", schemaext.ErrDuplicate, block.Site, block.Type,
-					set.extensions[previous.extension].Owner, extension.Owner)
-			}
 			block.Attributes = slices.Clone(block.Attributes)
 			block.Children = cloneChildren(block.Children)
-			set.blocks[key] = shape{extension: index, block: block}
+			block.Dialects = slices.Clone(block.Dialects)
+			if err := set.claimBlock(index, extension.Owner, block); err != nil {
+				return Set{}, err
+			}
 			blocks = append(blocks, block)
 		}
 		extension.Kinds = slices.Clone(extension.Kinds)
@@ -506,10 +521,13 @@ func validateBlock(owner string, block Block) error {
 	if strings.TrimSpace(block.Type) == "" {
 		return fmt.Errorf("HCL extension of %s declares a block without a type", owner)
 	}
+	if err := validateBlockScope(owner, block); err != nil {
+		return err
+	}
 	if err := validateNaming(owner, block); err != nil {
 		return err
 	}
-	names := map[string]bool{"schema": readsOwnSchema(block.Naming)}
+	names := map[string]bool{"schema": readsOwnSchema(block.Naming), "dialect": scopedBlock(block)}
 	for _, attribute := range block.Attributes {
 		if strings.TrimSpace(attribute.Name) == "" {
 			return fmt.Errorf("HCL block %q of %s declares an attribute without a name", block.Type, owner)
@@ -539,7 +557,7 @@ func validateChildren(owner string, block Block) error {
 		return fmt.Errorf("HCL %s block %q of %s takes children or declares a type, which only a top-level block does",
 			block.Site, block.Type, owner)
 	}
-	taken := map[string]bool{"schema": readsOwnSchema(block.Naming)}
+	taken := map[string]bool{"schema": readsOwnSchema(block.Naming), "dialect": scopedBlock(block)}
 	for _, attribute := range block.Attributes {
 		taken[attribute.Name] = true
 	}
@@ -643,16 +661,22 @@ type Shape struct {
 	// Block is the block's shape.
 	Block     Block
 	extension int
+	dialect   string
 }
 
 // Lookup returns the shape of the block of type an extension reads at site,
-// and false for a block no extension reads there.
+// and false when no extension reads it for the view's default dialect.
+// ForDialect selects that default; a fresh set selects unscoped blocks.
 func (s Set) Lookup(site Site, block string) (Shape, bool) {
-	found, ok := s.blocks[blockKey{site: site, block: block}]
+	routes, ok := s.blocks[blockKey{site: site, block: block}]
 	if !ok {
 		return Shape{}, false
 	}
-	return Shape{Block: found.block, extension: found.extension}, true
+	index, found := routes.owner(s.dialect)
+	if !found {
+		return Shape{}, false
+	}
+	return Shape{Block: routes.shapes[index], extension: index, dialect: s.dialect}, true
 }
 
 // Match is a claim the frontend made for a shape the set returned.
@@ -687,7 +711,9 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 		extension := s.extensions[index]
 		request := Request{Claims: make([]Claim, 0, len(positions[index]))}
 		for _, position := range positions[index] {
-			request.Claims = append(request.Claims, matches[position].Claim)
+			claim := matches[position].Claim
+			claim.Dialect = matches[position].Shape.dialect
+			request.Claims = append(request.Claims, claim)
 		}
 		result, err := extension.Decoder.DecodeHCL(ctx, request)
 		if refused, ok := errors.AsType[*ClaimError](err); ok && refused.Claim >= 0 && refused.Claim < len(request.Claims) {
