@@ -327,7 +327,7 @@ func TestSet_Coverage(t *testing.T) {
 			c := qt.New(t)
 			set := must.Must(sqlext.NewSet(test.extension))
 
-			_, claimed, err := set.Coverage(test.target, nil)
+			_, claimed, err := set.Coverage(test.target, sqlext.CoverageRequest{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(claimed, qt.Equals, test.wantClaimed)

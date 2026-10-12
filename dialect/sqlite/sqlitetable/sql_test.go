@@ -124,7 +124,7 @@ func TestSQL_Coverage(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			claim, claimed, err := set.Coverage(platform.SQLite, test.header)
+			claim, claimed, err := set.Coverage(platform.SQLite, sqlext.CoverageRequest{Limits: test.header})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(claimed, qt.IsTrue)
@@ -136,7 +136,7 @@ func TestSQL_Coverage(t *testing.T) {
 func TestSQL_Coverage_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	claim, claimed, err := sqliteOwners().Coverage(platform.SQLite, []coverage.Object{{Kind: "virtual_table", Name: "docs"}})
+	claim, claimed, err := sqliteOwners().Coverage(platform.SQLite, sqlext.CoverageRequest{Limits: []coverage.Object{{Kind: "virtual_table", Name: "docs"}}})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `coverage of ptah.run/sqlite: .*ptah:not-described virtual_table names "docs"; the directive takes no name in a SQLite document`)
@@ -150,7 +150,7 @@ func TestSQL_ReadsItsHeaderOnSQLiteAlone(t *testing.T) {
 	c := qt.New(t)
 	set := sqliteOwners()
 
-	_, claimed, err := set.Coverage("", nil)
+	_, claimed, err := set.Coverage("", sqlext.CoverageRequest{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(claimed, qt.IsFalse)

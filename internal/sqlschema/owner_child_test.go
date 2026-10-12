@@ -101,7 +101,10 @@ func (markParser) ParseSQL(_ context.Context, request sqlext.Request) (sqlext.Re
 
 // markRuntime registers target "postgres" alone, with the mark owner's
 // statements, so nothing but the shared grammar and this owner reads.
-func markRuntime() *engine.Runtime {
+func markRuntime() *engine.Runtime { return markRuntimeWithCoverage(nil) }
+
+// markRuntimeWithCoverage adds the owner's claim to its statement reader.
+func markRuntimeWithCoverage(claim func(sqlext.CoverageRequest) (schemaext.Coverage, error)) *engine.Runtime {
 	codec := func(prototype schemaext.Value) schemaext.Codec {
 		return schemaext.Codec{Prototype: prototype, Representation: schemaext.Desired, Version: 1,
 			Definition: json.RawMessage(`{"type":"object"}`),
@@ -128,7 +131,8 @@ func markRuntime() *engine.Runtime {
 				{Name: "note", Site: sqlext.Statement, Words: []string{"NOTE", "ON", "MARK"}},
 				{Name: "stamp", Site: sqlext.Statement, Words: []string{"STAMP", "TABLE"}},
 			},
-			Parser: markParser{},
+			Parser:   markParser{},
+			Coverage: claim,
 		}},
 	}))
 }
@@ -277,4 +281,25 @@ func TestReadWith_DropTableRemovesItsChildren(t *testing.T) {
 	c.Assert(refs[0].Name.Source, qt.Equals, "n")
 	c.Assert(database.FeatureCoverage.SubjectRecords(), qt.ContentEquals, subjects[3:])
 	c.Assert(database.FeatureCoverage.KindRecords(), qt.ContentEquals, kinds)
+}
+
+// TestReadWith_CoverageUsesTheAppliedDeclarations gives the coverage owner
+// the final objects, with comments applied and dropped table children absent.
+func TestReadWith_CoverageUsesTheAppliedDeclarations(t *testing.T) {
+	c := qt.New(t)
+	var declarations [][]schemaext.Object
+	runtime := markRuntimeWithCoverage(func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+		all, err := request.Declared.All()
+		declarations = append(declarations, all)
+		return schemaext.Coverage{}, err
+	})
+	source := "CREATE TABLE orders (id int); CREATE MARK m ON orders; DROP TABLE orders; " +
+		"CREATE TABLE lines (id int); CREATE MARK n ON public.lines; NOTE ON MARK n ON lines 'checked';"
+
+	database, _, err := sqlschema.ReadWith(t.Context(), []byte(source), "postgres", nil,
+		sqlschema.Options{Owners: runtime.SQL(), Relations: runtime})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(declarations, qt.DeepEquals, [][]schemaext.Object{{{Ref: markRef("lines", "n"), Value: &mark{Note: "checked"}}}})
+	c.Assert(database.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{markRef("lines", "n")})
 }

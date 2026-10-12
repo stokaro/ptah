@@ -594,24 +594,25 @@ func checkStatementValue(extension Extension, claim Claim, value Value) error {
 }
 
 // Coverage combines the claims of the extensions that read documents of
-// target, each handed the entries of header whose kind it reads, and reports
-// whether any of them claims something. A document that names no target
+// target, each handed the header entries whose kind it reads and the declared
+// objects. It reports whether any extension claims something. A document
+// that names no target
 // claims what an extension claims only where it reads all of that
 // extension's syntax; see [claimsFor].
-func (s Set) Coverage(target string, header []coverage.Object) (schemaext.Coverage, bool, error) {
+func (s Set) Coverage(target string, document CoverageRequest) (schemaext.Coverage, bool, error) {
 	var combined schemaext.Coverage
 	claimed := false
 	for _, extension := range s.extensions {
 		if !claimsFor(extension, target) || extension.Coverage == nil {
 			continue
 		}
-		var limits []coverage.Object
-		for _, entry := range header {
+		request := CoverageRequest{Declared: document.Declared}
+		for _, entry := range document.Limits {
 			if containsKind(extension.Header, entry.Kind) {
-				limits = append(limits, entry)
+				request.Limits = append(request.Limits, entry)
 			}
 		}
-		claim, err := extension.Coverage(limits)
+		claim, err := extension.Coverage(request)
 		if err != nil {
 			return schemaext.Coverage{}, false, fmt.Errorf("coverage of %s: %w", extension.Owner, err)
 		}

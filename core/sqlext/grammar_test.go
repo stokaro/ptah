@@ -21,7 +21,7 @@ func (emptyGrammar) ReadSQL(context.Context, sqlext.GrammarRequest) (sqlext.Gram
 }
 
 // noClaim claims an empty desired coverage whatever the header says.
-func noClaim([]coverage.Object) (schemaext.Coverage, error) {
+func noClaim(sqlext.CoverageRequest) (schemaext.Coverage, error) {
 	return schemaext.NewCoverage(schemaext.Desired, nil, nil)
 }
 
@@ -86,10 +86,10 @@ func TestSet_ReadsHeader(t *testing.T) {
 func TestSet_Coverage_HandsEachOwnerItsHeaderEntries(t *testing.T) {
 	c := qt.New(t)
 	var first, second []coverage.Object
-	recording := func(into *[]coverage.Object) func([]coverage.Object) (schemaext.Coverage, error) {
-		return func(limits []coverage.Object) (schemaext.Coverage, error) {
-			*into = limits
-			return noClaim(limits)
+	recording := func(into *[]coverage.Object) func(sqlext.CoverageRequest) (schemaext.Coverage, error) {
+		return func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+			*into = request.Limits
+			return noClaim(request)
 		}
 	}
 	set := must.Must(sqlext.NewSet(
@@ -98,7 +98,7 @@ func TestSet_Coverage_HandsEachOwnerItsHeaderEntries(t *testing.T) {
 	))
 	header := []coverage.Object{{Kind: "Secret", Name: "s"}, {Kind: "topic", Name: "t"}, {Kind: "secret"}}
 
-	_, claimed, err := set.Coverage("a", header)
+	_, claimed, err := set.Coverage("a", sqlext.CoverageRequest{Limits: header})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(claimed, qt.IsTrue)
@@ -115,4 +115,29 @@ func TestFileError(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `schema/b.sql: refused`)
 	c.Assert(err, qt.ErrorIs, reason)
+}
+
+// TestSet_Coverage_HandsOwnersTheDeclarations lets each owner derive its
+// claim from the document's objects, including objects from another owner.
+func TestSet_Coverage_HandsOwnersTheDeclarations(t *testing.T) {
+	c := qt.New(t)
+	var requests []sqlext.CoverageRequest
+	record := func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+		requests = append(requests, request)
+		return noClaim(request)
+	}
+	set := must.Must(sqlext.NewSet(
+		sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"}, Coverage: record},
+		sqlext.Extension{Owner: "example.org/b", Targets: []string{"a"}, Coverage: record},
+	))
+	objects := must.Must(schemaext.NewObjects(gadgetObject(gadgetKind, "local"), gadgetObject("example.org/b/other", "foreign")))
+
+	_, claimed, err := set.Coverage("a", sqlext.CoverageRequest{Declared: objects})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(claimed, qt.IsTrue)
+	c.Assert(requests, qt.HasLen, 2)
+	for _, request := range requests {
+		c.Assert(must.Must(request.Declared.All()), qt.DeepEquals, must.Must(objects.All()))
+	}
 }

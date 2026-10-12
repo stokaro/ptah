@@ -295,9 +295,21 @@ type Extension struct {
 	// Coverage is the knowledge a document of one of Targets holds about the
 	// owner's models, such as the refresh schedule a ClickHouse materialized
 	// view states in its CREATE statement. It is handed the entries of the
-	// document's header whose kind is one of Header. It is optional; without
-	// it the owner claims nothing.
-	Coverage func(limits []coverage.Object) (schemaext.Coverage, error)
+	// document's header whose kind is one of Header, and the objects the
+	// document declares. It is optional; without it the owner claims nothing.
+	Coverage func(request CoverageRequest) (schemaext.Coverage, error)
+}
+
+// CoverageRequest is the document's input to an owner's coverage claim.
+type CoverageRequest struct {
+	// Limits are the header's ptah:not-described entries of the owner's
+	// Header kinds, in their written order.
+	Limits []coverage.Object
+	// Declared are the objects the document declares after its statements
+	// are applied. A grammar that reads several files receives the whole
+	// load's declarations for each file's claim. Owners can use these
+	// objects to distinguish omission from a default implied by a declaration.
+	Declared schemaext.Objects
 }
 
 // Runtime supplies the SQL extensions of one explicit provider selection, so

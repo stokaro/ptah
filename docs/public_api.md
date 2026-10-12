@@ -3064,7 +3064,12 @@ document that names no target makes it only when every pattern of the
 extension, at least one, is untargeted, because such a document can write all
 the extension reads. It is handed the entries of the document's
 `ptah:not-described` header whose kind is one of `Extension.Header`, such as a
-YDB topic the document leaves unmanaged.
+YDB topic the document leaves unmanaged. Its `CoverageRequest.Declared` holds
+all objects the document declares after its statements are applied, including
+amendments and removal of a dropped table's children. An owner can derive a
+default from these declarations, such as leaving the switches of a table with
+policies unspecified. A grammar that reads a whole load receives the final
+objects of that load for each file's claim, with each file's own header limits.
 
 An owner whose target is not written in the shared grammar registers a
 `Grammar` instead of patterns, and one target takes one grammar. The reader

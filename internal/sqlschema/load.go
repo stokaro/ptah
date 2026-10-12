@@ -98,10 +98,11 @@ func describeLoad(database *schemamodel.Database, files []sqlext.SourceFile, dia
 	}
 	var described schemamodel.Database
 	for _, file := range files {
-		var header schemamodel.Database
+		header := schemamodel.Database{FeatureObjects: database.FeatureObjects}
 		if err := describe(&header, []byte(file.Text), dialect, opts); err != nil {
 			return &sqlext.FileError{Path: file.Path, Err: err}
 		}
+		header.FeatureObjects = schemaext.Objects{}
 		if err := schemamerge.Append(&described, &header); err != nil {
 			return &sqlext.FileError{Path: file.Path, Err: err}
 		}

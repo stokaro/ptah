@@ -23,11 +23,13 @@ type wholeGrammar struct {
 	requests *[]sqlext.GrammarRequest
 	// answer returns the declarations the owner answers for the request.
 	answer func(sqlext.GrammarRequest) []sqlext.FileDeclarations
+	// objects are the owner's final declarations after the whole script.
+	objects schemaext.Objects
 }
 
 func (g wholeGrammar) ReadSQL(_ context.Context, request sqlext.GrammarRequest) (sqlext.GrammarResult, error) {
 	*g.requests = append(*g.requests, request)
-	var result sqlext.GrammarResult
+	result := sqlext.GrammarResult{Database: schemamodel.Database{FeatureObjects: g.objects}}
 	for _, file := range request.Files {
 		name := "from_" + file.Path
 		result.Database.Tables = append(result.Database.Tables, schemamodel.Table{Name: name, StructName: name})
@@ -58,8 +60,8 @@ func grammarRuntime(grammar wholeGrammar, limits *[][]coverage.Object) *engine.R
 			Targets: []string{"custom"},
 			Grammar: grammar,
 			Header:  []coverage.Kind{"widget"},
-			Coverage: func(handed []coverage.Object) (schemaext.Coverage, error) {
-				*limits = append(*limits, handed)
+			Coverage: func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+				*limits = append(*limits, request.Limits)
 				return schemaext.NewCoverage(schemaext.Desired, nil, nil)
 			},
 		}},
@@ -209,4 +211,49 @@ func tableNames(database schemamodel.Database) []string {
 		names = append(names, table.Name)
 	}
 	return names
+}
+
+// TestReadLoad_CoverageUsesTheWholeLoadsDeclarations keeps a grammar's
+// final objects available to every file's claim while header limits remain
+// specific to the file, for a single file and for a directory.
+func TestReadLoad_CoverageUsesTheWholeLoadsDeclarations(t *testing.T) {
+	tests := []struct {
+		name       string
+		files      []sqlext.SourceFile
+		wantLimits [][]coverage.Object
+	}{
+		{name: "one file", files: []sqlext.SourceFile{{Path: "a.sql", Text: "-- ptah:not-described widget \"w1\"\nanything"}},
+			wantLimits: [][]coverage.Object{{{Kind: "widget", Name: "w1"}}}},
+		{name: "directory", files: []sqlext.SourceFile{{Path: "a.sql", Text: "-- ptah:not-described widget \"w1\"\nanything"},
+			{Path: "b.sql", Text: "anything else"}}, wantLimits: [][]coverage.Object{{{Kind: "widget", Name: "w1"}}, nil}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var parses []sqlext.GrammarRequest
+			var claims []sqlext.CoverageRequest
+			objects := must.Must(schemaext.NewObjects(widgetObject("final", "amended")))
+			runtime := must.Must(engine.New(engine.Provider{
+				ID: "example.org/custom", Targets: []engine.Target{{Name: "custom"}},
+				SQL: []sqlext.Extension{{Owner: "example.org/custom", Targets: []string{"custom"},
+					Grammar: wholeGrammar{requests: &parses, answer: echoFiles, objects: objects}, Header: []coverage.Kind{"widget"},
+					Coverage: func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+						claims = append(claims, request)
+						return schemaext.NewCoverage(schemaext.Desired, nil, nil)
+					},
+				}},
+			}))
+
+			load, err := sqlschema.ReadLoad(t.Context(), sqlext.GrammarRequest{Target: "custom", Files: test.files},
+				sqlschema.Options{Owners: runtime.SQL()})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(claims, qt.HasLen, len(test.files))
+			for i, claim := range claims {
+				c.Assert(widgetComments(c, claim.Declared), qt.DeepEquals, map[string]string{"final": "amended"})
+				c.Assert(claim.Limits, qt.DeepEquals, test.wantLimits[i])
+			}
+			c.Assert(widgetComments(c, load.Database.FeatureObjects), qt.DeepEquals, map[string]string{"final": "amended"})
+		})
+	}
 }

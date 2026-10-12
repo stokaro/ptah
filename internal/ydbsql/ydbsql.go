@@ -8,7 +8,6 @@ package ydbsql
 import (
 	"context"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
@@ -43,9 +42,9 @@ func (grammar) ReadSQL(ctx context.Context, request sqlext.GrammarRequest) (sqle
 
 // claim enrolls the namespaces a YQL document can declare, less the objects
 // limits leave unmanaged.
-func claim(limits []coverage.Object) (schemaext.Coverage, error) {
+func claim(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
 	var recorded ydbsource.Limits
-	for _, limit := range limits {
+	for _, limit := range request.Limits {
 		recorded.Add(string(limit.Kind), limit.Name)
 	}
 	return ydbsource.Coverage(recorded)

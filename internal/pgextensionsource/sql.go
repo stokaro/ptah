@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -56,7 +55,7 @@ func SQL() sqlext.Extension {
 			{Name: sqlAlter, Site: sqlext.Statement, Words: []string{"ALTER", "EXTENSION"}},
 		},
 		Parser: sqlParser{},
-		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
+		Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) {
 			return pgextension.CompleteCoverage(schemaext.Desired)
 		},
 	}
