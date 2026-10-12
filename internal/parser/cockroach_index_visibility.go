@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/lexer"
 )
 
@@ -60,18 +59,17 @@ func (p *Parser) cockroachVisibilityAt() (read bool, err error) {
 }
 
 // readTableElementOptions reads the options after the parts of a CREATE TABLE
-// element: the MySQL family's (see [Parser.readKeyOptions]), whose access
-// method, comment and block-size hint a primary key keeps on its constraint,
-// and the visibility clause that
-// may end a CockroachDB index. Any other dialect, and
-// any other element, reads no visibility here; the table element reports what
-// it cannot read.
+// element: the MySQL family's and the owners' (see [Parser.readKeyOptions]),
+// whose access method, comment and owners' options a primary key keeps on its
+// constraint, and the visibility clause that may end a CockroachDB index. Any
+// other dialect, and any other element, reads no visibility here; the table
+// element reports what it cannot read.
 //
 // CREATE INDEX does not come here: CockroachDB takes the clause there after
 // INCLUDE and WHERE, so reading it after the parts would accept `NOT VISIBLE
 // WHERE ...`, which the server refuses.
 func (p *Parser) readTableElementOptions(constraint *ast.ConstraintNode, kind, prefix string) error {
-	if err := p.readKeyOptions(kind, prefix); err != nil {
+	if err := p.readKeyOptions(kind, constraint.Name, prefix); err != nil {
 		return err
 	}
 	if kind == primaryKeyElement {
@@ -79,13 +77,9 @@ func (p *Parser) readTableElementOptions(constraint *ast.ConstraintNode, kind, p
 			constraint.UsingMethod = p.keyOptions.primaryKeyMethod
 		}
 		constraint.Comment = p.keyOptions.comment
-		// The hint is the MySQL owner's setting of the key, as it is of an
-		// index (see [Parser.withIndexBlockSize]).
-		facets, err := mysqlschema.WithIndexBlockSize(constraint.Facets, p.keyOptions.keyBlockSize)
-		if err != nil {
-			return fmt.Errorf("primary key: %w", err)
-		}
-		constraint.Facets = facets
+		// An owner's option of the key, such as MySQL's KEY_BLOCK_SIZE, is
+		// its setting of the key, as it is of an index.
+		p.keyOptions.hold(&constraint.Facets, "primary key")
 	}
 	if p.dialect != platform.CockroachDB || kind != indexElement {
 		return nil

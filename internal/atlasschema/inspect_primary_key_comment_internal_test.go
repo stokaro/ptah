@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
 )
@@ -48,7 +47,8 @@ func TestRenderInspectSchema_PreservesPrimaryKeyComment(t *testing.T) {
 					}},
 				}
 
-				result, err := renderInspectSchema(c.Context(), current, catalog.ServerInfo{Dialect: dialect}, InspectOptions{Runtime: inspectFeatureRuntime(c), Format: "sql"})
+				runtime := inspectFeatureRuntime(c)
+				result, err := renderInspectSchema(c.Context(), current, catalog.ServerInfo{Dialect: dialect}, InspectOptions{Runtime: runtime, Format: "sql"})
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(result.Rendered, qt.Contains, "COMMENT 'account identity'")
@@ -58,9 +58,10 @@ func TestRenderInspectSchema_PreservesPrimaryKeyComment(t *testing.T) {
 				size, _, err := mysqlschema.IndexBlockSize(result.Schema.Tables[0].PrimaryKeyFacets)
 				c.Assert(err, qt.IsNil)
 				c.Assert(size, qt.Equals, test.size)
-				desired, _, err := sqlschema.Read([]byte(result.Rendered), dialect)
+				desired, _, err := sqlschema.ReadWith(c.Context(), []byte(result.Rendered), dialect, nil,
+					sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary()})
 				c.Assert(err, qt.IsNil)
-				c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, current, dialect, must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
+				c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, current, dialect, runtime)).HasChanges(), qt.IsFalse)
 			})
 		}
 	}

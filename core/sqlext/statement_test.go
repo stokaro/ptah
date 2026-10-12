@@ -156,6 +156,8 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with a statement's value`},
 		{name: "an index at a column option", site: sqlext.ColumnOption, value: sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its column-option claim "gadget" with an index or an operation, which the site does not take`},
+		{name: "an operation at an index option", site: sqlext.IndexOption, value: sqlext.Value{Operation: &gadgetStatement{}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its index-option claim "gadget" with an index or an operation, which the site does not take`},
 		{name: "a facet of a kind the extension does not declare", site: sqlext.ColumnOption,
 			value:   sqlext.Value{Facets: must.Must(schemaext.NewFacets(&label{kind: "example.org/a/other"}))},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered a facet of kind "example.org/a/other", which its extension does not declare`},

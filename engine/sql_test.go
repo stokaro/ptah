@@ -175,6 +175,18 @@ func TestRuntimeSQL_AFeatureOwnerReadsItsFacets(t *testing.T) {
 	c.Assert(runtime.SQL().Candidates("custom", sqlext.ColumnOption), qt.HasLen, 1)
 }
 
+// TestRuntimeSQL_AFeatureOwnerReadsItsIndexOptions pins that an option after
+// a key's parts sets facets alone, so a feature owner reads one on a target
+// another provider registers as it reads a column option.
+func TestRuntimeSQL_AFeatureOwnerReadsItsIndexOptions(t *testing.T) {
+	c := qt.New(t)
+
+	runtime := mustRuntime(c, hostProvider(), facetReader([]schemaext.Kind{conversionFirst}, []string{"custom"},
+		sqlext.Pattern{Name: "packed", Site: sqlext.IndexOption, Words: []string{"PACKED"}}))
+
+	c.Assert(runtime.SQL().Candidates("custom", sqlext.IndexOption), qt.HasLen, 1)
+}
+
 // TestRuntimeSQL_AFacetOwnerReadsNothingElse pins what an owner that does not
 // register a target may not read there through facets: a kind it does not
 // compare on that target, a kind whose codec it does not own, a kind another

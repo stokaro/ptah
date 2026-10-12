@@ -205,10 +205,13 @@ func TestCompareSchemas_IndexBlockSize(t *testing.T) {
 	}
 }
 
-// readDeclaration reads one SQL declaration for dialect.
+// readDeclaration reads one SQL declaration for dialect with the bundled
+// runtime's SQL owners, whose syntax and claims a document carries.
 func readDeclaration(c *qt.C, sql, dialect string) schemamodel.Database {
 	c.Helper()
-	db, _, err := sqlschema.Read([]byte(sql), dialect)
+	runtime := builtintest.Runtime()
+	db, _, err := sqlschema.ReadWith(c.Context(), []byte(sql), dialect, nil,
+		sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary()})
 	c.Assert(err, qt.IsNil)
 	return db
 }

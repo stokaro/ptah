@@ -2,13 +2,13 @@ package parser
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/mysqlindex"
 )
 
 // enforcement is what `ENFORCED` and `NOT ENFORCED` said about one
@@ -314,57 +314,123 @@ func takesMatch(dialect string) bool {
 	}
 }
 
-// readKeyOptions reads the MySQL family's index options after a key's parts,
-// in any order, and refuses by name the ones the model cannot keep. kind is
-// the element the options follow and prefix its FULLTEXT or SPATIAL prefix,
-// empty for none.
+// readKeyOptions reads the options after a key's parts, in any order. kind is
+// the element the options follow, name the key's name as the document writes
+// it, and prefix its FULLTEXT or SPATIAL prefix, empty for none.
 //
-// `USING BTREE | HASH` is the access method `KEY k USING HASH (a)` asks for
-// before the parts, and the later clause wins: MariaDB 11.8 builds `KEY k USING
-// BTREE (a) USING HASH` as HASH. A `COMMENT` and the visibility of the index
-// are kept on p.keyOptions; see [Parser.readKeyVisibility]. The rest declare
-// what the model has no field for; see [refuseKeyOption]. Other dialects take
-// none of these, and a document read as one of them leaves them to the end of
-// the table element.
-func (p *Parser) readKeyOptions(kind, prefix string) error {
-	if !p.readsKeyOptions() || (kind != primaryKeyElement && kind != uniqueElement && kind != indexElement) {
+// The MySQL family's options the shared grammar reads are listed once, in
+// [Parser.keyOptionReader]. `USING BTREE | HASH` is the access method `KEY k
+// USING HASH (a)` asks for before the parts, and the later clause wins:
+// MariaDB 11.8 builds `KEY k USING BTREE (a) USING HASH` as HASH. A `COMMENT`
+// and the visibility of the index are kept on p.keyOptions; see
+// [Parser.readKeyVisibility]. An engine attribute is refused by name. An
+// owner's option, such as MySQL's KEY_BLOCK_SIZE, is claimed for the owner;
+// see [Parser.claimOwnerIndexOption]. A version guard among the options is
+// read as the options it holds; see [Parser.readGuardedKeyOptions]. A
+// document of another dialect reads only the owners' options here, and
+// leaves the rest to the end of the table element.
+func (p *Parser) readKeyOptions(kind, name, prefix string) error {
+	if kind != primaryKeyElement && kind != uniqueElement && kind != indexElement {
 		return nil
 	}
 	for {
-		p.skipWhitespace()
-		start := p.current.Start
-		keyword := strings.ToUpper(p.current.Value)
-		if p.current.Type != lexer.TokenIdentifier {
+		p.skipSpaceBeforeGuard()
+		if p.current.Type == lexer.TokenUnknown {
+			if err := p.readGuardedKeyOptions(kind, name, prefix); err != nil {
+				return err
+			}
+			continue
+		}
+		if p.claimOwnerIndexOption(name, prefix) {
+			continue
+		}
+		read, known := p.keyOptionReader()
+		if !known || !p.readsKeyOptions() {
 			return nil
 		}
-		var err error
-		switch {
-		case keyword == "USING" && !p.nextIsWord("INDEX"):
-			err = p.readKeyMethod(kind, prefix, start)
-		case keyword == "KEY_BLOCK_SIZE":
-			err = p.readKeyBlockSize(start)
-		case keyword == "COMMENT":
-			err = p.readKeyComment()
-		case p.atVisibilityWord(keyword):
-			err = p.readKeyVisibility(kind, keyword, start)
-		default:
-			return refuseKeyOption(keyword, start)
-		}
-		if err != nil {
+		if err := read(kind, prefix, p.current.Start); err != nil {
 			return err
 		}
 	}
+}
+
+// keyOptionReader answers the reader of the key option the current token
+// opens, of those the shared grammar reads, and whether it opens one. It is
+// the one list of them: [Parser.readKeyOptions] dispatches through it, and an
+// owner's option ends where it answers true, so the two cannot disagree.
+func (p *Parser) keyOptionReader() (func(kind, prefix string, start int) error, bool) {
+	if p.current.Type != lexer.TokenIdentifier {
+		return nil, false
+	}
+	keyword := strings.ToUpper(p.current.Value)
+	switch {
+	case keyword == "USING" && !p.nextIsWord("INDEX"):
+		return p.readKeyMethod, true
+	case keyword == "COMMENT":
+		return func(string, string, int) error { return p.readKeyComment() }, true
+	case p.atVisibilityWord(keyword):
+		return func(kind, _ string, start int) error { return p.readKeyVisibility(kind, keyword, start) }, true
+	case keyword == "ENGINE_ATTRIBUTE" || keyword == "SECONDARY_ENGINE_ATTRIBUTE":
+		// Measured on MySQL 8.4 and MariaDB 11.8, an engine attribute is
+		// stored with the index, and the model has no field for it.
+		return func(_, _ string, start int) error {
+			return fmt.Errorf("%s at position %d: an engine attribute of an index is not modeled; declare the key without it",
+				keyword, start)
+		}, true
+	default:
+		return nil, false
+	}
+}
+
+// readGuardedKeyOptions reads the version guard at the cursor, among a key's
+// options, as the options its body holds, at their own positions in the
+// document. MySQL 8.4's SHOW CREATE TABLE writes two options that way, after
+// any other: `FULLTEXT KEY ft (bio) COMMENT 'x' /*!80000 INVISIBLE */
+// /*!50100 WITH PARSER ngram */`. So every guard among the options is read,
+// not only the last. A guard whose body opens with no key option is stepped
+// over, as a guard is anywhere else; one whose body opens with an option
+// holds nothing else.
+//
+// The body is read in place: the parser reads it through a lexer over the
+// guard's text and returns to the document's lexer after it, so the options
+// and any owner's claim land where they stand.
+func (p *Parser) readGuardedKeyOptions(kind, name, prefix string) error {
+	guard := p.current
+	start, end, ok := executableCommentBody(guard.Value)
+	if !ok {
+		p.advance()
+		return nil
+	}
+	outer, current, previous := p.lexer, p.current, p.previous
+	p.lexer = outer.Range(guard.Start+start, guard.Start+end)
+	p.advance()
+	p.skipWhitespace()
+	var err error
+	if p.opensNextOption(sqlext.IndexOption) {
+		err = p.readKeyOptions(kind, name, prefix)
+		if err == nil && !p.isAtEnd() {
+			err = fmt.Errorf("%s at position %d: a version guard among a key's options holds only key options",
+				p.current.Value, p.current.Start)
+		}
+	}
+	p.lexer, p.current, p.previous = outer, current, previous
+	if err != nil {
+		return err
+	}
+	p.advance()
+	return nil
 }
 
 // keyOptions are the options after a key's parts that the index model keeps.
 // They belong to the element being read, which resets them before it reads its
 // parts.
 type keyOptions struct {
-	keyBlockSize    uint64
-	hasKeyBlockSize bool
-	comment         string
-	hasComment      bool
-	invisible       bool
+	comment    string
+	hasComment bool
+	invisible  bool
+	// facets is where the owners' options of the key land, nil when no owner
+	// claimed one.
+	facets *keyFacets
 	// primaryKeyMethod is the `USING HASH` after a primary key's parts, which
 	// the table element carries onto its constraint; see
 	// [Parser.readTableElementOptions].
@@ -372,9 +438,42 @@ type keyOptions struct {
 }
 
 // carriesIndexOptions reports whether the element asked for something only an
-// index can hold.
+// index can hold: a comment, a visibility, or an owner's option.
 func (o keyOptions) carriesIndexOptions() bool {
-	return o.hasComment || o.invisible || o.hasKeyBlockSize
+	return o.hasComment || o.invisible || o.facets != nil
+}
+
+// hold points the owners' options of the key at the node the element built,
+// the index or the PRIMARY KEY constraint, which label names in an error. An
+// element no owner's option was claimed for holds nothing.
+func (o keyOptions) hold(node *schemaext.Facets, label string) {
+	if o.facets != nil {
+		o.facets.node, o.facets.label = node, label
+	}
+}
+
+// keyFacets is where the owners' options of one key land. The owners read
+// their claims once the document is parsed, and the element decides after its
+// options whether it builds an index or a PRIMARY KEY constraint, so a claim
+// holds this and the element points it at the node it built.
+type keyFacets struct {
+	node  *schemaext.Facets
+	label string
+}
+
+// merge adds an owner's facets to the key's node.
+func (k *keyFacets) merge(value sqlext.Value) error {
+	if k.node == nil {
+		// Every element that reads options builds an index or a PRIMARY KEY
+		// constraint and holds them, so this is a defect of the reader.
+		return fmt.Errorf("%w: an owner's key option reached no key", schemaext.ErrInvalidValue)
+	}
+	merged, err := k.node.Merge(value.Facets)
+	if err != nil {
+		return fmt.Errorf("%s: %w", k.label, err)
+	}
+	*k.node = merged
+	return nil
 }
 
 // readKeyComment reads `COMMENT 'text'` after a key's parts, which MySQL 8.4.11
@@ -455,39 +554,5 @@ func (p *Parser) readKeyMethod(kind, prefix string, start int) error {
 	// MariaDB 11.8.9 keeps it, INDEX_TYPE HASH, and MySQL 8.4.11 builds BTREE on
 	// InnoDB; see [mysqlindex.MethodSatisfiedBy] for how each is compared.
 	p.keyOptions.primaryKeyMethod = method
-	return nil
-}
-
-// refuseKeyOption refuses an index option the model has no field for, by
-// name, and answers nil for a word that is not one. Measured on MySQL 8.4 and
-// MariaDB 11.8, an engine attribute is stored with the index.
-func refuseKeyOption(keyword string, start int) error {
-	var what string
-	switch keyword {
-	case "ENGINE_ATTRIBUTE", "SECONDARY_ENGINE_ATTRIBUTE":
-		what = "an engine attribute of an index is not modeled"
-	default:
-		return nil
-	}
-	return fmt.Errorf("%s at position %d: %s; declare the key without it", keyword, start, what)
-}
-
-// readKeyBlockSize reads the optional equals sign and the unsigned index hint.
-func (p *Parser) readKeyBlockSize(start int) error {
-	p.advance()
-	p.skipWhitespace()
-	if p.current.MatchOperatorValue("=") {
-		p.advance()
-		p.skipWhitespace()
-	}
-	size, err := strconv.ParseUint(p.current.Value, 10, 64)
-	if err != nil {
-		return fmt.Errorf("KEY_BLOCK_SIZE at position %d: expected a non-negative integer", start)
-	}
-	if err := mysqlindex.ValidateBlockSize(p.dialect, size); err != nil {
-		return err
-	}
-	p.keyOptions.keyBlockSize, p.keyOptions.hasKeyBlockSize = size, true
-	p.advance()
 	return nil
 }

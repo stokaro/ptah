@@ -12,7 +12,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
@@ -23,7 +22,7 @@ func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
 		} {
 			t.Run(dialect+"/"+sql, func(t *testing.T) {
 				c := qt.New(t)
-				db, _, err := sqlschema.Read([]byte(sql), dialect)
+				db, _, err := readWithOwners([]byte(sql), dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(primaryKeyBlockSize(c, db.Tables[0]), qt.Equals, uint64(8))
 				c.Assert(db.Tables[0].PrimaryKeyComment, qt.Equals, "lookup")

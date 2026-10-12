@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 // The same hint must survive each SQL entry point and a render/read round trip.
@@ -28,13 +27,13 @@ func TestRead_IndexBlockSize_HappyPath(t *testing.T) {
 		} {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
-				db, _, err := sqlschema.Read([]byte(test.sql), dialect)
+				db, _, err := readWithOwners([]byte(test.sql), dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(db.Indexes, qt.HasLen, 1)
 				c.Assert(blockSize(c, db.Indexes[0].Facets), qt.Equals, test.size)
 				statements, err := builtin.GetOrderedCreateStatements(&db, dialect)
 				c.Assert(err, qt.IsNil)
-				again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), dialect)
+				again, _, err := readWithOwners([]byte(strings.Join(statements, "\n")), dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(again.Indexes, qt.HasLen, 1)
 				c.Assert(blockSize(c, again.Indexes[0].Facets), qt.Equals, test.size)
@@ -47,7 +46,7 @@ func TestRead_IndexBlockSize_FailurePath(t *testing.T) {
 	for _, value := range []string{"-1", "'8'", "1.5", "18446744073709551616", ""} {
 		t.Run(value, func(t *testing.T) {
 			c := qt.New(t)
-			_, _, err := sqlschema.Read([]byte("CREATE TABLE t(a int, KEY k(a) KEY_BLOCK_SIZE="+value+")"), "mysql")
+			_, _, err := readWithOwners([]byte("CREATE TABLE t(a int, KEY k(a) KEY_BLOCK_SIZE="+value+")"), "mysql")
 			c.Assert(err, qt.ErrorMatches, `(?s).*KEY_BLOCK_SIZE.*expected a non-negative integer.*`)
 		})
 	}

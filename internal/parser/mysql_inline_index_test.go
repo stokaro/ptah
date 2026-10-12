@@ -9,10 +9,11 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// parsedTable parses one CREATE TABLE and returns the node.
+// parsedTable parses one CREATE TABLE as a MySQL document, with the MySQL
+// owner's options, and returns the node.
 func parsedTable(c *qt.C, sql string) *ast.CreateTableNode {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect("mysql")).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect("mysql"), withMySQLOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements.Statements {
 		table, ok := statement.(*ast.CreateTableNode)

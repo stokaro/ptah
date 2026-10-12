@@ -216,6 +216,15 @@ func NewLexerWithOptions(input string, opts Options) *Lexer {
 	}
 }
 
+// Range returns a lexer over the input between start and end, with this
+// lexer's options. Its tokens report positions in the whole input, so a
+// reader can scan text inside one token, such as the body of an executable
+// comment, and still name positions in the document. The range is read as
+// text after the head of the input, where YQL reads no translation setting.
+func (l *Lexer) Range(start, end int) *Lexer {
+	return &Lexer{input: l.input[:end], pos: start, start: start, opts: l.opts, pastHead: true}
+}
+
 // peek returns the character at the current position without advancing
 func (l *Lexer) peek() rune {
 	if l.pos >= len(l.input) {

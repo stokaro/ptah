@@ -68,6 +68,19 @@ const (
 	// or another ColumnOption pattern of the document's owners. Its [Value]
 	// carries the owner's facets of the column.
 	ColumnOption Site = "column-option"
+	// IndexOption is an option of a key after its parts: of a PRIMARY KEY,
+	// UNIQUE, KEY, INDEX, FULLTEXT or SPATIAL element of CREATE TABLE or of
+	// ALTER TABLE ADD, and of CREATE INDEX. It may stand inside a version
+	// guard among the options, `/*!50100 ... */`, where the guard's body is
+	// read as options. A span ends at the next top-level comma, at the
+	// parenthesis that closes the column list, at the end of the statement or
+	// of the guard, at the next version guard, or at the next word that opens
+	// a key option the frontend reads or another IndexOption pattern of the
+	// document's owners. Its
+	// [Value] carries the owner's facets of the key's index, or of the
+	// PRIMARY KEY constraint. A UNIQUE element with such an option is read as
+	// a unique index, as a key's options belong to its index.
+	IndexOption Site = "index-option"
 	// Statement is a whole top-level statement. A span ends at the semicolon
 	// that ends the statement or at the end of the document. Its [Value] is
 	// the owner's statement, and may declare objects of the owner or amend
@@ -106,17 +119,24 @@ type Claim struct {
 	// Site is the matched pattern's site.
 	Site Site
 	// Subject names the object the syntax belongs to, as the document
-	// writes it: the table of a table element or an ALTER TABLE operation,
-	// the view of a view clause.
+	// writes it: the table of a table element, an ALTER TABLE operation or a
+	// table option, the view of a view clause, the column of a column option,
+	// and the key of an index option, empty for a key the document leaves
+	// unnamed.
 	Subject string
 	// Text is the span's source text, its opening words included.
 	Text string
-	// Definition numbers the column definition a ColumnOption claim belongs
-	// to, from 1 in document order. The claims of one definition share it,
-	// so an owner can combine several options of one column into one facet:
-	// it answers the facet on one claim and an empty value, which adds
-	// nothing, on the others. It is zero at every other site.
+	// Definition numbers the element a ColumnOption or IndexOption claim
+	// belongs to, a column definition or a key, from 1 in document order.
+	// The claims of one element share it, so an owner can combine several
+	// options of one element into one facet: it answers the facet on one
+	// claim and an empty value, which adds nothing, on the others. It is
+	// zero at every other site.
 	Definition int
+	// IndexType is the type an IndexOption claim's key declares before its
+	// parts, FULLTEXT or SPATIAL in upper case, and empty for any other key
+	// and at every other site.
+	IndexType string
 	// Offset is the byte offset of the span in the document, which an error
 	// the owner returns about the span is positioned against.
 	Offset int

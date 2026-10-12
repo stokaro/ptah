@@ -1496,7 +1496,7 @@ complete it.
 `mysqlschema` owns an index's options under `IndexKind` the same way:
 `DesiredIndex` and `ObservedIndex` hold the parser of a FULLTEXT index, read
 from the index's `parser` platform property by `mysqlsource.IndexService`,
-attached by the SQL parser bound to `Targets` with `WithIndexOptions`, and
+attached by `mysqlsource.SQL` bound to `Targets` with `WithIndexOptions`, and
 written by `mysqlrender.IndexOptions` into `WITH PARSER`. The table and index
 services of `mysqlcompare`, `mysqlconvert`, `mysqlplan` and `mysqlreport`
 share one shape. The index comparison registers no change kinds: it reports
@@ -1568,8 +1568,10 @@ a declaration wrote it.
 `Targets`, mysql and mariadb, which is how `mysqlsource.SQL` and the reader
 declare them. `mysqlsource.SQL` reads `CHARSET`, `CHARACTER SET` and `ON
 UPDATE` as column options in a MySQL, MariaDB or target-less document, and a
-clause written twice keeps the last. Atlas HCL, Go annotations and YAML state
-them as platform properties.
+clause written twice keeps the last. It reads a key's `KEY_BLOCK_SIZE` and a
+FULLTEXT index's `WITH PARSER` as index options the same way, and claims that
+a document states every index's block size. Atlas HCL, Go annotations and
+YAML state the column settings as platform properties.
 
 The column owner is split over these services:
 
@@ -2914,20 +2916,28 @@ Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index a table element or an ALTER TABLE
 operation declares, the owner's operation payload, or facets of a view, a
-table or a column.
+table, a column or a key.
 
-A `ViewClause`, a `TableOption` after a CREATE TABLE's column list and a
-`ColumnOption` among a column's constraints carry facets alone, and no index
-or operation. Every facet a value carries is of one of the extension's
-`Facets` kinds.
+A `ViewClause`, a `TableOption` after a CREATE TABLE's column list, a
+`ColumnOption` among a column's constraints and an `IndexOption` after a key's
+parts carry facets alone, and no index or operation. Every facet a value
+carries is of one of the extension's `Facets` kinds.
 
-A `ColumnOption` span ends where the column's next clause begins: a
-constraint the reader parses itself, or the opening word of any owner's
-column option, so a pattern lists no stop word the reader or another owner
-owns. Each claim carries the number of its column definition in
-`Claim.Definition`, so an owner combines several options of one column into
-one facet: it answers the facet on one claim and an empty value, which adds
-nothing, on the others.
+A `ColumnOption` or `IndexOption` span ends where the element's next option
+begins: a clause or key option the reader parses itself, or the opening word
+of any owner's pattern at the site, so a pattern lists no stop word the reader
+or another owner owns. Each claim carries the number of its column definition
+or key in `Claim.Definition`, so an owner combines several options of one
+element into one facet: it answers the facet on one claim and an empty value,
+which adds nothing, on the others.
+
+An `IndexOption` claim carries the key's FULLTEXT or SPATIAL prefix in
+`Claim.IndexType`. The reader reads a version guard among a key's options,
+`/*!50100 ... */`, as the options it holds, so an option inside one is a claim
+at its own position in the document, and a guard ends the option before it.
+The facets reach the index the key
+builds, or the PRIMARY KEY constraint, and a UNIQUE key with such an option is
+read as a unique index.
 
 A `Statement` pattern claims a whole top-level statement. Its value carries
 the owner's statement payload, which the parse places where the statement
