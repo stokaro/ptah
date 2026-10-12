@@ -98,13 +98,12 @@ None.
 
 ### Round trips that plan a change
 
-8 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+7 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
 | `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | the comparison plans ADD PRIMARY KEY on MySQL and MariaDB for a key declared both on its field and as an equal PRIMARY KEY constraint. Both conversions carry the key, so the defect is in the comparison |
-| `matview-refresh` | `clickhouse` | both | goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete |
 | `function-planner-properties` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to PostgreSQL facets, which the conversion already carries |
 | `function-procedure` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
 | `grant-routine` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
