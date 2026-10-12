@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
+	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/triggerdef"
 )
@@ -613,6 +614,9 @@ func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 }
 
 func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
+	if err := viewrefusal.Attributes(DialectName, node.Name, node.Attributes); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}

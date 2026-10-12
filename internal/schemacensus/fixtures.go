@@ -193,6 +193,7 @@ func corpus() []Fixture {
 		{Name: "sequence", Schema: sequenceFixture()},
 		{Name: "extension", Schema: extensionFixture()},
 		{Name: "view", Schema: viewFixture()},
+		{Name: "view-attributes", Schema: viewAttributesFixture()},
 		{Name: "matview", Schema: matViewFixture()},
 		{Name: "matview-refresh", Schema: matViewRefreshFixture()},
 		{Name: "table-row-policy", Schema: tableRowPolicyFixture()},
@@ -1390,8 +1391,19 @@ func viewFixture() schemamodel.Database {
 	db.Views = []schemamodel.View{{
 		StructName: "V", Name: "recent", Comment: "recent rows",
 		Body: "SELECT id FROM t", WithCheck: true,
-		Attributes: []string{"SCHEMABINDING"},
-		Dialects:   []string{"postgres", "cockroachdb", "yugabytedb", "sqlserver"},
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb", "sqlserver"},
+	}}
+	return db
+}
+
+// viewAttributesFixture declares a view with SQL Server's own WITH clause. It
+// is apart from viewFixture because every other target refuses the clause, and
+// a refused pair would take the view's other fields out of the measurement
+// there too.
+func viewAttributesFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Views = []schemamodel.View{{
+		StructName: "V", Name: "bound", Body: "SELECT id FROM t", Attributes: []string{"SCHEMABINDING"},
 	}}
 	return db
 }

@@ -39,6 +39,7 @@ import (
 	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
+	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/renderdiag"
@@ -1376,6 +1377,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 			statement,
 			node.Name,
 		)
+	}
+	if err := viewrefusal.Attributes(DialectName, node.Name, node.Attributes); err != nil {
+		return err
 	}
 	if node.WithCheck {
 		return fmt.Errorf(
