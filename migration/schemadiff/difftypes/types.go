@@ -979,15 +979,22 @@ type SchemaDiff struct {
 	IndexesRenamed []IndexRename `json:"indexes_renamed,omitempty"`
 
 	// IndexCommentsChanged holds the index comments a plan writes in place,
-	// on a target that keeps an index's comment apart from its definition
-	// ([ptah.run/core/platform/capability.CommentAttributes], which is
-	// YDB's: the comment is an attribute of the index's table, keyed by the
-	// index's name). An entry names an index whose comment differs between
-	// the two sides; a renamed index whose comment moves to its new name; and
-	// a dropped index whose comment its table keeps until a plan removes it.
+	// on a target that keeps an index's comment apart from its definition.
+	//
+	// On a target with
+	// [ptah.run/core/platform/capability.CommentAttributes], which is YDB's,
+	// the comment is an attribute of the index's table, keyed by the index's
+	// name. An entry names an index whose comment differs between the two
+	// sides; a renamed index whose comment moves to its new name; and a
+	// dropped index whose comment its table keeps until a plan removes it.
 	// An index this diff adds writes its own comment with the addition, so
 	// one dropped and added again is here only where the addition cannot
 	// remove the comment the old index left.
+	//
+	// On a target with [ptah.run/core/platform/capability.IndexComments], the
+	// PostgreSQL family's, the comment belongs to the index and goes with it:
+	// an entry names an index both sides hold and the plan keeps, whose
+	// comment differs. COMMENT ON INDEX changes it in place.
 	IndexCommentsChanged []IndexCommentChange `json:"index_comments_changed,omitempty"`
 
 	// ExtensionsAdded is the PostgreSQL extensions that exist in the target
@@ -1132,9 +1139,9 @@ type SchemaDiff struct {
 
 	// ObjectCommentsChanged holds the comment transitions of views,
 	// materialized views, sequences, domains, composite, range and enum types,
-	// extensions, functions, procedures, triggers and policies whose comment
-	// is all that differs, or whose comment differs beside a change the lists
-	// above carry.
+	// extensions, functions, procedures, triggers, policies, schemas and roles
+	// whose comment is all that differs, or whose comment differs beside a
+	// change the lists above carry.
 	//
 	// It is a list of its own rather than a field on each kind's diff because
 	// a comment is the one change these objects take in place: a domain whose
@@ -2070,6 +2077,8 @@ const (
 	CommentedMatView       CommentedObjectKind = "materialized_view"
 	CommentedTrigger       CommentedObjectKind = "trigger"
 	CommentedPolicy        CommentedObjectKind = "policy"
+	CommentedSchema        CommentedObjectKind = "schema"
+	CommentedRole          CommentedObjectKind = "role"
 )
 
 // ObjectCommentChange is the comment transition of one object that is neither
@@ -2080,7 +2089,7 @@ type ObjectCommentChange struct {
 	// Kind says which kind of object Name names.
 	Kind CommentedObjectKind `json:"kind"`
 	// Name is the object's name as the declaration qualifies it. An
-	// extension's name is database-wide and carries no schema, and a
+	// extension's, a schema's and a role's name carries no schema, and a
 	// trigger's and a policy's is scoped to Table.
 	Name string `json:"name"`
 	// Table is the table a trigger or a policy belongs to, and empty for

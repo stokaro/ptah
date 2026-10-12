@@ -197,6 +197,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.FunctionComments,
 			capability.GroupPrincipals,
 			capability.Hypertables,
+			capability.IndexComments,
 			capability.IndexRename,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
@@ -208,6 +209,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.RangeTypes,
 			capability.RelativeGrantPaths,
 			capability.ResourcePools,
+			capability.RoleComments,
 			capability.RoleManagement,
 			capability.RoleMembership,
 			capability.RoutineReplacementResetsDefiner,
@@ -249,6 +251,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.FunctionComments,
 			capability.GroupPrincipals,
 			capability.Hypertables,
+			capability.IndexComments,
 			capability.IndexRename,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
@@ -260,6 +263,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.RangeTypes,
 			capability.RelativeGrantPaths,
 			capability.ResourcePools,
+			capability.RoleComments,
 			capability.RoleManagement,
 			capability.RoleMembership,
 			capability.RoutineReplacementResetsDefiner,
@@ -304,6 +308,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.FunctionComments,
 			capability.GroupPrincipals,
 			capability.Hypertables,
+			capability.IndexComments,
 			capability.IndexRename,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
@@ -315,6 +320,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.RangeTypes,
 			capability.RelativeGrantPaths,
 			capability.ResourcePools,
+			capability.RoleComments,
 			capability.RoleMembership,
 			capability.RoutineReplacementResetsDefiner,
 			capability.RowDeletionPolicy,
@@ -336,8 +342,10 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// The PostgreSQL set, for the PostgreSQL reasons: YDB is asked in its
 		// own spelling or in the standard one everywhere else, and what is
 		// left is a property of the probe, of the migrator or of an extension
-		// no YDB has. A data source's secret path is the one YDB key besides:
-		// its statement needs a flag that is off on every line the probe runs.
+		// no YDB has. A data source's secret path is a YDB key besides: its
+		// statement needs a flag that is off on every line the probe runs. An
+		// index's comment is another: YDB keeps it as a table attribute, which
+		// comment_attributes names, so no statement asks about one kept apart.
 		// Tiered TTL also needs an authenticated external source; its live
 		// integration fixture supplies one while the default matrix does not.
 		want: []capability.Capability{
@@ -347,6 +355,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.DDLInsideTransaction,
 			capability.ExternalDataSourceSecretPaths,
 			capability.Hypertables,
+			capability.IndexComments,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
 			capability.RoutineReplacementResetsDefiner,
@@ -471,23 +480,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 22,
 	}, {
-		name: "mysql owes forty-eight fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, coordination_nodes, the three workload keys, comment_attributes, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction and the routine replacement key name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes fifty fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, coordination_nodes, the three workload keys, comment_attributes, the twelve object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction and the routine replacement key name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 48,
+		want: registered - 50,
 	}, {
-		name: "mariadb owes forty-eight fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the four access keys only YDB plans and coordination_nodes and the three workload keys and comment_attributes and the routine replacement key name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes fifty fewer: COMMENT ON SCHEMA and the twelve object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the four access keys only YDB plans and coordination_nodes and the three workload keys and comment_attributes and the routine replacement key name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 48,
+		want: registered - 50,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the twenty-two its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{
@@ -507,7 +516,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.CockroachDB25(),
 		want: registered - 24,
 	}, {
-		name: "ydb 26.2 owes every row but the twelve it declares and the seven whose prerequisite the preset lacks: " +
+		name: "ydb 26.2 owes every row but the thirteen it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
 			"and the sequence grammar restriction",
 		cell: Cell{
@@ -516,7 +525,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB262(),
-		want: registered - 19,
+		want: registered - 20,
 	}, {
 		name: "ydb 25.1 owes two rows fewer than 26.2: the vector index's writes and its bit vectors, whose " +
 			"prerequisite the line keeps behind a flag that is off by default",
@@ -526,7 +535,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB251(),
-		want: registered - 21,
+		want: registered - 22,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

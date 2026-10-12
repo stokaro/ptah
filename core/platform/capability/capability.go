@@ -649,6 +649,28 @@ const (
 	// (stokaro/ptah#3678).
 	ConstraintComments Capability = "constraint_comments"
 
+	// IndexComments marks a target that stores a comment against an index
+	// through `COMMENT ON INDEX`, apart from the index's definition, and
+	// reports it back through obj_description(oid, 'pg_class'), which is where
+	// Ptah reads it. A comparison on such a target changes a kept index's
+	// comment in place rather than rebuilding the index.
+	//
+	// MySQL and MariaDB write an index's comment into its definition, and YDB
+	// keeps it as an attribute of the table ([CommentAttributes]); none of
+	// them has the statement. Measured 2026-10-12: PostgreSQL 18.6,
+	// CockroachDB v26.3.2 and YugabyteDB 2026.1.2 take it and read it back;
+	// the Spanner PostgreSQL interface answers `Unknown statement`.
+	IndexComments Capability = "index_comments"
+
+	// RoleComments marks a target that stores a comment against a role
+	// through `COMMENT ON ROLE` and reports it back through
+	// shobj_description(oid, 'pg_authid'), which is where Ptah reads it.
+	//
+	// Measured 2026-10-12: PostgreSQL 18.6 and YugabyteDB 2026.1.2 take it and
+	// read it back; CockroachDB v26.3.2 answers a syntax error, and the
+	// Spanner PostgreSQL interface has no CREATE ROLE to comment on.
+	RoleComments Capability = "role_comments"
+
 	// CommentAttributes marks a target on which Ptah keeps the comments of a
 	// table, its columns and its indexes as user attributes of the table:
 	// written by Ptah's own COMMENT ON statement, which its connection runs
@@ -2031,6 +2053,13 @@ var registry = map[Capability]spec{
 	ConstraintComments: {
 		doc: "COMMENT ON CONSTRAINT ... ON a table, stored where obj_description reads it back",
 	},
+	IndexComments: {
+		doc: "COMMENT ON INDEX, stored apart from the index's definition where obj_description reads it back",
+	},
+	RoleComments: {
+		doc:      "COMMENT ON ROLE, stored where shobj_description reads it back",
+		requires: []Capability{RoleManagement},
+	},
 	CommentAttributes: {
 		doc: "the comments of a table, its columns and its indexes kept as user attributes of the table, written by Ptah's COMMENT ON (YDB)",
 	},
@@ -2533,6 +2562,8 @@ func buildMySQL84() Capabilities {
 		TriggerComments:                 false,
 		PolicyComments:                  false,
 		ConstraintComments:              false,
+		IndexComments:                   false,
+		RoleComments:                    false,
 		CommentAttributes:               false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
@@ -2834,6 +2865,8 @@ func buildMariaDB1011() Capabilities {
 		TriggerComments:                 false,
 		PolicyComments:                  false,
 		ConstraintComments:              false,
+		IndexComments:                   false,
+		RoleComments:                    false,
 		CommentAttributes:               false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
@@ -3051,6 +3084,8 @@ func buildPostgres16() Capabilities {
 		// Measured on PostgreSQL 14 and 18 on a CHECK, a UNIQUE, a PRIMARY KEY
 		// and a FOREIGN KEY constraint (stokaro/ptah#3678).
 		ConstraintComments:              true,
+		IndexComments:                   true,
+		RoleComments:                    true,
 		CommentAttributes:               false,
 		XMLType:                         true,
 		AdvisoryLocks:                   true,
@@ -3407,6 +3442,8 @@ func buildClickHouse24() Capabilities {
 		TriggerComments:          false,
 		PolicyComments:           false,
 		ConstraintComments:       false,
+		IndexComments:            false,
+		RoleComments:             false,
 		CommentAttributes:        false,
 		XMLType:                  false,
 		AdvisoryLocks:            false,
@@ -3632,6 +3669,8 @@ func buildSQLite3() Capabilities {
 		TriggerComments:              false,
 		PolicyComments:               false,
 		ConstraintComments:           false,
+		IndexComments:                false,
+		RoleComments:                 false,
 		CommentAttributes:            false,
 		XMLType:                      false,
 		AdvisoryLocks:                false,
@@ -3936,6 +3975,8 @@ func buildSQLServer2022() Capabilities {
 		TriggerComments:              false,
 		PolicyComments:               false,
 		ConstraintComments:           false,
+		IndexComments:                false,
+		RoleComments:                 false,
 		CommentAttributes:            false,
 		XMLType:                      true,
 		AdvisoryLocks:                false,
@@ -4184,6 +4225,9 @@ func buildCockroachDB23() Capabilities {
 		With(MaterializedViewComments, false).
 		With(TriggerComments, false).
 		With(PolicyComments, false).
+		// Measured 2026-10-12 on v26.3.2: `syntax error` to COMMENT ON ROLE,
+		// while COMMENT ON INDEX is taken and read back.
+		With(RoleComments, false).
 		// Measured 2026-09-26: v25.4.16 answers `unknown function:
 		// pg_get_triggerdef()`. The 26.2 line is the first to have it; see
 		// CockroachDB26 (stokaro/ptah#3707).
@@ -4478,6 +4522,11 @@ func buildSpannerPostgres() Capabilities {
 		// COMMENT ON CONSTRAINT answers `Unknown statement` for a CHECK and a
 		// FOREIGN KEY constraint (stokaro/ptah#3678).
 		With(ConstraintComments, false).
+		// Measured 2026-10-12 on the emulator behind PGAdapter 0.56.1:
+		// COMMENT ON INDEX answers `Unknown statement`, and CREATE ROLE
+		// `Statement is not supported`, so no role holds a comment.
+		With(IndexComments, false).
+		With(RoleComments, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
@@ -4748,6 +4797,8 @@ func buildOracle23() Capabilities {
 		TriggerComments:          false,
 		PolicyComments:           false,
 		ConstraintComments:       false,
+		IndexComments:            false,
+		RoleComments:             false,
 		CommentAttributes:        false,
 		XMLType:                  true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
@@ -4944,6 +4995,8 @@ func buildYDB262() Capabilities {
 		DeferrableKeys:                     false,
 		AddConstraintNotValid:              false,
 		ConstraintComments:                 false,
+		IndexComments:                      false,
+		RoleComments:                       false,
 		ForeignKeys:                        false,
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: false,

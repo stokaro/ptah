@@ -1490,18 +1490,10 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
 	// An index comment is a separate statement: CREATE INDEX has no COMMENT
-	// clause in PostgreSQL's grammar, unlike MySQL's index definition. Emitting
+	// clause in PostgreSQL's grammar, unlike MySQL's index definition. Writing
 	// it here is what keeps the comment attached to the index the statement
-	// above just created. Without it the value is carried all the way from the
-	// annotation or the HCL document to this node and then dropped, and the
-	// index arrives with no comment at exit 0.
-	if node.Comment != "" {
-		r.w.WriteLinef(
-			"COMMENT ON INDEX %s IS %s;",
-			r.qualifiedIndexTarget(node.Table, node.Name),
-			r.escapeValue(node.Comment),
-		)
-	}
+	// above just created. A target that does not store it gets the named skip.
+	r.writeCreatedObjectComment(ast.CommentedIndex, r.qualifiedIndexTarget(node.Table, node.Name), node.Name, node.Comment)
 
 	return nil
 }
@@ -2774,6 +2766,9 @@ var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
 	ast.CommentedMaterializedView: capability.MaterializedViewComments,
 	ast.CommentedTrigger:          capability.TriggerComments,
 	ast.CommentedPolicy:           capability.PolicyComments,
+	ast.CommentedIndex:            capability.IndexComments,
+	ast.CommentedSchema:           capability.SchemaComments,
+	ast.CommentedRole:             capability.RoleComments,
 }
 
 // renderObjectComment sets the comment of an object that already exists.
@@ -2783,11 +2778,15 @@ var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
 // for a comment there, so a node that reaches this point was built by hand.
 func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
 	switch node.Object {
-	case ast.CommentedExtension:
-		// An extension's name is database-wide, and splitting it on a dot
-		// would name an object that does not exist, for the reason
-		// renderExtension gives.
+	case ast.CommentedExtension, ast.CommentedSchema, ast.CommentedRole:
+		// An extension's and a role's name is database-wide, and a schema's
+		// is its own namespace, so splitting one on a dot would name an
+		// object that does not exist, for the reason renderExtension gives.
 		return r.writeObjectComment(node.Object, r.escapeIdentifier(node.Name), node.Name, node.Comment)
+	case ast.CommentedIndex:
+		// An index is spelled the way DROP INDEX spells it: in its table's
+		// schema, or as table@index on CockroachDB.
+		return r.writeObjectComment(node.Object, r.qualifiedIndexTarget(node.Table, node.Name), node.Name, node.Comment)
 	case ast.CommentedTrigger, ast.CommentedPolicy:
 		if node.Table == "" {
 			return fmt.Errorf("%w: %s: COMMENT ON %s %s names no table, and the statement addresses one ON its table",
@@ -3410,13 +3409,7 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-	if node.Comment != "" {
-		r.w.WriteLinef(
-			"COMMENT ON ROLE %s IS %s;",
-			r.escapeIdentifier(node.Name),
-			r.escapeValue(node.Comment),
-		)
-	}
+	r.writeCreatedObjectComment(ast.CommentedRole, r.escapeIdentifier(node.Name), node.Name, node.Comment)
 
 	return nil
 }

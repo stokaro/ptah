@@ -101,6 +101,36 @@ func TestPostgreSQLRenderer_ObjectComment_HappyPath(t *testing.T) {
 			node: ast.NewObjectComment(ast.CommentedTrigger, "tg", "x").SetTable("app.t"),
 			want: "-- POSTGRES: trigger comment tg on app.t is not supported by this target; skipped.\n",
 		},
+		{
+			name: "an index, in its table's schema",
+			caps: capability.Postgres18(),
+			node: ast.NewObjectComment(ast.CommentedIndex, "k", "x").SetTable("app.t"),
+			want: "COMMENT ON INDEX \"app\".\"k\" IS 'x';\n",
+		},
+		{
+			name: "an index on Spanner, which refuses the statement",
+			caps: capability.SpannerPostgres(),
+			node: ast.NewObjectComment(ast.CommentedIndex, "k", "x").SetTable("app.t"),
+			want: "-- POSTGRES: index comment k is not supported by this target; skipped.\n",
+		},
+		{
+			name: "a schema, whose name is never split on a dot",
+			caps: capability.Postgres18(),
+			node: ast.NewObjectComment(ast.CommentedSchema, "odd.name", ""),
+			want: "COMMENT ON SCHEMA \"odd.name\" IS NULL;\n",
+		},
+		{
+			name: "a role",
+			caps: capability.Postgres18(),
+			node: ast.NewObjectComment(ast.CommentedRole, "app_reader", "x"),
+			want: "COMMENT ON ROLE \"app_reader\" IS 'x';\n",
+		},
+		{
+			name: "a role on CockroachDB, which refuses the statement",
+			caps: capability.CockroachDB263(),
+			node: ast.NewObjectComment(ast.CommentedRole, "app_reader", "x"),
+			want: "-- POSTGRES: role comment app_reader is not supported by this target; skipped.\n",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -202,6 +232,26 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 			caps: capability.Postgres18(),
 			node: ast.NewCreateType("e", &ast.EnumTypeDef{Values: []string{"a"}}).SetComment("note"),
 			want: "CREATE TYPE \"e\" AS ENUM ('a');\nCOMMENT ON TYPE \"e\" IS 'note';\n",
+		},
+		{
+			name: "an index",
+			caps: capability.Postgres18(),
+			node: &ast.IndexNode{Name: "k", Table: "app.t", Columns: []string{"a"}, Comment: "note"},
+			want: "CREATE INDEX \"k\" ON \"app\".\"t\" (\"a\");\nCOMMENT ON INDEX \"app\".\"k\" IS 'note';\n",
+		},
+		{
+			name: "an index on Spanner, which stores no index comment",
+			caps: capability.SpannerPostgres(),
+			node: &ast.IndexNode{Name: "k", Table: "app.t", Columns: []string{"a"}, Comment: "note"},
+			want: "CREATE INDEX \"k\" ON \"app\".\"t\" (\"a\");\n" +
+				"-- POSTGRES: index comment k is not supported by this target; skipped.\n",
+		},
+		{
+			name: "a role on CockroachDB, which stores no role comment",
+			caps: capability.CockroachDB263(),
+			node: ast.NewCreateRole("app_reader").SetComment("note"),
+			want: "CREATE ROLE \"app_reader\" WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;\n" +
+				"-- POSTGRES: role comment app_reader is not supported by this target; skipped.\n",
 		},
 		{
 			name: "an enum node",

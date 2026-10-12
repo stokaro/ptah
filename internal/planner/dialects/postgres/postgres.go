@@ -1861,7 +1861,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseMaterializedViewFeatureChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
+	if err := p.refuseIndexChangesInPlace(diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
@@ -2075,6 +2075,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+
+	// 10.1. Comments on the indexes the plan keeps. An index the plan
+	// creates writes its own comment above, and one it drops takes its
+	// comment with it.
+	result = changeIndexComments(result, diff)
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
 	result, err = p.addNewConstraints(result, diff, foreignKeysReleased)

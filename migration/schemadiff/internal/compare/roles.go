@@ -114,27 +114,7 @@ func Roles(
 		generatedRoleMap[role.Name] = role
 	}
 
-	// Every role the reader manages, whether or not it described it. A role
-	// missing from here is a role this reader would not report at all -- one
-	// that does not exist, or one Ptah never manages; a role missing from
-	// database.Roles alone is only a role this description does not speak
-	// about.
-	databaseRoleMap := make(map[string]catalog.Role, len(database.Roles)+len(database.RolesOutOfScope))
-	for _, role := range database.Roles {
-		databaseRoleMap[role.Name] = role
-	}
-	// The described entry wins when a name is in both lists. A PostgreSQL
-	// reader's two lists are disjoint by construction, so this decides nothing
-	// there; it decides for every other producer of a Database -- a
-	// hand-assembled one, a merged one, a future reader whose scoping rule
-	// overlaps -- and without it the later list would silently overwrite the
-	// attributes the description was read from.
-	for _, role := range database.RolesOutOfScope {
-		if _, described := databaseRoleMap[role.Name]; described {
-			continue
-		}
-		databaseRoleMap[role.Name] = role
-	}
+	databaseRoleMap := managedRoles(database)
 
 	// Find added roles
 	for roleName := range generatedRoleMap {
@@ -179,6 +159,32 @@ func Roles(
 	sort.Slice(diff.RolesModified, func(i, j int) bool {
 		return diff.RolesModified[i].RoleName < diff.RolesModified[j].RoleName
 	})
+}
+
+// managedRoles is every role the reader manages, keyed by name, whether or
+// not it described the role. A role missing from here is a role this reader
+// would not report at all -- one that does not exist, or one Ptah never
+// manages; a role missing from database.Roles alone is only a role this
+// description does not speak about.
+//
+// The described entry wins when a name is in both lists. A PostgreSQL
+// reader's two lists are disjoint by construction, so this decides nothing
+// there; it decides for every other producer of a Database -- a
+// hand-assembled one, a merged one, a future reader whose scoping rule
+// overlaps -- and without it the later list would silently overwrite the
+// attributes the description was read from.
+func managedRoles(database *catalog.Database) map[string]catalog.Role {
+	roles := make(map[string]catalog.Role, len(database.Roles)+len(database.RolesOutOfScope))
+	for _, role := range database.Roles {
+		roles[role.Name] = role
+	}
+	for _, role := range database.RolesOutOfScope {
+		if _, described := roles[role.Name]; described {
+			continue
+		}
+		roles[role.Name] = role
+	}
+	return roles
 }
 
 // RoleDefinitions compares individual role definitions and returns detailed differences.

@@ -93,26 +93,34 @@ func RefuseServerSchemas(dialect string, diff *difftypes.SchemaDiff) error {
 
 // RefuseIndexChangesInPlace refuses a diff that renames an index or writes an
 // index's comment in place, for a planner of dialect that plans neither. The
-// comparison records those changes only on a target with
-// capability.IndexRename or capability.CommentAttributes, which only YDB has,
-// so another planner reaches one only through a diff built by hand, and
-// planning nothing would leave the index as it was and report the two sides
-// equal.
+// comparison records a rename only on a target with capability.IndexRename,
+// which only YDB has, and a comment only on a target with
+// capability.CommentAttributes or capability.IndexComments, which only YDB and
+// the PostgreSQL family have, so another planner reaches one only through a
+// diff built by hand, and planning nothing would leave the index as it was and
+// report the two sides equal.
 func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error {
-	switch {
-	case diff == nil:
-		return nil
-	case len(diff.IndexesRenamed) > 0:
-		rename := diff.IndexesRenamed[0]
-		return fmt.Errorf("%w: the diff renames index %q of table %q to %q, and the %s planner plans no index rename",
-			ptaherr.ErrUnsupportedFeature, rename.From, rename.TableName, rename.To, dialect)
-	case len(diff.IndexCommentsChanged) > 0:
-		change := diff.IndexCommentsChanged[0]
-		return fmt.Errorf("%w: the diff writes the comment of index %q of table %q apart from the index, which only "+
-			"a YDB plan does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
-	default:
+	if err := RefuseIndexRenames(dialect, diff); err != nil {
+		return err
+	}
+	if diff == nil || len(diff.IndexCommentsChanged) == 0 {
 		return nil
 	}
+	change := diff.IndexCommentsChanged[0]
+	return fmt.Errorf("%w: the diff writes the comment of index %q of table %q apart from the index, which only "+
+		"a YDB or a PostgreSQL-family plan does; the %s planner plans none",
+		ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
+}
+
+// RefuseIndexRenames is the rename half of [RefuseIndexChangesInPlace], for a
+// planner that writes an index's comment in place and renames no index.
+func RefuseIndexRenames(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil || len(diff.IndexesRenamed) == 0 {
+		return nil
+	}
+	rename := diff.IndexesRenamed[0]
+	return fmt.Errorf("%w: the diff renames index %q of table %q to %q, and the %s planner plans no index rename",
+		ptaherr.ErrUnsupportedFeature, rename.From, rename.TableName, rename.To, dialect)
 }
 
 // RefuseSerialSequenceChanges refuses a diff that changes the start or the

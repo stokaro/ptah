@@ -15,7 +15,8 @@ import (
 
 // ObjectComments records the comment transitions of the views, materialized
 // views, sequences, domains, composite, range and enum types, extensions,
-// functions, procedures, triggers and policies both sides hold.
+// functions, procedures, triggers, policies, schemas and roles both sides
+// hold.
 //
 // A kind is compared only where caps says the target stores its comment and
 // reads it back. Everywhere else the reader reports no comment whatever was
@@ -67,6 +68,12 @@ func ObjectComments(
 	if caps.Has(capability.PolicyComments) {
 		changes = append(changes, policyComments(desired, database, semantics)...)
 	}
+	if caps.Has(capability.SchemaComments) {
+		changes = append(changes, schemaComments(desired, database, semantics)...)
+	}
+	if caps.Has(capability.RoleComments) {
+		changes = append(changes, roleComments(desired, database)...)
+	}
 	sort.SliceStable(changes, func(i, j int) bool {
 		if changes[i].Kind != changes[j].Kind {
 			return changes[i].Kind < changes[j].Kind
@@ -91,6 +98,53 @@ func commentTransition(
 		return difftypes.ObjectCommentChange{}, false
 	}
 	return difftypes.ObjectCommentChange{Kind: kind, Name: name, Current: current, Desired: desired}, true
+}
+
+// schemaComments compares the comment of each schema the declaration names
+// and the read reports. A read reports the schemas it was asked to read, so a
+// declared schema it was not asked about is not compared, and one the plan
+// creates takes its comment from CREATE SCHEMA.
+func schemaComments(
+	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
+) []difftypes.ObjectCommentChange {
+	reported := make(map[string]catalog.Schema, len(database.Schemas))
+	for _, schema := range database.Schemas {
+		reported[semantics.TableIdentityKey(schema.Name)] = schema
+	}
+	var changes []difftypes.ObjectCommentChange
+	for _, schema := range desired.Schemas {
+		current, exists := reported[semantics.TableIdentityKey(schema.Name)]
+		if !exists {
+			continue
+		}
+		if change, changed := commentTransition(
+			difftypes.CommentedSchema, schema.Name, schema.Comment, current.Comment,
+		); changed {
+			changes = append(changes, change)
+		}
+	}
+	return changes
+}
+
+// roleComments compares the comment of each declared role the server has. A
+// role is matched the way [Roles] matches it, against every role the reader
+// manages whether or not its description named the role, so the two never
+// disagree about which roles exist.
+func roleComments(desired *schemamodel.Database, database *catalog.Database) []difftypes.ObjectCommentChange {
+	reported := managedRoles(database)
+	var changes []difftypes.ObjectCommentChange
+	for _, role := range desired.Roles {
+		current, exists := reported[role.Name]
+		if !exists {
+			continue
+		}
+		if change, changed := commentTransition(
+			difftypes.CommentedRole, role.Name, role.Comment, current.Comment,
+		); changed {
+			changes = append(changes, change)
+		}
+	}
+	return changes
 }
 
 func viewComments(
