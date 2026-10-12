@@ -124,10 +124,7 @@ func parseDialectScope(kv map[string]string, ctx annotationErrorContext) ([]stri
 }
 
 func requireAttributes(kv map[string]string, ctx annotationErrorContext) error {
-	for _, key := range ctx.catalog.RequiredAttributes(ctx.directive) {
-		if strings.TrimSpace(kv[key]) != "" {
-			continue
-		}
+	for _, key := range ctx.catalog.MissingRequiredAttributes(ctx.directive, kv) {
 		slog.Error("missing required annotation attribute",
 			"directive", ctx.directive,
 			"attribute", key,

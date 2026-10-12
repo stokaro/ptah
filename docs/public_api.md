@@ -273,7 +273,12 @@ YAML interpretation and source-file access. Captured schema contracts therefore
 do not import a parser to carry a declaration.
 
 `core/annotation` is the contract between the Go annotation frontend,
-`core/goschema`, and the feature owners. An `Extension` holds:
+`core/goschema`, and the feature owners. `Attribute.AllowEmpty` lets a required
+attribute carry an empty or whitespace-only string. The attribute must be
+present. Parsing and Go export enforce the same rule; required attributes
+without `AllowEmpty` need nonempty values.
+
+An `Extension` holds:
 
 - an owner's directives and their decoder;
 - the attributes it adds to the frontend's own directives, the directive's

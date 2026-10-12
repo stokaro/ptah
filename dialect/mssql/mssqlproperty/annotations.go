@@ -14,6 +14,8 @@ const Directive = "ptah:schema:extendedproperty"
 // Annotations is the owner's contribution to the Go annotation frontend: the
 // directive, its decoder, and the claim that a Go annotation source describes
 // every extended property, so a property the source leaves out is dropped.
+// Its encoder preserves declaration attributes and refuses incomplete coverage
+// and target scopes the directive cannot represent.
 //
 // There is no dialect attribute: an extended property is a SQL Server object
 // and nothing else, so the declaration is bound to SQL Server and another
@@ -24,6 +26,8 @@ func Annotations() annotation.Extension {
 		Directives: []annotation.Directive{directive()},
 		Kinds:      []schemaext.Kind{Kind},
 		Decode:     decode,
+		Encoder:    annotationEncoder{},
+		Encodes:    []schemaext.Kind{Kind},
 		Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) {
 			return Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		}),
@@ -64,7 +68,7 @@ func directive() annotation.Directive {
 			{Name: "table", Description: "Table the property is on. Requires schema; omit for a schema-scoped " +
 				"property.", Value: "string"},
 			{Name: "column", Description: "Column the property is on. Requires table.", Value: "string"},
-			{Name: "value", Description: "The value, written back as an N'' literal.", Value: "string", Required: true},
+			{Name: "value", Description: "The value, written back as an N'' literal. An empty string is valid.", Value: "string", Required: true, AllowEmpty: true},
 			{Name: "comment", Description: "Extended property comment.", Value: "string"},
 		},
 	}

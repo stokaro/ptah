@@ -155,24 +155,22 @@ func checkOwnerDirective(catalog annotationmeta.Catalog, directive annotationext
 		return fmt.Errorf("%w: an owner wrote directive %q, which the frontend does not read on a struct",
 			schemaext.ErrInvalidValue, directive.Directive)
 	}
-	written := make([]string, 0, len(directive.Attributes)+1)
+	written := make(map[string]string, len(directive.Attributes)+1)
 	for _, attribute := range directive.Attributes {
-		written = append(written, attribute.Name)
+		written[attribute.Name] = attribute.Value
 	}
 	if len(directive.Targets) > 0 {
-		written = append(written, dialectscope.Attribute)
+		written[dialectscope.Attribute] = strings.Join(directive.Targets, ",")
 	}
-	for _, name := range written {
+	for _, name := range slices.Sorted(maps.Keys(written)) {
 		if !catalog.AllowsAttribute(directive.Directive, name) {
 			return fmt.Errorf("%w: an owner wrote attribute %q of directive %q, which the frontend does not read",
 				schemaext.ErrInvalidValue, name, directive.Directive)
 		}
 	}
-	for _, name := range catalog.RequiredAttributes(directive.Directive) {
-		if !slices.Contains(written, name) {
-			return fmt.Errorf("%w: an owner wrote directive %q without its required attribute %q",
-				schemaext.ErrInvalidValue, directive.Directive, name)
-		}
+	for _, name := range catalog.MissingRequiredAttributes(directive.Directive, written) {
+		return fmt.Errorf("%w: an owner wrote directive %q without its required attribute %q",
+			schemaext.ErrInvalidValue, directive.Directive, name)
 	}
 	return nil
 }

@@ -117,7 +117,18 @@ A synonym belongs to the synonym owner and is bound to SQL Server and Oracle,
 the two targets that have one. A schema rendered or planned for any other
 target leaves it out. Two declarations of one synonym are refused.
 
+Go export preserves the alias, schema, target spelling, and comment, including
+schemas that declare only synonyms. The annotation binds each alias to SQL
+Server and Oracle. An explicit scope that names a different set is refused.
+
 ## Extended properties
+
+Go export preserves database, schema, table, and column properties, including
+empty string values and declaration comments. The `value` attribute is required;
+`value=""` is valid. Export refuses `MS_Description` as an extended property
+because Ptah represents it as the object's comment. Synonym and property export
+refuse incomplete namespace or object coverage so an unread object cannot
+become a planned removal through the exported file.
 
 An extended property is a named value attached to a schema, a table, or a
 column of one:

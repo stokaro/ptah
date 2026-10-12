@@ -11,6 +11,8 @@ const Directive = "ptah:schema:synonym"
 // Annotations is the owner's contribution to the Go annotation frontend: the
 // directive, its decoder, and the claim that a Go annotation source describes
 // every synonym, so a synonym the source leaves out is dropped.
+// Its encoder preserves declaration attributes and refuses incomplete coverage
+// and target scopes the directive cannot represent.
 //
 // There is no dialect attribute: a synonym is bound to the targets that have
 // one, and every other target leaves it out.
@@ -20,6 +22,8 @@ func Annotations() annotation.Extension {
 		Directives: []annotation.Directive{directive()},
 		Kinds:      []schemaext.Kind{Kind},
 		Decode:     decode,
+		Encoder:    annotationEncoder{},
+		Encodes:    []schemaext.Kind{Kind},
 		Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) {
 			return Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		}),
