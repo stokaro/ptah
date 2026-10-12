@@ -2,10 +2,13 @@ package builtin
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaprep"
 )
 
 // validateDeclaredColumns refuses a column declaration whose meaning no target
@@ -20,8 +23,65 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 		if err := validateUniqueExpression(dialect, field); err != nil {
 			return err
 		}
+		if err := validateUndeclaredEnum(dialect, database, field); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// validateUndeclaredEnum refuses a column typed ENUM that carries its values
+// and names no declared enum, on a target that cannot build it inline.
+//
+// The five inline-enum dialects build such a column from its values, the way
+// the comparison lowers it. Everywhere else the column type has to name
+// something the server knows: the PostgreSQL family a named enum type,
+// ClickHouse an Enum8 or Enum16 column type, and Spanner has no enum at all.
+// Rendered as it stands, the declaration is the bare type ENUM, which each of
+// them refuses at apply time, and ClickHouse would pass it through behind a
+// warning comment. A type created here for the column would be an object no
+// declaration owns, so the column is refused with what to declare instead.
+// YDB refuses an ENUM type of any kind when it maps the column.
+func validateUndeclaredEnum(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
+	values, declared := schemaprep.EnumColumnValues(field, database.Enums)
+	target := platform.NormalizeDialect(dialect)
+	if declared || len(values) == 0 || schemaprep.InlineEnumDialect(target) || target == platform.YDB {
+		return nil
+	}
+	var remedy string
+	switch {
+	case target == platform.Spanner:
+		remedy = "Spanner has no enum type; type the column with one it has"
+	case platform.IsPostgresFamily(target):
+		remedy = "declare a named enum with these values (//ptah:schema:enum in Go, an enums entry in YAML, " +
+			"an enum block in HCL) and type the column with its name"
+	case target == platform.ClickHouse:
+		remedy = "ClickHouse has no named enum type; type the column Enum8 or Enum16 with these values instead"
+	default:
+		remedy = "type the column with a type " + target + " has"
+	}
+	tableName := field.StructName
+	if table := tableByStructName(database.Tables, field.StructName); table != nil {
+		tableName = table.QualifiedName()
+	}
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"column %q of table %q is typed ENUM with the values %s and names no declared enum, "+
+				"which %s cannot create: %s",
+			field.Name, tableName, quotedValueList(values), target, remedy,
+		),
+	}
+}
+
+// quotedValueList writes values as a parenthesized list of quoted strings.
+func quotedValueList(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = strconv.Quote(value)
+	}
+	return "(" + strings.Join(quoted, ", ") + ")"
 }
 
 // validateUniqueExpression refuses a column declaring uniqueness over an

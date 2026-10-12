@@ -139,3 +139,58 @@ func TestInlineEnumValues(t *testing.T) {
 		})
 	}
 }
+
+// TestEnumColumnValues covers which columns are enum columns on any target,
+// with which values, and whether the column names a declared enum. A column
+// with values and no declaration is the shape a target without inline enums
+// refuses.
+func TestEnumColumnValues(t *testing.T) {
+	enums := []schemamodel.Enum{{Name: "status", Values: []string{"a", "b"}}}
+	tests := []struct {
+		name         string
+		field        schemamodel.Field
+		wantValues   []string
+		wantDeclared bool
+	}{
+		{
+			name:       "values on a column typed ENUM",
+			field:      schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{"draft", "live"}},
+			wantValues: []string{"draft", "live"},
+		},
+		{
+			name:       "values on a column typed enum in lower case",
+			field:      schemamodel.Field{Name: "s", Type: "enum", Enum: []string{"draft"}},
+			wantValues: []string{"draft"},
+		},
+		{
+			name:         "a declared enum named by type",
+			field:        schemamodel.Field{Name: "s", Type: "status"},
+			wantValues:   []string{"a", "b"},
+			wantDeclared: true,
+		},
+		{
+			name:         "values on the column beside a declared enum",
+			field:        schemamodel.Field{Name: "s", Type: "status", Enum: []string{"c"}},
+			wantValues:   []string{"c"},
+			wantDeclared: true,
+		},
+		{
+			name:  "a column typed ENUM without values",
+			field: schemamodel.Field{Name: "s", Type: "ENUM"},
+		},
+		{
+			name:  "values beside another type",
+			field: schemamodel.Field{Name: "s", Type: "VARCHAR(8)", Enum: []string{"a"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			values, declared := schemaprep.EnumColumnValues(test.field, enums)
+
+			c.Assert(values, qt.DeepEquals, test.wantValues)
+			c.Assert(declared, qt.Equals, test.wantDeclared)
+		})
+	}
+}

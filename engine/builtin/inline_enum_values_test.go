@@ -1,11 +1,13 @@
 package builtin_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 )
@@ -95,4 +97,70 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnMatchesADeclaredEnum(t *tes
 			c.Assert(valued, qt.DeepEquals, declared)
 		})
 	}
+}
+
+// TestGetOrderedCreateStatements_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath
+// covers the targets that cannot build the column from its values. Rendered
+// as it stands it is the bare type ENUM, which each of them refuses at apply
+// time, so the render refuses it first and says what to declare instead.
+func TestGetOrderedCreateStatements_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath(t *testing.T) {
+	const prefix = `column "s" of table "t" is typed ENUM with the values \("draft", "live"\) and names no declared enum, which `
+	const namedEnum = `declare a named enum with these values \(//ptah:schema:enum in Go, an enums entry in YAML, ` +
+		`an enum block in HCL\) and type the column with its name`
+	tests := []struct {
+		dialect string
+		wantErr string
+	}{
+		{dialect: platform.Postgres, wantErr: prefix + `postgres cannot create: ` + namedEnum},
+		{dialect: platform.CockroachDB, wantErr: prefix + `cockroachdb cannot create: ` + namedEnum},
+		{dialect: platform.YugabyteDB, wantErr: prefix + `yugabytedb cannot create: ` + namedEnum},
+		{
+			dialect: platform.Spanner,
+			wantErr: prefix + `spanner cannot create: Spanner has no enum type; type the column with one it has`,
+		},
+		{
+			dialect: platform.ClickHouse,
+			wantErr: prefix + `clickhouse cannot create: ClickHouse has no named enum type; ` +
+				`type the column Enum8 or Enum16 with these values instead`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := builtin.GetOrderedCreateStatements(valuedEnumSchema(), test.dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestGetOrderedCreateStatements_ADeclaredEnumIsNotRefused is the control on
+// the PostgreSQL family: the same values declared as a named enum render the
+// type and the column that names it.
+func TestGetOrderedCreateStatements_ADeclaredEnumIsNotRefused(t *testing.T) {
+	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := builtin.GetOrderedCreateStatements(declaredEnumSchema(), dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, `CREATE TYPE "enum_t_s" AS ENUM ('draft', 'live');`)
+		})
+	}
+}
+
+// TestValidateSchema_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath
+// pins that validation, which the comparison runs on the declared side before
+// planning, refuses the column the render refuses.
+func TestValidateSchema_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	err := builtin.ValidateSchema(valuedEnumSchema(), platform.Postgres)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `column "s" of table "t" is typed ENUM .* which postgres cannot create: declare a named enum .*`)
 }
