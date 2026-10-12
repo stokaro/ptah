@@ -33,8 +33,8 @@ func (v vocabulary) fields(resourceType string) []string {
 	if fields, common := excludeFieldSelectors[resourceType]; common {
 		return slices.Sorted(maps.Keys(fields))
 	}
-	if selection, owned := v.selections.Selection(resourceType); owned {
-		return slices.Clone(selection.Fields)
+	if selections := v.selections.ForType(resourceType); len(selections) > 0 {
+		return selections[0].Fields
 	}
 	return nil
 }

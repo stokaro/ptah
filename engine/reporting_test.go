@@ -267,3 +267,40 @@ func TestReporting_ServiceFailureAndCancellationDiscardEarlierResults(t *testing
 		})
 	}
 }
+
+func TestReporting_ModelsContributeToOneMetric(t *testing.T) {
+	c := qt.New(t)
+	service := reportingFunc(func(_ context.Context, request schemaext.ReportingRequest) ([]schemaext.ValueReport, error) {
+		values := make([]schemaext.ValueReport, len(request.Values))
+		for i, value := range request.Values {
+			values[i] = schemaext.ValueReport{Kind: value.Kind(), Counts: []schemaext.MetricCount{{Name: "objects", Value: value.(*conversionValue).Number}}}
+		}
+		return values, nil
+	})
+	var providers []engine.Provider
+	for _, kind := range []schemaext.Kind{conversionFirst, conversionSecond} {
+		providers = append(providers, engine.Provider{ID: string(kind), Codecs: []schemaext.Codec{conversionCodec(kind, schemaext.Desired)},
+			Reporting: []engine.Reporting{{Representation: schemaext.Desired, Service: service,
+				Definitions: []schemaext.ReportDefinition{{Kind: kind, DisplayName: "objects", Metrics: []schemaext.MetricDefinition{{Name: "objects", Help: "Stored objects"}}}}}}})
+	}
+	runtime, err := engine.New(providers...)
+	c.Assert(err, qt.IsNil)
+	report, err := runtime.ReportFeatures(t.Context(), schemaext.ReportingRequest{Representation: schemaext.Desired,
+		Values: []schemaext.Value{&conversionValue{ID: conversionFirst, Number: 3}, &conversionValue{ID: conversionSecond, Number: 5}}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Definitions, qt.HasLen, 2)
+	c.Assert(report.Values, qt.DeepEquals, []schemaext.ValueReport{
+		{Kind: conversionFirst, Counts: []schemaext.MetricCount{{Name: "objects", Value: 3}}},
+		{Kind: conversionSecond, Counts: []schemaext.MetricCount{{Name: "objects", Value: 5}}},
+	})
+}
+
+func TestReporting_RefusesRepeatedMetricWithinAModel(t *testing.T) {
+	c := qt.New(t)
+	provider := reportingProvider(reportingFunc(func(context.Context, schemaext.ReportingRequest) ([]schemaext.ValueReport, error) { return nil, nil }))
+	metrics := provider.Reporting[0].Definitions[0].Metrics
+	provider.Reporting[0].Definitions[0].Metrics = append(metrics, metrics[0])
+	runtime, err := engine.New(provider)
+	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+	c.Assert(runtime, qt.IsNil)
+}

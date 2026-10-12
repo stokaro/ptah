@@ -254,3 +254,31 @@ func TestExcludeDatabase_LeavesADatabaseWideNameOutOfEverySchema(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(customObjects(c, got), qt.ContentEquals, []string{"other|g2=two", "|app.d1", "|d2", "|d3"})
 }
+
+func TestScopeDatabase_SharedSelectorKeepsEveryOwner(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(
+		engine.Provider{ID: "example.org/first", Codecs: []schemaext.Codec{customCodec(&gadget{})},
+			Selections: []selectext.Extension{{Owner: "example.org/first", Selections: []selectext.Selection{{Kind: gadgetKind, Type: "shared", Naming: selectext.InSchema}}}}},
+		engine.Provider{ID: "example.org/second", Codecs: []schemaext.Codec{customCodec(&depot{})},
+			Selections: []selectext.Extension{{Owner: "example.org/second", Selections: []selectext.Selection{{Kind: depotKind, Type: "shared", Naming: selectext.InSchema}}}}},
+	))
+	objects := must.Must(schemaext.NewObjects(
+		schemaext.Object{Ref: customRef(gadgetKind, "app", "keep"), Value: &gadget{}},
+		schemaext.Object{Ref: customRef(depotKind, "app", "keep"), Value: &depot{}},
+		schemaext.Object{Ref: customRef(gadgetKind, "app", "omit"), Value: &gadget{}},
+		schemaext.Object{Ref: customRef(depotKind, "app", "omit"), Value: &depot{}},
+	))
+	for _, scope := range []atlasfilter.Scope{
+		{Include: []string{"app.keep[type=shared]"}, Selections: runtime.Selections()},
+		{Exclude: []string{"app.omit[type=shared]"}, Selections: runtime.Selections()},
+	} {
+		got, err := atlasfilter.ScopeDatabase(&catalog.Database{FeatureObjects: objects}, scope)
+		c.Assert(err, qt.IsNil)
+		refs := got.FeatureObjects.Refs()
+		c.Assert(refs, qt.HasLen, 2)
+		c.Assert(refs[0].Name.Source, qt.Equals, "keep")
+		c.Assert(refs[1].Name.Source, qt.Equals, "keep")
+		c.Assert(refs[0].Kind, qt.Not(qt.Equals), refs[1].Kind)
+	}
+}

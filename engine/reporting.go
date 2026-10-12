@@ -12,7 +12,8 @@ import (
 )
 
 // Reporting registers one owner for model reports in a source representation.
-// Metric names are unique within that representation. Reporting ownership does
+// Models may contribute to the same metric when its name and help agree.
+// Each model declares a metric name once. Reporting ownership does
 // not depend on which targets implement the model's migration semantics.
 type Reporting struct {
 	Representation schemaext.Representation
@@ -30,12 +31,12 @@ func (r *Runtime) registerReporting(owner string, declaration Reporting) error {
 		return fmt.Errorf("%w: incomplete reporting registration", ErrInvalidRegistration)
 	}
 	index := len(r.reportingServices)
-	metrics := make(map[string]bool)
+	metrics := make(map[string]schemaext.MetricDefinition)
 	for _, registered := range r.reportingServices {
 		if registered.Representation == declaration.Representation {
 			for _, definition := range registered.Definitions {
 				for _, metric := range definition.Metrics {
-					metrics[metric.Name] = true
+					metrics[metric.Name] = metric
 				}
 			}
 		}
@@ -56,7 +57,7 @@ func (r *Runtime) registerReporting(owner string, declaration Reporting) error {
 	return nil
 }
 
-func (r *Runtime) validateReportDefinition(owner string, representation schemaext.Representation, definition schemaext.ReportDefinition, metrics map[string]bool) error {
+func (r *Runtime) validateReportDefinition(owner string, representation schemaext.Representation, definition schemaext.ReportDefinition, metrics map[string]schemaext.MetricDefinition) error {
 	if !definition.Kind.Valid() || !reportText(definition.DisplayName) {
 		return fmt.Errorf("%w: invalid reporting definition for %q", ErrInvalidRegistration, definition.Kind)
 	}
@@ -66,11 +67,14 @@ func (r *Runtime) validateReportDefinition(owner string, representation schemaex
 	if !found {
 		return fmt.Errorf("%w: %q does not own %q/%s", ErrInvalidRegistration, owner, definition.Kind, representation)
 	}
+	seen := make(map[string]bool, len(definition.Metrics))
 	for _, metric := range definition.Metrics {
-		if !metricName(metric.Name) || !reportText(metric.Help) || metrics[metric.Name] {
+		registered, exists := metrics[metric.Name]
+		if !metricName(metric.Name) || !reportText(metric.Help) || seen[metric.Name] || (exists && registered != metric) {
 			return fmt.Errorf("%w: invalid or duplicate reporting metric %q", ErrInvalidRegistration, metric.Name)
 		}
-		metrics[metric.Name] = true
+		metrics[metric.Name] = metric
+		seen[metric.Name] = true
 	}
 	return nil
 }

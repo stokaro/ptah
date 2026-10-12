@@ -70,11 +70,10 @@ func TestNewSet_HappyPath(t *testing.T) {
 		{Kind: "example.org/a/x", Type: "gadget", Naming: selectext.DatabaseWide, Relation: true, Fields: []string{"comment"}},
 		{Kind: "example.org/b/x", Type: "widget", Naming: selectext.InSchema},
 	})
-	widget, found := set.Selection("widget")
-	c.Assert(found, qt.IsTrue)
-	c.Assert(widget.Kind, qt.Equals, schemaext.Kind("example.org/b/x"))
-	_, found = set.Selection("nothing")
-	c.Assert(found, qt.IsFalse)
+	widget := set.ForType("widget")
+	c.Assert(widget, qt.HasLen, 1)
+	c.Assert(widget[0].Kind, qt.Equals, schemaext.Kind("example.org/b/x"))
+	c.Assert(set.ForType("nothing"), qt.HasLen, 0)
 	c.Assert(selectext.None().Selected(), qt.IsTrue)
 	c.Assert(selectext.None().Selections(), qt.HasLen, 0)
 	c.Assert(selectext.Set{}.Selected(), qt.IsFalse)
@@ -111,10 +110,10 @@ func TestNewSet_FailurePath(t *testing.T) {
 			{Owner: "example.org/a", Selections: []selectext.Selection{selection("example.org/x", "gadget")}},
 			{Owner: "example.org/b", Selections: []selectext.Selection{selection("example.org/x", "widget")}}},
 			wantErr: `duplicate feature identity: model "example.org/x" is selected by example.org/a and example.org/b`},
-		{name: "a type twice", extensions: []selectext.Extension{
+		{name: "conflicting type", extensions: []selectext.Extension{
 			{Owner: "example.org/a", Selections: []selectext.Selection{selection("example.org/a/x", "gadget")}},
-			{Owner: "example.org/b", Selections: []selectext.Selection{selection("example.org/b/x", "gadget")}}},
-			wantErr: `duplicate feature identity: selector type "gadget" is claimed by example.org/a and example.org/b`},
+			{Owner: "example.org/b", Selections: []selectext.Selection{{Kind: "example.org/b/x", Type: "gadget", Naming: selectext.DatabaseWide}}}},
+			wantErr: `duplicate feature identity: selector type "gadget" has conflicting definitions`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -224,4 +223,22 @@ func TestSelection_ByNameAlone(t *testing.T) {
 			c.Assert(selectext.Selection{Naming: test.naming}.ByNameAlone(test.schema), qt.Equals, test.want)
 		})
 	}
+}
+
+func TestSet_SharedSelectorTypesRetainEveryModel(t *testing.T) {
+	c := qt.New(t)
+	definitions := []selectext.Extension{
+		{Owner: "example.org/b", Service: answering{}, Selections: []selectext.Selection{{Kind: "example.org/b/x", Type: "domain", Naming: selectext.InSchema, Fields: []string{"comment"}}}},
+		{Owner: "example.org/a", Service: answering{}, Selections: []selectext.Selection{{Kind: "example.org/a/x", Type: "domain", Naming: selectext.InSchema, Fields: []string{"comment"}}}},
+	}
+	set, err := selectext.NewSet(definitions...)
+	c.Assert(err, qt.IsNil)
+	definitions[0].Selections[0].Fields[0] = "changed"
+	selections := set.ForType("domain")
+	c.Assert(selections, qt.HasLen, 2)
+	c.Assert(selections[0].Kind, qt.Equals, schemaext.Kind("example.org/a/x"))
+	c.Assert(selections[1].Kind, qt.Equals, schemaext.Kind("example.org/b/x"))
+	selections[0].Fields[0] = "changed"
+	c.Assert(set.ForType("domain")[0].Fields, qt.DeepEquals, []string{"comment"})
+	c.Assert(set.Selections()[1].Fields, qt.DeepEquals, []string{"comment"})
 }
