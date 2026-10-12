@@ -689,19 +689,15 @@ func columnEnumFixture() schemamodel.Database {
 	)
 }
 
-// columnEnumForeignKeyFixture is what makes [schemamodel.Field.Enum] visible to
-// the ablation.
+// columnEnumForeignKeyFixture is the second reader of [schemamodel.Field.Enum]
+// the ablation sees.
 //
-// The values themselves reach DDL through [schemamodel.Database.Enums] -- every
-// reader fills both, and the renderer emits the type from the enum -- so
-// removing the field from the fixture above changes nothing and the field read
-// as a gap against stokaro/ptah#2611.
-//
-// It has a production reader all the same, and this is it: MySQL refuses a
-// foreign key between two ENUM columns whose value lists differ, and the refusal
-// is the only place the FIELD decides anything. Ablating it makes the two lists
-// equal, the refusal stops, and the render answers SQL where it answered an
-// error -- which [everyCell] sees, because it keeps a refusal as its own text.
+// The first is the column above: a dialect without standalone enums builds it
+// from the values it carries, so ablating them leaves the bare type ENUM. The
+// second is a refusal: MySQL refuses a foreign key between two ENUM columns
+// whose value lists differ. Ablating the field makes the two lists equal, the
+// refusal stops, and the render answers SQL where it answered an error -- which
+// [everyCell] sees, because it keeps a refusal as its own text.
 func columnEnumForeignKeyFixture() schemamodel.Database {
 	db := twoTables()
 	db.Fields = append(db.Fields,
