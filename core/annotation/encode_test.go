@@ -62,7 +62,7 @@ func TestSet_Encode_HappyPath(t *testing.T) {
 	table := annotation.Table{Schema: "app", Name: "rooms", Struct: "Room"}
 	written := annotation.EncodedDirective{Directive: "ptah:schema:level", Placement: annotation.AfterTable, Table: &table,
 		Attributes: []annotation.EncodedAttribute{{Name: "value", Value: "high"}}}
-	marked := annotation.EncodedDirective{Directive: "ptah:schema:mark", Placement: annotation.AfterSchemas}
+	marked := annotation.EncodedDirective{Directive: "ptah:schema:mark", Placement: annotation.AfterViews}
 	// Registered with the later name first: the result is ordered by owner
 	// name, not by registration.
 	set := must.Must(annotation.NewSet(
@@ -160,6 +160,8 @@ func TestSet_Encode_FailurePath(t *testing.T) {
 			wantErr: `.*placed directive "ptah:schema:level" at a table the schema does not declare`},
 		{name: "a table on a directive of the standalone objects", directive: directive("ptah:schema:level", annotation.AfterPrivileges, &table),
 			wantErr: `.*placed directive "ptah:schema:level" at after-privileges with a table`},
+		{name: "a table on a directive after the views", directive: directive("ptah:schema:level", annotation.AfterViews, &table),
+			wantErr: `.*placed directive "ptah:schema:level" at after-views with a table`},
 		{name: "an attribute without a name", directive: directive("ptah:schema:level", annotation.AfterSchemas, nil, annotation.EncodedAttribute{Name: ""}),
 			wantErr: `.*wrote directive "ptah:schema:level" with attribute "" unnamed, twice or as its targets`},
 		{name: "an attribute written twice", directive: directive("ptah:schema:level", annotation.AfterSchemas, nil,

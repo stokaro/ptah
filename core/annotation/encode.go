@@ -39,6 +39,11 @@ type EncodeRequest struct {
 	Slots []SlotFacets
 	// Coverage is what the schema knows of the extension's Kinds.
 	Coverage schemaext.Coverage
+	// Target is the target the source is written for, as
+	// platform.NormalizeDialect spells it, or empty when the export names
+	// none. An owner may leave out what only another target reads, such as
+	// the limits of models the target never holds.
+	Target string
 }
 
 // Slot names one declaration of the frontend's own directives the writer
@@ -78,8 +83,24 @@ type EncodeResult struct {
 	// writer writes them in this order.
 	Directives []EncodedDirective
 	// Attributes are what the owner adds to the frontend's own declarations
-	// it was handed, one entry for each declaration.
+	// it was handed, one entry for each declaration and position.
 	Attributes []SlotAttributes
+	// Limits are the not-described declarations the owner writes: kinds of
+	// its models, or one object of them, that the source does not describe,
+	// so reading it back leaves them unknown rather than absent (see
+	// [Extension.Limits]). The writer writes them at the start of every file
+	// it generates, owner by owner in the order of the owners' names, so a
+	// file read alone claims no more than the whole source does.
+	Limits []EncodedLimit
+}
+
+// EncodedLimit is one not-described declaration an owner writes.
+type EncodedLimit struct {
+	// Kind is the kind the declaration names, one of the owner's
+	// [Extension.Limits].
+	Kind string
+	// Name is the object the limit covers, or empty for the whole kind.
+	Name string
 }
 
 // SlotAttributes are the attributes an owner adds to one of the frontend's
@@ -130,6 +151,11 @@ const (
 	// objects the rest of the schema may name, such as a type a column is
 	// declared over.
 	AfterSchemas Placement = "after-schemas"
+	// AfterViews places a directive in that comment after the views and
+	// materialized views and before the roles: an object that reads or
+	// moves data rather than declaring a relation, such as a topic or an
+	// external table.
+	AfterViews Placement = "after-views"
 	// AfterPrivileges places a directive in that comment after the default
 	// privileges, the last of the writer's own directives there: an object
 	// that stands for a relation over the tables, such as a continuous
@@ -204,7 +230,9 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // dialects attribute, which Targets write. It refuses attributes added to a
 // declaration the extension was not handed or added twice, and an attribute
 // without a name, written twice, or one the extension does not add to the
-// declaration's directive. An encoder's own error is returned
+// declaration's directive. It refuses a limit of a kind reading the source
+// back does not hand to the extension, and one written twice. Every owner is
+// handed the request's Target. An encoder's own error is returned
 // as it is: it refuses the export, as a value the owner cannot write would
 // otherwise be written wrong.
 func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, error) {
@@ -235,16 +263,36 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 		if err := s.checkSlotAttributes(index, request, result.Attributes, writers); err != nil {
 			return EncodeResult{}, err
 		}
+		if err := s.checkLimits(index, result.Limits); err != nil {
+			return EncodeResult{}, err
+		}
 		encoded.Directives = append(encoded.Directives, result.Directives...)
 		encoded.Attributes = append(encoded.Attributes, result.Attributes...)
+		encoded.Limits = append(encoded.Limits, result.Limits...)
 	}
 	return encoded, nil
+}
+
+// checkLimits refuses a limit of the extension at index that reading the
+// source back would hand to another owner or to none, and one it writes
+// twice.
+func (s Set) checkLimits(index int, limits []EncodedLimit) error {
+	written := make(map[EncodedLimit]bool, len(limits))
+	for _, limit := range limits {
+		reader, found := s.limits[strings.ToLower(strings.TrimSpace(limit.Kind))]
+		if !found || reader != index || written[limit] {
+			return fmt.Errorf("%w: Go annotation encoder of %s wrote the limit of kind %q and name %q, which reading the source back does not hand to it, or wrote it twice",
+				schemaext.ErrInvalidValue, s.extensions[index].Owner, limit.Kind, limit.Name)
+		}
+		written[limit] = true
+	}
+	return nil
 }
 
 // selectRequest is what schema holds of the extension's models: the objects
 // and the facets of its Encodes, the coverage of its Kinds, and every table.
 func (e Extension) selectRequest(schema EncodeRequest) EncodeRequest {
-	request := EncodeRequest{Tables: slices.Clone(schema.Tables), Coverage: schema.Coverage.SelectKinds(e.Kinds)}
+	request := EncodeRequest{Tables: slices.Clone(schema.Tables), Coverage: schema.Coverage.SelectKinds(e.Kinds), Target: schema.Target}
 	for _, object := range schema.Objects {
 		if slices.Contains(e.Encodes, schemaext.Kind(object.Ref.Kind)) {
 			request.Objects = append(request.Objects, object)
@@ -308,7 +356,7 @@ func checkPlacement(owner string, request EncodeRequest, directive EncodedDirect
 			return fmt.Errorf("%w: Go annotation encoder of %s placed directive %q at a table the schema does not declare",
 				schemaext.ErrInvalidValue, owner, directive.Directive)
 		}
-	case AfterSchemas, AfterPrivileges:
+	case AfterSchemas, AfterViews, AfterPrivileges:
 		if directive.Table != nil {
 			return fmt.Errorf("%w: Go annotation encoder of %s placed directive %q at %s with a table",
 				schemaext.ErrInvalidValue, owner, directive.Directive, directive.Placement)

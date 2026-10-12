@@ -337,10 +337,12 @@ models, models without an encoder, and a model the extension does not declare.
   a table's primary key and a PRIMARY KEY constraint, so an owner can refuse a
   key's setting on another constraint. Every encoder is asked,
   also for a schema that holds none of its models, since an owner may refuse a
-  coverage record a source cannot carry.
+  coverage record a source cannot carry. Each is handed the request's
+  `Target`, the target the source is written for, empty when the export
+  names none.
 - The encoder returns `EncodedDirective` values as data: the directive, its
-  `Placement` (`AfterSchemas` or `AfterPrivileges` among the standalone
-  objects, `AfterTable` beside the `Table` it names), its attributes as name
+  `Placement` (`AfterSchemas`, `AfterViews` or `AfterPrivileges` among the
+  standalone objects, `AfterTable` beside the `Table` it names), its attributes as name
   and value, and the `Targets` its dialects attribute scopes it to. The writer
   quotes every value and writes the dialects attribute last. `Set.Encode`
   returns the directives owner by owner in the order of the owners' names,
@@ -370,6 +372,13 @@ models, models without an encoder, and a model the extension does not declare.
   row-level security policies, such as a ClickHouse row policy or a
   PostgreSQL policy. `AfterSwitches` places one after the table's own
   `rls:enable` directives, such as the switch of a PostgreSQL table.
+- `EncodeResult.Limits` holds the `EncodedLimit` values an owner writes: a
+  kind of its `Extension.Limits`, and an object name or none, which the
+  writer writes as `ptah:schema:notdescribed` at the start of every file it
+  generates. `Set.Encode` refuses a limit reading the source back would hand
+  to another owner or to none, and one written twice.
+- `AfterViews` places a directive among the standalone objects after the
+  views and materialized views and before the roles, such as a YDB topic.
 - The writer reports no losses. A value an owner cannot write is the owner's
   to refuse with an error, which refuses the export.
 - `Table.QualifiedName` is the spelling a `table` attribute names a table by,
