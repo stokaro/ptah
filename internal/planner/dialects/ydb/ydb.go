@@ -133,7 +133,7 @@ func New() *Planner { return NewWithCapabilities(capability.YDB262()) }
 // NewWithCapabilities returns a planner for a concrete server capability set.
 // The set is cloned, so a caller mutating it later does not change a plan.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
-	return &Planner{caps: caps.Clone()}
+	return &Planner{caps: caps}
 }
 
 // WithTableRebuild returns a copy of the planner that, when allow is set,

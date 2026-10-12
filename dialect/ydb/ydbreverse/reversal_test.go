@@ -170,7 +170,7 @@ func TestReversalValidatesContextTargetAndCapabilities(t *testing.T) {
 	result, err = service.ReverseChanges(t.Context(), input)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 	c.Assert(result, qt.IsNil)
-	input.Target, input.Capabilities = "ydb", nil
+	input.Target, input.Capabilities = "ydb", capability.Capabilities{}
 	result, err = service.ReverseChanges(t.Context(), input)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(result, qt.IsNil)

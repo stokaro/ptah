@@ -33,7 +33,7 @@ func TestDefaultPoolSettingsPreservesUnspecifiedLimits(t *testing.T) {
 			result, err := registry.Render(ctx, ast.StatementExtension, &ydbast.DefaultPoolSettings{Spec: tc.spec})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.DeepEquals, tc.want)
-			ctx.Capabilities = nil
+			ctx.Capabilities = capability.Capabilities{}
 			result, err = registry.Render(ctx, ast.StatementExtension, &ydbast.DefaultPoolSettings{Spec: tc.spec})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(result, qt.IsNil)

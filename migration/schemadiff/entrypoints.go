@@ -207,7 +207,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// A comparison given no capability set assumes the dialect's preset, as
 	// the comparison itself does.
 	caps := info.Capabilities
-	if len(caps) == 0 {
+	if caps.Len() == 0 {
 		caps = comparisonCapabilities(info.Dialect)
 	}
 	rules, err := runtime.ComparisonRules(info.Dialect)

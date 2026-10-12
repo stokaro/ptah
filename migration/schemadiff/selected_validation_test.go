@@ -30,7 +30,7 @@ func (s selectedValidator) ValidateSchema(ctx context.Context, request schemaval
 func TestCompareWithDatabaseInfoUsesSelectedValidation(t *testing.T) {
 	c := qt.New(t)
 	calls := 0
-	caps := capability.Capabilities{capability.CreateIndexConcurrently: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.CreateIndexConcurrently: true})
 	selected := selectedValidator{Runtime: must.Must(builtin.New()), validate: func(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
 		calls++
 		c.Assert(ctx, qt.Equals, t.Context())

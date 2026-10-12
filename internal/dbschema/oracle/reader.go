@@ -62,7 +62,7 @@ func NewOracleReaderWithCapabilities(
 	return &Reader{
 		db:     db,
 		schema: strings.ToUpper(strings.TrimSpace(schema)),
-		caps:   caps.Clone(),
+		caps:   caps,
 	}
 }
 

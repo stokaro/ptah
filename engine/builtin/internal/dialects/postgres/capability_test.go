@@ -17,7 +17,7 @@ import (
 func TestPostgreSQLRenderer_NilCapabilitiesAreConservative(t *testing.T) {
 	c := qt.New(t)
 
-	renderer := postgres.NewWithCapabilities(nil, platform.CockroachDB)
+	renderer := postgres.NewWithCapabilities(capability.Capabilities{}, platform.CockroachDB)
 
 	idx := ast.NewIndex("idx_users_email", "users", "email")
 	idx.Concurrently = true

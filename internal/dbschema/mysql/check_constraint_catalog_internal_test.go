@@ -72,7 +72,7 @@ func TestReadCheckConstraintClauses_CapabilityChoosesTheFirstSpelling(t *testing
 	}{
 		{
 			name:      "a reader with no set sniffs, as it always did",
-			caps:      nil,
+			caps:      capability.Capabilities{},
 			wantAsked: []string{"table-aware", "name-only"},
 		},
 		{

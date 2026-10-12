@@ -115,7 +115,7 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 	if strings.TrimSpace(opts.Dialect) != "" {
 		parserOpts = append(parserOpts, parser.WithDialect(opts.Dialect))
 	}
-	if len(opts.Capabilities) > 0 {
+	if opts.Capabilities.Len() > 0 {
 		parserOpts = append(parserOpts, parser.WithCapabilities(opts.Capabilities))
 	}
 	if opts.Timeout > 0 {

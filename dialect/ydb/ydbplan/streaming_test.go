@@ -33,7 +33,7 @@ func streamingRuntime(c *qt.C) *engine.Runtime {
 
 func streamingPlanRequest(changes ...schemaext.ChangeRecord) featureplan.Request {
 	return featureplan.Request{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-		Capabilities: capability.Capabilities{capability.StreamingQueries: true}, Changes: changes}
+		Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}), Changes: changes}
 }
 
 func TestStreamingBodyChangeStopsBeforeCommonMutations(t *testing.T) {
@@ -160,7 +160,7 @@ func TestStreamingDeclarationUsesTheSameOwnerOperation(t *testing.T) {
 	c := qt.New(t)
 	object := ydbstreaming.DesiredObject("app", "query", "Holder", ydbstreaming.Spec{Text: "SELECT 1;"}, true)
 	result, err := streamingRuntime(c).PlanDeclarations(t.Context(), featureplan.DeclarationRequest{
-		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.StreamingQueries: true}, Objects: []schemaext.Object{object},
+		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}), Objects: []schemaext.Object{object},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)

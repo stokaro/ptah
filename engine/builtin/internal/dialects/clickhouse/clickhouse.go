@@ -86,7 +86,7 @@ func New() *Renderer {
 // capability set. The set is cloned so later caller mutations cannot change
 // rendering behavior.
 func NewWithCapabilities(caps capability.Capabilities) *Renderer {
-	return &Renderer{w: &bufwriter.Writer{}, caps: caps.Clone()}
+	return &Renderer{w: &bufwriter.Writer{}, caps: caps}
 }
 
 func (r *Renderer) capabilities() capability.Capabilities {

@@ -7,8 +7,9 @@ its own T-SQL renderer and dbschema implementation while initially reusing the
 closest generic planner path; and versions within a single dialect differ in
 which DDL they accept. Instead of forking a new dialect for every variant,
 capability-aware planners and renderers consult a **capability set** — a
-validated `map[Capability]bool` describing what the concrete target accepts —
-and restrict or enable individual emissions accordingly (issues #225/#226/#171).
+validated, read-only set of `Capability` flags describing what the concrete
+target accepts — and restrict or enable individual emissions accordingly
+(issues #225/#226/#171).
 
 Package: `core/platform/capability`.
 
@@ -69,15 +70,15 @@ Each layer below asks the same capability set a different question:
   guard, so a schema file may carry a guard only where the renderer would write
   one. The `mysql` parser refuses the guard, as MySQL does.
 
-At the `Capabilities` type level the nil/empty set is valid and reads as
-"everything absent" (`Has` is nil-safe). The **planners** deliberately do NOT
+At the `Capabilities` type level the zero set is valid and reads as
+"everything absent" (`Has` reports false for every key). The **planners** deliberately do NOT
 treat nil as assume-nothing, though: a zero-value planner (`&mysql.Planner{}`,
 `&postgres.Planner{}`) defaults to its dialect's current-line preset, so it
 behaves exactly like `New()`. An assume-nothing planner would be a trap — it
 would silently downgrade CHECK additions to warnings (turning a CHECK
 modification into a destructive drop-without-re-add) and re-spell CHECK drops.
 Restricting emissions is always an explicit choice: pass a legacy preset or a
-composed set to `NewWithCapabilities` (which clones its argument).
+composed set to `NewWithCapabilities`.
 
 ## Registry
 
@@ -776,7 +777,11 @@ if err := caps.Validate(); err != nil { /* reject configuration */ }
 planner := mysql.NewWithCapabilities(caps)
 ```
 
-`With` copies — presets are never mutated.
+A set never changes once made: `With` returns a new set, presets are shared
+rather than copied, and a set passed to a planner or a renderer is kept as it
+is, since no holder can change it. `capability.Of` makes a set from a
+`map[Capability]bool` and copies the map, `Map` hands back a copy the caller
+owns, and `All` iterates the answered keys in order.
 
 `capability.IndexIncludeSPGiST` distinguishes PostgreSQL 14 and newer from
 PostgreSQL 12–13 when rendering `SPGIST` indexes with `INCLUDE` payload

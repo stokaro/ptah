@@ -56,7 +56,7 @@ func New() *Planner { return NewWithCapabilities(capability.ClickHouse24()) }
 // plan already being assembled. A nil set is conservative; New explicitly
 // selects the default ClickHouse 24 preset.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
-	return &Planner{caps: caps.Clone()}
+	return &Planner{caps: caps}
 }
 
 func (p *Planner) capabilities() capability.Capabilities {

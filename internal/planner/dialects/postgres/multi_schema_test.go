@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -165,7 +166,7 @@ func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: test.schema + ".users"}}}
 
-			nodes, err := postgres.NewForDialect(test.dialect, nil).
+			nodes, err := postgres.NewForDialect(test.dialect, capability.Capabilities{}).
 				GenerateMigrationAST(
 					context.Background(), must.Must(builtin.New()),
 					withDeclaredObjects(diff, desired),

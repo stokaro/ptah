@@ -268,7 +268,7 @@ func diffCapabilities(
 		return target.Capabilities
 	case conn != nil:
 		return conn.Info().Capabilities
-	case documentCaps != nil:
+	case documentCaps.Len() != 0:
 		return documentCaps
 	default:
 		return target.Capabilities
@@ -290,17 +290,17 @@ func diffCapabilities(
 func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout time.Duration) capability.Capabilities {
 	devURL = strings.TrimSpace(devURL)
 	if devURL == "" {
-		return nil
+		return capability.Capabilities{}
 	}
 	if devdocker.IsURL(devURL) {
 		spec, err := devdocker.Parse(devURL)
 		if err != nil {
-			return nil
+			return capability.Capabilities{}
 		}
 		_, tag, tagged := strings.Cut(spec.Image, ":")
 		resolution := capability.ResolveServerVersion(dialect, tag)
 		if !tagged || !resolution.Recognized {
-			return nil
+			return capability.Capabilities{}
 		}
 		return resolution.Capabilities
 	}
@@ -310,7 +310,7 @@ func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout 
 		// file to ask creates it, so without this `--dev-url sqlite://dev.db`
 		// on a diff of two files leaves an empty dev.db in the working
 		// directory.
-		return nil
+		return capability.Capabilities{}
 	}
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
@@ -321,7 +321,7 @@ func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout 
 	if err != nil {
 		slog.Debug("could not open --dev-url for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
-		return nil
+		return capability.Capabilities{}
 	}
 	defer func() { _ = conn.Close() }()
 	return conn.Info().Capabilities

@@ -400,7 +400,7 @@ func NewWithCapabilities(caps capability.Capabilities, dialect string) *Renderer
 		currentEnums: nil,
 		dialect:      normalized,
 		dialectUpper: strings.ToUpper(normalized),
-		caps:         caps.Clone(),
+		caps:         caps,
 	}
 }
 

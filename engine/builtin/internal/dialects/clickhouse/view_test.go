@@ -86,7 +86,7 @@ func TestViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) {
 
 func TestViewDDL_NilCapabilitySetIsConservative(t *testing.T) {
 	c := qt.New(t)
-	rendered, err := clickhouse.NewWithCapabilities(nil).Render(
+	rendered, err := clickhouse.NewWithCapabilities(capability.Capabilities{}).Render(
 		ast.NewCreateView("analytics.active_users").SetBody("SELECT 1"),
 	)
 

@@ -573,7 +573,7 @@ func TestRefineMySQLForeignKeyCapabilities_ProbeFailure(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorMatches, `query restrict_fk_on_non_standard_key: driver: bad connection`)
-	c.Assert(got, qt.IsNil)
+	c.Assert(got.Len(), qt.Equals, 0)
 }
 
 func TestConvertClickHouseURL(t *testing.T) {
@@ -1048,7 +1048,7 @@ func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
 	}
 
 	info := conn.Info()
-	info.Capabilities[capability.XMLType] = true
+	info.Capabilities = info.Capabilities.With(capability.XMLType, true)
 
 	c.Assert(conn.Info().Capabilities.Has(capability.XMLType), qt.IsFalse)
 }

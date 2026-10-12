@@ -283,7 +283,7 @@ func resolveServerTarget(opts *options) (servertarget.Target, error) {
 //
 // capability.ForDialect supplies the profile when no server version is pinned.
 func renderCapabilities(dialect string, target servertarget.Target) capability.Capabilities {
-	if target.Capabilities == nil {
+	if target.Capabilities.Len() == 0 {
 		return capability.ForDialect(dialect)
 	}
 	return target.Capabilities

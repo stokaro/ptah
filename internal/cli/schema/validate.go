@@ -215,9 +215,9 @@ func validateCapabilities(dialect, serverVersion string) (capability.Capabilitie
 	}
 	target, err := servertarget.Resolve(dialect, serverVersion)
 	if err != nil {
-		return nil, fmt.Errorf("invalid --%s: %w", serverversion.FlagName, err)
+		return capability.Capabilities{}, fmt.Errorf("invalid --%s: %w", serverversion.FlagName, err)
 	}
-	if target.Capabilities == nil {
+	if target.Capabilities.Len() == 0 {
 		return capability.ForDialect(dialect), nil
 	}
 	return target.Capabilities, nil

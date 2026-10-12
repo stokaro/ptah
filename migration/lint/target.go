@@ -117,12 +117,8 @@ func ResolveTarget(dialect, version string) (Target, error) {
 // the empty set, which is the same thing its hybrid lexer says: the target is
 // unknown.
 func effectiveTarget(opts Options) (Target, error) {
-	if opts.Target.Named() || len(opts.Target.Capabilities) > 0 {
-		// Cloned on the way in as well as on the way out: the caller keeps
-		// its own Target, and an analysis that stored that map would change
-		// under it -- and change what its rules read -- if the caller wrote to
-		// the set afterwards.
-		return opts.Target.clone(), nil
+	if opts.Target.Named() || opts.Target.Capabilities.Len() > 0 {
+		return opts.Target, nil
 	}
 	// A run may analyze against a dialect this linter has no rules for. The
 	// apply-time gate does, on Oracle, and that is not an error there: the
@@ -161,14 +157,4 @@ func TargetFromServer(dialect, version string, capabilities capability.Capabilit
 		Capabilities: capabilities,
 		Note:         note,
 	}
-}
-
-// clone returns a target that shares no map with this one.
-//
-// Capabilities is a map, so a Target handed out by an accessor that promises a
-// deep copy would otherwise let a caller rewrite what every rule in the
-// analysis reads. The other fields are strings and copy with the struct.
-func (t Target) clone() Target {
-	t.Capabilities = t.Capabilities.Clone()
-	return t
 }

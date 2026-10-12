@@ -49,7 +49,7 @@ func checkOwnedRules(
 		return ownerAnswer{}, nil
 	}
 	request := lintext.CheckRequest{
-		Target:        lintext.Target{Name: opts.Dialect, Version: target.Version, Capabilities: target.clone().Capabilities},
+		Target:        lintext.Target{Name: opts.Dialect, Version: target.Version, Capabilities: target.Capabilities},
 		Codes:         codes,
 		Files:         checkFiles(files),
 		Compatibility: string(opts.Compatibility),

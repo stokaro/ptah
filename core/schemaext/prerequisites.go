@@ -55,7 +55,6 @@ type Requirer interface {
 // [CapabilityProvider], in order; any other change provides nothing. caps is
 // not changed.
 func ProvidedByChanges(caps capability.Capabilities, changes []ChangeRecord) capability.Capabilities {
-	caps = caps.Clone()
 	for _, change := range changes {
 		if provider, ok := change.Value.(CapabilityProvider); ok {
 			caps = provider.ProvidedCapabilities(change.Subject, caps)
@@ -72,9 +71,8 @@ func ProvidedByChanges(caps capability.Capabilities, changes []ChangeRecord) cap
 func ProvidedByObjects(caps capability.Capabilities, objects Objects) (capability.Capabilities, error) {
 	all, err := objects.All()
 	if err != nil {
-		return nil, err
+		return capability.Capabilities{}, err
 	}
-	caps = caps.Clone()
 	for _, object := range all {
 		if provider, ok := object.Value.(CapabilityProvider); ok {
 			caps = provider.ProvidedCapabilities(object.Ref, caps)

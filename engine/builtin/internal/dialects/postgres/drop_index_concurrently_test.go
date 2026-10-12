@@ -65,7 +65,7 @@ func TestPostgreSQLRenderer_DropIndexConcurrently(t *testing.T) {
 		},
 		{
 			name:    "nil capability set is conservative",
-			caps:    nil,
+			caps:    capability.Capabilities{},
 			dialect: platform.Postgres,
 			node: func() *ast.DropIndexNode {
 				return ast.NewDropIndex("idx_users_email").SetTable("users").SetConcurrently()

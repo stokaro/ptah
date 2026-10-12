@@ -38,7 +38,7 @@ func declarationProvider(service featureplan.DeclarationService) engine.Provider
 func declarationRequest() featureplan.DeclarationRequest {
 	semantics := identifier.ForDialect("postgres")
 	builder := objectidentity.NewBuilder(semantics)
-	return featureplan.DeclarationRequest{Target: " ALTERNATE ", Identifiers: semantics, Capabilities: capability.Capabilities{capability.Changefeeds: true},
+	return featureplan.DeclarationRequest{Target: " ALTERNATE ", Identifiers: semantics, Capabilities: capability.Of(map[capability.Capability]bool{capability.Changefeeds: true}),
 		Objects: []schemaext.Object{
 			{Ref: builder.SchemaScopedParts(objectidentity.Kind(conversionSecond), "", "first"), Value: &conversionValue{ID: conversionSecond, Number: 3}},
 			{Ref: builder.SchemaScopedParts(objectidentity.Kind(conversionFirst), "", "second"), Value: &conversionValue{ID: conversionFirst, Number: 7}},
@@ -78,7 +78,7 @@ func TestDeclarationsSnapshotInputsAndRepliesWithoutEncoding(t *testing.T) {
 		reply, err = declaredFixture(ctx, request)
 		request.Objects[0].Value.(*conversionValue).Number = 99
 		request.Tables[0].Table.PrimaryKey[0] = "changed"
-		request.Capabilities[capability.Changefeeds] = false
+		request.Capabilities = request.Capabilities.With(capability.Changefeeds, false)
 		request.CommonSteps[0].Effects[0].Action = plangraph.Drop
 		return reply, err
 	}))

@@ -69,7 +69,7 @@ func TestWithDeclaredExtensions(t *testing.T) {
 			// Nothing else moves: the rule names one key, and a refinement that
 			// rebuilt the set would be a preset change nobody reviewed.
 			c.Assert(refined.Has(capability.Sequences), qt.Equals, test.base.Has(capability.Sequences))
-			c.Assert(refined, qt.HasLen, len(test.base))
+			c.Assert(refined.Len(), qt.Equals, test.base.Len())
 		})
 	}
 }

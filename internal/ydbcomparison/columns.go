@@ -115,10 +115,10 @@ func declaredDefault(desired schemamodel.Field, catalogType, declared string) st
 		return ""
 	}
 	columnType, _ := comparableTypes(desired.Type, catalogType)
-	literal, err := ydbtype.Literal(columnType, value, capability.Capabilities{
+	literal, err := ydbtype.Literal(columnType, value, capability.Of(map[capability.Capability]bool{
 		capability.SmallIntegerDefaults: true,
 		capability.DocumentTypeDefaults: true,
-	})
+	}))
 	if err != nil {
 		return declared
 	}

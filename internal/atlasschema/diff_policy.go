@@ -86,7 +86,7 @@ func declaredConcurrentIndexRefs(
 	if policy.ConcurrentIndexCreateDisabled || policy.ConcurrentIndexCreate {
 		return nil
 	}
-	if capabilities == nil {
+	if capabilities.Len() == 0 {
 		capabilities = capability.ForDialect(dialect)
 	}
 	return concurrentindex.DeclaredRefs(diff, desired, current, catalog.ServerInfo{

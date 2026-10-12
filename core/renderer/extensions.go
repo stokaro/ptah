@@ -132,7 +132,6 @@ func (e Extensions) Prepare(ctx ExtensionContext, role ast.ExtensionRole, payloa
 		return nil, &ptaherr.RenderError{Dialect: ctx.Target, Err: ptaherr.ErrInvalidSchemaDiff,
 			Message: fmt.Sprintf("extension %q has an unregistered payload type %T", cloned.Kind(), cloned)}
 	}
-	ctx.Capabilities = ctx.Capabilities.Clone()
 	if err := handler.validate(ctx, cloned); err != nil {
 		return nil, err
 	}
@@ -156,7 +155,6 @@ func (e Extensions) Render(ctx ExtensionContext, role ast.ExtensionRole, payload
 			Message: fmt.Sprintf("extension %q requires an ALTER TABLE parent", prepared.Kind())}
 	}
 	handler := e.handlers[extensionKey{kind: prepared.Kind(), role: role}]
-	ctx.Capabilities = ctx.Capabilities.Clone()
 	statements, err := handler.render(ctx, prepared)
 	if err != nil {
 		return nil, err

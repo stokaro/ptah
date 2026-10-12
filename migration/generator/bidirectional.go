@@ -3,7 +3,6 @@ package generator
 import (
 	"context"
 	"fmt"
-	"maps"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -147,7 +146,7 @@ func PlanBidirectionalSchemaDiff(
 		return nil, fmt.Errorf("dialect is required")
 	}
 	caps := opts.Capabilities
-	if caps == nil {
+	if caps.Len() == 0 {
 		caps = capability.ForDialect(dialect)
 	}
 	if err := caps.Validate(); err != nil {
@@ -298,7 +297,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	return &BidirectionalSchemaPlan{
 		PriorSchema:   prior,
 		Dialect:       dialect,
-		Capabilities:  maps.Clone(caps),
+		Capabilities:  caps,
 		DesiredSchema: opts.DesiredSchema,
 		CurrentSchema: opts.CurrentSchema,
 		Policy:        opts.Policy,

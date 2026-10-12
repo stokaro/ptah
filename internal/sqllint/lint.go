@@ -322,12 +322,12 @@ func keepEnabled(findings []Finding, disabled []string) []Finding {
 // statement, and refuses a version string that names no server instead of
 // planning with the dialect default under that version's name.
 func effectiveCapabilities(opts Options) (capability.Capabilities, error) {
-	if opts.Capabilities != nil {
+	if opts.Capabilities.Len() != 0 {
 		return opts.Capabilities, nil
 	}
 	target, err := servertarget.Resolve(opts.Dialect, opts.Version)
 	if err != nil {
-		return nil, err
+		return capability.Capabilities{}, err
 	}
 	return target.Capabilities, nil
 }
@@ -506,7 +506,7 @@ func parserOptions(opts Options, caps capability.Capabilities) []parser.Option {
 	if opts.Dialect != "" {
 		parseOpts = append(parseOpts, parser.WithDialect(opts.Dialect))
 	}
-	if caps != nil {
+	if caps.Len() != 0 {
 		parseOpts = append(parseOpts, parser.WithCapabilities(caps))
 	}
 	return parseOpts

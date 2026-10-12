@@ -35,7 +35,7 @@ func TestForeignKeyReference_NamesEveryValidatedPolicy(t *testing.T) {
 		t.Run(string(policy), func(t *testing.T) {
 			c := qt.New(t)
 
-			caps := Capabilities{ForeignKeys: true, policy: true}
+			caps := Of(map[Capability]bool{ForeignKeys: true, policy: true})
 
 			c.Assert(caps.Validate(), qt.IsNil)
 			c.Assert(caps.ForeignKeyReference(), qt.Not(qt.Equals), ReferenceUnspecified)

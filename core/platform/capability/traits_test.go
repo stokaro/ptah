@@ -196,7 +196,7 @@ func TestForeignKeyReference_ReadsThePresets(t *testing.T) {
 func TestTraits_NilSetIsConservative(t *testing.T) {
 	c := qt.New(t)
 
-	traits := capability.TraitsFor(platform.Postgres, nil)
+	traits := capability.TraitsFor(platform.Postgres, capability.Capabilities{})
 
 	c.Assert(traits.EnumModeling, qt.Equals, capability.EnumUnsupported)
 	c.Assert(traits.ForeignKeyReference, qt.Equals, capability.ReferenceUnsupported)
@@ -211,10 +211,10 @@ func TestTraits_NilSetIsConservative(t *testing.T) {
 func TestTraits_ContradictorySetsResolveToUnspecified(t *testing.T) {
 	t.Run("both enum modes at once", func(t *testing.T) {
 		c := qt.New(t)
-		caps := capability.Capabilities{
+		caps := capability.Of(map[capability.Capability]bool{
 			capability.EnumInlineColumn: true,
 			capability.EnumCustomType:   true,
-		}
+		})
 
 		c.Assert(caps.Validate(), qt.IsNotNil)
 		c.Assert(caps.EnumModeling(), qt.Equals, capability.EnumUnspecified)
@@ -222,11 +222,11 @@ func TestTraits_ContradictorySetsResolveToUnspecified(t *testing.T) {
 
 	t.Run("two reference policies at once", func(t *testing.T) {
 		c := qt.New(t)
-		caps := capability.Capabilities{
+		caps := capability.Of(map[capability.Capability]bool{
 			capability.ForeignKeys:                        true,
 			capability.ForeignKeysRequireUniqueReference:  true,
 			capability.ForeignKeysRequireIndexedReference: true,
-		}
+		})
 
 		c.Assert(caps.Validate(), qt.IsNotNil)
 		c.Assert(caps.ForeignKeyReference(), qt.Equals, capability.ReferenceUnspecified)
@@ -234,7 +234,7 @@ func TestTraits_ContradictorySetsResolveToUnspecified(t *testing.T) {
 
 	t.Run("foreign keys with no policy at all", func(t *testing.T) {
 		c := qt.New(t)
-		caps := capability.Capabilities{capability.ForeignKeys: true}
+		caps := capability.Of(map[capability.Capability]bool{capability.ForeignKeys: true})
 
 		c.Assert(caps.Validate(), qt.IsNotNil)
 		c.Assert(caps.ForeignKeyReference(), qt.Equals, capability.ReferenceUnspecified)

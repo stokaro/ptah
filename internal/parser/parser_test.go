@@ -19,7 +19,7 @@ func TestNewParser(t *testing.T) {
 	p := parser.NewParser("CREATE TABLE users (id INTEGER);")
 	c.Assert(p, qt.IsNotNil)
 	c.Assert(p.Dialect(), qt.Equals, "")
-	c.Assert(p.Capabilities(), qt.IsNil)
+	c.Assert(p.Capabilities().Len(), qt.Equals, 0)
 }
 
 func TestNewParser_WithDialectAndCapabilities(t *testing.T) {
@@ -35,11 +35,12 @@ func TestNewParser_WithDialectAndCapabilities(t *testing.T) {
 	c.Assert(p.Dialect(), qt.Equals, platform.Postgres)
 	c.Assert(p.Capabilities().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
 
-	caps[capability.CreateOrReplaceTrigger] = true
+	derived := caps.With(capability.CreateOrReplaceTrigger, true)
+	c.Assert(derived.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(p.Capabilities().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
 
-	parserCaps := p.Capabilities()
-	parserCaps[capability.CreateOrReplaceTrigger] = true
+	fromParser := p.Capabilities().With(capability.CreateOrReplaceTrigger, true)
+	c.Assert(fromParser.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(p.Capabilities().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
 }
 

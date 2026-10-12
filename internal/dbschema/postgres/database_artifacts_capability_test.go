@@ -39,7 +39,7 @@ func TestDatabaseScopedArtifactsReadsAServerWithTheCatalogsItJoins(t *testing.T)
 	var asked bool
 	db := dbtest.Open(c, answerArtifacts(&asked))
 	writer := postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db.SQL, "public",
-		capability.Capabilities{capability.CatalogDependencies: true})
+		capability.Of(map[capability.Capability]bool{capability.CatalogDependencies: true}))
 
 	artifacts, err := writer.DatabaseScopedArtifacts(c.Context())
 
@@ -58,7 +58,7 @@ func TestDatabaseScopedArtifactsAsksNothingOfSpanner(t *testing.T) {
 	var asked bool
 	db := dbtest.Open(c, answerArtifacts(&asked))
 	writer := postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db.SQL, "public",
-		capability.Capabilities{capability.CatalogDependencies: false})
+		capability.Of(map[capability.Capability]bool{capability.CatalogDependencies: false}))
 
 	artifacts, err := writer.DatabaseScopedArtifacts(c.Context())
 

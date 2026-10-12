@@ -73,7 +73,7 @@ func (v *ResourcePool) Validate() error {
 	}
 	// The capability is checked against the actual target by the renderer. Here
 	// it only lets the shared validator inspect names and operand values.
-	caps := capability.Capabilities{capability.ResourcePools: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.ResourcePools: true})
 	if v.Operation == PoolDrop {
 		return poolInvalid(ydbworkload.CheckPoolDrop(v.Name, caps))
 	}
@@ -141,7 +141,7 @@ func (v *ResourcePoolClassifier) Validate() error {
 	if err := poolOperands(v.Operation, v.Spec, v.Previous); err != nil {
 		return err
 	}
-	caps := capability.Capabilities{capability.ResourcePools: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.ResourcePools: true})
 	if v.Operation == PoolDrop {
 		return poolInvalid(ydbworkload.CheckClassifier(v.Name, ydbworkload.ClassifierSpec{ResourcePool: ydbworkload.DefaultPool}, caps))
 	}

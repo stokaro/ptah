@@ -102,7 +102,7 @@ func TestPlanningSnapshotsInputsAndRepliesWithoutEncoding(t *testing.T) {
 		received, receivedContext = request, ctx
 		var err error
 		reply, err = plannedFixture(ctx, request)
-		request.Capabilities[capability.Changefeeds] = false
+		request.Capabilities = request.Capabilities.With(capability.Changefeeds, false)
 		request.Changes[0].Value.(*reversalChange).Number = 99
 		request.Tables[0].Desired.Table.PrimaryKey[0] = "changed"
 		request.Tables[0].Current.Table.Columns[0].Name = "changed"

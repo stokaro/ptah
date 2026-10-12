@@ -153,8 +153,9 @@ type Runtime interface {
 }
 
 // Validate invokes the selected service once and validates its completion
-// receipt. It copies target-fact maps, the outer schema value, and the reply's
-// diagnostic slice. Nested schema data remains read-only under the service
+// receipt. It copies the identifier facts, the outer schema value, and the
+// reply's diagnostic slice; the capability set is read-only and is passed as
+// it is. Nested schema data remains read-only under the service
 // contract. Errors and cancellation expose no partial diagnostics. A missing
 // service is refused without selecting a built-in implementation.
 func Validate(ctx context.Context, service Service, request Request) (Result, error) {
@@ -164,7 +165,6 @@ func Validate(ctx context.Context, service Service, request Request) (Result, er
 	if request.Schema == nil {
 		return Result{}, &ptaherr.RenderError{Dialect: request.Target, Err: ptaherr.ErrInvalidSchemaDiff, Message: "cannot validate a nil database schema"}
 	}
-	request.Capabilities = request.Capabilities.Clone()
 	request.Identifiers = request.Identifiers.Clone()
 	request.Schema = new(*request.Schema)
 	result, err := service.ValidateSchema(ctx, request)

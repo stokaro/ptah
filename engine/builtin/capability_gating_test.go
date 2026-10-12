@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
-	"ptah.run/engine/builtin/internal/dialects/mysql"
 )
 
 // TestMySQLFamilyRenderers_ConstraintDropGuardValidity pins the renderer-side
@@ -106,22 +105,6 @@ func TestMySQLRendererWithCapabilities_UsesPassedCapabilitySet(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS idx_users_email ON users;")
-}
-
-func TestMySQLRendererWithCapabilities_ClonesCapabilitySet(t *testing.T) {
-	c := qt.New(t)
-
-	caps := capability.MySQL84()
-	mysqlRenderer := mysql.NewWithCapabilities(caps)
-	caps[capability.DropIndexIfExists] = true
-
-	node := ast.NewDropIndex("idx_users_email").SetIfExists().SetTable("users")
-	sql, err := mysqlRenderer.Render(node)
-
-	c.Assert(err, qt.IsNil)
-	sql = legacyRenderedSQL(sql)
-	c.Assert(sql, qt.Contains, "DROP INDEX idx_users_email ON users;")
-	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 }
 
 func TestMySQLFamilyRenderers_IndexPrefixTypes(t *testing.T) {

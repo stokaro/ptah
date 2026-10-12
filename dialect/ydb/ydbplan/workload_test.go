@@ -44,7 +44,7 @@ func workloadRuntime(c *qt.C) *engine.Runtime {
 
 func workloadRequest(changes ...schemaext.ChangeRecord) featureplan.Request {
 	return featureplan.Request{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-		Capabilities: capability.Capabilities{capability.ResourcePools: true, capability.StreamingQueries: true}, Changes: changes}
+		Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true, capability.StreamingQueries: true}), Changes: changes}
 }
 
 func workloadClassifierMove(name string, before, after int64) schemaext.ChangeRecord {
@@ -211,7 +211,7 @@ func TestWorkloadRefusalsDiscardOtherFamiliesAndKeepInputIndexes(t *testing.T) {
 func TestWorkloadScopeAndCapabilitiesDoNotSelectFallbacks(t *testing.T) {
 	c := qt.New(t)
 	request := workloadRequest(workloadClassifierMove("classifier", 10, 30))
-	request.Capabilities = nil
+	request.Capabilities = capability.Capabilities{}
 	result, err := workloadRuntime(c).PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 1)

@@ -112,7 +112,7 @@ func TablesAndColumnsWithSemantics(
 	semantics identifier.Semantics,
 	cov Coverage,
 ) {
-	TablesAndColumnsWithTableContext(desired, database, diff, dialect, semantics, cov, TableContext{}, nil)
+	TablesAndColumnsWithTableContext(desired, database, diff, dialect, semantics, cov, TableContext{}, capability.Capabilities{})
 }
 
 // TableContext carries selected preparation and server-reported spellings.

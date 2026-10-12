@@ -116,7 +116,7 @@ func TestGeneratedExpressionProbesRefuseIncompleteOrLossyRendering(t *testing.T)
 
 func TestGeneratedExpressionProbesRequireExplicitInputs(t *testing.T) {
 	c := qt.New(t)
-	probes, err := genexprprobe.For(t.Context(), nil, "oracle", nil, probeSchema())
+	probes, err := genexprprobe.For(t.Context(), nil, "oracle", capability.Capabilities{}, probeSchema())
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(probes, qt.IsNil)
 	service := renderFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
@@ -125,7 +125,7 @@ func TestGeneratedExpressionProbesRequireExplicitInputs(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	probes, err = genexprprobe.For(ctx, service, "oracle", nil, probeSchema())
+	probes, err = genexprprobe.For(ctx, service, "oracle", capability.Capabilities{}, probeSchema())
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(probes, qt.IsNil)
 }
@@ -147,7 +147,7 @@ func TestGeneratedExpressionProbesSkipUnneededRendering(t *testing.T) {
 				calls++
 				return renderer.Result{}, nil
 			})
-			probes, err := genexprprobe.For(t.Context(), service, test.target, nil, test.schema)
+			probes, err := genexprprobe.For(t.Context(), service, test.target, capability.Capabilities{}, test.schema)
 			c.Assert(err, qt.IsNil)
 			c.Assert(probes, qt.IsNil)
 			c.Assert(calls, qt.Equals, 0)

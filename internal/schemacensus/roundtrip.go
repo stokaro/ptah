@@ -619,7 +619,7 @@ func richestPresets(dialects []string) map[string]capability.Capabilities {
 // enabled counts the capabilities a preset turns on.
 func enabled(preset capability.Capabilities) int {
 	count := 0
-	for _, on := range preset {
+	for _, on := range preset.All() {
 		if on {
 			count++
 		}

@@ -146,7 +146,7 @@ func (r *Runtime) snapshotFacetComparison(ctx context.Context, request schemaext
 	}
 	request.Kinds = slices.Clone(request.Kinds)
 	request.Owners = slices.Clone(request.Owners)
-	request.Capabilities, request.Identifiers = request.Capabilities.Clone(), request.Identifiers.Clone()
+	request.Identifiers = request.Identifiers.Clone()
 	seen := make(map[objectidentity.Key]bool)
 	for _, owner := range request.Owners {
 		ref := owner.Subject

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
@@ -175,7 +174,7 @@ func validateConnection(
 			nil,
 		)
 	}
-	if capabilities != nil && !maps.Equal(capabilities, shadowConn.Info().Capabilities) {
+	if capabilities.Len() != 0 && !capabilities.Equal(shadowConn.Info().Capabilities) {
 		return newVerificationError(
 			"capability-check",
 			"capability_mismatch",

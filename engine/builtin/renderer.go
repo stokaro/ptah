@@ -126,9 +126,8 @@ func NewRenderer(dialect string) (renderer.RenderVisitor, error) {
 //
 // A capability set that fails caps.Validate is refused with a
 // [ptaherr.CapabilityError] wrapping the validation error; an unsupported
-// dialect is refused the way NewRenderer describes. The renderer does not
-// alias caps: mutating the argument after construction does not change what
-// the renderer accepts.
+// dialect is refused the way NewRenderer describes. caps is read-only, so the
+// renderer keeps it as it is.
 func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (renderer.RenderVisitor, error) {
 	if err := caps.Validate(); err != nil {
 		return nil, &ptaherr.CapabilityError{
@@ -172,7 +171,7 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	return &validatingRenderer{
 		inner:        raw,
 		dialect:      dialect,
-		capabilities: caps.Clone(),
+		capabilities: caps,
 	}, nil
 }
 

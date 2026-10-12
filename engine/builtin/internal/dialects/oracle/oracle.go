@@ -49,7 +49,7 @@ func New() *Renderer {
 // capability set. The set is cloned so later caller mutations cannot change
 // rendering behavior (stokaro/ptah#916).
 func NewWithCapabilities(caps capability.Capabilities) *Renderer {
-	return &Renderer{caps: caps.Clone()}
+	return &Renderer{caps: caps}
 }
 
 func (r *Renderer) capabilities() capability.Capabilities { return r.caps }

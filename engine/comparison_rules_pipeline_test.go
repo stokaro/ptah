@@ -80,7 +80,7 @@ func TestCompare_IndexRulesDecideWhatARenameCarries(t *testing.T) {
 			desired, current := renamedFacetIndexes()
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current,
-				catalog.ServerInfo{Dialect: "custom", Capabilities: capability.Capabilities{capability.IndexRename: true}}, nil, runtime)
+				catalog.ServerInfo{Dialect: "custom", Capabilities: capability.Of(map[capability.Capability]bool{capability.IndexRename: true})}, nil, runtime)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.IndexesRenamed, qt.DeepEquals, tt.wantRenamed)
@@ -118,7 +118,7 @@ func TestCompare_ColumnRulesCompareTheSequence(t *testing.T) {
 		wantChanges []map[string]string
 		wantRestart []string
 	}{
-		{name: "with the capability", caps: capability.Capabilities{capability.SerialSequenceOptions: true},
+		{name: "with the capability", caps: capability.Of(map[capability.Capability]bool{capability.SerialSequenceOptions: true}),
 			wantChanges: []map[string]string{{"identity_start": "1 -> 5"}}, wantRestart: []string{"7"}},
 		{name: "without it", caps: capability.Capabilities{}},
 	}

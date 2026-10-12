@@ -55,7 +55,7 @@ func postgresMetadata(target string) func(context.Context, []ast.Node) ([]featur
 // line -- the database itself, and an object at the database root -- so the
 // render does not depend on the line. Every other grant keeps its name.
 func ydbGrantPath(objectType, objectName, databasePath string) string {
-	path, err := ydbacl.StatementPath(objectType, objectName, databasePath, nil)
+	path, err := ydbacl.StatementPath(objectType, objectName, databasePath, capability.Capabilities{})
 	if err != nil || !strings.HasPrefix(path, "/") {
 		return objectName
 	}

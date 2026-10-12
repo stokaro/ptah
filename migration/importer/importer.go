@@ -126,7 +126,7 @@ func WithRendering(parser Parser, target string, caps capability.Capabilities, s
 	if !ok {
 		return nil, fmt.Errorf("a target dialect applies only to a Liquibase source; %s migrations are SQL already", parser.Name())
 	}
-	return rendering.withRendering(target, caps.Clone(), service), nil
+	return rendering.withRendering(target, caps, service), nil
 }
 
 // dbmsSelector is a Parser whose source can limit a changeset to some

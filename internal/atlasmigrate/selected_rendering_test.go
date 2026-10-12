@@ -45,7 +45,7 @@ func TestBuildMigrationFileContentsRefusesIncompleteRendering(t *testing.T) {
 		return renderer.Result{Complete: true, Fragments: []string{"SELECT 1;"}}, nil
 	})
 	nodes := []ast.Node{ast.NewRawSQL("SELECT 1;"), ast.NewRawSQL("SELECT 2;")}
-	contents, err := atlasmigrate.BuildMigrationFileContents(t.Context(), service, "postgres", nil, defaultMigrateDiffFormat(), nodes)
+	contents, err := atlasmigrate.BuildMigrationFileContents(t.Context(), service, "postgres", capability.Capabilities{}, defaultMigrateDiffFormat(), nodes)
 	c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)
 	c.Assert(contents, qt.IsNil)
 }

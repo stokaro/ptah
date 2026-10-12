@@ -29,7 +29,7 @@ func TestValidatePreservesTheBatchAndSnapshotsFactAndReplyContainers(t *testing.
 	c := qt.New(t)
 	request := validRequest()
 	request.Schema.Tables = []schemamodel.Table{{Name: "first"}, {Name: "second"}}
-	request.Capabilities = capability.Capabilities{capability.TransactionalDDL: true}
+	request.Capabilities = capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true})
 	request.NoSkipped = true
 	request.Identifiers.ResolvedNames = []identifier.ResolvedName{{Name: "Orders", Key: "orders"}}
 	diagnostics := []schemavalidation.Diagnostic{{Code: schemavalidation.InvalidSchema, Kind: "table", Object: "second", Message: "rejected declaration"}}
@@ -39,7 +39,7 @@ func TestValidatePreservesTheBatchAndSnapshotsFactAndReplyContainers(t *testing.
 		c.Assert(ctx, qt.Equals, t.Context())
 		c.Assert(received, qt.DeepEquals, request)
 		received.Schema.Tables = nil
-		received.Capabilities[capability.TransactionalDDL] = false
+		received.Capabilities = received.Capabilities.With(capability.TransactionalDDL, false)
 		received.Identifiers.ResolvedNames[0].Key = "changed"
 		return schemavalidation.Result{Complete: true, Diagnostics: diagnostics}, nil
 	})
@@ -47,7 +47,7 @@ func TestValidatePreservesTheBatchAndSnapshotsFactAndReplyContainers(t *testing.
 	c.Assert(err, qt.IsNil)
 	diagnostics[0].Message = "changed after return"
 	c.Assert(result.Diagnostics[0].Message, qt.Equals, "rejected declaration")
-	c.Assert(request.Capabilities[capability.TransactionalDDL], qt.IsTrue)
+	c.Assert(request.Capabilities.Has(capability.TransactionalDDL), qt.IsTrue)
 	c.Assert(request.Schema.Tables, qt.HasLen, 2)
 	c.Assert(request.Identifiers.ResolvedNames[0].Key, qt.Equals, "orders")
 	c.Assert(calls, qt.Equals, 1)

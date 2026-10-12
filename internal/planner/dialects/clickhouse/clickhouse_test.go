@@ -335,7 +335,7 @@ func TestGenerateMigrationAST_DisabledViewsNeedNoDesiredDeclaration(t *testing.T
 
 func TestNewWithCapabilities_NilIsConservative(t *testing.T) {
 	c := qt.New(t)
-	planner := clickhouse.NewWithCapabilities(nil)
+	planner := clickhouse.NewWithCapabilities(capability.Capabilities{})
 
 	nodes, err := planner.GenerateMigrationAST(
 		context.Background(), must.Must(builtin.New()),

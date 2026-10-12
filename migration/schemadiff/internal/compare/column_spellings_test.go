@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
@@ -41,7 +42,7 @@ func spellingsDiff(desired *schemamodel.Database, current *catalog.Database, spe
 	diff := &difftypes.SchemaDiff{}
 	compare.TablesAndColumnsWithTableContext(desired, current, diff, "postgres",
 		identifier.ForDialect("postgres"), compare.CoverageOf(desired, current),
-		compare.TableContext{Columns: spellings}, nil)
+		compare.TableContext{Columns: spellings}, capability.Capabilities{})
 	return diff
 }
 

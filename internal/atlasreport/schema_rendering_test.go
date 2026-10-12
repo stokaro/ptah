@@ -27,7 +27,7 @@ func (s selectedSchemaRenderer) RenderSchema(ctx context.Context, request render
 func TestSchemaInspectSQLUsesSelectedWholeSchemaRenderer(t *testing.T) {
 	c := qt.New(t)
 	calls := 0
-	caps := capability.Capabilities{capability.TransactionalDDL: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true})
 	selected := selectedSchemaRenderer{Runtime: inspectRuntime(c), render: func(ctx context.Context, request renderer.SchemaRequest) (renderer.SchemaResult, error) {
 		calls++
 		c.Assert(ctx, qt.Equals, t.Context())

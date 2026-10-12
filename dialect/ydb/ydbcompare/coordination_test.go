@@ -78,7 +78,7 @@ func TestCoordinationComparisonNeedsNoTableAndRespectsEvidence(t *testing.T) {
 			c := qt.New(t)
 			runtime := coordinationRuntime(c)
 			request := schemaext.ObjectComparisonRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-				Capabilities: capability.Capabilities{capability.CoordinationNodes: true}, Kinds: []schemaext.Kind{ydbcoordination.Kind},
+				Capabilities: capability.Of(map[capability.Capability]bool{capability.CoordinationNodes: true}), Kinds: []schemaext.Kind{ydbcoordination.Kind},
 				Desired: coordinationState(c, schemaext.Desired, test.desiredKnowledge, test.desired, test.desiredLimits...),
 				Current: coordinationState(c, schemaext.Observed, test.currentKnowledge, test.current, test.currentLimits...),
 			}
@@ -117,7 +117,7 @@ func TestCoordinationComparisonRefusesInvalidInputsWithoutPartialOutput(t *testi
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			request := schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbcoordination.Kind}, Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.CoordinationNodes: true},
+			request := schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbcoordination.Kind}, Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.CoordinationNodes: true}),
 				Desired: coordinationState(c, schemaext.Desired, schemaext.Complete, &ydbcoordination.Spec{}),
 				Current: coordinationState(c, schemaext.Observed, schemaext.Complete, nil)}
 			test.mutate(&request)

@@ -46,7 +46,7 @@ func TriggersWithSemantics(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
-	TriggersWithSemanticsAndConditions(desired, database, diff, semantics, nil, nil)
+	TriggersWithSemanticsAndConditions(desired, database, diff, semantics, nil, capability.Capabilities{})
 }
 
 // TriggersWithSemanticsAndConditions is [TriggersWithSemantics] with each
@@ -67,7 +67,7 @@ func TriggersWithSemanticsAndConditions(
 	conditions map[string]config.TriggerCondition,
 	caps capability.Capabilities,
 ) {
-	readsConditions := len(caps) == 0 || caps.Has(capability.CatalogTriggerDefinitions)
+	readsConditions := caps.Len() == 0 || caps.Has(capability.CatalogTriggerDefinitions)
 	semantics = semantics.Normalize("")
 
 	// Paired by the candidate set rather than by a map key.
