@@ -18,6 +18,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
+	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/renderdiag"
@@ -3054,6 +3055,9 @@ func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if r.refuses(capability.Views, "view", node.Name) {
 		return nil
+	}
+	if err := viewrefusal.Attributes(r.dialect, node.Name, node.Attributes); err != nil {
+		return err
 	}
 
 	create := "CREATE VIEW"

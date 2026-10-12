@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/mysql/mysqlast"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
+	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/renderdiag"
@@ -675,6 +676,9 @@ func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 
 // renderCreateView renders a CREATE VIEW statement for MySQL/MariaDB.
 func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
+	if err := viewrefusal.Attributes(r.dialect, node.Name, node.Attributes); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
