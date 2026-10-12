@@ -11,14 +11,10 @@ import (
 // importing them. Its rendering joins the family's composition in
 // [ownersFor].
 //
-// No source or reader produces a user-type value yet, so the common user-type
-// path still plans and renders what a declaration asks for. The owner's
-// reports stay out until the common user-type model goes: both count the
-// types under the metric names "domains", "composite_types" and
-// "range_types", and the schema statistics refuse a metric two reports
-// define.
+// Its reports count the types under "domains", "composite_types" and
+// "range_types", the names the common model's types are counted under, and
+// the schema statistics add the two: a metric counts its objects whoever
+// owns them.
 func pgtypeProvider() engine.Provider {
-	provider := pgtypeprovider.Provider()
-	provider.Reporting = nil
-	return provider
+	return pgtypeprovider.Provider()
 }

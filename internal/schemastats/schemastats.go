@@ -81,6 +81,9 @@ func Collect(ctx context.Context, db *schemamodel.Database, target string, runti
 		{Name: "roles", Help: "Roles", Value: len(db.Roles)},
 		{Name: "grants", Help: "Privilege grants", Value: len(db.Grants)},
 	}
+	if err := refuseTypesCountedTwice(db); err != nil {
+		return Stats{}, err
+	}
 	metrics, err := appendFeatureMetrics(ctx, db, target, runtime, metrics)
 	if err != nil {
 		return Stats{}, err
