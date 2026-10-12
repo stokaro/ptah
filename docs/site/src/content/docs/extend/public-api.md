@@ -65,7 +65,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/mysql/mysqllint` | The MySQL owner's migration lint rules for MySQL and MariaDB, published as data and checked once per run. |
 | `dialect/mysql/mysqlroutine` | The MySQL owner's routine body reader for MySQL and MariaDB compound and `RETURN` bodies. |
 | `dialect/postgres/pglint` | The PostgreSQL owner's migration lint rules, published as data and checked once per run. |
-| `dialect/postgres/pgroutine` | The PostgreSQL owner's routine body reader for PL/pgSQL and SQL bodies. |
+| `dialect/postgres/pgroutine` | The PostgreSQL owner's routine body reader and typed function evaluation properties. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chprobe` | Server-normalized row policy filters. |

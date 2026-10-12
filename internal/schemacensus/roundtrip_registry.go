@@ -40,8 +40,6 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossRoutineAttributes = "goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to " +
-		"PostgreSQL facets, which the conversion already carries"
 	lossRoutineKind           = "goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION"
 	lossRoutinePublicExecute  = "dbschematogo drops the EXECUTE that PUBLIC holds on a procedure, so the converted-back declaration revokes it"
 	lossRoutinesWithoutTarget = "the comparison lists a routine on a target that has none, so the plan carries notes about it or is refused"
@@ -49,11 +47,10 @@ const (
 
 // The reasons a compared field is known not to reach the plan.
 const (
-	gapToCatalog         = "goschematodb drops it: the catalog is the same with and without it"
-	gapFromCatalog       = "dbschematogo drops it: the converted-back declaration is the same with and without it"
-	gapComparison        = "both conversions carry it, and the comparison plans nothing when it changes"
-	gapRoutineAttributes = "goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet"
-	gapRoutineKind       = "the conversions drop a routine's kind; the other direction is a recorded loss"
+	gapToCatalog   = "goschematodb drops it: the catalog is the same with and without it"
+	gapFromCatalog = "dbschematogo drops it: the converted-back declaration is the same with and without it"
+	gapComparison  = "both conversions carry it, and the comparison plans nothing when it changes"
+	gapRoutineKind = "the conversions drop a routine's kind; the other direction is a recorded loss"
 )
 
 // The reasons a compared field does not reach the plan by design.
@@ -183,12 +180,6 @@ func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
 	{
-		Fixtures:   []string{"function-planner-properties"},
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossRoutineAttributes,
-	},
-	{
 		Fixtures:   []string{"function-procedure"},
 		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
@@ -308,24 +299,6 @@ var roundTripGaps = []Unreached{
 		Dialects:   []string{"mariadb", "mysql", "sqlserver"},
 		Directions: []Direction{FromCatalog},
 		Reason:     gapRoutineKind,
-	},
-	{
-		Field:      "schemamodel.Function.Leakproof",
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapRoutineAttributes,
-	},
-	{
-		Field:      "schemamodel.Function.Parallel",
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapRoutineAttributes,
-	},
-	{
-		Field:      "schemamodel.Function.Strict",
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapRoutineAttributes,
 	},
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{

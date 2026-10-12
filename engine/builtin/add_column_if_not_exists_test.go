@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/engine/builtin"
 )
 
@@ -84,7 +87,7 @@ func TestFunctionStrict_Renders(t *testing.T) {
 				SetLanguage("sql").
 				SetVolatility("IMMUTABLE").
 				SetBody("SELECT a * 2")
-			function.Strict = test.strict
+			function.Facets = must.Must(pgroutine.WithProperties(schemaext.Facets{}, pgroutine.Properties{Strict: test.strict}))
 
 			sql, err := builtin.RenderSQL("postgres", function)
 

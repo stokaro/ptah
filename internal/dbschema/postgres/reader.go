@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
@@ -3614,6 +3615,7 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 	var functions []catalog.Function
 	for rows.Next() {
 		var fn catalog.Function
+		var properties pgroutine.Properties
 		var identityArguments string
 		var settings string
 		var returnsSet bool
@@ -3630,12 +3632,18 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			&fn.Comment,
 			&fn.Kind,
 			&settings,
-			&fn.Leakproof,
-			&fn.Strict,
-			&fn.Parallel,
+			&properties.Leakproof,
+			&properties.Strict,
+			&properties.Parallel,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)
+		}
+		if fn.Kind != "procedure" {
+			fn.Facets, err = pgroutine.WithObservedProperties(fn.Facets, properties)
+			if err != nil {
+				return nil, fmt.Errorf("function %s: %w", fn.Name, err)
+			}
 		}
 		fn.Settings = routinesetting.Split(settings)
 		if returnsSet {
@@ -5056,6 +5064,9 @@ func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog
 			return fmt.Errorf("failed to read functions: %w", err)
 		}
 		schema.Functions = functions
+		if err := r.functionPropertiesCoverage(schema); err != nil {
+			return err
+		}
 	}
 
 	views, err := r.readAllViews(ctx)

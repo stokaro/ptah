@@ -146,9 +146,7 @@ func toFunction(node *ast.CreateFunctionNode, sourcePlatform string) schemamodel
 		Security:   node.Security,
 		Volatility: node.Volatility,
 		Settings:   node.Settings,
-		Leakproof:  node.Leakproof,
-		Parallel:   node.Parallel,
-		Strict:     node.Strict,
+		Facets:     node.Facets,
 		Body:       strings.TrimSpace(node.Body),
 		Comment:    node.Comment,
 	}

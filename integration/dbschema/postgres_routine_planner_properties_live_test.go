@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
@@ -84,8 +85,11 @@ func TestPostgresLiveRoutinePlannerPropertiesConverge(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 1)
-	c.Assert(live.Functions[0].Leakproof, qt.IsTrue)
-	c.Assert(live.Functions[0].Parallel, qt.Equals, "SAFE")
+	properties, _, propertyErr := pgroutine.PropertiesOf(live.Functions[0].Facets)
+	c.Assert(propertyErr, qt.IsNil)
+
+	c.Assert(properties.Leakproof, qt.IsTrue)
+	c.Assert(properties.Parallel, qt.Equals, "SAFE")
 
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
@@ -133,9 +137,12 @@ func TestPostgresLiveRoutineWithoutPlannerPropertiesConverges(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 1)
-	c.Assert(live.Functions[0].Leakproof, qt.IsFalse)
+	properties, _, propertyErr := pgroutine.PropertiesOf(live.Functions[0].Facets)
+	c.Assert(propertyErr, qt.IsNil)
+
+	c.Assert(properties.Leakproof, qt.IsFalse)
 	// The server names the default even though the declaration did not.
-	c.Assert(live.Functions[0].Parallel, qt.Equals, "UNSAFE")
+	c.Assert(properties.Parallel, qt.Equals, "")
 
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
@@ -184,6 +191,9 @@ func TestPostgresLiveRoutinePlannerPropertyDifferenceIsPlanned(t *testing.T) {
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
-	c.Assert(diff.FunctionsModified[0].Changes["leakproof"], qt.Equals, "false -> true")
-	c.Assert(diff.FunctionsModified[0].Changes["parallel"], qt.Equals, "UNSAFE -> SAFE")
+	c.Assert(diff.FunctionsModified[0].Changes, qt.HasLen, 0)
+	c.Assert(diff.FunctionsModified[0].FeatureChanges, qt.HasLen, 1)
+	change := diff.FunctionsModified[0].FeatureChanges[0].Value.(*pgroutine.PropertiesChange)
+	c.Assert(change.Before, qt.IsNil)
+	c.Assert(change.After, qt.DeepEquals, &pgroutine.DesiredProperties{Leakproof: true, Parallel: "SAFE"})
 }

@@ -304,19 +304,15 @@ func (s *enumSpec) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type functionSpec struct {
-	StructName stringScalar `yaml:"struct_name"`
-	Name       stringScalar `yaml:"name"`
-	Parameters stringScalar `yaml:"parameters"`
-	Params     stringScalar `yaml:"params"`
-	Returns    stringScalar `yaml:"returns"`
-	Language   stringScalar `yaml:"language"`
-	Security   stringScalar `yaml:"security"`
-	Volatility stringScalar `yaml:"volatility"`
-	// Leakproof, Parallel and Strict are the planner attributes; see
-	// [schemamodel.Function].
-	Leakproof bool         `yaml:"leakproof"`
-	Parallel  stringScalar `yaml:"parallel"`
-	Strict    bool         `yaml:"strict"`
+	StructName stringScalar         `yaml:"struct_name"`
+	Name       stringScalar         `yaml:"name"`
+	Parameters stringScalar         `yaml:"parameters"`
+	Params     stringScalar         `yaml:"params"`
+	Returns    stringScalar         `yaml:"returns"`
+	Language   stringScalar         `yaml:"language"`
+	Security   stringScalar         `yaml:"security"`
+	Volatility stringScalar         `yaml:"volatility"`
+	Owned      map[string]yaml.Node `yaml:",inline"`
 	// Settings are the routine's own configuration settings, each `name=value`.
 	Settings []stringScalar `yaml:"settings"`
 	Body     stringScalar   `yaml:"body"`
@@ -494,7 +490,7 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 	if err := d.addConstraints(db); err != nil {
 		return nil, err
 	}
-	if err := d.addFunctions(db); err != nil {
+	if err := d.addFunctions(db, owners); err != nil {
 		return nil, err
 	}
 	if err := d.addViews(db); err != nil {
@@ -900,19 +896,20 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 	return nil
 }
 
-func (d document) addFunctions(db *schemamodel.Database) error {
+func (d document) addFunctions(db *schemamodel.Database, owners yamlext.Set) error {
 	for _, key := range sortedKeys(d.Functions) {
 		spec := d.Functions[key]
 		parameters := string(spec.Parameters)
 		if parameters == "" {
 			parameters = string(spec.Params)
 		}
-		// An unrecognized level is refused rather than read as the default,
-		// for the reason the HCL reader gives: UNSAFE is the most
-		// restrictive, so a misspelled SAFE would forbid what was asked for.
-		parallel := strings.ToUpper(strings.TrimSpace(string(spec.Parallel)))
-		if parallel != "" && parallel != "SAFE" && parallel != "RESTRICTED" && parallel != "UNSAFE" {
-			return fmt.Errorf("function %q: parallel must be SAFE, RESTRICTED or UNSAFE, not %q", key, string(spec.Parallel))
+		attributes, _, err := ownedKeys(owners, yamlext.EntryFunction, fmt.Sprintf("function %q", key), spec.Owned)
+		if err != nil {
+			return err
+		}
+		facets, err := owners.DecodeEntryAttributes(yamlext.EntryFunction, attributes)
+		if err != nil {
+			return fmt.Errorf("function %q: %w", key, err)
 		}
 		settings := make([]string, 0, len(spec.Settings))
 		for _, setting := range spec.Settings {
@@ -929,12 +926,10 @@ func (d document) addFunctions(db *schemamodel.Database) error {
 			Volatility: string(spec.Volatility),
 			// The settings key was accepted and never read, so a YAML
 			// document's search_path reached nothing (stokaro/ptah#3630).
-			Settings:  routinesetting.NormalizeAll(settings),
-			Leakproof: spec.Leakproof,
-			Parallel:  parallel,
-			Strict:    spec.Strict,
-			Body:      string(spec.Body),
-			Comment:   string(spec.Comment),
+			Settings: routinesetting.NormalizeAll(settings),
+			Facets:   facets,
+			Body:     string(spec.Body),
+			Comment:  string(spec.Comment),
 		}
 		fn.Canonicalize()
 		db.Functions = append(db.Functions, fn)

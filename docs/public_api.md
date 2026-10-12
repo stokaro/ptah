@@ -492,6 +492,16 @@ runtime registers it on every target of the PostgreSQL family. `Language` is
 the language of a PostgreSQL routine that declares none, plpgsql, and
 `Security` the mode one that states none runs with, INVOKER.
 
+`pgroutine.Properties` owns PostgreSQL function `LEAKPROOF`, `STRICT` and
+`PARALLEL`. `WithProperties` attaches a normalized `DesiredProperties` facet;
+`WithObservedProperties` attaches catalog observations. Server defaults carry
+no facet. `PropertiesCodecs`, `PropertiesChangeCodec` and `PropertiesService`
+provide versioned data contracts for conversion, comparison and reversal.
+`PropertiesCoverage` records complete declarations and the functions a catalog
+read inspects. An unknown overload stays undecided. Function identity includes
+its input signature throughout source export and comparison. These properties
+are absent from common function structs; callers use the owner facet.
+
 `dialect/mysql/mysqlroutine` is the MySQL owner's routine body reader for MySQL
 and MariaDB. `Reader` splits a compound body into the statements of its outer
 `BEGIN ... END` and reads a `RETURN` body as one statement. It does not split

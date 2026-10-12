@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/parser"
 )
 
@@ -15,7 +17,7 @@ import (
 
 func parsePostgres(c *qt.C, sql string) *ast.StatementList {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect("postgres")).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(builtintest.Runtime().SQL())).Parse()
 	c.Assert(err, qt.IsNil)
 	return statements
 }
@@ -77,7 +79,7 @@ func TestParse_CastInADefaultIsReadWhole_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := parser.NewParser(
-				"CREATE TABLE t (id int PRIMARY KEY, "+row.column+");", parser.WithDialect("postgres"),
+				"CREATE TABLE t (id int PRIMARY KEY, "+row.column+");", parser.WithDialect("postgres"), parser.WithSQL(builtintest.Runtime().SQL()),
 			).Parse()
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
@@ -123,7 +125,7 @@ func TestParse_AddColumnIfNotExists_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := parser.NewParser(
-		"ALTER TABLE users ADD COLUMN IF EXISTS note text;", parser.WithDialect("postgres"),
+		"ALTER TABLE users ADD COLUMN IF EXISTS note text;", parser.WithDialect("postgres"), parser.WithSQL(builtintest.Runtime().SQL()),
 	).Parse()
 
 	c.Assert(err, qt.ErrorMatches, `expected NOT after IF: .*`)
@@ -146,7 +148,7 @@ func TestParse_RoutineNullInputAndParallelClauses_HappyPath(t *testing.T) {
 		{name: "the default, stated nowhere", clauses: "IMMUTABLE"},
 		{name: "PARALLEL SAFE", clauses: "PARALLEL SAFE", wantParallel: "SAFE"},
 		{name: "PARALLEL RESTRICTED", clauses: "PARALLEL restricted", wantParallel: "RESTRICTED"},
-		{name: "PARALLEL UNSAFE", clauses: "PARALLEL UNSAFE", wantParallel: "UNSAFE"},
+		{name: "PARALLEL UNSAFE", clauses: "PARALLEL UNSAFE"},
 		{name: "LEAKPROOF", clauses: "LEAKPROOF", wantLeakproof: true},
 		{name: "NOT LEAKPROOF", clauses: "NOT LEAKPROOF"},
 		{
@@ -163,10 +165,12 @@ func TestParse_RoutineNullInputAndParallelClauses_HappyPath(t *testing.T) {
 			function := functionOf(c, parsePostgres(c,
 				"CREATE FUNCTION add_arrays(a integer[], b integer[]) RETURNS integer[] LANGUAGE sql "+
 					row.clauses+" AS $$ SELECT a || b $$;"))
+			properties, _, propertyErr := pgroutine.PropertiesOf(function.Facets)
+			c.Assert(propertyErr, qt.IsNil)
 
-			c.Assert(function.Strict, qt.Equals, row.wantStrict)
-			c.Assert(function.Parallel, qt.Equals, row.wantParallel)
-			c.Assert(function.Leakproof, qt.Equals, row.wantLeakproof)
+			c.Assert(properties.Strict, qt.Equals, row.wantStrict)
+			c.Assert(properties.Parallel, qt.Equals, row.wantParallel)
+			c.Assert(properties.Leakproof, qt.Equals, row.wantLeakproof)
 			c.Assert(function.Returns, qt.Equals, "integer[]")
 		})
 	}
@@ -208,7 +212,10 @@ func TestParse_RoutineReturnTypeEndsAtAClause_HappyPath(t *testing.T) {
 			function := functionOf(c, parsePostgres(c, row.sql))
 
 			c.Assert(function.Returns, qt.Equals, row.wantReturns)
-			c.Assert(function.Strict, qt.Equals, row.wantStrict)
+			properties, _, propertyErr := pgroutine.PropertiesOf(function.Facets)
+			c.Assert(propertyErr, qt.IsNil)
+
+			c.Assert(properties.Strict, qt.Equals, row.wantStrict)
 		})
 	}
 }
@@ -224,17 +231,17 @@ func TestParse_RoutineNullInputAndParallelClauses_FailurePath(t *testing.T) {
 		{
 			name:    "an unknown PARALLEL level",
 			sql:     "CREATE FUNCTION f(a int) RETURNS int LANGUAGE sql PARALLEL MAYBE AS $$ SELECT a $$;",
-			wantErr: `unsupported PARALLEL level MAYBE at position \d+`,
+			wantErr: `.*function f at position \d+: invalid function property PARALLEL MAYBE`,
 		},
 		{
 			name:    "CALLED without ON NULL INPUT",
 			sql:     "CREATE FUNCTION f(a int) RETURNS int LANGUAGE sql CALLED ON INPUT AS $$ SELECT a $$;",
-			wantErr: `expected CALLED ON NULL INPUT: .*`,
+			wantErr: `.*invalid function property CALLED ON INPUT`,
 		},
 		{
 			name:    "RETURNS NULL without ON NULL INPUT",
 			sql:     "CREATE FUNCTION f(a int) RETURNS int RETURNS NULL LANGUAGE sql AS $$ SELECT a $$;",
-			wantErr: `expected RETURNS NULL ON NULL INPUT: .*`,
+			wantErr: `.*invalid function property RETURNS NULL`,
 		},
 		{
 			name:    "a NOT clause Ptah does not know",
@@ -252,7 +259,7 @@ func TestParse_RoutineNullInputAndParallelClauses_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(row.sql, parser.WithDialect("postgres")).Parse()
+			statements, err := parser.NewParser(row.sql, parser.WithDialect("postgres"), parser.WithSQL(builtintest.Runtime().SQL())).Parse()
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 			c.Assert(statements, qt.IsNil)

@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/internal/builtintest"
 )
 
 // A YAML function declares its settings and planner attributes as the other
@@ -25,12 +27,14 @@ func TestParse_FunctionAttributes_HappyPath(t *testing.T) {
     body: SELECT true
 `
 
-	db, err := yamlschema.Parse(noOwners, []byte(document))
+	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Functions, qt.HasLen, 1)
 	function := db.Functions[0]
-	c.Assert([]any{function.Leakproof, function.Parallel, function.Strict}, qt.DeepEquals, []any{true, "SAFE", true})
+	properties, _, propertyErr := pgroutine.PropertiesOf(function.Facets)
+	c.Assert(propertyErr, qt.IsNil)
+	c.Assert([]any{properties.Leakproof, properties.Parallel, properties.Strict}, qt.DeepEquals, []any{true, "SAFE", true})
 	c.Assert(function.Settings, qt.DeepEquals, []string{"search_path=pg_catalog"})
 }
 
@@ -46,8 +50,8 @@ func TestParse_FunctionAttributes_FailurePath(t *testing.T) {
     body: SELECT true
 `
 
-	db, err := yamlschema.Parse(noOwners, []byte(document))
+	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(document))
 
-	c.Assert(err, qt.ErrorMatches, `function "same_tenant": parallel must be SAFE, RESTRICTED or UNSAFE, not "sometimes"`)
+	c.Assert(err, qt.ErrorMatches, `function "same_tenant": .*parallel must be SAFE, RESTRICTED or UNSAFE, not "SOMETIMES"`)
 	c.Assert(db, qt.IsNil)
 }

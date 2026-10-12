@@ -201,9 +201,9 @@ func (p *Parser) ownerSpan(site sqlext.Site, pattern sqlext.Pattern) (string, in
 	start := p.current.Start
 	end := start
 	depth := 0
-	first := true
+	opening := len(pattern.Words)
 	for p.current.Type != lexer.TokenEOF {
-		if depth == 0 && !first && (p.endsOwnerSpan(site) || p.isOwnerStop(pattern.Stops) || p.opensNextOption(site)) {
+		if depth == 0 && opening == 0 && (p.endsOwnerSpan(site) || p.isOwnerStop(pattern.Stops) || p.opensNextOption(site)) {
 			break
 		}
 		if p.current.MatchOperatorValue("(") {
@@ -217,7 +217,9 @@ func (p *Parser) ownerSpan(site sqlext.Site, pattern sqlext.Pattern) (string, in
 				break
 			}
 		}
-		first = false
+		if p.current.Type != lexer.TokenWhitespace && p.current.Type != lexer.TokenComment && opening > 0 {
+			opening--
+		}
 		end = p.current.End
 		p.advance()
 	}
@@ -258,6 +260,10 @@ func (p *Parser) opensNextOption(site sqlext.Site) bool {
 	switch site {
 	case sqlext.ColumnOption:
 		if columnClauseStart(p.current.Value) {
+			return true
+		}
+	case sqlext.RoutineOption:
+		if isFunctionClauseKeyword(p.current.Value) {
 			return true
 		}
 	case sqlext.IndexOption:

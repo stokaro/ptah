@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -17,7 +20,7 @@ func attributedFunction() schemamodel.Function {
 	return schemamodel.Function{
 		StructName: "Fns", Name: "same_tenant", Parameters: "t uuid", Returns: "boolean",
 		Language: "sql", Volatility: "STABLE", Security: "DEFINER",
-		Leakproof: true, Parallel: "SAFE", Strict: true,
+		Facets:   must.Must(pgroutine.WithProperties(schemaext.Facets{}, pgroutine.Properties{Leakproof: true, Parallel: "SAFE", Strict: true})),
 		Settings: []string{"search_path=pg_catalog"},
 		Body:     "SELECT t = current_setting('app.tenant')::uuid",
 	}
@@ -42,6 +45,8 @@ func TestRender_RoutineAttributesRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("the exported source does not parse:\n%s", source.String()))
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	function := parsed.Functions[0]
-	c.Assert([]any{function.Leakproof, function.Parallel, function.Strict}, qt.DeepEquals, []any{true, "SAFE", true})
+	properties, _, propertyErr := pgroutine.PropertiesOf(function.Facets)
+	c.Assert(propertyErr, qt.IsNil)
+	c.Assert([]any{properties.Leakproof, properties.Parallel, properties.Strict}, qt.DeepEquals, []any{true, "SAFE", true})
 	c.Assert(function.Settings, qt.DeepEquals, []string{"search_path=pg_catalog"})
 }

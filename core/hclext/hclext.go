@@ -57,6 +57,10 @@ const (
 	// index's type may select the owner's reading without any of the
 	// owner's attributes. Its [Declaration] carries facets of the index.
 	IndexAttributes Site = "index-attributes"
+	// RoutineAttributes adds owner attributes to a function or procedure block.
+	// The frontend reads the signature and attaches the returned facets to that
+	// declaration, so overloaded functions keep separate settings.
+	RoutineAttributes Site = "routine-attributes"
 	// InTable is a block inside a `table` block, beside its columns. The
 	// [Block] has no naming, and the block takes no labels. Its claim carries
 	// the table in [Claim.Table], and its [Declaration] carries facets of the
@@ -591,6 +595,10 @@ func validateNaming(owner string, block Block) error {
 	case IndexAttributes:
 		if block.Type != "index" || block.Naming != "" {
 			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
+		}
+	case RoutineAttributes:
+		if (block.Type != "function" && block.Type != "procedure") || block.Naming != "" {
+			return fmt.Errorf("HCL %s block of %s must be a function or procedure with no naming", block.Site, owner)
 		}
 	case InTable:
 		if block.Naming != "" {

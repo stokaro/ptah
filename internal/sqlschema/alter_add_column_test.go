@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -150,14 +151,17 @@ func TestReadOnto_AddsAColumnToAnEarlierTable_FailurePath(t *testing.T) {
 func TestRead_RoutineAttributesReachTheModel(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(
+	database, _, err := readWithOwners([]byte(
 		"CREATE FUNCTION add_arrays(a integer[], b integer[]) RETURNS integer[] "+
 			"LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE LEAKPROOF AS $$ SELECT a || b $$;",
 	), "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Functions, qt.HasLen, 1)
-	c.Assert(database.Functions[0].Strict, qt.IsTrue)
-	c.Assert(database.Functions[0].Parallel, qt.Equals, "SAFE")
-	c.Assert(database.Functions[0].Leakproof, qt.IsTrue)
+	properties, _, propertyErr := pgroutine.PropertiesOf(database.Functions[0].Facets)
+	c.Assert(propertyErr, qt.IsNil)
+
+	c.Assert(properties.Strict, qt.IsTrue)
+	c.Assert(properties.Parallel, qt.Equals, "SAFE")
+	c.Assert(properties.Leakproof, qt.IsTrue)
 }

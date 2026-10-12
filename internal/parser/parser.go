@@ -863,6 +863,7 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 		return nil, err
 	}
 
+	p.definitions++
 	function := ast.NewCreateFunction(functionName).SetParameters(parameters)
 	raw, err := p.parseFunctionClauses(function)
 	if err != nil {
@@ -1095,6 +1096,16 @@ func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) (bool, e
 }
 
 func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, error) {
+	if p.claimOwnerSyntax(sqlext.RoutineOption, function.Name, func(value sqlext.Value) error {
+		merged, err := function.Facets.Merge(value.Facets)
+		if err == nil {
+			function.Facets = merged
+		}
+		return err
+	}) {
+		p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Definition = p.definitions
+		return false, nil
+	}
 	keyword := strings.ToUpper(p.current.Value)
 	switch keyword {
 	case "RETURNS":
@@ -1121,25 +1132,8 @@ func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, er
 		return false, nil
 	case "SET":
 		return false, p.parseFunctionSetting(function)
-	case "STRICT":
-		function.Strict = true
-		p.advance()
-		return false, nil
-	case "CALLED":
-		p.advance()
-		if err := p.expectWords("ON", "NULL", "INPUT"); err != nil {
-			return false, fmt.Errorf("expected CALLED ON NULL INPUT: %w", err)
-		}
-		function.Strict = false
-		return false, nil
-	case "PARALLEL":
-		return false, p.parseFunctionParallel(function)
-	case "LEAKPROOF":
-		function.Leakproof = true
-		p.advance()
-		return false, nil
 	case "NOT":
-		return false, p.parseFunctionNotClause(function)
+		return false, p.parseFunctionNotClause()
 	default:
 		if p.skipMySQLFunctionAttribute(keyword) {
 			return false, nil
@@ -1191,17 +1185,6 @@ func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
 	}
 	p.skipWhitespace()
 
-	// RETURNS NULL ON NULL INPUT is not a return type but the long spelling of
-	// STRICT. No type is called NULL, so the word decides it.
-	if p.current.MatchIdentifierValue("NULL") {
-		p.advance()
-		if err := p.expectWords("ON", "NULL", "INPUT"); err != nil {
-			return fmt.Errorf("expected RETURNS NULL ON NULL INPUT: %w", err)
-		}
-		function.Strict = true
-		return nil
-	}
-
 	// The type ends at the first clause keyword outside parentheses. Reading a
 	// keyword inside them as the end would cut RETURNS TABLE (rows int) short,
 	// and a clause keyword missing from the list was read as part of the type:
@@ -1215,7 +1198,7 @@ func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
 		case p.current.MatchOperatorValue(")"):
 			depth--
 		case depth == 0 && returns.Len() > 0 && p.current.Type == lexer.TokenIdentifier &&
-			isFunctionClauseKeyword(p.current.Value):
+			p.functionClauseStart():
 			function.SetReturns(strings.TrimSpace(returns.String()))
 			return nil
 		}
@@ -1234,7 +1217,7 @@ func isFunctionClauseKeyword(word string) bool {
 	switch strings.ToUpper(word) {
 	case "AS", "BEGIN", "CONTAINS", "DETERMINISTIC", "LANGUAGE", "MODIFIES", "NO", "NOT", "READS", "RETURN",
 		"SECURITY", "SQL", "IMMUTABLE", "STABLE", "VOLATILE",
-		"STRICT", "CALLED", "RETURNS", "PARALLEL", "LEAKPROOF", "SET", "COST", "ROWS", "WINDOW", "SUPPORT",
+		"RETURNS", "SET", "COST", "ROWS", "WINDOW", "SUPPORT",
 		"TRANSFORM", "EXTERNAL":
 		return true
 	default:
@@ -1242,32 +1225,21 @@ func isFunctionClauseKeyword(word string) bool {
 	}
 }
 
-// parseFunctionParallel reads PARALLEL SAFE, RESTRICTED or UNSAFE.
-func (p *Parser) parseFunctionParallel(function *ast.CreateFunctionNode) error {
-	start := p.current.Start
-	p.advance()
-	p.skipWhitespace()
-	level := strings.ToUpper(p.current.Value)
-	switch {
-	case p.current.Type != lexer.TokenIdentifier:
-		return fmt.Errorf("expected SAFE, RESTRICTED or UNSAFE after PARALLEL at position %d", start)
-	case level != "SAFE" && level != "RESTRICTED" && level != "UNSAFE":
-		return fmt.Errorf("unsupported PARALLEL level %s at position %d", p.current.Value, p.current.Start)
+// functionClauseStart recognizes shared clauses and selected owner syntax.
+func (p *Parser) functionClauseStart() bool {
+	if isFunctionClauseKeyword(p.current.Value) {
+		return true
 	}
-	function.Parallel = level
-	p.advance()
-	return nil
+	_, found := p.ownerCandidate(sqlext.RoutineOption)
+	return found
 }
 
-// parseFunctionNotClause reads a clause that begins with NOT: PostgreSQL's
-// NOT LEAKPROOF, and the MySQL family's NOT DETERMINISTIC.
-func (p *Parser) parseFunctionNotClause(function *ast.CreateFunctionNode) error {
+// parseFunctionNotClause reads the MySQL family's NOT DETERMINISTIC.
+func (p *Parser) parseFunctionNotClause() error {
 	start := p.current.Start
 	p.advance()
 	p.skipWhitespace()
 	switch {
-	case p.current.MatchIdentifierValue("LEAKPROOF"):
-		function.Leakproof = false
 	case p.current.MatchIdentifierValue("DETERMINISTIC"):
 	default:
 		return fmt.Errorf("unsupported CREATE FUNCTION clause: NOT %s at position %d", p.current.Value, start)

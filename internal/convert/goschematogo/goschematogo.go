@@ -449,7 +449,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		w.writeComment(extension.annotation())
 	}
 	for _, function := range sortedFunctions(ctx.db.Functions) {
-		w.writeComment(functionAnnotation(function))
+		w.writeComment(functionAnnotation(function, ctx.ownerAttrs(routineAnnotationSlot(function), annotationext.WithOwnAttributes)...))
 	}
 	for _, view := range sortedViews(ctx.db.Views) {
 		w.writeComment(annotation("ptah:schema:view",
@@ -769,7 +769,7 @@ func constraintAnnotation(constraint schemamodel.Constraint, owned []attr) strin
 //
 // A procedure returns nothing, so the returns attribute is left to the function
 // arm rather than emitted and ignored.
-func functionAnnotation(function schemamodel.Function) string {
+func functionAnnotation(function schemamodel.Function, owned ...attr) string {
 	if function.IsProcedure() {
 		return annotation("ptah:schema:procedure",
 			attr{name: "name", value: function.Name, set: true},
@@ -782,23 +782,18 @@ func functionAnnotation(function schemamodel.Function) string {
 			dialectsAttr(function.Dialects),
 		)
 	}
-	return annotation("ptah:schema:function",
-		attr{name: "name", value: function.Name, set: true},
-		attr{name: "params", value: function.Parameters, set: function.Parameters != ""},
-		attr{name: "returns", value: function.Returns, set: function.Returns != ""},
-		attr{name: "language", value: function.Language, set: function.Language != ""},
-		attr{name: "security", value: function.Security, set: function.Security != ""},
-		attr{name: "volatility", value: function.Volatility, set: function.Volatility != ""},
-		// The planner attributes the parser reads; left out, an export read
-		// back loses them (stokaro/ptah#3630).
-		attr{name: "leakproof", value: "true", set: function.Leakproof},
-		attr{name: "parallel", value: function.Parallel, set: function.Parallel != ""},
-		attr{name: "strict", value: "true", set: function.Strict},
-		attr{name: "settings", value: strings.Join(function.Settings, ";"), set: len(function.Settings) > 0},
-		attr{name: "body", value: function.Body, set: true},
-		attr{name: "comment", value: function.Comment, set: function.Comment != ""},
+	return annotation("ptah:schema:function", append([]attr{
+		{name: "name", value: function.Name, set: true},
+		{name: "params", value: function.Parameters, set: function.Parameters != ""},
+		{name: "returns", value: function.Returns, set: function.Returns != ""},
+		{name: "language", value: function.Language, set: function.Language != ""},
+		{name: "security", value: function.Security, set: function.Security != ""},
+		{name: "volatility", value: function.Volatility, set: function.Volatility != ""},
+		{name: "settings", value: strings.Join(function.Settings, ";"), set: len(function.Settings) > 0},
+		{name: "body", value: function.Body, set: true},
+		{name: "comment", value: function.Comment, set: function.Comment != ""},
 		dialectsAttr(function.Dialects),
-	)
+	}, owned...)...)
 }
 
 // domainAnnotation writes a domain.

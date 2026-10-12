@@ -30,6 +30,7 @@ import (
 // references are the [hclext.Ref] attributes the block writes, as written,
 // which are resolved once every table of the document is read.
 type ownerClaim struct {
+	routine    *int
 	block      *hclsyntax.Block
 	match      hclext.Match
 	index      int
@@ -606,6 +607,13 @@ func (p *parser) addOwnerFacets(claim ownerClaim, facets schemaext.Facets) error
 	switch {
 	case facets.Len() == 0:
 		return nil
+	case claim.routine != nil:
+		routine := &p.db.Functions[*claim.routine]
+		merged, err := routine.Facets.Merge(facets)
+		if err != nil {
+			return p.blockError(claim.block, "routine %q: %v", routine.Name, err)
+		}
+		routine.Facets = merged
 	case claim.index >= 0:
 		index := &p.db.Indexes[claim.index]
 		merged, err := index.Facets.Merge(facets)
@@ -631,4 +639,21 @@ func qualifiedName(claim hclext.Claim) string {
 		return claim.Name
 	}
 	return claim.Schema + "." + claim.Name
+}
+
+// claimOwnerRoutine hands evaluated attributes to the owner of this block's
+// routine attributes. The claim retains the exact declaration position.
+func (p *parser) claimOwnerRoutine(block *hclsyntax.Block, position int) error {
+	shape, owned := p.owners.Lookup(hclext.RoutineAttributes, block.Type)
+	if !owned {
+		return nil
+	}
+	routine := p.db.Functions[position]
+	values, references, err := p.ownerValues(block, shape, routine.Name)
+	if err != nil {
+		return err
+	}
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, routine: new(position), index: -1, table: -1, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: routine.Name, Attributes: values, At: blockAt(block)}}})
+	return nil
 }
