@@ -66,6 +66,10 @@ and on 21 it is refused before any SQL — a column declared with a type the
 target cannot create would be left naming something the server has no
 definition of.
 
+Domain reads preserve numeric precision and scale, including `NUMBER(*,0)`.
+National character types use their character count, so `NVARCHAR2(10)` remains
+ten characters when the catalog reports twenty bytes.
+
 Two of Oracle's catalog behaviors decide whether a domain converges. A domain declared `NOT NULL` grows a `CHECK` of its
 own, named by the server and numbered per database, and Ptah reads the
 nullability off the column instead so the plan does not carry that constraint
@@ -85,6 +89,9 @@ creates nothing usable — `USER_TYPES` reports `ATTRIBUTES 0` with
 error at all. Ptah writes `CREATE OR REPLACE TYPE t AS OBJECT (...)`, which is
 the statement that creates one, and reads it back from `ALL_TYPES` and
 `ALL_TYPE_ATTRS`.
+
+Object attribute reads preserve `DECIMAL` precision and scale, including a
+negative scale. An unconstrained `FLOAT` remains `FLOAT`.
 
 The read describes the subset the model can carry, and declines the rest by name
 rather than flattening it: an object type with a method, a subtype, a collection
