@@ -81,7 +81,7 @@ func TestPlanExtensions_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a drop", target: "postgres", change: &pgextension.Change{Before: installedTrgm()},
-			want: []planned{{Payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop}, Phase: prerequisite, Effect: plangraph.Drop, Notes: []string{
+			want: []planned{{Payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfExists: true}, Phase: prerequisite, Effect: plangraph.Drop, Notes: []string{
 				"WARNING: Removing extension 'pg_trgm' may break existing functionality that depends on it",
 				"Consider reviewing all database objects that use this extension before proceeding",
 				"Extension removal may cascade to dependent objects - review carefully",

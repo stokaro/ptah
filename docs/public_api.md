@@ -2631,8 +2631,9 @@ the extensions of a collection by name and leave every other object alone.
 surviving extension moves to, resolved under the target's default, and whether
 its comment changes. A version update needs no record of its own. `Operation`
 is the payload of CREATE EXTENSION, ALTER EXTENSION ... UPDATE TO, ALTER
-EXTENSION ... SET SCHEMA and DROP EXTENSION IF EXISTS. `CommentOperation` is
-gated by `capability.ExtensionComments`. The codecs refuse unknown, null, empty
+EXTENSION ... SET SCHEMA and DROP EXTENSION. Only a drop takes `IfExists` and
+`Cascade`, and a plan's drop names IF EXISTS. `CommentOperation` is gated by
+`capability.ExtensionComments`. The codecs refuse unknown, null, empty
 and case-variant keys, and a refused value is a `schemaext.InvalidModelError`.
 
 `feature/pgextension/extensionrender` renders the payloads for the PostgreSQL
@@ -2646,6 +2647,10 @@ target scope reaches every target, and one outside the family skips or refuses
 it by the off-target policy. A scope is different: a Go declaration whose
 `dialects` names a target outside the family is refused, and so is a CREATE
 EXTENSION in a SQL document read for one, which that target refuses as well.
+
+The SQL source reads a migration's DROP EXTENSION and ALTER EXTENSION as the
+`Operation` each performs, which migration lint and safety classify; a schema
+document refuses both, because they declare nothing.
 
 The schema model has no extension list of its own: `schemamodel.Database` and
 `catalog.Database` hold an extension only as this owner's object. A Go parse

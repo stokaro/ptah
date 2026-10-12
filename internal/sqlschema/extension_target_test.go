@@ -1,6 +1,7 @@
 package sqlschema_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -73,6 +74,35 @@ func TestRead_ACreateExtensionOutsideTheFamily_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(pgextension.Names(db.FeatureObjects), qt.DeepEquals, []string{"pg_trgm"})
+		})
+	}
+}
+
+// TestRead_AChangeToAnExtension_FailurePath pins that a schema document
+// refuses DROP EXTENSION and ALTER EXTENSION by name. The extension owner
+// reads each as the operation it performs, which declares nothing, and a
+// schema document describes objects.
+func TestRead_AChangeToAnExtension_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{name: "a drop", sql: "DROP EXTENSION IF EXISTS pg_trgm CASCADE;", want: "DROP EXTENSION IF EXISTS pg_trgm CASCADE"},
+		{name: "an update", sql: "ALTER EXTENSION pg_trgm UPDATE TO '1.6';", want: "ALTER EXTENSION pg_trgm UPDATE TO '1.6'"},
+		{name: "a move", sql: "ALTER EXTENSION pg_trgm SET SCHEMA ext;", want: "ALTER EXTENSION pg_trgm SET SCHEMA ext"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, statements, err := sqlschema.ReadWith(c.Context(), []byte("CREATE EXTENSION pg_trgm;\n"+test.sql), platform.Postgres, nil,
+				sqlschema.Options{Owners: builtintest.Runtime().SQL()})
+
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+			c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: `+regexp.QuoteMeta(test.want))
+			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
