@@ -196,6 +196,7 @@ func corpus() []Fixture {
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
 		{Name: "matview", Schema: matViewFixture()},
 		{Name: "matview-refresh", Schema: matViewRefreshFixture()},
+		{Name: "matview-refresh-after", Schema: matViewRefreshAfterFixture()},
 		{Name: "table-row-policy", Schema: tableRowPolicyFixture()},
 		{Name: "table-row-policy-all-except", Schema: tableRowPolicyAllExceptFixture()},
 		{Name: "function", Schema: functionFixture()},

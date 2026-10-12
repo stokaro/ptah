@@ -42,7 +42,6 @@ type UnmeasuredEntry struct {
 const (
 	lossPrimaryKeyDeclaredTwice = "the comparison plans ADD PRIMARY KEY on MySQL and MariaDB for a key declared both " +
 		"on its field and as an equal PRIMARY KEY constraint. Both conversions carry the key, so the defect is in the comparison"
-	lossRefreshCoverage   = "goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete"
 	lossRoutineAttributes = "goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to " +
 		"PostgreSQL facets, which the conversion already carries"
 	lossRoutineKind           = "goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION"
@@ -149,6 +148,9 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 // stays valid.
 func alternates() map[string][]any {
 	return map[string][]any{
+		// Another mode is valid only without an OFFSET; the AFTER fixture
+		// changes to EVERY.
+		"chschema.Schedule.Mode": {"EVERY"},
 		// Removing a ClickHouse index's type leaves an index the comparison
 		// refuses as not inspected; another type is a change it can plan.
 		"schemamodel.Index.Overrides": {map[string]map[string]string{"clickhouse": {"type": "minmax", "granularity": "4"}}},
@@ -188,7 +190,6 @@ var roundTripLosses = []RecordedLoss{
 		Directions: []Direction{ToCatalog},
 		Reason:     lossPrimaryKeyDeclaredTwice,
 	},
-	{Fixtures: []string{"matview-refresh"}, Dialects: []string{"clickhouse"}, Directions: nil, Reason: lossRefreshCoverage},
 	{
 		Fixtures:   []string{"function-planner-properties"},
 		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},

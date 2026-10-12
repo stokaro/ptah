@@ -43,15 +43,30 @@ func indexClickHouseSettingsFixture() schemamodel.Database {
 // matViewRefreshFixture declares a materialized view's refresh schedule as the
 // owner's typed facet, every clause set, so the census measures each one.
 func matViewRefreshFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	schedule := &chschema.DesiredRefresh{Schedule: chschema.Schedule{
+	return refreshedViewFixture(chschema.Schedule{
 		Mode: chschema.RefreshEvery, Interval: "1 HOUR", Offset: "5 MINUTE",
 		Randomize: "1 MINUTE", Append: true, DependsOn: []string{"other"},
-	}}
+	})
+}
+
+// matViewRefreshAfterFixture declares an AFTER schedule. OFFSET belongs to
+// EVERY alone, so the fixture with every clause set cannot hold another mode,
+// and this one carries the mode the census changes.
+func matViewRefreshAfterFixture() schemamodel.Database {
+	return refreshedViewFixture(chschema.Schedule{Mode: chschema.RefreshAfter, Interval: "1 HOUR"})
+}
+
+// refreshedViewFixture declares one materialized view with schedule. It
+// records the refresh coverage every source that states schedules records, so
+// the comparison reads the schedule rather than refusing it as not inspected.
+func refreshedViewFixture(schedule chschema.Schedule) schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.MaterializedViews = []schemamodel.MaterializedView{{
 		StructName: "MV", Name: "daily", Body: "SELECT id FROM t",
-		Facets: must.Must(must.Must(schemaext.NewFacets(schedule)).WithTargetScope(chschema.RefreshKind, "clickhouse")),
+		Facets: must.Must(must.Must(schemaext.NewFacets(&chschema.DesiredRefresh{Schedule: schedule})).
+			WithTargetScope(chschema.RefreshKind, "clickhouse")),
 	}}
+	db.FeatureCoverage = must.Must(chschema.RefreshCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 
