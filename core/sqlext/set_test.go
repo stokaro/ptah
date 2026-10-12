@@ -43,8 +43,11 @@ func (refusingParser) ParseSQL(context.Context, sqlext.Request) (sqlext.Result, 
 	return sqlext.Result{}, errRefused
 }
 
+// labelKind is the facet kind the test extensions declare.
+const labelKind schemaext.Kind = "example.org/a/label"
+
 func extension(owner, target string, parser sqlext.Parser, patterns ...sqlext.Pattern) sqlext.Extension {
-	return sqlext.Extension{Owner: owner, Targets: []string{target}, Patterns: patterns, Parser: parser}
+	return sqlext.Extension{Owner: owner, Targets: []string{target}, Patterns: patterns, Parser: parser, Facets: []schemaext.Kind{labelKind}}
 }
 
 func TestNewSet_FailurePath(t *testing.T) {
@@ -67,6 +70,11 @@ func TestNewSet_FailurePath(t *testing.T) {
 		{name: "a pattern named twice", extensions: []sqlext.Extension{extension("example.org/a", "a", parser, index,
 			sqlext.Pattern{Name: "index", Site: sqlext.ViewClause, Words: []string{"REFRESH"}})},
 			wantErr: `duplicate.*: SQL extension of example.org/a declares pattern "index" twice`},
+		{name: "a facet site without facet kinds", extensions: []sqlext.Extension{{Owner: "example.org/a", Targets: []string{"a"}, Parser: parser,
+			Patterns: []sqlext.Pattern{{Name: "option", Site: sqlext.ColumnOption, Words: []string{"CHARSET"}}}}},
+			wantErr: `SQL extension of example.org/a declares patterns at a site that takes facets, and no facet kinds`},
+		{name: "an invalid facet kind", extensions: []sqlext.Extension{{Owner: "example.org/a", Targets: []string{"a"}, Facets: []schemaext.Kind{"label"}}},
+			wantErr: `SQL extension of example.org/a declares invalid facet kind "label"`},
 		{name: "an unknown site", extensions: []sqlext.Extension{extension("example.org/a", "a", parser,
 			sqlext.Pattern{Name: "index", Site: "column", Words: []string{"INDEX"}})},
 			wantErr: `SQL pattern "index" of example.org/a names unknown site "column"`},

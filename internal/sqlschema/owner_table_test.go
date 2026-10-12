@@ -120,6 +120,7 @@ func labelOwners() sqlext.Set {
 		SQL: []sqlext.Extension{{
 			Owner:    "example.org/shelves",
 			Targets:  []string{"shelves"},
+			Facets:   []schemaext.Kind{labelKind},
 			Patterns: []sqlext.Pattern{{Name: "label", Site: sqlext.TableOption, Words: []string{"LABELED"}}},
 			Parser:   labelParser{},
 		}},
@@ -156,4 +157,79 @@ func TestReadWith_WithoutTheOptionOwnerRefusesItsSyntax(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `unsupported table option: LABELED at position 28`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 	c.Assert(statements, qt.IsNil)
+}
+
+const tagKind schemaext.Kind = "example.org/shelves/tag"
+
+// tag is the shelves owner's second setting of a column, written `TAGGED
+// '<text>'`.
+type tag struct {
+	Text string
+}
+
+func (*tag) Kind() schemaext.Kind { return tagKind }
+
+func (t *tag) Clone() schemaext.Value { return new(*t) }
+
+func (t *tag) Equal(other schemaext.Value) bool {
+	o, ok := other.(*tag)
+	return ok && *o == *t
+}
+
+// columnLabelParser reads `LABELED '<text>'` into a label and `TAGGED
+// '<text>'` into a tag of the column.
+type columnLabelParser struct{}
+
+func (columnLabelParser) ParseSQL(_ context.Context, request sqlext.Request) (sqlext.Result, error) {
+	values := make([]sqlext.Value, 0, len(request.Claims))
+	for _, claim := range request.Claims {
+		words := strings.Fields(claim.Text)
+		var value schemaext.Value = &label{Text: strings.Trim(words[1], "'")}
+		if claim.Pattern == "tag" {
+			value = &tag{Text: strings.Trim(words[1], "'")}
+		}
+		facets, err := schemaext.Facets{}.With(value)
+		if err != nil {
+			return sqlext.Result{}, err
+		}
+		values = append(values, sqlext.Value{Facets: facets})
+	}
+	return sqlext.Result{Values: values}, nil
+}
+
+// TestReadWith_AppliesAnOwnersColumnOptions reads an owner's options among a
+// column's constraints as the owner's facets of that column, each one added
+// beside the ones before it, and ends each option where the next clause of
+// the column begins.
+func TestReadWith_AppliesAnOwnersColumnOptions(t *testing.T) {
+	c := qt.New(t)
+	owners := must.Must(engine.New(engine.Provider{
+		ID:      "example.org/shelves",
+		Targets: []engine.Target{{Name: "shelves"}},
+		SQL: []sqlext.Extension{{
+			Owner:   "example.org/shelves",
+			Targets: []string{"shelves"},
+			Facets:  []schemaext.Kind{labelKind, tagKind},
+			Patterns: []sqlext.Pattern{
+				{Name: "label", Site: sqlext.ColumnOption, Words: []string{"LABELED"}},
+				{Name: "tag", Site: sqlext.ColumnOption, Words: []string{"TAGGED"}},
+			},
+			Parser: columnLabelParser{},
+		}},
+	})).SQL()
+
+	database, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE a (v int LABELED 'archive' NOT NULL TAGGED 'cold');"),
+		"shelves", nil, sqlschema.Options{Owners: owners})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Fields, qt.HasLen, 1)
+	c.Assert(database.Fields[0].Nullable, qt.IsFalse)
+	labeled, found, err := schemaext.FacetAs[*label](database.Fields[0].Facets, labelKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(labeled.Text, qt.Equals, "archive")
+	tagged, found, err := schemaext.FacetAs[*tag](database.Fields[0].Facets, tagKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(tagged.Text, qt.Equals, "cold")
 }

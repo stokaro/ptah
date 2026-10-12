@@ -1565,9 +1565,11 @@ a declaration wrote it.
 
 `Settings` reads either representation from a facet collection.
 `WithColumnSettings` and `WithObservedColumnSettings` add a value bound to
-`Targets`, mysql and mariadb, which is how the SQL parser and the reader
-declare them. Atlas HCL, Go annotations and YAML state them as platform
-properties.
+`Targets`, mysql and mariadb, which is how `mysqlsource.SQL` and the reader
+declare them. `mysqlsource.SQL` reads `CHARSET`, `CHARACTER SET` and `ON
+UPDATE` as column options in a MySQL, MariaDB or target-less document, and a
+clause written twice keeps the last. Atlas HCL, Go annotations and YAML state
+them as platform properties.
 
 The column owner is split over these services:
 
@@ -2905,9 +2907,21 @@ end it, and whether a document that names no target consults it too.
 Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index a table element or an ALTER TABLE
-operation declares, the owner's operation payload, or facets of a view or of
-a table, which a `ViewClause` or a `TableOption` after a CREATE TABLE's column
-list carries and which take no index or operation.
+operation declares, the owner's operation payload, or facets of a view, a
+table or a column.
+
+A `ViewClause`, a `TableOption` after a CREATE TABLE's column list and a
+`ColumnOption` among a column's constraints carry facets alone, and no index
+or operation. Every facet a value carries is of one of the extension's
+`Facets` kinds.
+
+A `ColumnOption` span ends where the column's next clause begins: a
+constraint the reader parses itself, or the opening word of any owner's
+column option, so a pattern lists no stop word the reader or another owner
+owns. Each claim carries the number of its column definition in
+`Claim.Definition`, so an owner combines several options of one column into
+one facet: it answers the facet on one claim and an empty value, which adds
+nothing, on the others.
 
 A `Statement` pattern claims a whole top-level statement. Its value carries
 the owner's statement payload, which the parse places where the statement
@@ -2942,6 +2956,12 @@ PostgreSQL-family target so. Two patterns one document could consult at one
 site that can match the same syntax are refused at registration. The zero set
 is refused with `sqlext.ErrUnselected`, and `sqlext.None` reads the shared
 grammar alone.
+
+A provider may also read syntax that only sets facets of its own on a target
+another provider registers: every pattern stands at a site that takes facets
+alone, and each of the extension's `Facets` kinds is one whose desired codec
+the provider owns and which it compares on that target. The MySQL owner reads
+a MariaDB column's character set so.
 
 `Extension.Coverage` is the claim a document of the owner's targets makes. A
 document that names no target makes it only when every pattern of the

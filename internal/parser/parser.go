@@ -107,6 +107,10 @@ type Parser struct {
 	// ownerTables are the tables owners' statements declare, each standing
 	// where its statement stood once the owners have read the document.
 	ownerTables map[*ast.ExtensionStatement]*ast.CreateTableNode
+	// columnDefinitions counts the column definitions read so far, which
+	// numbers the claims of owners' column options; see
+	// [sqlext.Claim.Definition].
+	columnDefinitions int
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -2808,52 +2812,6 @@ func (p *Parser) parseIdentityOptionValue(optionalKeyword string) string {
 	return value
 }
 
-func (p *Parser) handleCharacter(column *ast.ColumnNode) error {
-	// Handle MySQL/MariaDB CHARACTER SET
-	p.advance()
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenIdentifier {
-		return nil
-	}
-
-	if strings.ToUpper(p.current.Value) != "SET" {
-		return nil
-	}
-
-	p.advance()
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenIdentifier {
-		return nil
-	}
-	charset := p.current.Value
-	p.advance()
-	return setColumnSettings(column, func(settings *mysqlschema.ColumnSettings) { settings.Charset = charset })
-}
-
-func (p *Parser) handleCharset(column *ast.ColumnNode) error {
-	p.advance()
-	p.skipWhitespace()
-
-	value, err := p.expectIdentifier()
-	if err != nil {
-		return fmt.Errorf("expected charset name: %w", err)
-	}
-	return setColumnSettings(column, func(settings *mysqlschema.ColumnSettings) { settings.Charset = value })
-}
-
-// setColumnSettings records a column's character set or ON UPDATE clause as
-// the MySQL owner's settings, bound to the MySQL family. A clause written
-// twice keeps the last, as MySQL does.
-func setColumnSettings(column *ast.ColumnNode, update func(*mysqlschema.ColumnSettings)) error {
-	settings, _, err := mysqlschema.Settings(column.Facets)
-	if err != nil {
-		return err
-	}
-	update(&settings)
-	column.Facets, err = mysqlschema.WithColumnSettings(column.Facets.Without(mysqlschema.ColumnSettingsKind), settings)
-	return err
-}
-
 func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 	// Handle PostgreSQL/MySQL COLLATE
 	p.advance()
@@ -2892,63 +2850,6 @@ func (p *Parser) handleColumnComment(column *ast.ColumnNode) error {
 	return nil
 }
 
-func (p *Parser) handleOn(column *ast.ColumnNode) error {
-	// Handle MySQL/MariaDB ON UPDATE syntax
-	p.advance()
-	p.skipWhitespace()
-	if !p.current.MatchIdentifierValue("UPDATE") {
-		return nil
-	}
-
-	p.advance()
-	p.skipWhitespace()
-
-	updateExpr := p.parseOnUpdateExpression()
-	if updateExpr == "" {
-		return nil
-	}
-	return setColumnSettings(column, func(settings *mysqlschema.ColumnSettings) { settings.OnUpdate = updateExpr })
-}
-
-func (p *Parser) parseOnUpdateExpression() string {
-	var expr strings.Builder
-	depth := 0
-	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
-		if depth == 0 && expr.Len() > 0 && p.current.Type == lexer.TokenIdentifier &&
-			isOnUpdateExpressionTerminator(p.current.Value) {
-			return strings.TrimSpace(expr.String())
-		}
-		if p.current.Type == lexer.TokenOperator {
-			switch p.current.Value {
-			case "(":
-				depth++
-			case ")":
-				if depth == 0 {
-					return strings.TrimSpace(expr.String())
-				}
-				depth--
-			case ",":
-				if depth == 0 {
-					return strings.TrimSpace(expr.String())
-				}
-			}
-		}
-		expr.WriteString(p.current.Value)
-		p.advance()
-	}
-	return strings.TrimSpace(expr.String())
-}
-
-func isOnUpdateExpressionTerminator(value string) bool {
-	switch strings.ToUpper(value) {
-	case "NOT", "NULL", "PRIMARY", "UNIQUE", "AUTO_INCREMENT", "AUTOINCREMENT", "DEFAULT", "CHECK",
-		"CONSTRAINT", "REFERENCES", "AS", "GENERATED", "CHARACTER", "CHARSET", "COLLATE", "COMMENT", "ON":
-		return true
-	default:
-		return false
-	}
-}
-
 func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode, column *ast.ColumnNode) error {
 	var err error
 	// The constraint a deferral clause belongs to: PostgreSQL attaches one to
@@ -2958,6 +2859,7 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 	lastCheck := false
 	// What the enforcement clauses after that constraint said.
 	var enforced enforcement
+	p.columnDefinitions++
 	for {
 		// Check for timeout to prevent infinite loops
 		if err := p.checkTimeout(); err != nil {
@@ -2989,6 +2891,10 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 				return err
 			}
 		}
+		if p.claimOwnerColumnOption(column) {
+			last, lastCheck, enforced = columnClause{}, false, enforcement{}
+			continue
+		}
 		before := snapshotColumnClauses(table, column)
 		checks := p.markColumnChecks(column)
 		err = p.parseColumnConstraintOrAttribute(table, column, keyword)
@@ -3004,49 +2910,87 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 }
 
 func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, column *ast.ColumnNode, keyword string) error {
-	switch keyword {
-	case "NOT":
-		return p.handleNotNull(column)
-	case "NULL":
-		p.handleNull(column)
-	case "PRIMARY":
-		return p.handlePrimaryKeyAttribute(table, column)
-	case "UNIQUE":
-		return p.handleColumnUnique(table, column)
-	case "AUTO_INCREMENT", "AUTOINCREMENT":
-		p.handleAutoIncrement(column)
-	case "DEFAULT":
-		return p.handleDefault(column)
-	case "CHECK":
-		return p.handleColumnCheck(table, column, "")
-	case "CONSTRAINT":
-		return p.handleColumnConstraint(table, column)
-	case "REFERENCES":
-		if err := p.refuseModifyReferences(); err != nil {
-			return err
-		}
-		if err := p.refuseColumnReferences(); err != nil {
-			return err
-		}
-		return p.handleReferences(column)
-	case "AS":
-		return p.handleAs(column)
-	case "GENERATED":
-		return p.handleGenerated(column)
-	case "CHARACTER":
-		return p.handleCharacter(column)
-	case "CHARSET":
-		return p.handleCharset(column)
-	case "COLLATE":
-		return p.handleCollate(column)
-	case "COMMENT":
-		return p.handleColumnComment(column)
-	case "ON":
-		return p.handleOn(column)
-	default:
+	read, known := columnClauseReader(keyword)
+	if !known {
 		return fmt.Errorf("unsupported column attribute: %s at position %d", keyword, p.current.Start)
 	}
-	return nil
+	return read(p, table, column)
+}
+
+// columnClauseReader returns the reader of the column constraint or attribute
+// keyword opens, and false for a word that opens none the shared grammar
+// reads. [columnClauseStart] asks it too, so an owner's column option ends
+// where one of these clauses begins and the two cannot disagree.
+func columnClauseReader(keyword string) (func(p *Parser, table *ast.CreateTableNode, column *ast.ColumnNode) error, bool) {
+	switch keyword {
+	case "NOT":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleNotNull(column) }, true
+	case "NULL":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
+			p.handleNull(column)
+			return nil
+		}, true
+	case "PRIMARY":
+		return func(p *Parser, table *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handlePrimaryKeyAttribute(table, column)
+		}, true
+	case "UNIQUE":
+		return func(p *Parser, table *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handleColumnUnique(table, column)
+		}, true
+	case "AUTO_INCREMENT", "AUTOINCREMENT":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
+			p.handleAutoIncrement(column)
+			return nil
+		}, true
+	case "DEFAULT":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleDefault(column) }, true
+	case "CHECK":
+		return func(p *Parser, table *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handleColumnCheck(table, column, "")
+		}, true
+	case "CONSTRAINT":
+		return func(p *Parser, table *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handleColumnConstraint(table, column)
+		}, true
+	case "REFERENCES":
+		return (*Parser).readColumnReferences, true
+	case "AS":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleAs(column) }, true
+	case "GENERATED":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handleGenerated(column)
+		}, true
+	case "COLLATE":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleCollate(column) }, true
+	case "COMMENT":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handleColumnComment(column)
+		}, true
+	default:
+		return nil, false
+	}
+}
+
+// readColumnReferences reads a column's REFERENCES clause where the statement
+// and the dialect take one.
+func (p *Parser) readColumnReferences(_ *ast.CreateTableNode, column *ast.ColumnNode) error {
+	if err := p.refuseModifyReferences(); err != nil {
+		return err
+	}
+	if err := p.refuseColumnReferences(); err != nil {
+		return err
+	}
+	return p.handleReferences(column)
+}
+
+// columnClauseStart reports whether word opens a column constraint or
+// attribute the shared grammar reads: a clause [columnClauseReader] reads, an
+// enforcement clause, or a deferral.
+func columnClauseStart(word string) bool {
+	keyword := strings.ToUpper(word)
+	_, known := columnClauseReader(keyword)
+	return known || keyword == "ENFORCED" || keyword == "DEFERRABLE" || keyword == "INITIALLY"
 }
 
 // handleColumnConstraint reads `CONSTRAINT <name> <constraint>` on a column.

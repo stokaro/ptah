@@ -26,10 +26,11 @@ func None() Set {
 }
 
 // NewSet validates and freezes extensions. It refuses an extension without an
-// owner or a target, a pattern without a name, a known site or opening words,
-// patterns without a parser, two patterns of one extension under one name,
-// and two patterns that one document could consult at one site and that can
-// match the same syntax.
+// owner or a target, an object or facet kind that is not valid, patterns at a
+// site that takes facets without facet kinds, a pattern without a name, a
+// known site or opening words, patterns without a parser,
+// two patterns of one extension under one name, and two patterns that one
+// document could consult at one site and that can match the same syntax.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true}
 	for _, extension := range extensions {
@@ -39,6 +40,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 		extension.Targets = slices.Clone(extension.Targets)
 		extension.Header = slices.Clone(extension.Header)
 		extension.Kinds = slices.Clone(extension.Kinds)
+		extension.Facets = slices.Clone(extension.Facets)
 		patterns := make([]Pattern, 0, len(extension.Patterns))
 		for _, pattern := range extension.Patterns {
 			pattern.Words = slices.Clone(pattern.Words)
@@ -164,6 +166,14 @@ func validateExtension(extension Extension) error {
 			return fmt.Errorf("SQL extension of %s declares invalid object kind %q", extension.Owner, kind)
 		}
 	}
+	for _, kind := range extension.Facets {
+		if !kind.Valid() {
+			return fmt.Errorf("SQL extension of %s declares invalid facet kind %q", extension.Owner, kind)
+		}
+	}
+	if len(extension.Facets) == 0 && slices.ContainsFunc(extension.Patterns, func(pattern Pattern) bool { return FacetSite(pattern.Site) }) {
+		return fmt.Errorf("SQL extension of %s declares patterns at a site that takes facets, and no facet kinds", extension.Owner)
+	}
 	names := make(map[string]bool, len(extension.Patterns))
 	for _, pattern := range extension.Patterns {
 		if strings.TrimSpace(pattern.Name) == "" {
@@ -183,9 +193,20 @@ func validateExtension(extension Extension) error {
 	return nil
 }
 
+// FacetSite reports whether a value at site carries the owner's facets of its
+// subject and nothing else: [ViewClause], [TableOption] and [ColumnOption].
+func FacetSite(site Site) bool {
+	switch site {
+	case ViewClause, TableOption, ColumnOption:
+		return true
+	default:
+		return false
+	}
+}
+
 func knownSite(site Site) bool {
 	switch site {
-	case TableElement, AlterOperation, ViewClause, TableOption, Statement:
+	case TableElement, AlterOperation, ViewClause, TableOption, ColumnOption, Statement:
 		return true
 	default:
 		return false
@@ -395,15 +416,22 @@ func ownedObjects(extension Extension, declared schemaext.Objects) ([]schemaext.
 // carries the owner's statement or the table it declares, one and not both,
 // only a statement declares a table or declares or amends objects, a
 // statement that declares a table names it and declares and amends nothing
-// else, a site that takes facets alone takes no index and no operation, and
-// every object is of one of the extension's Kinds.
+// else, a site that takes facets alone takes no index and no operation, every
+// facet is of one of the extension's Facets kinds, and every object is of one
+// of its Kinds.
 func checkValue(extension Extension, claim Claim, value Value) error {
+	for _, kind := range value.Facets.Kinds() {
+		if !slices.Contains(extension.Facets, kind) {
+			return fmt.Errorf("%w: SQL parser of %s answered a facet of kind %q, which its extension does not declare",
+				schemaext.ErrInvalidValue, extension.Owner, kind)
+		}
+	}
 	if claim.Site != Statement {
 		if value.Statement != nil || value.Table != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}
-		if (claim.Site == ViewClause || claim.Site == TableOption) && (value.Index != nil || value.Operation != nil) {
+		if FacetSite(claim.Site) && (value.Index != nil || value.Operation != nil) {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with an index or an operation, which the site does not take",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}

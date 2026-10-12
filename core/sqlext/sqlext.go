@@ -60,6 +60,14 @@ const (
 	// comma or at the end of the statement. Its [Value] carries the owner's
 	// facets of the table.
 	TableOption Site = "table-option"
+	// ColumnOption is an option of a column definition after its type, among
+	// the column's constraints, in CREATE TABLE and in the column definitions
+	// of ALTER TABLE. A span ends at the next top-level comma, at the
+	// parenthesis that closes the column list, at the end of the statement,
+	// or at the next word that opens a column constraint the frontend reads
+	// or another ColumnOption pattern of the document's owners. Its [Value]
+	// carries the owner's facets of the column.
+	ColumnOption Site = "column-option"
 	// Statement is a whole top-level statement. A span ends at the semicolon
 	// that ends the statement or at the end of the document. Its [Value] is
 	// the owner's statement, and may declare objects of the owner or amend
@@ -103,6 +111,12 @@ type Claim struct {
 	Subject string
 	// Text is the span's source text, its opening words included.
 	Text string
+	// Definition numbers the column definition a ColumnOption claim belongs
+	// to, from 1 in document order. The claims of one definition share it,
+	// so an owner can combine several options of one column into one facet:
+	// it answers the facet on one claim and an empty value, which adds
+	// nothing, on the others. It is zero at every other site.
+	Definition int
 	// Offset is the byte offset of the span in the document, which an error
 	// the owner returns about the span is positioned against.
 	Offset int
@@ -141,7 +155,8 @@ type Value struct {
 	// alter operation requires.
 	Operation ast.ExtensionPayload
 	// Facets are the owner's settings of the subject, such as a materialized
-	// view's refresh schedule or a table's row deletion policy.
+	// view's refresh schedule, a table's row deletion policy or a column's
+	// character set, each of one of the extension's Facets kinds.
 	Facets schemaext.Facets
 	// Statement is the owner's payload of a statement. A statement carries
 	// it or a Table, never both. The parse places it where the statement
@@ -217,6 +232,12 @@ type Extension struct {
 	// A statement's objects must be of these kinds, and a request carries
 	// the objects of these kinds that earlier documents declared.
 	Kinds []schemaext.Kind
+	// Facets are the facet kinds the owner's values carry as the settings of
+	// their subject ([Value.Facets]). A value's facets must be of these
+	// kinds. A provider may read syntax on a target another provider
+	// registers when every pattern stands at a site that takes facets alone
+	// and it serves each of these kinds there; see ptah.run/engine.
+	Facets []schemaext.Kind
 	// Coverage is the knowledge a document of one of Targets holds about the
 	// owner's models, such as the refresh schedule a ClickHouse materialized
 	// view states in its CREATE statement. It is handed the entries of the
