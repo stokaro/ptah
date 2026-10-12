@@ -120,9 +120,10 @@ func TestSet_Parse_ReturnsATableAStatementDeclares(t *testing.T) {
 
 // TestSet_Parse_RefusesAValueItsSiteDoesNotTake refuses a statement answered
 // without the owner's statement or a table, or with both, a table without a
-// name or with objects beside it, a value of another site that declares
-// objects or a table, an index or an operation at a site that takes facets
-// alone, a facet or an object of a kind the extension does not declare.
+// name or with objects or table facets beside it, table facets without a
+// table name or any facet, a value of another site that declares objects, a table or table
+// facets, an index or an operation at a site that takes facets alone, a facet
+// or an object of a kind the extension does not declare.
 func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -135,6 +136,22 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 		{name: "a statement and a table", site: sqlext.Statement,
 			value:   sqlext.Value{Statement: &gadgetStatement{}, Table: &sqlext.TableDeclaration{Name: "t"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with both a statement and a table`},
+		{name: "table facets at another site", site: sqlext.TableOption,
+			value:   sqlext.Value{TableFacets: &sqlext.TableFacets{Name: "t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with a statement's value`},
+		{name: "table facets without a table name", site: sqlext.Statement,
+			value:   sqlext.Value{Statement: &gadgetStatement{}, TableFacets: &sqlext.TableFacets{Name: " "}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with table facets without a table name`},
+		{name: "table facets without a facet", site: sqlext.Statement,
+			value:   sqlext.Value{Statement: &gadgetStatement{}, TableFacets: &sqlext.TableFacets{Name: "t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with table facets without a facet`},
+		{name: "a table and another table's facets", site: sqlext.Statement,
+			value:   sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}, TableFacets: &sqlext.TableFacets{Name: "u"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table and another table's facets`},
+		{name: "a table facet of a kind the extension does not declare", site: sqlext.Statement,
+			value: sqlext.Value{Statement: &gadgetStatement{},
+				TableFacets: &sqlext.TableFacets{Name: "t", Facets: must.Must(schemaext.NewFacets(&label{kind: "example.org/a/other"}))}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered a facet of kind "example.org/a/other", which its extension does not declare`},
 		{name: "a table without a name", site: sqlext.Statement, value: sqlext.Value{Table: &sqlext.TableDeclaration{Name: " "}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table without a name`},
 		{name: "a table and an object", site: sqlext.Statement,

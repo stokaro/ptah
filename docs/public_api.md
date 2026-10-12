@@ -3009,6 +3009,17 @@ one nothing declared with an error wrapping `sqlext.ErrUndeclared`. The reader
 adds the declared objects, refusing a duplicate, and replaces each amended one
 where it was declared.
 
+A child object, one whose identity names its table as its parent, is keyed by
+the table the load declares under that name, as an ALTER TABLE finds its table;
+a table the load does not declare stays as written. A statement's
+`TableFacets` set the owner's facets of a table the load declares, such as
+the row-level security switch an ALTER TABLE sets. They must contain a facet
+and name a table. An undeclared table is refused with an error wrapping
+`sqlext.ErrUndeclared`; a duplicate facet kind is refused. An owner may group
+statements that set the same facet and return its final value on the last
+claim. A DROP TABLE removes the table's children and the subject coverage of
+the table and its children, including facet and child-namespace claims.
+
 A `Statement` pattern may read the name of the statement's object before it
 decides: `AfterName` are the words that must follow the qualified name, which
 the reader reads with its own grammar, and `Next` and `NotNext` then apply to

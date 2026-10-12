@@ -174,6 +174,8 @@ func TestSet_Parse_RefusesADeclineItCannotHonor(t *testing.T) {
 			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
 		{name: "a statement beside it", site: sqlext.Statement, value: sqlext.Value{Declined: true, Statement: &gadgetStatement{}},
 			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
+		{name: "table facets beside it", site: sqlext.Statement, value: sqlext.Value{Declined: true, TableFacets: &sqlext.TableFacets{Name: "t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

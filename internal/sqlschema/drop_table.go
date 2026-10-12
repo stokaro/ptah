@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -30,7 +31,9 @@ import (
 // drops it, such as a SQL Server extended property; the read's relation
 // runtime says which table an object is attached to (see
 // [Options.Relations]). Without one, a DROP TABLE in a document whose model
-// holds a standalone feature object is refused.
+// holds a standalone feature object is refused. A feature object that is the
+// table's child, one whose identity names the table as its parent, goes with
+// it too, as the model holds no child without its table.
 //
 // What the servers refuse is refused, before anything is removed:
 //
@@ -186,6 +189,18 @@ func removeTable(target alterTarget) {
 		})
 		database.Grants = slices.DeleteFunc(database.Grants, func(grant schemamodel.Grant) bool {
 			return grant.OnTable != "" && target.reachesTable(grant.OnTable)
+		})
+		notChild := func(ref objectidentity.ID) bool {
+			table := childTable(target.databases, ref, target.sourcePlatform)
+			return table == nil || table.QualifiedName() != target.table.QualifiedName()
+		}
+		database.FeatureObjects = database.FeatureObjects.Select(notChild)
+		database.FeatureCoverage = database.FeatureCoverage.SelectSubjects(func(ref objectidentity.ID) bool {
+			if ref.Kind != objectidentity.KindTable {
+				return notChild(ref)
+			}
+			table := declaredOwnerTable(target.databases, ref, target.sourcePlatform)
+			return table == nil || table.QualifiedName() != target.table.QualifiedName()
 		})
 		database.ManagedData = slices.DeleteFunc(database.ManagedData, func(data schemamodel.ManagedData) bool {
 			return target.reachesTable(schemamodel.QualifyTableName(data.Schema, data.Table))

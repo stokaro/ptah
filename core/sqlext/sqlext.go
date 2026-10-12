@@ -161,6 +161,18 @@ type Index struct {
 	Facets schemaext.Facets
 }
 
+// TableFacets are an owner's facets of a common table a statement sets, such
+// as the row-level security switch `ALTER TABLE t ENABLE ROW LEVEL SECURITY`
+// sets on t.
+type TableFacets struct {
+	// Name is the table's name as the statement writes it, qualified where
+	// the statement qualifies it.
+	Name string
+	// Facets contains at least one setting of the table. Each setting has
+	// one of the extension's Facets kinds.
+	Facets schemaext.Facets
+}
+
 // TableDeclaration is a table an owner's statement declares and defines by
 // the owner's facets alone, with no column list, such as a SQLite virtual
 // table, which its module defines.
@@ -207,6 +219,12 @@ type Value struct {
 	// declared. An owner refuses a statement that amends an object it cannot
 	// find with an error wrapping [ErrUndeclared].
 	Replaces []schemaext.Object
+	// TableFacets sets the owner's facets of a table the load declares. The
+	// reader merges them into the table, refuses a facet the table already
+	// holds, and refuses a table the load does not declare with an error
+	// wrapping [ErrUndeclared]. Only a [Statement] value carries it, beside
+	// the owner's statement.
+	TableFacets *TableFacets
 	// Declined hands a statement back to the shared grammar: the owner's
 	// pattern matched syntax that is not the owner's after all, such as a
 	// COMMENT ON TYPE of a type another model declares. The frontend reads

@@ -516,14 +516,18 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 	if value.Declined {
 		return checkDeclined(extension, claim, value)
 	}
-	for _, kind := range value.Facets.Kinds() {
+	var tableFacets schemaext.Facets
+	if value.TableFacets != nil {
+		tableFacets = value.TableFacets.Facets
+	}
+	for _, kind := range slices.Concat(value.Facets.Kinds(), tableFacets.Kinds()) {
 		if !slices.Contains(extension.Facets, kind) {
 			return fmt.Errorf("%w: SQL parser of %s answered a facet of kind %q, which its extension does not declare",
 				schemaext.ErrInvalidValue, extension.Owner, kind)
 		}
 	}
 	if claim.Site != Statement {
-		if value.Statement != nil || value.Table != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
+		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}
@@ -554,7 +558,7 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 			schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 	}
 	if value.Index != nil || value.Operation != nil || !value.Facets.IsZero() || value.Statement != nil || value.Table != nil ||
-		len(value.Objects) > 0 || len(value.Replaces) > 0 {
+		value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
 		return fmt.Errorf("%w: SQL parser of %s declined its statement claim %q and answered a value beside it",
 			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
 	}
@@ -562,8 +566,9 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 }
 
 // checkStatementValue refuses a statement's value that carries neither the
-// owner's statement nor a table, or both, and a table without a name or with
-// objects beside it.
+// owner's statement nor a table, or both, a table without a name or with
+// objects or another table's facets beside it, and table facets that name no
+// table or contain no facets.
 func checkStatementValue(extension Extension, claim Claim, value Value) error {
 	var problem string
 	switch {
@@ -575,6 +580,12 @@ func checkStatementValue(extension Extension, claim Claim, value Value) error {
 		problem = "a table without a name"
 	case value.Table != nil && (len(value.Objects) > 0 || len(value.Replaces) > 0):
 		problem = "a table and objects beside it"
+	case value.Table != nil && value.TableFacets != nil:
+		problem = "a table and another table's facets"
+	case value.TableFacets != nil && strings.TrimSpace(value.TableFacets.Name) == "":
+		problem = "table facets without a table name"
+	case value.TableFacets != nil && value.TableFacets.Facets.IsZero():
+		problem = "table facets without a facet"
 	default:
 		return nil
 	}

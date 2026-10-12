@@ -716,7 +716,7 @@ func appendStatement(
 func appendFamilyStatement(
 	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
-	if handled, err := applyOwnerStatement(database, document, stmt); handled {
+	if handled, err := applyOwnerStatement(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
 	if appendRoutine(database, stmt, sourcePlatform) {
