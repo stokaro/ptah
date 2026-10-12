@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
@@ -102,7 +103,7 @@ func (p *Parser) ownerSpan(site sqlext.Site, pattern sqlext.Pattern) (string, in
 	depth := 0
 	first := true
 	for p.current.Type != lexer.TokenEOF {
-		if depth == 0 && !first && (p.endsOwnerSpan(site) || p.isOwnerStop(pattern.Stops)) {
+		if depth == 0 && !first && (p.endsOwnerSpan(site) || p.isOwnerStop(pattern.Stops) || p.opensColumnClause(site)) {
 			break
 		}
 		if p.current.MatchOperatorValue("(") {
@@ -130,13 +131,34 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 		return true
 	}
 	switch site {
-	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption:
+	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption, sqlext.ColumnOption:
 		return p.current.MatchOperatorValue(",")
 	case sqlext.ViewClause:
 		return p.current.MatchIdentifierValue("AS")
 	default:
 		return false
 	}
+}
+
+// opensColumnClause reports whether, at a column option, the current token
+// opens the next clause of the column: a constraint or attribute the shared
+// grammar reads, or the opening word of any owner's column option the
+// document consults. Column clauses follow one another without a comma, so
+// these are where an owner's option ends, and no owner repeats the
+// grammar's words or another owner's.
+func (p *Parser) opensColumnClause(site sqlext.Site) bool {
+	if site != sqlext.ColumnOption || p.current.Type != lexer.TokenIdentifier {
+		return false
+	}
+	if columnClauseStart(p.current.Value) {
+		return true
+	}
+	for _, candidate := range p.owners.Candidates(p.dialect, sqlext.ColumnOption) {
+		if strings.EqualFold(candidate.Pattern.Words[0], p.current.Value) {
+			return true
+		}
+	}
+	return false
 }
 
 // isOwnerStop reports whether the current token is one of a pattern's stops.
@@ -258,6 +280,24 @@ func (p *Parser) claimOwnerTableOption(table *ast.CreateTableNode) bool {
 		table.Facets = merged
 		return nil
 	})
+}
+
+// claimOwnerColumnOption claims an owner's option of the column definition
+// being read. The facets it reads are the column's; the claim carries the
+// definition's number, so an owner can combine the options of one column.
+func (p *Parser) claimOwnerColumnOption(column *ast.ColumnNode) bool {
+	claimed := p.claimOwnerSyntax(sqlext.ColumnOption, column.Name, func(value sqlext.Value) error {
+		merged, err := column.Facets.Merge(value.Facets)
+		if err != nil {
+			return fmt.Errorf("column %s: %w", column.Name, err)
+		}
+		column.Facets = merged
+		return nil
+	})
+	if claimed {
+		p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Definition = p.columnDefinitions
+	}
+	return claimed
 }
 
 // claimOwnerViewClauses claims every owner's clause between a materialized

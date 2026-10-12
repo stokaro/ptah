@@ -147,7 +147,8 @@ func (r *Runtime) HCL() hclext.Set {
 // registerSQL freezes every provider's SQL extensions into one set. An
 // extension must name its provider as the owner and read only targets that
 // provider registers, under their canonical names, or targets it reads
-// statements of its own on; see [Runtime.readsStatements].
+// statements or facets of its own on; see [Runtime.readsStatements] and
+// [Runtime.readsFacets].
 func (r *Runtime) registerSQL(providers []Provider) error {
 	var extensions []sqlext.Extension
 	for _, provider := range providers {
@@ -157,7 +158,8 @@ func (r *Runtime) registerSQL(providers []Provider) error {
 			}
 			for _, target := range extension.Targets {
 				selected, found := r.targets[target]
-				if !found || selected.name != target || (selected.owner != provider.ID && !r.readsStatements(provider.ID, extension, target)) {
+				if !found || selected.name != target || (selected.owner != provider.ID &&
+					!r.readsStatements(provider.ID, extension, target) && !r.readsFacets(provider.ID, extension, target)) {
 					return fmt.Errorf("%w: provider %q registers SQL syntax for target %q it does not register", ErrInvalidRegistration, provider.ID, target)
 				}
 			}
@@ -189,6 +191,28 @@ func (r *Runtime) readsStatements(owner string, extension sqlext.Extension, targ
 	}
 	for _, kind := range extension.Kinds {
 		if !r.ownsCodec(owner, kind, schemaext.Desired) || !r.serves(target, kind) {
+			return false
+		}
+	}
+	return true
+}
+
+// readsFacets reports whether owner may read syntax on target, a target
+// another provider registers, that only sets facets of the owner's: every
+// pattern stands at a site whose value carries facets alone, and every facet
+// kind the extension declares is the owner's and compared on target. The MySQL
+// owner reads a MariaDB column's character set and ON UPDATE clause so.
+func (r *Runtime) readsFacets(owner string, extension sqlext.Extension, target string) bool {
+	if len(extension.Patterns) == 0 {
+		return false
+	}
+	for _, pattern := range extension.Patterns {
+		if !sqlext.FacetSite(pattern.Site) {
+			return false
+		}
+	}
+	for _, kind := range extension.Facets {
+		if !r.ownsCodec(owner, kind, schemaext.Desired) || !r.servesFacet(target, kind) {
 			return false
 		}
 	}

@@ -48,6 +48,12 @@ func (r *Runtime) serves(target string, kind schemaext.Kind) bool {
 	return compares || declares
 }
 
+// servesFacet reports whether target compares facets of kind.
+func (r *Runtime) servesFacet(target string, kind schemaext.Kind) bool {
+	_, compares := r.facetComparisons[conversionKey{target: target, kind: kind}]
+	return compares
+}
+
 // hosts lists, sorted, the targets that serve kind.
 func (r *Runtime) hosts(kind schemaext.Kind) []string {
 	var hosts []string

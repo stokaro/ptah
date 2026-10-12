@@ -48,6 +48,7 @@ func SQL() sqlext.Extension {
 	return sqlext.Extension{
 		Owner:   chschema.Owner,
 		Targets: []string{platform.ClickHouse},
+		Facets:  []schemaext.Kind{chschema.RefreshKind},
 		Patterns: []sqlext.Pattern{
 			{Name: sqlSkippingIndex, Site: sqlext.TableElement, Words: []string{"INDEX"}, Targeted: true},
 			{Name: sqlAddSkippingIndex, Site: sqlext.AlterOperation, Words: []string{"ADD", "INDEX"}},

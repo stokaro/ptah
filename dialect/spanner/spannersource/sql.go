@@ -30,6 +30,7 @@ func SQL() sqlext.Extension {
 	return sqlext.Extension{
 		Owner:    spannerschema.Owner,
 		Targets:  []string{platform.Spanner},
+		Facets:   []schemaext.Kind{spannerschema.RowDeletionKind},
 		Patterns: []sqlext.Pattern{{Name: sqlRowDeletion, Site: sqlext.TableOption, Words: []string{"TTL"}, Targeted: true}},
 		Parser:   sqlParser{},
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) { return Coverage() },

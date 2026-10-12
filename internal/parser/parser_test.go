@@ -93,7 +93,7 @@ func TestParser_ParseCreateTable_ColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
 	sql := "CREATE TABLE users (name VARCHAR(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL);"
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
@@ -597,7 +597,7 @@ func TestParser_ParseCreateTable_MySQLColumnModifiers(t *testing.T) {
     c2 VARCHAR(255) CHARACTER SET utf8 NOT NULL DEFAULT 'a',
     c3 VARCHAR(255) CHARSET utf8 COLLATE utf8_unicode_ci NULL DEFAULT 'b'
 );`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
@@ -4579,7 +4579,7 @@ func TestParser_ParseMariaDBComprehensiveDemo(t *testing.T) {
 	ROW_FORMAT=DYNAMIC
 	COMMENT='Comprehensive MariaDB table';`
 
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -4786,7 +4786,7 @@ func TestParser_MariaDBCharacterSet(t *testing.T) {
 
 	// Test CHARACTER SET and COLLATE syntax
 	sql := "CREATE TABLE test (`name` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci);"
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -4916,7 +4916,7 @@ func TestParser_MariaDBFirstFewColumns(t *testing.T) {
 		` + "`username`" + ` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
 		` + "`bio`" + ` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 	);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -5060,7 +5060,7 @@ func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 	sql := `CREATE TABLE test (
 		` + "`updated_at`" + ` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -5078,7 +5078,7 @@ func TestParser_MariaDBOnUpdateBeforeComment(t *testing.T) {
 	sql := `CREATE TABLE test (
 		` + "`updated_at`" + ` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated timestamp'
 	);`
-	statements, err := parser.NewParser(sql).Parse()
+	statements, err := parser.NewParser(sql, withMySQLOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
@@ -5103,7 +5103,7 @@ func TestParser_MariaDBFirst5Columns(t *testing.T) {
 		` + "`balance`" + ` DECIMAL(10,2) NOT NULL DEFAULT 0.00 CHECK (` + "`balance`" + ` >= 0),
 		` + "`score`" + ` DOUBLE ZEROFILL DEFAULT 0000.00
 	);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -5138,7 +5138,7 @@ func TestParser_MariaDBFirst7Columns(t *testing.T) {
 		` + "`created_at`" + ` DATETIME DEFAULT CURRENT_TIMESTAMP,
 		` + "`updated_at`" + ` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -5174,7 +5174,7 @@ func TestParser_MariaDBFirst10Columns(t *testing.T) {
 		` + "`status`" + ` ENUM('new', 'active', 'archived') DEFAULT 'new',
 		` + "`roles`" + ` SET('admin', 'editor', 'user') DEFAULT 'user'
 	);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withMySQLOwners())
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)

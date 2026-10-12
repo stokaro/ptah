@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/clickhouse/chsource"
+	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/internal/parser"
 )
 
@@ -17,4 +18,11 @@ func clickHouseOwners() sqlext.Set {
 // withClickHouseOwners is the parse option that selects [clickHouseOwners].
 func withClickHouseOwners() parser.Option {
 	return parser.WithSQL(clickHouseOwners())
+}
+
+// withMySQLOwners is the parse option that selects the MySQL owner, whose
+// column options a MySQL or MariaDB document carries, and a document that
+// names no target too.
+func withMySQLOwners() parser.Option {
+	return parser.WithSQL(must.Must(sqlext.NewSet(mysqlsource.SQL())))
 }

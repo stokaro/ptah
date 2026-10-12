@@ -57,9 +57,24 @@ func (p answeringParser) ParseSQL(_ context.Context, request sqlext.Request) (sq
 	return sqlext.Result{Values: values}, nil
 }
 
+// label is a facet value of any kind.
+type label struct {
+	kind schemaext.Kind
+}
+
+func (l *label) Kind() schemaext.Kind { return l.kind }
+
+func (l *label) Clone() schemaext.Value { return new(*l) }
+
+func (l *label) Equal(other schemaext.Value) bool {
+	o, ok := other.(*label)
+	return ok && *o == *l
+}
+
 func gadgetSet(site sqlext.Site, parser sqlext.Parser) sqlext.Set {
 	return must.Must(sqlext.NewSet(sqlext.Extension{Owner: "example.org/a", Targets: []string{"x"},
 		Kinds:    []schemaext.Kind{gadgetKind},
+		Facets:   []schemaext.Kind{labelKind},
 		Patterns: []sqlext.Pattern{{Name: "gadget", Site: site, Words: []string{"CREATE", "GADGET"}}},
 		Parser:   parser}))
 }
@@ -107,7 +122,7 @@ func TestSet_Parse_ReturnsATableAStatementDeclares(t *testing.T) {
 // without the owner's statement or a table, or with both, a table without a
 // name or with objects beside it, a value of another site that declares
 // objects or a table, an index or an operation at a site that takes facets
-// alone, and an object of a kind the extension does not declare.
+// alone, a facet or an object of a kind the extension does not declare.
 func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -139,6 +154,11 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its view-clause claim "gadget" with an index or an operation, which the site does not take`},
 		{name: "a table at a table option", site: sqlext.TableOption, value: sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with a statement's value`},
+		{name: "an index at a column option", site: sqlext.ColumnOption, value: sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its column-option claim "gadget" with an index or an operation, which the site does not take`},
+		{name: "a facet of a kind the extension does not declare", site: sqlext.ColumnOption,
+			value:   sqlext.Value{Facets: must.Must(schemaext.NewFacets(&label{kind: "example.org/a/other"}))},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered a facet of kind "example.org/a/other", which its extension does not declare`},
 		{name: "objects at another site", site: sqlext.AlterOperation,
 			value:   sqlext.Value{Operation: &gadgetStatement{}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "new")}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its alter-operation claim "gadget" with a statement's value`},

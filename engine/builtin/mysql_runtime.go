@@ -37,6 +37,7 @@ func registerMySQLServices(provider *engine.Provider) {
 	provider.Annotations = append(provider.Annotations, mysqlsource.Annotations())
 	provider.YAML = append(provider.YAML, mysqlsource.YAML())
 	provider.HCL = append(provider.HCL, mysqlsource.HCL())
+	provider.SQL = append(provider.SQL, mysqlsource.SQL())
 	provider.Codecs = append(provider.Codecs, slices.Concat(
 		mysqlschema.TableCodecs(), []schemaext.Codec{mysqldiff.TableCodec()},
 		mysqlschema.IndexCodecs(),

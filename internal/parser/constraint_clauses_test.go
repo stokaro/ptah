@@ -10,10 +10,11 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// parsed answers the statements sql parses to under dialect.
+// parsed answers the statements sql parses to under dialect, with the MySQL
+// owner's column options read.
 func parsed(c *qt.C, dialect, sql string) []ast.Node {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect(dialect)).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect(dialect), withMySQLOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 	return statements.Statements
 }
