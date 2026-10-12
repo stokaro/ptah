@@ -158,6 +158,11 @@ procedure also accepts and which belongs to nothing. It is in no schema either,
 so `--schema` neither selects nor removes it — the same rule an extension
 follows, where placement is not ownership.
 
+`--include` and `--exclude` name a property as `name[type=extended_property]`,
+qualified by its schema, or by its name alone for a property on the database.
+A property on a table or a column follows its table: a scope keeps or leaves it
+with the table, on the declaration and on the database alike.
+
 A changed value plans `sp_updateextendedproperty` rather than a drop and an
 add, so the property is never absent partway through a script. A `DROP TABLE`
 in a SQL schema file removes the properties on the table and its columns, as

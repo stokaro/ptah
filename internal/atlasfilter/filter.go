@@ -135,7 +135,6 @@ func excludeDatabase(
 	}
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterPropertyFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)

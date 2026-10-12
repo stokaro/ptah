@@ -78,18 +78,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	// A YDB topic, external data source, external table, async replication
 	// and transfer are feature objects; selectTopicFeatures,
 	// selectExternalFeatures and selectReplicationFeatures select them.
-	// An extended property rides with the object it hangs off, and is also
-	// selectable on its own name. SQL Server drops the property with the
-	// table, so a selection that kept the property and dropped its owner would
-	// describe a property on an object the same description says is absent.
-	//
-	// A DATABASE-scoped property is in no schema, so the schema universe does
-	// not reach it -- the rule selectedExtension already applies, where
-	// placement is not ownership. Narrowing it away would plan
-	// sp_dropextendedproperty for a property the declaration still names.
-	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(schema, table string) bool {
-		return s.tableKept(keptTables, schema, table)
-	})
 	out.Functions = keep(db.Functions, func(function catalog.Function) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
 	})

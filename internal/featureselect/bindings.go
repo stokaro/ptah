@@ -162,13 +162,16 @@ func (b Bindings) add(record schemaext.ValueRelations) {
 // Select is [Tables] for objects that bind tables without belonging to one.
 // A standalone object whose every bound table keepTable keeps is kept whole,
 // one with none is left out with its knowledge, and one with some is refused
-// with [ErrPartialScope], naming the tables on each side of the scope. A
-// standalone object with no recorded table is kept, as [Tables] keeps it.
+// with [ErrPartialScope], naming the tables on each side of the scope. An
+// object attached to a table keepTable does not keep is left out with its
+// knowledge, as the server drops it with the table. A standalone object with
+// no recorded table is kept, as [Tables] keeps it.
 //
 // named lists the kinds the caller selects by their own identity, such as a
-// continuous aggregate an include names. For them the tables decide only the
-// refusal of a split; keeping or leaving one out stays the caller's
-// selection. Inputs remain unchanged; a refusal returns no selection.
+// continuous aggregate an include names. For them the tables they bind decide
+// only the refusal of a split; keeping or leaving one out stays the caller's
+// selection. The table an object is attached to decides for every kind.
+// Inputs remain unchanged; a refusal returns no selection.
 func (b Bindings) Select(objects schemaext.Objects, coverage schemaext.Coverage, keepTable func(schema, table string) bool,
 	named ...schemaext.Kind,
 ) (schemaext.Objects, schemaext.Coverage, error) {
@@ -185,6 +188,8 @@ func (b Bindings) Select(objects schemaext.Objects, coverage schemaext.Coverage,
 			}
 		}
 		switch {
+		case bound.attachment != (objectidentity.ID{}) && !keepTable(bound.attachment.Schema.Source, bound.attachment.Name.Source):
+			decided[key] = false
 		case len(inside) != 0 && len(outside) != 0:
 			slices.Sort(inside)
 			slices.Sort(outside)
@@ -207,6 +212,12 @@ func (b Bindings) Select(objects schemaext.Objects, coverage schemaext.Coverage,
 		return keepOwned(ref, keepTable)
 	}
 	return objects.Select(keep), coverage.SelectSubjects(keep), nil
+}
+
+// Attached reports whether ref is an object the bindings record as attached
+// to a table, which a scope keeps or leaves with that table.
+func (b Bindings) Attached(ref objectidentity.ID) bool {
+	return b.objects[ref.Key()].attachment != (objectidentity.ID{})
 }
 
 // Detach removes the objects attached to a table dropped names, with their
