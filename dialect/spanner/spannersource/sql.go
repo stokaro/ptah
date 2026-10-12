@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
@@ -33,7 +32,7 @@ func SQL() sqlext.Extension {
 		Facets:   []schemaext.Kind{spannerschema.RowDeletionKind},
 		Patterns: []sqlext.Pattern{{Name: sqlRowDeletion, Site: sqlext.TableOption, Words: []string{"TTL"}, Targeted: true}},
 		Parser:   sqlParser{},
-		Coverage: func([]coverage.Object) (schemaext.Coverage, error) { return Coverage() },
+		Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) { return Coverage() },
 	}
 }
 

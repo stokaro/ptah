@@ -60,8 +60,8 @@ func SQL() []sqlext.Extension {
 // documentClaim is a SQLite document's claim about its tables: what
 // [virtualClaim] says about virtual tables, and that a table's options are
 // the ones its CREATE TABLE states.
-func documentClaim(limits []coverage.Object) (schemaext.Coverage, error) {
-	virtual, err := virtualClaim(limits)
+func documentClaim(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+	virtual, err := virtualClaim(request.Limits)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}

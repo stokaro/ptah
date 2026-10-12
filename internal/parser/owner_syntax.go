@@ -377,7 +377,7 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 			return nil
 		}
 		statement.Payload = value.Statement
-		note.Objects, note.Replaces = value.Objects, value.Replaces
+		note.Objects, note.Replaces, note.TableFacets = value.Objects, value.Replaces, value.TableFacets
 		return nil
 	})
 	if !claimed {
@@ -477,6 +477,9 @@ type OwnerStatement struct {
 	// Replaces are the objects the statement amends; see
 	// [sqlext.Value.Replaces].
 	Replaces []schemaext.Object
+	// TableFacets are the owner's facets of a declared table the statement
+	// sets; see [sqlext.Value.TableFacets].
+	TableFacets *sqlext.TableFacets
 	// Text is the statement as the document writes it, without the
 	// semicolon that ends it, so a refusal can name it.
 	Text string

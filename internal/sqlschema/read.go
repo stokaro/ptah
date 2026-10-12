@@ -194,7 +194,7 @@ func describe(database *schemamodel.Database, data []byte, dialect string, opts 
 	// them, a Spanner table's row deletion policy, or the block size of a
 	// MySQL index. The owners' claims combine, since a Spanner document
 	// carries both its row deletion policies and its extensions.
-	claim, claimed, err := opts.Owners.Coverage(target, owned)
+	claim, claimed, err := opts.Owners.Coverage(target, sqlext.CoverageRequest{Limits: owned, Declared: database.FeatureObjects})
 	if err != nil || !claimed {
 		return err
 	}

@@ -76,12 +76,12 @@ func TestSQL_Coverage(t *testing.T) {
 	c := qt.New(t)
 	set := must.Must(sqlext.NewSet(spannersource.SQL()))
 
-	claim, claimed, err := set.Coverage(platform.Spanner, nil)
+	claim, claimed, err := set.Coverage(platform.Spanner, sqlext.CoverageRequest{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(claimed, qt.IsTrue)
 	c.Assert(claim.Lookup(spannerschema.RowDeletionKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 
-	_, claimed, err = set.Coverage("", nil)
+	_, claimed, err = set.Coverage("", sqlext.CoverageRequest{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(claimed, qt.IsFalse)
 }

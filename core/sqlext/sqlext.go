@@ -161,6 +161,18 @@ type Index struct {
 	Facets schemaext.Facets
 }
 
+// TableFacets are an owner's facets of a common table a statement sets, such
+// as the row-level security switch `ALTER TABLE t ENABLE ROW LEVEL SECURITY`
+// sets on t.
+type TableFacets struct {
+	// Name is the table's name as the statement writes it, qualified where
+	// the statement qualifies it.
+	Name string
+	// Facets contains at least one setting of the table. Each setting has
+	// one of the extension's Facets kinds.
+	Facets schemaext.Facets
+}
+
 // TableDeclaration is a table an owner's statement declares and defines by
 // the owner's facets alone, with no column list, such as a SQLite virtual
 // table, which its module defines.
@@ -207,6 +219,12 @@ type Value struct {
 	// declared. An owner refuses a statement that amends an object it cannot
 	// find with an error wrapping [ErrUndeclared].
 	Replaces []schemaext.Object
+	// TableFacets sets the owner's facets of a table the load declares. The
+	// reader merges them into the table, refuses a facet the table already
+	// holds, and refuses a table the load does not declare with an error
+	// wrapping [ErrUndeclared]. Only a [Statement] value carries it, beside
+	// the owner's statement.
+	TableFacets *TableFacets
 	// Declined hands a statement back to the shared grammar: the owner's
 	// pattern matched syntax that is not the owner's after all, such as a
 	// COMMENT ON TYPE of a type another model declares. The frontend reads
@@ -277,9 +295,21 @@ type Extension struct {
 	// Coverage is the knowledge a document of one of Targets holds about the
 	// owner's models, such as the refresh schedule a ClickHouse materialized
 	// view states in its CREATE statement. It is handed the entries of the
-	// document's header whose kind is one of Header. It is optional; without
-	// it the owner claims nothing.
-	Coverage func(limits []coverage.Object) (schemaext.Coverage, error)
+	// document's header whose kind is one of Header, and the objects the
+	// document declares. It is optional; without it the owner claims nothing.
+	Coverage func(request CoverageRequest) (schemaext.Coverage, error)
+}
+
+// CoverageRequest is the document's input to an owner's coverage claim.
+type CoverageRequest struct {
+	// Limits are the header's ptah:not-described entries of the owner's
+	// Header kinds, in their written order.
+	Limits []coverage.Object
+	// Declared are the objects the document declares after its statements
+	// are applied. A grammar that reads several files receives the whole
+	// load's declarations for each file's claim. Owners can use these
+	// objects to distinguish omission from a default implied by a declaration.
+	Declared schemaext.Objects
 }
 
 // Runtime supplies the SQL extensions of one explicit provider selection, so

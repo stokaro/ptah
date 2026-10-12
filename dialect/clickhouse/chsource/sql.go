@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -63,7 +62,7 @@ func SQL() sqlext.Extension {
 
 // sqlCoverage is the owner's claim for a ClickHouse document. The owner reads
 // no header entry, so it is handed none.
-func sqlCoverage([]coverage.Object) (schemaext.Coverage, error) {
+func sqlCoverage(sqlext.CoverageRequest) (schemaext.Coverage, error) {
 	return RefreshCoverage()
 }
 

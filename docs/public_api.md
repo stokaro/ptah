@@ -3016,6 +3016,17 @@ one nothing declared with an error wrapping `sqlext.ErrUndeclared`. The reader
 adds the declared objects, refusing a duplicate, and replaces each amended one
 where it was declared.
 
+A child object, one whose identity names its table as its parent, is keyed by
+the table the load declares under that name, as an ALTER TABLE finds its table;
+a table the load does not declare stays as written. A statement's
+`TableFacets` set the owner's facets of a table the load declares, such as
+the row-level security switch an ALTER TABLE sets. They must contain a facet
+and name a table. An undeclared table is refused with an error wrapping
+`sqlext.ErrUndeclared`; a duplicate facet kind is refused. An owner may group
+statements that set the same facet and return its final value on the last
+claim. A DROP TABLE removes the table's children and the subject coverage of
+the table and its children, including facet and child-namespace claims.
+
 A `Statement` pattern may read the name of the statement's object before it
 decides: `AfterName` are the words that must follow the qualified name, which
 the reader reads with its own grammar, and `Next` and `NotNext` then apply to
@@ -3060,7 +3071,12 @@ document that names no target makes it only when every pattern of the
 extension, at least one, is untargeted, because such a document can write all
 the extension reads. It is handed the entries of the document's
 `ptah:not-described` header whose kind is one of `Extension.Header`, such as a
-YDB topic the document leaves unmanaged.
+YDB topic the document leaves unmanaged. Its `CoverageRequest.Declared` holds
+all objects the document declares after its statements are applied, including
+amendments and removal of a dropped table's children. An owner can derive a
+default from these declarations, such as leaving the switches of a table with
+policies unspecified. A grammar that reads a whole load receives the final
+objects of that load for each file's claim, with each file's own header limits.
 
 An owner whose target is not written in the shared grammar registers a
 `Grammar` instead of patterns, and one target takes one grammar. The reader

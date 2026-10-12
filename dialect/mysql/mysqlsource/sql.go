@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/mysql/mysqlschema"
@@ -56,7 +55,7 @@ func SQL() sqlext.Extension {
 			{Name: sqlWithParser, Site: sqlext.IndexOption, Words: []string{"WITH", "PARSER"}},
 		},
 		Parser:   sqlParser{},
-		Coverage: func([]coverage.Object) (schemaext.Coverage, error) { return BlockSizeCoverage() },
+		Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) { return BlockSizeCoverage() },
 	}
 }
 
