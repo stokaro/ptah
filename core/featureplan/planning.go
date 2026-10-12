@@ -35,6 +35,16 @@ func (t Table) Clone() Table {
 	return t
 }
 
+// TypeContext holds captured type definitions, including unchanged types.
+// Identities use common type kinds; references retain their SQL spelling for
+// the receiving owner to interpret. Each side contains unique identities.
+// An empty side means no supplied facts, not an inspected empty namespace.
+// A missing type is not proof of absence. The zero value supplies no context.
+type TypeContext struct {
+	Desired []schemaext.DefinedType
+	Current []schemaext.DefinedType
+}
+
 // Request plans accepted changes against captured state. Capabilities and
 // identifiers describe the selected target, not a live connection. Owners must
 // refuse missing required facts instead of inspecting a database or source file.
@@ -45,6 +55,9 @@ type Request struct {
 	Capabilities capability.Capabilities
 	Changes      []schemaext.ChangeRecord
 	Tables       []Table
+	// Types supplies common identity and reference facts across owners. It
+	// carries no owner-specific model values and does not narrow to Changes.
+	Types TypeContext
 	// CommonSteps describes host operations available for dependency references
 	// and explicit rewrites. Providers cannot inspect the host's mutable graph.
 	CommonSteps []CommonStep

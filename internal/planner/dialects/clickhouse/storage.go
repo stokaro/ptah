@@ -32,6 +32,7 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	request := featureplan.Request{
 		Target: platform.ClickHouse, Identifiers: diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges), DatabasePath: diff.CurrentDatabasePath,
+		Types: featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)},
 	}
 	names := make(map[objectidentity.Key]string)
 	builder := objectidentity.NewBuilder(request.Identifiers)

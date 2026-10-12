@@ -17,6 +17,14 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	var err error
 	request.Identifiers = request.Identifiers.Clone()
 	request.ParentKinds = slices.Clone(request.ParentKinds)
+	request.Types.Desired, err = snapshotDefinedTypes(request.Types.Desired)
+	if err != nil {
+		return featureplan.Request{}, fmt.Errorf("declared planning types: %w", err)
+	}
+	request.Types.Current, err = snapshotDefinedTypes(request.Types.Current)
+	if err != nil {
+		return featureplan.Request{}, fmt.Errorf("observed planning types: %w", err)
+	}
 	request.Changes, err = r.codecs.SnapshotChanges(ctx, request.Changes)
 	if err != nil {
 		return featureplan.Request{}, err
@@ -52,6 +60,25 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 		return featureplan.Request{}, err
 	}
 	return request, ctx.Err()
+}
+
+func snapshotDefinedTypes(types []schemaext.DefinedType) ([]schemaext.DefinedType, error) {
+	result := slices.Clone(types)
+	seen := make(map[objectidentity.Key]bool, len(types))
+	for i, defined := range types {
+		if err := defined.Validate(); err != nil {
+			return nil, err
+		}
+		if _, err := objectidentity.Resolve(objectidentity.Reference{Kind: defined.ID.Kind, ID: defined.ID}, []objectidentity.ID{defined.ID}); err != nil {
+			return nil, fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
+		}
+		if seen[defined.ID.Key()] {
+			return nil, fmt.Errorf("%w: duplicate planning type %s", schemaext.ErrInvalidValue, defined.ID)
+		}
+		seen[defined.ID.Key()] = true
+		result[i] = defined.Clone()
+	}
+	return result, nil
 }
 
 // validateParentAction checks that a table carries the captures its action

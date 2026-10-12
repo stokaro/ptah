@@ -95,7 +95,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	}
 	semantics := identifier.ForDialect(target)
 	request := featureplan.DeclarationRequest{Target: target, Identifiers: semantics, Capabilities: lowering.Capabilities,
-		Objects: objects, CommonSteps: metadata}
+		Objects: objects, CommonSteps: metadata, Types: schemaext.DefinedTypes(database.FeatureObjects)}
 	names := make(map[objectidentity.Key]string, len(database.Tables))
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range database.Tables {

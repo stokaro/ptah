@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/pgeffects"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/schemaprecondition"
@@ -68,7 +69,8 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	semantics := diff.EffectiveIdentifierSemantics(target)
 	builder := objectidentity.NewBuilder(semantics)
 	request := featureplan.Request{Target: target, Identifiers: semantics, Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges),
-		DatabasePath: diff.CurrentDatabasePath}
+		DatabasePath: diff.CurrentDatabasePath,
+		Types:        featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)}}
 	names := make(map[objectidentity.Key]string)
 	for _, table := range diff.TablesModified {
 		if len(table.FeatureChanges) == 0 {

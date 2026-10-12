@@ -14,7 +14,7 @@ func (r *Runtime) snapshotDeclarations(ctx context.Context, request featureplan.
 	// Creation and migration use the same isolation and metadata validation.
 	// Only declared tables are supplied here; no catalog state is synthesized.
 	planning := featureplan.Request{Identifiers: request.Identifiers, Capabilities: request.Capabilities,
-		CommonSteps: request.CommonSteps, Tables: declarationTables(request)}
+		CommonSteps: request.CommonSteps, Tables: declarationTables(request), Types: featureplan.TypeContext{Desired: request.Types}}
 	for _, table := range planning.Tables {
 		if !table.Desired.HasTable() {
 			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: declaration dependency has no table", schemaext.ErrInvalidValue)
@@ -26,6 +26,7 @@ func (r *Runtime) snapshotDeclarations(ctx context.Context, request featureplan.
 	}
 	request.Identifiers, request.Capabilities = planning.Identifiers, planning.Capabilities
 	request.CommonSteps = planning.CommonSteps
+	request.Types = planning.Types.Desired
 	request.Tables = slices.Clone(request.Tables)
 	for i, table := range planning.Tables {
 		request.Tables[i] = table.Desired
