@@ -118,14 +118,6 @@ func declaredEnum(fieldType string, enums []schemamodel.Enum) *schemamodel.Enum 
 }
 
 func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) schemamodel.Field {
-	enum := declaredEnum(field.Type, enums)
-	if enum == nil {
-		return field
-	}
-
-	// Validate enum field
-	validateEnumField(field, enums)
-
 	// The inline rewrite is the exact complement of the standalone CREATE TYPE:
 	// a dialect models an enum either on the column or as its own type, never
 	// both and never neither. Deriving both sides from one predicate is what
@@ -133,6 +125,14 @@ func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPl
 	// at the same time, which is how `--dialect sqlite3` drops the enum
 	// entirely and renders the column as the bare type name `enum_status`.
 	if schemaprep.EmitsStandaloneEnumDefinitions(targetPlatform) {
+		enum := declaredEnum(field.Type, enums)
+		if enum == nil {
+			return field
+		}
+
+		// Validate enum field
+		validateEnumField(field, enums)
+
 		// A standalone enum type is created in a schema, and a column declared
 		// against it has to name the same one. The declared type is matched by
 		// bare name -- that is what makes an annotation `type="mood"` find the
@@ -149,12 +149,22 @@ func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPl
 		return field
 	}
 
-	return applyInlineEnumModel(field, *enum, targetPlatform)
+	// The comparison lowers the column with these same values, so the column
+	// built here is the one a read of the server reports. A column typed ENUM
+	// that carries its values and names no declared enum is an enum as well:
+	// the bare type ENUM is refused by every inline dialect, and on SQLite it
+	// is a TEXT column without the CHECK. A column the comparison has lowered
+	// is no enum column, so it is built as it stands.
+	values := schemaprep.InlineEnumValues(field, enums, targetPlatform)
+	if len(values) == 0 {
+		return field
+	}
+	return applyInlineEnumModel(field, values, targetPlatform)
 }
 
-func applyInlineEnumModel(field schemamodel.Field, enum schemamodel.Enum, targetPlatform string) schemamodel.Field {
-	quotedValues := make([]string, len(enum.Values))
-	for i, value := range enum.Values {
+func applyInlineEnumModel(field schemamodel.Field, values []string, targetPlatform string) schemamodel.Field {
+	quotedValues := make([]string, len(values))
+	for i, value := range values {
 		quotedValues[i] = escapeSQLStringLiteral(value)
 	}
 

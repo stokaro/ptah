@@ -56,6 +56,16 @@ func TestLowerInlineEnums(t *testing.T) {
 			field:    schemamodel.Field{Name: "s", Type: "VARCHAR(8)"},
 			wantType: "VARCHAR(8)",
 		},
+		{
+			name: "values beside another type", dialect: "mysql",
+			field:    schemamodel.Field{Name: "s", Type: "VARCHAR(8)", Enum: []string{"a"}},
+			wantType: "VARCHAR(8)",
+		},
+		{
+			name: "a lowered column", dialect: "sqlite",
+			field:    schemamodel.Field{Name: "s", Type: "TEXT", Enum: []string{"a"}, Check: "s IN ('a')"},
+			wantType: "TEXT", wantCheck: "s IN ('a')",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -68,6 +78,64 @@ func TestLowerInlineEnums(t *testing.T) {
 			c.Assert(lowered[0].Type, qt.Equals, test.wantType)
 			c.Assert(lowered[0].Check, qt.Equals, test.wantCheck)
 			c.Assert(fields[0], qt.DeepEquals, test.field)
+		})
+	}
+}
+
+// TestInlineEnumValues covers which columns an inline-enum dialect builds as
+// enums, and from which values. The renderer and LowerInlineEnums both ask it,
+// so a column the one builds is the column the other describes.
+func TestInlineEnumValues(t *testing.T) {
+	enums := []schemamodel.Enum{{Name: "status", Values: []string{"a", "b"}}}
+	tests := []struct {
+		name    string
+		dialect string
+		field   schemamodel.Field
+		want    []string
+	}{
+		{
+			name: "values on the column", dialect: "mysql",
+			field: schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{"draft", "live"}},
+			want:  []string{"draft", "live"},
+		},
+		{
+			name: "a declared enum named by type", dialect: "sqlite",
+			field: schemamodel.Field{Name: "s", Type: "status"},
+			want:  []string{"a", "b"},
+		},
+		{
+			name: "values on the column beside a declared enum", dialect: "oracle",
+			field: schemamodel.Field{Name: "s", Type: "status", Enum: []string{"c"}},
+			want:  []string{"c"},
+		},
+		{
+			name: "a standalone-enum dialect", dialect: "postgres",
+			field: schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{"draft", "live"}},
+			want:  nil,
+		},
+		{
+			name: "a column without values", dialect: "mariadb",
+			field: schemamodel.Field{Name: "s", Type: "VARCHAR(8)"},
+			want:  nil,
+		},
+		{
+			name: "values beside another type", dialect: "mysql",
+			field: schemamodel.Field{Name: "s", Type: "VARCHAR(8)", Enum: []string{"a"}},
+			want:  nil,
+		},
+		{
+			name: "a lowered column", dialect: "mysql",
+			field: schemamodel.Field{Name: "s", Type: "enum('draft','live')", Enum: []string{"draft", "live"}},
+			want:  nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			values := schemaprep.InlineEnumValues(test.field, enums, test.dialect)
+
+			c.Assert(values, qt.DeepEquals, test.want)
 		})
 	}
 }

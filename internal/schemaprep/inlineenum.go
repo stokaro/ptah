@@ -25,6 +25,43 @@ func InlineEnumDialect(dialect string) bool {
 	}
 }
 
+// InlineEnumValues returns the values dialect builds field with as an inline
+// enum column, and nil where dialect is not an [InlineEnumDialect] or field is
+// not an enum column.
+//
+// A column is an enum column two ways: typed ENUM with its values on the
+// field, or typed with the name of one of enums. Both spellings have to be
+// read: a lowering that reads only the values on the field compares a schema
+// written with `//ptah:schema:enum` and `type="status_kind"` as the enum's own
+// name, and on SQLite the plan rebuilds the table on every apply. Values
+// beside any other type make no enum column, since [schemamodel.Field.Enum]
+// holds the values of an ENUM type, and neither does a column this lowering
+// built: enum('a','b'), or a text column with its CHECK. Lowering a lowered
+// column therefore changes nothing.
+//
+// The renderer asks this to build the column, and [LowerInlineEnums] to
+// describe it, so a render builds the column a comparison expects a read of
+// the server to report. The returned slice is field's or an enum's own and is
+// not to be changed.
+func InlineEnumValues(field schemamodel.Field, enums []schemamodel.Enum, dialect string) []string {
+	if !InlineEnumDialect(dialect) {
+		return nil
+	}
+	for _, enum := range enums {
+		if enum.Name != field.Type {
+			continue
+		}
+		if len(field.Enum) > 0 {
+			return field.Enum
+		}
+		return enum.Values
+	}
+	if strings.EqualFold(field.Type, "ENUM") {
+		return field.Enum
+	}
+	return nil
+}
+
 // LowerInlineEnums returns a copy of fields with every enum column described
 // as dialect builds it, and fields itself where dialect is not an
 // [InlineEnumDialect].
@@ -36,8 +73,7 @@ func InlineEnumDialect(dialect string) bool {
 // same enum on MySQL, a varchar and a CHECK on SQL Server and Oracle, and a
 // table rebuild on SQLite.
 //
-// A column names its values inline, or by naming one of enums as its type; see
-// [resolveDeclaredEnumValues].
+// Which columns are enums, and with which values, is [InlineEnumValues].
 func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dialect string) []schemamodel.Field {
 	if !InlineEnumDialect(dialect) {
 		return fields
@@ -45,10 +81,11 @@ func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dial
 	lowered := append([]schemamodel.Field(nil), fields...)
 	for i := range lowered {
 		field := &lowered[i]
-		resolveDeclaredEnumValues(field, enums)
-		if len(field.Enum) == 0 {
+		values := InlineEnumValues(*field, enums, dialect)
+		if len(values) == 0 {
 			continue
 		}
+		field.Enum = values
 		switch platform.NormalizeDialect(dialect) {
 		case platform.MySQL, platform.MariaDB:
 			field.Type = mysqlInlineEnumType(field.Enum)
@@ -68,33 +105,6 @@ func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dial
 		}
 	}
 	return lowered
-}
-
-// resolveDeclaredEnumValues fills in the values for the other spelling of an
-// enum column.
-//
-// A column can name its values two ways: inline on the field, or by naming an
-// enum declared elsewhere. The renderer reads the second -- handleEnumTypes
-// finds the enum by the column's type -- and a lowering that read only the
-// first rendered a schema written with `//ptah:schema:enum` plus
-// `type="status_kind"` as the target's inline model and compared it as the
-// enum's own name. Nothing converged: measured on SQLite, the plan rebuilt the
-// table into one whose only difference from the original was none, on every
-// apply.
-//
-// Filling the values here rather than teaching every arm about the second
-// spelling keeps the arms about what a dialect writes, which is what they are
-// for.
-func resolveDeclaredEnumValues(field *schemamodel.Field, enums []schemamodel.Enum) {
-	if len(field.Enum) > 0 {
-		return
-	}
-	for _, enum := range enums {
-		if enum.Name == field.Type {
-			field.Enum = enum.Values
-			return
-		}
-	}
 }
 
 // inlineEnumCheck is the CHECK an inline enum column carries, over the
