@@ -2967,6 +2967,16 @@ one nothing declared with an error wrapping `sqlext.ErrUndeclared`. The reader
 adds the declared objects, refusing a duplicate, and replaces each amended one
 where it was declared.
 
+A `Statement` pattern may read the name of the statement's object before it
+decides: `AfterName` are the words that must follow the qualified name, which
+the reader reads with its own grammar, and `Next` and `NotNext` then apply to
+the word after them. `CREATE TYPE x AS (` and `CREATE TYPE x AS ENUM` are
+told apart so, and `Candidate.MatchesNamed` is the test. An owner whose
+statement pattern matched syntax it does not own answers `Value.Declined`,
+with no other field: the reader reads the statement's text by itself with
+the shared grammar and places what it reads where the statement stood. Only
+a statement may decline.
+
 An owner may instead state the amendment of an object it cannot find, and the
 reader refuses it, leading with the statement: `COMMENT ON EXTENSION citext IS
 'x': extension "citext" is not declared in this schema`. A reader of syntax

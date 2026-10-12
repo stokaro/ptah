@@ -174,6 +174,13 @@ func validateExtension(extension Extension) error {
 	if len(extension.Facets) == 0 && slices.ContainsFunc(extension.Patterns, func(pattern Pattern) bool { return FacetSite(pattern.Site) }) {
 		return fmt.Errorf("SQL extension of %s declares patterns at a site that takes facets, and no facet kinds", extension.Owner)
 	}
+	return validatePatterns(extension)
+}
+
+// validatePatterns refuses a pattern without a name, a name declared twice, an
+// unknown site, missing or blank opening words, and words after a name where
+// the pattern does not read one.
+func validatePatterns(extension Extension) error {
 	names := make(map[string]bool, len(extension.Patterns))
 	for _, pattern := range extension.Patterns {
 		if strings.TrimSpace(pattern.Name) == "" {
@@ -188,6 +195,10 @@ func validateExtension(extension Extension) error {
 		}
 		if len(pattern.Words) == 0 || slices.ContainsFunc(pattern.Words, blankWord) {
 			return fmt.Errorf("SQL pattern %q of %s opens with no words", pattern.Name, extension.Owner)
+		}
+		if len(pattern.AfterName) > 0 && (pattern.Site != Statement || slices.ContainsFunc(pattern.AfterName, blankWord)) {
+			return fmt.Errorf("SQL pattern %q of %s names words after a name, which only a statement pattern takes, and each a word",
+				pattern.Name, extension.Owner)
 		}
 	}
 	return nil
@@ -258,8 +269,14 @@ func (s Set) consultedTogether(first int, a Pattern, second int, b Pattern) bool
 	})
 }
 
-// overlaps reports whether some syntax matches both patterns.
+// overlaps reports whether some syntax matches both patterns. A name stands
+// after the opening words of a pattern with AfterName, and a name is any
+// identifier: a pattern without AfterName whose opening words end where the
+// name begins matches some of what the other matches, whatever its Next.
 func overlaps(a, b Pattern) bool {
+	if len(a.AfterName) > 0 || len(b.AfterName) > 0 {
+		return overlapsAroundName(a, b)
+	}
 	shorter, longer := a, b
 	if len(b.Words) < len(a.Words) {
 		shorter, longer = b, a
@@ -280,6 +297,55 @@ func overlaps(a, b Pattern) bool {
 	default:
 		// Each admits every word its NotNext leaves out, and no finite list
 		// leaves out every word.
+		return true
+	}
+}
+
+// overlapsAroundName is [overlaps] for two patterns at least one of which
+// reads a name after its opening words. Where the two differ in a word both
+// fix, nothing matches both; where one leaves a word to the name, any word
+// may stand there.
+func overlapsAroundName(a, b Pattern) bool {
+	named, other := a, b
+	if len(a.AfterName) == 0 {
+		named, other = b, a
+	}
+	common := min(len(named.Words), len(other.Words))
+	for i := range common {
+		if !strings.EqualFold(named.Words[i], other.Words[i]) {
+			return false
+		}
+	}
+	switch {
+	case len(other.Words) < len(named.Words):
+		return acceptsNext(other, named.Words[len(other.Words)])
+	case len(other.AfterName) == 0:
+		// The other's next word, or its next opening word, is the name.
+		return true
+	case len(other.Words) != len(named.Words):
+		// Both read a name, at different words; the one that reads it later
+		// takes the earlier one's name as an opening word. Refuse rather
+		// than reason about names that are keywords.
+		return true
+	}
+	shorter, longer := named, other
+	if len(other.AfterName) < len(named.AfterName) {
+		shorter, longer = other, named
+	}
+	for i, word := range shorter.AfterName {
+		if !strings.EqualFold(word, longer.AfterName[i]) {
+			return false
+		}
+	}
+	if len(shorter.AfterName) < len(longer.AfterName) {
+		return acceptsNext(shorter, longer.AfterName[len(shorter.AfterName)])
+	}
+	switch {
+	case len(a.Next) > 0:
+		return slices.ContainsFunc(a.Next, func(word string) bool { return acceptsNext(a, word) && acceptsNext(b, word) })
+	case len(b.Next) > 0:
+		return slices.ContainsFunc(b.Next, func(word string) bool { return acceptsNext(a, word) && acceptsNext(b, word) })
+	default:
 		return true
 	}
 }
@@ -329,9 +395,10 @@ func (s Set) Candidates(target string, site Site) []Candidate {
 }
 
 // Matches reports whether words, the words a document holds from the point
-// the frontend is at, open the candidate's syntax.
+// the frontend is at, open the candidate's syntax. A pattern with AfterName
+// never matches so: the frontend reads the name and asks [Candidate.MatchesNamed].
 func (c Candidate) Matches(words []string) bool {
-	if len(words) < len(c.Pattern.Words) {
+	if len(c.Pattern.AfterName) > 0 || len(words) < len(c.Pattern.Words) {
 		return false
 	}
 	for i, word := range c.Pattern.Words {
@@ -343,6 +410,31 @@ func (c Candidate) Matches(words []string) bool {
 		return len(c.Pattern.Next) == 0
 	}
 	return acceptsNext(c.Pattern, words[len(c.Pattern.Words)])
+}
+
+// MatchesNamed reports whether the candidate's syntax opens with before and
+// continues, after the qualified name the frontend read, with after: before
+// holds the pattern's opening words, and after begins with its AfterName and
+// the word one of Next must be. A pattern without AfterName never matches so.
+func (c Candidate) MatchesNamed(before, after []string) bool {
+	pattern := c.Pattern
+	if len(pattern.AfterName) == 0 || len(before) != len(pattern.Words) || len(after) < len(pattern.AfterName) {
+		return false
+	}
+	for i, word := range pattern.Words {
+		if !strings.EqualFold(word, before[i]) {
+			return false
+		}
+	}
+	for i, word := range pattern.AfterName {
+		if !strings.EqualFold(word, after[i]) {
+			return false
+		}
+	}
+	if len(after) == len(pattern.AfterName) {
+		return len(pattern.Next) == 0
+	}
+	return acceptsNext(pattern, after[len(pattern.AfterName)])
 }
 
 // Match is a claim the frontend made for a candidate.
@@ -421,6 +513,9 @@ func ownedObjects(extension Extension, declared schemaext.Objects) ([]schemaext.
 // facet is of one of the extension's Facets kinds, and every object is of one
 // of its Kinds.
 func checkValue(extension Extension, claim Claim, value Value) error {
+	if value.Declined {
+		return checkDeclined(extension, claim, value)
+	}
 	for _, kind := range value.Facets.Kinds() {
 		if !slices.Contains(extension.Facets, kind) {
 			return fmt.Errorf("%w: SQL parser of %s answered a facet of kind %q, which its extension does not declare",
@@ -446,6 +541,22 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 			return fmt.Errorf("%w: SQL parser of %s answered an object of kind %q, which its extension does not declare",
 				schemaext.ErrInvalidValue, extension.Owner, object.Ref.Kind)
 		}
+	}
+	return nil
+}
+
+// checkDeclined refuses a decline of a claim other than a statement, which
+// the frontend could not read again by itself, and a decline that carries a
+// value besides.
+func checkDeclined(extension Extension, claim Claim, value Value) error {
+	if claim.Site != Statement {
+		return fmt.Errorf("%w: SQL parser of %s declined its %s claim %q; only a statement claim may decline",
+			schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
+	}
+	if value.Index != nil || value.Operation != nil || !value.Facets.IsZero() || value.Statement != nil || value.Table != nil ||
+		len(value.Objects) > 0 || len(value.Replaces) > 0 {
+		return fmt.Errorf("%w: SQL parser of %s declined its statement claim %q and answered a value beside it",
+			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
 	}
 	return nil
 }

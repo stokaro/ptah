@@ -98,10 +98,18 @@ type Pattern struct {
 	Site Site
 	// Words are the words the syntax opens with.
 	Words []string
+	// AfterName, when it is not empty, are the words that must follow the
+	// qualified name of the object a statement opens with, after Words, such
+	// as AS in `CREATE TYPE app.addr AS (`. The frontend reads the name with
+	// its own grammar for one: an identifier, then a dot and an identifier as
+	// often as the document writes them. Next and NotNext then apply to the
+	// word after AfterName. Only a [Statement] pattern takes it.
+	AfterName []string
 	// Next, when it is not empty, lists the words one of which must follow
-	// Words.
+	// Words, or AfterName where the pattern has it.
 	Next []string
-	// NotNext lists the words that must not follow Words.
+	// NotNext lists the words that must not follow Words, or AfterName where
+	// the pattern has it.
 	NotNext []string
 	// Stops are the top-level words, or punctuation such as "(", that end
 	// the span before the site would.
@@ -199,6 +207,14 @@ type Value struct {
 	// declared. An owner refuses a statement that amends an object it cannot
 	// find with an error wrapping [ErrUndeclared].
 	Replaces []schemaext.Object
+	// Declined hands a statement back to the shared grammar: the owner's
+	// pattern matched syntax that is not the owner's after all, such as a
+	// COMMENT ON TYPE of a type another model declares. The frontend reads
+	// the claim's text by itself with the shared grammar, as if no pattern
+	// had matched, and places what it reads where the statement stood. Only
+	// a [Statement] claim may decline, and a declining value carries no other
+	// field.
+	Declined bool
 }
 
 // Request is every claim of one document an extension's patterns matched.
