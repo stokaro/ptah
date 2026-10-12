@@ -2482,75 +2482,51 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 
 // Helper functions for RLS and functions testing
 
-// skipNonPostgreSQL skips the test for non-PostgreSQL databases
-func skipNonPostgreSQL(conn *dbschema.DatabaseConnection, recorder *StepRecorder) error {
-	if conn.Info().Dialect != "postgres" {
-		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
-			return nil
-		})
+// skipNonPostgreSQL records that a PostgreSQL-only scenario has no work on this
+// target. The boolean tells the caller to return immediately: recording the
+// step does not stop the scenario.
+func skipNonPostgreSQL(conn *dbschema.DatabaseConnection, recorder *StepRecorder) (bool, error) {
+	if conn.Info().Dialect == platform.Postgres {
+		return false, nil
 	}
-	return nil
+	err := recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+		return nil
+	})
+	return true, err
 }
 
-// verifyBasicRLSSchema verifies the basic RLS schema contains expected functions, policies, and tables
-func verifyBasicRLSSchema(schema *schemamodel.Database) error {
-	// Should have 2 functions
-	if len(schema.Functions) != 2 {
-		return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
+// verifyBasicRowSecurity verifies the database holds what 014-rls-functions
+// declares: two functions, a policy on each table, and row-level security
+// enabled on both.
+func verifyBasicRowSecurity(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	state, err := readRowSecurityState(ctx, conn)
+	if err != nil {
+		return err
 	}
+	return errors.Join(
+		state.expectFunctions("get_current_tenant_id", "set_tenant_context"),
+		state.expectPolicies("product_tenant_isolation", "user_tenant_isolation"),
+		state.expectEnabledTables("products", "users"),
+	)
+}
 
-	// Should have 2 RLS policies
-	if len(schema.RLSPolicies) != 2 {
-		return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
+// verifyNoRowSecurity verifies a rollback left no function, no policy and no
+// table with row-level security enabled.
+func verifyNoRowSecurity(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	state, err := readRowSecurityState(ctx, conn)
+	if err != nil {
+		return err
 	}
-
-	// Should have 2 RLS enabled tables
-	if len(schema.RLSEnabledTables) != 2 {
-		return fmt.Errorf("expected 2 RLS enabled tables, got %d", len(schema.RLSEnabledTables))
-	}
-
-	// Verify function names
-	functionNames := make(map[string]bool)
-	for _, function := range schema.Functions {
-		functionNames[function.Name] = true
-	}
-	if !functionNames["set_tenant_context"] {
-		return fmt.Errorf("expected set_tenant_context function")
-	}
-	if !functionNames["get_current_tenant_id"] {
-		return fmt.Errorf("expected get_current_tenant_id function")
-	}
-
-	// Verify RLS policy names
-	policyNames := make(map[string]bool)
-	for _, policy := range schema.RLSPolicies {
-		policyNames[policy.Name] = true
-	}
-	if !policyNames["user_tenant_isolation"] {
-		return fmt.Errorf("expected user_tenant_isolation policy")
-	}
-	if !policyNames["product_tenant_isolation"] {
-		return fmt.Errorf("expected product_tenant_isolation policy")
-	}
-
-	// Verify RLS enabled tables
-	rlsTableNames := make(map[string]bool)
-	for _, rlsTable := range schema.RLSEnabledTables {
-		rlsTableNames[rlsTable.Table] = true
-	}
-	if !rlsTableNames["users"] {
-		return fmt.Errorf("expected users table to have RLS enabled")
-	}
-	if !rlsTableNames["products"] {
-		return fmt.Errorf("expected products table to have RLS enabled")
-	}
-
-	return nil
+	return errors.Join(
+		state.expectFunctions(),
+		state.expectPolicies(),
+		state.expectEnabledTables(),
+	)
 }
 
 // testDynamicRLSFunctionsBasic tests basic PostgreSQL RLS and custom functions setup
 func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	if err := skipNonPostgreSQL(conn, recorder); err != nil {
+	if skipped, err := skipNonPostgreSQL(conn, recorder); skipped || err != nil {
 		return err
 	}
 
@@ -2566,58 +2542,28 @@ func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseCo
 			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
 		}
 
-		// Verify schema contains functions
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		return verifyBasicRLSSchema(schema)
+		return verifyBasicRowSecurity(ctx, conn)
 	})
 }
 
-// verifyAdvancedRLSSchema verifies the advanced RLS schema contains expected functions and policies
-func verifyAdvancedRLSSchema(schema *schemamodel.Database) error {
-	// Should have 3 functions (including validation function)
-	if len(schema.Functions) != 3 {
-		return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
+// verifyAdvancedRowSecurity verifies the database holds what 015-rls-advanced
+// declares: three functions, separate SELECT and INSERT policies on users, two
+// policies on products, and row-level security enabled on both tables.
+func verifyAdvancedRowSecurity(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	state, err := readRowSecurityState(ctx, conn)
+	if err != nil {
+		return err
 	}
-
-	// Should have 4 RLS policies (separate SELECT and INSERT policies + product policies)
-	if len(schema.RLSPolicies) != 4 {
-		return fmt.Errorf("expected 4 RLS policies, got %d", len(schema.RLSPolicies))
-	}
-
-	// Verify the validation function exists
-	functionNames := make(map[string]bool)
-	for _, function := range schema.Functions {
-		functionNames[function.Name] = true
-	}
-	if !functionNames["validate_user_access"] {
-		return fmt.Errorf("expected validate_user_access function")
-	}
-
-	// Verify separate SELECT and INSERT policies exist
-	policyNames := make(map[string]bool)
-	for _, policy := range schema.RLSPolicies {
-		policyNames[policy.Name] = true
-	}
-	if !policyNames["user_tenant_select"] {
-		return fmt.Errorf("expected user_tenant_select policy")
-	}
-	if !policyNames["user_tenant_insert"] {
-		return fmt.Errorf("expected user_tenant_insert policy")
-	}
-	if !policyNames["product_owner_access"] {
-		return fmt.Errorf("expected product_owner_access policy")
-	}
-
-	return nil
+	return errors.Join(
+		state.expectFunctions("get_current_tenant_id", "set_tenant_context", "validate_user_access"),
+		state.expectPolicies("product_owner_access", "product_tenant_select", "user_tenant_insert", "user_tenant_select"),
+		state.expectEnabledTables("products", "users"),
+	)
 }
 
 // testDynamicRLSFunctionsAdvanced tests advanced PostgreSQL RLS with role-based policies
 func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	if err := skipNonPostgreSQL(conn, recorder); err != nil {
+	if skipped, err := skipNonPostgreSQL(conn, recorder); skipped || err != nil {
 		return err
 	}
 
@@ -2633,13 +2579,7 @@ func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.Databas
 			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
 		}
 
-		// Verify schema contains advanced features
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		return verifyAdvancedRLSSchema(schema)
+		return verifyAdvancedRowSecurity(ctx, conn)
 	})
 }
 
@@ -2779,55 +2719,19 @@ func testDynamicRLSPolicyModification(ctx context.Context, conn *dbschema.Databa
 			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
 		}
 
-		// Verify schema contains the modified policies
-		schema, err := vem.GenerateSchemaFromEntities()
+		// The 014 policies are replaced: users get separate SELECT and INSERT
+		// policies, and products gain an owner policy for UPDATE.
+		state, err := readRowSecurityState(ctx, conn)
 		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
+			return err
 		}
-
-		// Should now have 4 RLS policies (split user policies + product policies)
-		if len(schema.RLSPolicies) != 4 {
-			return fmt.Errorf("expected 4 RLS policies after modification, got %d", len(schema.RLSPolicies))
-		}
-
-		// Verify the new policies exist
-		policyNames := make(map[string]bool)
-		for _, policy := range schema.RLSPolicies {
-			policyNames[policy.Name] = true
-		}
-
-		// Should have separate SELECT and INSERT policies for users
-		if !policyNames["user_tenant_select"] {
-			return fmt.Errorf("expected user_tenant_select policy after modification")
-		}
-		if !policyNames["user_tenant_insert"] {
-			return fmt.Errorf("expected user_tenant_insert policy after modification")
-		}
-
-		// Should have the new product owner access policy
-		if !policyNames["product_owner_access"] {
-			return fmt.Errorf("expected product_owner_access policy after modification")
-		}
-
-		// Verify policy details
-		for _, policy := range schema.RLSPolicies {
-			switch policy.Name {
-			case "user_tenant_select":
-				if policy.PolicyFor != "SELECT" {
-					return fmt.Errorf("user_tenant_select should be FOR SELECT, got %s", policy.PolicyFor)
-				}
-			case "user_tenant_insert":
-				if policy.PolicyFor != "INSERT" {
-					return fmt.Errorf("user_tenant_insert should be FOR INSERT, got %s", policy.PolicyFor)
-				}
-			case "product_owner_access":
-				if policy.PolicyFor != "UPDATE" {
-					return fmt.Errorf("product_owner_access should be FOR UPDATE, got %s", policy.PolicyFor)
-				}
-			}
-		}
-
-		return nil
+		return errors.Join(
+			state.expectPolicies("product_owner_access", "product_tenant_select", "user_tenant_insert", "user_tenant_select"),
+			state.expectPolicyCommand("user_tenant_select", "SELECT"),
+			state.expectPolicyCommand("user_tenant_insert", "INSERT"),
+			state.expectPolicyCommand("product_owner_access", "UPDATE"),
+			state.expectPolicyCommand("product_tenant_select", "SELECT"),
+		)
 	})
 }
 
@@ -2856,20 +2760,7 @@ func testDynamicRLSFunctionsRollback(ctx context.Context, conn *dbschema.Databas
 			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
 		}
 
-		// Verify basic features are present
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		if len(schema.Functions) != 2 {
-			return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 2 {
-			return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
-		}
-
-		return nil
+		return verifyBasicRowSecurity(ctx, conn)
 	})
 	if err != nil {
 		return err
@@ -2881,23 +2772,7 @@ func testDynamicRLSFunctionsRollback(ctx context.Context, conn *dbschema.Databas
 			return fmt.Errorf("failed to rollback to 013-embedded-fields: %w", err)
 		}
 
-		// Verify all RLS and function features were removed
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		// Should have no functions
-		if len(schema.Functions) != 0 {
-			return fmt.Errorf("expected 0 functions after complete rollback, got %d", len(schema.Functions))
-		}
-
-		// Should have no RLS policies
-		if len(schema.RLSPolicies) != 0 {
-			return fmt.Errorf("expected 0 RLS policies after complete rollback, got %d", len(schema.RLSPolicies))
-		}
-
-		return nil
+		return verifyNoRowSecurity(ctx, conn)
 	})
 }
 
@@ -2945,33 +2820,8 @@ func testDynamicRLSFunctionsPartialRollback(ctx context.Context, conn *dbschema.
 			return fmt.Errorf("failed to rollback to 014-rls-functions: %w", err)
 		}
 
-		// Verify intermediate state
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		// Should still have basic RLS features
-		if len(schema.Functions) != 2 {
-			return fmt.Errorf("expected 2 functions after partial rollback, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 2 {
-			return fmt.Errorf("expected 2 RLS policies after partial rollback, got %d", len(schema.RLSPolicies))
-		}
-		if len(schema.RLSEnabledTables) != 2 {
-			return fmt.Errorf("expected 2 RLS enabled tables after partial rollback, got %d", len(schema.RLSEnabledTables))
-		}
-
-		// Verify advanced function was removed
-		functionNames := make(map[string]bool)
-		for _, function := range schema.Functions {
-			functionNames[function.Name] = true
-		}
-		if functionNames["validate_user_access"] {
-			return fmt.Errorf("validate_user_access function should have been removed in partial rollback")
-		}
-
-		return nil
+		// The basic features stay, and the advanced function and policies go.
+		return verifyBasicRowSecurity(ctx, conn)
 	})
 	if err != nil {
 		return err
@@ -2983,24 +2833,15 @@ func testDynamicRLSFunctionsPartialRollback(ctx context.Context, conn *dbschema.
 			return fmt.Errorf("failed to rollback to 000-initial: %w", err)
 		}
 
-		// Verify complete removal
+		if err := verifyNoRowSecurity(ctx, conn); err != nil {
+			return err
+		}
+
+		// Should still have basic tables
 		schema, err := vem.GenerateSchemaFromEntities()
 		if err != nil {
 			return fmt.Errorf("failed to generate schema: %w", err)
 		}
-
-		// Should have no RLS or function features
-		if len(schema.Functions) != 0 {
-			return fmt.Errorf("expected 0 functions after complete rollback, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 0 {
-			return fmt.Errorf("expected 0 RLS policies after complete rollback, got %d", len(schema.RLSPolicies))
-		}
-		if len(schema.RLSEnabledTables) != 0 {
-			return fmt.Errorf("expected 0 RLS enabled tables after complete rollback, got %d", len(schema.RLSEnabledTables))
-		}
-
-		// Should still have basic tables
 		if len(schema.Tables) != 2 {
 			return fmt.Errorf("expected 2 basic tables after complete rollback, got %d", len(schema.Tables))
 		}
@@ -3030,31 +2871,9 @@ func testDynamicRLSFunctionsDependencyOrder(ctx context.Context, conn *dbschema.
 			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
 		}
 
-		// Verify dependencies are in place
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		// Should have functions that policies depend on
-		functionNames := make(map[string]bool)
-		for _, function := range schema.Functions {
-			functionNames[function.Name] = true
-		}
-		if !functionNames["get_current_tenant_id"] {
-			return fmt.Errorf("expected get_current_tenant_id function (used by policies)")
-		}
-
-		// Should have policies that use the functions
-		policyNames := make(map[string]bool)
-		for _, policy := range schema.RLSPolicies {
-			policyNames[policy.Name] = true
-		}
-		if !policyNames["user_tenant_isolation"] {
-			return fmt.Errorf("expected user_tenant_isolation policy (uses get_current_tenant_id)")
-		}
-
-		return nil
+		// Both policies call get_current_tenant_id, so the rollback below
+		// has to drop them before the function.
+		return verifyBasicRowSecurity(ctx, conn)
 	})
 	if err != nil {
 		return err
@@ -3105,20 +2924,7 @@ func testDynamicRLSFunctionsDependencyOrder(ctx context.Context, conn *dbschema.
 			return fmt.Errorf("failed to apply rollback migration: %w", err)
 		}
 
-		// Verify clean state
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema after rollback: %w", err)
-		}
-
-		if len(schema.Functions) != 0 {
-			return fmt.Errorf("expected 0 functions after dependency order rollback, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 0 {
-			return fmt.Errorf("expected 0 RLS policies after dependency order rollback, got %d", len(schema.RLSPolicies))
-		}
-
-		return nil
+		return verifyNoRowSecurity(ctx, conn)
 	})
 }
 
@@ -3237,20 +3043,8 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("expected 'User One', got '%s'", userName)
 		}
 
-		// Verify RLS features were removed but data remains accessible
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		if len(schema.Functions) != 0 {
-			return fmt.Errorf("expected 0 functions after rollback, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 0 {
-			return fmt.Errorf("expected 0 RLS policies after rollback, got %d", len(schema.RLSPolicies))
-		}
-
-		return nil
+		// Row-level security is removed while the data stays readable.
+		return verifyNoRowSecurity(ctx, conn)
 	})
 }
 
@@ -3303,24 +3097,8 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("expected error when dropping function used by policies, but succeeded")
 		}
 
-		// Verify the function still exists
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		functionExists := false
-		for _, function := range schema.Functions {
-			if function.Name == "get_current_tenant_id" {
-				functionExists = true
-				break
-			}
-		}
-		if !functionExists {
-			return fmt.Errorf("function should still exist after failed drop")
-		}
-
-		return nil
+		// The failed drop leaves the function and the policies calling it.
+		return verifyBasicRowSecurity(ctx, conn)
 	})
 	if err != nil {
 		return err
@@ -3354,20 +3132,7 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("rollback should handle missing objects gracefully: %w", err)
 		}
 
-		// Verify clean final state
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema: %w", err)
-		}
-
-		if len(schema.Functions) != 0 {
-			return fmt.Errorf("expected 0 functions after rollback, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 0 {
-			return fmt.Errorf("expected 0 RLS policies after rollback, got %d", len(schema.RLSPolicies))
-		}
-
-		return nil
+		return verifyNoRowSecurity(ctx, conn)
 	})
 	if err != nil {
 		return err
@@ -3380,17 +3145,8 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("failed to re-apply RLS: %w", err)
 		}
 
-		// Verify recovery was successful
-		schema, err := vem.GenerateSchemaFromEntities()
-		if err != nil {
-			return fmt.Errorf("failed to generate schema after recovery: %w", err)
-		}
-
-		if len(schema.Functions) != 2 {
-			return fmt.Errorf("expected 2 functions after recovery, got %d", len(schema.Functions))
-		}
-		if len(schema.RLSPolicies) != 2 {
-			return fmt.Errorf("expected 2 RLS policies after recovery, got %d", len(schema.RLSPolicies))
+		if err := verifyBasicRowSecurity(ctx, conn); err != nil {
+			return fmt.Errorf("after recovery: %w", err)
 		}
 
 		// Test normal rollback works after recovery
@@ -3398,7 +3154,7 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("normal rollback should work after recovery: %w", err)
 		}
 
-		return nil
+		return verifyNoRowSecurity(ctx, conn)
 	})
 }
 
