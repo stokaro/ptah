@@ -204,10 +204,24 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
+		if key := slices.IndexFunc(creation.Constraints, isPrimaryKeyConstraint); key >= 0 {
+			astNode.AddConstraint(modelast.FromConstraint(creation.Constraints[key]))
+		}
 		result = append(result, astNode)
 	}
 
 	return result
+}
+
+// isPrimaryKeyConstraint reports whether constraint is a PRIMARY KEY.
+//
+// The PRIMARY KEY of a table this plan creates goes inside its CREATE TABLE
+// rather than into an ALTER TABLE after it. MySQL and MariaDB refuse an
+// AUTO_INCREMENT column that no key of the same statement covers: measured on
+// MySQL 26.7 and MariaDB 12.3 as `there can be only one auto column and it
+// must be defined as a key`.
+func isPrimaryKeyConstraint(constraint schemamodel.Constraint) bool {
+	return strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY")
 }
 
 func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -1762,7 +1776,7 @@ func (p *Planner) addNewConstraints(
 	// would abort the migration.
 	maps.Copy(state.droppedForModify, bracketDropped)
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, diff.TablesAdded.Names(), state)
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,
@@ -1884,6 +1898,7 @@ func newConstraintPlanState(
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
 	additions difftypes.ConstraintAdditions,
+	created []string,
 	state constraintPlanState,
 ) []ast.Node {
 	// Prefer the table-qualified additions when present. A field-level FK from an
@@ -1894,6 +1909,11 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	// skips them.
 	for _, add := range additions {
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
+			continue
+		}
+		// The CREATE TABLE holds it; see [isPrimaryKeyConstraint].
+		if objectlookup.Contains(created, add.TableName, state.semantics) {
+			state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 			continue
 		}
 		// The deferral rides with the key: Oracle, which this planner also

@@ -654,6 +654,7 @@ func FromTableWithConstraints(
 ) *ast.CreateTableNode {
 	node := fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromField)
 	replaceSynthesizedTableChecks(node, table, fields, declared, targetPlatform)
+	withoutKeyTheListRedeclares(node, table, declared)
 	return node
 }
 
@@ -933,6 +934,7 @@ func addTableConstraints(
 	// input, rather than a rendered name decided without the explicit
 	// constraints and a compared name decided with them.
 	replaceSynthesizedTableChecks(createTable, table, fields, constraints, targetPlatform)
+	withoutKeyTheListRedeclares(createTable, table, constraints)
 
 	folded := make(map[int]bool)
 	for _, fold := range schemaprep.FoldedIndexConstraints(table, fields, constraints, targetPlatform) {

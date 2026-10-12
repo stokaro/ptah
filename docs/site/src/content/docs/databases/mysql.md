@@ -131,6 +131,12 @@ SQL:
   v1.3.0 writes the drop and the add as two statements. Primary-key replacements
   also use one `ALTER TABLE` so `AUTO_INCREMENT` and incoming foreign keys
   keep their supporting index.
+- A primary key declared on its column and again as a `PRIMARY KEY`
+  constraint over the same columns is one key, and the table is created with
+  it once. Both engines refuse a `CREATE TABLE` that holds two primary keys
+  (`ERROR 1068`). A new table holds its `PRIMARY KEY` constraint inside its
+  `CREATE TABLE`, because both engines refuse an `AUTO_INCREMENT` column that
+  no key of the same statement covers (`ERROR 1075`).
 - `KEY_BLOCK_SIZE [=] n` on a secondary, unique or primary index is retained
   by MariaDB. MySQL retains it only on a table with `ROW_FORMAT=COMPRESSED`.
   Ptah reads the hint from `SHOW CREATE TABLE` and compares it where the
@@ -193,12 +199,17 @@ SQL:
   covers the columns. So a same-named index beside a covering one is the
   author's on MariaDB and the engine's on MySQL, and only the first is planned
   for removal.
+- Each key part is compared whole: its column or expression, its prefix length
+  and its direction, read from `information_schema.STATISTICS`. Neither engine
+  changes a key part in place, so a changed part rebuilds the index in one
+  `ALTER TABLE`, as a changed comment does.
 - A key part may be an expression on MySQL -- `KEY ((a + 1))`, a functional key
   part -- and an unnamed one takes the name the server gives it,
   `functional_index`, then `functional_index_2` and `functional_index_3`. Two
   refusals go with it, and they are different facts rather than one rule:
   MariaDB has no functional key parts at all and answers `ERROR 1064` to every
-  spelling, so the dialect decides; MySQL accepts them in an index and refuses
+  spelling, so the dialect decides, and Ptah refuses the index by name before
+  the plan reaches the server; MySQL accepts them in an index and refuses
   one in a `PRIMARY KEY` with `ERROR 3756`, so that refusal holds on both
   engines. A functional part in a table-body `UNIQUE KEY` is read as a unique
   index rather than as a constraint, which is what the server builds: MySQL

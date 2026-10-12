@@ -1248,14 +1248,11 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 // take the drop and the add in one statement, which the planner writes
 // (stokaro/ptah#3853).
 //
-// Nothing else is compared, and the omissions are the reader's, not a
-// judgement that they do not matter. Ptah's MySQL reader keeps the column
-// names, NON_UNIQUE and INDEX_TYPE out of information_schema.STATISTICS, so a
-// descending key and a prefix key both arrive as a plain column. Comparing a
-// direction the reader always reports as ascending against a desired
-// `desc = true` would plan a rebuild on every run forever, which is the
-// oscillation this change exists to remove. Those are reader gaps, recorded as
-// such.
+// Each key part is compared whole: its column, or the expression of a
+// functional key part, its prefix length and its direction, all of which the
+// reader takes from information_schema.STATISTICS. MySQL 26.7 and MariaDB 12.3
+// change none of them in place, so a changed key part rebuilds the index as a
+// changed comment does; see [mysqlIndexKeyColumnsChanged].
 func mysqlIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
@@ -1286,14 +1283,16 @@ func mysqlIndexMethodChanged(
 	return !mysqlindex.MethodSatisfiedBy(dialect, desired.Type, database.Method)
 }
 
-// mysqlIndexKeyColumnsChanged compares the key columns in order, and only the
-// columns. See [mysqlIndexDefinitionChanged] for why a key's direction is not
-// part of the comparison.
+// mysqlIndexKeyColumnsChanged compares the key parts in order: each part's
+// column or expression, its prefix length and its direction. An expression is
+// compared the way a CHECK is, since MySQL keeps it in its own spelling, such
+// as lower(`a`) for a declared lower(a). A prefix is the number the reader
+// reports in SUB_PART, and a direction the COLLATION it reports.
 //
 // A key the reader could not read whole is compared as far as it was read. The
 // MySQL reader reports a functional key part -- `KEY idx ((b + 1))` -- as a
-// part missing from Columns, because the expression lives in a STATISTICS
-// column MariaDB does not have; see [catalog.Index.KeyPartsIncomplete]. Reading
+// part missing from Columns on a server whose STATISTICS has no EXPRESSION
+// column; see [catalog.Index.KeyPartsIncomplete]. Reading
 // what is left as the whole key would find the key short by one part on every
 // run and plan a rebuild forever, on a database the pinned community binary
 // v1.3.0 reports synced -- but declining the comparison outright reported
@@ -1314,8 +1313,12 @@ func mysqlIndexKeyColumnsChanged(
 		return true
 	}
 	for position, generatedPart := range generatedParts {
-		if semantics.ColumnIdentityKey(generatedPart.Name) !=
-			semantics.ColumnIdentityKey(databaseParts[position].Name) {
+		databasePart := databaseParts[position]
+		generatedColumn, generatedExpr := postgresIndexKeyTarget(generatedPart.Name, generatedPart.Expr, semantics)
+		databaseColumn, databaseExpr := postgresIndexKeyTarget(databasePart.Name, databasePart.Expr, semantics)
+		if generatedColumn != databaseColumn || generatedExpr != databaseExpr ||
+			strings.TrimSpace(generatedPart.Prefix) != strings.TrimSpace(databasePart.Prefix) ||
+			generatedPart.Desc != databasePart.Desc {
 			return true
 		}
 	}
