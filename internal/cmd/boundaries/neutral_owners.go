@@ -16,12 +16,12 @@ import (
 // belongs to the layer, so a package added below one is held to the rule
 // without an edit here. engine/builtin is the composition of bundled owners and
 // sits above the layer.
-var neutralRoots = []string{"catalog", "core", "engine", "migration/planner", "migration/schemadiff"}
+var neutralRoots = []string{"catalog", "core", "engine", "migration/planner", "migration/schemadiff", "internal/convert/goschematogo"}
 
 // requiredNeutralPackages must load for the rule to mean anything. Each is a
 // package the design names; a rename that took one out of the corpus would
 // otherwise report nothing about it.
-var requiredNeutralPackages = []string{"catalog", "core/ast", "core/schemaext", "core/schemamodel", "engine", "migration/planner", "migration/schemadiff", "migration/schemadiff/difftypes"}
+var requiredNeutralPackages = []string{"catalog", "core/ast", "core/schemaext", "core/schemamodel", "engine", "migration/planner", "migration/schemadiff", "migration/schemadiff/difftypes", "internal/convert/goschematogo"}
 
 // neutral reports whether a module-relative package path is in the neutral
 // layer.

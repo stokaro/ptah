@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/feature/pgextension"
 )
 
 // Capture once before writing any files. A named object that has no matching
@@ -30,19 +29,14 @@ func (ctx *renderContext) captureFeatureObjects(requestContext context.Context) 
 			return err
 		}
 	}
-	ctx.sortExtensions()
 	return nil
 }
 
-// captureFeatureObject records an object the export writes itself, and
-// refuses one no annotation writes. An object of a model a selected owner
-// encodes is the owner's to write or refuse.
+// captureFeatureObject refuses an object no selected owner encodes.
+// A selected owner writes or refuses each object of its models.
 func (ctx *renderContext) captureFeatureObject(object schemaext.Object) error {
 	if ctx.opts.Annotations.Encodes(schemaext.Kind(object.Ref.Kind)) {
 		return nil
-	}
-	if extension, ok := object.Value.(*pgextension.DesiredExtension); ok {
-		return ctx.captureExtension(object, extension)
 	}
 	return fmt.Errorf("%w: Go annotations cannot represent feature object %s with value %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
 }

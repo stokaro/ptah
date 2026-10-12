@@ -329,6 +329,11 @@ extension declares and does not encode, such as a setting written as a
 platform property, is not handed to it. `NewSet` refuses an encoder without
 models, models without an encoder, and a model the extension does not declare.
 
+The PostgreSQL extension owner supplies its Go encoder. Select the bundled
+runtime's annotations when exporting extension objects.
+The shared Go writer links no concrete owner and refuses objects whose encoder
+is not selected.
+
 - `Set.Encode` hands each encoder what the schema holds of its models: the
   objects and the facets of its `Encodes`, every table the source declares,
   and the coverage of its `Kinds`. A facet arrives on the `Slot` that holds it:
