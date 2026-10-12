@@ -370,7 +370,7 @@ func toDBIndexes(
 			TableName:      tableName,
 			Schema:         schema,
 			Columns:        append([]string(nil), index.Fields...),
-			Parts:          toDBIndexParts(index.Parts, index.Operator),
+			Parts:          toDBIndexParts(index.Parts, index.Fields, index.Operator),
 			IsUnique:       index.Unique,
 			Condition:      index.Condition,
 			Comment:        index.Comment,
@@ -401,7 +401,18 @@ func indexAccessMethod(indexType, dialect string) string {
 // operator class the way the renderer applies it: a part without its own class
 // inherits the index's, so the DB shape -- which has no index-level slot --
 // records the resolved value per part.
-func toDBIndexParts(parts []schemamodel.IndexPart, indexOperator string) []catalog.IndexPart {
+//
+// An index that names its columns as Fields and an operator class for the
+// whole index has no parts to carry the class, so each column becomes a part
+// that holds it, as a read reports the class of every key. Without them the
+// class was lost, and a GIN index on gin_trgm_ops compared with its own
+// conversion was dropped and created again.
+func toDBIndexParts(parts []schemamodel.IndexPart, fields []string, indexOperator string) []catalog.IndexPart {
+	if len(parts) == 0 && strings.TrimSpace(indexOperator) != "" {
+		for _, field := range fields {
+			parts = append(parts, schemamodel.IndexPart{Name: field})
+		}
+	}
 	if len(parts) == 0 {
 		return nil
 	}
