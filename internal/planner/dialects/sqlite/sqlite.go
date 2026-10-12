@@ -43,14 +43,14 @@ func New() *Planner {
 // capability set. The set is cloned so later caller mutations cannot change
 // planning behavior (stokaro/ptah#916).
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
-	return &Planner{caps: caps.Clone()}
+	return &Planner{caps: caps}
 }
 
 // capabilities answers for a zero-value Planner too: the type is constructed
 // directly in a few call sites, and a nil set there would refuse every view
 // and trigger rather than plan the dialect default.
 func (p *Planner) capabilities() capability.Capabilities {
-	if p.caps == nil {
+	if p.caps.Len() == 0 {
 		return capability.SQLite3()
 	}
 	return p.caps

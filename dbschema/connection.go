@@ -453,23 +453,23 @@ func refineFeatureFlagCapabilities(
 	}
 	parsed, err := ydburl.Parse(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid YDB URL: %w", err)
+		return capability.Capabilities{}, fmt.Errorf("invalid YDB URL: %w", err)
 	}
 	if parsed.Monitoring == nil {
 		return caps, nil
 	}
 	credential, err := ticket.read(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read YDB feature flags: %w", err)
+		return capability.Capabilities{}, fmt.Errorf("read YDB feature flags: %w", err)
 	}
 	if credential != "" && parsed.Secure && parsed.Monitoring.Scheme == "http" {
-		return nil, fmt.Errorf("read YDB feature flags from %s: the connection's credential travels over TLS, "+
+		return capability.Capabilities{}, fmt.Errorf("read YDB feature flags from %s: the connection's credential travels over TLS, "+
 			"and Ptah does not send it to a plain http:// endpoint; name the endpoint as https://%s",
 			parsed.Monitoring, parsed.Monitoring.Host)
 	}
 	flags, err := ydbflags.Read(ctx, parsed.Monitoring, parsed.Database, credential)
 	if err != nil {
-		return nil, err
+		return capability.Capabilities{}, err
 	}
 	refined := flags.Refine(caps)
 	if changed := deltaKeys(caps, refined); len(changed) > 0 {
@@ -828,7 +828,6 @@ func recordUnmodeledObjectKinds(schema *catalog.Database, dialect string) *catal
 // was opened with.
 func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 	info := dc.info
-	info.Capabilities = info.Capabilities.Clone()
 	info.IdentifierSemantics = info.IdentifierSemantics.Clone()
 	return info
 }
@@ -1088,10 +1087,10 @@ func (dc *DatabaseConnection) WithSessionOrCurrent(
 // connection assembled without one carries none. A session refines it further
 // only with what the session itself can change.
 func connectionCapabilities(connection, baseline capability.Capabilities) capability.Capabilities {
-	if len(connection) == 0 {
+	if connection.Len() == 0 {
 		return baseline
 	}
-	return connection.Clone()
+	return connection
 }
 
 func refineMySQLForeignKeyCapabilities(
@@ -1107,7 +1106,7 @@ func refineMySQLForeignKeyCapabilities(
 
 	var restrictNonstandardKey int64
 	if err := scan(&restrictNonstandardKey); err != nil {
-		return nil, fmt.Errorf("query restrict_fk_on_non_standard_key: %w", err)
+		return capability.Capabilities{}, fmt.Errorf("query restrict_fk_on_non_standard_key: %w", err)
 	}
 	if restrictNonstandardKey != 0 {
 		return caps.

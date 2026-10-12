@@ -119,7 +119,7 @@ func NewPostgreSQLWriterForRunner(
 	schema string,
 ) *PostgreSQLWriter {
 	return NewPostgreSQLWriterForRunnerWithCapabilities(
-		runner, schema, capability.Capabilities{
+		runner, schema, capability.Of(map[capability.Capability]bool{
 			capability.DDLInsideTransaction: true,
 			capability.CatalogRecursiveCTE:  true,
 			// pg_depend, for the same reason as the two above: every
@@ -155,7 +155,7 @@ func NewPostgreSQLWriterForRunner(
 			// enumerates from the catalog a moment earlier. See
 			// [constraintDropGuard].
 			capability.DropConstraintIfExists: false,
-		})
+		}))
 }
 
 // NewPostgreSQLWriterForRunnerWithCapabilities creates a writer that knows what

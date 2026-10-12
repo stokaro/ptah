@@ -74,10 +74,8 @@ func NewReport(
 	if schemas == nil {
 		schemas = make([]string, 0)
 	}
-	if capabilities == nil {
-		capabilities = capability.Capabilities{}
-	} else {
-		capabilities = capabilities.Clone()
+	if capabilities.Len() == 0 {
+		capabilities = capability.Of(make(map[capability.Capability]bool))
 	}
 	if assessments == nil {
 		assessments = make([]safety.StatementAssessment, 0)

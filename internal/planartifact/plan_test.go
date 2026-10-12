@@ -35,7 +35,7 @@ func TestNewFS_UsesStateBoundCanonicalJSON(t *testing.T) {
 		subject,
 		&catalog.Database{},
 		"postgres",
-		capability.Capabilities{capability.CreateIndexConcurrently: true},
+		capability.Of(map[capability.Capability]bool{capability.CreateIndexConcurrently: true}),
 		[]string{"tenant", "public", "tenant"},
 		sampleAssessments(),
 	)
@@ -52,7 +52,7 @@ func TestNewFS_UsesStateBoundCanonicalJSON(t *testing.T) {
 	c.Assert(decoded.CurrentSchemaDigest, qt.Matches, `sha256:[a-f0-9]{64}`)
 	c.Assert(decoded.Dialect, qt.Equals, "postgres")
 	c.Assert(decoded.Schemas, qt.DeepEquals, []string{"public", "tenant"})
-	c.Assert(decoded.Capabilities, qt.DeepEquals, capability.Capabilities{capability.CreateIndexConcurrently: true})
+	c.Assert(decoded.Capabilities, qt.DeepEquals, capability.Of(map[capability.Capability]bool{capability.CreateIndexConcurrently: true}))
 	c.Assert(decoded.Assessments, qt.DeepEquals, sampleAssessments())
 	c.Assert(fstest.TestFS(planFS, planartifact.FileName), qt.IsNil)
 }
@@ -179,11 +179,11 @@ func TestNewReport_FingerprintsOwnerDataThroughTheRuntime(t *testing.T) {
 	plain := &catalog.Database{Tables: []catalog.Table{{Name: "items"}}}
 	covered := &catalog.Database{Tables: []catalog.Table{{Name: "items"}}, FeatureCoverage: must.Must(tsschema.CompleteCoverage(schemaext.Observed))}
 
-	first, err := planartifact.NewReport(t.Context(), runtime, subject, covered, "postgres", nil, nil, nil)
+	first, err := planartifact.NewReport(t.Context(), runtime, subject, covered, "postgres", capability.Capabilities{}, nil, nil)
 	c.Assert(err, qt.IsNil)
-	second, err := planartifact.NewReport(t.Context(), runtime, subject, covered, "postgres", nil, nil, nil)
+	second, err := planartifact.NewReport(t.Context(), runtime, subject, covered, "postgres", capability.Capabilities{}, nil, nil)
 	c.Assert(err, qt.IsNil)
-	without, err := planartifact.NewReport(t.Context(), runtime, subject, plain, "postgres", nil, nil, nil)
+	without, err := planartifact.NewReport(t.Context(), runtime, subject, plain, "postgres", capability.Capabilities{}, nil, nil)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(first.CurrentSchemaDigest, qt.Matches, `sha256:[a-f0-9]{64}`)

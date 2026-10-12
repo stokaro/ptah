@@ -23,7 +23,7 @@ func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
 	for _, dialect := range capability.DefaultDialects() {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(capability.ForDialect(dialect), qt.IsNotNil)
+			c.Assert(capability.ForDialect(dialect).Len(), qt.Not(qt.Equals), 0)
 			c.Assert(ddltx.ClassOf(dialect), qt.Not(qt.Equals), ddltx.Unclassified)
 		})
 	}
@@ -52,7 +52,7 @@ func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(capability.ForDialect(test.dialect), qt.IsNil)
+			c.Assert(capability.ForDialect(test.dialect).Len(), qt.Equals, 0)
 			c.Assert(ddltx.ClassOf(test.dialect), qt.Equals, ddltx.Unclassified)
 		})
 	}

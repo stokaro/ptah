@@ -74,7 +74,7 @@ func (r *Runtime) ReverseChanges(ctx context.Context, request schemaext.Reversal
 			return nil, err
 		}
 		replies, err := r.reversalServices[service].ReverseChanges(ctx, schemaext.ReversalRequest{
-			Target: target.name, Identifiers: request.Identifiers.Clone(), Capabilities: request.Capabilities.Clone(), Changes: sent,
+			Target: target.name, Identifiers: request.Identifiers.Clone(), Capabilities: request.Capabilities, Changes: sent,
 		})
 		if err != nil {
 			return nil, err

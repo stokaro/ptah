@@ -28,19 +28,18 @@ func (f importRenderFunc) Render(ctx context.Context, request renderer.Request) 
 func TestImportUsesSelectedRendererAndCallerContext(t *testing.T) {
 	c := qt.New(t)
 	parser := must.Must(importer.ParserByName("liquibase"))
-	caps := capability.Capabilities{capability.TransactionalDDL: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true})
 	var captured []ast.Node
 	service := importRenderFunc(func(ctx context.Context, request renderer.Request) (renderer.Result, error) {
 		c.Assert(ctx, qt.Equals, t.Context())
 		c.Assert(request.Target, qt.Equals, "custom")
-		c.Assert(request.Capabilities[capability.TransactionalDDL], qt.IsTrue)
-		request.Capabilities[capability.TransactionalDDL] = false
+		c.Assert(request.Capabilities.Has(capability.TransactionalDDL), qt.IsTrue)
+		request.Capabilities = request.Capabilities.With(capability.TransactionalDDL, false)
 		captured = append(captured, request.Nodes...)
 		return renderer.Result{Complete: true, Fragments: []string{fmt.Sprintf("SELECT %d;", len(captured))}}, nil
 	})
 	selected, err := importer.WithRendering(parser, "custom", caps, service)
 	c.Assert(err, qt.IsNil)
-	caps[capability.TransactionalDDL] = false
 	parsed, err := selected.Parse(t.Context(), liquibaseXMLOneChangeSet(`<createTable tableName="t"><column name="id" type="int"/></createTable>`))
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Migrations, qt.HasLen, 1)
@@ -94,7 +93,7 @@ func TestImportRefusesFailedOrLossyRenderingBeforeWriting(t *testing.T) {
 			defer cancel()
 			calls := 0
 			service := test.renderer(cancel, &calls)
-			parser := must.Must(importer.WithRendering(must.Must(importer.ParserByName("liquibase")), "custom", nil, service))
+			parser := must.Must(importer.WithRendering(must.Must(importer.ParserByName("liquibase")), "custom", capability.Capabilities{}, service))
 			out := t.TempDir()
 			result, err := importer.Import(ctx, liquibaseXMLOneChangeSet(`<createTable tableName="t"><column name="id" type="int"/></createTable>`), parser, out, importer.Options{})
 			c.Assert(err, qt.IsNotNil)
@@ -110,7 +109,7 @@ func TestImportRefusesFailedOrLossyRenderingBeforeWriting(t *testing.T) {
 func TestWithRenderingRequiresSelectedService(t *testing.T) {
 	for _, service := range []renderer.Service{nil, importRenderFunc(nil)} {
 		c := qt.New(t)
-		parser, err := importer.WithRendering(must.Must(importer.ParserByName("liquibase")), "custom", nil, service)
+		parser, err := importer.WithRendering(must.Must(importer.ParserByName("liquibase")), "custom", capability.Capabilities{}, service)
 		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 		c.Assert(parser, qt.IsNil)
 	}

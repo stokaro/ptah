@@ -1,7 +1,6 @@
 package capability_test
 
 import (
-	"maps"
 	"slices"
 	"testing"
 
@@ -59,10 +58,10 @@ func TestCapabilities_Has_NilSafe(t *testing.T) {
 func TestCapabilities_Has(t *testing.T) {
 	c := qt.New(t)
 
-	caps := capability.Capabilities{
+	caps := capability.Of(map[capability.Capability]bool{
 		capability.DropConstraintGeneric: true,
 		capability.DropIndexIfExists:     false,
-	}
+	})
 	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(caps.Has(capability.DropIndexIfExists), qt.IsFalse, qt.Commentf("present-but-disabled must read as absent"))
 	c.Assert(caps.Has(capability.RowLevelSecurity), qt.IsFalse, qt.Commentf("missing key must read as absent"))
@@ -71,11 +70,11 @@ func TestCapabilities_Has(t *testing.T) {
 func TestCapabilities_Validate_UnknownKey(t *testing.T) {
 	c := qt.New(t)
 
-	caps := capability.Capabilities{"definately_a_typo": true}
+	caps := capability.Of(map[capability.Capability]bool{"definately_a_typo": true})
 	c.Assert(caps.Validate(), qt.ErrorMatches, `unknown capability "definately_a_typo"`)
 
 	// Disabled unknown keys are rejected too: a typo must never validate.
-	caps = capability.Capabilities{"another_typo": false}
+	caps = capability.Of(map[capability.Capability]bool{"another_typo": false})
 	c.Assert(caps.Validate(), qt.ErrorMatches, `unknown capability "another_typo"`)
 }
 
@@ -83,82 +82,82 @@ func TestCapabilities_Validate_RequiresEdge(t *testing.T) {
 	c := qt.New(t)
 
 	// IF EXISTS on a statement the target does not have is a contradiction.
-	caps := capability.Capabilities{
+	caps := capability.Of(map[capability.Capability]bool{
 		capability.DropConstraintIfExists: true,
 		capability.DropConstraintGeneric:  false,
-	}
+	})
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capability "drop_constraint_if_exists" requires "drop_constraint_generic", which is not enabled`)
 
 	// A missing (rather than disabled) requirement is equally invalid.
-	caps = capability.Capabilities{capability.DropConstraintIfExists: true}
+	caps = capability.Of(map[capability.Capability]bool{capability.DropConstraintIfExists: true})
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capability "drop_constraint_if_exists" requires "drop_constraint_generic", which is not enabled`)
 
 	// Satisfying the edge fixes the set.
-	caps = capability.Capabilities{
+	caps = capability.Of(map[capability.Capability]bool{
 		capability.DropConstraintIfExists: true,
 		capability.DropConstraintGeneric:  true,
-	}
+	})
 	c.Assert(caps.Validate(), qt.IsNil)
 
 	// DROP CHECK presupposes enforced CHECK constraints.
-	caps = capability.Capabilities{capability.DropCheckClause: true}
+	caps = capability.Of(map[capability.Capability]bool{capability.DropCheckClause: true})
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capability "drop_check_clause" requires "check_constraints_enforced", which is not enabled`)
 
 	// A materialized view is a view whose result is stored, so a target that
 	// has no views cannot have one (stokaro/ptah#929).
-	caps = capability.Capabilities{capability.MaterializedViews: true}
+	caps = capability.Of(map[capability.Capability]bool{capability.MaterializedViews: true})
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capability "materialized_views" requires "views", which is not enabled`)
-	caps = capability.Capabilities{capability.MaterializedViews: true, capability.Views: true}
+	caps = capability.Of(map[capability.Capability]bool{capability.MaterializedViews: true, capability.Views: true})
 	c.Assert(caps.Validate(), qt.IsNil)
 
 	// Replace syntax for a statement the target does not have is the same
 	// contradiction as IF EXISTS above.
-	caps = capability.Capabilities{capability.CreateOrReplaceTrigger: true}
+	caps = capability.Of(map[capability.Capability]bool{capability.CreateOrReplaceTrigger: true})
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capability "create_or_replace_trigger" requires "triggers", which is not enabled`)
-	caps = capability.Capabilities{capability.CreateOrReplaceTrigger: true, capability.Triggers: true}
+	caps = capability.Of(map[capability.Capability]bool{capability.CreateOrReplaceTrigger: true, capability.Triggers: true})
 	c.Assert(caps.Validate(), qt.IsNil)
 }
 
 func TestCapabilities_Validate_MutexGroup(t *testing.T) {
 	c := qt.New(t)
 
-	caps := capability.Capabilities{
+	caps := capability.Of(map[capability.Capability]bool{
 		capability.EnumInlineColumn: true,
 		capability.EnumCustomType:   true,
-	}
+	})
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capabilities enum_inline_column and enum_custom_type are mutually exclusive`)
 
 	// One of the two (or neither) is fine.
-	c.Assert(capability.Capabilities{capability.EnumInlineColumn: true}.Validate(), qt.IsNil)
-	c.Assert(capability.Capabilities{capability.EnumCustomType: true}.Validate(), qt.IsNil)
+	c.Assert(capability.Of(map[capability.Capability]bool{capability.EnumInlineColumn: true}).Validate(), qt.IsNil)
+	c.Assert(capability.Of(map[capability.Capability]bool{capability.EnumCustomType: true}).Validate(), qt.IsNil)
 	c.Assert(capability.Capabilities{}.Validate(), qt.IsNil)
 }
 
 func TestCapabilities_Validate_ForeignKeyReferencePolicy(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(capability.Capabilities{
+	c.Assert(capability.Of(map[capability.Capability]bool{
 		capability.ForeignKeys: true,
-	}.Validate(), qt.ErrorMatches,
+	}).Validate(), qt.ErrorMatches,
 		`capability "foreign_keys" requires exactly one foreign-key reference policy`)
 
-	c.Assert(capability.Capabilities{
+	c.Assert(capability.Of(map[capability.Capability]bool{
 		capability.ForeignKeys:                        true,
 		capability.ForeignKeysRequireUniqueReference:  true,
 		capability.ForeignKeysRequireIndexedReference: true,
-	}.Validate(), qt.ErrorMatches,
+	}).Validate(), qt.ErrorMatches,
 		`capabilities foreign_keys_require_unique_reference and foreign_keys_require_indexed_reference are mutually exclusive`)
 
-	c.Assert(capability.Capabilities{
+	c.Assert(capability.Of(map[capability.Capability]bool{
 		capability.ForeignKeys:                        true,
 		capability.ForeignKeysRequireIndexedReference: true,
-	}.Validate(), qt.IsNil)
+	}).Validate(), qt.IsNil)
 }
 
 func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
@@ -190,10 +189,10 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		// Presets enumerate every registered capability explicitly, so the
 		// docs matrix and the code never drift silently.
 		for _, key := range capability.All() {
-			_, present := preset[key]
+			present := preset.Established(key)
 			c.Assert(present, qt.IsTrue, qt.Commentf("preset %s is missing registry key %q", name, key))
 		}
-		c.Assert(preset, qt.HasLen, len(capability.All()), qt.Commentf("preset %s carries an extra key", name))
+		c.Assert(preset.Len(), qt.Equals, len(capability.All()), qt.Commentf("preset %s carries an extra key", name))
 	}
 }
 
@@ -395,23 +394,24 @@ func TestCapabilities_With_DoesNotMutateReceiver(t *testing.T) {
 	c.Assert(derived.Has(capability.DropIndexIfExists), qt.IsFalse)
 	c.Assert(derived.Validate(), qt.IsNil)
 
-	// With on a nil set allocates.
+	// With on the zero set makes a set.
 	var empty capability.Capabilities
 	derived = empty.With(capability.DropConstraintGeneric, true)
 	c.Assert(derived.Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(empty.Has(capability.DropConstraintGeneric), qt.IsFalse)
 }
 
-func TestCapabilities_Clone(t *testing.T) {
+// TestCapabilities_ZeroSetAnswersNothing pins the zero set as the empty one:
+// it answers no key, and no key is enabled.
+func TestCapabilities_ZeroSetAnswersNothing(t *testing.T) {
 	c := qt.New(t)
 
-	var nilSet capability.Capabilities
-	c.Assert(nilSet.Clone(), qt.IsNil)
+	var zero capability.Capabilities
 
-	orig := capability.MySQL84()
-	cl := orig.Clone()
-	cl[capability.DropIndexIfExists] = true
-	c.Assert(orig.Has(capability.DropIndexIfExists), qt.IsFalse, qt.Commentf("clone must be independent"))
+	c.Assert(zero.Len(), qt.Equals, 0)
+	c.Assert(zero.Established(capability.DropIndexIfExists), qt.IsFalse)
+	c.Assert(zero.Has(capability.DropIndexIfExists), qt.IsFalse)
+	c.Assert(zero.Equal(capability.Of(make(map[capability.Capability]bool))), qt.IsTrue)
 }
 
 func TestDefaultDialects(t *testing.T) {
@@ -424,13 +424,13 @@ func TestDefaultDialects(t *testing.T) {
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(capability.ForDialect(dialect), qt.IsNotNil)
+			c.Assert(capability.ForDialect(dialect).Len(), qt.Not(qt.Equals), 0)
 			c.Assert(capability.ForDialect(dialect).Validate(), qt.IsNil)
 		})
 	}
 
 	dialects[0] = "mutated"
-	c.Assert(capability.ForDialect("mutated"), qt.IsNil)
+	c.Assert(capability.ForDialect("mutated").Len(), qt.Equals, 0)
 	c.Assert(slices.IsSorted(capability.DefaultDialects()), qt.IsTrue)
 }
 
@@ -456,10 +456,10 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(capability.ForDialect("oracle").Has(capability.ObjectExistenceGuards), qt.IsTrue)
 	c.Assert(capability.ForDialect("oracle").Has(capability.TransactionalDDL), qt.IsFalse)
-	// Unknown dialects get the conservative nil set. The name has to be one
+	// Unknown dialects get the conservative zero set. The name has to be one
 	// NormalizeDialect knows nothing about, which "oracle" is not; "db2" is
 	// named by nothing there.
-	c.Assert(capability.ForDialect("db2"), qt.IsNil)
+	c.Assert(capability.ForDialect("db2").Len(), qt.Equals, 0)
 }
 
 func TestForServerVersion(t *testing.T) {
@@ -800,7 +800,7 @@ func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 			aboveCaps, aboveSpecific := capability.ForServerVersionResult(tt.dialect, tt.above)
 			insideCaps, insideSpecific := capability.ForServerVersionResult(tt.dialect, tt.inside)
 
-			identicalSet := maps.Equal(aboveCaps, insideCaps)
+			identicalSet := aboveCaps.Equal(insideCaps)
 			c.Assert(identicalSet, qt.Equals, tt.wantIdenticalSet, comment)
 			c.Assert(aboveSpecific, qt.Equals, tt.wantAboveSpecific, comment)
 

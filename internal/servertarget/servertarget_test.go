@@ -170,7 +170,7 @@ func TestResolve_RefusesAVersionThatNamesNoServer(t *testing.T) {
 
 			target, err := servertarget.Resolve(tt.dialect, tt.version)
 
-			c.Assert(target.Capabilities, qt.IsNil)
+			c.Assert(target.Capabilities.Len(), qt.Equals, 0)
 			var unrecognized *servertarget.UnrecognizedVersionError
 			c.Assert(err, qt.ErrorAs, &unrecognized)
 			c.Assert(unrecognized.Version, qt.Equals, tt.version)
@@ -267,7 +267,7 @@ func TestResolve_RefusesABannerFromAnotherServer(t *testing.T) {
 
 			target, err := servertarget.Resolve(tt.dialect, tt.version)
 
-			c.Assert(target.Capabilities, qt.IsNil)
+			c.Assert(target.Capabilities.Len(), qt.Equals, 0)
 			var mismatch *servertarget.DialectMismatchError
 			c.Assert(err, qt.ErrorAs, &mismatch)
 			c.Assert(mismatch.Dialect, qt.Equals, tt.dialect)
@@ -407,7 +407,7 @@ func TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps(t *testing.T) {
 
 			target, err := servertarget.Resolve(tt.dialect, tt.version)
 
-			c.Assert(target.Capabilities, qt.IsNil)
+			c.Assert(target.Capabilities.Len(), qt.Equals, 0)
 			var mismatch *servertarget.DialectMismatchError
 			c.Assert(err, qt.ErrorAs, &mismatch)
 			c.Assert(mismatch.Dialect, qt.Equals, tt.dialect)

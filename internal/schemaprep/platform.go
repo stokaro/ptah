@@ -162,5 +162,5 @@ func fieldWithPlatformValues(
 // standalone: that is what every target with a CREATE INDEX statement does,
 // and the renderer refuses such a dialect anyway.
 func DeclaresIndexesInCreateTable(caps capability.Capabilities) bool {
-	return caps != nil && !caps.Has(capability.CreateIndexStatement)
+	return caps.Len() != 0 && !caps.Has(capability.CreateIndexStatement)
 }

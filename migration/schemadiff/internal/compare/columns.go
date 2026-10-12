@@ -136,7 +136,7 @@ func TableColumnsWithSemantics(
 		semantics,
 		columnUniqueness{},
 		TableContext{},
-		nil,
+		capability.Capabilities{},
 	)
 }
 

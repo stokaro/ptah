@@ -39,7 +39,7 @@ func cleanupQueryFor(c *qt.C, caps capability.Capabilities) string {
 // fullCatalogCaps is a server whose catalog answers everything the cleanup can
 // ask, which is every PostgreSQL-family engine except Spanner.
 func fullCatalogCaps() capability.Capabilities {
-	return capability.Capabilities{
+	return capability.Of(map[capability.Capability]bool{
 		capability.DDLInsideTransaction:     true,
 		capability.CatalogRecursiveCTE:      true,
 		capability.CatalogDependencies:      true,
@@ -51,7 +51,7 @@ func fullCatalogCaps() capability.Capabilities {
 		capability.CompositeTypes:           true,
 		capability.RangeTypes:               true,
 		capability.CatalogPartitions:        true,
-	}
+	})
 }
 
 // TestCleanupQuery_OmitsRelationsTheCatalogLacks is the acceptance case.
@@ -84,7 +84,7 @@ func TestCleanupQuery_OmitsRelationsTheCatalogLacks(t *testing.T) {
 			caps := fullCatalogCaps()
 
 			with := cleanupQueryFor(c, caps)
-			caps[test.off] = false
+			caps = caps.With(test.off, false)
 			without := cleanupQueryFor(c, caps)
 
 			// Present when the server has it...
@@ -103,8 +103,8 @@ func TestCleanupQuery_OmitsRelationsTheCatalogLacks(t *testing.T) {
 func TestCleanupQuery_KeepsEveryOtherBranchWhenOneIsOmitted(t *testing.T) {
 	c := qt.New(t)
 	caps := fullCatalogCaps()
-	caps[capability.CatalogDependencies] = false
-	caps[capability.CatalogDefaultPrivileges] = false
+	caps = caps.With(capability.CatalogDependencies, false)
+	caps = caps.With(capability.CatalogDefaultPrivileges, false)
 
 	query := cleanupQueryFor(c, caps)
 

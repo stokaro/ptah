@@ -51,7 +51,7 @@ func TestSchemaReportsIndentPreservesRoutineBody(t *testing.T) {
 		{"plan", atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{Statements: []atlasreport.SchemaPlanChange{{Cmd: statement}}}).MarshalSQL},
 		{"inspect", newInspectReport(c,
 			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "text", Language: "plpgsql", Body: body}}},
-			&catalog.Database{}, catalog.ServerInfo{Dialect: platform.Postgres, Capabilities: capability.Capabilities{capability.Functions: true}}, nil,
+			&catalog.Database{}, catalog.ServerInfo{Dialect: platform.Postgres, Capabilities: capability.Of(map[capability.Capability]bool{capability.Functions: true})}, nil,
 			atlasreport.SchemaInspectReportOptions{},
 		).MarshalSQL},
 	}

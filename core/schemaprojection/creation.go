@@ -34,7 +34,6 @@ type TableCreationRequest struct {
 // Clone returns independent declarations and target facts.
 func (r TableCreationRequest) Clone() TableCreationRequest {
 	r.Identifiers = r.Identifiers.Clone()
-	r.Capabilities = r.Capabilities.Clone()
 	r.Tables = slices.Clone(r.Tables)
 	for i := range r.Tables {
 		r.Tables[i].Declaration = r.Tables[i].Declaration.Clone()

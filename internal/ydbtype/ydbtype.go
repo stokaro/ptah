@@ -611,7 +611,7 @@ func SerialFor(ydbType string) (string, bool) {
 // DeclaresSerial reports a declared type the map writes as one of YDB's Serial
 // types, on a target that has them.
 func DeclaresSerial(declared string) bool {
-	mapping, err := Map(declared, capability.Capabilities{capability.SerialColumns: true})
+	mapping, err := Map(declared, capability.Of(map[capability.Capability]bool{capability.SerialColumns: true}))
 	return err == nil && mapping.Serial
 }
 
@@ -625,11 +625,11 @@ func DeclaresSerial(declared string) bool {
 func Renderings(declared string) []string {
 	var out []string
 	for _, wide := range []bool{true, false} {
-		caps := capability.Capabilities{
+		caps := capability.Of(map[capability.Capability]bool{
 			capability.WideDateTimeTypes:    wide,
 			capability.ParameterizedDecimal: true,
 			capability.SerialColumns:        true,
-		}
+		})
 		mapping, err := Map(declared, caps)
 		if err == nil && !slices.Contains(out, mapping.Type) {
 			out = append(out, mapping.Type)

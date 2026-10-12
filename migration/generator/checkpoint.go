@@ -123,7 +123,7 @@ func generateCheckpointFromDiff(
 	qualifierValue string,
 ) (upSQL, downSQL string, err error) {
 	capabilities := info.Capabilities
-	if capabilities == nil {
+	if capabilities.Len() == 0 {
 		capabilities = capability.ForDialect(info.Dialect)
 	}
 	qualifier, err := atlasmigrate.ParseQualifier(qualifierValue)

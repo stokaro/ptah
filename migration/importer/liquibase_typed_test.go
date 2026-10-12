@@ -624,10 +624,9 @@ func TestWithRendering_LeavesItsArgumentUnchanged_HappyPath(t *testing.T) {
 // preset exists so a test can see whether the one handed over is the one
 // rendered against.
 func postgresWithoutForeignKeys() capability.Capabilities {
-	caps := capability.ForDialect("postgres").Clone()
-	delete(caps, capability.ForeignKeys)
-	delete(caps, capability.ForeignKeysRequireUniqueReference)
-	return caps
+	return capability.ForDialect("postgres").
+		With(capability.ForeignKeys, false).
+		With(capability.ForeignKeysRequireUniqueReference, false)
 }
 
 // liquibaseForeignKeyChangelog adds one reference, which converts under the
@@ -653,29 +652,10 @@ func TestWithRendering_RendersAgainstItsPreset_FailurePath(t *testing.T) {
 	c.Assert(parsed, qt.IsNil)
 }
 
-// The parser keeps its own copy of the preset. Restoring foreign keys in the
-// caller's map afterwards does not reach it, so it still refuses the reference.
-func TestWithRendering_KeepsItsOwnCopy_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	caps := postgresWithoutForeignKeys()
-	parser, err := importer.ParserByName("liquibase")
-	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithRendering(parser, "postgres", caps, builtintest.Runtime())
-	c.Assert(err, qt.IsNil)
-	caps[capability.ForeignKeys] = true
-	caps[capability.ForeignKeysRequireUniqueReference] = true
-
-	parsed, err := rendering.Parse(c.Context(), liquibaseForeignKeyChangelog())
-
-	c.Assert(err, qt.ErrorMatches, `(?s).*postgres does not support foreign keys.*`)
-	c.Assert(parsed, qt.IsNil)
-}
-
 // A preset that contradicts itself is refused before anything is parsed.
 func TestWithRendering_InvalidPreset_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	caps := capability.ForDialect("postgres").Clone()
-	delete(caps, capability.ForeignKeys)
+	caps := capability.ForDialect("postgres").With(capability.ForeignKeys, false)
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 

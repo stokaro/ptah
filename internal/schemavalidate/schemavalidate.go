@@ -94,7 +94,7 @@ func CollectWithOptions(
 	}
 	dialect = selected.Name()
 	caps := opts.Capabilities
-	if caps == nil {
+	if caps.Len() == 0 {
 		caps = capability.ForDialect(dialect)
 	}
 	if database == nil {

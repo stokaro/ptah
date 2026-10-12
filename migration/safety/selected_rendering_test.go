@@ -39,7 +39,7 @@ func TestAssessRenderedUsesOneSelectedBatchAndPreservesNodeRisk(t *testing.T) {
 		ast.NewRawSQL("DROP TABLE items;"),
 	}
 	calls := 0
-	caps := capability.Capabilities{capability.TransactionalDDL: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true})
 	service := selectedRendering(func(ctx context.Context, request renderer.Request) (renderer.Result, error) {
 		calls++
 		c.Assert(ctx, qt.Equals, t.Context())

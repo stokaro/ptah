@@ -76,7 +76,6 @@ type ConstraintRequest struct {
 // Clone returns an independent request, including target facts.
 func (r ConstraintRequest) Clone() ConstraintRequest {
 	r.Identifiers = r.Identifiers.Clone()
-	r.Capabilities = r.Capabilities.Clone()
 	r.Before = r.Before.Clone()
 	r.After = r.After.Clone()
 	r.Changes = slices.Clone(r.Changes)

@@ -88,7 +88,7 @@ func TestDeclaredConcurrentIndexRefs_ResolvesTheDialectDefault(t *testing.T) {
 	c := qt.New(t)
 
 	refs := declaredConcurrentIndexRefs(
-		DiffPolicy{}, concurrentDiff(), concurrentDesired(), nil, "postgres", nil,
+		DiffPolicy{}, concurrentDiff(), concurrentDesired(), nil, "postgres", capability.Capabilities{},
 	)
 
 	c.Assert(refs, qt.HasLen, 1,
@@ -102,7 +102,7 @@ func TestDeclaredConcurrentIndexRefs_UnknownDialectStaysPlain(t *testing.T) {
 	c := qt.New(t)
 
 	refs := declaredConcurrentIndexRefs(
-		DiffPolicy{}, concurrentDiff(), concurrentDesired(), nil, "nosuchengine", nil,
+		DiffPolicy{}, concurrentDiff(), concurrentDesired(), nil, "nosuchengine", capability.Capabilities{},
 	)
 
 	c.Assert(refs, qt.HasLen, 0)

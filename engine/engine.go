@@ -457,8 +457,9 @@ func (r *Runtime) Targets() []string {
 // rendering satisfies errors.Is(err, ptaherr.ErrUnsupportedFeature).
 //
 // Cancellation and service errors propagate without partial SQL. A nil context
-// is rejected. The service receives a cloned capability set and node slice;
-// its contract also prohibits mutation of the nodes themselves. Completed
+// is rejected. The service receives a cloned node slice and the caller's
+// capability set, which is read-only; its contract also prohibits mutation of
+// the nodes themselves. Completed
 // refusals return renderer.BatchRefusalError with diagnostic data and local
 // input-node provenance. Every reply must account for batch completion.
 func (r *Runtime) Render(ctx context.Context, request renderer.Request) (renderer.Result, error) {

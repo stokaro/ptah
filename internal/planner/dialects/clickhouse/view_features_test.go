@@ -173,7 +173,7 @@ func TestMaterializedViewReplacementEffectsFollowTheEmittedDrop(t *testing.T) {
 	c := qt.New(t)
 	var request featureplan.Request
 	caps := capability.ClickHouse24()
-	caps[capability.MaterializedViews] = false
+	caps = caps.With(capability.MaterializedViews, false)
 
 	_, err := clickhouse.NewWithCapabilities(caps).GenerateMigrationAST(t.Context(), viewPlanner{Runtime: must.Must(engine.New()), request: &request}, viewSettingDiff(true))
 

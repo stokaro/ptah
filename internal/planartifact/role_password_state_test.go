@@ -9,6 +9,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planartifact"
 )
@@ -38,7 +39,7 @@ func rolePasswordStateDigest(c *qt.C, state catalog.RolePasswordState) string {
 			PasswordState: state,
 		}}},
 		"postgres",
-		nil,
+		capability.Capabilities{},
 		nil,
 		nil,
 	)

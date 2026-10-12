@@ -64,7 +64,6 @@ type Request struct {
 // Clone returns an independent batch, including mutable target facts.
 func (r Request) Clone() Request {
 	r.Identifiers = r.Identifiers.Clone()
-	r.Capabilities = r.Capabilities.Clone()
 	r.Tables = cloneTables(r.Tables)
 	return r
 }

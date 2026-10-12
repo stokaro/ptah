@@ -75,7 +75,7 @@ func TestGenerateMigrationUsesSelectedRenderingForSafetyAndBothFiles(t *testing.
 	for i, request := range selected.requests {
 		c.Assert(selected.contexts[i], qt.Equals, t.Context())
 		c.Assert(request.Target, qt.Equals, "sqlite")
-		c.Assert(request.Capabilities, qt.Not(qt.HasLen), 0)
+		c.Assert(request.Capabilities.Len(), qt.Not(qt.Equals), 0)
 		c.Assert(request.Nodes, qt.HasLen, 1)
 	}
 	c.Assert(selected.requests[0].Nodes[0], qt.Satisfies, func(node ast.Node) bool { _, ok := node.(*ast.CreateTableNode); return ok })

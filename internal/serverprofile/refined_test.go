@@ -44,29 +44,29 @@ func TestProfileRefinedRecordsWhatTheServerDecided(t *testing.T) {
 	}{
 		{
 			name: "a server the release line describes changes nothing",
-			effective: capability.Capabilities{
+			effective: capability.Of(map[capability.Capability]bool{
 				"foreign_keys_require_indexed_reference": false,
 				"foreign_keys_require_unique_reference":  true,
 				"views":                                  true,
-			},
+			}),
 			reason:      "read from this server's session settings",
 			wantValues:  []bool{false, true, true},
 			wantRefined: make([]string, 0),
 		},
 		{
 			name: "a server configured the other way answers for itself",
-			effective: capability.Capabilities{
+			effective: capability.Of(map[capability.Capability]bool{
 				"foreign_keys_require_indexed_reference": true,
 				"foreign_keys_require_unique_reference":  false,
 				"views":                                  true,
-			},
+			}),
 			reason:      "read from this server's session settings",
 			wantValues:  []bool{true, false, true},
 			wantRefined: []string{"foreign_keys_require_indexed_reference", "foreign_keys_require_unique_reference"},
 		},
 		{
 			name:        "nothing measured leaves the release line's answer alone",
-			effective:   nil,
+			effective:   capability.Capabilities{},
 			reason:      "read from this server's session settings",
 			wantValues:  []bool{false, true, true},
 			wantRefined: make([]string, 0),
@@ -75,9 +75,9 @@ func TestProfileRefinedRecordsWhatTheServerDecided(t *testing.T) {
 			// A refinement a reader cannot go and check is a claim, and this
 			// verb exists to replace claims with what a server said.
 			name: "a refinement with no reason is not recorded",
-			effective: capability.Capabilities{
+			effective: capability.Of(map[capability.Capability]bool{
 				"foreign_keys_require_unique_reference": false,
-			},
+			}),
 			reason:      "  ",
 			wantValues:  []bool{false, true, true},
 			wantRefined: make([]string, 0),
@@ -136,23 +136,23 @@ func TestProfileRefined_TraitsFollowTheKeysTheyAreReadFrom(t *testing.T) {
 	}{
 		{
 			name: "a server the release line describes keeps its policy",
-			effective: capability.Capabilities{
+			effective: capability.Of(map[capability.Capability]bool{
 				capability.ForeignKeys:                        true,
 				capability.ForeignKeysRequireUniqueReference:  true,
 				capability.ForeignKeysRequireIndexedReference: false,
 				capability.EnumInlineColumn:                   true,
-			},
+			}),
 			wantReference: capability.ReferenceUnique,
 			wantEnum:      capability.EnumInline,
 		},
 		{
 			name: "a server configured the other way reports the other policy",
-			effective: capability.Capabilities{
+			effective: capability.Of(map[capability.Capability]bool{
 				capability.ForeignKeys:                        true,
 				capability.ForeignKeysRequireUniqueReference:  false,
 				capability.ForeignKeysRequireIndexedReference: true,
 				capability.EnumInlineColumn:                   true,
-			},
+			}),
 			wantReference: capability.ReferenceIndexed,
 			wantEnum:      capability.EnumInline,
 		},
@@ -212,19 +212,19 @@ func TestProfileRefined_EachKeyNamesTheReadingThatChangedIt(t *testing.T) {
 		},
 	}
 	connection := serverprofile.Reading{
-		Capabilities: capability.Capabilities{
+		Capabilities: capability.Of(map[capability.Capability]bool{
 			capability.ForeignKeysRequireUniqueReference: true,
 			capability.Hypertables:                       true,
 			capability.Views:                             false,
-		},
+		}),
 		Reason: "read from pg_extension",
 	}
 	session := serverprofile.Reading{
-		Capabilities: capability.Capabilities{
+		Capabilities: capability.Of(map[capability.Capability]bool{
 			capability.ForeignKeysRequireUniqueReference: false,
 			capability.Hypertables:                       true,
 			capability.Views:                             true,
-		},
+		}),
 		Reason: "read from the session settings",
 	}
 

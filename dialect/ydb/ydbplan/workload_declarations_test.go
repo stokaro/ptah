@@ -17,7 +17,7 @@ import (
 
 func workloadDeclarations(objects ...schemaext.Object) featureplan.DeclarationRequest {
 	return featureplan.DeclarationRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-		Capabilities: capability.Capabilities{capability.ResourcePools: true, capability.StreamingQueries: true}, Objects: objects}
+		Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true, capability.StreamingQueries: true}), Objects: objects}
 }
 
 func TestWorkloadDeclarationsStartQueriesAfterDefaultSettingsAndRouting(t *testing.T) {
@@ -56,7 +56,7 @@ func TestWorkloadDefaultDeclarationCanBeAnExplicitNoOp(t *testing.T) {
 	c.Assert(result.Declarations, qt.HasLen, 1)
 	c.Assert(result.Declarations[0].Steps, qt.HasLen, 0)
 	c.Assert(result.Declarations[0].Strategy, qt.Contains, "preserving unspecified")
-	request.Capabilities = nil
+	request.Capabilities = capability.Capabilities{}
 	result, err = workloadRuntime(c).PlanDeclarations(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 1)

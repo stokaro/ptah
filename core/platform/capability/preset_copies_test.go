@@ -1,7 +1,6 @@
 package capability_test
 
 import (
-	"maps"
 	"sync"
 	"testing"
 
@@ -10,11 +9,12 @@ import (
 	"ptah.run/core/platform/capability"
 )
 
-// A preset is built once and shared, so every call has to hand back a set its
-// caller may change without changing the next caller's. The rows cover a set
-// written as a literal, one derived from it, and one at the end of a chain of
-// derived sets.
-func TestPresets_EveryCallReturnsAnIndependentCopy(t *testing.T) {
+// A preset is built once and every caller gets that one set, so nothing a
+// caller does with its set may reach the next caller's. A set offers no way
+// to change it: With returns a new set and Map returns a map the caller owns.
+// The rows cover a set written as a literal, one derived from it, and one at
+// the end of a chain of derived sets.
+func TestPresets_NoCallerChangesAnotherCallersSet(t *testing.T) {
 	tests := []struct {
 		name   string
 		preset func() capability.Capabilities
@@ -28,36 +28,61 @@ func TestPresets_EveryCallReturnsAnIndependentCopy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			first := tc.preset()
-			c.Assert(len(first) > 10, qt.IsTrue)
-			unchanged := maps.Clone(first)
+			unchanged := first.Map()
+			c.Assert(len(unchanged) > 10, qt.IsTrue)
 
-			for key, enabled := range first {
-				first[key] = !enabled
+			flags := first.Map()
+			for key, enabled := range flags {
+				flags[key] = !enabled
 			}
-			first["test.invented"] = true
+			flags["test.invented"] = true
+			derived := first
+			for key, enabled := range first.All() {
+				derived = derived.With(key, !enabled)
+			}
+			derived = derived.With("test.invented", true)
 
-			c.Assert(tc.preset(), qt.DeepEquals, unchanged)
+			c.Assert(first.Map(), qt.DeepEquals, unchanged)
+			c.Assert(tc.preset().Map(), qt.DeepEquals, unchanged)
+			c.Assert(derived.Equal(first), qt.IsFalse)
 		})
 	}
 }
 
-// Concurrent callers each get their own copy; the race detector reports a set
-// two callers share. Presets are process-wide, so this cannot force the first
-// build to be concurrent; sync.OnceValue owns that guarantee.
-func TestPresets_ConcurrentCallsGetTheirOwnSet(t *testing.T) {
+// Concurrent callers share one preset and derive their own sets from it; the
+// race detector reports a write two callers can see. Presets are
+// process-wide, so this cannot force the first build to be concurrent;
+// sync.OnceValue owns that guarantee.
+func TestPresets_ConcurrentCallsShareTheSetSafely(t *testing.T) {
 	c := qt.New(t)
-	want := capability.YDB252()
+	want := capability.YDB252().Map()
 	results := make([]capability.Capabilities, 8)
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Go(func() {
-			results[i] = capability.YDB252()
-			results[i]["test.invented"] = true
+			results[i] = capability.YDB252().With("test.invented", true)
 		})
 	}
 	wg.Wait()
 	for _, result := range results {
-		delete(result, "test.invented")
-		c.Assert(result, qt.DeepEquals, want)
+		c.Assert(result.Has("test.invented"), qt.IsTrue)
+		c.Assert(capability.YDB252().Map(), qt.DeepEquals, want)
 	}
+}
+
+// A set made from a map keeps no reference to it, and a map read from a set
+// is the caller's: changing either map changes no set.
+func TestOf_SharesNoMapWithItsCaller(t *testing.T) {
+	c := qt.New(t)
+	flags := map[capability.Capability]bool{capability.DropConstraintGeneric: true}
+
+	set := capability.Of(flags)
+	flags[capability.DropConstraintGeneric] = false
+	flags[capability.DropIndexIfExists] = true
+	read := set.Map()
+	read[capability.DropConstraintGeneric] = false
+
+	c.Assert(set.Has(capability.DropConstraintGeneric), qt.IsTrue)
+	c.Assert(set.Established(capability.DropIndexIfExists), qt.IsFalse)
+	c.Assert(set.Len(), qt.Equals, 1)
 }

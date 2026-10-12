@@ -87,7 +87,6 @@ func RenderSchema(ctx context.Context, service SchemaService, request SchemaRequ
 		return SchemaResult{}, &ptaherr.RenderError{Dialect: request.Target, Err: ptaherr.ErrInvalidSchemaDiff, Message: "cannot render a nil database schema"}
 	}
 	request.Schema = new(*request.Schema)
-	request.Capabilities = request.Capabilities.Clone()
 	request.Identifiers = request.Identifiers.Clone()
 	result, err := service.RenderSchema(ctx, request)
 	if err != nil {

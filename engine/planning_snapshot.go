@@ -16,7 +16,6 @@ import (
 func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Request) (featureplan.Request, error) {
 	var err error
 	request.Identifiers = request.Identifiers.Clone()
-	request.Capabilities = request.Capabilities.Clone()
 	request.ParentKinds = slices.Clone(request.ParentKinds)
 	request.Changes, err = r.codecs.SnapshotChanges(ctx, request.Changes)
 	if err != nil {

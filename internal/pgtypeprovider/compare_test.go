@@ -201,8 +201,7 @@ func TestCompareTypes_LeavesCommentsATargetDoesNotStore(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			request := comparisonOf(values(test.declaration), values(test.observation))
-			request.Capabilities = capability.Postgres17()
-			delete(request.Capabilities, test.without)
+			request.Capabilities = capability.Postgres17().With(test.without, false)
 
 			result, err := newRuntime(c).CompareObjects(t.Context(), request)
 

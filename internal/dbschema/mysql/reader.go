@@ -82,7 +82,7 @@ type indexKey struct {
 
 // NewMySQLReader creates a new MySQL schema reader
 func NewMySQLReader(db sqlrunner.Runner, schema string) *Reader {
-	return NewMySQLReaderWithCapabilities(db, schema, nil)
+	return NewMySQLReaderWithCapabilities(db, schema, capability.Capabilities{})
 }
 
 // NewMySQLReaderWithCapabilities creates a MySQL schema reader that knows the
@@ -1570,7 +1570,7 @@ func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string) 
 // costs MySQL a failed round trip on every schema read -- the column is a
 // MariaDB extension, not a newer MySQL -- which is what the set removes.
 func (r *Reader) catalogNamesCheckConstraintTables() bool {
-	if r.caps == nil {
+	if r.caps.Len() == 0 {
 		return true
 	}
 	return r.caps.Has(capability.CatalogCheckConstraintTableName)

@@ -50,7 +50,7 @@ func New() *Renderer {
 // NewWithCapabilities constructs a renderer for a concrete server capability
 // set. The set is cloned so later caller mutations cannot change what renders.
 func NewWithCapabilities(caps capability.Capabilities) *Renderer {
-	return &Renderer{caps: caps.Clone()}
+	return &Renderer{caps: caps}
 }
 
 // ReportOmissionsTo directs this renderer's omission records to sink.

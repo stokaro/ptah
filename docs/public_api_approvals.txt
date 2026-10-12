@@ -741,3 +741,13 @@ v0.13.0 ptah.run/migration/generator
 # knowledge of SQL Server extended properties. Pre-v1, so no compatibility is
 # owed.
 v0.13.0 ptah.run/sourceformats
+
+# #4140: capability.Capabilities is a read-only set rather than a map. Every
+# boundary that handed a set on cloned it so no holder could change another
+# holder's set, and in the schema census those clones were 39% of all
+# allocations. A set that cannot change is shared instead. Of makes a set
+# from a map, With returns a new set, Map and All read it, Len and Equal
+# replace len and map comparison, and Clone is removed because a copy and
+# the set are the same. The JSON encoding is unchanged. Pre-v1, so no
+# compatibility is owed.
+v0.13.0 ptah.run/core/platform/capability

@@ -90,7 +90,7 @@ func (r *Runtime) NormalizeObjects(ctx context.Context, request schemaext.Normal
 		batch := request
 		batch.Desired = schemaext.ObjectState{Objects: desired.Objects.Select(selected), Coverage: desired.Coverage.SelectKinds(service.Kinds)}
 		batch.Current = schemaext.ObjectState{Objects: current.Objects.Select(selected), Coverage: current.Coverage.SelectKinds(service.Kinds)}
-		batch.Capabilities = request.Capabilities.Clone()
+		batch.Capabilities = request.Capabilities
 		batch.Identifiers = request.Identifiers.Clone()
 		if batch.Desired.Objects.Len() == 0 {
 			continue

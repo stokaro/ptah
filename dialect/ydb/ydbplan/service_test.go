@@ -103,7 +103,7 @@ func TestServiceRefusesUnknownOrContradictoryCapturedState(t *testing.T) {
 		{"missing declaration", func(r *featureplan.Request) { r.Tables[0].Desired = schemacapture.TableDeclaration{} }},
 		{"missing observation", func(r *featureplan.Request) { r.Tables[0].Current = schemacapture.TableObservation{} }},
 		{"unknown absence", func(r *featureplan.Request) { r.Tables[0].Current.FeatureCoverage = schemaext.Coverage{} }},
-		{"capability refused", func(r *featureplan.Request) { r.Capabilities = nil }},
+		{"capability refused", func(r *featureplan.Request) { r.Capabilities = capability.Capabilities{} }},
 		{"duplicate change", func(r *featureplan.Request) { r.Changes = append(r.Changes, r.Changes[0]) }},
 		{"duplicate capture", func(r *featureplan.Request) { r.Tables = append(r.Tables, r.Tables[0]) }},
 		{"rebuild still validates", func(r *featureplan.Request) {

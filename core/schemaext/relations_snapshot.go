@@ -127,7 +127,6 @@ func (r Registry) SnapshotRelationRequest(ctx context.Context, request RelationR
 		}
 	}
 	request.Values, request.Kinds = values, kinds
-	request.Capabilities = request.Capabilities.Clone()
 	request.Identifiers = request.Identifiers.Clone()
 	if err := ctx.Err(); err != nil {
 		return RelationRequest{}, err

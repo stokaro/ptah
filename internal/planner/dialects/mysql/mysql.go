@@ -113,7 +113,7 @@ func NewForDialect(dialect string, caps capability.Capabilities) *Planner {
 	if normalized == "" {
 		normalized = DialectName
 	}
-	return &Planner{caps: caps.Clone(), dialect: normalized}
+	return &Planner{caps: caps, dialect: normalized}
 }
 
 // capabilities returns the planner's capability set, defaulting the nil zero
@@ -122,7 +122,7 @@ func NewForDialect(dialect string, caps capability.Capabilities) *Planner {
 // additions to warnings and re-spell CHECK drops as DROP CHECK — destructive
 // surprises for a zero-value planner. Restriction must be an explicit choice.
 func (p *Planner) capabilities() capability.Capabilities {
-	if p.caps == nil {
+	if p.caps.Len() == 0 {
 		return capability.ForDialect(p.targetDialect())
 	}
 	return p.caps

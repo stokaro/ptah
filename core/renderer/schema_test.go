@@ -25,14 +25,14 @@ func TestRenderSchemaPreservesWholeBatchAndSnapshotsContainers(t *testing.T) {
 	c := qt.New(t)
 	statements := []string{"CREATE FIRST;", "CREATE SECOND;"}
 	omissions := []renderer.Omission{{Dialect: "custom", Kind: "table", Name: "second", Reason: "unsupported", Property: "comment"}}
-	request := renderer.SchemaRequest{Target: "custom", Capabilities: capability.Capabilities{capability.TransactionalDDL: true}, Schema: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "first"}, {Name: "second"}}}}
+	request := renderer.SchemaRequest{Target: "custom", Capabilities: capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true}), Schema: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "first"}, {Name: "second"}}}}
 	calls := 0
 	service := schemaRenderFunc(func(ctx context.Context, received renderer.SchemaRequest) (renderer.SchemaResult, error) {
 		calls++
 		c.Assert(ctx, qt.Equals, t.Context())
 		c.Assert(received, qt.DeepEquals, request)
 		received.Schema.Tables = nil
-		received.Capabilities[capability.TransactionalDDL] = false
+		received.Capabilities = received.Capabilities.With(capability.TransactionalDDL, false)
 		return renderer.SchemaResult{Complete: true, Statements: statements, Omissions: omissions}, nil
 	})
 	result, err := renderer.RenderSchema(t.Context(), service, request)
@@ -43,7 +43,7 @@ func TestRenderSchemaPreservesWholeBatchAndSnapshotsContainers(t *testing.T) {
 	c.Assert(result.Statements, qt.DeepEquals, []string{"CREATE FIRST;", "CREATE SECOND;"})
 	c.Assert(result.Omissions[0].Name, qt.Equals, "second")
 	c.Assert(request.Schema.Tables, qt.HasLen, 2)
-	c.Assert(request.Capabilities[capability.TransactionalDDL], qt.IsTrue)
+	c.Assert(request.Capabilities.Has(capability.TransactionalDDL), qt.IsTrue)
 }
 
 func TestRenderSchemaRejectsIncompleteAndMalformedResults(t *testing.T) {

@@ -98,7 +98,7 @@ func NewReader(connection *Connection, caps capability.Capabilities) *Reader {
 		},
 		database: "/" + strings.Trim(root, "/"),
 		realm:    strings.Trim(root, "/") != strings.Trim(driver.Name(), "/"),
-		caps:     caps.Clone(),
+		caps:     caps,
 	}
 }
 
@@ -110,7 +110,7 @@ func NewReaderFromSource(source Source, database string, caps capability.Capabil
 			return source, func() {}, nil
 		},
 		database: "/" + strings.Trim(database, "/"),
-		caps:     caps.Clone(),
+		caps:     caps,
 	}
 }
 

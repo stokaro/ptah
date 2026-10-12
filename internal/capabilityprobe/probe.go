@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -276,7 +275,7 @@ func (r *Report) cellProblems() []error {
 				"newest measured line (%s): a saturated version receives the dialect default, not this line's answer",
 			r.Cell, r.Resolution.NewestMeasured))
 	}
-	if !maps.Equal(r.Resolution.Capabilities, r.Cell.Preset()) {
+	if !r.Resolution.Capabilities.Equal(r.Cell.Preset()) {
 		problems = append(problems, fmt.Errorf(
 			"matrix cell %s names preset %s, but the resolver handed this server a different set",
 			r.Cell, r.Cell.PresetName))

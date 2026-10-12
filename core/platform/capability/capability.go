@@ -14,10 +14,11 @@
 // # Model
 //
 // A Capability is a named feature flag from a curated registry — free-form
-// keys are rejected by Validate. A Capabilities value is a plain
-// map[Capability]bool set. The nil set is valid and behaves conservatively:
-// Has reports false for everything, so consumers fall back to the most
-// compatible emission.
+// keys are rejected by Validate. A Capabilities value is a read-only set of
+// those flags: it never changes once made, so it is passed on and shared
+// without copying, and a change is a new set from With. The zero value is
+// valid and behaves conservatively: Has reports false for everything, so
+// consumers fall back to the most compatible emission.
 //
 // Some capabilities relate to each other: a capability may require another
 // (IF EXISTS on constraint drops presupposes the generic DROP CONSTRAINT
@@ -39,7 +40,9 @@
 package capability
 
 import (
+	"encoding/json"
 	"fmt"
+	"iter"
 	"maps"
 	"slices"
 	"strconv"
@@ -2351,16 +2354,34 @@ var foreignKeyReferencePolicies = []Capability{
 	ForeignKeysCreateBackingIndex,
 }
 
-// Capabilities is a set of feature flags describing one concrete target, as
-// map[Capability]bool. The nil set is valid and conservative (Has always
-// reports false). Presets in this package enumerate every registry key
-// explicitly; hand-built sets should be checked with Validate.
-type Capabilities map[Capability]bool
+// Capabilities is a read-only set of feature flags describing one concrete
+// target.
+//
+// A set never changes once it is made, so it is shared rather than copied:
+// storing it, passing it on and handing one set to many callers cost nothing,
+// and no holder can change what another holder reads. A change is a new set
+// from [Capabilities.With]. Make a set from a map with [Of], or take a preset.
+//
+// The zero value is valid and conservative: it answers no key, so Has reports
+// false for every capability. Presets in this package answer every registry
+// key explicitly; check a hand-built set with Validate.
+type Capabilities struct {
+	// flags is never written after the set is made.
+	flags map[Capability]bool
+}
 
-// Has reports whether the capability is present AND enabled. It is nil-safe:
-// a nil set has nothing, which is the conservative reading consumers rely on.
+// Of returns the set flags describes. It copies flags, so changing the map
+// afterward does not change the set. A set made from a nil map is the zero
+// set; one made from an empty map answers no key either, and encodes as an
+// empty JSON object rather than null.
+func Of(flags map[Capability]bool) Capabilities {
+	return Capabilities{flags: maps.Clone(flags)}
+}
+
+// Has reports whether the capability is present AND enabled. The zero set has
+// nothing, which is the conservative reading consumers rely on.
 func (c Capabilities) Has(key Capability) bool {
-	return c != nil && c[key]
+	return c.flags[key]
 }
 
 // Established reports whether this set has an ANSWER for a key, which is not
@@ -2373,31 +2394,63 @@ func (c Capabilities) Has(key Capability) bool {
 // target does not have it", which tells an operator the wrong thing about their
 // server fifty times over (stokaro/ptah#1348).
 func (c Capabilities) Established(key Capability) bool {
-	_, answered := c[key]
+	_, answered := c.flags[key]
 	return answered
 }
 
-// Clone returns an independent copy of the set (nil stays nil).
-func (c Capabilities) Clone() Capabilities {
-	if c == nil {
-		return nil
-	}
-	out := make(Capabilities, len(c))
-	maps.Copy(out, c)
-	return out
+// Len returns the number of keys the set answers.
+func (c Capabilities) Len() int {
+	return len(c.flags)
 }
 
-// With returns a copy of the set with one capability overridden. The receiver
-// is never mutated, so presets can be composed safely:
+// All iterates over the keys the set answers, in key order, with the answer
+// for each.
+func (c Capabilities) All() iter.Seq2[Capability, bool] {
+	return func(yield func(Capability, bool) bool) {
+		for _, key := range slices.Sorted(maps.Keys(c.flags)) {
+			if !yield(key, c.flags[key]) {
+				return
+			}
+		}
+	}
+}
+
+// Map returns the set as a map the caller owns: changing it does not change
+// the set.
+func (c Capabilities) Map() map[Capability]bool {
+	return maps.Clone(c.flags)
+}
+
+// MarshalJSON encodes the set as a JSON object of capability names to
+// booleans, in key order, and the zero set as null.
+func (c Capabilities) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.flags)
+}
+
+// UnmarshalJSON decodes a set from the object MarshalJSON writes.
+func (c *Capabilities) UnmarshalJSON(data []byte) error {
+	var flags map[Capability]bool
+	if err := json.Unmarshal(data, &flags); err != nil {
+		return err
+	}
+	c.flags = flags
+	return nil
+}
+
+// Equal reports whether c and other answer the same keys the same way.
+func (c Capabilities) Equal(other Capabilities) bool {
+	return maps.Equal(c.flags, other.flags)
+}
+
+// With returns a set like c with one capability overridden. c does not
+// change, so presets compose safely:
 //
 //	caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 func (c Capabilities) With(key Capability, enabled bool) Capabilities {
-	out := c.Clone()
-	if out == nil {
-		out = make(Capabilities, 1)
-	}
-	out[key] = enabled
-	return out
+	flags := make(map[Capability]bool, len(c.flags)+1)
+	maps.Copy(flags, c.flags)
+	flags[key] = enabled
+	return Capabilities{flags: flags}
 }
 
 // Validate checks the set against the registry:
@@ -2411,12 +2464,12 @@ func (c Capabilities) With(key Capability, enabled bool) Capabilities {
 //
 // A nil or empty set is valid.
 func (c Capabilities) Validate() error {
-	for key := range c {
+	for key := range c.flags {
 		if _, known := registry[key]; !known {
 			return fmt.Errorf("unknown capability %q", key)
 		}
 	}
-	for key, enabled := range c {
+	for key, enabled := range c.flags {
 		if !enabled {
 			continue
 		}
@@ -2481,16 +2534,16 @@ func All() []Capability {
 // then 1: the result is recomputed, not stored, so the word MATERIALIZED is
 // parsed and dropped. This key names a view whose result is stored, and
 // MySQL has none.
-func MySQL84() Capabilities { return presetMySQL84().Clone() }
+func MySQL84() Capabilities { return presetMySQL84() }
 
 // Each preset constructor builds its set once, with sync.OnceValue, and hands
-// every caller an independent copy: a caller may change its set without
-// changing anyone else's. A builder that panics panics again on every call.
+// every caller that one set, which no caller can change. A builder that panics
+// panics again on every call.
 var presetMySQL84 = sync.OnceValue(buildMySQL84)
 
-// buildMySQL84 builds the [MySQL84] set; the preset builds it once and returns copies.
+// buildMySQL84 builds the [MySQL84] set; the preset builds it once and shares it.
 func buildMySQL84() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		DomainTypes:                     false,
 		CompositeTypes:                  false,
 		RangeTypes:                      false,
@@ -2677,16 +2730,16 @@ func buildMySQL84() Capabilities {
 		CorrelatedSubqueries:   true,
 		NonEquiJoins:           true,
 		OffsetWithoutLimit:     false,
-	}
+	})
 }
 
 // MySQL8019 is the preset for MySQL 8.0.19–8.3. It permits foreign keys that
 // reference nonunique indexes, unlike MySQL 8.4 and newer.
-func MySQL8019() Capabilities { return presetMySQL8019().Clone() }
+func MySQL8019() Capabilities { return presetMySQL8019() }
 
 var presetMySQL8019 = sync.OnceValue(buildMySQL8019)
 
-// buildMySQL8019 builds the [MySQL8019] set; the preset builds it once and returns copies.
+// buildMySQL8019 builds the [MySQL8019] set; the preset builds it once and shares it.
 func buildMySQL8019() Capabilities {
 	return MySQL84().
 		With(ForeignKeysRequireUniqueReference, false).
@@ -2699,11 +2752,11 @@ func buildMySQL8019() Capabilities {
 // [MySQL8019] plus the global SHOW_ROUTINE privilege, which MySQL introduced in
 // 8.0.20 and which the metadata-visibility check demands exactly where a server
 // can grant it (stokaro/ptah#916 item 3).
-func MySQL8020() Capabilities { return presetMySQL8020().Clone() }
+func MySQL8020() Capabilities { return presetMySQL8020() }
 
 var presetMySQL8020 = sync.OnceValue(buildMySQL8020)
 
-// buildMySQL8020 builds the [MySQL8020] set; the preset builds it once and returns copies.
+// buildMySQL8020 builds the [MySQL8020] set; the preset builds it once and shares it.
 func buildMySQL8020() Capabilities {
 	return MySQL8019().With(ShowRoutinePrivilege, true)
 }
@@ -2711,11 +2764,11 @@ func buildMySQL8020() Capabilities {
 // MySQL8016 is the preset for MySQL 8.0.16–8.0.18: CHECK constraints are
 // enforced, but the generic DROP CONSTRAINT clause does not exist yet (CHECK
 // drops must use ALTER TABLE ... DROP CHECK).
-func MySQL8016() Capabilities { return presetMySQL8016().Clone() }
+func MySQL8016() Capabilities { return presetMySQL8016() }
 
 var presetMySQL8016 = sync.OnceValue(buildMySQL8016)
 
-// buildMySQL8016 builds the [MySQL8016] set; the preset builds it once and returns copies.
+// buildMySQL8016 builds the [MySQL8016] set; the preset builds it once and shares it.
 func buildMySQL8016() Capabilities {
 	return MySQL8019().With(DropConstraintGeneric, false)
 }
@@ -2723,11 +2776,11 @@ func buildMySQL8016() Capabilities {
 // MySQLLegacy is the preset for MySQL before 8.0.16: no generic
 // DROP CONSTRAINT, no DROP CHECK, and CHECK constraints are parsed but not
 // enforced.
-func MySQLLegacy() Capabilities { return presetMySQLLegacy().Clone() }
+func MySQLLegacy() Capabilities { return presetMySQLLegacy() }
 
 var presetMySQLLegacy = sync.OnceValue(buildMySQLLegacy)
 
-// buildMySQLLegacy builds the [MySQLLegacy] set; the preset builds it once and returns copies.
+// buildMySQLLegacy builds the [MySQLLegacy] set; the preset builds it once and shares it.
 func buildMySQLLegacy() Capabilities {
 	return MySQL8016().
 		With(CheckConstraintsEnforced, false).
@@ -2757,11 +2810,11 @@ func buildMySQLLegacy() Capabilities {
 // its edge: 8.0.13 is below the 8.0.16 CHECK-enforcement step, so the catalog
 // arrives before the constraint behavior does and neither arm can carry both
 // (stokaro/ptah#916 item 3).
-func MySQL8013() Capabilities { return presetMySQL8013().Clone() }
+func MySQL8013() Capabilities { return presetMySQL8013() }
 
 var presetMySQL8013 = sync.OnceValue(buildMySQL8013)
 
-// buildMySQL8013 builds the [MySQL8013] set; the preset builds it once and returns copies.
+// buildMySQL8013 builds the [MySQL8013] set; the preset builds it once and shares it.
 func buildMySQL8013() Capabilities {
 	return MySQLLegacy().
 		With(CatalogViewDependencies, true).
@@ -2778,13 +2831,13 @@ func buildMySQL8013() Capabilities {
 // CREATE FUNCTION and CREATE TRIGGER succeed; CREATE MATERIALIZED VIEW is
 // refused at exit 1, the same exit the nonsense control gets. Unlike MySQL,
 // MariaDB does not quietly accept the keyword.
-func MariaDB1011() Capabilities { return presetMariaDB1011().Clone() }
+func MariaDB1011() Capabilities { return presetMariaDB1011() }
 
 var presetMariaDB1011 = sync.OnceValue(buildMariaDB1011)
 
-// buildMariaDB1011 builds the [MariaDB1011] set; the preset builds it once and returns copies.
+// buildMariaDB1011 builds the [MariaDB1011] set; the preset builds it once and shares it.
 func buildMariaDB1011() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		DomainTypes:                     false,
 		CompositeTypes:                  false,
 		RangeTypes:                      false,
@@ -2978,7 +3031,7 @@ func buildMariaDB1011() Capabilities {
 		CorrelatedSubqueries:   true,
 		NonEquiJoins:           true,
 		OffsetWithoutLimit:     false,
-	}
+	})
 }
 
 // MariaDBLegacy is the conservative preset for MariaDB before 10.2 (EOL
@@ -2986,11 +3039,11 @@ func buildMariaDB1011() Capabilities {
 // IF EXISTS guards are assumed (a floor, deliberately below what late 10.1
 // releases could do). ForServerVersion maps pre-10.2 version strings here so
 // a modern preset is never over-promised to an old server.
-func MariaDBLegacy() Capabilities { return presetMariaDBLegacy().Clone() }
+func MariaDBLegacy() Capabilities { return presetMariaDBLegacy() }
 
 var presetMariaDBLegacy = sync.OnceValue(buildMariaDBLegacy)
 
-// buildMariaDBLegacy builds the [MariaDBLegacy] set; the preset builds it once and returns copies.
+// buildMariaDBLegacy builds the [MariaDBLegacy] set; the preset builds it once and shares it.
 func buildMariaDBLegacy() Capabilities {
 	return MariaDB1011().
 		// IGNORED arrived in MariaDB 10.6.
@@ -3014,13 +3067,13 @@ func buildMariaDBLegacy() Capabilities {
 // The materialized view is a real one: selecting from it returns the same
 // count before and after an INSERT into its source table, so the result is
 // stored rather than recomputed.
-func Postgres16() Capabilities { return presetPostgres16().Clone() }
+func Postgres16() Capabilities { return presetPostgres16() }
 
 var presetPostgres16 = sync.OnceValue(buildPostgres16)
 
-// buildPostgres16 builds the [Postgres16] set; the preset builds it once and returns copies.
+// buildPostgres16 builds the [Postgres16] set; the preset builds it once and shares it.
 func buildPostgres16() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		DropConstraintGeneric:           true,
 		DropConstraintIfExists:          true,
 		DropIndexIfExists:               true,
@@ -3200,15 +3253,15 @@ func buildPostgres16() Capabilities {
 		CorrelatedSubqueries:   true,
 		NonEquiJoins:           true,
 		OffsetWithoutLimit:     true,
-	}
+	})
 }
 
 // Postgres17 is the preset for PostgreSQL 17.
-func Postgres17() Capabilities { return presetPostgres17().Clone() }
+func Postgres17() Capabilities { return presetPostgres17() }
 
 var presetPostgres17 = sync.OnceValue(buildPostgres17)
 
-// buildPostgres17 builds the [Postgres17] set; the preset builds it once and returns copies.
+// buildPostgres17 builds the [Postgres17] set; the preset builds it once and shares it.
 func buildPostgres17() Capabilities {
 	return Postgres16().With(AlterGeneratedColumnExpression, true)
 }
@@ -3228,11 +3281,11 @@ func buildPostgres17() Capabilities {
 // run 32948628838. Every other key on the line resolves as Postgres17 does,
 // which is what makes deriving the preset from it correct rather than
 // convenient (stokaro/ptah#2161).
-func Postgres18() Capabilities { return presetPostgres18().Clone() }
+func Postgres18() Capabilities { return presetPostgres18() }
 
 var presetPostgres18 = sync.OnceValue(buildPostgres18)
 
-// buildPostgres18 builds the [Postgres18] set; the preset builds it once and returns copies.
+// buildPostgres18 builds the [Postgres18] set; the preset builds it once and shares it.
 func buildPostgres18() Capabilities {
 	return Postgres17().
 		With(NamedNotNullConstraints, true).
@@ -3254,11 +3307,11 @@ func buildPostgres18() Capabilities {
 // measured it: postgres-14 answered `preset says true, server does false` for
 // unique_nulls_distinct_clause, on master, because the ladder sent every major
 // at or above 14 to Postgres16 (stokaro/ptah#2820).
-func Postgres14() Capabilities { return presetPostgres14().Clone() }
+func Postgres14() Capabilities { return presetPostgres14() }
 
 var presetPostgres14 = sync.OnceValue(buildPostgres14)
 
-// buildPostgres14 builds the [Postgres14] set; the preset builds it once and returns copies.
+// buildPostgres14 builds the [Postgres14] set; the preset builds it once and shares it.
 func buildPostgres14() Capabilities {
 	return Postgres16().
 		With(UniqueNullsDistinctClause, false).
@@ -3270,11 +3323,11 @@ func buildPostgres14() Capabilities {
 // Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
 // CREATE OR REPLACE TRIGGER and SP-GiST INCLUDE columns, which both arrived in
 // PostgreSQL 14.
-func Postgres13() Capabilities { return presetPostgres13().Clone() }
+func Postgres13() Capabilities { return presetPostgres13() }
 
 var presetPostgres13 = sync.OnceValue(buildPostgres13)
 
-// buildPostgres13 builds the [Postgres13] set; the preset builds it once and returns copies.
+// buildPostgres13 builds the [Postgres13] set; the preset builds it once and shares it.
 func buildPostgres13() Capabilities {
 	return Postgres16().
 		// PostgreSQL grew NULLS [NOT] DISTINCT and the ON DELETE column list
@@ -3325,13 +3378,13 @@ func buildPostgres13() Capabilities {
 // The TO target form is not emitted. The shared materialized-view node carries
 // a name and a body, so a target table it does not name cannot be planned; the
 // storage clause is the self-contained shape that node can express.
-func ClickHouse24() Capabilities { return presetClickHouse24().Clone() }
+func ClickHouse24() Capabilities { return presetClickHouse24() }
 
 var presetClickHouse24 = sync.OnceValue(buildClickHouse24)
 
-// buildClickHouse24 builds the [ClickHouse24] set; the preset builds it once and returns copies.
+// buildClickHouse24 builds the [ClickHouse24] set; the preset builds it once and shares it.
 func buildClickHouse24() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		// ClickHouse has no pg catalogs at all, so the question the key asks
 		// does not arise; false is the honest answer for the same reason it is
 		// false for every non-PostgreSQL-family engine.
@@ -3561,7 +3614,7 @@ func buildClickHouse24() Capabilities {
 		CorrelatedSubqueries:   false,
 		NonEquiJoins:           false,
 		OffsetWithoutLimit:     true,
-	}
+	})
 }
 
 // ClickHouse2411 is the preset for ClickHouse 24.11 and above.
@@ -3576,11 +3629,11 @@ func buildClickHouse24() Capabilities {
 // in ALTER MODIFY COLUMN statement`. The release in between that changed it is
 // unmeasured, so the lines from 24.11 are false on the conservative side. Every
 // other registered key answers identically on both.
-func ClickHouse2411() Capabilities { return presetClickHouse2411().Clone() }
+func ClickHouse2411() Capabilities { return presetClickHouse2411() }
 
 var presetClickHouse2411 = sync.OnceValue(buildClickHouse2411)
 
-// buildClickHouse2411 builds the [ClickHouse2411] set; the preset builds it once and returns copies.
+// buildClickHouse2411 builds the [ClickHouse2411] set; the preset builds it once and shares it.
 func buildClickHouse2411() Capabilities {
 	return ClickHouse24().
 		With(CheckGrantStatement, true).
@@ -3603,13 +3656,13 @@ func buildClickHouse2411() Capabilities {
 // CREATE MATERIALIZED VIEW and CREATE FUNCTION are syntax errors. A SQLite
 // user-defined function is registered by the host application through
 // sqlite3_create_function, so there is no DDL object for one to plan.
-func SQLite3() Capabilities { return presetSQLite3().Clone() }
+func SQLite3() Capabilities { return presetSQLite3() }
 
 var presetSQLite3 = sync.OnceValue(buildSQLite3)
 
-// buildSQLite3 builds the [SQLite3] set; the preset builds it once and returns copies.
+// buildSQLite3 builds the [SQLite3] set; the preset builds it once and shares it.
 func buildSQLite3() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		DomainTypes:                     false,
 		CompositeTypes:                  false,
 		RangeTypes:                      false,
@@ -3801,17 +3854,17 @@ func buildSQLite3() Capabilities {
 		CorrelatedSubqueries:   true,
 		NonEquiJoins:           true,
 		OffsetWithoutLimit:     false,
-	}
+	})
 }
 
 // SQLite352 is the preset for SQLite 3.25 through 3.52: [SQLite3] without
 // ALTER TABLE ... ALTER COLUMN ... SET NOT NULL and DROP NOT NULL, which
 // arrived in 3.53.0.
-func SQLite352() Capabilities { return presetSQLite352().Clone() }
+func SQLite352() Capabilities { return presetSQLite352() }
 
 var presetSQLite352 = sync.OnceValue(buildSQLite352)
 
-// buildSQLite352 builds the [SQLite352] set; the preset builds it once and returns copies.
+// buildSQLite352 builds the [SQLite352] set; the preset builds it once and shares it.
 func buildSQLite352() Capabilities {
 	return SQLite3().
 		With(AlterColumnSetNotNull, false).
@@ -3827,11 +3880,11 @@ func buildSQLite352() Capabilities {
 // `--server-version 3.24` on an offline render is a user saying the consumer of
 // this DDL is older than Ptah's own engine, which is exactly the case
 // stokaro/ptah#916 item 5 exists for.
-func SQLite324() Capabilities { return presetSQLite324().Clone() }
+func SQLite324() Capabilities { return presetSQLite324() }
 
 var presetSQLite324 = sync.OnceValue(buildSQLite324)
 
-// buildSQLite324 builds the [SQLite324] set; the preset builds it once and returns copies.
+// buildSQLite324 builds the [SQLite324] set; the preset builds it once and shares it.
 func buildSQLite324() Capabilities {
 	return SQLite352().
 		With(RenameColumnClause, false).
@@ -3856,13 +3909,13 @@ func buildSQLite324() Capabilities {
 // the same refusal the nonsense control gets. SQL Server's stored-result
 // equivalent is an indexed view — a plain view plus a clustered index rather
 // than its own object kind.
-func SQLServer2022() Capabilities { return presetSQLServer2022().Clone() }
+func SQLServer2022() Capabilities { return presetSQLServer2022() }
 
 var presetSQLServer2022 = sync.OnceValue(buildSQLServer2022)
 
-// buildSQLServer2022 builds the [SQLServer2022] set; the preset builds it once and returns copies.
+// buildSQLServer2022 builds the [SQLServer2022] set; the preset builds it once and shares it.
 func buildSQLServer2022() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		DomainTypes:           false,
 		CompositeTypes:        false,
 		RangeTypes:            false,
@@ -4127,7 +4180,7 @@ func buildSQLServer2022() Capabilities {
 		CorrelatedSubqueries:   true,
 		NonEquiJoins:           true,
 		OffsetWithoutLimit:     false,
-	}
+	})
 }
 
 // CockroachDB23 is the historical preset for CockroachDB's
@@ -4167,11 +4220,11 @@ func buildSQLServer2022() Capabilities {
 // the per-line presets because both measured lines answered identically to
 // every row-level TTL probe the CockroachDB owner was measured with
 // (stokaro/ptah#1027).
-func CockroachDB23() Capabilities { return presetCockroachDB23().Clone() }
+func CockroachDB23() Capabilities { return presetCockroachDB23() }
 
 var presetCockroachDB23 = sync.OnceValue(buildCockroachDB23)
 
-// buildCockroachDB23 builds the [CockroachDB23] set; the preset builds it once and returns copies.
+// buildCockroachDB23 builds the [CockroachDB23] set; the preset builds it once and shares it.
 func buildCockroachDB23() Capabilities {
 	return Postgres16().
 		// Measured on v26.3.1: `42601 syntax error at or near "nulls"`. The
@@ -4246,11 +4299,11 @@ func buildCockroachDB23() Capabilities {
 // CockroachDB25 is the preset measured on CockroachDB 25.4. The line refuses
 // both generic DROP CONSTRAINT and CREATE OR REPLACE TRIGGER, which the 26.2
 // line accepts. The remaining registered capabilities match CockroachDB26.
-func CockroachDB25() Capabilities { return presetCockroachDB25().Clone() }
+func CockroachDB25() Capabilities { return presetCockroachDB25() }
 
 var presetCockroachDB25 = sync.OnceValue(buildCockroachDB25)
 
-// buildCockroachDB25 builds the [CockroachDB25] set; the preset builds it once and returns copies.
+// buildCockroachDB25 builds the [CockroachDB25] set; the preset builds it once and shares it.
 func buildCockroachDB25() Capabilities {
 	return CockroachDB23().
 		With(DropConstraintGeneric, false).
@@ -4295,11 +4348,11 @@ func buildCockroachDB25() Capabilities {
 // CockroachDB26 is the preset measured on CockroachDB 26.2. It retains the
 // full current CockroachDB surface documented by CockroachDB23 while giving
 // the version resolver a truthful current-line name.
-func CockroachDB26() Capabilities { return presetCockroachDB26().Clone() }
+func CockroachDB26() Capabilities { return presetCockroachDB26() }
 
 var presetCockroachDB26 = sync.OnceValue(buildCockroachDB26)
 
-// buildCockroachDB26 builds the [CockroachDB26] set; the preset builds it once and returns copies.
+// buildCockroachDB26 builds the [CockroachDB26] set; the preset builds it once and shares it.
 func buildCockroachDB26() Capabilities {
 	return CockroachDB23().
 		// Stated here as well as on CockroachDB25 because this line derives
@@ -4344,11 +4397,11 @@ func buildCockroachDB26() Capabilities {
 // FUNCTION and COMMENT ON PROCEDURE, measured 2026-09-26 on v26.3.1 and read
 // back through pg_proc, while COMMENT ON MATERIALIZED VIEW, TRIGGER and POLICY
 // stay syntax errors (stokaro/ptah#3646).
-func CockroachDB263() Capabilities { return presetCockroachDB263().Clone() }
+func CockroachDB263() Capabilities { return presetCockroachDB263() }
 
 var presetCockroachDB263 = sync.OnceValue(buildCockroachDB263)
 
-// buildCockroachDB263 builds the [CockroachDB263] set; the preset builds it once and returns copies.
+// buildCockroachDB263 builds the [CockroachDB263] set; the preset builds it once and shares it.
 func buildCockroachDB263() Capabilities {
 	return CockroachDB26().
 		With(DomainTypes, true).
@@ -4372,11 +4425,11 @@ func buildCockroachDB263() Capabilities {
 // result — after an INSERT it still reports 0 while the plain view reports 1.
 // The same probe accepted advisory lock/unlock calls and row-level security
 // policy DDL, matching the enabled keys below.
-func YugabyteDB25() Capabilities { return presetYugabyteDB25().Clone() }
+func YugabyteDB25() Capabilities { return presetYugabyteDB25() }
 
 var presetYugabyteDB25 = sync.OnceValue(buildYugabyteDB25)
 
-// buildYugabyteDB25 builds the [YugabyteDB25] set; the preset builds it once and returns copies.
+// buildYugabyteDB25 builds the [YugabyteDB25] set; the preset builds it once and shares it.
 func buildYugabyteDB25() Capabilities {
 	return Postgres16().
 		// Measured on 2026.1.2: `DEFERRABLE unique constraints are not
@@ -4413,11 +4466,11 @@ func buildYugabyteDB25() Capabilities {
 //
 // alter_generated_column_expression is false on both arms and so carries
 // nothing: what differs there is why, not what (stokaro/ptah#916).
-func YugabyteDB24() Capabilities { return presetYugabyteDB24().Clone() }
+func YugabyteDB24() Capabilities { return presetYugabyteDB24() }
 
 var presetYugabyteDB24 = sync.OnceValue(buildYugabyteDB24)
 
-// buildYugabyteDB24 builds the [YugabyteDB24] set; the preset builds it once and returns copies.
+// buildYugabyteDB24 builds the [YugabyteDB24] set; the preset builds it once and shares it.
 func buildYugabyteDB24() Capabilities {
 	return YugabyteDB25().
 		// The same PostgreSQL 11 -> 15 engine swap GeneratedColumns below turns
@@ -4460,11 +4513,11 @@ func buildYugabyteDB24() Capabilities {
 // What is still not measured is the managed service. An emulator is evidence
 // about the PostgreSQL interface, not about hosted Spanner, and that is why the
 // line stays best-effort -- not for want of coverage.
-func SpannerPostgres() Capabilities { return presetSpannerPostgres().Clone() }
+func SpannerPostgres() Capabilities { return presetSpannerPostgres() }
 
 var presetSpannerPostgres = sync.OnceValue(buildSpannerPostgres)
 
-// buildSpannerPostgres builds the [SpannerPostgres] set; the preset builds it once and returns copies.
+// buildSpannerPostgres builds the [SpannerPostgres] set; the preset builds it once and shares it.
 func buildSpannerPostgres() Capabilities {
 	return Postgres16().
 		// Unmeasured against a live emulator and false on the conservative
@@ -4640,13 +4693,13 @@ func buildSpannerPostgres() Capabilities {
 // because Ptah's Oracle path does not render the object yet, that is said
 // instead, because the two are different promises and only the second one
 // changes when a later slice lands.
-func Oracle23() Capabilities { return presetOracle23().Clone() }
+func Oracle23() Capabilities { return presetOracle23() }
 
 var presetOracle23 = sync.OnceValue(buildOracle23)
 
-// buildOracle23 builds the [Oracle23] set; the preset builds it once and returns copies.
+// buildOracle23 builds the [Oracle23] set; the preset builds it once and shares it.
 func buildOracle23() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		// Oracle 23 has a real CREATE DOMAIN -- measured usable as a column
 		// type and enforcing its own NOT NULL against an INSERT of NULL -- and
 		// the renderer, the reader and the planner all reach it now
@@ -4924,7 +4977,7 @@ func buildOracle23() Capabilities {
 		CorrelatedSubqueries:   true,
 		NonEquiJoins:           true,
 		OffsetWithoutLimit:     false,
-	}
+	})
 }
 
 // Oracle21 is the capability set measured against Oracle 21.3.
@@ -4940,11 +4993,11 @@ func buildOracle23() Capabilities {
 // Two more differences exist that no capability key carries: 21.3 has no
 // BOOLEAN type and no VECTOR type, both ORA-00902. The renderer handles the
 // first by never emitting BOOLEAN on any line; see mapColumnType there.
-func Oracle21() Capabilities { return presetOracle21().Clone() }
+func Oracle21() Capabilities { return presetOracle21() }
 
 var presetOracle21 = sync.OnceValue(buildOracle21)
 
-// buildOracle21 builds the [Oracle21] set; the preset builds it once and returns copies.
+// buildOracle21 builds the [Oracle21] set; the preset builds it once and shares it.
 func buildOracle21() Capabilities {
 	return Oracle23().
 		With(DropIndexIfExists, false).
@@ -4971,13 +5024,13 @@ func buildOracle21() Capabilities {
 //
 // A key is true only where Ptah's renderer and planner reach the feature, so
 // a key reads false where the server has a feature Ptah does not plan yet.
-func YDB262() Capabilities { return presetYDB262().Clone() }
+func YDB262() Capabilities { return presetYDB262() }
 
 var presetYDB262 = sync.OnceValue(buildYDB262)
 
-// buildYDB262 builds the [YDB262] set; the preset builds it once and returns copies.
+// buildYDB262 builds the [YDB262] set; the preset builds it once and shares it.
 func buildYDB262() Capabilities {
-	return Capabilities{
+	return Of(map[Capability]bool{
 		// Constraints. The grammar has no CHECK, FOREIGN KEY, UNIQUE
 		// constraint or CONSTRAINT clause at all: each answers `no viable
 		// alternative at input` or `extraneous input`, and a named PRIMARY KEY
@@ -5301,7 +5354,7 @@ func buildYDB262() Capabilities {
 		// 25.1.4.7 and 26.2.1.14 alike: Ptah's YDB connection runs Ptah's own
 		// statement through it, so every line between them carries the key.
 		CoordinationNodes: true,
-	}
+	})
 }
 
 // YDB261 is the preset for YDB 26.1. Its full-text flag is off by default.
@@ -5309,11 +5362,11 @@ func buildYDB262() Capabilities {
 // measured on 26.1.1.22, `ALTER TABLE ... ALTER COLUMN b SET DEFAULT 2` and
 // `DROP DEFAULT` are both refused at type annotation, where 26.2.1.14 accepts
 // them.
-func YDB261() Capabilities { return presetYDB261().Clone() }
+func YDB261() Capabilities { return presetYDB261() }
 
 var presetYDB261 = sync.OnceValue(buildYDB261)
 
-// buildYDB261 builds the [YDB261] set; the preset builds it once and returns copies.
+// buildYDB261 builds the [YDB261] set; the preset builds it once and shares it.
 func buildYDB261() Capabilities {
 	return YDB262().With(AlterColumnDefault, false).With(FullTextIndexes, false).With(LocalBloomIndexes, false).With(LocalNgramIndexes, false)
 }
@@ -5334,11 +5387,11 @@ func buildYDB261() Capabilities {
 //   - a vector index over bit vectors fails its build with `Unsupported
 //     vector_type: VECTOR_TYPE_BIT`, where 26.1.1.22 builds it. 25.1, 25.2
 //     and 25.3 refuse it too.
-func YDB254() Capabilities { return presetYDB254().Clone() }
+func YDB254() Capabilities { return presetYDB254() }
 
 var presetYDB254 = sync.OnceValue(buildYDB254)
 
-// buildYDB254 builds the [YDB254] set; the preset builds it once and returns copies.
+// buildYDB254 builds the [YDB254] set; the preset builds it once and shares it.
 func buildYDB254() Capabilities {
 	return YDB261().
 		With(AddColumnWithDefault, false).
@@ -5364,11 +5417,11 @@ func buildYDB254() Capabilities {
 // PASSWORD_SECRET_PATH; 25.4 accepts the path.
 //
 // Every other statement measured on the two lines answered alike.
-func YDB253() Capabilities { return presetYDB253().Clone() }
+func YDB253() Capabilities { return presetYDB253() }
 
 var presetYDB253 = sync.OnceValue(buildYDB253)
 
-// buildYDB253 builds the [YDB253] set; the preset builds it once and returns copies.
+// buildYDB253 builds the [YDB253] set; the preset builds it once and shares it.
 func buildYDB253() Capabilities {
 	return YDB254().
 		With(TopicConsumerAvailabilityPeriod, false).
@@ -5390,11 +5443,11 @@ func buildYDB253() Capabilities {
 //     SCHEMA_CHANGES`, where 25.3 takes it and reads it back;
 //   - a vector index answers a search as its table stood at the build: a row
 //     written afterwards is not found through it, where 25.3 finds it.
-func YDB252() Capabilities { return presetYDB252().Clone() }
+func YDB252() Capabilities { return presetYDB252() }
 
 var presetYDB252 = sync.OnceValue(buildYDB252)
 
-// buildYDB252 builds the [YDB252] set; the preset builds it once and returns copies.
+// buildYDB252 builds the [YDB252] set; the preset builds it once and shares it.
 func buildYDB252() Capabilities {
 	return YDB253().
 		With(DocumentTypeDefaults, false).
@@ -5419,11 +5472,11 @@ func buildYDB252() Capabilities {
 //     disabled`);
 //   - a transfer is behind a flag that is off (`Topic transfer creation is
 //     disabled`).
-func YDB251() Capabilities { return presetYDB251().Clone() }
+func YDB251() Capabilities { return presetYDB251() }
 
 var presetYDB251 = sync.OnceValue(buildYDB251)
 
-// buildYDB251 builds the [YDB251] set; the preset builds it once and returns copies.
+// buildYDB251 builds the [YDB251] set; the preset builds it once and shares it.
 func buildYDB251() Capabilities {
 	return YDB252().
 		With(WideDateTimeTypes, false).
@@ -5549,11 +5602,11 @@ const timescaleExtension = "timescaledb"
 
 // ForDialect returns the default preset for a dialect name (normalized via
 // platform.NormalizeDialect): the current supported version line of that
-// dialect. Unknown dialects get nil — the conservative empty set.
+// dialect. Unknown dialects get the zero set, the conservative empty one.
 func ForDialect(dialect string) Capabilities {
 	preset := defaultDialectPresets[platform.NormalizeDialect(dialect)]
 	if preset == nil {
-		return nil
+		return Capabilities{}
 	}
 	return preset()
 }

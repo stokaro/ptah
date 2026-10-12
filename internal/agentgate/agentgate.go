@@ -460,7 +460,7 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 // capabilities is the preset the checks run against, resolved to the dialect
 // default when the operator named no server.
 func (r *Runner) capabilities() capability.Capabilities {
-	if r.opts.Capabilities == nil {
+	if r.opts.Capabilities.Len() == 0 {
 		return capability.ForDialect(r.opts.Dialect)
 	}
 	return r.opts.Capabilities

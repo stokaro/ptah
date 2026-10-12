@@ -267,10 +267,11 @@ func (p Profile) Refined(readings ...Reading) Profile {
 	// Identifiers are left alone: they come from the dialect the version
 	// ladder resolved, which no session setting moves, and recomputing them
 	// from Dialect would answer for mysql on a MariaDB reached over mysql://.
-	merged := make(capability.Capabilities, len(p.Capabilities))
+	flags := make(map[capability.Capability]bool, len(p.Capabilities))
 	for _, row := range p.Capabilities {
-		merged[capability.Capability(row.Key)] = row.Supported
+		flags[capability.Capability(row.Key)] = row.Supported
 	}
+	merged := capability.Of(flags)
 	p.Traits.EnumModeling = merged.EnumModeling()
 	p.Traits.ForeignKeyReference = merged.ForeignKeyReference()
 
@@ -282,7 +283,7 @@ func (p Profile) Refined(readings ...Reading) Profile {
 func answer(key capability.Capability, preset bool, readings []Reading) (value bool, reason string) {
 	value = preset
 	for _, reading := range readings {
-		said, decided := reading.Capabilities[key]
+		said, decided := reading.Capabilities.Has(key), reading.Capabilities.Established(key)
 		if strings.TrimSpace(reading.Reason) == "" || !decided || said == value {
 			continue
 		}

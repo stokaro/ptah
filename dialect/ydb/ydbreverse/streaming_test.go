@@ -73,7 +73,7 @@ func TestStreamingChangeCloneDoesNotShareOptionalSettings(t *testing.T) {
 
 func streamingReverseRequest(change *ydbdiff.StreamingQuery) schemaext.ReversalRequest {
 	return schemaext.ReversalRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-		Capabilities: capability.Capabilities{capability.StreamingQueries: true},
+		Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}),
 		Changes:      []schemaext.ChangeRecord{{Subject: ydbstreaming.Ref("app", "query"), Value: change}},
 	}
 }

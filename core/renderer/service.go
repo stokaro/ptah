@@ -109,7 +109,6 @@ func Render(ctx context.Context, service Service, request Request) (Result, erro
 	}
 	inputs := slices.Clone(request.Nodes)
 	request.Nodes = slices.Clone(inputs)
-	request.Capabilities = request.Capabilities.Clone()
 	nodes := len(request.Nodes)
 	result, err := service.Render(ctx, request)
 	if err != nil {

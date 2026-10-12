@@ -131,7 +131,7 @@ func TestRelationsCaptureIsolatesTargetFactsBetweenOwners(t *testing.T) {
 	c := qt.New(t)
 	var received schemaext.RelationRequest
 	provider := relationProvider(relationsFunc(func(_ context.Context, request schemaext.RelationRequest) (schemaext.RelationResult, error) {
-		request.Capabilities[capability.CreateIndexConcurrently] = false
+		request.Capabilities = request.Capabilities.With(capability.CreateIndexConcurrently, false)
 		request.Identifiers.ResolvedNames[0].Key = "mutated"
 		return relationReply(request), nil
 	}))
@@ -145,7 +145,7 @@ func TestRelationsCaptureIsolatesTargetFactsBetweenOwners(t *testing.T) {
 	})
 	runtime := mustRuntime(c, provider)
 	request := relationRequest(runtime)
-	request.Capabilities = capability.Capabilities{capability.CreateIndexConcurrently: true}
+	request.Capabilities = capability.Of(map[capability.Capability]bool{capability.CreateIndexConcurrently: true})
 	request.Identifiers = identifier.ForSQLServerCatalog("Latin1_General_CI_AS").WithResolvedNames([]identifier.ResolvedName{{Name: "orders", Key: "orders"}})
 	snapshot, err := runtime.CaptureRelations(t.Context(), request)
 	c.Assert(err, qt.IsNil)

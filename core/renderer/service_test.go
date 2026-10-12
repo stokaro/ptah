@@ -23,7 +23,7 @@ func TestRenderPreservesBatchContextAndIsolatesContainers(t *testing.T) {
 	c := qt.New(t)
 	node := ast.NewRawSQL("SELECT 1;")
 	nodes := []ast.Node{node, &ast.StatementList{}}
-	caps := capability.Capabilities{capability.TransactionalDDL: true}
+	caps := capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true})
 	fragments := []string{"SELECT 1;\n", ""}
 	omissions := []renderer.Omission{{Dialect: "custom", Kind: "table", Name: "items", Reason: "unsupported", Property: "storage", Detail: "tier", Remedy: "choose another tier"}}
 	calls := 0
@@ -34,7 +34,7 @@ func TestRenderPreservesBatchContextAndIsolatesContainers(t *testing.T) {
 		c.Assert(request.Nodes, qt.DeepEquals, nodes)
 		c.Assert(request.Capabilities, qt.DeepEquals, caps)
 		request.Nodes[0] = nil
-		request.Capabilities[capability.TransactionalDDL] = false
+		request.Capabilities = request.Capabilities.With(capability.TransactionalDDL, false)
 		return renderer.Result{Complete: true, Fragments: fragments, Omissions: omissions}, nil
 	})
 	result, err := renderer.Render(t.Context(), service, renderer.Request{Target: "custom", Capabilities: caps, Nodes: nodes})
@@ -45,7 +45,7 @@ func TestRenderPreservesBatchContextAndIsolatesContainers(t *testing.T) {
 	c.Assert(result.Fragments, qt.DeepEquals, []string{"SELECT 1;\n", ""})
 	c.Assert(result.Omissions, qt.DeepEquals, []renderer.Omission{{Dialect: "custom", Kind: "table", Name: "items", Reason: "unsupported", Property: "storage", Detail: "tier", Remedy: "choose another tier"}})
 	c.Assert(nodes[0], qt.Equals, node)
-	c.Assert(caps[capability.TransactionalDDL], qt.IsTrue)
+	c.Assert(caps.Has(capability.TransactionalDDL), qt.IsTrue)
 	c.Assert(calls, qt.Equals, 1)
 }
 

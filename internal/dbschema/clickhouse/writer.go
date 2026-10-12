@@ -143,7 +143,7 @@ func NewClickHouseWriter(db *sql.DB, schema string) *Writer {
 // NewClickHouseWriterForRunner constructs a writer bound to a pool or pinned
 // database session.
 func NewClickHouseWriterForRunner(runner sqlrunner.Runner, schema string) *Writer {
-	return NewClickHouseWriterForRunnerWithCapabilities(runner, schema, nil)
+	return NewClickHouseWriterForRunnerWithCapabilities(runner, schema, capability.Capabilities{})
 }
 
 // NewClickHouseWriterForRunnerWithCapabilities builds a writer whose
@@ -793,9 +793,9 @@ func (w *Writer) IsDryRun() bool { return w.dryRun }
 func (w *Writer) realmCapabilities(ctx context.Context) (capability.Capabilities, string, error) {
 	var version string
 	if err := w.db.QueryRowContext(ctx, databaseRealmVersionQuery).Scan(&version); err != nil {
-		return nil, "", fmt.Errorf("clickhouse: inspect server version: %w", err)
+		return capability.Capabilities{}, "", fmt.Errorf("clickhouse: inspect server version: %w", err)
 	}
-	if len(w.caps) > 0 {
+	if w.caps.Len() > 0 {
 		return w.caps, version, nil
 	}
 	return capability.ResolveServerVersion(platform.ClickHouse, version).Capabilities, version, nil

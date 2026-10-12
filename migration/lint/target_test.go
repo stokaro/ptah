@@ -43,7 +43,7 @@ func TestResolveTarget_HappyPath(t *testing.T) {
 	t.Run("a live server keeps a dialect the linter cannot analyze", func(t *testing.T) {
 		c := qt.New(t)
 
-		target := lint.TargetFromServer("oracle", "23.0.0", nil, "")
+		target := lint.TargetFromServer("oracle", "23.0.0", capability.Capabilities{}, "")
 
 		c.Assert(target.Dialect, qt.Equals, "oracle")
 	})
@@ -265,9 +265,9 @@ func TestLoadConfigFS_ServerVersion_FailurePath(t *testing.T) {
 	})
 }
 
-// Every view an analysis hands out is a deep copy, and a capability set is a
-// map. Without the clone, a caller that wrote to the set it was given would
-// rewrite what every rule in that analysis reads.
+// Every view an analysis hands out is a copy. A caller that gives the view it
+// was handed another capability set must not change what every rule in that
+// analysis reads.
 func TestAnalyzeFS_HandsOutTargetCopies(t *testing.T) {
 	t.Run("the analysis target is a copy", func(t *testing.T) {
 		c := qt.New(t)
@@ -276,7 +276,8 @@ func TestAnalyzeFS_HandsOutTargetCopies(t *testing.T) {
 		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
 		c.Assert(err, qt.IsNil)
 
-		analysis.Target().Capabilities[capability.NamedNotNullConstraints] = false
+		handed := analysis.Target()
+		handed.Capabilities = handed.Capabilities.With(capability.NamedNotNullConstraints, false)
 
 		c.Assert(analysis.Target().Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
 	})
@@ -290,16 +291,15 @@ func TestAnalyzeFS_HandsOutTargetCopies(t *testing.T) {
 		files := analysis.Files()
 		c.Assert(files, qt.Not(qt.HasLen), 0)
 
-		files[0].Target.Capabilities[capability.NamedNotNullConstraints] = false
+		files[0].Target.Capabilities = files[0].Target.Capabilities.With(capability.NamedNotNullConstraints, false)
 
 		c.Assert(analysis.Files()[0].Target.Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
 	})
 }
 
-// The caller keeps its own Target after handing one to AnalyzeFS, so the
-// analysis clones it on the way in as well as on the way out. Without that, an
-// embedder writing to its own set would change what every rule in a finished
-// analysis reads.
+// The caller keeps its own Target after handing one to AnalyzeFS. An embedder
+// giving its own Target another capability set must not change what every
+// rule in a finished analysis reads.
 func TestAnalyzeFS_DoesNotStoreTheCallersTargetMap(t *testing.T) {
 	c := qt.New(t)
 	target, err := lint.ResolveTarget("postgres", "18")
@@ -307,8 +307,8 @@ func TestAnalyzeFS_DoesNotStoreTheCallersTargetMap(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
 	c.Assert(err, qt.IsNil)
 
-	// The caller keeps its own Target and writes to the set it still holds.
-	target.Capabilities[capability.NamedNotNullConstraints] = false
+	// The caller keeps its own Target and gives it another set.
+	target.Capabilities = target.Capabilities.With(capability.NamedNotNullConstraints, false)
 
 	c.Assert(analysis.Target().Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
 	c.Assert(analysis.Files()[0].Target.Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)

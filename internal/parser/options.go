@@ -28,7 +28,7 @@ func WithDialect(dialect string) Option {
 // original value safely.
 func WithCapabilities(capabilities capability.Capabilities) Option {
 	return func(p *Parser) {
-		p.capabilities = capabilities.Clone()
+		p.capabilities = capabilities
 	}
 }
 
@@ -48,9 +48,9 @@ func (p *Parser) Dialect() string {
 	return p.dialect
 }
 
-// Capabilities returns an independent copy of the parser capability set.
+// Capabilities returns the parser capability set.
 func (p *Parser) Capabilities() capability.Capabilities {
-	return p.capabilities.Clone()
+	return p.capabilities
 }
 
 // targetHas answers whether the parser's target has key: from the capability

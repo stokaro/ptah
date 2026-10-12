@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -81,7 +82,7 @@ func TestDiffResolvedStates_ScopesAPolicyWhole(t *testing.T) {
 			options := test.options
 			options.Runtime = must.Must(builtin.New())
 
-			report, diff, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, nil, devServerSides{}, options)
+			report, diff, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, capability.Capabilities{}, devServerSides{}, options)
 
 			c.Assert(err, qt.ErrorIs, featureselect.ErrPartialScope)
 			c.Assert(err, qt.ErrorMatches, splitPolicyErr)
@@ -91,7 +92,7 @@ func TestDiffResolvedStates_ScopesAPolicyWhole(t *testing.T) {
 	}
 	t.Run("an exclusion of an unbound table", func(t *testing.T) {
 		c := qt.New(t)
-		_, _, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, nil, devServerSides{},
+		_, _, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, capability.Capabilities{}, devServerSides{},
 			DiffOptions{Exclude: []string{"audit"}, Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.IsNil)
 	})

@@ -19,10 +19,10 @@ import (
 // literalCapabilities lets [ydbtype.Literal] write every literal a stored
 // default can be. A line that refuses a default of some type at CREATE TABLE
 // never stores one, so a stored default is written whatever the line.
-var literalCapabilities = capability.Capabilities{
+var literalCapabilities = capability.Of(map[capability.Capability]bool{
 	capability.SmallIntegerDefaults: true,
 	capability.DocumentTypeDefaults: true,
-}
+})
 
 // defaultLiteral writes a stored default as the YQL literal
 // [ydbtype.Literal] writes for the same value, which is the spelling a

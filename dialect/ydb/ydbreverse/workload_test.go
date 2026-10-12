@@ -17,7 +17,7 @@ import (
 
 func workloadReverseRequest(ref objectidentity.ID, change schemaext.ChangeValue) schemaext.ReversalRequest {
 	return schemaext.ReversalRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-		Capabilities: capability.Capabilities{capability.ResourcePools: true}, Changes: []schemaext.ChangeRecord{{Subject: ref, Value: change}}}
+		Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Changes: []schemaext.ChangeRecord{{Subject: ref, Value: change}}}
 }
 
 func TestPoolReversalPreservesResetAndZeroWithoutSharingPointers(t *testing.T) {

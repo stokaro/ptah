@@ -59,7 +59,7 @@ func CompareReportingUndecidedAdditions(
 	opts *config.CompareOptions,
 	runtime schemapreparation.Runtime,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
-	return compareReportingUndecidedAdditions(ctx, desired, database, opts, nil, 0, runtime)
+	return compareReportingUndecidedAdditions(ctx, desired, database, opts, capability.Capabilities{}, 0, runtime)
 }
 
 // compareReportingUndecidedAdditions is [CompareReportingUndecidedAdditions]
@@ -88,7 +88,7 @@ func compareReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	if len(caps) == 0 {
+	if caps.Len() == 0 {
 		caps = comparisonCapabilities(opts.Dialect)
 	}
 	// The rules the target gives the shared comparison; a comparison without
@@ -479,7 +479,7 @@ func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime
 		return &RefusalError{cause: err}
 	}
 	caps := info.Capabilities
-	if len(caps) == 0 {
+	if caps.Len() == 0 {
 		caps = capability.ForDialect(info.Dialect)
 	}
 	// A column does not carry the schema of the user type it names, only the

@@ -126,7 +126,7 @@ func TestParse_AlterGuard_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a MariaDB set that does not answer for the guard", dialect: platform.MariaDB,
-			caps: capability.Capabilities{capability.Views: true}, clause: "DROP INDEX IF EXISTS ix",
+			caps: capability.Of(map[capability.Capability]bool{capability.Views: true}), clause: "DROP INDEX IF EXISTS ix",
 			want: []ast.AlterOperation{&ast.DropConstraintOperation{ConstraintName: "ix", IfExists: true, Unique: true}},
 		},
 	}

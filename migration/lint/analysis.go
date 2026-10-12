@@ -308,9 +308,9 @@ type Analysis struct {
 // planned against reads it here rather than repeating the resolution, so the
 // sentence a reader sees and the set the rules read cannot disagree.
 //
-// The capability set is a copy, like every other view this type hands out.
+// The Target is a copy, like every other view this type hands out.
 func (a Analysis) Target() Target {
-	return a.target.clone()
+	return a.target
 }
 
 // Files returns every prepared migration file in the captured directory.
@@ -397,7 +397,6 @@ func cloneFiles(files []File) []File {
 }
 
 func cloneFile(file File) File {
-	file.Target = file.Target.clone()
 	file.suppressedRules = slices.Clone(file.suppressedRules)
 	file.Changes = slices.Clone(file.Changes)
 	file.scopeExcluded = maps.Clone(file.scopeExcluded)
@@ -412,7 +411,6 @@ func cloneFile(file File) File {
 }
 
 func cloneStatement(statement Statement) Statement {
-	statement.Target = statement.Target.clone()
 	statement.Words = slices.Clone(statement.Words)
 	statement.sourceWords = slices.Clone(statement.sourceWords)
 	statement.effects = slices.Clone(statement.effects)

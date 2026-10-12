@@ -55,7 +55,7 @@ func TestWorkloadComparisonKeepsDatabaseObjectsOutsideApplicationScope(t *testin
 			t.Run(string(family.kind)+"/"+string(knowledge), func(t *testing.T) {
 				c := qt.New(t)
 				result, err := workloadRuntime().CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
-					Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.ResourcePools: true}, Kinds: []schemaext.Kind{family.kind},
+					Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Kinds: []schemaext.Kind{family.kind},
 					Desired: workloadState(family.kind, schemaext.Desired, knowledge, nil),
 					Current: workloadState(family.kind, schemaext.Observed, schemaext.Complete, family.current),
 				})
@@ -100,7 +100,7 @@ func TestPoolComparisonPreservesLimitsAndEvidence(t *testing.T) {
 			current := workloadState(ydbworkload.PoolKind, schemaext.Observed, test.currentKnowledge, nil, test.currentLimits...)
 			setPoolOperands(&desired, &current, test.desired, test.current)
 			result, err := workloadRuntime().CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
-				Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.ResourcePools: true}, Kinds: []schemaext.Kind{ydbworkload.PoolKind}, Desired: desired, Current: current,
+				Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Kinds: []schemaext.Kind{ydbworkload.PoolKind}, Desired: desired, Current: current,
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Complete, qt.IsTrue)
@@ -127,7 +127,7 @@ func TestWorkloadComparisonDoesNotCreateAnUninspectedDefaultPool(t *testing.T) {
 	desired := workloadState(ydbworkload.PoolKind, schemaext.Desired, schemaext.Complete, nil)
 	desired.Objects = must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("default", "", ydbworkload.PoolSpec{ResourceWeight: new(50.0)})))
 	result, err := workloadRuntime().CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
-		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.ResourcePools: true}, Kinds: []schemaext.Kind{ydbworkload.PoolKind},
+		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Kinds: []schemaext.Kind{ydbworkload.PoolKind},
 		Desired: desired, Current: workloadState(ydbworkload.PoolKind, schemaext.Observed, schemaext.Complete, nil),
 	})
 	c.Assert(err, qt.IsNil)
@@ -143,7 +143,7 @@ func TestWorkloadExplicitAbsenceRequiresAnOperationWithoutChangingSourceEvidence
 	desired := workloadState(ydbworkload.PoolKind, schemaext.Desired, schemaext.Complete, nil,
 		schemaext.SubjectCoverage{Kind: ydbworkload.PoolKind, Subject: ref, Knowledge: absent})
 	result, err := workloadRuntime().CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
-		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.ResourcePools: true}, Kinds: []schemaext.Kind{ydbworkload.PoolKind},
+		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Kinds: []schemaext.Kind{ydbworkload.PoolKind},
 		Desired: desired, Current: workloadState(ydbworkload.PoolKind, schemaext.Observed, schemaext.Complete, &ydbworkload.ObservedPool{}),
 	})
 	c.Assert(err, qt.IsNil)
@@ -171,7 +171,7 @@ func TestClassifierComparisonCapturesRoutingAndRankOperands(t *testing.T) {
 			current := workloadState(ydbworkload.ClassifierKind, schemaext.Observed, schemaext.Complete, nil)
 			current.Objects = observedClassifierObjects(test.before)
 			result, err := workloadRuntime().CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
-				Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.ResourcePools: true}, Kinds: []schemaext.Kind{ydbworkload.ClassifierKind},
+				Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Kinds: []schemaext.Kind{ydbworkload.ClassifierKind},
 				Desired: workloadState(ydbworkload.ClassifierKind, schemaext.Desired, schemaext.Complete, test.after), Current: current,
 			})
 			c.Assert(err, qt.IsNil)
@@ -198,7 +198,7 @@ func TestWorkloadComparisonRefusesInvalidRequestsWithoutPartialOutput(t *testing
 		want   error
 	}{
 		{"wrong target", func(r *schemaext.ObjectComparisonRequest) { r.Target = "postgres" }, ptaherr.ErrUnsupportedDialect},
-		{"missing capability", func(r *schemaext.ObjectComparisonRequest) { r.Capabilities = nil }, ptaherr.ErrUnsupportedFeature},
+		{"missing capability", func(r *schemaext.ObjectComparisonRequest) { r.Capabilities = capability.Capabilities{} }, ptaherr.ErrUnsupportedFeature},
 		{"wrong identifiers", func(r *schemaext.ObjectComparisonRequest) { r.Identifiers = identifier.ForDialect("postgres") }, schemaext.ErrInvalidValue},
 		{"foreign vocabulary", func(r *schemaext.ObjectComparisonRequest) { r.Kinds = []schemaext.Kind{ydbworkload.ClassifierKind} }, schemaext.ErrInvalidValue},
 		{"default limit", func(r *schemaext.ObjectComparisonRequest) {
@@ -212,7 +212,7 @@ func TestWorkloadComparisonRefusesInvalidRequestsWithoutPartialOutput(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			request := schemaext.ObjectComparisonRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.ResourcePools: true}, Kinds: []schemaext.Kind{ydbworkload.PoolKind},
+			request := schemaext.ObjectComparisonRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.ResourcePools: true}), Kinds: []schemaext.Kind{ydbworkload.PoolKind},
 				Desired: workloadState(ydbworkload.PoolKind, schemaext.Desired, schemaext.Complete, &ydbworkload.DesiredPool{}),
 				Current: workloadState(ydbworkload.PoolKind, schemaext.Observed, schemaext.Complete, nil)}
 			test.mutate(&request)

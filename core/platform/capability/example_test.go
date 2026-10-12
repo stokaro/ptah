@@ -9,10 +9,10 @@ import (
 
 // ExampleForDialect resolves the default capability preset for a dialect name
 // and gates an emission with Has. Any spelling platform.NormalizeDialect
-// accepts works ("postgresql" here). An unknown dialect gets nil — the
-// conservative empty set — and reading it is safe: every Has answer on it is
-// false, so a target Ptah does not model is treated as having nothing rather
-// than everything.
+// accepts works ("postgresql" here). An unknown dialect gets the zero set,
+// the conservative empty one, and reading it is safe: every Has answer on it
+// is false, so a target Ptah does not model is treated as having nothing
+// rather than everything.
 func ExampleForDialect() {
 	postgres := capability.ForDialect("postgresql")
 	mysql := capability.ForDialect("mysql")
@@ -21,20 +21,20 @@ func ExampleForDialect() {
 	fmt.Println("mysql concurrent index builds:", mysql.Has(capability.CreateIndexConcurrently))
 
 	unknown := capability.ForDialect("db2")
-	fmt.Println("unknown dialect preset is nil:", unknown == nil)
+	fmt.Println("unknown dialect preset is empty:", unknown.Len() == 0)
 	fmt.Println("unknown dialect concurrent index builds:", unknown.Has(capability.CreateIndexConcurrently))
 
 	// Output:
 	// postgres concurrent index builds: true
 	// mysql concurrent index builds: false
-	// unknown dialect preset is nil: true
+	// unknown dialect preset is empty: true
 	// unknown dialect concurrent index builds: false
 }
 
 // ExampleCapabilities_With composes a target description from a preset: start
 // from the closest shipped preset, override the keys that differ, and Validate
-// the result. With never mutates its receiver — it returns a copy — so the
-// preset the set was derived from keeps answering for the unmodified target.
+// the result. A set never changes: With returns a new set, so the preset the
+// set was derived from keeps answering for the unmodified target.
 func ExampleCapabilities_With() {
 	base := capability.Postgres17()
 	restricted := base.With(capability.CreateIndexConcurrently, false)
@@ -62,16 +62,16 @@ func ExampleCapabilities_With() {
 // satisfy every rule, which is the last line here — hand-built sets are the
 // ones to check.
 func ExampleCapabilities_Validate() {
-	typo := capability.Capabilities{"drop_index_if_exist": true}
+	typo := capability.Of(map[capability.Capability]bool{"drop_index_if_exist": true})
 	fmt.Println("unregistered key refused:", typo.Validate() != nil)
 
-	orphan := capability.Capabilities{capability.DropConstraintIfExists: true}
+	orphan := capability.Of(map[capability.Capability]bool{capability.DropConstraintIfExists: true})
 	fmt.Println("unmet requirement refused:", orphan.Validate() != nil)
 
-	bothEnumModes := capability.Capabilities{
+	bothEnumModes := capability.Of(map[capability.Capability]bool{
 		capability.EnumInlineColumn: true,
 		capability.EnumCustomType:   true,
-	}
+	})
 	fmt.Println("mutually exclusive pair refused:", bothEnumModes.Validate() != nil)
 
 	fmt.Println("shipped preset accepted:", capability.Postgres17().Validate() == nil)

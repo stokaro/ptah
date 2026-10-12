@@ -63,7 +63,7 @@ func NewWithCapabilities(dialect string, buf *bufwriter.Writer, caps capability.
 		w:            buf,
 		dialect:      dialect,
 		dialectUpper: strings.ToUpper(dialect),
-		caps:         caps.Clone(),
+		caps:         caps,
 	}
 }
 

@@ -107,7 +107,7 @@ func TestPlanTypes_RefusesWhatTheTargetCannotCreate(t *testing.T) {
 			request := planning(test.changes...)
 			request.Target = test.target
 			for _, key := range test.without {
-				delete(request.Capabilities, key)
+				request.Capabilities = request.Capabilities.With(key, false)
 			}
 
 			result, err := newRuntime(c).PlanFeatures(t.Context(), request)
@@ -132,7 +132,7 @@ func TestPlanTypes_LeavesWhatTheTargetHolds(t *testing.T) {
 			Differs: []string{pgtype.DiffBaseType}}),
 	)
 	request.Target = "cockroachdb"
-	delete(request.Capabilities, capability.DomainTypes)
+	request.Capabilities = request.Capabilities.With(capability.DomainTypes, false)
 
 	result, err := newRuntime(c).PlanFeatures(t.Context(), request)
 
@@ -169,8 +169,7 @@ func TestPlanTypes_DeclaresForARender(t *testing.T) {
 // model.
 func TestPlanTypes_RefusesADeclarationTheTargetCannotCreate(t *testing.T) {
 	c := qt.New(t)
-	caps := capability.Postgres17()
-	delete(caps, capability.RangeTypes)
+	caps := capability.Postgres17().With(capability.RangeTypes, false)
 	request := featureplan.DeclarationRequest{Target: "cockroachdb", Identifiers: identifier.ForDialect("cockroachdb"), Capabilities: caps,
 		Objects: []schemaext.Object{must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "", "span"), &pgtype.DesiredRange{Subtype: "int4"}))}}
 

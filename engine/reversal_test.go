@@ -64,7 +64,7 @@ func reverseFixture(_ context.Context, request schemaext.ReversalRequest) ([]sch
 }
 
 func reversalRequest() schemaext.ReversalRequest {
-	return schemaext.ReversalRequest{Target: " ALTERNATE ", Identifiers: identifier.ForDialect("postgres"), Capabilities: capability.Capabilities{capability.Changefeeds: true},
+	return schemaext.ReversalRequest{Target: " ALTERNATE ", Identifiers: identifier.ForDialect("postgres"), Capabilities: capability.Of(map[capability.Capability]bool{capability.Changefeeds: true}),
 		Changes: []schemaext.ChangeRecord{
 			{Subject: comparedRef(conversionFirst, "one"), Value: &reversalChange{ID: conversionFirst, Number: 3}},
 			{Subject: comparedRef(conversionSecond, "two"), Value: &reversalChange{ID: conversionSecond, Number: 5}},
@@ -82,7 +82,7 @@ func TestReversalBatchesOwnedKindsAndIsolatesRequestsAndReplies(t *testing.T) {
 	service := reversalFunc(func(ctx context.Context, request schemaext.ReversalRequest) ([]schemaext.Reversal, error) {
 		calls++
 		received, receivedContext = request, ctx
-		request.Capabilities[capability.Changefeeds] = false
+		request.Capabilities = request.Capabilities.With(capability.Changefeeds, false)
 		var err error
 		reply, err = reverseFixture(ctx, request)
 		request.Changes[0].Value.(*reversalChange).Number = 99

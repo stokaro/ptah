@@ -78,7 +78,7 @@ func TestStreamingComparisonNeedsNoTableAndRespectsEvidence(t *testing.T) {
 			c := qt.New(t)
 			runtime := streamingRuntime(c)
 			request := schemaext.ObjectComparisonRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-				Capabilities: capability.Capabilities{capability.StreamingQueries: true}, Kinds: []schemaext.Kind{ydbstreaming.Kind},
+				Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}), Kinds: []schemaext.Kind{ydbstreaming.Kind},
 				Desired: streamingState(c, schemaext.Desired, test.desiredKnowledge, test.desired, test.desiredLimits...),
 				Current: streamingState(c, schemaext.Observed, test.currentKnowledge, test.current, test.currentLimits...),
 			}
@@ -117,7 +117,7 @@ func TestStreamingComparisonRefusesInvalidInputsWithoutPartialOutput(t *testing.
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			request := schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbstreaming.Kind}, Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.StreamingQueries: true},
+			request := schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbstreaming.Kind}, Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}),
 				Desired: streamingState(c, schemaext.Desired, schemaext.Complete, &ydbstreaming.Spec{Text: "SELECT 1;"}),
 				Current: streamingState(c, schemaext.Observed, schemaext.Complete, nil)}
 			test.mutate(&request)
@@ -150,7 +150,7 @@ func TestStreamingComparisonAdoptsRawStateFromAnUnknownSource(t *testing.T) {
 	c := qt.New(t)
 	observed := &ydbstreaming.Spec{Text: "SELECT 1;", Run: new(false)}
 	request := schemaext.ObjectComparisonRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"),
-		Capabilities: capability.Capabilities{capability.StreamingQueries: true}, Kinds: []schemaext.Kind{ydbstreaming.Kind},
+		Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}), Kinds: []schemaext.Kind{ydbstreaming.Kind},
 		Desired: streamingState(c, schemaext.Desired, schemaext.Uninspected, nil),
 		Current: streamingState(c, schemaext.Observed, schemaext.Complete, observed),
 	}
@@ -168,7 +168,7 @@ func TestStreamingComparisonKeepsServerOwnedLimits(t *testing.T) {
 	c := qt.New(t)
 	hidden := ydbstreaming.Ref("", ".hidden")
 	request := schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbstreaming.Kind},
-		Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.StreamingQueries: true},
+		Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}),
 		Desired: streamingState(c, schemaext.Desired, schemaext.Complete, nil),
 		Current: streamingState(c, schemaext.Observed, schemaext.Complete, nil, schemaext.SubjectCoverage{
 			Kind: ydbstreaming.Kind, Subject: hidden, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "server-owned node"},
@@ -197,7 +197,7 @@ func TestStreamingComparisonKeepsCaseAndDirectoryIdentity(t *testing.T) {
 			desired.Objects = must.Must(schemaext.NewObjects(ydbstreaming.DesiredObject(test.desiredSchema, test.desiredName, "", ydbstreaming.Spec{Text: "SELECT 1;"}, false)))
 			observed := ydbstreaming.Spec{Text: "SELECT 1;", Run: new(false)}
 			current.Objects = must.Must(schemaext.NewObjects(ydbstreaming.ObservedObject(test.currentSchema, test.currentName, observed)))
-			result, err := streamingRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbstreaming.Kind}, Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Capabilities{capability.StreamingQueries: true}, Desired: desired, Current: current})
+			result, err := streamingRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{Target: "ydb", Kinds: []schemaext.Kind{ydbstreaming.Kind}, Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.Of(map[capability.Capability]bool{capability.StreamingQueries: true}), Desired: desired, Current: current})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Undecided, qt.HasLen, 0)
 			c.Assert(result.Changes, qt.ContentEquals, []schemaext.ChangeRecord{

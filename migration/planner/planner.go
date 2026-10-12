@@ -169,7 +169,7 @@ type Options struct {
 // CapabilitiesFor returns the configured capability set, falling back to the
 // default preset for dialect when no explicit set was provided.
 func (o Options) CapabilitiesFor(dialect string) capability.Capabilities {
-	if o.Capabilities != nil {
+	if o.Capabilities.Len() != 0 {
 		return o.Capabilities
 	}
 	return capability.ForDialect(dialect)

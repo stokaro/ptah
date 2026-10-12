@@ -224,7 +224,7 @@ func TestGenerateCheckpoint_YDBStandaloneFeaturesUseSelectedOwners(t *testing.T)
 		)),
 	}
 	caps := capability.YDB262()
-	caps[capability.StreamingQueries] = true
+	caps = caps.With(capability.StreamingQueries, true)
 	up, down, err := generateCheckpointWithDatabaseInfo(t.Context(), must.Must(builtin.New()), schema,
 		catalog.ServerInfo{Dialect: "ydb", Capabilities: caps})
 	c.Assert(err, qt.IsNil)
