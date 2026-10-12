@@ -1547,7 +1547,7 @@ func (p *parser) parseComposite(block *hclsyntax.Block) error {
 // type is written as a bare keyword (`type = bigint`), which has no string value
 // to evaluate, and it can also carry Atlas's sql() escape hatch -- issue #1106.
 func (p *parser) functionArgType(attr *hclsyntax.Attribute) string {
-	if name, ok := userTypeReferenceName(p.optionalRawExpr(attr)); ok {
+	if name, ok := p.typeReferenceName(p.optionalRawExpr(attr)); ok {
 		return name
 	}
 	return p.optionalRawExpr(attr)

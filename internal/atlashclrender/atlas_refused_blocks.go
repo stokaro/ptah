@@ -14,15 +14,20 @@ import (
 )
 
 // Top-level HCL block spellings an inspected render can emit. Only the ones a
-// refusal list, a diagnostic, or a reference names are constants: the token has
-// to be spelled identically by the renderer, by [atlasRefusedBlockTypes], by
-// [renderer.documentDeclares], and by the conformance runs that re-measure both
-// against the binary, and string literals drift where one constant cannot.
+// refusal list, a diagnostic, a reference or a placement's order names are
+// constants: the token has to be spelled identically by the renderer, by
+// [atlasRefusedBlockTypes], by [renderer.documentDeclares], by the entries
+// [renderer.renderSlot] orders among the owners' blocks, and by the
+// conformance runs that re-measure both against the binary, and string
+// literals drift where one constant cannot.
 const (
+	blockComposite    = "composite"
+	blockDomain       = "domain"
 	blockExtension    = "extension"
 	blockFunction     = "function"
 	blockPolicy       = "policy"
 	blockProcedure    = "procedure"
+	blockRange        = "range"
 	blockSequence     = "sequence"
 	blockTable        = "table"
 	blockView         = "view"

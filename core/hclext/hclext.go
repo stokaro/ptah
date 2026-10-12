@@ -132,11 +132,25 @@ const (
 	// `auto_increment`. Only the writer takes it: a block an owner reads
 	// takes no Number.
 	Number Kind = "number"
-	// SQL is a SQL expression the writer writes as an sql() call, such as a
-	// column's `on_update`. The writer writes the text and never evaluates
-	// it, as the reader hands an owner the text of an sql() call and never
-	// the call. Only the writer takes it.
+	// SQL is a SQL expression, such as a column's `on_update`. The writer
+	// always writes it as an sql() call, and writes the text without
+	// evaluating it. The reader takes an sql() call or any other value: an
+	// sql() call reads as its SQL with Kind SQL, and any other value reads as
+	// [Text] reads it, with Kind Text. Kind then says which of the two the
+	// document wrote, as a domain's `default` needs: `sql("now()")` is an
+	// expression and `"now()"` a literal. The reader never evaluates the SQL
+	// either.
 	SQL Kind = "sql"
+	// TypeName is a type, read as a column's `type` is read. A reference
+	// `<block>.<label>` or `<block>.<schema>.<label>` whose `<block>` is a
+	// block that declares types -- the reader's own `enum`, or an owner's
+	// with [Block.DeclaresType] -- reads as the label, after its schema and
+	// a dot where it has one. It does whether or not the document declares
+	// that block, since a schema directory is read one file at a time, so
+	// `domain.missing` reads "missing". Any other value, a quoted
+	// "domain.pos2" included, reads as [Text] reads it. Only the reader
+	// takes it: an owner writes a type as [SQL].
+	TypeName Kind = "type-name"
 )
 
 // Attribute is one attribute a block takes.
@@ -164,8 +178,30 @@ type Block struct {
 	// Naming is how its labels name the object it declares.
 	Naming Naming
 	// Attributes are the attributes it takes, in the order the frontend
-	// reads them. Every other attribute and every nested block is an unknown
-	// name. The naming's own attribute, such as `schema`, is not listed.
+	// reads them. Every other attribute, and every nested block whose type
+	// is not one of Children, is an unknown name. The naming's own
+	// attribute, such as `schema`, is not listed.
+	Attributes []Attribute
+	// Children are the blocks it takes nested in it, one level deep, such as
+	// the fields of a composite type: a block nested in a child is an
+	// unknown name. Only a [TopLevel] block takes children.
+	Children []Child
+	// DeclaresType reports that the block's labels name a type, which a
+	// type elsewhere may then name as `<type>.<label>`; see [TypeName]. Only
+	// a [TopLevel] block declares a type.
+	DeclaresType bool
+}
+
+// Child is the shape of a block nested in an owner's block. It takes one
+// label, its name, and the attributes it lists, each of a kind other than
+// [Ref] and [Refs]. It may write none of them: a child that leaves out an
+// attribute its owner needs reaches the owner, which refuses it. Every other
+// attribute and every block nested in it is an unknown name.
+type Child struct {
+	// Type is the child's type, such as "field".
+	Type string
+	// Attributes are the attributes it takes, in the order the frontend
+	// reads them.
 	Attributes []Attribute
 }
 
@@ -212,8 +248,26 @@ type Claim struct {
 	// Table is the table an [InTable] claim stands in, and nil for a claim
 	// at another site.
 	Table *Table
+	// Children are the blocks nested in the block whose type is one of the
+	// shape's Children, in the order the document writes them.
+	Children []ClaimChild
 	// At is where the block stands, as `<file>:<line>`, for an owner that
 	// names two blocks in one refusal.
+	At string
+}
+
+// ClaimChild is one block nested in a claimed block, as the frontend read
+// it. No two children of a claim share a type and a name: the frontend
+// refuses the second, positioned at it.
+type ClaimChild struct {
+	// Type is the child's type.
+	Type string
+	// Name is its label.
+	Name string
+	// Attributes holds the value of each attribute the child writes. An
+	// attribute it leaves out has no entry.
+	Attributes map[string]Value
+	// At is where the child stands, as `<file>:<line>`.
 	At string
 }
 
@@ -386,9 +440,12 @@ func None() Set {
 
 // NewSet validates and freezes extensions. It refuses an extension without an
 // owner, a model two extensions claim, a block without a known site, a type, a
-// known naming or a decoder, an attribute without a name or a known kind, an
-// attribute named twice or named as the naming's own, a block type two
-// extensions read at one site, and an encoder without a model to encode.
+// known naming or a decoder, an attribute without a name or a known kind, a
+// [Number] attribute, which only the writer takes, an attribute named twice or
+// named as the naming's own, children or a type declaration on a block that is
+// not top-level, a child without a type, declared twice or under an
+// attribute's name, a child's reference, a block type two extensions read at
+// one site, and an encoder without a model to encode.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, blocks: make(map[blockKey]shape)}
 	kinds := make(map[schemaext.Kind]string)
@@ -419,6 +476,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 					set.extensions[previous.extension].Owner, extension.Owner)
 			}
 			block.Attributes = slices.Clone(block.Attributes)
+			block.Children = cloneChildren(block.Children)
 			set.blocks[key] = shape{extension: index, block: block}
 			blocks = append(blocks, block)
 		}
@@ -431,6 +489,19 @@ func NewSet(extensions ...Extension) (Set, error) {
 	return set, nil
 }
 
+// cloneChildren copies children and the attributes of each, so a caller
+// that changes its shapes after NewSet does not change the set.
+func cloneChildren(children []Child) []Child {
+	if children == nil {
+		return nil
+	}
+	cloned := make([]Child, len(children))
+	for i, child := range children {
+		cloned[i] = Child{Type: child.Type, Attributes: slices.Clone(child.Attributes)}
+	}
+	return cloned
+}
+
 func validateBlock(owner string, block Block) error {
 	if strings.TrimSpace(block.Type) == "" {
 		return fmt.Errorf("HCL extension of %s declares a block without a type", owner)
@@ -438,7 +509,7 @@ func validateBlock(owner string, block Block) error {
 	if err := validateNaming(owner, block); err != nil {
 		return err
 	}
-	names := map[string]bool{"schema": block.Naming == SchemaAndName || block.Naming == SchemaAndQualifiedName}
+	names := map[string]bool{"schema": readsOwnSchema(block.Naming)}
 	for _, attribute := range block.Attributes {
 		if strings.TrimSpace(attribute.Name) == "" {
 			return fmt.Errorf("HCL block %q of %s declares an attribute without a name", block.Type, owner)
@@ -452,11 +523,60 @@ func validateBlock(owner string, block Block) error {
 				schemaext.ErrDuplicate, block.Type, owner, attribute.Name)
 		}
 		names[attribute.Name] = true
-		if err := validateKind(owner, block, attribute); err != nil {
+		if err := validateKind(owner, block.Type, attribute); err != nil {
 			return err
 		}
 	}
+	return validateChildren(owner, block)
+}
+
+// validateChildren refuses children or a type declaration on a block that is
+// not top-level, a child without a type, one declared twice or under the name
+// of one of the block's attributes, and a child's attribute without a name,
+// named twice, or of a kind a child does not take.
+func validateChildren(owner string, block Block) error {
+	if block.Site != TopLevel && (len(block.Children) > 0 || block.DeclaresType) {
+		return fmt.Errorf("HCL %s block %q of %s takes children or declares a type, which only a top-level block does",
+			block.Site, block.Type, owner)
+	}
+	taken := map[string]bool{"schema": readsOwnSchema(block.Naming)}
+	for _, attribute := range block.Attributes {
+		taken[attribute.Name] = true
+	}
+	for _, child := range block.Children {
+		if strings.TrimSpace(child.Type) == "" {
+			return fmt.Errorf("HCL block %q of %s declares a child without a type", block.Type, owner)
+		}
+		if taken[child.Type] {
+			return fmt.Errorf("%w: HCL block %q of %s declares child %q twice or under an attribute's name",
+				schemaext.ErrDuplicate, block.Type, owner, child.Type)
+		}
+		taken[child.Type] = true
+		label := block.Type + " " + child.Type
+		names := make(map[string]bool, len(child.Attributes))
+		for _, attribute := range child.Attributes {
+			if strings.TrimSpace(attribute.Name) == "" {
+				return fmt.Errorf("HCL block %q of %s declares an attribute without a name", label, owner)
+			}
+			if names[attribute.Name] {
+				return fmt.Errorf("%w: HCL block %q of %s declares attribute %q twice", schemaext.ErrDuplicate, label, owner, attribute.Name)
+			}
+			names[attribute.Name] = true
+			if attribute.Kind == Ref || attribute.Kind == Refs {
+				return fmt.Errorf("HCL attribute %q of %s block %q is a %s, which a child does not take", attribute.Name, owner, label, attribute.Kind)
+			}
+			if err := validateKind(owner, label, attribute); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// readsOwnSchema reports whether a naming reads a `schema` attribute of its
+// own.
+func readsOwnSchema(naming Naming) bool {
+	return naming == SchemaAndName || naming == SchemaAndQualifiedName
 }
 
 // validateNaming refuses a site the frontend does not know, and a naming the
@@ -482,23 +602,27 @@ func validateNaming(owner string, block Block) error {
 	return nil
 }
 
-// validateKind refuses an unknown kind, a reference without the type it
-// refers to, and a type to refer to on another kind.
-func validateKind(owner string, block Block, attribute Attribute) error {
+// validateKind refuses an unknown kind, a kind only the writer takes, a
+// reference without the type it refers to, and a type to refer to on another
+// kind. block names the block in the refusal.
+func validateKind(owner, block string, attribute Attribute) error {
 	if attribute.Optional && attribute.Kind != Ref {
-		return fmt.Errorf("HCL attribute %q of %s block %q is a %s, and only a reference is made optional", attribute.Name, owner, block.Type, attribute.Kind)
+		return fmt.Errorf("HCL attribute %q of %s block %q is a %s, and only a reference is made optional", attribute.Name, owner, block, attribute.Kind)
 	}
 	switch attribute.Kind {
-	case String, Text, Bool:
+	case String, Text, Bool, SQL, TypeName:
 		if attribute.Refers != "" {
-			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and refers to nothing", attribute.Name, owner, block.Type, attribute.Kind)
+			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and refers to nothing", attribute.Name, owner, block, attribute.Kind)
 		}
 	case Ref, Refs:
 		if strings.TrimSpace(attribute.Refers) == "" {
-			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and names no type it refers to", attribute.Name, owner, block.Type, attribute.Kind)
+			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and names no type it refers to", attribute.Name, owner, block, attribute.Kind)
 		}
+	case Number:
+		return fmt.Errorf("HCL attribute %q of %s block %q is a %s, which only the writer takes; a reader reads digits as %s",
+			attribute.Name, owner, block, attribute.Kind, Text)
 	default:
-		return fmt.Errorf("HCL attribute %q of %s block %q names unknown kind %q", attribute.Name, owner, block.Type, attribute.Kind)
+		return fmt.Errorf("HCL attribute %q of %s block %q names unknown kind %q", attribute.Name, owner, block, attribute.Kind)
 	}
 	return nil
 }
