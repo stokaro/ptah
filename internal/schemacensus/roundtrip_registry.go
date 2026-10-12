@@ -42,7 +42,6 @@ type UnmeasuredEntry struct {
 const (
 	lossPrimaryKeyFacets  = "a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again"
 	lossIndexParser       = "a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again"
-	lossOperatorClass     = "a GIN index's operator class does not survive goschematodb, so the index is dropped and created again"
 	lossRefreshCoverage   = "goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete"
 	lossClickHouseEnum    = "a standalone enum reaches the ClickHouse comparison, which has only inline Enum8 and Enum16 columns"
 	lossRoutineAttributes = "goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to " +
@@ -188,7 +187,6 @@ var roundTripLosses = []RecordedLoss{
 		Reason:     lossPrimaryKeyFacets,
 	},
 	{Fixtures: []string{"index-mysql-parser"}, Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{ToCatalog}, Reason: lossIndexParser},
-	{Fixtures: []string{"index-fulltext"}, Dialects: []string{"postgres"}, Directions: []Direction{ToCatalog}, Reason: lossOperatorClass},
 	{Fixtures: []string{"matview-refresh"}, Dialects: []string{"clickhouse"}, Directions: nil, Reason: lossRefreshCoverage},
 	{Fixtures: []string{"enum"}, Dialects: []string{"clickhouse"}, Directions: []Direction{ToCatalog}, Reason: lossClickHouseEnum},
 	{
@@ -352,8 +350,7 @@ var roundTripGaps = []Unreached{
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.Index.Operator", Dialects: []string{"postgres"}, Directions: []Direction{FromCatalog}, Reason: gapToCatalog},
+	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Parts",
 		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "sqlite", "yugabytedb"},

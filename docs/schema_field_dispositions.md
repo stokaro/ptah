@@ -98,14 +98,13 @@ None.
 
 ### Round trips that plan a change
 
-11 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+10 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
 | `constraint-pk-options` | `mariadb`, `mysql` | to-catalog | a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again |
 | `index-mysql-parser` | `mariadb`, `mysql` | to-catalog | a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again |
-| `index-fulltext` | `postgres` | to-catalog | a GIN index's operator class does not survive goschematodb, so the index is dropped and created again |
 | `matview-refresh` | `clickhouse` | both | goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete |
 | `enum` | `clickhouse` | to-catalog | a standalone enum reaches the ClickHouse comparison, which has only inline Enum8 and Enum16 columns |
 | `function-planner-properties` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to PostgreSQL facets, which the conversion already carries |
@@ -117,7 +116,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-91 known gaps: a conversion or the comparison drops each one on the dialects named.
+90 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -164,8 +163,7 @@ migration nobody asked for.
 | `schemamodel.Index.Comment` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Fields` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `sqlite`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.Index.Operator` | `postgres` | from-catalog | goschematodb drops it: the catalog is the same with and without it |
+| `schemamodel.Index.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Parts` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `sqlite`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.StorageParams` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Type` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
