@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/astbuilder"
@@ -9,11 +10,11 @@ import (
 )
 
 // DemonstrateASTApproach shows how to use the new AST-based SQL generation
-func DemonstrateASTApproach() {
-	fmt.Println("=== AST-Based SQL Generation Example ===")
+func DemonstrateASTApproach(w io.Writer) error {
+	fmt.Fprintln(w, "=== AST-Based SQL Generation Example ===")
 
 	// Example 1: Building a simple table using the fluent API
-	fmt.Println("1. Simple table using fluent API:")
+	fmt.Fprintln(w, "1. Simple table using fluent API:")
 
 	table := astbuilder.NewTable("users").
 		Comment("User accounts table").
@@ -27,35 +28,31 @@ func DemonstrateASTApproach() {
 	// Render for PostgreSQL
 	pgRenderer, err := builtin.NewRenderer("postgresql")
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 	pgSQL, err := pgRenderer.Render(table)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
-	fmt.Println("PostgreSQL:")
-	fmt.Println(pgSQL)
+	fmt.Fprintln(w, "PostgreSQL:")
+	fmt.Fprintln(w, pgSQL)
 
 	// Render for MySQL
 	mysqlRenderer, err := builtin.NewRenderer("mysql")
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 	mysqlSQL, err := mysqlRenderer.Render(table)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
-	fmt.Println("MySQL:")
-	fmt.Println(mysqlSQL)
+	fmt.Fprintln(w, "MySQL:")
+	fmt.Fprintln(w, mysqlSQL)
 
 	// Example 2: Building a more complex schema with enums and foreign keys
-	fmt.Println("\n2. Complex schema with enums and foreign keys:")
+	fmt.Fprintln(w, "\n2. Complex schema with enums and foreign keys:")
 
 	schema := astbuilder.NewSchema().
 		Comment("E-commerce database schema").
@@ -88,15 +85,14 @@ func DemonstrateASTApproach() {
 	// Render complete schema for PostgreSQL
 	pgSchemaSQL, err := builtin.RenderSQL("postgresql", schema)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
-	fmt.Println("PostgreSQL Schema:")
-	fmt.Println(pgSchemaSQL)
+	fmt.Fprintln(w, "PostgreSQL Schema:")
+	fmt.Fprintln(w, pgSchemaSQL)
 
 	// Example 3: Building ALTER statements
-	fmt.Println("\n3. ALTER statements using AST:")
+	fmt.Fprintln(w, "\n3. ALTER statements using AST:")
 
 	alterTable := &ast.AlterTableNode{
 		Name: "users",
@@ -115,15 +111,14 @@ func DemonstrateASTApproach() {
 
 	alterSQL, err := builtin.RenderSQL("postgresql", alterTable)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
-	fmt.Println("PostgreSQL ALTER statements:")
-	fmt.Println(alterSQL)
+	fmt.Fprintln(w, "PostgreSQL ALTER statements:")
+	fmt.Fprintln(w, alterSQL)
 
 	// Example 4: Direct AST construction (lower-level approach)
-	fmt.Println("\n4. Direct AST construction:")
+	fmt.Fprintln(w, "\n4. Direct AST construction:")
 
 	directTable := ast.NewCreateTable("products").
 		AddColumn(
@@ -141,20 +136,20 @@ func DemonstrateASTApproach() {
 
 	directSQL, err := builtin.RenderSQL("postgresql", directTable)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
-	fmt.Println("Direct AST construction result:")
-	fmt.Println(directSQL)
+	fmt.Fprintln(w, "Direct AST construction result:")
+	fmt.Fprintln(w, directSQL)
+	return nil
 }
 
 // CompareApproaches demonstrates the difference between old and new approaches
-func CompareApproaches() {
-	fmt.Println("=== Comparison: Old vs New Approach ===")
+func CompareApproaches(w io.Writer) {
+	fmt.Fprintln(w, "=== Comparison: Old vs New Approach ===")
 
-	fmt.Println("OLD APPROACH (string-based):")
-	fmt.Printf(`
+	fmt.Fprintln(w, "OLD APPROACH (string-based):")
+	fmt.Fprintf(w, `
 // Hard to read, error-prone, not composable
 func generateOldWay() string {
     var buf strings.Builder
@@ -167,8 +162,8 @@ func generateOldWay() string {
     return buf.String()
 }`)
 
-	fmt.Println("\nNEW APPROACH (AST-based):")
-	fmt.Println(`
+	fmt.Fprintln(w, "\nNEW APPROACH (AST-based):")
+	fmt.Fprintln(w, `
 // Readable, type-safe, composable, testable
 func generateNewWay() string {
     table := astbuilder.NewTable("users").
@@ -181,22 +176,22 @@ func generateNewWay() string {
     return sql
 }`)
 
-	fmt.Println("\nBENEFITS OF AST APPROACH:")
-	fmt.Println("✓ Type safety - compile-time validation")
-	fmt.Println("✓ Readability - fluent API mirrors SQL structure")
-	fmt.Println("✓ Composability - build complex schemas from parts")
-	fmt.Println("✓ Testability - easy to unit test individual components")
-	fmt.Println("✓ Maintainability - changes in one place affect all dialects")
-	fmt.Println("✓ Extensibility - easy to add new SQL features")
-	fmt.Println("✓ Dialect independence - same AST, different renderers")
+	fmt.Fprintln(w, "\nBENEFITS OF AST APPROACH:")
+	fmt.Fprintln(w, "✓ Type safety - compile-time validation")
+	fmt.Fprintln(w, "✓ Readability - fluent API mirrors SQL structure")
+	fmt.Fprintln(w, "✓ Composability - build complex schemas from parts")
+	fmt.Fprintln(w, "✓ Testability - easy to unit test individual components")
+	fmt.Fprintln(w, "✓ Maintainability - changes in one place affect all dialects")
+	fmt.Fprintln(w, "✓ Extensibility - easy to add new SQL features")
+	fmt.Fprintln(w, "✓ Dialect independence - same AST, different renderers")
 }
 
 // ShowAdvancedFeatures demonstrates advanced AST capabilities
-func ShowAdvancedFeatures() {
-	fmt.Println("=== Advanced AST Features ===")
+func ShowAdvancedFeatures(w io.Writer) error {
+	fmt.Fprintln(w, "=== Advanced AST Features ===")
 
 	// Custom visitor for SQL analysis
-	fmt.Println("1. Custom visitor for analyzing schema:")
+	fmt.Fprintln(w, "1. Custom visitor for analyzing schema:")
 
 	analyzer := &SchemaAnalyzer{
 		TableCount:  0,
@@ -216,19 +211,25 @@ func ShowAdvancedFeatures() {
 		Index("idx_posts_user", "posts", "user_id").End().
 		Build()
 
-	schema.Accept(analyzer)
-	fmt.Printf("Analysis result: %d tables, %d columns, %d indexes\n",
+	if err := schema.Accept(analyzer); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "Analysis result: %d tables, %d columns, %d indexes\n",
 		analyzer.TableCount, analyzer.ColumnCount, analyzer.IndexCount)
 
 	// Schema transformation
-	fmt.Println("\n2. Schema transformation (add audit columns to all tables):")
+	fmt.Fprintln(w, "\n2. Schema transformation (add audit columns to all tables):")
 
 	transformer := &AuditTransformer{}
 	transformedSchema := transformer.Transform(schema)
 
-	sql, _ := builtin.RenderSQL("postgresql", transformedSchema)
-	fmt.Println("Transformed schema with audit columns:")
-	fmt.Println(sql)
+	sql, err := builtin.RenderSQL("postgresql", transformedSchema)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(w, "Transformed schema with audit columns:")
+	fmt.Fprintln(w, sql)
+	return nil
 }
 
 // SchemaAnalyzer is a custom visitor that analyzes schema structure
