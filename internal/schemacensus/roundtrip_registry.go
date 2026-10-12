@@ -40,8 +40,8 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossPrimaryKeyFacets  = "a primary key's KEY_BLOCK_SIZE and COMMENT do not survive goschematodb, so the key is added again"
-	lossIndexParser       = "a FULLTEXT index's parser does not survive goschematodb, so the index is dropped and added again"
+	lossPrimaryKeyDeclaredTwice = "the comparison plans ADD PRIMARY KEY on MySQL and MariaDB for a key declared both " +
+		"on its field and as an equal PRIMARY KEY constraint. Both conversions carry the key, so the defect is in the comparison"
 	lossRefreshCoverage   = "goschematodb leaves a refreshable materialized view's schedule marked as not inspected, so the comparison is refused as incomplete"
 	lossRoutineAttributes = "goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to " +
 		"PostgreSQL facets, which the conversion already carries"
@@ -188,9 +188,8 @@ var roundTripLosses = []RecordedLoss{
 		Fixtures:   []string{"constraint-pk-options"},
 		Dialects:   []string{"mariadb", "mysql"},
 		Directions: []Direction{ToCatalog},
-		Reason:     lossPrimaryKeyFacets,
+		Reason:     lossPrimaryKeyDeclaredTwice,
 	},
-	{Fixtures: []string{"index-mysql-parser"}, Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{ToCatalog}, Reason: lossIndexParser},
 	{Fixtures: []string{"matview-refresh"}, Dialects: []string{"clickhouse"}, Directions: nil, Reason: lossRefreshCoverage},
 	{
 		Fixtures:   []string{"function-planner-properties"},
@@ -236,7 +235,7 @@ var roundTripGaps = []Unreached{
 	{Field: "mssqlproperty.Property.Table", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "mysqlschema.DesiredColumnSettings.Charset", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "mysqlschema.DesiredColumnSettings.OnUpdate", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "mysqlschema.DesiredIndex.Parser", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: gapComparison},
+	{Field: "mysqlschema.DesiredIndex.Parser", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "mysqlschema.DesiredIndexBlockSize.KeyBlockSize", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "mysqlschema.DesiredTable.AutoIncrement", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "mysqlschema.DesiredTable.Charset", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
@@ -371,7 +370,6 @@ var roundTripGaps = []Unreached{
 	},
 	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Index.Type", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.Index.Type", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Index.Unique",
 		Dialects:   []string{"cockroachdb", "oracle", "spanner", "sqlite", "yugabytedb"},
