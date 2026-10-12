@@ -98,9 +98,6 @@ func (s *sqlScript) read(opts Options) (*schemamodel.Database, error) {
 		}
 	}
 	database := load.Database
-	if err := sqlschema.OwnRowSecurity(&database, opts.Dialect); err != nil {
-		return nil, err
-	}
 	schemamodel.Finalize(&database)
 	return &database, nil
 }

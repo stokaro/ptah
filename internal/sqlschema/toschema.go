@@ -644,10 +644,6 @@ func toDatabase(
 			return schemamodel.Database{}, err
 		}
 	}
-	if err := applyForcedRowSecurity(&database, statements.Statements, sourcePlatform); err != nil {
-		return schemamodel.Database{}, err
-	}
-
 	// A PostgreSQL trigger renders as a function plus a trigger; recombine the
 	// pair so the function is not also carried as a standalone object.
 	adoptTriggerFunctions(&database)
@@ -691,8 +687,6 @@ func appendStatement(
 		database.Sequences = append(database.Sequences, toSequence(node, sourcePlatform))
 	case *ast.CreateRoleNode:
 		return appendCreateRole(database, document, node, sourcePlatform)
-	case *ast.CreatePolicyNode:
-		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
 	case *ast.PostgresDoBlockNode:
 		return appendRoleBootstrap(database, document, node, sourcePlatform)
 	case *ast.RawSQLNode:
@@ -710,7 +704,7 @@ func appendStatement(
 }
 
 // appendFamilyStatement applies a statement of a family with a converter of
-// its own: an owner's statement, a routine, a privilege, row security, a YDB
+// its own: an owner's statement, a routine, a privilege, a YDB
 // object, a view, a namespace, or a change to an earlier declaration. handled
 // is false for any other statement, which [appendStatement] converts itself.
 func appendFamilyStatement(
@@ -723,9 +717,6 @@ func appendFamilyStatement(
 		return true, nil
 	}
 	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
-		return true, err
-	}
-	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
 		return true, err
 	}
 	if handled, err := appendYDBDeclaration(database, document, stmt, sourcePlatform); handled {

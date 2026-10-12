@@ -3036,7 +3036,23 @@ the row-level security switch an ALTER TABLE sets. They must contain a facet
 and name a table. An undeclared table is refused with an error wrapping
 `sqlext.ErrUndeclared`; a duplicate facet kind is refused. An owner may group
 statements that set the same facet and return its final value on the last
-claim. A DROP TABLE removes the table's children and the subject coverage of
+claim.
+
+An earlier statement sets `Value.DescribedBy` to the one-based index
+of that later claim in the owner's request. The later value must supply
+objects, replacements or table facets, and cannot defer to another claim.
+This keeps each operation visible to lint while validating that the combined
+model is present.
+
+`Value.TableReferences` requires a table at the statement's own position,
+even when a later claim supplies the combined facets. `Value.UnmodeledReason`
+refuses a statement as a desired-schema declaration while retaining its payload
+for syntax-only readers.
+
+`Set.Parse` takes a `Document`: its `Declared` objects
+and source-ordered `DroppedTables` records. Each owner receives an independent
+copy of the removal records, so it can end pending state without parsing the
+shared DROP TABLE grammar. A DROP TABLE removes the table's children and the subject coverage of
 the table and its children, including facet and child-namespace claims.
 
 A `Statement` pattern may read the name of the statement's object before it
@@ -3107,6 +3123,15 @@ that names no target, as a table its `DesiredVirtual` facet defines, and claims
 virtual tables complete for a SQLite document unless its header names
 `sqlitetable.VirtualDirective`. The claim is a second extension with no syntax,
 so a document that names no target reads the statement and claims nothing.
+
+The PostgreSQL policy owner reads CREATE POLICY, COMMENT ON POLICY and
+ALTER TABLE ENABLE or FORCE ROW LEVEL SECURITY on PostgreSQL, CockroachDB and
+YugabyteDB, and in documents that name no target. The shared grammar reads
+none of these declarations. The owner preserves role selectors, policy
+expressions and comments, and records table switches as facets. FORCE requires
+ENABLE in the same file and table lifetime for a desired schema; syntax-only
+readers retain an independent FORCE operation. DROP TABLE ends that table's
+pending switches and policies. Spanner has no row-security SQL reader.
 
 `chsource.SQL` reads ClickHouse's data-skipping index inside a column list and
 in ALTER TABLE ... ADD INDEX, and a materialized view's refresh schedule and

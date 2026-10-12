@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/engine"
 	"ptah.run/feature/pgpolicy"
@@ -42,6 +43,7 @@ func Provider() engine.Provider {
 		Annotations: []annotation.Extension{pgpolicysource.Annotations()},
 		YAML:        []yamlext.Extension{pgpolicysource.YAML()},
 		HCL:         []hclext.Extension{pgpolicysource.HCL()},
+		SQL:         []sqlext.Extension{pgpolicysource.SQL(Targets())},
 		// A description that does not describe policies, such as a document
 		// whose policy blocks the compatibility surface left out, describes
 		// none of the owner's policies either.

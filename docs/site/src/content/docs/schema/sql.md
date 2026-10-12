@@ -318,8 +318,8 @@ argument types, so `COMMENT ON FUNCTION app.f(integer, text)` names one of them.
 
 ## Row-level security
 
-A PostgreSQL schema file declares row-level security with the statements a
-migration would run:
+PostgreSQL, CockroachDB and YugabyteDB schema files declare row-level security
+with the statements a migration would run:
 
 ```sql
 CREATE TABLE sites (id uuid PRIMARY KEY, tenant_id uuid NOT NULL);
@@ -331,18 +331,18 @@ CREATE POLICY sites_scope ON sites AS RESTRICTIVE
   USING (current_setting('app.site_scope', true) = 'all');
 ```
 
-`FORCE` binds the table's owner to its policies; without it the owner reads and
-writes past every one of them. `ENABLE` and `FORCE` may come in either order.
-`AS RESTRICTIVE` narrows what the permissive policies admit, and `AS
-PERMISSIVE` is the default. Both flags are compared with the database and
-planned in both directions; [PostgreSQL](../../databases/postgresql/#row-level-security)
-has the details.
+`FORCE` subjects the table owner to policies. It requires `ENABLE` in the same
+file and table lifetime, in either order. `DROP TABLE` ends that lifetime;
+recreating the table restores its defaults. `DISABLE ROW LEVEL SECURITY` and
+`NO FORCE ROW LEVEL SECURITY` are refused; omit protection to declare its absence.
 
-Three spellings are refused rather than read. `DISABLE ROW LEVEL SECURITY` and
-`NO FORCE ROW LEVEL SECURITY` take a protection away, and a schema file says a
-table has none by not declaring it. A `FORCE` for a table the file never
-enables is refused too: PostgreSQL accepts it, and it changes nothing until the
-table enables row-level security.
+`AS RESTRICTIVE` narrows permissive policies; `AS PERMISSIVE` is the default.
+Both table flags are compared and planned in both directions. See
+[PostgreSQL](../../databases/postgresql/#row-level-security).
+
+`COMMENT ON POLICY name ON table IS 'text'` sets a declared policy's comment;
+`IS NULL` clears it. The declaration must precede the comment, including across
+SQL files. Spanner refuses row-security declarations.
 
 ## API export metadata
 

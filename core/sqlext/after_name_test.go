@@ -150,7 +150,7 @@ func TestSet_Parse_AcceptsADeclinedStatement(t *testing.T) {
 	matches := []sqlext.Match{{Candidate: set.Candidates("x", sqlext.Statement)[0],
 		Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "COMMENT ON GADGET g IS 'x'"}}}
 
-	values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
+	values, err := set.Parse(t.Context(), "x", matches, sqlext.Document{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(values, qt.DeepEquals, []sqlext.Value{{Declined: true}})
@@ -174,6 +174,10 @@ func TestSet_Parse_RefusesADeclineItCannotHonor(t *testing.T) {
 			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
 		{name: "a statement beside it", site: sqlext.Statement, value: sqlext.Value{Declined: true, Statement: &gadgetStatement{}},
 			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
+		{name: "table references beside it", site: sqlext.Statement, value: sqlext.Value{Declined: true, TableReferences: []string{"t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
+		{name: "refusal beside it", site: sqlext.Statement, value: sqlext.Value{Declined: true, UnmodeledReason: "not a declaration"},
+			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
 		{name: "table facets beside it", site: sqlext.Statement, value: sqlext.Value{Declined: true, TableFacets: &sqlext.TableFacets{Name: "t"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a declined its statement claim "gadget" and answered a value beside it`},
 	}
@@ -185,7 +189,7 @@ func TestSet_Parse_RefusesADeclineItCannotHonor(t *testing.T) {
 			matches := []sqlext.Match{{Candidate: set.Candidates("x", test.site)[0],
 				Claim: sqlext.Claim{Pattern: "gadget", Site: test.site, Text: "COMMENT ON GADGET g IS 'x'"}}}
 
-			values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
+			values, err := set.Parse(t.Context(), "x", matches, sqlext.Document{})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(values, qt.IsNil)

@@ -317,15 +317,12 @@ func overlapsAroundName(a, b Pattern) bool {
 		}
 	}
 	switch {
+	case len(other.AfterName) > 0 && len(other.Words) != len(named.Words):
+		return shiftedNamesOverlap(named, other)
 	case len(other.Words) < len(named.Words):
 		return acceptsNext(other, named.Words[len(other.Words)])
 	case len(other.AfterName) == 0:
 		// The other's next word, or its next opening word, is the name.
-		return true
-	case len(other.Words) != len(named.Words):
-		// Both read a name, at different words; the one that reads it later
-		// takes the earlier one's name as an opening word. Refuse rather
-		// than reason about names that are keywords.
 		return true
 	}
 	shorter, longer := named, other
@@ -444,12 +441,12 @@ type Match struct {
 }
 
 // Parse hands each extension the claims its candidates made, in one call per
-// extension, with the objects of declared its statements may amend, and
-// returns the values in the order of matches. declared is what the documents
-// read before this one declared. A parser that fails, answers with another
+// extension, with the earlier declarations its statements may amend and the
+// document's common table removals. It returns values in the order of matches.
+// A parser that fails, answers with another
 // number of values than it was given claims, or answers a claim with a value
 // its site does not take, fails the parse.
-func (s Set) Parse(ctx context.Context, target string, matches []Match, declared schemaext.Objects) ([]Value, error) {
+func (s Set) Parse(ctx context.Context, target string, matches []Match, document Document) ([]Value, error) {
 	values := make([]Value, len(matches))
 	positions := make(map[int][]int)
 	var order []int
@@ -461,11 +458,11 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match, declared
 	}
 	for _, index := range order {
 		extension := s.extensions[index]
-		owned, err := ownedObjects(extension, declared)
+		owned, err := ownedObjects(extension, document.Declared)
 		if err != nil {
 			return nil, err
 		}
-		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index])), Declared: owned}
+		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index])), Declared: owned, DroppedTables: slices.Clone(document.DroppedTables)}
 		for _, position := range positions[index] {
 			request.Claims = append(request.Claims, matches[position].Claim)
 		}
@@ -479,6 +476,9 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match, declared
 		if len(result.Values) != len(request.Claims) {
 			return nil, fmt.Errorf("%w: SQL parser of %s answered %d claims with %d values",
 				schemaext.ErrInvalidValue, extension.Owner, len(request.Claims), len(result.Values))
+		}
+		if err := checkCombinedDeclarations(extension, request.Claims, result.Values); err != nil {
+			return nil, err
 		}
 		for i, position := range positions[index] {
 			if err := checkValue(extension, request.Claims[i], result.Values[i]); err != nil {
@@ -527,7 +527,8 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 		}
 	}
 	if claim.Site != Statement {
-		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
+		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 ||
+			hasStatementRequirements(value) {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}
@@ -558,7 +559,7 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 			schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 	}
 	if value.Index != nil || value.Operation != nil || !value.Facets.IsZero() || value.Statement != nil || value.Table != nil ||
-		value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
+		value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 || hasStatementRequirements(value) {
 		return fmt.Errorf("%w: SQL parser of %s declined its statement claim %q and answered a value beside it",
 			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
 	}
@@ -582,6 +583,10 @@ func checkStatementValue(extension Extension, claim Claim, value Value) error {
 		problem = "a table and objects beside it"
 	case value.Table != nil && value.TableFacets != nil:
 		problem = "a table and another table's facets"
+	case value.Table != nil && (hasStatementRequirements(value)):
+		problem = "a table and statement requirements"
+	case slices.ContainsFunc(value.TableReferences, func(name string) bool { return strings.TrimSpace(name) == "" }):
+		problem = "a blank table reference"
 	case value.TableFacets != nil && strings.TrimSpace(value.TableFacets.Name) == "":
 		problem = "table facets without a table name"
 	case value.TableFacets != nil && value.TableFacets.Facets.IsZero():
@@ -625,4 +630,30 @@ func (s Set) Coverage(target string, document CoverageRequest) (schemaext.Covera
 		}
 	}
 	return combined, claimed, nil
+}
+
+// checkCombinedDeclarations requires a later model declaration for every
+// statement whose effect is combined with another. Forward references cannot
+// form a cycle, and a reference may not hide an unmodeled change in a chain.
+func checkCombinedDeclarations(extension Extension, claims []Claim, values []Value) error {
+	for i, value := range values {
+		target := value.DescribedBy
+		if target == 0 {
+			continue
+		}
+		if target <= i+1 || target > len(values) || claims[i].Site != Statement || claims[target-1].Site != Statement {
+			return fmt.Errorf("%w: SQL parser of %s claim %q must be described by a later statement claim", schemaext.ErrInvalidValue, extension.Owner, claims[i].Pattern)
+		}
+		described := values[target-1]
+		if described.DescribedBy != 0 || (len(described.Objects) == 0 && len(described.Replaces) == 0 && described.TableFacets == nil) {
+			return fmt.Errorf("%w: SQL parser of %s claim %q refers to claim %d without its own model declaration", schemaext.ErrInvalidValue, extension.Owner, claims[i].Pattern, target)
+		}
+	}
+	return nil
+}
+
+// hasStatementRequirements is shared by every site check. Adding a statement
+// requirement must reject it both on another site and beside a declined claim.
+func hasStatementRequirements(value Value) bool {
+	return len(value.TableReferences) > 0 || value.UnmodeledReason != "" || value.DescribedBy != 0
 }

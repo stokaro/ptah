@@ -225,6 +225,20 @@ type Value struct {
 	// wrapping [ErrUndeclared]. Only a [Statement] value carries it, beside
 	// the owner's statement.
 	TableFacets *TableFacets
+	// TableReferences name tables the statement requires the load to declare
+	// at this position, even when another claim carries its final facets.
+	// Only a statement takes them; syntax-only readers do not resolve them.
+	TableReferences []string
+	// DescribedBy is the one-based index in Request.Claims of a later
+	// statement claim that supplies this statement's combined declaration.
+	// Zero means this value describes itself. The referenced value must
+	// carry objects, replacements or table facets, and may not defer again.
+	// Syntax-only readers keep each statement's own operation payload.
+	DescribedBy int
+	// UnmodeledReason explains why a valid statement cannot describe a
+	// desired schema. A syntax-only reader keeps its payload, while the
+	// schema reader refuses it with this reason. Only a statement takes it.
+	UnmodeledReason string
 	// Declined hands a statement back to the shared grammar: the owner's
 	// pattern matched syntax that is not the owner's after all, such as a
 	// COMMENT ON TYPE of a type another model declares. The frontend reads
@@ -233,6 +247,24 @@ type Value struct {
 	// a [Statement] claim may decline, and a declining value carries no other
 	// field.
 	Declined bool
+}
+
+// DroppedTable identifies a common DROP TABLE boundary in the document.
+// An owner uses it to keep declarations from different table lifetimes apart.
+type DroppedTable struct {
+	// Name is the table reference as the DROP statement writes it.
+	Name string
+	// Offset is the statement's byte offset in the document.
+	Offset int
+}
+
+// Document supplies the context for one parse, independently of its owners.
+type Document struct {
+	// Declared are the objects earlier files of the load declare.
+	Declared schemaext.Objects
+	// DroppedTables are common DROP TABLE boundaries in source order. A
+	// statement naming several tables contributes one entry per table.
+	DroppedTables []DroppedTable
 }
 
 // Request is every claim of one document an extension's patterns matched.
@@ -247,6 +279,10 @@ type Request struct {
 	// directory, which a statement may amend. A document read alone has
 	// none.
 	Declared []schemaext.Object
+	// DroppedTables are the common table removals in the document, in source
+	// order. An owner can end a table's pending declarations at its removal
+	// without parsing the shared DROP TABLE grammar itself.
+	DroppedTables []DroppedTable
 }
 
 // Result is an owner's reading of a [Request].

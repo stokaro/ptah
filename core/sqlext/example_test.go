@@ -43,7 +43,7 @@ func ExampleNewSet() {
 
 	values, err := set.Parse(context.Background(), "custom", []sqlext.Match{
 		{Candidate: candidate, Claim: sqlext.Claim{Pattern: "bucket", Site: sqlext.TableElement, Text: "BUCKET by_day ON day"}},
-	}, schemaext.Objects{})
+	}, sqlext.Document{})
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -54,4 +54,29 @@ func ExampleNewSet() {
 	// false
 	// 0
 	// BUCKET by_day ON day
+}
+
+// ExampleSet_Parse_combined shows an owner grouping statements into one model
+// declaration while preserving every statement's independent operation payload.
+func ExampleSet_Parse_combined() {
+	set := gadgetSet(sqlext.Statement, combinedParser{values: []sqlext.Value{
+		{Statement: &gadgetStatement{}, TableReferences: []string{"orders"}, DescribedBy: 2},
+		{Statement: &gadgetStatement{}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "grouped")}},
+	}})
+	candidate := set.Candidates("x", sqlext.Statement)[0]
+	values, err := set.Parse(context.Background(), "x", []sqlext.Match{
+		{Candidate: candidate, Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "CREATE GADGET first"}},
+		{Candidate: candidate, Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "CREATE GADGET second"}},
+	}, sqlext.Document{})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("operations:", len(values))
+	fmt.Println("first operation described by claim:", values[0].DescribedBy)
+	fmt.Println("declaration:", values[1].Objects[0].Ref.Name.Source)
+	// Output:
+	// operations: 2
+	// first operation described by claim: 2
+	// declaration: grouped
 }

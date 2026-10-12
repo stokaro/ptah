@@ -90,6 +90,8 @@ type Parser struct {
 	// ownerClaims are the spans the owners' patterns claimed, read once the
 	// document is parsed; see [Parser.ParseContext].
 	ownerClaims []ownerClaim
+	// droppedTables are shared table lifetime boundaries for the owners.
+	droppedTables []sqlext.DroppedTable
 	// declaredIndexes are the indexes owners' ALTER TABLE operations declare;
 	// see [Parser.DeclaredIndex].
 	declaredIndexes map[*ast.ExtensionAlterOperation]sqlext.Index
@@ -216,11 +218,13 @@ func (p *Parser) parseStatements() (*ast.StatementList, error) {
 			continue
 		}
 
+		start := p.current.Start
 		stmt, err := p.parseStatement()
 		if err != nil {
 			return nil, err
 		}
 
+		p.recordTableDrops(stmt, start)
 		if list, ok := stmt.(*ast.StatementList); ok {
 			statements.Statements = append(statements.Statements, list.Statements...)
 		} else if stmt != nil {
@@ -413,7 +417,7 @@ func (p *Parser) parseCreateUnloggedTable() (ast.Node, error) {
 
 // createTargetList names the CREATE targets the grammar recognizes.
 const createTargetList = "TABLE, UNLOGGED TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
-	"TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION, SEQUENCE, ROLE, POLICY"
+	"TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION, SEQUENCE, ROLE"
 
 // parseCreateSchemaObject parses the CREATE targets for standalone PostgreSQL
 // schema objects, which Ptah renders and, since issue #932, reads back.
@@ -423,8 +427,6 @@ func (p *Parser) parseCreateSchemaObject(target string) (ast.Node, error) {
 		return p.parseCreateSequence()
 	case "ROLE":
 		return p.parseCreateRole()
-	case "POLICY":
-		return p.parseCreatePolicy()
 	case "MATERIALIZED":
 		return p.parseCreateMaterializedView()
 	default:
@@ -5424,9 +5426,8 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 }
 
 // parseAlterTable parses the ALTER TABLE statement, with ALTER consumed and
-// TABLE current. Most tails become an AlterTableNode carrying operations;
-// ENABLE ROW LEVEL SECURITY is its own node kind, so the return type is the
-// Node interface.
+// TABLE current. The table name and operations are common grammar; owners
+// may claim whole statements or individual operations.
 func (p *Parser) parseAlterTable() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "TABLE"); err != nil {
 		return nil, err
@@ -5443,10 +5444,6 @@ func (p *Parser) parseAlterTable() (ast.Node, error) {
 	tableName, err := p.parseTableName("table name")
 	if err != nil {
 		return nil, err
-	}
-
-	if rlsNode, handled, err := p.parseAlterTableRowSecurity(tableName); handled {
-		return rlsNode, err
 	}
 
 	alterNode := &ast.AlterTableNode{

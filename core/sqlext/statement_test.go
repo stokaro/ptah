@@ -91,7 +91,7 @@ func TestSet_Parse_HandsAStatementTheObjectsOfItsKinds(t *testing.T) {
 	matches := []sqlext.Match{{Candidate: set.Candidates("x", sqlext.Statement)[0],
 		Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "CREATE GADGET new"}}}
 
-	values, err := set.Parse(t.Context(), "x", matches, declared)
+	values, err := set.Parse(t.Context(), "x", matches, sqlext.Document{Declared: declared})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(values, qt.HasLen, 1)
@@ -110,7 +110,7 @@ func TestSet_Parse_ReturnsATableAStatementDeclares(t *testing.T) {
 	matches := []sqlext.Match{{Candidate: set.Candidates("x", sqlext.Statement)[0],
 		Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "CREATE GADGET main.docs"}}}
 
-	values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
+	values, err := set.Parse(t.Context(), "x", matches, sqlext.Document{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(values, qt.HasLen, 1)
@@ -131,6 +131,16 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 		value   sqlext.Value
 		wantErr string
 	}{
+		{name: "a blank table reference", site: sqlext.Statement, value: sqlext.Value{Statement: &gadgetStatement{}, TableReferences: []string{" "}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a blank table reference`},
+		{name: "table references at another site", site: sqlext.TableOption, value: sqlext.Value{TableReferences: []string{"t"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with a statement's value`},
+		{name: "refusal at another site", site: sqlext.TableOption, value: sqlext.Value{UnmodeledReason: "not a declaration"},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with a statement's value`},
+		{name: "table with statement references", site: sqlext.Statement, value: sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}, TableReferences: []string{"u"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table and statement requirements`},
+		{name: "table with statement refusal", site: sqlext.Statement, value: sqlext.Value{Table: &sqlext.TableDeclaration{Name: "t"}, UnmodeledReason: "not a declaration"},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with a table and statement requirements`},
 		{name: "a statement without the owner's statement", site: sqlext.Statement, value: sqlext.Value{},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its statement claim "gadget" with no statement`},
 		{name: "a statement and a table", site: sqlext.Statement,
@@ -193,7 +203,7 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 			matches := []sqlext.Match{{Candidate: set.Candidates("x", test.site)[0],
 				Claim: sqlext.Claim{Pattern: "gadget", Site: test.site, Text: "CREATE GADGET new"}}}
 
-			values, err := set.Parse(t.Context(), "x", matches, schemaext.Objects{})
+			values, err := set.Parse(t.Context(), "x", matches, sqlext.Document{})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(values, qt.IsNil)
@@ -210,4 +220,75 @@ func TestNewSet_RefusesAnInvalidObjectKind(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `SQL extension of example.org/a declares invalid object kind "gadget"`)
 	c.Assert(set.Selected(), qt.IsFalse)
+}
+
+// TestSet_Parse_DocumentFacts copies source-ordered table removals into the
+// owner's request and returns statement requirements without interpreting them.
+func TestSet_Parse_DocumentFacts(t *testing.T) {
+	c := qt.New(t)
+	var requests []sqlext.Request
+	value := sqlext.Value{Statement: &gadgetStatement{}, TableReferences: []string{"t"}, UnmodeledReason: "requires a declaration"}
+	set := gadgetSet(sqlext.Statement, answeringParser{value: value, requests: &requests})
+	drops := []sqlext.DroppedTable{{Name: "t", Offset: 20}, {Name: "app.u", Offset: 40}}
+	matches := []sqlext.Match{{Candidate: set.Candidates("x", sqlext.Statement)[0], Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement, Text: "CREATE GADGET x"}}}
+	values, err := set.Parse(t.Context(), "x", matches, sqlext.Document{DroppedTables: drops})
+	c.Assert(err, qt.IsNil)
+	c.Assert(values, qt.DeepEquals, []sqlext.Value{value})
+	c.Assert(requests, qt.HasLen, 1)
+	c.Assert(requests[0].DroppedTables, qt.DeepEquals, drops)
+	requests[0].DroppedTables[0].Name = "changed by owner"
+	c.Assert(drops[0].Name, qt.Equals, "t")
+}
+
+// combinedParser returns a fixed batch to exercise declaration references.
+type combinedParser struct{ values []sqlext.Value }
+
+func (p combinedParser) ParseSQL(context.Context, sqlext.Request) (sqlext.Result, error) {
+	return sqlext.Result{Values: p.values}, nil
+}
+
+func parseCombined(c *qt.C, values []sqlext.Value) ([]sqlext.Value, error) {
+	c.Helper()
+	set := gadgetSet(sqlext.Statement, combinedParser{values: values})
+	matches := make([]sqlext.Match, len(values))
+	for i := range matches {
+		matches[i] = sqlext.Match{Candidate: set.Candidates("x", sqlext.Statement)[0], Claim: sqlext.Claim{Pattern: "gadget", Site: sqlext.Statement}}
+	}
+	return set.Parse(c.Context(), "x", matches, sqlext.Document{})
+}
+
+// TestSet_Parse_CombinedDeclaration accepts one final model for earlier
+// operations without replacing their separate syntax payloads.
+func TestSet_Parse_CombinedDeclaration(t *testing.T) {
+	c := qt.New(t)
+	values := []sqlext.Value{{Statement: &gadgetStatement{}, DescribedBy: 2}, {Statement: &gadgetStatement{}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "new")}}}
+	got, err := parseCombined(c, values)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, values)
+}
+
+// TestSet_Parse_CombinedDeclaration_FailurePath refuses dangling, cyclic
+// and chained references, and a target carrying no model declaration.
+func TestSet_Parse_CombinedDeclaration_FailurePath(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []sqlext.Value
+		want   string
+	}{
+		{name: "negative", values: []sqlext.Value{{Statement: &gadgetStatement{}, DescribedBy: -1}}, want: "must be described by a later statement claim"},
+		{name: "self", values: []sqlext.Value{{Statement: &gadgetStatement{}, DescribedBy: 1}}, want: "must be described by a later statement claim"},
+		{name: "missing", values: []sqlext.Value{{Statement: &gadgetStatement{}, DescribedBy: 2}}, want: "must be described by a later statement claim"},
+		{name: "backward", values: []sqlext.Value{{Statement: &gadgetStatement{}}, {Statement: &gadgetStatement{}, DescribedBy: 1}}, want: "must be described by a later statement claim"},
+		{name: "no declaration", values: []sqlext.Value{{Statement: &gadgetStatement{}, DescribedBy: 2}, {Statement: &gadgetStatement{}}}, want: "without its own model declaration"},
+		{name: "chain", values: []sqlext.Value{{Statement: &gadgetStatement{}, DescribedBy: 2}, {Statement: &gadgetStatement{}, DescribedBy: 3}, {Statement: &gadgetStatement{}, Objects: []schemaext.Object{gadgetObject(gadgetKind, "new")}}}, want: "without its own model declaration"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := parseCombined(c, test.values)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err.Error(), qt.Contains, test.want)
+			c.Assert(got, qt.IsNil)
+		})
+	}
 }

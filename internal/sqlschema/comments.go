@@ -98,7 +98,7 @@ func commentTarget(
 			normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
 	case "FUNCTION", "PROCEDURE":
 		return routineCommentTarget(databases, statement, sourcePlatform)
-	case "TRIGGER", "POLICY", "CONSTRAINT":
+	case "TRIGGER", "CONSTRAINT":
 		return tableMemberCommentTarget(databases, statement, sourcePlatform)
 	default:
 		return &unmodeledKind, false
@@ -308,11 +308,6 @@ func tableMemberCommentTarget(
 			for i := range database.Triggers {
 				targets = append(targets, &database.Triggers[i].Comment)
 				names = append(names, memberName(database.Triggers[i].Table, database.Triggers[i].Name))
-			}
-		case "POLICY":
-			for i := range database.RLSPolicies {
-				targets = append(targets, &database.RLSPolicies[i].Comment)
-				names = append(names, memberName(database.RLSPolicies[i].Table, database.RLSPolicies[i].Name))
 			}
 		default:
 			for i := range database.Constraints {

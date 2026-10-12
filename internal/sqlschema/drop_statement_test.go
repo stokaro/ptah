@@ -99,7 +99,7 @@ func TestRead_DropTable_HappyPath(t *testing.T) {
 func TestRead_DropTable_TakesWhatBelongsToTheTable(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(
+	database, _, err := readWithPolicyOwners([]byte(
 		"CREATE TABLE a (id int PRIMARY KEY, x int, CONSTRAINT a_x_ck CHECK (x > 0));\n"+
 			"CREATE INDEX a_x ON a (x);\n"+
 			"ALTER TABLE a ENABLE ROW LEVEL SECURITY;\n"+
@@ -115,6 +115,8 @@ func TestRead_DropTable_TakesWhatBelongsToTheTable(t *testing.T) {
 	c.Assert(constraintNamesOf(database), qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 0)
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 0)
+	c.Assert(database.FeatureObjects.Refs(), qt.HasLen, 0)
+	c.Assert(database.Tables[0].Facets.IsZero(), qt.IsTrue)
 	c.Assert(database.Grants, qt.HasLen, 0)
 	c.Assert(database.Sequences, qt.HasLen, 0)
 }

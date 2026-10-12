@@ -118,13 +118,6 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 			sql:  "GRANT SELECT ON users TO app;",
 			want: []changeProjection{{lint.SchemaChangeAdd, "users"}},
 		},
-		{
-			// FORCE changes the table in place, as ENABLE does; it is not an
-			// operational statement that contributes nothing.
-			name: "force row level security is one change",
-			sql:  "ALTER TABLE users FORCE ROW LEVEL SECURITY;",
-			want: []changeProjection{{lint.SchemaChangeModify, "users"}},
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,4 +208,17 @@ func TestAnalyzeFS_SchemaChangesRespectDialect(t *testing.T) {
 		{lint.SchemaChangeAdd, "a"},
 		{lint.SchemaChangeAdd, "b"},
 	})
+}
+
+// TestAnalyzeFS_PolicySwitchChanges reports each switch as a table change
+// on a target where the policy owner reads its syntax.
+func TestAnalyzeFS_PolicySwitchChanges(t *testing.T) {
+	for _, sql := range []string{"ALTER TABLE users FORCE ROW LEVEL SECURITY;", "ALTER TABLE users ENABLE ROW LEVEL SECURITY;"} {
+		t.Run(sql, func(t *testing.T) {
+			c := qt.New(t)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"1_change.sql": sql}), lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: "postgres"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(projectChanges(fileByName(c, analysis, "1_change.sql").Changes), qt.DeepEquals, []changeProjection{{Kind: lint.SchemaChangeModify, Object: "users"}})
+		})
+	}
 }

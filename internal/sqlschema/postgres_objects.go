@@ -7,12 +7,10 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlroutine"
-	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 )
 
@@ -106,147 +104,6 @@ func toDefaultPrivilege(node *ast.DefaultPrivilegeNode, sourcePlatform string) s
 	}
 	defaultPrivilege.Canonicalize()
 	return defaultPrivilege
-}
-
-// toRLSPolicy resolves the policy's table through
-// [catalogPostgresTableReference] rather than the plain unquoting every other
-// object uses.
-//
-// A policy is an access-control declaration, and the relation it lands on is
-// the whole question. `CREATE POLICY p ON "ORDERS"` and `CREATE POLICY p ON
-// ORDERS` name different relations, so keeping the raw spelling left the rest
-// of the pipeline to guess -- and the guess secured a relation the author did
-// not name (stokaro/ptah#1311).
-func toRLSPolicy(node *ast.CreatePolicyNode, sourcePlatform string) schemamodel.RLSPolicy {
-	return schemamodel.RLSPolicy{
-		Name:                normalizeSQLIdentifier(sourcePlatform, node.Name),
-		Table:               normalizeSQLTableReference(sourcePlatform, node.Table),
-		PolicyFor:           node.PolicyFor,
-		ToRoles:             policyRoles(sourcePlatform, node.ToRoles),
-		UsingExpression:     node.UsingExpression,
-		WithCheckExpression: node.WithCheckExpression,
-		Restrictive:         node.Restrictive,
-		Comment:             node.Comment,
-	}
-}
-
-// policyRoles reads a policy's TO list. On the PostgreSQL family it is
-// written in the grammar [pgpolicysource.ParseRoleList] reads, which
-// [OwnRowSecurity] applies: a role keyword written bare stays the keyword,
-// and every other entry is the role [normalizeGrantee] resolves, quoted so the
-// owner keeps its exact name. Every other dialect reads the list through
-// [normalizeRoleList].
-func policyRoles(sourcePlatform, roles string) string {
-	if !platform.IsPostgresFamily(sourcePlatform) {
-		return normalizeRoleList(sourcePlatform, roles)
-	}
-	if strings.TrimSpace(roles) == "" {
-		return ""
-	}
-	parts := strings.Split(roles, ",")
-	for index, part := range parts {
-		part = strings.TrimSpace(part)
-		if !strings.HasPrefix(part, `"`) && pgpolicysource.SpellsKeyword(part) {
-			parts[index] = strings.ToUpper(part)
-			continue
-		}
-		name := normalizeGrantee(sourcePlatform, part)
-		if name == "PUBLIC" {
-			parts[index] = name
-			continue
-		}
-		parts[index] = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-	}
-	return strings.Join(parts, ", ")
-}
-
-// normalizeRoleList reads each role in a policy's TO list through
-// [roleTarget] while keeping the separator the renderer expects.
-func normalizeRoleList(sourcePlatform, roles string) string {
-	if strings.TrimSpace(roles) == "" {
-		return ""
-	}
-	parts := strings.Split(roles, ",")
-	for index, part := range parts {
-		parts[index] = roleTarget(sourcePlatform, part)
-	}
-	return strings.Join(parts, ", ")
-}
-
-// toRLSEnabledTable resolves its table the same way [toRLSPolicy] does. The
-// enablement and the policies on it have to name one relation, or the render
-// turns row-level security on for one table and protects another.
-func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode, sourcePlatform string) schemamodel.RLSEnabledTable {
-	return schemamodel.RLSEnabledTable{
-		Table:   normalizeSQLTableReference(sourcePlatform, node.Table),
-		Comment: node.Comment,
-	}
-}
-
-// appendRowSecurity reads the two table-level row-level security statements
-// and reports whether stmt was one of them.
-//
-// ENABLE becomes an enablement. FORCE is accepted here and folded into its
-// enablement by [applyForcedRowSecurity], which runs after every statement is
-// read because the ENABLE it qualifies may come later in the document. NO FORCE
-// is refused: a schema says the owner is exempt by not declaring FORCE.
-func appendRowSecurity(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
-	switch node := stmt.(type) {
-	case *ast.AlterTableEnableRLSNode:
-		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node, sourcePlatform))
-		return true, nil
-	case *ast.AlterTableForceRLSNode:
-		if node.NoForce {
-			return true, fmt.Errorf(
-				"%w: ALTER TABLE %s NO FORCE ROW LEVEL SECURITY; a schema says its owner is exempt by not declaring FORCE",
-				ErrUnmodeledStatement, node.Table)
-		}
-		return true, nil
-	default:
-		return false, nil
-	}
-}
-
-// applyForcedRowSecurity marks each table a FORCE ROW LEVEL SECURITY statement
-// names as forced on the enablement the same document declares.
-//
-// ENABLE and FORCE are two statements and may come in either order, so this
-// runs after every statement is read. The table is resolved the way
-// [toRLSEnabledTable] resolves it and then matched under the target's
-// identifier rules, so `t1` and `public.t1` are one relation here as they are
-// to the comparison that later reads the model.
-//
-// A FORCE for a table the document never enables is refused. PostgreSQL accepts
-// it: measured on 18.6, the table then reports relforcerowsecurity true and
-// relrowsecurity false, and its owner still reads every row, because FORCE
-// changes nothing until row-level security is enabled. The model has no state
-// for a forced table that is not enabled, and the other schema frontends cannot
-// declare one either (an HCL row_security block requires enabled = true), so
-// dropping the statement would lose it and inventing an enablement would add a
-// control nobody wrote.
-func applyForcedRowSecurity(database *schemamodel.Database, statements []ast.Node, sourcePlatform string) error {
-	semantics := identifier.ForDialect(sourcePlatform)
-	for _, statement := range statements {
-		force, ok := statement.(*ast.AlterTableForceRLSNode)
-		if !ok || force.NoForce {
-			continue
-		}
-		key := semantics.QualifiedTableIdentityKey(normalizeSQLTableReference(sourcePlatform, force.Table))
-		found := false
-		for index := range database.RLSEnabledTables {
-			if semantics.QualifiedTableIdentityKey(database.RLSEnabledTables[index].Table) == key {
-				database.RLSEnabledTables[index].Forced = true
-				found = true
-			}
-		}
-		if !found {
-			return fmt.Errorf(
-				"ALTER TABLE %s FORCE ROW LEVEL SECURITY has no effect until the table enables row-level security; "+
-					"declare ALTER TABLE %s ENABLE ROW LEVEL SECURITY too",
-				force.Table, force.Table)
-		}
-	}
-	return nil
 }
 
 func appendView(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {

@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -143,7 +144,7 @@ CREATE POLICY docs_member ON docs USING (is_member(owner));`,
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 			c.Assert(err, qt.IsNil)
 
 			statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)

@@ -498,7 +498,18 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 	if len((unsupportedRoutineRule{}).CheckStatement(ctx, stmt)) > 0 {
 		return "", false
 	}
+	if _, owned := stmt.(*ast.ExtensionStatement); owned {
+		return extensionStatementLabel(ctx.statement.sql), true
+	}
 	return statementLabel(stmt), true
+}
+
+// extensionStatementLabel uses the statement's opening words, since the
+// host node names the ownership boundary rather than the SQL statement.
+func extensionStatementLabel(source string) string {
+	first, offset := firstKeyword(source)
+	second, _ := firstKeyword(source[offset+len(first):])
+	return strings.TrimSpace(first + " " + second)
 }
 
 func parserOptions(opts Options, caps capability.Capabilities) []parser.Option {

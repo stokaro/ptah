@@ -161,11 +161,11 @@ func TestLoadAll_TableRendersOneRelation(t *testing.T) {
 }
 
 // TestLoadAll_DialectNeutralTableNamesKeepTheirCase is the control: a read
-// with no dialect or a dialect that does not fold keeps every name as written,
+// with no dialect keeps every name as written,
 // the row-level security statements included, so the file still names one
 // table.
 func TestLoadAll_DialectNeutralTableNamesKeepTheirCase(t *testing.T) {
-	for _, dialect := range []string{"", platform.Spanner} {
+	for _, dialect := range []string{""} {
 		t.Run("dialect="+dialect, func(t *testing.T) {
 			c := qt.New(t)
 			db := loadRoleCaseSchema(c, dialect, tableCaseSchema("Docs", "Title"))
