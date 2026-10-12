@@ -688,3 +688,19 @@ func TestRender_OwnersPoliciesFollowTheTablesOwn(t *testing.T) {
 //ptah:schema:table name="orders"
 `)
 }
+
+// TestRender_RefusesATablePropertyAnOwnerAlsoWrites pins that a table's
+// platform property and an owner's attribute of the same name are refused
+// together rather than both written: read back, one would replace the other.
+func TestRender_RefusesATablePropertyAnOwnerAlsoWrites(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(shadingProvider(slotWriter{name: "platform.mysql.shade"})))
+	db := &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Room", Name: "rooms",
+		Overrides: map[string]map[string]string{"mysql": {"shade": "red"}}, Facets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}}}
+
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: runtime.Annotations(), SingleFile: true})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: the Go annotation of table "rooms" would write attribute "platform.mysql.shade" twice: .*`)
+	c.Assert(files, qt.IsNil)
+}

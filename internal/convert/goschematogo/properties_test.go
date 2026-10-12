@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -67,7 +68,8 @@ func TestRender_RefusesUnrepresentableTablePropertyNames(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", StructName: "Events", Overrides: map[string]map[string]string{"clickhouse": {key: "value"}}}}}
 			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-			c.Assert(err, qt.ErrorMatches, `table "events" has an unrepresentable Go annotation property .*`)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: table "events" has an unrepresentable Go annotation property .*`)
 			c.Assert(files, qt.IsNil)
 		})
 	}
@@ -99,6 +101,7 @@ func TestRender_RefusesAmbiguousPropertyTargets(t *testing.T) {
 		"click.house": {"engine": "Memory"},
 	}}}}
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-	c.Assert(err, qt.ErrorMatches, `table "events" has an unrepresentable Go annotation target "click.house"`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: table "events" has an unrepresentable Go annotation target "click.house"`)
 	c.Assert(files, qt.IsNil)
 }

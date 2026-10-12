@@ -128,6 +128,9 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if err := validateSourceProperties(db); err != nil {
 		return nil, err
 	}
+	if err := ctx.refuseRepeatedAttributes(); err != nil {
+		return nil, err
+	}
 	if opts.SingleFile {
 		file, err := ctx.renderSingleFile()
 		if err != nil {
@@ -623,7 +626,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		slot := constraintSlot(declared, constraint)
 		w.writeComment(constraintAnnotation(constraint, ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)))
 	}
-	w.writeComment(ctx.tableAnnotation(table))
+	w.writeComment(annotation("ptah:schema:table", ctx.tableAttrs(table)...))
 	// The YDB owner's column families and changefeeds, which this package
 	// still writes, follow the other owners' directives, as its name orders
 	// it.
@@ -642,19 +645,75 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	usedNames := make(map[string]struct{})
 	for _, field := range ctx.fieldsByTable[table.StructName] {
 		fieldName := ctx.fieldIdentifier(field, usedNames)
-		slot := annotationext.Slot{Directive: fieldDirective, Table: declared, Name: field.Name}
-		w.writeComment("\t" + annotation("ptah:schema:field", append(fieldAttrs(field), ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)...)...))
+		w.writeComment("\t" + annotation("ptah:schema:field", ctx.fieldDirectiveAttrs(field, declared)...))
 		w.writeLine("\t" + fieldName + " " + ctx.goType(field) + structTags(field, ctx.opts))
 	}
 	for _, index := range ctx.indexesByTable[table.StructName] {
-		partitioning := ctx.partitioningByIndex[indexKey{table: index.StructName, name: index.Name}]
-		slot := annotationext.Slot{Directive: indexDirective, Table: declared, Name: index.Name}
-		w.writeComment("\t" + annotation("ptah:schema:index", indexAttrs(index, partitioning,
-			ctx.ownerAttrs(slot, annotationext.WithOwnAttributes), ctx.ownerAttrs(slot, annotationext.AfterProperties))...))
+		w.writeComment("\t" + annotation("ptah:schema:index", ctx.indexDirectiveAttrs(index, declared)...))
 		w.writeLine("\t_ struct{}")
 	}
 	w.writeLine("}")
 	w.writeLine("")
+}
+
+// fieldDirectiveAttrs are the attributes of a field's directive: its own,
+// the owners' settings of it, then its platform properties.
+func (ctx *renderContext) fieldDirectiveAttrs(field schemamodel.Field, table annotationext.Table) []attr {
+	slot := annotationext.Slot{Directive: fieldDirective, Table: table, Name: field.Name}
+	attrs := append(fieldAttrs(field), ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)...)
+	return append(attrs, propertyAttrs(fieldProperties(field))...)
+}
+
+// indexDirectiveAttrs are the attributes of an index's directive.
+func (ctx *renderContext) indexDirectiveAttrs(index schemamodel.Index, table annotationext.Table) []attr {
+	partitioning := ctx.partitioningByIndex[indexKey{table: index.StructName, name: index.Name}]
+	slot := annotationext.Slot{Directive: indexDirective, Table: table, Name: index.Name}
+	return indexAttrs(index, partitioning, ctx.ownerAttrs(slot, annotationext.WithOwnAttributes), ctx.ownerAttrs(slot, annotationext.AfterProperties))
+}
+
+// refuseRepeatedAttributes refuses a directive the writer would give one
+// attribute twice: a platform property a declaration states that an owner
+// also writes from a setting of it. Read back, one of the two values would
+// replace the other without a word.
+func (ctx *renderContext) refuseRepeatedAttributes() error {
+	for _, table := range sortedTables(ctx.db.Tables) {
+		declared := ctx.owned.tables[table.StructName]
+		directives := []slotAttrs{{annotationext.Slot{Directive: tableDirective, Table: sourceTable(table)}, ctx.tableAttrs(table)}}
+		for _, field := range ctx.fieldsByTable[table.StructName] {
+			directives = append(directives, slotAttrs{annotationext.Slot{Directive: fieldDirective, Table: declared, Name: field.Name}, ctx.fieldDirectiveAttrs(field, declared)})
+		}
+		for _, index := range ctx.indexesByTable[table.StructName] {
+			directives = append(directives, slotAttrs{annotationext.Slot{Directive: indexDirective, Table: declared, Name: index.Name}, ctx.indexDirectiveAttrs(index, declared)})
+		}
+		for _, directive := range directives {
+			if name, repeated := repeatedAttr(directive.attrs); repeated {
+				return fmt.Errorf("%w: the Go annotation of %s would write attribute %q twice: a platform property and an owner's setting both spell it",
+					ptaherr.ErrUnsupportedFeature, directive.slot, name)
+			}
+		}
+	}
+	return nil
+}
+
+// slotAttrs are the attributes the writer gives one declaration.
+type slotAttrs struct {
+	slot  annotationext.Slot
+	attrs []attr
+}
+
+// repeatedAttr is the first attribute attrs write twice.
+func repeatedAttr(attrs []attr) (string, bool) {
+	written := make(map[string]bool, len(attrs))
+	for _, attribute := range attrs {
+		if !attribute.set {
+			continue
+		}
+		if written[attribute.name] {
+			return attribute.name, true
+		}
+		written[attribute.name] = true
+	}
+	return "", false
 }
 
 func (ctx *renderContext) fieldIdentifier(field schemamodel.Field, used map[string]struct{}) string {
@@ -717,11 +776,11 @@ func dialectsAttr(scope []string) attr {
 	}
 }
 
-// tableAnnotation writes a table's directive: its own attributes, the
+// tableAttrs are the attributes of a table's directive: its own, the
 // owners' settings of its primary key beside the key's, the owners' settings
 // of the table, its YDB column storage, its platform properties, then the
 // owners' settings that follow them and its YDB partitioning.
-func (ctx *renderContext) tableAnnotation(table schemamodel.Table) string {
+func (ctx *renderContext) tableAttrs(table schemamodel.Table) []attr {
 	declared := sourceTable(table)
 	slot := annotationext.Slot{Directive: tableDirective, Table: declared}
 	attrs := []attr{
@@ -741,7 +800,7 @@ func (ctx *renderContext) tableAnnotation(table schemamodel.Table) string {
 	attrs = append(attrs, columnStoreAttrs(ctx.storesByTable[table.QualifiedName()])...)
 	attrs = append(attrs, propertyAttrs(table.Overrides)...)
 	attrs = append(attrs, ctx.ownerAttrs(slot, annotationext.AfterProperties)...)
-	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(ctx.partitioningByTable[table.QualifiedName()])...)...)
+	return append(attrs, tablePartitioningAttrs(ctx.partitioningByTable[table.QualifiedName()])...)
 }
 
 // columnFamilyAttrs writes a YDB column family as the attributes the
