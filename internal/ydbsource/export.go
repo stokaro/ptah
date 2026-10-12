@@ -17,10 +17,10 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 )
 
-// ExportLimits encodes source-authored unmanaged scopes and missing namespaces.
+// exportLimits encodes source-authored unmanaged scopes and missing namespaces.
 // Captured models and read limits that the source cannot reproduce are refused.
 // With no kinds specified, it checks every standalone family the source owns.
-func ExportLimits(known schemaext.Coverage, kinds ...schemaext.Kind) ([]coverage.Object, error) {
+func exportLimits(known schemaext.Coverage, kinds ...schemaext.Kind) ([]coverage.Object, error) {
 	// This supplies the source's exact model definitions for comparison only.
 	// It never adds enrollment to the captured input.
 	declared, err := Coverage(Limits{})

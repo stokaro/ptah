@@ -17,23 +17,15 @@ import (
 	"unicode"
 
 	annotationext "ptah.run/core/annotation"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
-	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtype"
@@ -257,19 +249,9 @@ func validatePackageName(name string) error {
 }
 
 type renderContext struct {
+	// featureLimitAnnotations are the owners' limits, as the comments every
+	// generated file starts with.
 	featureLimitAnnotations []string
-	coordinationAnnotations []string
-	topicAnnotations        []string
-	// replicationAnnotations are the declared async replications, each
-	// followed by its items, and transferAnnotations the declared transfers.
-	replicationAnnotations []string
-	transferAnnotations    []string
-	streamingAnnotations   []string
-	workloadAnnotations    []string
-	secretAnnotations      []string
-	// externalAnnotations are the declared external data sources, then the
-	// external tables.
-	externalAnnotations [2][]string
 	// owned are the declarations the selected owners are handed,
 	// ownerDirectives the directives they write, as the comments the source
 	// carries, at each place they stand, and ownerAttributes the attributes
@@ -280,11 +262,9 @@ type renderContext struct {
 	// extensions are the declared extensions in name order, from the common
 	// model and from the extension owner alike.
 	extensions          []extensionDeclaration
-	familiesByTable     map[string][]ydbschema.ColumnFamily
 	partitioningByTable map[string]*ydbschema.TablePartitioning
 	storesByTable       map[string]*ydbschema.DesiredColumnStore
 	partitioningByIndex map[indexKey]*ydbschema.IndexPartitioning
-	changefeedsByTable  map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                  *schemamodel.Database
 	opts                Options
 	enumsByName         map[string]schemamodel.Enum
@@ -441,22 +421,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
 		ctx.hasOwnerGlobals() ||
-		ctx.hasYDBObjects() || ctx.hasExternalObjects()
-}
-
-// hasYDBObjects reports declarations of the YDB-specific global families.
-func (ctx *renderContext) hasYDBObjects() bool {
-	return len(ctx.featureLimitAnnotations) > 0 || len(ctx.topicAnnotations) > 0 ||
-		len(ctx.workloadAnnotations) > 0 ||
-		len(ctx.replicationAnnotations) > 0 ||
-		len(ctx.transferAnnotations) > 0 ||
-		len(ctx.coordinationAnnotations) > 0 ||
-		len(ctx.streamingAnnotations) > 0
-}
-
-// hasExternalObjects reports declarations for external access and its credentials.
-func (ctx *renderContext) hasExternalObjects() bool {
-	return len(ctx.secretAnnotations) > 0 || len(ctx.externalAnnotations[0]) > 0 || len(ctx.externalAnnotations[1]) > 0
+		len(ctx.featureLimitAnnotations) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -542,18 +507,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		}, ctx.ownerAttrs(annotationext.Slot{Directive: matviewDirective, Name: view.Name}, annotationext.WithOwnAttributes)...)
 		w.writeComment(annotation("ptah:schema:matview", append(attrs, dialectsAttr(view.Dialects))...))
 	}
-	for _, comment := range ctx.topicAnnotations {
-		w.writeComment(comment)
-	}
-	for _, comment := range ctx.replicationAnnotations {
-		w.writeComment(comment)
-	}
-	for _, comment := range ctx.transferAnnotations {
-		w.writeComment(comment)
-	}
-	ctx.writeSecrets(w)
-	ctx.writeExternalObjects(w)
-	ctx.writeStreamingQueries(w)
+	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterViews})
 	for _, role := range sortedRoles(ctx.db.Roles) {
 		w.writeComment(roleAnnotation(role))
 	}
@@ -567,40 +521,11 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
 	}
 	// The owners write after the default privileges in the order of their
-	// names. The YDB owner's resource pools and coordination nodes, which
-	// this package still writes, take the place that order gives them: last.
+	// names.
 	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterPrivileges})
-	ctx.writeResourcePools(w)
-	ctx.writeCoordinationNodes(w)
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
 		w.writeLine("")
-	}
-}
-
-// writeExternalObjects writes the data sources and then the external tables,
-// each in path order.
-func (ctx *renderContext) writeExternalObjects(w *sourceWriter) {
-	for _, annotations := range ctx.externalAnnotations {
-		for _, text := range annotations {
-			w.writeComment(text)
-		}
-	}
-}
-
-// writeSecrets writes secret references in stable order without their values.
-func (ctx *renderContext) writeSecrets(w *sourceWriter) {
-	for _, text := range ctx.secretAnnotations {
-		w.writeComment(text)
-	}
-}
-
-// writeCoordinationNodes writes an annotation for each of the database's YDB
-// coordination nodes, broken out of [renderContext.writeGlobalObjects] to
-// keep that function's branching under the complexity limit.
-func (ctx *renderContext) writeCoordinationNodes(w *sourceWriter) {
-	for _, annotation := range ctx.coordinationAnnotations {
-		w.writeComment(annotation)
 	}
 }
 
@@ -627,19 +552,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeComment(constraintAnnotation(constraint, ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)))
 	}
 	w.writeComment(annotation("ptah:schema:table", ctx.tableAttrs(table)...))
-	// The YDB owner's column families and changefeeds, which this package
-	// still writes, follow the other owners' directives, as its name orders
-	// it.
 	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterTable, table: sourceTable(table)})
-	for _, family := range ctx.familiesByTable[table.QualifiedName()] {
-		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
-	}
-	for _, changefeed := range ctx.changefeedsByTable[changefeedTableRef(table).Key()] {
-		w.writeComment(annotation("ptah:schema:changefeed", changefeedAttrs(changefeed)...))
-		for _, consumer := range changefeed.Consumers {
-			w.writeComment(annotation("ptah:schema:changefeed:consumer", consumerAttrs(changefeed.Name, consumer)...))
-		}
-	}
 	typeName := exportedIdentifier(firstNonEmpty(table.StructName, table.Name))
 	w.writeLine("type " + typeName + " struct {")
 	usedNames := make(map[string]struct{})
@@ -801,58 +714,6 @@ func (ctx *renderContext) tableAttrs(table schemamodel.Table) []attr {
 	attrs = append(attrs, propertyAttrs(table.Overrides)...)
 	attrs = append(attrs, ctx.ownerAttrs(slot, annotationext.AfterProperties)...)
 	return append(attrs, tablePartitioningAttrs(ctx.partitioningByTable[table.QualifiedName()])...)
-}
-
-// columnFamilyAttrs writes a YDB column family as the attributes the
-// annotation parser reads it from. A table's default family is written only
-// where it holds something other than what YDB gives a family stating nothing
-// (see [ydbfamily.Stated]), so a table nobody gave families exports none.
-// keep_in_memory has no attribute: no statement writes it, and a declaration
-// that leaves it out keeps what the table holds.
-func columnFamilyAttrs(family ydbschema.ColumnFamily) []attr {
-	return []attr{
-		{name: ydbfamily.AttributeName, value: family.Name, set: true},
-		{name: ydbfamily.AttributeData, value: family.Data, set: family.Data != ""},
-		{name: ydbfamily.AttributeCompression, value: family.Compression, set: family.Compression != ""},
-		{name: ydbfamily.AttributeCacheMode, value: family.CacheMode, set: family.CacheMode != ""},
-		{name: ydbfamily.AttributeFields, value: strings.Join(family.Columns, ","), set: len(family.Columns) > 0},
-	}
-}
-
-// changefeedAttrs writes a YDB changefeed as the attributes the annotation
-// parser reads it from. A disabled changefeed is written as an enabled one:
-// no annotation declares one disabled, because no statement disables one.
-func changefeedAttrs(changefeed ydbschema.ChangefeedSpec) []attr {
-	flag := func(name string, on bool) attr { return attr{name: name, value: "true", set: on} }
-	return []attr{
-		{name: ydbchangefeed.AttributeName, value: changefeed.Name, set: true},
-		{name: ydbchangefeed.AttributeMode, value: changefeed.Mode, set: true},
-		{name: ydbchangefeed.AttributeFormat, value: changefeed.Format, set: true},
-		flag(ydbchangefeed.AttributeVirtualTimestamps, changefeed.VirtualTimestamps),
-		{name: ydbchangefeed.AttributeResolvedTimestamps, value: changefeed.ResolvedTimestamps,
-			set: changefeed.ResolvedTimestamps != ""},
-		flag(ydbchangefeed.AttributeInitialScan, changefeed.InitialScan),
-		flag(ydbchangefeed.AttributeUserSIDs, changefeed.UserSIDs),
-		flag(ydbchangefeed.AttributeSchemaChanges, changefeed.SchemaChanges),
-		{name: ydbchangefeed.AttributeTopicMinActivePartitions,
-			value: strconv.FormatUint(changefeed.TopicMinActivePartitions, 10), set: changefeed.TopicMinActivePartitions != 0},
-		flag(ydbchangefeed.AttributeTopicAutoPartitioning, changefeed.TopicAutoPartitioning),
-		{name: ydbchangefeed.AttributeRetentionPeriod, value: changefeed.RetentionPeriod, set: changefeed.RetentionPeriod != ""},
-	}
-}
-
-// consumerAttrs writes a consumer of the changefeed named changefeed.
-func consumerAttrs(changefeed string, consumer ydbtopic.ConsumerSpec) []attr {
-	return []attr{
-		{name: ydbchangefeed.AttributeChangefeed, value: changefeed, set: true},
-		{name: ydbchangefeed.AttributeName, value: consumer.Name, set: true},
-		{name: ydbchangefeed.AttributeImportant, value: "true", set: consumer.Important},
-		{name: ydbchangefeed.AttributeReadFrom, value: consumer.ReadFrom, set: consumer.ReadFrom != ""},
-		{name: ydbchangefeed.AttributeSupportedCodecs, value: strings.Join(consumer.SupportedCodecs, ","),
-			set: len(consumer.SupportedCodecs) > 0},
-		{name: ydbchangefeed.AttributeAvailabilityPeriod, value: consumer.AvailabilityPeriod,
-			set: consumer.AvailabilityPeriod != ""},
-	}
 }
 
 // tablePartitioningAttrs writes a YDB row table's settings as the attributes
@@ -1168,132 +1029,6 @@ func triggerAnnotation(trigger schemamodel.Trigger) string {
 	)
 }
 
-// topicAnnotations writes a YDB topic as its annotation and one annotation
-// per consumer, each naming only what differs from the zero value: a read
-// fills every setting the server holds, and an attribute naming a setting at
-// the value YDB gives a new topic declares the same topic as one leaving it
-// out.
-func topicAnnotations(schema, name string, spec ydbtopic.Spec) []string {
-	count := func(name string, value uint64) attr {
-		return attr{name: name, value: strconv.FormatUint(value, 10), set: value != 0}
-	}
-	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
-	comments := []string{annotation("ptah:schema:topic",
-		attr{name: ydbtopic.AttributeName, value: name, set: true},
-		text(ydbtopic.AttributeSchema, schema),
-		count(ydbtopic.AttributeMinActivePartitions, spec.MinActivePartitions),
-		count(ydbtopic.AttributeMaxActivePartitions, spec.MaxActivePartitions),
-		text(ydbtopic.AttributeStrategy, spec.AutoPartitioningStrategy),
-		count(ydbtopic.AttributeUpUtilizationPercent, uint64(spec.AutoPartitioningUpUtilizationPercent)),
-		count(ydbtopic.AttributeDownUtilizationPercent, uint64(spec.AutoPartitioningDownUtilizationPercent)),
-		text(ydbtopic.AttributeStabilizationWindow, spec.AutoPartitioningStabilizationWindow),
-		text(ydbtopic.AttributeRetentionPeriod, spec.RetentionPeriod),
-		count(ydbtopic.AttributeWriteSpeed, spec.PartitionWriteSpeedBytesPerSecond),
-		count(ydbtopic.AttributeWriteBurst, spec.PartitionWriteBurstBytes),
-		text(ydbtopic.AttributeSupportedCodecs, strings.Join(spec.SupportedCodecs, ",")),
-	)}
-	for _, consumer := range spec.Consumers {
-		comments = append(comments, annotation("ptah:schema:topic:consumer",
-			attr{name: ydbtopic.AttributeName, value: consumer.Name, set: true},
-			attr{name: ydbtopic.AttributeTopic, value: name, set: true},
-			text(ydbtopic.AttributeSchema, schema),
-			attr{name: ydbtopic.AttributeImportant, value: "true", set: consumer.Important},
-			text(ydbtopic.AttributeReadFrom, consumer.ReadFrom),
-			text(ydbtopic.AttributeSupportedCodecs, strings.Join(consumer.SupportedCodecs, ",")),
-			text(ydbtopic.AttributeAvailabilityPeriod, consumer.AvailabilityPeriod),
-		))
-	}
-	return comments
-}
-
-// connectionAttrs writes a replication's or a transfer's connection as
-// annotation attributes, each naming only what the connection names.
-func connectionAttrs(connection ydbreplication.Connection) []attr {
-	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
-	return []attr{
-		text(ydbreplication.AttributeConnectionString, connection.ConnectionString),
-		text(ydbreplication.AttributeTokenSecretName, connection.TokenSecretName),
-		text(ydbreplication.AttributeTokenSecretPath, connection.TokenSecretPath),
-		text(ydbreplication.AttributeUser, connection.User),
-		text(ydbreplication.AttributePasswordSecretName, connection.PasswordSecretName),
-		text(ydbreplication.AttributePasswordSecretPath, connection.PasswordSecretPath),
-	}
-}
-
-// replicationAnnotations writes the YDB async replication name in the
-// directory schema as its annotation and one annotation per item, each naming
-// only what differs from the zero value.
-func replicationAnnotations(schema, name string, spec ydbreplication.ReplicationSpec) []string {
-	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
-	attrs := append([]attr{
-		{name: ydbreplication.AttributeName, value: name, set: true},
-		text(ydbreplication.AttributeSchema, schema),
-	}, connectionAttrs(spec.Connection)...)
-	attrs = append(attrs,
-		text(ydbreplication.AttributeConsistencyLevel, spec.ConsistencyLevel),
-		text(ydbreplication.AttributeCommitInterval, spec.CommitInterval),
-	)
-	comments := []string{annotation("ptah:schema:async_replication", attrs...)}
-	for _, item := range spec.Items {
-		comments = append(comments, annotation("ptah:schema:async_replication:item",
-			attr{name: ydbreplication.AttributeReplication, value: name, set: true},
-			text(ydbreplication.AttributeSchema, schema),
-			attr{name: ydbreplication.AttributeSource, value: item.Source, set: true},
-			attr{name: ydbreplication.AttributeTarget, value: item.Target, set: true},
-		))
-	}
-	return comments
-}
-
-// transferAnnotation writes the YDB transfer name in the directory schema as
-// its annotation, naming only what differs from the zero value.
-func transferAnnotation(schema, name string, spec ydbreplication.TransferSpec) string {
-	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
-	attrs := append([]attr{
-		{name: ydbreplication.AttributeName, value: name, set: true},
-		text(ydbreplication.AttributeSchema, schema),
-	}, connectionAttrs(spec.Connection)...)
-	attrs = append(attrs,
-		attr{name: ydbreplication.AttributeSource, value: spec.Source, set: true},
-		attr{name: ydbreplication.AttributeTarget, value: spec.Target, set: true},
-		attr{name: ydbreplication.AttributeUsing, value: spec.Lambda, set: true},
-		text(ydbreplication.AttributeConsumer, spec.Consumer),
-		attr{name: ydbreplication.AttributeBatchSizeBytes, value: strconv.FormatUint(spec.BatchSizeBytes, 10),
-			set: spec.BatchSizeBytes != 0},
-		text(ydbreplication.AttributeFlushInterval, spec.FlushInterval),
-	)
-	return annotation("ptah:schema:transfer", attrs...)
-}
-
-// externalDataSourceAnnotation writes the YDB external data source name in the
-// directory schema as its annotation. A credential is an option naming a
-// secret, never a value.
-func externalDataSourceAnnotation(schema, name string, source ydbexternal.DataSource) string {
-	return annotation("ptah:schema:externaldatasource",
-		attr{name: ydbexternal.AttributeName, value: name, set: true},
-		attr{name: ydbexternal.AttributeSchema, value: schema, set: schema != ""},
-		attr{name: ydbexternal.AttributeSourceType, value: source.SourceType, set: true},
-		attr{name: ydbexternal.AttributeLocation, value: source.Location, set: source.Location != ""},
-		attr{name: ydbexternal.AttributeAuthMethod, value: source.AuthMethod, set: true},
-		attr{name: ydbexternal.AttributeOptions, value: ydbexternal.FormatOptions(source.Options),
-			set: len(source.Options) > 0},
-	)
-}
-
-// externalTableAnnotation writes the YDB external table name in the directory
-// schema as its annotation.
-func externalTableAnnotation(schema, name string, table ydbexternal.Table) string {
-	return annotation("ptah:schema:externaltable",
-		attr{name: ydbexternal.AttributeName, value: name, set: true},
-		attr{name: ydbexternal.AttributeSchema, value: schema, set: schema != ""},
-		attr{name: ydbexternal.AttributeDataSource, value: table.DataSource, set: true},
-		attr{name: ydbexternal.AttributeLocation, value: table.Location, set: true},
-		attr{name: ydbexternal.AttributeColumns, value: ydbexternal.FormatColumns(table.Columns), set: true},
-		attr{name: ydbexternal.AttributeOptions, value: ydbexternal.FormatOptions(table.Options),
-			set: len(table.Options) > 0},
-	)
-}
-
 func roleAnnotation(role schemamodel.Role) string {
 	return annotation("ptah:schema:role",
 		attr{name: "name", value: role.Name, set: true},
@@ -1386,55 +1121,6 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 		attr{name: "comment", value: privilege.Comment, set: privilege.Comment != ""},
 		dialectsAttr(privilege.Dialects),
 	)
-}
-
-// resourcePoolAnnotation preserves unset settings and explicit zero limits.
-func resourcePoolAnnotation(name string, spec ydbworkload.PoolSpec) string {
-	integer := func(name string, value *int32) attr {
-		if value == nil {
-			return attr{name: name}
-		}
-		return attr{name: name, value: strconv.FormatInt(int64(*value), 10), set: true}
-	}
-	fraction := func(name string, value *float64) attr {
-		if value == nil {
-			return attr{name: name}
-		}
-		return attr{name: name, value: strconv.FormatFloat(*value, 'f', -1, 64), set: true}
-	}
-	return annotation("ptah:schema:resourcepool",
-		attr{name: ydbworkload.AttributeName, value: name, set: true},
-		integer(ydbworkload.AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit),
-		integer(ydbworkload.AttributeQueueSize, spec.QueueSize),
-		fraction(ydbworkload.AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold),
-		fraction(ydbworkload.AttributeQueryMemoryLimitPercentPerNode, spec.QueryMemoryLimitPercentPerNode),
-		fraction(ydbworkload.AttributeQueryCPULimitPercentPerNode, spec.QueryCPULimitPercentPerNode),
-		fraction(ydbworkload.AttributeTotalCPULimitPercentPerNode, spec.TotalCPULimitPercentPerNode),
-		fraction(ydbworkload.AttributeResourceWeight, spec.ResourceWeight),
-	)
-}
-
-func resourcePoolClassifierAnnotation(name string, spec ydbworkload.ClassifierSpec) string {
-	return annotation("ptah:schema:resourcepool:classifier",
-		attr{name: ydbworkload.AttributeName, value: name, set: true},
-		attr{name: ydbworkload.AttributeResourcePool, value: spec.ResourcePool, set: true},
-		attr{name: ydbworkload.AttributeMemberName, value: spec.MemberName,
-			set: spec.MemberName != ""},
-		attr{name: ydbworkload.AttributeRank, value: strconv.FormatInt(spec.Rank, 10), set: true},
-	)
-}
-
-// coordinationNodeAnnotation declares a YDB coordination node with the
-// settings it was given; a setting left unset takes YDB's default.
-func coordinationNodeAnnotation(schema, name string, spec ydbcoordination.Spec) string {
-	attrs := []attr{
-		{name: "name", value: name, set: true},
-		{name: "schema", value: schema, set: schema != ""},
-	}
-	for _, setting := range ydbcoordination.Attributes(spec) {
-		attrs = append(attrs, attr{name: setting[0], value: setting[1], set: true})
-	}
-	return annotation("ptah:schema:coordinationnode", attrs...)
 }
 
 func annotation(name string, attrs ...attr) string {
@@ -1781,13 +1467,6 @@ func sortedImportPaths(values map[string]struct{}) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-// writeResourcePools writes the database resource pools and their classifiers in name order.
-func (ctx *renderContext) writeResourcePools(w *sourceWriter) {
-	for _, comment := range ctx.workloadAnnotations {
-		w.writeComment(comment)
-	}
 }
 
 // fullTextAttrs preserves full-text WITH options in the exported Go declaration.

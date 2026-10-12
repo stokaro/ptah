@@ -656,7 +656,9 @@ Go export adds whole-family annotations when those namespaces were not
 inspected. These annotations keep the generated source from claiming that
 unread objects are absent. Repeated export preserves authored family and object
 limits. Each generated file carries the limits, so reading one table file on
-its own preserves them too. Export refuses detailed inspection errors and
+its own preserves them too. An export for YDB, or one that names no target,
+writes them; an export for another target leaves them out, since that target
+never holds these objects. Export refuses detailed inspection errors and
 model definitions that the annotations cannot reproduce.
 
 A kind this build does not know is refused

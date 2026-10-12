@@ -8,6 +8,7 @@ import (
 
 	annotationext "ptah.run/core/annotation"
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -39,6 +40,7 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 	}
 	encoded, err := ctx.opts.Annotations.Encode(requestContext, annotationext.EncodeRequest{
 		Objects: objects, Tables: ctx.sourceTables(), Slots: ctx.owned.slots, Coverage: ctx.db.FeatureCoverage,
+		Target: platform.NormalizeDialect(ctx.opts.Dialect),
 	})
 	if err != nil {
 		return err
@@ -58,6 +60,10 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 		}
 		ctx.ownerDirectives[place] = append(ctx.ownerDirectives[place],
 			annotation(directive.Directive, append(attrs, dialectsAttr(directive.Targets))...))
+	}
+	for _, limit := range encoded.Limits {
+		ctx.featureLimitAnnotations = append(ctx.featureLimitAnnotations, annotation("ptah:schema:notdescribed",
+			attr{name: "kind", value: limit.Kind, set: true}, attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
 	ctx.ownerAttributes = make(map[ownerSlot][]attr)
 	for _, slot := range encoded.Attributes {

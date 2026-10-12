@@ -50,7 +50,9 @@ const (
 // file; the settings a table and an index declare in the frontend's own
 // directives; the not-described kinds that leave a namespace of those objects
 // unmanaged; and the claim that a Go annotation source describes each of
-// them, and a table's TTL, completely.
+// them, and a table's TTL, completely. Its encoder writes the standalone
+// objects, a table's changefeeds and its column families back as those
+// directives, and the limits where the export's target reads them.
 func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner:      ydbschema.Owner,
@@ -67,6 +69,8 @@ func Annotations() annotation.Extension {
 		File:     func() annotation.FileDecoder { return &fileDecoder{} },
 		Limits:   limitTokens(),
 		Coverage: annotationCoverage,
+		Encoder:  annotationEncoder{},
+		Encodes:  encodedKinds,
 	}
 }
 
