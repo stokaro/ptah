@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -232,12 +230,10 @@ func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, erro
 
 // refuseUnwrittenFacets refuses a facet no annotation writes, so it cannot
 // disappear from a successful export: a facet of a model a selected owner
-// encodes, which the owner writes or refuses, a table facet with an
-// annotation of its own, a YDB vector index's settings, which the index
-// annotation writes, a primary key's MySQL block-size hint, which the
-// directive declaring the key writes, and a materialized view's refresh
-// schedule, its `refresh` attribute, are the ones written. Render has refused
-// any other view setting already.
+// encodes, which the owner writes or refuses, a YDB table facet with an
+// annotation of its own, and a YDB vector index's settings, which the index
+// annotation writes, are the ones written. Render has refused any view
+// setting no owner writes already.
 func (ctx *renderContext) refuseUnwrittenFacets() error {
 	writers := ctx.facetWriters()
 	for _, facets := range ctx.db.FacetSlots() {
@@ -281,57 +277,12 @@ func (ctx *renderContext) facetWriters() map[*schemaext.Facets]*facetWriter {
 	for i := range ctx.db.Tables {
 		writers[&ctx.db.Tables[i].Facets] = table
 	}
-	index := &facetWriter{accepts: isAnnotatedIndexFacet, validate: validateAnnotatedIndexFacets}
+	index := &facetWriter{accepts: isAnnotatedIndexFacet, validate: validateVectorDeclaration}
 	for i := range ctx.db.Indexes {
 		writers[&ctx.db.Indexes[i].Facets] = index
 	}
 	for i := range ctx.db.MaterializedViews {
 		writers[&ctx.db.MaterializedViews[i].Facets] = nil
 	}
-	column := &facetWriter{accepts: isAnnotatedColumnFacet, validate: func(facets schemaext.Facets) error {
-		_, _, err := mysqlschema.Settings(facets)
-		return err
-	}}
-	for i := range ctx.db.Fields {
-		writers[&ctx.db.Fields[i].Facets] = column
-	}
-	key := &facetWriter{accepts: func(kind schemaext.Kind) bool { return kind == mysqlschema.IndexBlockSizeKind },
-		validate: func(facets schemaext.Facets) error {
-			_, _, err := mysqlschema.IndexBlockSize(facets)
-			return err
-		}}
-	for slot := range keyFacetSlots(ctx.db) {
-		writers[slot] = key
-	}
 	return writers
-}
-
-// keyFacetSlots addresses the settings of every primary key: a key's
-// block-size hint is written as an attribute of the directive that declares
-// the key, the table's or a PRIMARY KEY constraint's.
-func keyFacetSlots(db *schemamodel.Database) map[*schemaext.Facets]bool {
-	keys := make(map[*schemaext.Facets]bool, len(db.Tables))
-	for i := range db.Tables {
-		keys[&db.Tables[i].PrimaryKeyFacets] = true
-	}
-	for i := range db.Constraints {
-		if strings.EqualFold(strings.TrimSpace(db.Constraints[i].Type), "PRIMARY KEY") {
-			keys[&db.Constraints[i].Facets] = true
-		}
-	}
-	return keys
-}
-
-// validateAnnotatedIndexFacets checks the index values the export writes as
-// attributes of the index directive: a YDB vector declaration and the MySQL
-// owner's index options and block-size hint.
-func validateAnnotatedIndexFacets(facets schemaext.Facets) error {
-	if err := validateVectorDeclaration(facets); err != nil {
-		return err
-	}
-	if _, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](facets, mysqlschema.IndexKind); err != nil {
-		return err
-	}
-	_, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndexBlockSize](facets, mysqlschema.IndexBlockSizeKind)
-	return err
 }

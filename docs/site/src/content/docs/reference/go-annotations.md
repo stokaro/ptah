@@ -414,7 +414,7 @@ Declares a table constraint.
 | `foreign_columns` | No | Comma-separated referenced columns for composite FOREIGN KEY constraints. |
 | `foreign_table` | No | Referenced table for FOREIGN KEY constraints. |
 | `include` | No | Comma-separated INCLUDE columns for a covering UNIQUE or PRIMARY KEY constraint. Order is preserved. |
-| `key_block_size` | No | Block-size hint for a MySQL-family `PRIMARY KEY`. Declare a unique index to give a `UNIQUE` key this option. |
+| `key_block_size` | No | Block-size hint for a MySQL-family `PRIMARY KEY`. Any other constraint type refuses it when the source is read. Declare a unique index to give a `UNIQUE` key this option. |
 | `name` | No | Constraint name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `on_delete` | No | Foreign key ON DELETE action. |

@@ -6,9 +6,31 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
+
+// ConstraintBlockSize refuses a block-size hint on a constraint that is not a
+// PRIMARY KEY. MySQL and MariaDB keep the index options of a UNIQUE key on
+// the unique index it is, so a schema spells that hint on a unique index, and
+// a UNIQUE constraint holding one has no statement to write it. The renderer
+// and the Go annotation reader refuse it with this one error, so an author
+// meets at parse time the text a render would give. A hint of zero states
+// none.
+func ConstraintBlockSize(constraintType, name string, size uint64) error {
+	if size == 0 || IsPrimaryKeyConstraint(constraintType) {
+		return nil
+	}
+	return fmt.Errorf("%w: KEY_BLOCK_SIZE on %s constraint %q is not supported; declare a unique index for a UNIQUE key",
+		ptaherr.ErrUnsupportedFeature, constraintType, name)
+}
+
+// IsPrimaryKeyConstraint reports a constraint type that declares a primary
+// key, in any case and with surrounding space.
+func IsPrimaryKeyConstraint(constraintType string) bool {
+	return strings.EqualFold(strings.TrimSpace(constraintType), "PRIMARY KEY")
+}
 
 // KeepsBlockSize reports whether this table retains an index block-size hint.
 // MariaDB prints it on every table; MySQL drops it outside compressed tables.

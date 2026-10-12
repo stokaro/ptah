@@ -333,7 +333,9 @@ models, models without an encoder, and a model the extension does not declare.
   objects and the facets of its `Encodes`, every table the source declares,
   and the coverage of its `Kinds`. A facet arrives on the `Slot` that holds it:
   the declaration of the frontend's own directive, such as a table, its primary
-  key, or an index of it, with its `Table` and `Name`. Every encoder is asked,
+  key, or an index of it, with its `Table` and `Name`. `Slot.PrimaryKey` marks
+  a table's primary key and a PRIMARY KEY constraint, so an owner can refuse a
+  key's setting on another constraint. Every encoder is asked,
   also for a schema that holds none of its models, since an owner may refuse a
   coverage record a source cannot carry.
 - The encoder returns `EncodedDirective` values as data: the directive, its
@@ -351,12 +353,19 @@ models, models without an encoder, and a model the extension does not declare.
   or written twice, and the dialects attribute, which `Targets` writes.
 - The encoder also returns `SlotAttributes`: attributes it adds to a
   declaration of the frontend's own that it was handed, such as a
-  materialized view's refresh schedule. The writer writes them after the
-  directive's own attributes and before its dialects attribute. `Set.Encode`
-  refuses attributes of a declaration the owner was not handed, or of one
-  twice, and an attribute the owner does not add to that directive, in a group
-  of the primary key exactly where the declaration is one. `Slot.String` names
-  a declaration in these refusals.
+  materialized view's refresh schedule or an index's block-size hint. The
+  writer writes them after the directive's own attributes and before its
+  dialects attribute. `AfterProperties` asks for a place after the platform
+  properties of a table or an index, which no other directive carries. A
+  `platform.<target>.<name>` attribute is one the owner decodes from a
+  platform property, such as a column's character set.
+- `Set.Encode` refuses attributes of a declaration the owner was not handed,
+  or of one at one position twice, and an attribute the owner does not add to
+  that directive, in a group of the primary key exactly where the declaration
+  is one. Two owners writing one attribute of one declaration are refused with
+  `schemaext.ErrDuplicate`. The writer refuses a platform property the
+  directive does not read. `Slot.String` names a declaration in these
+  refusals.
 - `AfterPolicies` places a directive beside a table, after the table's own
   row-level security policies, such as a ClickHouse row policy or a
   PostgreSQL policy. `AfterSwitches` places one after the table's own
@@ -1523,7 +1532,15 @@ make, so an index they declare without a hint requests none.
 and constraint directives and the `primary_key_block_size` attribute of the
 table directive, a primary key attribute in the sense of
 `annotation.DirectiveAttributes.PrimaryKey`, and `mysqlsource.YAML` makes the
-YAML claim.
+YAML claim. A `key_block_size` on a constraint other than a PRIMARY KEY is
+refused with the error the renderer gives, since MySQL keeps a UNIQUE key's
+hint on the unique index it is.
+
+The encoder of `mysqlsource.Annotations` writes the hint back to the
+directive that declared it: `key_block_size` on an index and on a PRIMARY KEY
+constraint, and `primary_key_block_size` on the table. It writes a column's
+`charset` and `on_update` and an index's `parser` as platform properties, once
+for each target the setting is bound to.
 
 `mysqlcompare.IndexBlockSizeService` reports a `mysqldiff.IndexBlockSize`
 change where a retained hint differs from the declared one.

@@ -50,8 +50,8 @@ func validatePrimaryKeyOptions(dialect, table, comment string, size uint64) erro
 }
 
 func validateConstraintBlockSize(dialect, kind, name string, size uint64) error {
-	if size != 0 && kind != "PRIMARY KEY" {
-		return fmt.Errorf("%w: KEY_BLOCK_SIZE on %s constraint %q is not supported; declare a unique index for a UNIQUE key", ptaherr.ErrUnsupportedFeature, kind, name)
+	if err := mysqlindex.ConstraintBlockSize(kind, name, size); err != nil {
+		return err
 	}
 	return validateIndexBlockSize(dialect, name, size)
 }

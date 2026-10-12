@@ -156,9 +156,12 @@ SQL:
   the hint needs the key declared with `primary_key`, since a field's
   `primary` writes a column key with no place for it, and is refused without
   one. A `PRIMARY KEY` constraint annotation uses `key_block_size` and
-  `comment`. These attributes belong to the MySQL owner: a parse that does
-  not select it refuses them as unknown. Atlas HCL output reports the
-  block-size hint it cannot represent.
+  `comment`. A `UNIQUE` or any other constraint annotation that writes
+  `key_block_size` is refused when the source is read, as rendering refuses
+  it: MySQL keeps a `UNIQUE` key's hint on the unique index it is, so declare
+  a unique index with `unique="true"` instead. These attributes belong to the
+  MySQL owner: a parse that does not select it refuses them as unknown. Atlas
+  HCL output reports the block-size hint it cannot represent.
 - An index the optimizer does not use is `INVISIBLE` on MySQL and `IGNORED` on
   MariaDB, and each engine answers `ERROR 1064` to the other's word. Ptah reads
   it from `STATISTICS.IS_VISIBLE` or `STATISTICS.IGNORED`, writes it in the

@@ -2155,8 +2155,8 @@ func validateDeclaredPrimaryKeyOptions(dialect string, database *schemamodel.Dat
 	}
 	for _, constraint := range database.Constraints {
 		size := indexBlockSize(constraint.Facets)
-		if size != 0 && !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
-			return fmt.Errorf("%w: KEY_BLOCK_SIZE on %s constraint %q is not supported; declare a unique index for a UNIQUE key", ptaherr.ErrUnsupportedFeature, constraint.Type, constraint.Name)
+		if err := mysqlindex.ConstraintBlockSize(constraint.Type, constraint.Name, size); err != nil {
+			return err
 		}
 		if !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
 			continue

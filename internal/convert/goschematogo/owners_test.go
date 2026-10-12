@@ -1,6 +1,7 @@
 package goschematogo_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"testing"
@@ -508,33 +509,41 @@ func TestRender_HandsAnOwnerEveryDeclarationOfItsModel(t *testing.T) {
 }
 
 // slotWriter adds the paint owner's attribute to every declaration it is
-// handed.
-type slotWriter struct{}
+// handed, at position, under name, or shade when name is empty.
+type slotWriter struct {
+	position annotation.Position
+	name     string
+}
 
-func (slotWriter) EncodeAnnotations(_ context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
+func (w slotWriter) EncodeAnnotations(_ context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
 	var result annotation.EncodeResult
 	for _, slot := range request.Slots {
 		painted, _, err := schemaext.FacetAs[*shade](slot.Facets, shadeKind)
 		if err != nil {
 			return annotation.EncodeResult{}, err
 		}
-		result.Attributes = append(result.Attributes, annotation.SlotAttributes{Slot: slot.Slot,
-			Attributes: []annotation.EncodedAttribute{{Name: "shade", Value: painted.Name}}})
+		result.Attributes = append(result.Attributes, annotation.SlotAttributes{Slot: slot.Slot, Position: w.position,
+			Attributes: []annotation.EncodedAttribute{{Name: cmp.Or(w.name, "shade"), Value: painted.Name}}})
 	}
 	return result, nil
 }
 
 // shadingProvider is the paint owner adding a shade attribute to the table
-// and the materialized view directives.
-func shadingProvider() engine.Provider {
-	provider := paintProvider("example.org/paint", slotWriter{})
-	decode := func(attributes map[string]string) (schemaext.Facets, error) {
-		return schemaext.NewFacets(&shade{Name: attributes["shade"]})
+// and the materialized view directives, and a key_shade attribute of a
+// table's primary key, as writer writes them.
+func shadingProvider(writer slotWriter) engine.Provider {
+	provider := paintProvider("example.org/paint", writer)
+	decode := func(name string) func(map[string]string) (schemaext.Facets, error) {
+		return func(attributes map[string]string) (schemaext.Facets, error) {
+			return schemaext.NewFacets(&shade{Name: attributes[name]})
+		}
 	}
 	shadeAttribute := []annotation.Attribute{{Name: "shade", Description: "The shade.", Value: "string"}}
 	provider.Annotations[0].Attributes = []annotation.DirectiveAttributes{
-		{Directive: "ptah:schema:table", Attributes: shadeAttribute, Decode: decode},
-		{Directive: "ptah:schema:matview", Attributes: shadeAttribute, Decode: decode},
+		{Directive: "ptah:schema:table", Attributes: shadeAttribute, Decode: decode("shade")},
+		{Directive: "ptah:schema:table", Attributes: []annotation.Attribute{{Name: "key_shade", Description: "The key's shade.", Value: "string"}},
+			Decode: decode("key_shade"), PrimaryKey: true},
+		{Directive: "ptah:schema:matview", Attributes: shadeAttribute, Decode: decode("shade")},
 	}
 	return provider
 }
@@ -545,7 +554,7 @@ func shadingProvider() engine.Provider {
 // back to the same setting through the same owner.
 func TestRender_AnOwnersAttributeOfAViewPrecedesItsDialects(t *testing.T) {
 	c := qt.New(t)
-	runtime := must.Must(engine.New(shadingProvider()))
+	runtime := must.Must(engine.New(shadingProvider(slotWriter{})))
 	db := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "hourly", Body: "SELECT 1", Comment: "by hour",
 		Dialects: []string{"postgres"}, Facets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}}}
 
@@ -559,20 +568,98 @@ func TestRender_AnOwnersAttributeOfAViewPrecedesItsDialects(t *testing.T) {
 	c.Assert(parsed.MaterializedViews[0].Facets, qt.DeepEquals, db.MaterializedViews[0].Facets)
 }
 
-// TestRender_RefusesAnOwnersAttributeWhereTheWriterPlacesNone pins that an
-// attribute an owner adds to a declaration the writer has no place for is
-// refused rather than left out.
-func TestRender_RefusesAnOwnersAttributeWhereTheWriterPlacesNone(t *testing.T) {
+// TestRender_AnOwnersAttributeOfATable pins where the writer places an
+// attribute an owner adds to a table: after the directive's own attributes,
+// or after its platform properties where the owner asks for that, and the
+// source reads back to the same setting through the same owner.
+func TestRender_AnOwnersAttributeOfATable(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		position annotation.Position
+		want     string
+	}{
+		{"with the table's own", annotation.WithOwnAttributes,
+			`//ptah:schema:table name="rooms" comment="by room" shade="teal" platform.mysql.engine="InnoDB"` + "\n"},
+		{"after the platform properties", annotation.AfterProperties,
+			`//ptah:schema:table name="rooms" comment="by room" platform.mysql.engine="InnoDB" shade="teal"` + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(engine.New(shadingProvider(slotWriter{position: test.position})))
+			db := &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Room", Name: "rooms", Comment: "by room",
+				Overrides: map[string]map[string]string{"mysql": {"engine": "InnoDB"}}, Facets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}}}
+
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: runtime.Annotations(), SingleFile: true})
+			c.Assert(err, qt.IsNil)
+			parsed, err := goschema.ParseSource(runtime.Annotations(), files[0].Name, files[0].Data)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(files[0].Data), qt.Contains, test.want)
+			c.Assert(parsed.Tables[0].Facets, qt.DeepEquals, db.Tables[0].Facets)
+		})
+	}
+}
+
+// TestRender_AnOwnersAttributeOfAPrimaryKey pins where the writer places an
+// attribute an owner adds to a table's primary key: with the key's own
+// attributes, before the column list, and the source reads back to the same
+// setting of the key.
+func TestRender_AnOwnersAttributeOfAPrimaryKey(t *testing.T) {
 	c := qt.New(t)
-	runtime := must.Must(engine.New(shadingProvider()))
-	db := &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Room", Name: "rooms",
-		Facets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}}}
+	runtime := must.Must(engine.New(shadingProvider(slotWriter{name: "key_shade"})))
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Room", Name: "rooms", Comment: "by room", PrimaryKey: []string{"id"},
+			PrimaryKeyComment: "lookup", PrimaryKeyFacets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}},
+		Fields: []schemamodel.Field{{StructName: "Room", FieldName: "ID", Name: "id", Type: "BIGINT"}},
+	}
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: runtime.Annotations(), SingleFile: true})
+	c.Assert(err, qt.IsNil)
+	parsed, err := goschema.ParseSource(runtime.Annotations(), files[0].Name, files[0].Data)
 
-	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-	c.Assert(err, qt.ErrorMatches, `.*an owner wrote attributes of table "rooms", where the writer places none`)
-	c.Assert(files, qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(files[0].Data), qt.Contains,
+		`//ptah:schema:table name="rooms" primary_key_comment="lookup" key_shade="teal" primary_key="id" comment="by room"`+"\n")
+	c.Assert(parsed.Tables[0].PrimaryKeyFacets, qt.DeepEquals, db.Tables[0].PrimaryKeyFacets)
+	c.Assert(parsed.Tables[0].Facets.IsZero(), qt.IsTrue)
+}
+
+// TestRender_RefusesAnOwnersAttributeWhereTheWriterPlacesNone pins that an
+// attribute an owner adds where the writer has no place for it is refused
+// rather than left out: after the platform properties of a directive that
+// carries none, a primary key's among them, which shares the table's
+// directive, and a platform property of a directive that reads none.
+func TestRender_RefusesAnOwnersAttributeWhereTheWriterPlacesNone(t *testing.T) {
+	painted := must.Must(schemaext.NewFacets(&shade{Name: "teal"}))
+	for _, test := range []struct {
+		name    string
+		writer  slotWriter
+		db      *schemamodel.Database
+		wantErr string
+	}{
+		{"after the properties of a view", slotWriter{position: annotation.AfterProperties},
+			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "hourly", Body: "SELECT 1", Facets: painted}}},
+			`.*an owner wrote attributes after the platform properties of matview "hourly", which has none`},
+		{"after the properties of a primary key", slotWriter{position: annotation.AfterProperties, name: "key_shade"},
+			&schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Room", Name: "rooms", PrimaryKey: []string{"id"},
+				PrimaryKeyFacets: painted}}},
+			`.*an owner wrote attributes after the platform properties of the primary key of table "rooms", which has none`},
+		{"a platform property of a view", slotWriter{name: "platform.mysql.shade"},
+			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "hourly", Body: "SELECT 1", Facets: painted}}},
+			`.*an owner wrote attribute "platform.mysql.shade" of matview "hourly", which the frontend does not read`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(engine.New(shadingProvider(test.writer)))
+			db := test.db
+
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: runtime.Annotations(), SingleFile: true})
+
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(files, qt.IsNil)
+		})
+	}
 }
 
 // TestRender_OwnersPoliciesFollowTheTablesOwn pins the order beside a table:

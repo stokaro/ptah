@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	annotationext "ptah.run/core/annotation"
+	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -58,18 +59,48 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 		ctx.ownerDirectives[place] = append(ctx.ownerDirectives[place],
 			annotation(directive.Directive, append(attrs, dialectsAttr(directive.Targets))...))
 	}
-	// Set.Encode has checked that each attribute is one its owner adds to the
-	// directive. The writer places them on a materialized view alone.
-	ctx.ownerAttributes = make(map[annotationext.Slot][]attr)
+	ctx.ownerAttributes = make(map[ownerSlot][]attr)
 	for _, slot := range encoded.Attributes {
-		if slot.Slot.Directive != matviewDirective {
-			return fmt.Errorf("%w: an owner wrote attributes of %s, where the writer places none", schemaext.ErrInvalidValue, slot.Slot)
+		if err := checkOwnerAttributes(catalog, slot); err != nil {
+			return err
 		}
+		place := ownerSlot{slot: slot.Slot, position: slot.Position}
 		for _, attribute := range slot.Attributes {
-			ctx.ownerAttributes[slot.Slot] = append(ctx.ownerAttributes[slot.Slot], attr{name: attribute.Name, value: attribute.Value, set: true})
+			ctx.ownerAttributes[place] = append(ctx.ownerAttributes[place], attr{name: attribute.Name, value: attribute.Value, set: true})
 		}
 	}
 	return nil
+}
+
+// ownerSlot is where in a declaration of the frontend's own the attributes
+// an owner adds stand.
+type ownerSlot struct {
+	slot     annotationext.Slot
+	position annotationext.Position
+}
+
+// checkOwnerAttributes refuses attributes the writer has no place for:
+// attributes after the platform properties of a directive that carries none,
+// and a platform property the directive does not read. Set.Encode has
+// checked that every other attribute is one its owner adds to the directive.
+func checkOwnerAttributes(catalog annotationmeta.Catalog, slot annotationext.SlotAttributes) error {
+	carriesProperties := slot.Slot.Directive == indexDirective || slot.Slot.Directive == tableDirective && !slot.Slot.PrimaryKey
+	if slot.Position == annotationext.AfterProperties && !carriesProperties {
+		return fmt.Errorf("%w: an owner wrote attributes after the platform properties of %s, which has none", schemaext.ErrInvalidValue, slot.Slot)
+	}
+	for _, attribute := range slot.Attributes {
+		if !catalog.AllowsAttribute(slot.Slot.Directive, attribute.Name) {
+			return fmt.Errorf("%w: an owner wrote attribute %q of %s, which the frontend does not read",
+				schemaext.ErrInvalidValue, attribute.Name, slot.Slot)
+		}
+	}
+	return nil
+}
+
+// ownerAttrs are the attributes the owners add to the declaration slot at
+// position.
+func (ctx *renderContext) ownerAttrs(slot annotationext.Slot, position annotationext.Position) []attr {
+	return ctx.ownerAttributes[ownerSlot{slot: slot, position: position}]
 }
 
 // validateMaterializedViewFacets refuses a materialized view setting no
@@ -173,6 +204,9 @@ const (
 type ownerSlots struct {
 	slots  []annotationext.SlotFacets
 	handed map[*schemaext.Facets]bool
+	// tables names, by struct, the table a struct's fields, indexes and
+	// constraints are handed under.
+	tables map[string]annotationext.Table
 }
 
 // collectOwnerSlots addresses the declarations the owners are handed.
@@ -220,7 +254,7 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 		}
 		for i := range db.Constraints {
 			if constraintOwner(db.Constraints[i]) == name {
-				add(annotationext.Slot{Directive: constraintDirective, Table: table, Name: db.Constraints[i].Name}, &db.Constraints[i].Facets)
+				add(constraintSlot(table, db.Constraints[i]), &db.Constraints[i].Facets)
 			}
 		}
 	}
@@ -234,7 +268,17 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 	for _, i := range views {
 		add(annotationext.Slot{Directive: matviewDirective, Name: db.MaterializedViews[i].Name}, &db.MaterializedViews[i].Facets)
 	}
+	collected.tables = declared
 	return collected
+}
+
+// constraintSlot is the declaration of constraint in the struct of table. A
+// PRIMARY KEY constraint is marked as a primary key, as the renderer
+// recognizes one, so an owner can tell a key's settings from another
+// constraint's.
+func constraintSlot(table annotationext.Table, constraint schemamodel.Constraint) annotationext.Slot {
+	return annotationext.Slot{Directive: constraintDirective, Table: table, Name: constraint.Name,
+		PrimaryKey: strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String())}
 }
 
 // undeclaredStructs are, sorted, the structs a field, an index or a

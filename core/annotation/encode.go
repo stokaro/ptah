@@ -54,8 +54,12 @@ type Slot struct {
 	// Name is the name of a field, an index, a constraint or a materialized
 	// view, and empty for a table and its primary key.
 	Name string
-	// PrimaryKey marks the primary key the table directive declares, whose
-	// settings [DirectiveAttributes.PrimaryKey] attributes spell.
+	// PrimaryKey marks a primary key. On the table directive it is the key
+	// the table declares, whose settings [DirectiveAttributes.PrimaryKey]
+	// attributes spell. On the constraint directive it is a PRIMARY KEY
+	// constraint, whose settings the directive's other attributes spell, so
+	// an owner can refuse a setting only a primary key takes on any other
+	// constraint.
 	PrimaryKey bool
 }
 
@@ -80,17 +84,37 @@ type EncodeResult struct {
 
 // SlotAttributes are the attributes an owner adds to one of the frontend's
 // own declarations it was handed, such as a materialized view's refresh
-// schedule. The writer writes them after the directive's own attributes and
-// before its dialects attribute, owner by owner in the order of the owners'
-// names.
+// schedule. The writer writes them where Position says, before the
+// directive's dialects attribute, owner by owner in the order of the owners'
+// names. An owner writes at most one entry for each declaration and
+// position.
 type SlotAttributes struct {
 	// Slot is the declaration.
 	Slot Slot
+	// Position is where in the directive the attributes stand.
+	Position Position
 	// Attributes are the attributes, in order. Each is one the owner adds to
 	// the declaration's directive (see [DirectiveAttributes]), so reading the
-	// source back hands it to the owner.
+	// source back hands it to the owner, or a platform property written
+	// platform.<target>.<key>, which the owner's property decoding reads.
 	Attributes []EncodedAttribute
 }
+
+// Position is where in one of the frontend's own directives the attributes an
+// owner adds stand.
+type Position string
+
+const (
+	// WithOwnAttributes places them with the directive's own attributes, and
+	// before its platform properties: after the attributes that name the
+	// key a table's primary key or a constraint states, and after the own
+	// attributes of any other directive. It is the zero value.
+	WithOwnAttributes Position = ""
+	// AfterProperties places them after the directive's platform
+	// properties, on a table or an index, the two directives that carry
+	// them.
+	AfterProperties Position = "after-properties"
+)
 
 // Placement is where among the writer's own directives an encoded directive
 // stands. The writer writes the directives of one placement owner by owner,
@@ -192,6 +216,7 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 	}
 	slices.SortStableFunc(order, func(a, b int) int { return cmp.Compare(s.extensions[a].Owner, s.extensions[b].Owner) })
 	var encoded EncodeResult
+	writers := make(map[slotAttribute]string)
 	for _, index := range order {
 		extension := s.extensions[index]
 		request := extension.selectRequest(schema)
@@ -207,7 +232,7 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 				return EncodeResult{}, err
 			}
 		}
-		if err := s.checkSlotAttributes(index, request, result.Attributes); err != nil {
+		if err := s.checkSlotAttributes(index, request, result.Attributes, writers); err != nil {
 			return EncodeResult{}, err
 		}
 		encoded.Directives = append(encoded.Directives, result.Directives...)
@@ -295,39 +320,59 @@ func checkPlacement(owner string, request EncodeRequest, directive EncodedDirect
 	return nil
 }
 
+// slotAttribute is one attribute of one declaration.
+type slotAttribute struct {
+	slot Slot
+	name string
+}
+
 // checkSlotAttributes refuses the attributes the extension at index adds to
 // declarations where the writer cannot write them: to a declaration the
-// extension was not handed, or to one twice, and an attribute without a name,
-// written twice, or one the extension does not add to the declaration's
-// directive.
-func (s Set) checkSlotAttributes(index int, request EncodeRequest, slots []SlotAttributes) error {
+// extension was not handed, or to one twice at one position, at an unknown
+// position, and an attribute without a name, written twice, neither one the
+// extension adds to the declaration's directive nor a platform property, or
+// one another extension writes to the declaration. writers records which
+// extension writes each attribute.
+func (s Set) checkSlotAttributes(index int, request EncodeRequest, slots []SlotAttributes, writers map[slotAttribute]string) error {
 	extension := s.extensions[index]
-	written := make(map[Slot]bool, len(slots))
+	type slotPosition struct {
+		slot     Slot
+		position Position
+	}
+	written := make(map[slotPosition]bool, len(slots))
 	for _, slot := range slots {
 		handed := slices.ContainsFunc(request.Slots, func(entry SlotFacets) bool { return entry.Slot == slot.Slot })
-		if !handed || written[slot.Slot] {
-			return fmt.Errorf("%w: Go annotation encoder of %s wrote attributes of %s, which it was not handed or wrote twice",
-				schemaext.ErrInvalidValue, extension.Owner, slot.Slot)
+		place := slotPosition{slot: slot.Slot, position: slot.Position}
+		if !handed || written[place] || (slot.Position != WithOwnAttributes && slot.Position != AfterProperties) {
+			return fmt.Errorf("%w: Go annotation encoder of %s wrote attributes of %s, which it was not handed, wrote twice or placed at %q",
+				schemaext.ErrInvalidValue, extension.Owner, slot.Slot, slot.Position)
 		}
-		written[slot.Slot] = true
-		names := make(map[string]bool, len(slot.Attributes))
+		written[place] = true
 		for _, attribute := range slot.Attributes {
-			if strings.TrimSpace(attribute.Name) == "" || names[attribute.Name] || !extension.adds(slot.Slot, attribute.Name) {
+			key := slotAttribute{slot: slot.Slot, name: attribute.Name}
+			owned := extension.adds(slot.Slot, attribute.Name) || strings.HasPrefix(attribute.Name, "platform.")
+			if strings.TrimSpace(attribute.Name) == "" || writers[key] == extension.Owner || !owned {
 				return fmt.Errorf("%w: Go annotation encoder of %s wrote attribute %q of %s unnamed, twice or as one it does not add",
 					schemaext.ErrInvalidValue, extension.Owner, attribute.Name, slot.Slot)
 			}
-			names[attribute.Name] = true
+			if writer, taken := writers[key]; taken {
+				return fmt.Errorf("%w: Go annotation encoders of %s and %s both write attribute %q of %s",
+					schemaext.ErrDuplicate, writer, extension.Owner, attribute.Name, slot.Slot)
+			}
+			writers[key] = extension.Owner
 		}
 	}
 	return nil
 }
 
 // adds reports whether the extension adds the attribute name to the
-// directive of slot, in a group of the slot's primary key exactly where the
-// slot is one.
+// directive of slot, in a group of the table's primary key exactly where the
+// slot is that key. A PRIMARY KEY constraint takes the constraint
+// directive's ordinary groups.
 func (e Extension) adds(slot Slot, name string) bool {
+	tableKey := slot.PrimaryKey && slot.Directive == tableDirective
 	return slices.ContainsFunc(e.Attributes, func(group DirectiveAttributes) bool {
-		return group.Directive == slot.Directive && group.PrimaryKey == slot.PrimaryKey &&
+		return group.Directive == slot.Directive && group.PrimaryKey == tableKey &&
 			slices.ContainsFunc(group.Attributes, func(attribute Attribute) bool { return attribute.Name == name })
 	})
 }
@@ -339,7 +384,7 @@ func (s Slot) String() string {
 	kind := s.Directive[strings.LastIndex(s.Directive, ":")+1:]
 	table := s.Table.QualifiedName()
 	switch {
-	case s.PrimaryKey:
+	case s.PrimaryKey && s.Name == "":
 		return fmt.Sprintf("the primary key of table %q", table)
 	case s.Name == "":
 		return fmt.Sprintf("%s %q", kind, table)
