@@ -341,6 +341,7 @@ func toDBEnums(enums []schemamodel.Enum) []catalog.Enum {
 		out = append(out, catalog.Enum{
 			Facets:  enum.Facets,
 			Name:    enum.Name,
+			Schema:  enum.Schema,
 			Values:  append([]string(nil), enum.Values...),
 			Comment: enum.Comment,
 		})
