@@ -20,12 +20,15 @@ import (
 const (
 	sqlCreate  = "create-extension"
 	sqlComment = "comment-on-extension"
+	sqlDrop    = "drop-extension"
+	sqlAlter   = "alter-extension"
 )
 
 // SQL is the extension owner's contribution to the SQL frontend: the CREATE
-// EXTENSION and COMMENT ON EXTENSION statements of a document that names a
-// PostgreSQL-family target, or names none. A document of another target
-// reads them through the shared grammar, which refuses them.
+// EXTENSION, COMMENT ON EXTENSION, DROP EXTENSION and ALTER EXTENSION
+// statements of a document that names a PostgreSQL-family target, or names
+// none. A document of another target reads them through the shared grammar,
+// which refuses them.
 //
 // A CREATE declares an extension, with no target scope, as a declaration
 // that names none in any other source. A COMMENT amends the extension a
@@ -34,6 +37,10 @@ const (
 // declared still reads, as the amendment it states, and the reader of the
 // load refuses it. A statement read alone, as migration lint reads each one,
 // is therefore never refused for what other statements declare.
+//
+// A DROP or an ALTER is a change a migration states: it reads as the
+// operation it performs, which lint and safety classify, and declares and
+// amends nothing, so a schema document's reader refuses it.
 //
 // Its claim is the one every source makes: a document describes every
 // extension, and one it leaves out is absent.
@@ -45,6 +52,8 @@ func SQL() sqlext.Extension {
 		Patterns: []sqlext.Pattern{
 			{Name: sqlCreate, Site: sqlext.Statement, Words: []string{"CREATE", "EXTENSION"}},
 			{Name: sqlComment, Site: sqlext.Statement, Words: []string{"COMMENT", "ON", "EXTENSION"}},
+			{Name: sqlDrop, Site: sqlext.Statement, Words: []string{"DROP", "EXTENSION"}},
+			{Name: sqlAlter, Site: sqlext.Statement, Words: []string{"ALTER", "EXTENSION"}},
 		},
 		Parser: sqlParser{},
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
@@ -76,6 +85,10 @@ func (sqlParser) ParseSQL(ctx context.Context, request sqlext.Request) (sqlext.R
 			value, err = tokens.create()
 		case sqlComment:
 			value, err = tokens.comment(known)
+		case sqlDrop:
+			value, err = tokens.drop()
+		case sqlAlter:
+			value, err = tokens.alter()
 		default:
 			err = fmt.Errorf("%w: PostgreSQL extension SQL pattern %q", schemaext.ErrInvalidValue, claim.Pattern)
 		}
@@ -317,4 +330,100 @@ func (t *statementTokens) comment(known map[string]schemaext.Object) (sqlext.Val
 	object.Targets = targets
 	operation := &pgextension.CommentOperation{Name: name, Comment: text}
 	return sqlext.Value{Statement: operation, Replaces: []schemaext.Object{object}}, nil
+}
+
+// drop reads `DROP EXTENSION [IF EXISTS] name [CASCADE | RESTRICT]`.
+// PostgreSQL also takes several names in one statement; the operation drops
+// one, so that form is refused rather than read as part of itself.
+func (t *statementTokens) drop() (sqlext.Value, error) {
+	t.words(2)
+	operation := &pgextension.Operation{Action: pgextension.Drop}
+	if t.keyword("IF") {
+		t.pos++
+		if !t.keyword("EXISTS") {
+			return sqlext.Value{}, fmt.Errorf("expected EXISTS after IF at position %d", t.position(t.current()))
+		}
+		t.pos++
+		operation.IfExists = true
+	}
+	name, err := t.name("extension name")
+	if err != nil {
+		return sqlext.Value{}, err
+	}
+	operation.Name = name
+	if token := t.current(); token.Type == lexer.TokenOperator && token.Value == "," {
+		return sqlext.Value{}, fmt.Errorf("DROP EXTENSION %s, ... at position %d: the extension owner reads one extension per DROP EXTENSION; "+
+			"write a statement for each", name, t.position(token))
+	}
+	switch {
+	case t.keyword("CASCADE"):
+		t.pos++
+		operation.Cascade = true
+	case t.keyword("RESTRICT"):
+		t.pos++
+	}
+	if err := t.finished("DROP EXTENSION " + name); err != nil {
+		return sqlext.Value{}, err
+	}
+	return t.operation(operation)
+}
+
+// alter reads `ALTER EXTENSION name UPDATE TO version` and `ALTER EXTENSION
+// name SET SCHEMA schema`. An UPDATE without TO goes to the control file's
+// default version, which the operation cannot name, and the forms that add
+// or drop a member are not ones the owner models, so each is refused.
+func (t *statementTokens) alter() (sqlext.Value, error) {
+	t.words(2)
+	name, err := t.name("extension name")
+	if err != nil {
+		return sqlext.Value{}, err
+	}
+	operation := &pgextension.Operation{Name: name}
+	switch token := t.current(); {
+	case t.keyword("UPDATE"):
+		t.pos++
+		if !t.keyword("TO") {
+			return sqlext.Value{}, fmt.Errorf("ALTER EXTENSION %s UPDATE at position %d: the extension owner reads an update to a named version; "+
+				"write UPDATE TO the version", name, t.position(token))
+		}
+		t.pos++
+		operation.Action = pgextension.UpdateVersion
+		if operation.Version, err = t.version(); err != nil {
+			return sqlext.Value{}, err
+		}
+	case t.keyword("SET"):
+		t.pos++
+		if !t.keyword("SCHEMA") {
+			return sqlext.Value{}, fmt.Errorf("expected SCHEMA after SET in ALTER EXTENSION %s at position %d", name, t.position(t.current()))
+		}
+		t.pos++
+		operation.Action = pgextension.SetSchema
+		if operation.Schema, err = t.name("extension schema"); err != nil {
+			return sqlext.Value{}, err
+		}
+	default:
+		return sqlext.Value{}, fmt.Errorf("unsupported ALTER EXTENSION %s action %q at position %d: the extension owner reads UPDATE TO and SET SCHEMA",
+			name, token.Value, t.position(token))
+	}
+	if err := t.finished("ALTER EXTENSION " + name); err != nil {
+		return sqlext.Value{}, err
+	}
+	return t.operation(operation)
+}
+
+// finished refuses anything after a statement's last clause.
+func (t *statementTokens) finished(statement string) error {
+	if token := t.current(); token.Type != lexer.TokenEOF {
+		return fmt.Errorf("unexpected %q after %s at position %d", token.Value, statement, t.position(token))
+	}
+	return nil
+}
+
+// operation is the value of a statement that changes an extension and
+// declares nothing: its operation, valid as the planner's would be.
+func (t *statementTokens) operation(operation *pgextension.Operation) (sqlext.Value, error) {
+	if err := operation.Validate(); err != nil {
+		return sqlext.Value{}, err
+	}
+	return sqlext.Value{Statement: operation}, nil
 }

@@ -43,6 +43,13 @@ func TestOperation_HappyPath(t *testing.T) {
 			effect:    schemaext.Effect{Impact: schemaext.Destructive, Reason: "DROP EXTENSION removes database objects owned by the extension"},
 			report:    ast.ExtensionChange{Action: ast.ExtensionDrop, Name: "pg_trgm"},
 		},
+		{
+			name:      "a guarded drop with its dependents",
+			operation: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfExists: true, Cascade: true},
+			effect: schemaext.Effect{Impact: schemaext.Destructive,
+				Reason: "DROP EXTENSION ... CASCADE removes database objects owned by the extension and every object that depends on them"},
+			report: ast.ExtensionChange{Action: ast.ExtensionDrop, Name: "pg_trgm"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -76,6 +83,12 @@ func TestOperation_FailurePath(t *testing.T) {
 			want: `.*an extension move names its schema and nothing else`},
 		{name: "a drop guarded like a creation", operation: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfNotExists: true},
 			want: `.*an extension drop names its extension and nothing else`},
+		{name: "a creation guarded like a drop", operation: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Create, IfExists: true},
+			want: `.*only an extension drop names IF EXISTS or CASCADE`},
+		{name: "an update that cascades", operation: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.UpdateVersion, Version: "1.6", Cascade: true},
+			want: `.*only an extension drop names IF EXISTS or CASCADE`},
+		{name: "a move guarded like a drop", operation: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.SetSchema, Schema: "ext", IfExists: true},
+			want: `.*only an extension drop names IF EXISTS or CASCADE`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -98,7 +111,7 @@ func TestOperation_FailurePath(t *testing.T) {
 	t.Run("a wire without its action", func(t *testing.T) {
 		c := qt.New(t)
 
-		decoded, err := pgextension.OperationCodecs()[0].Decode(json.RawMessage(`{"name":"pg_trgm","schema":"","version":"","if_not_exists":false}`))
+		decoded, err := pgextension.OperationCodecs()[0].Decode(json.RawMessage(`{"name":"pg_trgm","schema":"","version":"","if_not_exists":false,"if_exists":false,"cascade":false}`))
 
 		c.Assert(err, qt.ErrorAs, new(*schemaext.InvalidModelError))
 		c.Assert(decoded, qt.IsNil)

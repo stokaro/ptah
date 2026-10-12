@@ -100,10 +100,24 @@ func renderOperation(_ renderer.ExtensionContext, value *pgextension.Operation) 
 	case pgextension.SetSchema:
 		return []string{"ALTER EXTENSION " + name + " SET SCHEMA " + quote(value.Schema) + ";"}, nil
 	case pgextension.Drop:
-		return []string{"DROP EXTENSION IF EXISTS " + name + ";"}, nil
+		return []string{dropStatement(value)}, nil
 	default:
 		return []string{CreateStatement(value)}, nil
 	}
+}
+
+// dropStatement writes DROP EXTENSION for a drop, with IF EXISTS and CASCADE
+// where the operation names them.
+func dropStatement(value *pgextension.Operation) string {
+	parts := []string{"DROP EXTENSION"}
+	if value.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, quote(value.Name))
+	if value.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	return strings.Join(parts, " ") + ";"
 }
 
 // CreateStatement writes CREATE EXTENSION for a creation. An extension's name

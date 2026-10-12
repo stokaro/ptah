@@ -23,7 +23,8 @@ const (
 	// SetSchema renders ALTER EXTENSION ... SET SCHEMA the operation's
 	// schema.
 	SetSchema Action = "set-schema"
-	// Drop renders DROP EXTENSION IF EXISTS.
+	// Drop renders DROP EXTENSION, with IF EXISTS and CASCADE where the
+	// operation names them.
 	Drop Action = "drop"
 )
 
@@ -32,8 +33,10 @@ const (
 // a creation names, empty for the connection's default, and the schema a
 // move goes to. Version is the version a creation names, empty for the
 // control file's default, and the version an update goes to. IfNotExists
-// applies to a creation only. An extension's comment is a
-// [CommentOperation] of its own, because a target can hold extensions and
+// applies to a creation only. IfExists and Cascade apply to a drop only:
+// IfExists makes a missing extension no error, and Cascade also drops every
+// object that depends on the extension's objects. An extension's comment is
+// a [CommentOperation] of its own, because a target can hold extensions and
 // not their comments.
 type Operation struct {
 	Name        string `json:"name"`
@@ -41,6 +44,8 @@ type Operation struct {
 	Schema      string `json:"schema"`
 	Version     string `json:"version"`
 	IfNotExists bool   `json:"if_not_exists"`
+	IfExists    bool   `json:"if_exists"`
+	Cascade     bool   `json:"cascade"`
 }
 
 // Kind returns the stable operation identity.
@@ -64,8 +69,8 @@ func (v *Operation) Copy() *Operation {
 func (v *Operation) Subject() objectidentity.ID { return Ref(v.Name) }
 
 // Validate refuses an invalid name or action, and a field the action does not
-// take: a move needs a schema, an update a version, and only a creation names
-// IF NOT EXISTS.
+// take: a move needs a schema, an update a version, only a creation names IF
+// NOT EXISTS, and only a drop names IF EXISTS or CASCADE.
 func (v *Operation) Validate() error {
 	if v == nil {
 		return fmt.Errorf("%w: extension operation is nil", schemaext.ErrInvalidValue)
@@ -75,6 +80,9 @@ func (v *Operation) Validate() error {
 	}
 	if err := validTexts("schema", v.Schema, "version", v.Version); err != nil {
 		return err
+	}
+	if v.Action != Drop && (v.IfExists || v.Cascade) {
+		return fmt.Errorf("%w: only an extension drop names IF EXISTS or CASCADE", schemaext.ErrInvalidValue)
 	}
 	switch v.Action {
 	case Create:
@@ -106,6 +114,10 @@ func (v *Operation) Effect() schemaext.Effect {
 	case Create:
 		return schemaext.Effect{Impact: schemaext.Additive, Reason: "installs an extension"}
 	case Drop:
+		if v.Cascade {
+			return schemaext.Effect{Impact: schemaext.Destructive,
+				Reason: "DROP EXTENSION ... CASCADE removes database objects owned by the extension and every object that depends on them"}
+		}
 		return schemaext.Effect{Impact: schemaext.Destructive, Reason: "DROP EXTENSION removes database objects owned by the extension"}
 	default:
 		return schemaext.Effect{Impact: schemaext.Behavioral, Reason: "changes the version or the schema of an extension and of the objects it owns"}
@@ -194,7 +206,8 @@ func OperationCodecs() []schemaext.Codec {
 // The operation wires. Every key is required.
 var (
 	operationShape = schemaext.ObjectShape{Name: "extension operation",
-		Allowed: []string{"name", "action", "schema", "version", "if_not_exists"}, Required: []string{"name", "action", "schema", "version", "if_not_exists"}}
+		Allowed:  []string{"name", "action", "schema", "version", "if_not_exists", "if_exists", "cascade"},
+		Required: []string{"name", "action", "schema", "version", "if_not_exists", "if_exists", "cascade"}}
 	commentOperationShape = schemaext.ObjectShape{Name: "extension comment operation",
 		Allowed: []string{"name", "comment"}, Required: []string{"name", "comment"}}
 )
@@ -202,9 +215,10 @@ var (
 func operationCodec() schemaext.Codec {
 	return schemaext.ModelCodec[*Operation]{
 		Prototype: &Operation{}, Representation: schemaext.Operation, Version: 1,
-		Definition: json.RawMessage(`{"type":"object","required":["name","action","schema","version","if_not_exists"],"additionalProperties":false,` +
-			`"properties":{"name":{"type":"string","minLength":1},"action":{"enum":["create","update-version","set-schema","drop"]},` +
-			`"schema":{"type":"string"},"version":{"type":"string"},"if_not_exists":{"type":"boolean"}}}`),
+		Definition: json.RawMessage(`{"type":"object","required":["name","action","schema","version","if_not_exists","if_exists","cascade"],` +
+			`"additionalProperties":false,"properties":{"name":{"type":"string","minLength":1},` +
+			`"action":{"enum":["create","update-version","set-schema","drop"]},"schema":{"type":"string"},"version":{"type":"string"},` +
+			`"if_not_exists":{"type":"boolean"},"if_exists":{"type":"boolean"},"cascade":{"type":"boolean"}}}`),
 		Shape:    shape(operationShape),
 		Validate: (*Operation).Validate,
 		Clone:    (*Operation).Copy,

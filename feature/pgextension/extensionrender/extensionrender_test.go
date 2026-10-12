@@ -53,7 +53,17 @@ func TestRender_HappyPath(t *testing.T) {
 		{
 			name: "a drop", target: "postgres",
 			payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop},
+			want:    []string{`DROP EXTENSION "pg_trgm";`},
+		},
+		{
+			name: "a drop of an extension that may be missing", target: "postgres",
+			payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfExists: true},
 			want:    []string{`DROP EXTENSION IF EXISTS "pg_trgm";`},
+		},
+		{
+			name: "a drop with its dependents", target: "postgres",
+			payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfExists: true, Cascade: true},
+			want:    []string{`DROP EXTENSION IF EXISTS "pg_trgm" CASCADE;`},
 		},
 		{
 			name: "a creation where alterations are refused", target: "cockroachdb",

@@ -169,7 +169,7 @@ func planChange(target, name string, subject objectidentity.ID, change *pgextens
 		result.add(step("create", plangraph.Create, &pgextension.Operation{Name: extension, Action: pgextension.Create,
 			Schema: change.After.Schema, Version: change.After.Version, IfNotExists: change.After.IfNotExists}, change.Effect()))
 	case change.After == nil:
-		result.add(step("drop", plangraph.Drop, &pgextension.Operation{Name: extension, Action: pgextension.Drop}, change.Effect(),
+		result.add(step("drop", plangraph.Drop, &pgextension.Operation{Name: extension, Action: pgextension.Drop, IfExists: true}, change.Effect(),
 			fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extension),
 			"Consider reviewing all database objects that use this extension before proceeding",
 			"Extension removal may cascade to dependent objects - review carefully",

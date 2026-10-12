@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/parser"
 	"ptah.run/internal/sqldecl"
 )
 
@@ -18,7 +19,9 @@ import (
 //
 // An object is added as a declaration, so declaring an extension a second
 // time with the same definition declares nothing new, and one that differs is
-// refused; see [schemaext.Objects.Declare].
+// refused; see [schemaext.Objects.Declare]. A statement that changes an
+// object and declares and amends nothing, such as DROP EXTENSION, is refused
+// with [ErrUnmodeledStatement], naming the statement.
 func applyOwnerStatement(database *schemamodel.Database, document *Document, stmt ast.Node) (handled bool, err error) {
 	statement, ok := stmt.(*ast.ExtensionStatement)
 	if !ok {
@@ -27,6 +30,9 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 	note, owned := document.ownerStatement(statement)
 	if !owned {
 		return false, nil
+	}
+	if changesUndeclared(statement, note) {
+		return true, fmt.Errorf("%w: %s", ErrUnmodeledStatement, firstLine(note.Text))
 	}
 	for _, object := range note.Objects {
 		objects, err := database.FeatureObjects.Declare(object)
@@ -41,6 +47,19 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 		}
 	}
 	return true, nil
+}
+
+// changesUndeclared reports an owner's statement that changes a named object
+// and declares and amends none, such as DROP EXTENSION: a change a migration
+// states. A schema document describes objects, and the model has no place for
+// such a statement. One whose payload reports no change is syntax the owner
+// answered, and stays where it stood.
+func changesUndeclared(statement *ast.ExtensionStatement, note parser.OwnerStatement) bool {
+	if len(note.Objects) > 0 || len(note.Replaces) > 0 {
+		return false
+	}
+	reporter, ok := statement.Payload.(ast.ExtensionChangeReporter)
+	return ok && strings.TrimSpace(reporter.SchemaChange().Name) != ""
 }
 
 // replaceDeclared replaces object where it was declared: in database, the

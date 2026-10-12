@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/parser"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlschema"
 )
@@ -270,4 +271,83 @@ func TestSQL_ASpannerDocumentMakesBothClaims(t *testing.T) {
 	}
 	c.Assert(kinds, qt.Contains, pgextension.ExtensionKind)
 	c.Assert(kinds, qt.Contains, spannerschema.RowDeletionKind)
+}
+
+// parseSyntax reads one SQL document of dialect into statements through the
+// bundled runtime's owners, as migration lint reads a migration file.
+func parseSyntax(c *qt.C, dialect, text string) (*ast.StatementList, error) {
+	c.Helper()
+	return parser.NewParser(text, parser.WithDialect(dialect), parser.WithSQL(builtintest.Runtime().SQL())).Parse()
+}
+
+// TestSQL_ChangesStandAsTheOwnersOperations pins how the owner reads DROP
+// EXTENSION and ALTER EXTENSION: each is the operation it performs, carried
+// as written, with a plain name folded as the target folds one.
+func TestSQL_ChangesStandAsTheOwnersOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+		want    *pgextension.Operation
+	}{
+		{name: "a drop", dialect: platform.Postgres, sql: "DROP EXTENSION pg_trgm;",
+			want: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop}},
+		{name: "a guarded drop with its dependents", dialect: platform.Postgres, sql: "DROP EXTENSION IF EXISTS PG_TRGM CASCADE;",
+			want: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfExists: true, Cascade: true}},
+		{name: "a drop that restricts", dialect: platform.Postgres, sql: `DROP EXTENSION "PG_TRGM" RESTRICT;`,
+			want: &pgextension.Operation{Name: "PG_TRGM", Action: pgextension.Drop}},
+		{name: "an update", dialect: platform.Postgres, sql: "ALTER EXTENSION pg_trgm UPDATE TO '1.6';",
+			want: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.UpdateVersion, Version: "1.6"}},
+		{name: "an update to a version written as a name", dialect: platform.Postgres, sql: `ALTER EXTENSION pg_trgm UPDATE TO "1.6";`,
+			want: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.UpdateVersion, Version: "1.6"}},
+		{name: "a move", dialect: platform.Postgres, sql: "ALTER EXTENSION pg_trgm SET SCHEMA Ext;",
+			want: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.SetSchema, Schema: "ext"}},
+		{name: "a CockroachDB drop", dialect: platform.CockroachDB, sql: "DROP EXTENSION PG_TRGM;",
+			want: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop}},
+		{name: "a document that names no target", sql: "DROP EXTENSION PG_TRGM;",
+			want: &pgextension.Operation{Name: "PG_TRGM", Action: pgextension.Drop}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parseSyntax(c, test.dialect, test.sql)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.DeepEquals, []ast.Node{&ast.ExtensionStatement{Payload: test.want}})
+		})
+	}
+}
+
+// TestSQL_ChangesFailurePath pins the forms of DROP EXTENSION and ALTER
+// EXTENSION the operation cannot carry, refused at their position rather
+// than read as a different statement.
+func TestSQL_ChangesFailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{name: "two extensions in one drop", sql: "DROP EXTENSION hstore, pg_trgm;",
+			wantErr: `.*DROP EXTENSION hstore, \.\.\. at position 21: the extension owner reads one extension per DROP EXTENSION; write a statement for each`},
+		{name: "IF without EXISTS", sql: "DROP EXTENSION IF pg_trgm;", wantErr: `.*expected EXISTS after IF at position 18`},
+		{name: "CASCADE and RESTRICT", sql: "DROP EXTENSION pg_trgm CASCADE RESTRICT;", wantErr: `.*unexpected "RESTRICT" after DROP EXTENSION pg_trgm at position 31`},
+		{name: "an update without a version", sql: "ALTER EXTENSION pg_trgm UPDATE;",
+			wantErr: `.*ALTER EXTENSION pg_trgm UPDATE at position 24: the extension owner reads an update to a named version; write UPDATE TO the version`},
+		{name: "SET without SCHEMA", sql: "ALTER EXTENSION pg_trgm SET ext;", wantErr: `.*expected SCHEMA after SET in ALTER EXTENSION pg_trgm at position 28`},
+		{name: "a member added", sql: "ALTER EXTENSION pg_trgm ADD FUNCTION f();",
+			wantErr: `.*unsupported ALTER EXTENSION pg_trgm action "ADD" at position 24: the extension owner reads UPDATE TO and SET SCHEMA`},
+		{name: "a word after a move", sql: "ALTER EXTENSION pg_trgm SET SCHEMA ext CASCADE;",
+			wantErr: `.*unexpected "CASCADE" after ALTER EXTENSION pg_trgm at position 39`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parseSyntax(c, platform.Postgres, test.sql)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
 }
