@@ -794,7 +794,7 @@ func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, pr
 			return vectorInfo.String
 		}
 		return dataType
-	case "NUMBER", "FLOAT":
+	case "NUMBER", "FLOAT", "DECIMAL":
 		if !precision.Valid {
 			return dataType
 		}

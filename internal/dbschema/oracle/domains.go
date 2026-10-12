@@ -25,7 +25,7 @@ import (
 // literal "VALUE".
 const domainQuery = `
 SELECT d.name, c.column_name, c.data_type, c.data_length, c.data_precision,
-       c.data_scale, c.nullable, c.data_default, d.cols
+       c.data_scale, c.char_length, c.nullable, c.data_default, d.cols
 FROM all_domains d
 JOIN all_domain_cols c
   ON c.owner = d.owner AND c.domain_name = d.name
@@ -77,14 +77,17 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 			columnName string
 			dataType   string
 			length     sql.NullInt64
+			charLength sql.NullInt64
 			precision  sql.NullInt64
 			scale      sql.NullInt64
 			nullable   string
 			def        sql.NullString
 			columns    int
 		)
-		if err := rows.Scan(&domain.Name, &columnName, &dataType, &length, &precision,
-			&scale, &nullable, &def, &columns); err != nil {
+		if err := rows.Scan(
+			&domain.Name, &columnName, &dataType, &length, &precision,
+			&scale, &charLength, &nullable, &def, &columns,
+		); err != nil {
 			return nil, err
 		}
 		// A multi-column domain has no counterpart in the model, and reporting
@@ -95,7 +98,7 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 		}
 		// The domain catalog carries no vector description, so a domain over a
 		// vector reads as a bare VECTOR here.
-		domain.BaseType = formatColumnType(dataType, sql.NullString{}, length, precision, scale)
+		domain.BaseType = formatDomainType(dataType, length, charLength, precision, scale)
 		domain.NotNull = strings.EqualFold(strings.TrimSpace(nullable), "N")
 		domain.Default = strings.TrimSpace(def.String)
 		domain.CheckConstraints = declaredDomainChecks(checks[domain.Name], columnName)
@@ -103,6 +106,19 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 		domains = append(domains, domain)
 	}
 	return domains, rows.Err()
+}
+
+// formatDomainType keeps facts whose meaning differs from the column catalog.
+// A scale without precision constrains NUMBER's scale. National character
+// lengths count characters, while DATA_LENGTH counts their encoded bytes.
+func formatDomainType(dataType string, length, charLength, precision, scale sql.NullInt64) string {
+	if dataType == "NUMBER" && !precision.Valid && scale.Valid {
+		return fmt.Sprintf("NUMBER(*,%d)", scale.Int64)
+	}
+	if dataType == "NCHAR" || dataType == "NVARCHAR2" {
+		length = charLength
+	}
+	return formatColumnType(dataType, sql.NullString{}, length, precision, scale)
 }
 
 // readDomainChecks groups the CHECK constraints by domain name.
