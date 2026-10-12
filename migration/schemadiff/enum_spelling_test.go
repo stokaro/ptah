@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
@@ -71,4 +72,28 @@ func TestEnumDeclaredByName_ComparesAsWhatTheTargetStores(t *testing.T) {
 				qt.Commentf("a column declared by enum name must compare as what %s stores", tt.dialect))
 		})
 	}
+}
+
+// TestCompareWithDatabaseInfo_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath
+// pins that the comparison a plan starts from refuses the column the render
+// refuses. A column typed ENUM that carries its values and names no declared
+// enum has no type a PostgreSQL-family server can create, so planning it would
+// write the bare type ENUM into a CREATE TABLE or an ADD COLUMN.
+func TestCompareWithDatabaseInfo_AValuedEnumColumnWithNoInlineFormIsRefused_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
+			{StructName: "T", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "T", FieldName: "S", Name: "s", Type: "ENUM", Nullable: true, Enum: []string{"draft", "live"}},
+		},
+	}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(
+		t.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: platform.Postgres}, nil, must.Must(builtin.New()),
+	)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*column "s" of table "t" is typed ENUM .* which postgres cannot create: declare a named enum .*`)
+	c.Assert(diff, qt.IsNil)
 }

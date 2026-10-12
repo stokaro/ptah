@@ -25,9 +25,9 @@ func InlineEnumDialect(dialect string) bool {
 	}
 }
 
-// InlineEnumValues returns the values dialect builds field with as an inline
-// enum column, and nil where dialect is not an [InlineEnumDialect] or field is
-// not an enum column.
+// EnumColumnValues returns the values of field as an enum column, and
+// whether it names one of enums as its type. Values are nil when field is not
+// an enum column.
 //
 // A column is an enum column two ways: typed ENUM with its values on the
 // field, or typed with the name of one of enums. Both spellings have to be
@@ -35,31 +35,42 @@ func InlineEnumDialect(dialect string) bool {
 // written with `//ptah:schema:enum` and `type="status_kind"` as the enum's own
 // name, and on SQLite the plan rebuilds the table on every apply. Values
 // beside any other type make no enum column, since [schemamodel.Field.Enum]
-// holds the values of an ENUM type, and neither does a column this lowering
-// built: enum('a','b'), or a text column with its CHECK. Lowering a lowered
-// column therefore changes nothing.
+// holds the values of an ENUM type, and neither does a column
+// [LowerInlineEnums] built: enum('a','b'), or a text column with its CHECK.
+// Lowering a lowered column therefore changes nothing.
 //
-// The renderer asks this to build the column, and [LowerInlineEnums] to
-// describe it, so a render builds the column a comparison expects a read of
-// the server to report. The returned slice is field's or an enum's own and is
-// not to be changed.
-func InlineEnumValues(field schemamodel.Field, enums []schemamodel.Enum, dialect string) []string {
-	if !InlineEnumDialect(dialect) {
-		return nil
-	}
+// An enum column that names no declared enum gives a target without inline
+// enums no type to create, so the renderer refuses it there. The returned
+// slice is field's or an enum's own and is not to be changed.
+func EnumColumnValues(field schemamodel.Field, enums []schemamodel.Enum) (values []string, declared bool) {
 	for _, enum := range enums {
 		if enum.Name != field.Type {
 			continue
 		}
 		if len(field.Enum) > 0 {
-			return field.Enum
+			return field.Enum, true
 		}
-		return enum.Values
+		return enum.Values, true
 	}
-	if strings.EqualFold(field.Type, "ENUM") {
-		return field.Enum
+	if strings.EqualFold(field.Type, "ENUM") && len(field.Enum) > 0 {
+		return field.Enum, false
 	}
-	return nil
+	return nil, false
+}
+
+// InlineEnumValues returns the values dialect builds field with as an inline
+// enum column, and nil where dialect is not an [InlineEnumDialect] or field is
+// not an enum column; see [EnumColumnValues].
+//
+// The renderer asks this to build the column, and [LowerInlineEnums] to
+// describe it, so a render builds the column a comparison expects a read of
+// the server to report.
+func InlineEnumValues(field schemamodel.Field, enums []schemamodel.Enum, dialect string) []string {
+	if !InlineEnumDialect(dialect) {
+		return nil
+	}
+	values, _ := EnumColumnValues(field, enums)
+	return values
 }
 
 // LowerInlineEnums returns a copy of fields with every enum column described
