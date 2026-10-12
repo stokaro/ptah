@@ -1,13 +1,21 @@
 package main
 
 import (
+	_ "embed" // exampleSource embeds this file, so the demo parses its own declarations.
 	"fmt"
-	"log"
+	"io"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 )
+
+// exampleSource is this file. The demo parses it rather than a directory, so
+// what it reads does not depend on where it is run from: a walk of the working
+// directory, run from the repository root, reads every fixture in the tree.
+//
+//go:embed exclude_constraints_example.go
+var exampleSource []byte
 
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings
 //
@@ -68,7 +76,7 @@ type Territory struct {
 //ptah:schema:table name="events"
 //ptah:schema:constraint name="no_overlapping_events" type="EXCLUDE" table="events" using="gist" elements="venue_id WITH =, event_time WITH &&" condition="status = 'confirmed'"
 //ptah:schema:constraint name="unique_event_code" type="UNIQUE" table="events" columns="event_code"
-//ptah:schema:constraint name="positive_capacity" type="CHECK" table="events" expression="capacity > 0"
+//ptah:schema:constraint name="positive_capacity" type="CHECK" table="events" check="capacity > 0"
 type Event struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
@@ -89,46 +97,47 @@ type Event struct {
 	Status string
 }
 
-func runExcludeConstraintsExample() {
-	fmt.Println("PostgreSQL EXCLUDE Constraints Example")
-	fmt.Println("=====================================")
+func runExcludeConstraintsExample(w io.Writer) error {
+	fmt.Fprintln(w, "PostgreSQL EXCLUDE Constraints Example")
+	fmt.Fprintln(w, "=====================================")
 
-	// Parse the current package to extract schema information
+	// Parse this file's declarations
 	annotations, err := builtin.Annotations()
 	if err != nil {
-		log.Fatalf("Failed to assemble the bundled owners: %v", err)
+		return fmt.Errorf("assemble the bundled owners: %w", err)
 	}
-	database, err := goschema.ParseDir(annotations, ".")
+	database, err := goschema.ParseSource(annotations, "exclude_constraints_example.go", exampleSource)
 	if err != nil {
-		log.Fatalf("Failed to parse schema: %v", err)
+		return fmt.Errorf("parse the schema: %w", err)
 	}
+	schemamodel.Finalize(&database)
 
-	fmt.Printf("Found %d tables with constraints:\n\n", len(database.Tables))
+	fmt.Fprintf(w, "Found %d tables with constraints:\n\n", len(database.Tables))
 
 	// Display constraint information
 	for _, constraint := range database.Constraints {
-		fmt.Printf("Constraint: %s\n", constraint.Name)
-		fmt.Printf("  Type: %s\n", constraint.Type)
-		fmt.Printf("  Table: %s\n", constraint.Table)
+		fmt.Fprintf(w, "Constraint: %s\n", constraint.Name)
+		fmt.Fprintf(w, "  Type: %s\n", constraint.Type)
+		fmt.Fprintf(w, "  Table: %s\n", constraint.Table)
 
 		switch constraint.Type {
 		case "EXCLUDE":
-			fmt.Printf("  Using Method: %s\n", constraint.UsingMethod)
-			fmt.Printf("  Elements: %s\n", constraint.ExcludeElements)
+			fmt.Fprintf(w, "  Using Method: %s\n", constraint.UsingMethod)
+			fmt.Fprintf(w, "  Elements: %s\n", constraint.ExcludeElements)
 			if constraint.WhereCondition != "" {
-				fmt.Printf("  WHERE: %s\n", constraint.WhereCondition)
+				fmt.Fprintf(w, "  WHERE: %s\n", constraint.WhereCondition)
 			}
 		case "UNIQUE":
-			fmt.Printf("  Columns: %v\n", constraint.Columns)
+			fmt.Fprintf(w, "  Columns: %v\n", constraint.Columns)
 		case "CHECK":
-			fmt.Printf("  Expression: %s\n", constraint.CheckExpression)
+			fmt.Fprintf(w, "  Expression: %s\n", constraint.CheckExpression)
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 	}
 
 	// Generate SQL for PostgreSQL
-	fmt.Println("Generated PostgreSQL SQL:")
-	fmt.Println("========================")
+	fmt.Fprintln(w, "Generated PostgreSQL SQL:")
+	fmt.Fprintln(w, "========================")
 
 	for _, table := range database.Tables {
 		// Find constraints for this table
@@ -140,7 +149,7 @@ func runExcludeConstraintsExample() {
 		}
 
 		if len(tableConstraints) > 0 {
-			fmt.Printf("\n-- Constraints for table: %s\n", table.Name)
+			fmt.Fprintf(w, "\n-- Constraints for table: %s\n", table.Name)
 			for _, constraint := range tableConstraints {
 				switch constraint.Type {
 				case "EXCLUDE":
@@ -150,27 +159,28 @@ func runExcludeConstraintsExample() {
 						sql += fmt.Sprintf(" WHERE (%s)", constraint.WhereCondition)
 					}
 					sql += ";"
-					fmt.Println(sql)
+					fmt.Fprintln(w, sql)
 
 				case "UNIQUE":
 					sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);",
 						constraint.Table, constraint.Name, constraint.Columns[0])
-					fmt.Println(sql)
+					fmt.Fprintln(w, sql)
 
 				case "CHECK":
 					sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s);",
 						constraint.Table, constraint.Name, constraint.CheckExpression)
-					fmt.Println(sql)
+					fmt.Fprintln(w, sql)
 				}
 			}
 		}
 	}
 
-	fmt.Println("\nEXCLUDE Constraint Use Cases:")
-	fmt.Println("============================")
-	fmt.Println("1. Room Booking: Prevents overlapping time slots for the same room")
-	fmt.Println("2. User Sessions: Ensures only one active session per user")
-	fmt.Println("3. Spatial Data: Prevents overlapping geographic territories")
-	fmt.Println("4. Event Scheduling: Avoids conflicting events at the same venue")
-	fmt.Println("\nNote: EXCLUDE constraints require PostgreSQL with appropriate extensions (e.g., btree_gist)")
+	fmt.Fprintln(w, "\nEXCLUDE Constraint Use Cases:")
+	fmt.Fprintln(w, "============================")
+	fmt.Fprintln(w, "1. Room Booking: Prevents overlapping time slots for the same room")
+	fmt.Fprintln(w, "2. User Sessions: Ensures only one active session per user")
+	fmt.Fprintln(w, "3. Spatial Data: Prevents overlapping geographic territories")
+	fmt.Fprintln(w, "4. Event Scheduling: Avoids conflicting events at the same venue")
+	fmt.Fprintln(w, "\nNote: EXCLUDE constraints require PostgreSQL with appropriate extensions (e.g., btree_gist)")
+	return nil
 }
