@@ -19,16 +19,6 @@ func TestMariaDBRenderer_WrapperHandlersReachTheSharedBuffer(t *testing.T) {
 		want string
 	}{
 		{
-			name: "ExtensionNode",
-			node: &ast.ExtensionNode{Name: "pg_trgm"},
-			want: "-- Extension pg_trgm not supported in MariaDB",
-		},
-		{
-			name: "DropExtensionNode",
-			node: &ast.DropExtensionNode{Name: "pg_trgm"},
-			want: "-- DROP EXTENSION pg_trgm not supported in MariaDB",
-		},
-		{
 			name: "CreateFunctionNode",
 			node: &ast.CreateFunctionNode{
 				Name: "touch", Returns: "int", Volatility: "IMMUTABLE", Body: "RETURN 1",

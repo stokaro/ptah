@@ -296,8 +296,6 @@ func addNodeObject(node ast.Node) (object string, ok bool) {
 		return n.Name, true
 	case *ast.IndexNode:
 		return n.Name, true
-	case *ast.ExtensionNode:
-		return n.Name, true
 	case *ast.CreateSequenceNode:
 		return n.Name, true
 	case *ast.CreateSchemaNode:
@@ -344,8 +342,6 @@ func dropNodeObject(node ast.Node) (object string, ok bool) {
 	case *ast.DropTypeNode:
 		return n.Name, true
 	case *ast.DropIndexNode:
-		return n.Name, true
-	case *ast.DropExtensionNode:
 		return n.Name, true
 	case *ast.DropSequenceNode:
 		return n.Name, true

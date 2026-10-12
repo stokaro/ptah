@@ -1317,19 +1317,6 @@ func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	return nil
 }
 
-// renderExtension is a no-op for ClickHouse, which has no equivalent of
-// PostgreSQL extensions.
-func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
-	r.notSupported("CREATE EXTENSION", node.Name)
-	return nil
-}
-
-// renderDropExtension mirrors renderExtension.
-func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
-	r.notSupported("DROP EXTENSION", node.Name)
-	return nil
-}
-
 // renderCreateFunction is a no-op for ClickHouse. ClickHouse has UDFs but
 // the syntax is incompatible with the PostgreSQL-shaped CreateFunctionNode.
 func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {

@@ -30,7 +30,6 @@ import (
 
 	"ptah.run/core/ast"
 	sqlplatform "ptah.run/core/platform"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
@@ -515,28 +514,6 @@ func toSchemaIndexParts(parts []ast.IndexPart, sourcePlatform string) []schemamo
 	return schemaParts
 }
 
-// refuseExtension refuses a CREATE EXTENSION the extension owner did not
-// claim. On a named target outside the PostgreSQL family the owner does not
-// read the statement. The target's own server refuses it, and an
-// Atlas-compatible apply runs the document on the dev database, which fails
-// there too, so skipping it would make the read looser than both. A document
-// that names no target is different: the extension owner reads its
-// statements, and a target that cannot host the extension skips it, as it
-// does an extension declared without a scope in any other source. Anywhere
-// else the statement reaches this package only when the read selected no
-// extension owner, and the model has no other place for an extension.
-func refuseExtension(node *ast.ExtensionNode, sourcePlatform string) error {
-	target := sqlplatform.NormalizeDialect(sourcePlatform)
-	if target == "" || sqlplatform.IsPostgresFamily(target) {
-		return fmt.Errorf("%w: CREATE EXTENSION %s: this read selected no owner that reads extensions",
-			ErrUnmodeledStatement, node.Name)
-	}
-	return statementRefusal{
-		text: fmt.Sprintf("CREATE EXTENSION %s: an extension is a PostgreSQL object, and %s refuses the statement", node.Name, target),
-		err:  ptaherr.ErrUnsupportedFeature,
-	}
-}
-
 // ToEnum converts an ast.EnumNode to a schemamodel.Enum for database enum type definitions.
 //
 // This function extracts enum metadata from an AST node, including the enum name
@@ -706,8 +683,6 @@ func appendStatement(
 		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
-	case *ast.ExtensionNode:
-		return refuseExtension(node, sourcePlatform)
 	case *ast.CreateFunctionNode:
 		database.Functions = append(database.Functions, toFunction(node, sourcePlatform))
 	case *ast.CreateTriggerNode:

@@ -533,12 +533,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropSequence(n)
 	case *ast.AlterSerialSequenceNode:
 		return nodedispatch.RefuseSerialSequence(r.dialect, n)
-	// Extensions.
-	case *ast.ExtensionNode:
-		return r.renderExtension(n)
-	case *ast.DropExtensionNode:
-		return r.renderDropExtension(n)
-
 	// Roles, privileges and row-level security.
 	case *ast.CreateRoleNode:
 		return r.renderCreateRole(n)
@@ -1581,59 +1575,6 @@ func (r *Renderer) renderIndexPart(part ast.IndexPart) string {
 	return r.escapeIdentifier(part.Name)
 }
 
-func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
-	// An altered extension is a different statement about the same object, and
-	// both spellings were measured on PostgreSQL 18 rather than read:
-	// `ALTER EXTENSION pg_trgm UPDATE TO '1.6'` moves 1.5 to 1.6 and answers
-	// `NOTICE: version "1.6" ... is already installed` when it is already
-	// there, so it is idempotent; `ALTER EXTENSION pg_trgm SET SCHEMA public`
-	// moves it and is idempotent on the schema it already occupies
-	// (stokaro/ptah#1718).
-	switch node.Alteration {
-	case ast.ExtensionUpdateVersion:
-		if node.Comment != "" {
-			r.w.WriteLinef("-- %s", node.Comment)
-		}
-		r.w.WriteLinef("ALTER EXTENSION %s UPDATE TO %s;",
-			r.escapeIdentifier(node.Name), r.escapeValue(node.Version))
-		return nil
-	case ast.ExtensionSetSchema:
-		if node.Comment != "" {
-			r.w.WriteLinef("-- %s", node.Comment)
-		}
-		r.w.WriteLinef("ALTER EXTENSION %s SET SCHEMA %s;",
-			r.escapeIdentifier(node.Name), r.escapeIdentifier(node.Schema))
-		return nil
-	case ast.ExtensionUnaltered:
-	}
-
-	var parts []string
-
-	parts = append(parts, "CREATE EXTENSION")
-
-	if node.IfNotExists {
-		parts = append(parts, "IF NOT EXISTS")
-	}
-
-	// Extension names are database-wide single identifiers. Treating a dot as
-	// a schema separator would render an extension named `audit.tools` as the
-	// invalid two-part identity `"audit"."tools"`, even though extension
-	// placement belongs exclusively to the separate SCHEMA option.
-	parts = append(parts, r.escapeIdentifier(node.Name))
-	if node.Schema != "" {
-		parts = append(parts, "WITH", "SCHEMA", r.escapeIdentifier(node.Schema))
-	}
-
-	// Add version specification if provided
-	if node.Version != "" {
-		parts = append(parts, fmt.Sprintf("VERSION %s", r.escapeValue(node.Version)))
-	}
-
-	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-	r.writeCreatedObjectComment(ast.CommentedExtension, r.escapeIdentifier(node.Name), node.Name, node.Comment)
-	return nil
-}
-
 // renderEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
 func (r *Renderer) renderEnum(node *ast.EnumNode) error {
 	if r.refuses(capability.EnumCustomType, "enum type", node.Name) {
@@ -2428,31 +2369,6 @@ func (r *Renderer) nullBackfillValue(column *ast.ColumnNode) string {
 		return r.renderDefaultLiteral(column.Default.Value)
 	}
 	return ""
-}
-
-func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
-	var parts []string
-
-	parts = append(parts, "DROP EXTENSION")
-
-	if node.IfExists {
-		parts = append(parts, "IF EXISTS")
-	}
-
-	parts = append(parts, r.escapeIdentifier(node.Name))
-
-	if node.Cascade {
-		parts = append(parts, "CASCADE")
-	}
-
-	// Add comment if provided
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
-	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-
-	return nil
 }
 
 // renderRoutineSetting spells one setting as a SET clause.

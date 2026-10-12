@@ -70,10 +70,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderDropTable(n)
 	case *ast.DropTypeNode:
 		return r.renderDropType(n)
-	case *ast.ExtensionNode:
-		return r.renderExtension(n)
-	case *ast.DropExtensionNode:
-		return r.renderDropExtension(n)
 	case *ast.CreateFunctionNode:
 		return r.renderCreateFunction(n)
 	case *ast.DropFunctionNode:

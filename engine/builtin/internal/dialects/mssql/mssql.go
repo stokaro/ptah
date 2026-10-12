@@ -393,16 +393,6 @@ func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	return nil
 }
 
-func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
-	r.notSupported("extensions", node.Name)
-	return nil
-}
-
-func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
-	r.notSupported("DROP EXTENSION", node.Name)
-	return nil
-}
-
 // defaultSchema is where SQL Server puts an object whose name carries no
 // schema, and therefore where an existence guard has to look for one.
 const defaultSchema = "dbo"

@@ -29,7 +29,6 @@ const (
 	Policy           = "policy"
 	Type             = "type"
 	Sequence         = "sequence"
-	Extension        = "extension"
 	Role             = "role"
 )
 
@@ -266,8 +265,6 @@ func guardedDeclaration(statement ast.Node) (kind, name string, guarded bool) {
 		return Schema, node.Name, node.IfNotExists
 	case *ast.IndexNode:
 		return Index, node.Name, node.IfNotExists
-	case *ast.ExtensionNode:
-		return Extension, node.Name, node.IfNotExists
 	case *ast.CreateSequenceNode:
 		return Sequence, node.Name, node.IfNotExists
 	case *ast.CreateViewNode:

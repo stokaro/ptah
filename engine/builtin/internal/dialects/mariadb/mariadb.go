@@ -60,7 +60,7 @@ func (r *Renderer) Output() string {
 // Render renders an AST node to SQL and returns the result.
 //
 // The node is accepted onto this renderer, so it reaches VisitNode below.
-// Handing it to the shared renderer instead would route around the four
+// Handing it to the shared renderer instead would route around the two
 // refusals this wrapper writes itself, and the refusal a caller reads would
 // then depend on which entry point produced it.
 func (r *Renderer) Render(node ast.Node) (string, error) {
@@ -95,7 +95,7 @@ func (r *Renderer) GetOutput() string {
 //
 // A nil node and a non-nil interface holding a nil pointer both go to the
 // shared renderer, which refuses a node that is not there. Without the check a
-// typed nil of one of the four kinds below would reach a handler and be
+// typed nil of one of the two kinds below would reach a handler and be
 // dereferenced, so the two spellings of "no node" would get one answer and one
 // panic.
 func (r *Renderer) VisitNode(node ast.Node) error {
@@ -103,10 +103,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.r.VisitNode(node)
 	}
 	switch n := node.(type) {
-	case *ast.ExtensionNode:
-		return r.renderExtension(n)
-	case *ast.DropExtensionNode:
-		return r.renderDropExtension(n)
 	case *ast.CreatePolicyNode:
 		return r.renderCreatePolicy(n)
 	case *ast.AlterTableEnableRLSNode:
@@ -114,30 +110,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	default:
 		return r.r.VisitNode(node)
 	}
-}
-
-// renderExtension renders CREATE EXTENSION statements for MariaDB (no-op)
-func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
-	// MariaDB doesn't support extensions like PostgreSQL
-	// Add a comment to indicate this feature is not supported
-	if node.Comment != "" {
-		r.w.WriteLinef("-- Extension %s not supported in MariaDB: %s", node.Name, node.Comment)
-	} else {
-		r.w.WriteLinef("-- Extension %s not supported in MariaDB", node.Name)
-	}
-	return nil
-}
-
-// renderDropExtension renders DROP EXTENSION statements for MariaDB (no-op)
-func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
-	// MariaDB doesn't support extensions like PostgreSQL
-	// Add a comment to indicate this feature is not supported
-	if node.Comment != "" {
-		r.w.WriteLinef("-- DROP EXTENSION %s not supported in MariaDB: %s", node.Name, node.Comment)
-	} else {
-		r.w.WriteLinef("-- DROP EXTENSION %s not supported in MariaDB", node.Name)
-	}
-	return nil
 }
 
 // renderCreatePolicy renders CREATE POLICY statements for MariaDB (no-op).

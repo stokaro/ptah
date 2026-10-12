@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -8,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
@@ -2944,122 +2946,40 @@ func TestParser_ParseCreateTypedIndex(t *testing.T) {
 	}
 }
 
-func TestParser_ParseCreateExtension(t *testing.T) {
+// TestParser_RefusesCreateExtension_FailurePath pins the shared grammar's
+// answer to CREATE EXTENSION, which reaches it only when no owner claimed the
+// statement: a refusal, never raw SQL a declarative read could skip. A named
+// target outside the PostgreSQL family refuses it as its own server does;
+// anywhere else the read selected no extension owner.
+func TestParser_RefusesCreateExtension_FailurePath(t *testing.T) {
 	tests := []struct {
-		name        string
-		sql         string
-		extension   string
-		ifNotExists bool
-		version     string
-		schema      string
+		name    string
+		dialect string
+		sql     string
+		want    string
 	}{
-		{
-			name:      "plain",
-			sql:       "CREATE EXTENSION pg_trgm;",
-			extension: "pg_trgm",
-		},
-		{
-			name:        "if not exists",
-			sql:         "CREATE EXTENSION IF NOT EXISTS unaccent;",
-			extension:   "unaccent",
-			ifNotExists: true,
-		},
-		{
-			name:      "schema and version",
-			sql:       `CREATE EXTENSION "uuid-ossp" WITH SCHEMA "Extension Store" VERSION '1.1';`,
-			extension: `"uuid-ossp"`,
-			schema:    `"Extension Store"`,
-			version:   "1.1",
-		},
-		{
-			name:      "version before schema",
-			sql:       `CREATE EXTENSION hstore WITH VERSION '1.8' SCHEMA extensions;`,
-			extension: "hstore",
-			schema:    "extensions",
-			version:   "1.8",
-		},
-		{
-			name:      "bare schema",
-			sql:       "CREATE EXTENSION pgcrypto SCHEMA extensions;",
-			extension: "pgcrypto",
-			schema:    "extensions",
-		},
-		{
-			name:      "version after with",
-			sql:       "CREATE EXTENSION postgis WITH VERSION '3.1';",
-			extension: "postgis",
-			version:   "3.1",
-		},
-		{
-			name:      "version",
-			sql:       "CREATE EXTENSION postgis VERSION '3.0';",
-			extension: "postgis",
-			version:   "3.0",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			p := parser.NewParser(tt.sql)
-			statements, err := p.Parse()
-			c.Assert(err, qt.IsNil)
-			c.Assert(statements.Statements, qt.HasLen, 1)
-
-			extension, ok := statements.Statements[0].(*ast.ExtensionNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(extension.Name, qt.Equals, tt.extension)
-			c.Assert(extension.IfNotExists, qt.Equals, tt.ifNotExists)
-			c.Assert(extension.Schema, qt.Equals, tt.schema)
-			c.Assert(extension.Version, qt.Equals, tt.version)
-		})
-	}
-}
-
-func TestParser_ParseCreateExtensionRejectsUnsupportedWithOption(t *testing.T) {
-	tests := []string{
-		"CREATE EXTENSION pgcrypto WITH;",
-		"CREATE EXTENSION pgcrypto WITH bogus;",
-	}
-	for _, sql := range tests {
-		t.Run(sql, func(t *testing.T) {
-			c := qt.New(t)
-			_, err := parser.NewParser(sql).Parse()
-			c.Assert(err, qt.ErrorMatches, `expected SCHEMA or VERSION after WITH in CREATE EXTENSION`)
-		})
-	}
-}
-
-func TestParser_ParseCreateExtensionRejectsDuplicateOptions(t *testing.T) {
-	tests := []struct {
-		sql  string
-		want string
-	}{
-		{
-			sql:  "CREATE EXTENSION pgcrypto WITH SCHEMA extensions SCHEMA public;",
-			want: `duplicate SCHEMA option in CREATE EXTENSION`,
-		},
-		{
-			sql:  "CREATE EXTENSION pgcrypto VERSION '1.0' VERSION '1.1';",
-			want: `duplicate VERSION option in CREATE EXTENSION`,
-		},
+		{name: "no target", sql: "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+			want: "CREATE EXTENSION pg_trgm needs the PostgreSQL extension owner, which this read did not select"},
+		{name: "postgres", dialect: platform.Postgres, sql: "CREATE EXTENSION pg_trgm WITH SCHEMA ext VERSION '1.6';",
+			want: "CREATE EXTENSION pg_trgm needs the PostgreSQL extension owner, which this read did not select"},
+		{name: "cockroachdb", dialect: platform.CockroachDB, sql: "CREATE EXTENSION pg_trgm;",
+			want: "CREATE EXTENSION pg_trgm needs the PostgreSQL extension owner, which this read did not select"},
+		{name: "mysql", dialect: platform.MySQL, sql: "CREATE EXTENSION pg_trgm;",
+			want: "CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and mysql refuses the statement"},
+		{name: "sqlite", dialect: platform.SQLite, sql: "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+			want: "CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and sqlite refuses the statement"},
 	}
 	for _, test := range tests {
-		t.Run(test.sql, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parser.NewParser(test.sql).Parse()
-			c.Assert(err, qt.ErrorMatches, test.want)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.want))
+			c.Assert(statements, qt.IsNil)
 		})
 	}
-}
-
-func TestParser_ParseCreateExtensionRejectsUnknownOptionAfterSupportedOption(t *testing.T) {
-	c := qt.New(t)
-
-	_, err := parser.NewParser("CREATE EXTENSION pgcrypto WITH VERSION '1.0' bogus;").Parse()
-
-	c.Assert(err, qt.ErrorMatches, `unsupported CREATE EXTENSION option "bogus" at position [0-9]+`)
 }
 
 func TestParser_ParseCreateEnum(t *testing.T) {

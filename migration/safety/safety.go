@@ -717,8 +717,6 @@ func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 	switch n := node.(type) {
 	case *ast.DropTableNode:
 		return n.Name, "DROP TABLE removes the table and all rows", true
-	case *ast.DropExtensionNode:
-		return n.Name, "DROP EXTENSION removes database objects owned by the extension", true
 	case *ast.DropFunctionNode:
 		return n.Name, "DROP FUNCTION removes executable database behavior", true
 	case *ast.DropRoleNode:

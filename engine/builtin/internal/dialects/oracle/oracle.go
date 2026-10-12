@@ -558,16 +558,6 @@ func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	return unsupportedFeaturef("DROP TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 
-func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
-	r.notSupported("extensions", node.Name)
-	return nil
-}
-
-func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
-	r.notSupported("DROP EXTENSION", node.Name)
-	return nil
-}
-
 func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)

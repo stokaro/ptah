@@ -140,13 +140,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.renderAlterTableForceRLS(n)
 
-	// Objects another engine owns. Each is named and skipped so the reader of
-	// a render sees what the target left out.
-	case *ast.ExtensionNode:
-		return r.renderExtension(n)
-	case *ast.DropExtensionNode:
-		return r.renderDropExtension(n)
-
 	// Data manipulation.
 	case *ast.UpsertNode:
 		return r.renderUpsert(n)

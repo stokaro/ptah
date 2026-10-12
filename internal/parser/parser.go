@@ -327,7 +327,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	case "DATABASE":
 		return p.parseCreateDatabase()
 	case "EXTENSION":
-		return p.parseCreateExtension()
+		return p.refuseCreateExtension()
 	case "TABLE":
 		return p.parseCreateTable()
 	case "VIEW":
@@ -484,94 +484,34 @@ func (p *Parser) parseCreateDatabase() (*ast.CreateDatabaseNode, error) {
 	return &ast.CreateDatabaseNode{Name: name, IfNotExists: ifNotExists}, nil
 }
 
-func (p *Parser) parseCreateExtension() (*ast.ExtensionNode, error) {
+// refuseCreateExtension refuses CREATE EXTENSION. The statement reaches the
+// shared grammar only when no owner claimed it, and an extension is its
+// owner's object: the shared grammar has no node for one. On a named target
+// outside the PostgreSQL family the extension owner does not read the
+// statement, and the target's own server refuses it as well, so a read that
+// skipped it would be looser than both. Anywhere else the read selected no
+// extension owner.
+//
+// The returned error satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature]).
+func (p *Parser) refuseCreateExtension() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "EXTENSION"); err != nil {
 		return nil, err
 	}
-
 	p.skipWhitespace()
-	ifNotExists, err := p.parseOptionalIfNotExists()
-	if err != nil {
+	if _, err := p.parseOptionalIfNotExists(); err != nil {
 		return nil, err
 	}
-
 	p.skipWhitespace()
 	name, err := p.expectIdentifier()
 	if err != nil {
 		return nil, fmt.Errorf("expected extension name: %w", err)
 	}
-
-	extension := ast.NewExtension(name)
-	if ifNotExists {
-		extension.SetIfNotExists()
+	target := platform.NormalizeDialect(p.dialect)
+	message := fmt.Sprintf("CREATE EXTENSION %s needs the PostgreSQL extension owner, which this read did not select", name)
+	if target != "" && !platform.IsPostgresFamily(target) {
+		message = fmt.Sprintf("CREATE EXTENSION %s: an extension is a PostgreSQL object, and %s refuses the statement", name, target)
 	}
-
-	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("WITH") {
-		p.advance()
-		p.skipWhitespace()
-		if !p.current.MatchIdentifierValue("SCHEMA") && !p.current.MatchIdentifierValue("VERSION") {
-			return nil, fmt.Errorf("expected SCHEMA or VERSION after WITH in CREATE EXTENSION")
-		}
-	}
-	if err := p.parseCreateExtensionOptions(extension); err != nil {
-		return nil, err
-	}
-
-	return extension, nil
-}
-
-func (p *Parser) parseCreateExtensionOptions(extension *ast.ExtensionNode) error {
-	foundSchema := false
-	foundVersion := false
-	for {
-		p.skipWhitespace()
-		switch {
-		case p.current.MatchIdentifierValue("SCHEMA"):
-			if foundSchema {
-				return fmt.Errorf("duplicate SCHEMA option in CREATE EXTENSION")
-			}
-			foundSchema = true
-			p.advance()
-			p.skipWhitespace()
-			schema, err := p.expectIdentifier()
-			if err != nil {
-				return fmt.Errorf("expected extension schema: %w", err)
-			}
-			extension.SetSchema(schema)
-		case p.current.MatchIdentifierValue("VERSION"):
-			if foundVersion {
-				return fmt.Errorf("duplicate VERSION option in CREATE EXTENSION")
-			}
-			foundVersion = true
-			version, err := p.parseCreateExtensionVersion()
-			if err != nil {
-				return err
-			}
-			extension.SetVersion(version)
-		default:
-			if p.isAtEnd() || p.current.Type == lexer.TokenSemicolon {
-				return nil
-			}
-			return fmt.Errorf("unsupported CREATE EXTENSION option %q at position %d", p.current.Value, p.current.Start)
-		}
-	}
-}
-
-func (p *Parser) parseCreateExtensionVersion() (string, error) {
-	p.advance()
-	p.skipWhitespace()
-
-	if p.current.Type == lexer.TokenString && !isDoubleQuotedIdentifierToken(p.current) {
-		return p.stringConstant("the extension version")
-	}
-	if p.current.Type != lexer.TokenString && p.current.Type != lexer.TokenIdentifier {
-		return "", fmt.Errorf("expected extension version, got %s at position %d", p.current.Type, p.current.Start)
-	}
-
-	version := strings.Trim(p.current.Value, `"`)
-	p.advance()
-	return version, nil
+	return nil, &ptaherr.CapabilityError{Dialect: target, Feature: "PostgreSQL extensions", Err: ptaherr.ErrUnsupportedFeature, Message: message}
 }
 
 func (p *Parser) parseCreateNamespaceName(label string) (string, bool, error) {

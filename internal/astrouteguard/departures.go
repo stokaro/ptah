@@ -139,13 +139,14 @@ func compareExtensionKinds(a, b ExtensionKind) int {
 
 // The owner payload packages the departures name.
 const (
-	clickHouseAST = "ptah.run/dialect/clickhouse/chast"
-	cockroachAST  = "ptah.run/dialect/cockroachdb/crdbast"
-	mssqlProperty = "ptah.run/dialect/mssql/mssqlproperty"
-	spannerAST    = "ptah.run/dialect/spanner/spannerast"
-	synonymOwner  = "ptah.run/feature/synonym"
-	timescaleAST  = "ptah.run/dialect/timescaledb/tsast"
-	ydbAST        = "ptah.run/dialect/ydb/ydbast"
+	clickHouseAST  = "ptah.run/dialect/clickhouse/chast"
+	cockroachAST   = "ptah.run/dialect/cockroachdb/crdbast"
+	extensionOwner = "ptah.run/feature/pgextension"
+	mssqlProperty  = "ptah.run/dialect/mssql/mssqlproperty"
+	spannerAST     = "ptah.run/dialect/spanner/spannerast"
+	synonymOwner   = "ptah.run/feature/synonym"
+	timescaleAST   = "ptah.run/dialect/timescaledb/tsast"
+	ydbAST         = "ptah.run/dialect/ydb/ydbast"
 )
 
 func payload(pkg, name string) ExtensionKind { return ExtensionKind{Package: pkg, Name: name} }
@@ -180,6 +181,7 @@ var recordedDepartures = []Departure{
 	{Node: "DropChangefeedOperation", Successors: []ExtensionKind{payload(ydbAST, "DropChangefeed")}},
 	{Node: "DropContinuousAggregateNode", Successors: []ExtensionKind{payload(timescaleAST, "ContinuousAggregate")}},
 	{Node: "DropCoordinationNodeNode", Successors: []ExtensionKind{payload(ydbAST, "CoordinationNode")}},
+	{Node: "DropExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation")}},
 	{Node: "DropExternalDataSourceNode", Successors: []ExtensionKind{payload(ydbAST, "ExternalDataSource")}},
 	{Node: "DropExternalTableNode", Successors: []ExtensionKind{payload(ydbAST, "ExternalTable")}},
 	{Node: "DropResourcePoolClassifierNode", Successors: []ExtensionKind{payload(ydbAST, "ResourcePoolClassifier")}},
@@ -190,6 +192,7 @@ var recordedDepartures = []Departure{
 	{Node: "DropTopicNode", Successors: []ExtensionKind{payload(ydbAST, "Topic")}},
 	{Node: "DropTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
 	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},
+	{Node: "ExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation"), payload(extensionOwner, "CommentOperation")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterTTL")}},
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},

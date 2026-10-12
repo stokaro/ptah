@@ -757,7 +757,6 @@ var analyzedStatementKinds = map[reflect.Type]struct{}{
 // "does not model ENUM statements" names a keyword no author wrote.
 var statementLabelOverrides = map[string]string{
 	"EnumNode":                   "CREATE TYPE",
-	"ExtensionNode":              "CREATE EXTENSION",
 	"DefaultPrivilegeNode":       "ALTER DEFAULT PRIVILEGES",
 	"RevokeDefaultPrivilegeNode": "ALTER DEFAULT PRIVILEGES",
 	"ObjectCommentNode":          "COMMENT ON",
