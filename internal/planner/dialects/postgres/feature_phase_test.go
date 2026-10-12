@@ -258,14 +258,17 @@ func TestPlanner_PlacesPrerequisiteFeatureOperations(t *testing.T) {
 	}
 }
 
-// placedChange is an owner's change that puts its object into Schema.
+// placedChange is an owner's change that puts its object into Schema, or
+// into the schema its subject names where Schema is empty.
 type placedChange struct{ Schema string }
 
 func (*placedChange) Kind() schemaext.Kind { return phaseOwner + "/placed" }
 func (v *placedChange) CloneChange() schemaext.ChangeValue {
 	return &placedChange{Schema: v.Schema}
 }
-func (v *placedChange) PlacementSchema() string { return v.Schema }
+func (v *placedChange) PlacementSchema(subject objectidentity.ID) string {
+	return cmp.Or(v.Schema, subject.Schema.Authored())
+}
 
 // acceptingRuntime accounts for every change without contributing an
 // operation.
@@ -281,21 +284,28 @@ func (acceptingRuntime) PlanFeatures(_ context.Context, request featureplan.Requ
 
 // TestPlanner_CreatesTheSchemaAnOwnersChangePlacesItsObjectIn pins that an
 // owner's change naming a schema gets the schema precondition an extension
-// addition gets, and that the connection's default schema needs none.
+// addition gets, and that the connection's default schema needs none. The
+// owner may answer from the change's subject, as a type created in the
+// schema its identity names does.
 func TestPlanner_CreatesTheSchemaAnOwnersChangePlacesItsObjectIn(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema string
-		want   []string
+		name          string
+		schema        string
+		subjectSchema string
+		want          []string
 	}{
 		{name: "a named schema", schema: "ext", want: []string{"create schema"}},
 		{name: "the default schema", schema: "public", want: nil},
 		{name: "no schema", want: nil},
+		{name: "a schema the subject names", subjectSchema: "app", want: []string{"create schema"}},
+		{name: "the default schema the subject names", subjectSchema: "public", want: nil},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: phaseSubject("placed"), Value: &placedChange{Schema: test.schema}}}}
+			subject := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts(objectidentity.Kind(phaseOwner+"/object"),
+				test.subjectSchema, "placed")
+			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: subject, Value: &placedChange{Schema: test.schema}}}}
 
 			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), acceptingRuntime{Runtime: must.Must(builtin.New())}, diff)
 

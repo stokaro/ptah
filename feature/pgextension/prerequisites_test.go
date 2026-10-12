@@ -30,7 +30,7 @@ func TestPlacementSchema(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(test.value.PlacementSchema(), qt.Equals, test.want)
+			c.Assert(test.value.PlacementSchema(pgextension.Ref("pg_trgm")), qt.Equals, test.want)
 		})
 	}
 }

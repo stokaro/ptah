@@ -90,6 +90,8 @@ const (
 		"can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees"
 	exemptSharedRowSecurity = "a shared row-level security declaration reaches no catalog: each target converts it to " +
 		"its owner's model or skips it, so only the dialect-free comparison of two declarations reads it"
+	exemptTypeClearedAttributes = "a cleared range attribute converts to the empty attribute an absent one converts to, so " +
+		"it differs only from a current range that holds the attribute; pgtypeprovider.TestCompareTypes_FindsChanges measures that"
 	exemptClearedAttributes = "a cleared range attribute converts to the empty attribute an absent one converts to, so " +
 		"it differs only from a current range that holds the attribute; compare.TestRanges_AttributeChangesAreReported measures that"
 	exemptDomainNormalized = "an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them " +
@@ -123,6 +125,9 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 	const noServerSpelling = "no census fixture declares a server's spelling; a connected comparison attaches one"
 	return []UnmeasuredEntry{
 		{Field: "mssqlschema.DesiredSecurityPolicy.Normalized", Reason: noServerSpelling},
+		{Field: "pgtype.DesiredDomain.Normalized", Reason: noServerSpelling},
+		{Field: "pgtype.NormalizedDomain.Check", Reason: noServerSpelling},
+		{Field: "pgtype.NormalizedDomain.Default", Reason: noServerSpelling},
 		{Field: "schemamodel.Database.Facets", Reason: unknownFacet},
 		{Field: "schemamodel.Enum.Facets", Reason: unknownFacet},
 		{Field: "schemamodel.Field.UniqueExpr", Reason: "every target refuses it: uniqueness over an expression is not implemented"},
@@ -522,6 +527,10 @@ var roundTripExemptions = []Unreached{
 	{Field: "mssqlschema.Predicate.Type", Dialects: []string{"sqlserver"}, Directions: nil, Reason: exemptCoupledPredicateType},
 	{Field: "pgextension.DesiredExtension.IfNotExists", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptIfNotExists},
 	{Field: "pgpolicy.RoleSelector.Keyword", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptRoleKeyword},
+	{Field: "pgtype.DesiredDomain.Check", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
+	{Field: "pgtype.DesiredDomain.Default", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
+	{Field: "pgtype.DesiredDomain.DefaultExpr", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
+	{Field: "pgtype.DesiredRange.Cleared", Dialects: nil, Directions: nil, Reason: exemptTypeClearedAttributes},
 	{Field: "schemamodel.Database.FeatureCoverage", Dialects: nil, Directions: nil, Reason: exemptFeatureCoverage},
 	{Field: "schemamodel.Database.NotDescribed", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "schemamodel.Domain.Check", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},

@@ -186,3 +186,39 @@ func TestDomainChange_CreatesTheDeclaredDomain(t *testing.T) {
 	want.Kind = objectidentity.KindDomain
 	c.Assert(created, qt.DeepEquals, []schemaext.DefinedType{{ID: want, References: []string{"integer"}}})
 }
+
+// TestChanges_PlaceACreatedType pins the schema each change asks a host to
+// create first: the one a creation's subject names as its source wrote it,
+// and none for a type that survives, one that is dropped, or one the source
+// left to the connection's default.
+func TestChanges_PlaceACreatedType(t *testing.T) {
+	domain := &pgtype.DesiredDomain{BaseType: "text"}
+	held := &pgtype.ObservedDomain{BaseType: "text"}
+	composite := &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "n", Type: "int"}}}
+	span := &pgtype.DesiredRange{Subtype: "int4"}
+	tests := []struct {
+		name    string
+		change  schemaext.SchemaPlacement
+		subject objectidentity.ID
+		want    string
+	}{
+		{name: "a domain created in a schema", change: &pgtype.DomainChange{After: domain}, subject: pgtype.Ref(pgtype.DomainKind, "App", "t"), want: "App"},
+		{name: "a composite type created in a schema", change: &pgtype.CompositeChange{After: composite},
+			subject: pgtype.Ref(pgtype.CompositeKind, "app", "t"), want: "app"},
+		{name: "a range type created in a schema", change: &pgtype.RangeChange{After: span}, subject: pgtype.Ref(pgtype.RangeKind, "app", "t"), want: "app"},
+		{name: "a domain created in the default schema", change: &pgtype.DomainChange{After: domain}, subject: pgtype.Ref(pgtype.DomainKind, "", "t")},
+		{name: "a domain that survives", change: &pgtype.DomainChange{Before: held, After: domain, Differs: []string{pgtype.DiffComment}},
+			subject: pgtype.Ref(pgtype.DomainKind, "app", "t")},
+		{name: "a domain dropped", change: &pgtype.DomainChange{Before: held}, subject: pgtype.Ref(pgtype.DomainKind, "app", "t")},
+		{name: "a range type dropped", change: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"}},
+			subject: pgtype.Ref(pgtype.RangeKind, "app", "t")},
+		{name: "a composite type dropped", change: &pgtype.CompositeChange{Before: composite.Observed()},
+			subject: pgtype.Ref(pgtype.CompositeKind, "app", "t")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.change.PlacementSchema(test.subject), qt.Equals, test.want)
+		})
+	}
+}

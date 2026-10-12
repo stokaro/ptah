@@ -603,7 +603,7 @@ func (p *Planner) placedSchemas(diff *difftypes.SchemaDiff) []string {
 	// way; see [schemaext.SchemaPlacement].
 	for _, change := range diff.FeatureChanges {
 		if placed, ok := change.Value.(schemaext.SchemaPlacement); ok {
-			if schema := placed.PlacementSchema(); schema != defaultSchema {
+			if schema := placed.PlacementSchema(change.Subject); schema != defaultSchema {
 				schemas = append(schemas, schema)
 			}
 		}

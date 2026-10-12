@@ -19,6 +19,7 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -113,7 +114,15 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		if err != nil {
 			return nil, err
 		}
+		// It describes the user types too, and an empty database has none.
+		types, err := pgtype.CompleteCoverage(schemaext.Observed)
+		if err != nil {
+			return nil, err
+		}
 		if current.FeatureCoverage, err = known.Combine(extensions); err != nil {
+			return nil, err
+		}
+		if current.FeatureCoverage, err = current.FeatureCoverage.Combine(types); err != nil {
 			return nil, err
 		}
 	}
