@@ -200,3 +200,28 @@ func TestSet_SelectObjects_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestSelection_ByNameAlone pins which objects a selection names by their
+// name alone: every object of a database-wide selection, none of an in-schema
+// one, and only the one with no schema of a schema-or-database selection.
+func TestSelection_ByNameAlone(t *testing.T) {
+	tests := []struct {
+		naming selectext.Naming
+		schema string
+		want   bool
+	}{
+		{naming: selectext.DatabaseWide, schema: "app", want: true},
+		{naming: selectext.DatabaseWide, schema: "", want: true},
+		{naming: selectext.InSchema, schema: "app", want: false},
+		{naming: selectext.InSchema, schema: "", want: false},
+		{naming: selectext.SchemaOrDatabase, schema: "app", want: false},
+		{naming: selectext.SchemaOrDatabase, schema: "", want: true},
+	}
+	for _, test := range tests {
+		t.Run(string(test.naming)+"/"+test.schema, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(selectext.Selection{Naming: test.naming}.ByNameAlone(test.schema), qt.Equals, test.want)
+		})
+	}
+}

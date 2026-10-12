@@ -1026,10 +1026,12 @@ only the refusal of a split.
 
 `core/selectext` is how an owner tells a scope to name its objects. A
 `Selection` states, as data, the selector type that names an object of one
-kind (`topic` in `*[type=topic]`), whether a selector reads its name in its
-schema (`InSchema`) or as a database-wide name (`DatabaseWide`), whether
+kind (`topic` in `*[type=topic]`), how a selector reads its name, whether
 excluding it excludes a table of its name (`Relation`), and the `Fields` an
-exclusion may subtract from it. What only the owner can compute is one batched
+exclusion may subtract from it. A name is read in its schema (`InSchema`), as
+a database-wide name (`DatabaseWide`), or by whether the object has a schema
+(`SchemaOrDatabase`), where one without is on the database and no schema
+selects or removes it; `Selection.ByNameAlone` answers which. What only the owner can compute is one batched
 `Service.SelectObjects` call for each side: it returns the kept objects with
 the requested fields cleared, and the objects the kept ones require, such as
 the resource pool a kept classifier routes to, which a scope keeps and an
@@ -2601,6 +2603,12 @@ of a value. `DeclaredObject` binds a declaration to SQL Server. The package
 holds every stage's service: `CompareService`, `PlanService`, which joins the
 host's dependent window and reads the table or column a property is on,
 `ReverseService`, `ConvertService`, `ReportService` and the render `Handlers`.
+
+`mssqlproperty.RelationService` reports the table a property on a table or a
+column hangs off as its attachment, so a DROP TABLE removes the property and a
+scope keeps or leaves it with the table. `mssqlproperty.Selections` names a
+property by the selector type `extended_property`, in its schema or, for one
+on the database, by its name alone.
 
 `feature/pgextension` owns the PostgreSQL extension model. An extension is a
 database-wide feature object of `ExtensionKind`, identified by its exact name

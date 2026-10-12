@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlrender"
 	"ptah.run/engine"
@@ -24,6 +25,7 @@ func mssqlPropertyProvider() engine.Provider {
 		ID:          mssqlproperty.Owner,
 		Annotations: []annotation.Extension{mssqlproperty.Annotations()},
 		HCL:         []hclext.Extension{mssqlproperty.HCL()},
+		Selections:  []selectext.Extension{mssqlproperty.Selections()},
 		Codecs:      mssqlproperty.Codecs(),
 		Conversions: []engine.Conversion{{Target: target, Kinds: models, Service: mssqlproperty.ConvertService{}}},
 		Comparisons: []engine.ObjectComparison{{Target: target, Kinds: models, ChangeKinds: changes, Service: mssqlproperty.CompareService{}}},

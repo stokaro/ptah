@@ -96,9 +96,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.MaterializedViews = keep(db.MaterializedViews, func(view schemamodel.MaterializedView) bool {
 		return s.selectedQualifiedName(typeList("materialized_view"), view.Name)
 	})
-	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(_, table string) bool {
-		return generatedTableNameKept(out.Tables, table)
-	})
 	out.Functions = keep(db.Functions, func(function schemamodel.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
 	})

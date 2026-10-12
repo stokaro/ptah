@@ -64,8 +64,8 @@ func ownerContext() context.Context {
 // exclusion reaches it.
 func (s *exclusionState) filterOwnerFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage) {
 	for _, selection := range s.vocabulary.selections.Selections() {
-		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(schema, name string) bool {
-			if selection.Naming == selectext.DatabaseWide {
+		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(_ objectidentity.ID, schema, name string) bool {
+			if selection.ByNameAlone(schema) {
 				return !s.matches(selection.Type, name)
 			}
 			if s.matches(selection.Type, s.nameCandidates(schema, name)...) || s.schemaExcluded(schema) {
@@ -93,7 +93,7 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 				continue
 			}
 			names := []string{ref.Name.Source}
-			if selection.Naming == selectext.InSchema {
+			if !selection.ByNameAlone(ref.Schema.Authored()) {
 				names = s.nameCandidates(ref.Schema.Authored(), ref.Name.Source)
 			}
 			for _, field := range selection.Fields {
@@ -131,11 +131,17 @@ func (s *scopeSelection) selectOwnerFeatures(
 	originalObjects, originalCoverage := objects, coverage
 	selections := s.vocabulary.selections.Selections()
 	for _, selection := range selections {
-		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(schema, name string) bool {
-			if selection.Naming == selectext.DatabaseWide {
+		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(ref objectidentity.ID, schema, name string) bool {
+			switch {
+			case s.bindings.Attached(ref):
+				// A scope keeps an attached object with its table, which
+				// the bindings have decided already.
+				return true
+			case selection.ByNameAlone(schema):
 				return s.selectedNames(typeList(selection.Type), name)
+			default:
+				return s.selected(typeList(selection.Type), schema, name)
 			}
-			return s.selected(typeList(selection.Type), schema, name)
 		})
 	}
 	if len(selections) == 0 {
@@ -177,9 +183,11 @@ func (s *scopeSelection) selectOwnerFeatures(
 // remove them. keepNode receives the schema the source wrote, so an unqualified object is
 // resolved under the filter's own default schema rather than under the one
 // its identity was built with.
-func selectNamedFeatures(objects schemaext.Objects, coverage schemaext.Coverage, kind schemaext.Kind, keepNode func(schema, name string) bool) (schemaext.Objects, schemaext.Coverage) {
+func selectNamedFeatures(
+	objects schemaext.Objects, coverage schemaext.Coverage, kind schemaext.Kind, keepNode func(ref objectidentity.ID, schema, name string) bool,
+) (schemaext.Objects, schemaext.Coverage) {
 	keep := func(ref objectidentity.ID) bool {
-		return ref.Kind != objectidentity.Kind(kind) || keepNode(ref.Schema.Authored(), ref.Name.Source)
+		return ref.Kind != objectidentity.Kind(kind) || keepNode(ref, ref.Schema.Authored(), ref.Name.Source)
 	}
 	return objects.Select(keep), coverage.SelectSubjects(keep)
 }

@@ -33,6 +33,14 @@ const (
 	// DatabaseWide names an object by its name alone, which is unique in the
 	// database: a dot is part of the name, and no schema scopes the object.
 	DatabaseWide Naming = "database-wide"
+	// SchemaOrDatabase names an object that lives in a schema or on the
+	// database itself, such as a SQL Server extended property. One with a
+	// schema is named as [InSchema] names an object. One without a schema is
+	// on the database: it is named by its name alone, as [DatabaseWide] names
+	// an object, and no schema selects or removes it. InSchema cannot say
+	// this, since an object with no schema is unqualified there and is read
+	// under the scope's default schema.
+	SchemaOrDatabase Naming = "schema-or-database"
 )
 
 // Selection is how a scope names an owner's objects of one kind.
@@ -52,6 +60,14 @@ type Selection struct {
 	// keeping it, such as "comment" in `*[type=synonym].comment`. The owner's
 	// [Service] clears them.
 	Fields []string
+}
+
+// ByNameAlone reports whether the selection names an object in schema by its
+// name alone, with no schema to select or remove it: every object of a
+// [DatabaseWide] selection, and one with no schema of a [SchemaOrDatabase]
+// selection.
+func (s Selection) ByNameAlone(schema string) bool {
+	return s.Naming == DatabaseWide || (s.Naming == SchemaOrDatabase && schema == "")
 }
 
 // Extension is what one owner contributes to a scope.
@@ -158,7 +174,7 @@ func validateSelection(extension Extension, selection Selection) error {
 	switch {
 	case strings.TrimSpace(string(selection.Kind)) == "" || strings.TrimSpace(selection.Type) == "":
 		return fmt.Errorf("scope selection of %s names no kind or no selector type", extension.Owner)
-	case selection.Naming != InSchema && selection.Naming != DatabaseWide:
+	case selection.Naming != InSchema && selection.Naming != DatabaseWide && selection.Naming != SchemaOrDatabase:
 		return fmt.Errorf("scope selection %q of %s has unknown naming %q", selection.Type, extension.Owner, selection.Naming)
 	case len(selection.Fields) > 0 && extension.Service == nil:
 		return fmt.Errorf("scope selection %q of %s names fields without a service to clear them", selection.Type, extension.Owner)
