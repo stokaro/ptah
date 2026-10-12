@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -99,7 +100,8 @@ func TestRenderRefusesUnrepresentableIndexProperties(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{Indexes: []schemamodel.Index{{Name: "by_id", Overrides: test.properties}}}
 			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-			c.Assert(err, qt.ErrorMatches, `index "by_id" has an unrepresentable Go annotation .*`)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: index "by_id" has an unrepresentable Go annotation .*`)
 			c.Assert(files, qt.IsNil)
 		})
 	}

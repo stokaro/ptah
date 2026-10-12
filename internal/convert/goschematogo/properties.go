@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -25,9 +27,39 @@ func propertyAttrs(overrides map[string]map[string]string) []attr {
 	return result
 }
 
+// fieldProperties are the platform properties a field's directive writes:
+// its overrides, less the MySQL-family comment the Go annotation reader
+// derives from the field's own comment attribute. Reading the directive back
+// derives it again, so writing it would only repeat the comment.
+func fieldProperties(field schemamodel.Field) map[string]map[string]string {
+	properties := make(map[string]map[string]string, len(field.Overrides))
+	for target, values := range field.Overrides {
+		for key, value := range values {
+			derived := field.Comment != "" && key == "comment" && value == field.Comment &&
+				(target == platform.MySQL || target == platform.MariaDB)
+			if derived {
+				continue
+			}
+			if properties[target] == nil {
+				properties[target] = make(map[string]string, len(values))
+			}
+			properties[target][key] = value
+		}
+	}
+	return properties
+}
+
+// validateSourceProperties refuses a platform property of a table, a field
+// or an index that a Go annotation cannot spell, rather than write it wrong
+// or leave it out.
 func validateSourceProperties(db *schemamodel.Database) error {
 	for _, table := range db.Tables {
 		if err := validateProperties("table", table.QualifiedName(), table.Overrides); err != nil {
+			return err
+		}
+	}
+	for _, field := range db.Fields {
+		if err := validateProperties("field", field.StructName+"."+field.Name, fieldProperties(field)); err != nil {
 			return err
 		}
 	}
@@ -42,12 +74,12 @@ func validateSourceProperties(db *schemamodel.Database) error {
 func validateProperties(owner, name string, overrides map[string]map[string]string) error {
 	for _, target := range slices.Sorted(maps.Keys(overrides)) {
 		if strings.ContainsRune(target, '.') {
-			return fmt.Errorf("%s %q has an unrepresentable Go annotation target %q", owner, name, target)
+			return fmt.Errorf("%w: %s %q has an unrepresentable Go annotation target %q", ptaherr.ErrUnsupportedFeature, owner, name, target)
 		}
 	}
 	for _, property := range propertyAttrs(overrides) {
 		if !annotationmeta.IsPlatformAttribute(property.name) || !utf8.ValidString(property.value) || strings.ContainsRune(property.value, 0) {
-			return fmt.Errorf("%s %q has an unrepresentable Go annotation property %q", owner, name, property.name)
+			return fmt.Errorf("%w: %s %q has an unrepresentable Go annotation property %q", ptaherr.ErrUnsupportedFeature, owner, name, property.name)
 		}
 	}
 	return nil
