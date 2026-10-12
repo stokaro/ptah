@@ -18,7 +18,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -42,14 +41,10 @@ type Parser struct {
 	// index rather than anything a renderer writes. See
 	// [Parser.ForeignKeyIndex].
 	foreignKeyIndexes map[*ast.IndexNode]bool
-	// lastGuard is the text of the most recent version-guarded span
-	// skipWhitespace stepped over, so a clause hiding inside one can still be
-	// read at the place that expects it.
-	lastGuard string
 	// foreignKeyIndexName is the optional identifier the MySQL family allows
-	// between FOREIGN KEY and the column list. It lives on the parser for the
-	// same reason lastGuard does: the keyword handler reads it, and the node it
-	// belongs to is not built until the column list has been read too.
+	// between FOREIGN KEY and the column list. It lives on the parser because
+	// the keyword handler reads it, and the node it belongs to is not built
+	// until the column list has been read too.
 	foreignKeyIndexName string
 	// keyOptions are the COMMENT and visibility after the parts of the key
 	// being read; see [Parser.readKeyOptions].
@@ -107,10 +102,10 @@ type Parser struct {
 	// ownerTables are the tables owners' statements declare, each standing
 	// where its statement stood once the owners have read the document.
 	ownerTables map[*ast.ExtensionStatement]*ast.CreateTableNode
-	// columnDefinitions counts the column definitions read so far, which
-	// numbers the claims of owners' column options; see
+	// definitions counts the column definitions and keys read so far, which
+	// numbers the claims of owners' column and index options; see
 	// [sqlext.Claim.Definition].
-	columnDefinitions int
+	definitions int
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -820,19 +815,25 @@ func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
 // whole statements. Stepping over them here keeps every one of those documents
 // readable, which is what the unnamed read already did (stokaro/ptah#2752).
 //
-// The last one stepped over is remembered rather than discarded, because one of
-// them carries a clause the schema needs. See lastGuard.
+// Among a key's options a guard holds options the schema needs, so
+// [Parser.readKeyOptions] reads those with [Parser.skipSpaceBeforeGuard]
+// instead.
 func (p *Parser) skipWhitespace() {
 	for {
 		switch p.current.Type {
-		case lexer.TokenWhitespace, lexer.TokenComment:
-			p.advance()
-		case lexer.TokenUnknown:
-			p.lastGuard = p.current.Value
+		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
 			p.advance()
 		default:
 			return
 		}
+	}
+}
+
+// skipSpaceBeforeGuard steps over whitespace and comments, and stops at a
+// version-guarded span.
+func (p *Parser) skipSpaceBeforeGuard() {
+	for p.current.Type == lexer.TokenWhitespace || p.current.Type == lexer.TokenComment {
+		p.advance()
 	}
 }
 
@@ -2859,7 +2860,7 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 	lastCheck := false
 	// What the enforcement clauses after that constraint said.
 	var enforced enforcement
-	p.columnDefinitions++
+	p.definitions++
 	for {
 		// Check for timeout to prevent infinite loops
 		if err := p.checkTimeout(); err != nil {
@@ -4201,36 +4202,6 @@ func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.Ind
 	return index
 }
 
-// withIndexParser records a FULLTEXT parser on index as the MySQL owner's
-// index option, bound to the MySQL family, since it is a MySQL-family index
-// option rather than part of the common definition. The facet holds the
-// plugin's name; the backticks a dump writes are its spelling. An empty name
-// records nothing.
-func withIndexParser(index *ast.IndexNode, parserName string) error {
-	if parserName == "" {
-		return nil
-	}
-	facets, err := mysqlschema.WithIndexOptions(index.Facets, mysqlschema.DesiredIndex{Parser: unquoteLiteral(parserName, '`')})
-	if err != nil {
-		return fmt.Errorf("index %s: %w", index.Name, err)
-	}
-	index.Facets = facets
-	return nil
-}
-
-// withIndexBlockSize records the KEY_BLOCK_SIZE the key options read on
-// index as the MySQL owner's hint. It is bound to no target, so a statement
-// written for another engine that declares one is refused there, as it always
-// was. Zero records nothing.
-func (p *Parser) withIndexBlockSize(index *ast.IndexNode) error {
-	facets, err := mysqlschema.WithIndexBlockSize(index.Facets, p.keyOptions.keyBlockSize)
-	if err != nil {
-		return fmt.Errorf("index %s: %w", index.Name, err)
-	}
-	index.Facets = facets
-	return nil
-}
-
 // ForeignKeyIndex reports whether index is the index a MySQL `FOREIGN KEY
 // name (columns)` clause names in the AST this parser returned, rather than
 // one the table body declares on its own.
@@ -4346,127 +4317,29 @@ func (p *Parser) handleTableConstraintTypedIndex(constraint *ast.ConstraintNode)
 	}
 }
 
-// indexParserName resolves a `WITH PARSER` clause in either spelling an author
-// or a dumper may have used.
-//
-// The guarded one is looked for only after the bare one came back empty, and
-// only AFTER handleTableIndexParser has run: that call opens with
-// skipWhitespace, which is what steps over the guard and records it.
-//
-// It is asked for a constraint as well as an index, deliberately. A guard
-// carrying the clause after something that is not a full-text index is refused
-// there rather than ignored here, which is the answer both servers give.
-func (p *Parser) indexParserName(indexMethod string) (string, error) {
-	name, err := p.handleTableIndexParser(indexMethod)
-	if err != nil || name != "" {
-		return name, err
-	}
-	return p.guardedIndexParser(p.lastGuard, indexMethod)
-}
-
-// guardedIndexParser reads a `WITH PARSER` clause out of a version-guarded
-// span that followed this index.
-//
-// mysqldump writes the clause that way and only that way:
-// `FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */`. The guard is
-// stepped over as whitespace so the rest of the dump stays readable, so the
-// clause has to be read from the span's own text rather than from the token
-// stream (stokaro/ptah#2752).
-//
-// A guard holding anything else is left alone. It is a version-conditional
-// fragment Ptah does not model, and it was invisible before a dialect was
-// named; refusing it here would make naming the dialect the thing that broke
-// the document.
-func (p *Parser) guardedIndexParser(guard, indexMethod string) (string, error) {
-	body, ok := executableCommentBody(guard)
-	if !ok {
-		return "", nil
-	}
-	inner := NewParser(body, WithDialect(p.dialect))
-	inner.skipWhitespace()
-	if inner.current.Type != lexer.TokenIdentifier ||
-		!strings.EqualFold(inner.current.Value, "WITH") {
-		return "", nil
-	}
-	return inner.handleTableIndexParser(indexMethod)
-}
-
-// executableCommentBody is the SQL inside `/*!NNNNN ... */` and MariaDB's
-// `/*M!NNNNN ... */`, and reports whether the text was one of those at all.
+// executableCommentBody answers where the SQL inside `/*!NNNNN ... */` or
+// MariaDB's `/*M!NNNNN ... */` begins and ends in text, and reports whether
+// text was one of those at all.
 //
 // The two markers are different lengths, which is the kind of thing a fixed
 // offset gets wrong on exactly one engine.
-func executableCommentBody(text string) (string, bool) {
+func executableCommentBody(text string) (start, end int, ok bool) {
 	rest, ok := strings.CutPrefix(text, "/*")
 	if !ok {
-		return "", false
+		return 0, 0, false
 	}
 	rest = strings.TrimPrefix(strings.TrimPrefix(rest, "M"), "m")
 	rest, ok = strings.CutPrefix(rest, "!")
 	if !ok {
-		return "", false
+		return 0, 0, false
 	}
 	rest, ok = strings.CutSuffix(rest, "*/")
 	if !ok {
-		return "", false
+		return 0, 0, false
 	}
-	return strings.TrimLeft(rest, "0123456789"), true
-}
-
-// handleTableIndexParser reads MySQL's optional `WITH PARSER <name>` clause.
-//
-// It names the tokenizer a full-text index uses, and it is not decoration: the
-// difference between the default parser and `ngram` is whether CJK text is
-// indexed at all. Dropping it produced an index Ptah reported as matching while
-// it tokenized differently.
-//
-// The clause belongs to FULLTEXT alone, and anything else carrying it is
-// refused rather than ignored. Measured on MySQL 26.7 and MariaDB 12.3, both
-// answer `ERROR 1064` to `KEY k (a) WITH PARSER ngram`, so accepting it would
-// read a document neither engine takes -- and the renderer emits the clause
-// from a non-empty Parser without asking about the type, so the run would then
-// write DDL neither engine takes either.
-//
-// mysqldump writes the clause inside an executable comment,
-// `/*!50100 WITH PARSER `ngram` */`, which the MySQL and MariaDB lexers hand
-// back as ordinary tokens; a reader with no dialect sees an ordinary comment
-// and never reaches this (stokaro/ptah#2752). Both routes end here, so the
-// clause is read once rather than once per spelling.
-//
-// Absent, it answers the empty string, which is what every index that is not
-// full-text carries.
-func (p *Parser) handleTableIndexParser(indexMethod string) (string, error) {
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenIdentifier ||
-		!strings.EqualFold(p.current.Value, "WITH") {
-		return "", nil
-	}
-	p.advance()
-	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "PARSER"); err != nil {
-		return "", fmt.Errorf("expected PARSER after WITH: %w", err)
-	}
-	p.skipWhitespace()
-	name, err := p.expectIdentifier()
-	if err != nil {
-		return "", fmt.Errorf("expected a parser name after WITH PARSER: %w", err)
-	}
-	if !strings.EqualFold(indexMethod, "FULLTEXT") {
-		return "", fmt.Errorf(
-			"WITH PARSER belongs to a FULLTEXT index, and this one is %s",
-			describeIndexMethod(indexMethod))
-	}
-	p.skipWhitespace()
-	return name, nil
-}
-
-// describeIndexMethod names an index's access method for a diagnostic, and says
-// "an ordinary index" rather than printing an empty string for the plain one.
-func describeIndexMethod(indexMethod string) string {
-	if indexMethod == "" {
-		return "an ordinary index"
-	}
-	return indexMethod
+	body := strings.TrimLeft(rest, "0123456789")
+	start = len(text) - len("*/") - len(body)
+	return start, start + len(body), true
 }
 
 // currentIsIndexKeyword reports whether the cursor sits on INDEX or KEY.
@@ -5006,6 +4879,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	}
 
 	p.keyOptions = keyOptions{}
+	p.definitions++
 	isIndex, indexMethod, err := p.readTableElementKind(constraint)
 	if err != nil {
 		return nil, nil, err
@@ -5019,13 +4893,6 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		}
 		p.skipWhitespace()
 	}
-
-	// Cleared here rather than read as it stands: skipWhitespace remembers
-	// every guard it steps over, and only one that appears AFTER the column
-	// list belongs to this index. Without this, a guard on an earlier column --
-	// `point NOT NULL /*!80003 SRID 4326 */` -- would still be the last one seen
-	// when the clause is looked for.
-	p.lastGuard = ""
 
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
 	err = p.parseTableColumnList(constraint)
@@ -5063,21 +4930,13 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	if err := p.refuseKeyIndexClause(kind); err != nil {
 		return nil, nil, err
 	}
-	parserName, err := p.indexParserName(indexMethod)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := p.readKeyOptions(kind, indexMethod); err != nil {
-		return nil, nil, err
-	}
 
 	if err := p.readConstraintClauses(constraint, kind); err != nil {
 		return nil, nil, err
 	}
 
 	if isIndex {
-		index, err := p.tableIndex(constraint, indexMethod, parserName, uniqueIndex)
-		return nil, index, err
+		return nil, p.tableIndex(constraint, indexMethod, uniqueIndex), nil
 	}
 
 	return constraint, p.foreignKeyBackingIndex(constraint), nil
@@ -5085,7 +4944,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 
 // tableIndex builds the index a key element of a table body declares, from
 // the columns read into constraint and the options read since.
-func (p *Parser) tableIndex(constraint *ast.ConstraintNode, indexMethod, parserName string, unique bool) (*ast.IndexNode, error) {
+func (p *Parser) tableIndex(constraint *ast.ConstraintNode, indexMethod string, unique bool) *ast.IndexNode {
 	index := &ast.IndexNode{
 		Name:    constraint.Name,
 		Columns: constraint.Columns,
@@ -5104,13 +4963,8 @@ func (p *Parser) tableIndex(constraint *ast.ConstraintNode, indexMethod, parserN
 		Comment:   p.keyOptions.comment,
 		Invisible: p.keyOptions.invisible,
 	}
-	if err := withIndexParser(index, parserName); err != nil {
-		return nil, err
-	}
-	if err := p.withIndexBlockSize(index); err != nil {
-		return nil, err
-	}
-	return index, nil
+	p.keyOptions.hold(&index.Facets, "index "+index.Name)
+	return index
 }
 
 func (p *Parser) handleTableEngine(table *ast.CreateTableNode) error {
@@ -5330,22 +5184,6 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 	}
 
 	return nil
-}
-
-// unquoteLiteral strips one pair of the given quote character and undoubles the
-// escapes inside it, leaving a value carrying no quotes alone.
-//
-// The lexer hands a String token its quotes, so a value stored as written would
-// carry them into the model and out again into every statement rendered from
-// it. Undoubling matters for the same reason in the other direction: a column
-// named `a"b` is written `"a""b"`, and keeping the doubled pair would store
-// `a""b`, which the renderer then escapes again into a column no database has.
-func unquoteLiteral(value string, quote byte) string {
-	if len(value) < 2 || value[0] != quote || value[len(value)-1] != quote {
-		return value
-	}
-	pair := string([]byte{quote, quote})
-	return strings.ReplaceAll(value[1:len(value)-1], pair, string(quote))
 }
 
 func isCreateTableOptionBoundary(option string) bool {
@@ -6787,7 +6625,8 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	// The MySQL family's options after the parts: a USING clause, a COMMENT
 	// and the visibility, which `CREATE INDEX` takes as a table element does.
 	p.keyOptions, p.indexAccessMethod = keyOptions{}, ""
-	if err := p.readKeyOptions(indexElement, createIndexPrefix(indexType)); err != nil {
+	p.definitions++
+	if err := p.readKeyOptions(indexElement, indexName, createIndexPrefix(indexType)); err != nil {
 		return nil, err
 	}
 	indexType = cmp.Or(p.indexAccessMethod, indexType)
@@ -6827,9 +6666,7 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index.IfNotExists = ifNotExists
 	index.Comment = p.keyOptions.comment
 	index.Invisible = p.keyOptions.invisible
-	if err := p.withIndexBlockSize(index); err != nil {
-		return nil, err
-	}
+	p.keyOptions.hold(&index.Facets, "index "+index.Name)
 	return index, nil
 }
 

@@ -390,13 +390,12 @@ string or a `U&'...'` string is refused: CockroachDB applies a different
 continuation rule and has no `U&'...'` strings, and the other two have not been
 measured.
 
-**A version-guarded span is stepped over, and the one clause a schema needs is
-read out of it.** `mysqldump` writes a full-text index's parser as
-``FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */``, and that clause
-reaches the schema. The rest of a guard is not read: those spans hold
-version-conditional fragments Ptah does not model, and `mariadb-dump` opens
-every file with `/*M!999999\- enable the sandbox mode */` — a guard no server
-executes, because no server is version 999999.
+**A version-guarded span is stepped over, except among a key's options, where
+it is read as options.** `mysqldump` writes ``KEY `k` (`a`) /*!80000 INVISIBLE
+*/`` and ``FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */``, and
+both reach the schema. Other guards hold version-conditional fragments Ptah
+does not model, and `mariadb-dump` opens every file with `/*M!999999\- enable
+the sandbox mode */`, a guard no server executes.
 
 **An unquoted name folds the way the engine folds it.** PostgreSQL and
 YugabyteDB lower the ASCII letters of an unquoted name, so `CREATE TABLE Docs

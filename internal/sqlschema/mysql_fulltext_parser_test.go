@@ -8,7 +8,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
-	"ptah.run/internal/sqlschema"
 )
 
 // TestRead_AFulltextParserIsAMySQLIndexOption reads `WITH PARSER` as the MySQL
@@ -28,7 +27,7 @@ func TestRead_AFulltextParserIsAMySQLIndexOption(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), platform.MySQL)
+			database, _, err := readWithOwners([]byte(test.sql), platform.MySQL)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Indexes, qt.HasLen, 1)
@@ -46,7 +45,7 @@ func TestRead_AFulltextParserIsAMySQLIndexOption(t *testing.T) {
 func TestRead_AnIndexWithoutAParserDeclaresNoOption(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte("CREATE TABLE docs (id BIGINT PRIMARY KEY, bio TEXT, FULLTEXT KEY ft_bio (bio));"), platform.MySQL)
+	database, _, err := readWithOwners([]byte("CREATE TABLE docs (id BIGINT PRIMARY KEY, bio TEXT, FULLTEXT KEY ft_bio (bio));"), platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Indexes, qt.HasLen, 1)

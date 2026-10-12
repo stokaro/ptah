@@ -364,7 +364,7 @@ func TestGenuineIndexFailureKeepsItsOwnReason_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	sql := "CREATE TABLE t (\n  a INT NOT NULL,\n  KEY idx_a (a) WITH PARSER ngram\n);"
 
-	statements, err := parser.NewParser(sql, parser.WithDialect(platform.MySQL)).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.MySQL), withMySQLOwners()).Parse()
 
 	c.Assert(err, qt.ErrorMatches,
 		`WITH PARSER belongs to a FULLTEXT index, and this one is an ordinary index`)

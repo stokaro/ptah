@@ -233,3 +233,51 @@ func TestReadWith_AppliesAnOwnersColumnOptions(t *testing.T) {
 	c.Assert(found, qt.IsTrue)
 	c.Assert(tagged.Text, qt.Equals, "cold")
 }
+
+// TestReadWith_AppliesAnOwnersIndexOptions reads an owner's options after a
+// key's parts as the owner's facets of the key: of the index a KEY or CREATE
+// INDEX builds, of the PRIMARY KEY, and of the unique index a UNIQUE key with
+// such an option is read as. Each option ends where the next one begins.
+func TestReadWith_AppliesAnOwnersIndexOptions(t *testing.T) {
+	c := qt.New(t)
+	owners := must.Must(engine.New(engine.Provider{
+		ID:      "example.org/shelves",
+		Targets: []engine.Target{{Name: "shelves"}},
+		SQL: []sqlext.Extension{{
+			Owner:   "example.org/shelves",
+			Targets: []string{"shelves"},
+			Facets:  []schemaext.Kind{labelKind, tagKind},
+			Patterns: []sqlext.Pattern{
+				{Name: "label", Site: sqlext.IndexOption, Words: []string{"LABELED"}},
+				{Name: "tag", Site: sqlext.IndexOption, Words: []string{"TAGGED"}},
+			},
+			Parser: columnLabelParser{},
+		}},
+	})).SQL()
+	source := "CREATE TABLE a (v int, w int, x int, PRIMARY KEY (v) TAGGED 'hot', UNIQUE (x) TAGGED 'one');\n" +
+		"CREATE INDEX k ON a (w) LABELED 'archive' TAGGED 'cold';\n"
+
+	database, _, err := sqlschema.ReadWith(t.Context(), []byte(source), "shelves", nil, sqlschema.Options{Owners: owners})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Tables, qt.HasLen, 1)
+	c.Assert(tagText(c, database.Tables[0].PrimaryKeyFacets), qt.Equals, "hot")
+	c.Assert(database.Constraints, qt.HasLen, 0)
+	c.Assert(database.Indexes, qt.HasLen, 2)
+	c.Assert(database.Indexes[0].Unique, qt.IsTrue)
+	c.Assert(tagText(c, database.Indexes[0].Facets), qt.Equals, "one")
+	c.Assert(tagText(c, database.Indexes[1].Facets), qt.Equals, "cold")
+	labeled, found, err := schemaext.FacetAs[*label](database.Indexes[1].Facets, labelKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(labeled.Text, qt.Equals, "archive")
+}
+
+// tagText is the text of the shelves owner's tag in facets.
+func tagText(c *qt.C, facets schemaext.Facets) string {
+	c.Helper()
+	tagged, found, err := schemaext.FacetAs[*tag](facets, tagKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	return tagged.Text
+}

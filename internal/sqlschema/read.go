@@ -8,12 +8,10 @@ import (
 
 	"ptah.run/core/ast"
 	schemacoverage "ptah.run/core/coverage"
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
-	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/internal/parser"
 )
 
@@ -177,31 +175,18 @@ func describe(database *schemamodel.Database, data []byte, dialect string, opts 
 		return err
 	}
 	database.NotDescribed = database.NotDescribed.Merge(header)
-	switch target {
-	case platform.MySQL, platform.MariaDB:
-		// An index states its KEY_BLOCK_SIZE in its own definition, so an
-		// index without one declares none.
-		database.FeatureCoverage, err = mysqlsource.BlockSizeCoverage()
-	}
-	if err != nil {
-		return err
-	}
 	// What a document of the dialect states about an owner's models is the
 	// owner's claim, such as a ClickHouse materialized view's refresh
 	// schedule, which its CREATE statement states, the YDB objects a YQL
 	// document declares except those its header leaves unmanaged, the
 	// virtual tables a SQLite document declares unless its header declines
-	// them, or a Spanner table's row deletion policy. The owners' claims
-	// combine, since a Spanner document carries both its row deletion
-	// policies and its extensions, and they join the dialect's own claim.
+	// them, a Spanner table's row deletion policy, or the block size of a
+	// MySQL index. The owners' claims combine, since a Spanner document
+	// carries both its row deletion policies and its extensions.
 	claim, claimed, err := opts.Owners.Coverage(target, owned)
 	if err != nil || !claimed {
 		return err
 	}
-	if database.FeatureCoverage.IsZero() {
-		database.FeatureCoverage = claim
-		return nil
-	}
-	database.FeatureCoverage, err = database.FeatureCoverage.Combine(claim)
-	return err
+	database.FeatureCoverage = claim
+	return nil
 }

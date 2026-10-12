@@ -202,9 +202,9 @@ func TestParse_MySQLTypedIndexKeepsItsKeyParts(t *testing.T) {
 // Only the bare spelling is covered here. mysqldump writes the clause inside an
 // executable comment, /*!50100 WITH PARSER `ngram` */, and
 // TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment covers that
-// spelling (stokaro/ptah#2752). The two reach this field by different routes --
-// one through the table-element grammar, one through a lexer that opens the
-// guard -- so each carries its own rows.
+// spelling (stokaro/ptah#2752). Both are the MySQL owner's claim, but the
+// guarded one reaches it only when the reader opens the guard among the key's
+// options, so each carries its own rows.
 //
 // The AST is also as far as the clause is followed anywhere. No live test
 // declares it, because MariaDB 12.3 answers `ERROR 1128 Function 'ngram' is not
@@ -317,7 +317,7 @@ func TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect), withMySQLOwners()).Parse()
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
 
@@ -428,7 +428,7 @@ func TestParse_MySQLIndexParserBelongsToFulltext_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := parser.NewParser(test.sql, parser.WithDialect(platform.MySQL)).Parse()
+			_, err := parser.NewParser(test.sql, parser.WithDialect(platform.MySQL), withMySQLOwners()).Parse()
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

@@ -103,7 +103,7 @@ func (p *Parser) ownerSpan(site sqlext.Site, pattern sqlext.Pattern) (string, in
 	depth := 0
 	first := true
 	for p.current.Type != lexer.TokenEOF {
-		if depth == 0 && !first && (p.endsOwnerSpan(site) || p.isOwnerStop(pattern.Stops) || p.opensColumnClause(site)) {
+		if depth == 0 && !first && (p.endsOwnerSpan(site) || p.isOwnerStop(pattern.Stops) || p.opensNextOption(site)) {
 			break
 		}
 		if p.current.MatchOperatorValue("(") {
@@ -131,7 +131,7 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 		return true
 	}
 	switch site {
-	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption, sqlext.ColumnOption:
+	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption, sqlext.ColumnOption, sqlext.IndexOption:
 		return p.current.MatchOperatorValue(",")
 	case sqlext.ViewClause:
 		return p.current.MatchIdentifierValue("AS")
@@ -140,20 +140,34 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 	}
 }
 
-// opensColumnClause reports whether, at a column option, the current token
-// opens the next clause of the column: a constraint or attribute the shared
-// grammar reads, or the opening word of any owner's column option the
-// document consults. Column clauses follow one another without a comma, so
-// these are where an owner's option ends, and no owner repeats the
-// grammar's words or another owner's.
-func (p *Parser) opensColumnClause(site sqlext.Site) bool {
-	if site != sqlext.ColumnOption || p.current.Type != lexer.TokenIdentifier {
-		return false
-	}
-	if columnClauseStart(p.current.Value) {
+// opensNextOption reports whether, at a column or an index option, the
+// current token opens the next one: a column constraint or attribute, or a
+// key option, the shared grammar reads, or the opening word of any owner's
+// pattern at the site the document consults. Such options follow one another
+// without a comma, so these are where an owner's option ends, and no owner
+// repeats the grammar's words or another owner's. Among a key's options a
+// version guard opens the next options too, since the reader reads the
+// guard's body as options; see [Parser.readGuardedKeyOptions].
+func (p *Parser) opensNextOption(site sqlext.Site) bool {
+	if site == sqlext.IndexOption && p.current.Type == lexer.TokenUnknown {
 		return true
 	}
-	for _, candidate := range p.owners.Candidates(p.dialect, sqlext.ColumnOption) {
+	if p.current.Type != lexer.TokenIdentifier {
+		return false
+	}
+	switch site {
+	case sqlext.ColumnOption:
+		if columnClauseStart(p.current.Value) {
+			return true
+		}
+	case sqlext.IndexOption:
+		if _, known := p.keyOptionReader(); known {
+			return true
+		}
+	default:
+		return false
+	}
+	for _, candidate := range p.owners.Candidates(p.dialect, site) {
 		if strings.EqualFold(candidate.Pattern.Words[0], p.current.Value) {
 			return true
 		}
@@ -295,9 +309,27 @@ func (p *Parser) claimOwnerColumnOption(column *ast.ColumnNode) bool {
 		return nil
 	})
 	if claimed {
-		p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Definition = p.columnDefinitions
+		p.ownerClaims[len(p.ownerClaims)-1].match.Claim.Definition = p.definitions
 	}
 	return claimed
+}
+
+// claimOwnerIndexOption claims an owner's option of the key being read, whose
+// name and FULLTEXT or SPATIAL prefix the claim carries, with the key's
+// number. The facets it reads are the key's: they reach the node the element
+// builds once it is built; see [keyFacets].
+func (p *Parser) claimOwnerIndexOption(name, prefix string) bool {
+	slot := p.keyOptions.facets
+	if slot == nil {
+		slot = &keyFacets{}
+	}
+	if !p.claimOwnerSyntax(sqlext.IndexOption, name, slot.merge) {
+		return false
+	}
+	p.keyOptions.facets = slot
+	claim := &p.ownerClaims[len(p.ownerClaims)-1].match.Claim
+	claim.Definition, claim.IndexType = p.definitions, prefix
+	return true
 }
 
 // claimOwnerViewClauses claims every owner's clause between a materialized

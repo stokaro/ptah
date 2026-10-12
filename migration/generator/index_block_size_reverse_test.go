@@ -110,9 +110,11 @@ func blockSizePlan(c *qt.C, before, after string) (*generator.BidirectionalSchem
 // database, with the constraint row MySQL reports for a unique index.
 func blockSizeSchemas(c *qt.C, before, after string) (schemamodel.Database, *catalog.Database) {
 	c.Helper()
-	prior, _, err := sqlschema.Read([]byte(before), "mysql")
+	runtime := must.Must(builtin.New())
+	owners := sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary()}
+	prior, _, err := sqlschema.ReadWith(c.Context(), []byte(before), "mysql", nil, owners)
 	c.Assert(err, qt.IsNil)
-	desired, _, err := sqlschema.Read([]byte(after), "mysql")
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte(after), "mysql", nil, owners)
 	c.Assert(err, qt.IsNil)
 	current := must.Must(goschematodb.ToDBSchema(c.Context(), &prior, "mysql", must.Must(builtin.New())))
 	current.Constraints = append(current.Constraints, catalog.Constraint{TableName: "t", Name: "u", Type: "UNIQUE", ColumnNames: []string{"b"}})
@@ -122,9 +124,11 @@ func blockSizeSchemas(c *qt.C, before, after string) (schemamodel.Database, *cat
 // Rebuilding a primary key for its comment must preserve its access method.
 func TestPlanBidirectionalSchemaDiff_PrimaryKeyMethodAndComment(t *testing.T) {
 	c := qt.New(t)
-	before, _, err := sqlschema.Read([]byte("CREATE TABLE t (id int NOT NULL, PRIMARY KEY USING HASH(id) COMMENT 'old') ENGINE=MEMORY"), "mysql")
+	runtime := must.Must(builtin.New())
+	owners := sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary()}
+	before, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE t (id int NOT NULL, PRIMARY KEY USING HASH(id) COMMENT 'old') ENGINE=MEMORY"), "mysql", nil, owners)
 	c.Assert(err, qt.IsNil)
-	after, _, err := sqlschema.Read([]byte("CREATE TABLE t (id int NOT NULL, PRIMARY KEY USING HASH(id) COMMENT 'new') ENGINE=MEMORY"), "mysql")
+	after, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE t (id int NOT NULL, PRIMARY KEY USING HASH(id) COMMENT 'new') ENGINE=MEMORY"), "mysql", nil, owners)
 	c.Assert(err, qt.IsNil)
 	current := must.Must(goschematodb.ToDBSchema(t.Context(),
 		&before, "mysql", must.Must(builtin.New()),
