@@ -369,7 +369,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// Only the PostgreSQL family renders a PARTITION BY clause, so a
 	// declared partitioning produces one ordinary table here: every row
 	// lands in the same place.
-	r.sink.RecordLostPartition(node.Name, node.Partition)
+	r.sink.RecordLostTableStorage(node)
 	// Table comment
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)

@@ -30,7 +30,6 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/unloggedtable"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -680,9 +679,11 @@ func fromTableWithFieldConverter(
 	if newTable.Collate != "" {
 		createTable.SetOption("COLLATE", newTable.Collate)
 	}
-	if unloggedtable.Supported(targetPlatform) {
-		createTable.Unlogged = newTable.Unlogged
-	}
+	// Every renderer reads it: the PostgreSQL renderer writes the keyword
+	// where the target creates an unlogged table
+	// (ptah.run/internal/unloggedtable), YDB's refuses it, and the others
+	// report it lost.
+	createTable.Unlogged = newTable.Unlogged
 	createTable.Partition = toASTPartition(newTable.Partition)
 	// Cloned rather than shared: the node travels to a renderer and a planner
 	// that must not be able to reach back through a pointer into the schema

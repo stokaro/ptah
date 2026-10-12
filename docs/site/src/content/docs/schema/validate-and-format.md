@@ -251,6 +251,7 @@ Some declarations belong to a whole object rather than to a column or an index:
 | Property | Kept by | Dropped by |
 | --- | --- | --- |
 | Table partitioning | the PostgreSQL family | every other target |
+| Unlogged table | PostgreSQL | every other target but YDB, which refuses it |
 | Schema character set and collation | the MySQL family | PostgreSQL, SQL Server, ClickHouse |
 | Role comment | PostgreSQL, YugabyteDB | CockroachDB, the MySQL family, SQL Server, Oracle, ClickHouse |
 

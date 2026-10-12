@@ -124,6 +124,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.SetCommentOperation{}},
 	{node: &ast.SetConstraintCommentOperation{}},
+	{node: &ast.SetUnloggedOperation{}},
 
 	// The type definitions and the ALTER TYPE operations. Each is rendered
 	// inside the CREATE TYPE or ALTER TYPE statement that carries it.

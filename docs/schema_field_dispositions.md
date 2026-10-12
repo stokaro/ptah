@@ -116,7 +116,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-93 known gaps: a conversion or the comparison drops each one on the dialects named.
+91 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -133,7 +133,6 @@ migration nobody asked for.
 | `mysqlschema.DesiredTable.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.CompositeType.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.Facets` | `mysql` | from-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Constraint.NotValid` | `cockroachdb`, `postgres`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Database.Extensions` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | the comparison does not read the shared extension list: every source hands an extension to its owner, whose objects the round trip reaches. The list itself goes next under stokaro/ptah#4140 |
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
@@ -202,7 +201,6 @@ migration nobody asked for.
 | `schemamodel.Table.PrimaryKeyMethod` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.PrimaryKeyName` | `cockroachdb`, `oracle`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.PrimaryKeyParts` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.Table.Unlogged` | `postgres`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Trigger.Dialects` | `clickhouse`, `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Trigger.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Trigger.ExecuteFunction` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -216,7 +214,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-43 exemptions, each with the reason it is right.
+44 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -230,6 +228,7 @@ migration nobody asked for.
 | `coverage.Set.Objects` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `mssqlschema.Predicate.Type` | `sqlserver` | both | the fixture's other predicate is a BLOCK for every operation, and a second BLOCK beside it is refused, so no single change of the type is valid there. The predicate's other fields are reached |
 | `pgextension.DesiredExtension.IfNotExists` | `postgres`, `yugabytedb` | both | IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it |
+| `schemamodel.Constraint.NotValid` | `cockroachdb`, `postgres`, `yugabytedb` | both | NOT VALID permits an unvalidated constraint and does not demand one: a validated one satisfies it, and no statement unvalidates a constraint. Without it, an unvalidated constraint plans VALIDATE CONSTRAINT |
 | `pgpolicy.RoleSelector.Keyword` | `cockroachdb`, `postgres`, `yugabytedb` | both | a role keyword such as CURRENT_USER has no observation until a server resolves it, and the conversion refuses it; a connected comparison reads the server's resolution from pgpolicy.NormalizedPolicy.Roles |
 | `pgtype.DesiredDomain.Check` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
 | `pgtype.DesiredDomain.Default` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |

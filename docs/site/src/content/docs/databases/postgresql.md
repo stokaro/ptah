@@ -572,13 +572,16 @@ Use it for a cache or a staging table, not for data that has to survive.
 `ptah db read` reports the property back, so a schema file built from a live
 database describes an unlogged table as one.
 
-YugabyteDB accepts the keyword as well. CockroachDB and Spanner reach Ptah over
-the same wire protocol and neither creates an unlogged table, so a declaration
-carrying the flag renders an ordinary table there.
+CockroachDB, YugabyteDB and Spanner reach Ptah over the same wire protocol and
+none of them creates an unlogged table: YugabyteDB takes the keyword and
+creates an ordinary table. A declaration carrying the flag renders an ordinary
+table there, and the render reports the flag as a property it left out.
 
-Changing a table between logged and unlogged rewrites it under a lock that
-blocks readers and writers. Ptah does not plan that change, and the `PG307`
-lint rule reports it in a migration that contains one.
+A table that changes between logged and unlogged is planned as
+`ALTER TABLE ... SET UNLOGGED` or `SET LOGGED`, and a rollback writes the
+opposite. PostgreSQL rewrites the table to do it, under a lock that blocks
+readers and writers, and the `PG307` lint rule reports the statement in a
+migration that contains one.
 
 ## Function changes
 

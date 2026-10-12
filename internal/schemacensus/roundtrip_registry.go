@@ -112,6 +112,9 @@ const (
 		"(stokaro/ptah#3789); this comparison reads one database"
 	exemptVirtualTable = "the comparison refuses any change of a SQLite virtual table, because rebuilding it destroys " +
 		"the module's storage (stokaro/ptah#1028); the refusal names the table, which is the comparison reading it"
+	exemptNotValidPermits = "NOT VALID permits an unvalidated constraint and does not demand one: a validated " +
+		"one satisfies it, and no statement unvalidates a constraint. Without it, an unvalidated constraint plans " +
+		"VALIDATE CONSTRAINT"
 	exemptForeignDefiner = "a routine that states no security mode is a definer routine here, a definer routine is " +
 		"replaced only beside a recorded definer and connected account, and a description converted from a catalog " +
 		"records neither, so the comparison refuses the replacement and names the routine"
@@ -247,7 +250,6 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Constraint.Facets", Dialects: []string{"mysql"}, Directions: []Direction{FromCatalog}, Reason: gapComparison},
-	{Field: "schemamodel.Constraint.NotValid", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Extensions",
 		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
@@ -476,7 +478,6 @@ var roundTripGaps = []Unreached{
 		Reason:     gapToCatalog,
 	},
 	{Field: "schemamodel.Table.PrimaryKeyParts", Dialects: []string{"mariadb", "mysql", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.Table.Unlogged", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Trigger.Dialects", Dialects: []string{"clickhouse", "spanner"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Trigger.Dialects",
@@ -519,6 +520,7 @@ var roundTripExemptions = []Unreached{
 	{Field: "coverage.Set.Objects", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "mssqlschema.Predicate.Type", Dialects: []string{"sqlserver"}, Directions: nil, Reason: exemptCoupledPredicateType},
 	{Field: "pgextension.DesiredExtension.IfNotExists", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptIfNotExists},
+	{Field: "schemamodel.Constraint.NotValid", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptNotValidPermits},
 	{Field: "pgpolicy.RoleSelector.Keyword", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptRoleKeyword},
 	{Field: "pgtype.DesiredDomain.Check", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
 	{Field: "pgtype.DesiredDomain.Default", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},

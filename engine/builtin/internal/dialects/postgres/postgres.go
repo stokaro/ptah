@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/rlspolicy"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/unloggedtable"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -630,7 +631,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameTableOperation,
 		*ast.RenameTypeOperation,
 		*ast.SetCommentOperation,
-		*ast.SetConstraintCommentOperation:
+		*ast.SetConstraintCommentOperation,
+		*ast.SetUnloggedOperation:
 		return r.nodeNeedsParent(node)
 
 	default:
@@ -781,15 +783,22 @@ func (r *Renderer) GetOutput() string {
 
 // unloggedKeyword returns the word that goes between CREATE and TABLE for a
 // table whose writes skip the write-ahead log, and the empty string otherwise.
+// On a target that creates no unlogged table the declaration is reported lost
+// rather than written: YugabyteDB takes the keyword and creates an ordinary
+// table, and CockroachDB and Spanner have none (internal/unloggedtable).
 //
 // One function serves both write sites -- the column-list form and the AS
 // SELECT form -- because a keyword added to one and forgotten in the other
 // renders a table that is logged on a path nobody looked at.
-func unloggedKeyword(node *ast.CreateTableNode) string {
-	if node.Unlogged {
-		return " UNLOGGED"
+func (r *Renderer) unloggedKeyword(node *ast.CreateTableNode) string {
+	if !node.Unlogged {
+		return ""
 	}
-	return ""
+	if !unloggedtable.Supported(r.dialect) {
+		r.sink.RecordLostUnlogged(node.Name)
+		return ""
+	}
+	return " UNLOGGED"
 }
 
 // renderCreateTable renders CREATE TABLE with PostgreSQL-specific handling
@@ -842,7 +851,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.writeTableOptionsSkipped(node.Name, node.Options)
 
-	r.w.WriteLinef("CREATE%s TABLE%s %s (", unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("CREATE%s TABLE%s %s (", r.unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
 	for i, line := range lines {
 		if i == len(lines)-1 {
 			r.w.WriteLine(line) // Last line without comma
@@ -983,7 +992,7 @@ func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard str
 		return fmt.Errorf("postgres: create table as select with explicit column definitions is not supported")
 	}
 
-	r.w.Writef("CREATE%s TABLE%s %s", unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
+	r.w.Writef("CREATE%s TABLE%s %s", r.unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
 	// A raw tail belongs to the table, so it precedes the AS the query hangs
 	// off. No producer builds a node carrying both today, and writing it here
 	// is what keeps that from becoming a silent drop if one does.
@@ -1226,7 +1235,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				return err
 			}
 		case *ast.SetCommentOperation, *ast.SetConstraintCommentOperation, *ast.RenameConstraintOperation,
-			*ast.AlterIndexVisibilityOperation:
+			*ast.AlterIndexVisibilityOperation, *ast.SetUnloggedOperation:
 			// Each renders a complete statement of its own rather than an
 			// ALTER TABLE clause, and they share one branch for the same reason
 			// the row-expiry operations above do: this switch has a complexity
@@ -1331,7 +1340,26 @@ func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOpe
 		r.writeRenameConstraint(table, op)
 	case *ast.AlterIndexVisibilityOperation:
 		return r.writeIndexVisibility(table, op)
+	case *ast.SetUnloggedOperation:
+		return r.writeSetUnlogged(table, op)
 	}
+	return nil
+}
+
+// writeSetUnlogged changes a table between logged and unlogged in place. The
+// server rewrites the table to do it, under a lock that blocks readers and
+// writers, which the PG307 lint rule reports. A target that creates no
+// unlogged table refuses it rather than leave the table as it was.
+func (r *Renderer) writeSetUnlogged(table string, op *ast.SetUnloggedOperation) error {
+	persistence := "LOGGED"
+	if op.Unlogged {
+		persistence = "UNLOGGED"
+	}
+	if !unloggedtable.Supported(r.dialect) {
+		return unsupportedFeaturef("%s: ALTER TABLE ... SET %s cannot be rendered: this target creates no unlogged table",
+			r.dialect, persistence)
+	}
+	r.w.WriteLinef("ALTER TABLE %s SET %s;", r.escapeQualifiedIdentifier(table), persistence)
 	return nil
 }
 
