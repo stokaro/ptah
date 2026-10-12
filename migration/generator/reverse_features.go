@@ -26,6 +26,9 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 	for _, view := range forward.MaterializedViewsModified {
 		changes = append(changes, view.FeatureChanges...)
 	}
+	for _, routine := range forward.FunctionsModified {
+		changes = append(changes, routine.FeatureChanges...)
+	}
 	recovery, err := runtime.ReverseChanges(ctx, schemaext.ReversalRequest{
 		Target: dialect, Identifiers: forward.EffectiveIdentifierSemantics(dialect), Capabilities: caps, Changes: changes,
 	})
@@ -65,6 +68,14 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 		if view.Replaces() {
 			accountForViewReplacement(recovery[offset : offset+count])
 		}
+		offset += count
+	}
+	// A routine's attached settings need no projected capture either: the
+	// reverse entry carries the prior declaration, settings included, and the
+	// reverse plan replaces the routine with it.
+	for i, routine := range forward.FunctionsModified {
+		count := len(routine.FeatureChanges)
+		reverse.FunctionsModified[i].FeatureChanges = reversedRecords(recovery[offset : offset+count])
 		offset += count
 	}
 	for _, observed := range forward.ObservedConstraintHosts {

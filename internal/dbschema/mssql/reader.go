@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -163,11 +165,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.Triggers = triggers
 
-	functions, err := r.readFunctions(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read functions: %w", err)
+	if err := r.recordFunctions(ctx, schema); err != nil {
+		return nil, err
 	}
-	schema.Functions = functions
 
 	policies, coverage, err := r.readSecurityPolicies(ctx)
 	if err != nil {
@@ -184,6 +184,25 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 
 	reconcileColumnFlags(schema)
 	return schema, nil
+}
+
+// recordFunctions reads the database's functions and procedures into schema,
+// and claims the principal each one runs as is read: a routine the read gives
+// no principal runs as its caller or its owner.
+func (r *Reader) recordFunctions(ctx context.Context, schema *catalog.Database) error {
+	functions, err := r.readFunctions(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read functions: %w", err)
+	}
+	schema.Functions = functions
+	executeAs, err := mssqlschema.ExecuteAsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return fmt.Errorf("sqlserver: record routine principals: %w", err)
+	}
+	if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(executeAs); err != nil {
+		return fmt.Errorf("sqlserver: record routine principals: %w", err)
+	}
+	return nil
 }
 
 func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {

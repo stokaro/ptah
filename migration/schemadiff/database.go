@@ -73,6 +73,15 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		return nil, Diagnostics{}, err
 	}
 	names := collectIdentifierNames(desired, database, info.Schema)
+	target, err := runtime.ResolveTarget(info.Dialect)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	slots := append(desired.FacetSlots(), database.FacetSlots()...)
+	names, err = appendFacetIdentifierNames(names, slots, target)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
 	if err != nil {
 		return nil, Diagnostics{}, fmt.Errorf("compare schemas: %w", err)
@@ -975,4 +984,25 @@ func appendQualifiedIdentifier(names []string, value string) []string {
 		return append(names, ref.Name)
 	}
 	return append(names, ref.Schema, ref.Name)
+}
+
+// appendFacetIdentifierNames includes owner-declared names in the same catalog
+// resolution as common identifiers. Target exclusions cannot contribute names.
+func appendFacetIdentifierNames(names []string, slots []*schemaext.Facets, target schemaext.TargetSelection) ([]string, error) {
+	for _, slot := range slots {
+		facets, err := slot.ForTarget(target)
+		if err != nil {
+			return nil, err
+		}
+		values, err := facets.Values()
+		if err != nil {
+			return nil, err
+		}
+		for _, value := range values {
+			if source, ok := value.(schemaext.IdentifierValue); ok {
+				names = append(names, source.IdentifierNames()...)
+			}
+		}
+	}
+	return names, nil
 }

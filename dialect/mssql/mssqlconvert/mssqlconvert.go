@@ -1,6 +1,7 @@
-// Package mssqlconvert projects SQL Server security policies between their
-// desired and observed representations. A projection is a prediction, never a
-// claim that a server was inspected; source coverage travels separately.
+// Package mssqlconvert projects SQL Server security policies, and the
+// principal a routine runs as, between their desired and observed
+// representations. A projection is a prediction, never a claim that a server
+// was inspected; source coverage travels separately.
 package mssqlconvert
 
 import (
@@ -13,8 +14,8 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 )
 
-// Service converts security policy values. Its zero value is ready for
-// concurrent use and never reads a database.
+// Service converts security policy and EXECUTE AS values. Its zero value is
+// ready for concurrent use and never reads a database.
 type Service struct{}
 
 // ConvertFeatures converts an ordered batch without mutating its inputs. It
@@ -30,11 +31,11 @@ func (Service) ConvertFeatures(ctx context.Context, request schemaext.Conversion
 		return nil, err
 	}
 	if platform.NormalizeDialect(request.Target) != platform.SQLServer {
-		return nil, fmt.Errorf("%w: SQL Server security policy conversion on %q", ptaherr.ErrUnsupportedDialect, request.Target)
+		return nil, fmt.Errorf("%w: SQL Server feature conversion on %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
 	if (request.From != schemaext.Desired && request.From != schemaext.Observed) ||
 		(request.To != schemaext.Desired && request.To != schemaext.Observed) || request.From == request.To {
-		return nil, fmt.Errorf("%w: invalid security policy conversion direction", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: invalid SQL Server feature conversion direction", schemaext.ErrInvalidValue)
 	}
 	result := make([]schemaext.Value, 0, len(request.Values))
 	for _, value := range request.Values {
@@ -60,6 +61,14 @@ func convert(from schemaext.Representation, value schemaext.Value) (schemaext.Va
 		if from == schemaext.Observed {
 			return typed.Desired()
 		}
+	case *mssqlschema.DesiredExecuteAs:
+		if from == schemaext.Desired {
+			return typed.Observed()
+		}
+	case *mssqlschema.ObservedExecuteAs:
+		if from == schemaext.Observed {
+			return typed.Desired()
+		}
 	}
-	return nil, fmt.Errorf("%w: unexpected %s security policy value %T", schemaext.ErrInvalidValue, from, value)
+	return nil, fmt.Errorf("%w: unexpected %s SQL Server feature value %T", schemaext.ErrInvalidValue, from, value)
 }

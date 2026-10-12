@@ -2166,6 +2166,12 @@ type FunctionDiff struct {
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
 
+	// FeatureChanges carries owner-defined changes to settings attached to
+	// this routine, in the order the comparison reported them, such as the
+	// principal a SQL Server routine runs as. Each requires replacing the
+	// routine, which renders from Desired and carries the settings with it.
+	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
+
 	// Desired is the function this change asks the database to hold.
 	//
 	// A modification renders as CREATE OR REPLACE, or as a drop and a create

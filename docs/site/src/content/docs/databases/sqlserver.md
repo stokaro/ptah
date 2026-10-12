@@ -62,6 +62,7 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   rendered, introspected from `sys.extended_properties`, and diffed (see
   below).
 - Schemas the declared objects live in, created before them (see below).
+- Scalar functions and procedures, with the principal they run as (see below).
 - Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
@@ -334,6 +335,42 @@ a plan that changes the type drops the default first and sets it again after
 the `ALTER COLUMN`. It does this for a longer length of the same type too,
 which the server would accept with the default in place. A nullability change
 leaves the default where it is.
+
+## Routines
+
+A function or a procedure is written `CREATE OR ALTER`. Its header states the
+principal the routine runs as, which T-SQL spells `WITH EXECUTE AS`, and
+`sys.sql_modules.execute_as_principal_id` reports it back:
+
+| Header | `execute_as_principal_id` | Ptah |
+| --- | --- | --- |
+| none, or `EXECUTE AS CALLER` | `NULL` | security `INVOKER` |
+| `EXECUTE AS OWNER` | -2 | security `DEFINER` |
+| `EXECUTE AS 'auditor'` | the user's id | security `DEFINER`, principal `auditor` |
+
+A function may omit `AS` before its body. A procedure requires it.
+
+Principal names use the connected catalog's comparison rules, including
+case-sensitive collations.
+
+A named principal is read from a SQL schema file and from a connected
+database, compared, and planned. A routine declared to run as `reviewer`,
+where the database runs it as `auditor`, is replaced with the new clause, and
+the rollback writes `auditor` back. A Go annotation and an Atlas HCL block have
+no way to state a principal, so a routine declared there keeps the one it runs
+as. A plan that would replace such a routine, for example for a new body, is
+refused, because the replacement would run as the owner instead.
+
+`EXECUTE AS SELF` is refused when a SQL schema file is read. It means the
+account that runs the `CREATE`, which can be a different user each time the
+schema is applied. Write `EXECUTE AS 'name'` with that user instead.
+
+In a SQL schema file, every other option of the `WITH` list is refused by
+name, because Ptah cannot
+write it and compare it back: `ENCRYPTION`, `SCHEMABINDING`, `RECOMPILE`,
+`NATIVE_COMPILATION`, `RETURNS NULL ON NULL INPUT`, `INLINE` and `FOR
+REPLICATION` among them. `CALLED ON NULL INPUT` is the default and is
+accepted.
 
 ## Limitations
 

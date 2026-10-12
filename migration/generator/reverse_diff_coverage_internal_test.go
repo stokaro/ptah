@@ -420,6 +420,11 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 		// real control is the ClickHouse refresh schedule.
 		diff.MaterializedViewsModified[i].FeatureChanges = nil
 	}
+	for i := range diff.FunctionsModified {
+		// The same for the settings attached to a routine, whose real control
+		// is the SQL Server EXECUTE AS principal.
+		diff.FunctionsModified[i].FeatureChanges = nil
+	}
 
 	// ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose object
 	// is a UNIQUE constraint of the same name on the same table, and

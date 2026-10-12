@@ -254,6 +254,11 @@ identity of its own, `KindPrimaryKey`, built by `PrimaryKeyOf` or
 the name the key carries differs by engine and by source, so the key a
 declaration describes pairs with the one a catalog reports under any name.
 
+`Builder.Function` and `Builder.Procedure` build a routine's identity from its
+qualified name and its input argument types, under `KindFunction` and
+`KindProcedure`, so overloads and a function and a procedure of one name are
+distinct routines.
+
 `ID.String` writes an identity for a person, its kind first; `ID.Path` writes
 the same without the kind, for a report that names the kind in words. A
 component holding a dot or a double quote is quoted in both, so two
@@ -999,6 +1004,10 @@ the conversion refuses rather than omitting the facet.
 
 `core/schemaext` defines namespaced feature identities, immutable data
 collections, positive source coverage, explicit codecs, and operation effects.
+`IdentifierValue.IdentifierNames` exposes unquoted catalog names from owned
+values. Live comparison resolves names from active facets through the target
+catalog before dispatching facet comparison. Excluded facets contribute none.
+
 `Facets` holds one typed value per kind; `Objects` holds individually named
 values with structured references. Insertions and lookups clone values.
 Duplicate kinds or object identities and nil payloads are errors. `Value.Equal`
@@ -2899,6 +2908,28 @@ skipped.
   rolls the creation back. A probe the server refuses leaves the declaration
   unanswered.
 
+The principal a SQL Server routine runs as is a routine facet of the same
+package, owned by `RoutineOwner`. `DesiredExecuteAs` and `ObservedExecuteAs`
+of `ExecuteAsKind` hold a user's name, as `WITH EXECUTE AS 'name'` writes it
+and `sys.sql_modules.execute_as_principal_id` reports it. A routine with no
+facet runs as its caller or its owner, which its common security mode states:
+`INVOKER` is `EXECUTE AS CALLER`, and `DEFINER` is `EXECUTE AS OWNER`. A named
+principal is a `DEFINER` routine, and the renderer refuses one beside
+`INVOKER`.
+
+`WithExecuteAs`, `WithObservedExecuteAs` and `ExecuteAsPrincipal`
+add and read the facet. `SamePrincipal` compares spelling without trailing
+spaces and preserves case. The comparison uses the catalog's resolved name
+equivalence. `ExecuteAsCoverage` claims a source describes the clause. Only a SQL document and the reader describe it; a
+source that does not, such as a Go annotation, leaves the routine's principal
+unmanaged.
+
+- `mssqlcompare.ExecuteAsService` reports an `mssqldiff.ExecuteAs` for a
+  routine both sides hold whose principals differ. A change replaces the
+  routine, and `mssqlreverse.ExecuteAsService` reverses it to the principal
+  the routine ran as.
+- `mssqlconvert` converts the facet between its representations.
+
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
 creation statements before phase-two foreign keys; SQLite keeps foreign keys
@@ -3017,12 +3048,18 @@ Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index a table element or an ALTER TABLE
 operation declares, the owner's operation payload, or facets of a view, a
-table, a column or a key.
+table, a column, a key or a routine.
 
 A `ViewClause`, a `TableOption` after a CREATE TABLE's column list, a
-`ColumnOption` among a column's constraints and an `IndexOption` after a key's
-parts carry facets alone, and no index or operation. Every facet a value
-carries is of one of the extension's `Facets` kinds.
+`ColumnOption` among a column's constraints, an `IndexOption` after a key's
+parts and a `RoutineOption` carry facets alone, and no index or operation.
+Every facet a value carries is of one of the extension's `Facets` kinds.
+
+A `RoutineOption` is one option of the `WITH` list of a T-SQL CREATE FUNCTION
+or CREATE PROCEDURE, between the signature and the AS that opens the body. The
+reader splits the list at its top-level commas, so a span is one whole option,
+and an option no owner claims is refused by the reader. The SQL Server owner
+claims `EXECUTE AS` there.
 
 A `ColumnOption` or `IndexOption` span ends where the element's next option
 begins: a clause or key option the reader parses itself, or the opening word
@@ -4307,6 +4344,14 @@ written, not the copy the comparison folds: the comparison canonicalizes case
 and normalizes MySQL type spellings on both sides so that two spellings of one
 function converge, and rendering from that copy would write Ptah's
 normalization into the user's DDL.
+
+`FunctionDiff.FeatureChanges` carries the changes an owner reports for a
+routine's facets, such as the principal a SQL Server routine runs as. Each one
+replaces the routine, so the entry's CREATE writes it from `Desired`, and a
+comparison adds an entry for a routine whose facets alone changed. A
+replacement of a routine that holds a facet the declaration's source has no way
+to state is refused with `ptaherr.ErrUnsupportedFeature`, since the routine
+would be created without it.
 
 `migration/schemadiff/difftypes.DomainDiff`, `CompositeTypeDiff` and
 `RangeDiff` each carry a `Desired` field, off the wire, holding the definition

@@ -1298,15 +1298,19 @@ file, exactly as any other command reaching the same URL would.
   with it on. It is not a recommendation here, and Ptah's diagnostic does not
   offer it as one.
 
-  SQL Server declares `false`. The engine hosts scalar functions and accepts
-  both `CREATE FUNCTION` and `CREATE OR ALTER FUNCTION` on 2025 (RTM-CU7), but
-  `sys.sql_modules.definition` returns the whole original `CREATE` statement as
-  one string rather than a body plus attributes, so reading one back into the
-  fields a diff compares needs a T-SQL routine-header parser that does not exist
-  yet. Emitting without reading is the permanent diff this issue is about, so
-  the key stays `false` and the renderer answers with the named skip
-  `-- SQLSERVER: CREATE FUNCTION "f1" is not generated for this target; skipped.`
-  — a sentence about Ptah, not about SQL Server.
+  SQL Server declares `true`, for functions and procedures alike.
+  `sys.parameters` reports the argument list and the return type as rows, so
+  only the body comes out of `sys.sql_modules.definition`, which holds the
+  whole `CREATE` statement. The body starts at the `AS` that opens it, not at
+  the `AS` of an `EXECUTE AS` clause or of a parameter written `@a AS INT`.
+  A function may omit the body-opening `AS`.
+  The principal a routine runs as is read from
+  `sys.sql_modules.execute_as_principal_id`, which is `NULL` for `EXECUTE AS
+  CALLER`, -2 for `EXECUTE AS OWNER` and the user's id for `EXECUTE AS
+  'name'` (measured on SQL Server 2025 RTM-CU9). The first two are the
+  routine's security mode, `INVOKER` and `DEFINER`. A named user is a
+  `DEFINER` routine whose principal the SQL Server owner keeps as a routine
+  facet, so a comparison sees a change of user and a plan writes it.
 - **One answer shape for every safely skippable object kind (#929).**
   `sequences`, `role_management`, and `row_level_security` use the same named
   skip when a PostgreSQL-family preset disables them. That currently matters

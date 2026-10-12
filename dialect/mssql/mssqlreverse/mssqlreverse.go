@@ -1,6 +1,6 @@
 // Package mssqlreverse reverses captured SQL Server security policy changes
-// and reports what restoring a policy cannot recover. It never reads a
-// database.
+// and reports what restoring a policy cannot recover, and reverses a change of
+// the principal a routine runs as. It never reads a database.
 package mssqlreverse
 
 import (

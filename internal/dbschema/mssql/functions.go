@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlroutine"
+	"ptah.run/dialect/mssql/mssqlschema"
 )
 
 // readFunctions recovers the functions the connected database declares.
@@ -44,6 +46,7 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 	query := `
 		SELECT s.name, o.name, o.type, m.definition,
 			   ISNULL(CONVERT(varchar(30), m.execute_as_principal_id), 'CALLER') AS execute_as,
+			   CASE WHEN m.execute_as_principal_id > 0 THEN ISNULL(USER_NAME(m.execute_as_principal_id), '') ELSE '' END AS principal,
 			   ISNULL(OBJECTPROPERTY(o.object_id, 'IsDeterministic'), 0) AS is_deterministic
 		FROM sys.objects AS o
 		JOIN sys.schemas AS s ON s.schema_id = o.schema_id
@@ -59,14 +62,19 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 
 	var functions []catalog.Function
 	for rows.Next() {
-		var schema, name, objectType, definition, executeAs string
+		var schema, name, objectType, definition, executeAs, principal string
 		var deterministic int
 		if err := rows.Scan(&schema, &name, &objectType, &definition,
-			&executeAs, &deterministic); err != nil {
+			&executeAs, &principal, &deterministic); err != nil {
+			return nil, err
+		}
+		facets, err := executeAsFacets(name, executeAs, principal)
+		if err != nil {
 			return nil, err
 		}
 		key := routineKey{schema: schema, name: name}
 		functions = append(functions, catalog.Function{
+			Facets:     facets,
 			Name:       name,
 			Kind:       routineKind(objectType),
 			Schema:     r.outputSchema(schema),
@@ -83,9 +91,10 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 			// Both of these are read rather than assumed, because the catalog
 			// carries them and a default written in here would be a claim about
 			// somebody else's function. execute_as_principal_id is NULL for
-			// EXECUTE AS CALLER and a principal id for OWNER; IsDeterministic
-			// is the engine's own verdict on the body, which is where T-SQL
-			// keeps the fact PostgreSQL spells as volatility.
+			// EXECUTE AS CALLER, -2 for OWNER and the principal's id for a named
+			// one, which the facets above carry; IsDeterministic is the
+			// engine's own verdict on the body, which is where T-SQL keeps the
+			// fact PostgreSQL spells as volatility.
 			Security:   functionSecurity(executeAs),
 			Volatility: functionVolatility(deterministic),
 			Body:       routineBody(objectType, definition),
@@ -219,7 +228,18 @@ func functionBody(definition string) string {
 			}
 			continue
 		}
+		// A function may omit AS before BEGIN or RETURN.
+		for _, keyword := range []string{"BEGIN", "RETURN"} {
+			if strings.HasPrefix(upper[i:], keyword) && standaloneWord(definition, i, i+len(keyword)) {
+				return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i:]), ";"))
+			}
+		}
 		if i+2 > len(upper) || upper[i:i+2] != "AS" || !standaloneWord(definition, i, i+2) {
+			continue
+		}
+		// `RETURNS int WITH EXECUTE AS OWNER AS BEGIN ... END` keeps both
+		// words in the definition, as a procedure's does.
+		if precededByExecute(upper, i) {
 			continue
 		}
 		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i+2:]), ";"))
@@ -456,6 +476,23 @@ func isWordByte(b byte) bool {
 		(b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
+// executeAsFacets returns the SQL Server owner's EXECUTE AS facet of a routine
+// that runs as a named principal, and none for one that runs as its caller or
+// its owner. Measured on SQL Server 2025 RTM-CU9, execute_as_principal_id is
+// the principal's own id for EXECUTE AS 'name', and for EXECUTE AS SELF the id
+// of the principal that created the routine, which is reported by that name.
+// A routine that runs as a principal the read cannot name is refused, since
+// reporting it as one that runs as its owner would hide a principal change.
+func executeAsFacets(routine, executeAs, principal string) (schemaext.Facets, error) {
+	if executeAs == "CALLER" || executeAs == "-2" {
+		return schemaext.Facets{}, nil
+	}
+	if strings.TrimSpace(principal) == "" {
+		return schemaext.Facets{}, fmt.Errorf("routine %q runs as principal id %s, which USER_NAME does not name", routine, executeAs)
+	}
+	return mssqlschema.WithObservedExecuteAs(schemaext.Facets{}, principal)
+}
+
 // functionSecurity spells the principal a function runs as.
 //
 // T-SQL writes it `WITH EXECUTE AS OWNER` or `EXECUTE AS CALLER`, and the
@@ -570,12 +607,27 @@ func procedureBody(definition string) string {
 		if i+2 > len(upper) || upper[i:i+2] != "AS" || !standaloneWord(definition, i, i+2) {
 			continue
 		}
-		if precededByExecute(upper, i) {
+		if precededByExecute(upper, i) || precededByParameter(definition, i) {
 			continue
 		}
 		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i+2:]), ";"))
 	}
 	return strings.TrimSpace(definition)
+}
+
+// precededByParameter reports whether the AS at position i follows a
+// parameter's name, as in `@a AS INT`, which T-SQL accepts in a procedure's
+// parameter list. Measured on SQL Server 2025 RTM-CU9, the definition keeps it.
+func precededByParameter(definition string, i int) bool {
+	end := i
+	for end > 0 && isSpaceByte(definition[end-1]) {
+		end--
+	}
+	start := end
+	for start > 0 && isWordByte(definition[start-1]) {
+		start--
+	}
+	return end-start > 1 && definition[start] == '@'
 }
 
 // precededByExecute reports whether the AS at position i is the one in an

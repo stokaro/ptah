@@ -62,6 +62,7 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 	effective.Indexes = slices.Clone(desired.Indexes)
 	effective.Constraints = slices.Clone(desired.Constraints)
 	effective.MaterializedViews = slices.Clone(desired.MaterializedViews)
+	effective.Functions = slices.Clone(desired.Functions)
 	declared, err := declaredFacetSlots(&effective, target, semantics)
 	if err != nil {
 		return nil, err
