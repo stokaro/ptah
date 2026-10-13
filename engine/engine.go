@@ -64,8 +64,11 @@ type Provider struct {
 	// Relations describes dependencies of captured model values without I/O.
 	Relations []RelationDiscovery
 	// Normalizations attach a connected target's spelling of declared objects
-	// before a comparison. They are the only services that use a probe session.
+	// before a comparison, through a probe session.
 	Normalizations []Normalization
+	// FacetNormalizations attach target facts to declared settings on common
+	// objects. Their probes use the same isolated session as object probes.
+	FacetNormalizations []FacetNormalization
 	// Annotations contributes Go annotation directives, their decoders and the
 	// coverage a Go annotation source holds. Each extension names this
 	// provider as its owner, and the provider owns the desired codec of every
@@ -213,6 +216,7 @@ type Runtime struct {
 	relationServices    []RelationDiscovery
 	probes              map[conversionKey]int
 	probeServices       []Normalization
+	facetProbes         []FacetNormalization
 	annotations         annotation.Set
 	yaml                yamlext.Set
 	sql                 sqlext.Set
@@ -300,6 +304,12 @@ func New(providers ...Provider) (*Runtime, error) {
 // registerStatements registers a provider's probes, lint rules and
 // off-target answers, once every provider's codecs and services are known.
 func (r *Runtime) registerStatements(provider Provider) error {
+	for _, normalization := range provider.FacetNormalizations {
+		if err := r.registerFacetNormalization(provider.ID, normalization); err != nil {
+			return err
+		}
+	}
+
 	for _, normalization := range provider.Normalizations {
 		if err := r.registerNormalization(provider.ID, normalization); err != nil {
 			return err

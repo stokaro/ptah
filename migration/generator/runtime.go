@@ -24,4 +24,5 @@ type Runtime interface {
 	schemaprojection.TableCreationService
 	schemavalidation.Service
 	schemaext.NormalizationService
+	schemaext.FacetNormalizationService
 }

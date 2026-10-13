@@ -32,4 +32,5 @@ type SchemaRuntime interface {
 	renderer.SchemaService
 	schemavalidation.Service
 	schemaext.NormalizationService
+	schemaext.FacetNormalizationService
 }
