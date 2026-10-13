@@ -173,6 +173,8 @@ func TestSet_Parse_RefusesAValueItsSiteDoesNotTake(t *testing.T) {
 		{name: "a table at another site", site: sqlext.TableElement,
 			value:   sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}, Table: &sqlext.TableDeclaration{Name: "t"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-element claim "gadget" with a statement's value`},
+		{name: "an index at a table prefix", site: sqlext.TablePrefix, value: sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}},
+			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-prefix claim "gadget" with an index or an operation, which the site does not take`},
 		{name: "an index at a table option", site: sqlext.TableOption, value: sqlext.Value{Index: &sqlext.Index{Name: "i", Expression: "a"}},
 			wantErr: `invalid feature value: SQL parser of example.org/a answered its table-option claim "gadget" with an index or an operation, which the site does not take`},
 		{name: "an operation at a table option", site: sqlext.TableOption, value: sqlext.Value{Operation: &gadgetStatement{}},

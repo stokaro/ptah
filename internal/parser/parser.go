@@ -320,6 +320,10 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 
 	p.skipWhitespace()
 
+	if table, claimed, err := p.parseOwnedTablePrefix(); claimed || err != nil {
+		return table, err
+	}
+
 	if p.current.Type != lexer.TokenIdentifier {
 		return nil, fmt.Errorf("expected CREATE target (%s), got %s at position %d",
 			createTargetList, p.current.Type, p.current.Start)
