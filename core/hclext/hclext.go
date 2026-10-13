@@ -129,12 +129,18 @@ const (
 	// be a string template or exact schema reference`. A schema is no
 	// relation of the document, so the reference is not resolved against its
 	// tables.
+	//
+	// A reference to a `column` names a local column, with no schema. The
+	// frontend reads parsed column references, including parentheses and
+	// conditionals, or a literal column name. Qualified table references are
+	// refused. The owner receives the name without resolving its existence.
 	Ref Kind = "reference"
 	// Refs is a list of references to objects of the
 	// [Attribute.Refers] type, or a single one, each read into a
 	// [Reference]: `role.app`, `role["app"]`, or a name written as a string
 	// or an identifier, which is the name as written. An element that refers
 	// to another type of object is refused, positioned at the attribute.
+	// Local column references follow the same rules as Ref.
 	Refs Kind = "references"
 	// Number is decimal digits the writer writes bare, such as a table's
 	// `auto_increment`. Only the writer takes it: a block an owner reads
@@ -192,7 +198,7 @@ type Block struct {
 	Attributes []Attribute
 	// Children are the blocks it takes nested in it, one level deep, such as
 	// the fields of a composite type: a block nested in a child is an
-	// unknown name. Only a [TopLevel] block takes children.
+	// unknown name. [TopLevel] and [InTable] blocks take children.
 	Children []Child
 	// DeclaresType reports that the block's labels name a type, which a
 	// type elsewhere may then name as `<type>.<label>`; see [TypeName]. Only
@@ -201,11 +207,13 @@ type Block struct {
 }
 
 // Child is the shape of a block nested in an owner's block. It takes one
-// label, its name, and the attributes it lists, each of a kind other than
-// [Ref] and [Refs]. It may write none of them: a child that leaves out an
-// attribute its owner needs reaches the owner, which refuses it. Every other
-// attribute and every block nested in it is an unknown name.
+// name label unless Unlabeled is true. References in children name local
+// columns; other reference kinds are refused. Every unlisted attribute and
+// every block nested in a child is an unknown name.
 type Child struct {
+	// Unlabeled selects a block with no labels. Repeated unlabeled children
+	// keep their document order; named children must have distinct names.
+	Unlabeled bool
 	// Type is the child's type, such as "field".
 	Type string
 	// Attributes are the attributes it takes, in the order the frontend
@@ -265,8 +273,8 @@ type Claim struct {
 }
 
 // ClaimChild is one block nested in a claimed block, as the frontend read
-// it. No two children of a claim share a type and a name: the frontend
-// refuses the second, positioned at it.
+// it. Named children of one type have distinct names. Unlabeled children
+// have empty names and may repeat; their position identifies them.
 type ClaimChild struct {
 	// Type is the child's type.
 	Type string
@@ -450,9 +458,9 @@ func None() Set {
 // owner, a model two extensions claim, a block without a known site, a type, a
 // known naming or a decoder, an attribute without a name or a known kind, a
 // [Number] attribute, which only the writer takes, an attribute named twice or
-// named as the naming's own, children or a type declaration on a block that is
-// not top-level, a child without a type, declared twice or under an
-// attribute's name, a child's reference, a block type two extensions read at
+// named as the naming's own, children or type declarations at unsupported
+// sites, a child without a type, declared twice or under an attribute's name,
+// a child's non-column reference, a block type two extensions read at
 // one site, and an encoder without a model to encode.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, blocks: make(map[blockKey]shape)}
@@ -505,7 +513,7 @@ func cloneChildren(children []Child) []Child {
 	}
 	cloned := make([]Child, len(children))
 	for i, child := range children {
-		cloned[i] = Child{Type: child.Type, Attributes: slices.Clone(child.Attributes)}
+		cloned[i] = Child{Type: child.Type, Unlabeled: child.Unlabeled, Attributes: slices.Clone(child.Attributes)}
 	}
 	return cloned
 }
@@ -538,13 +546,13 @@ func validateBlock(owner string, block Block) error {
 	return validateChildren(owner, block)
 }
 
-// validateChildren refuses children or a type declaration on a block that is
-// not top-level, a child without a type, one declared twice or under the name
+// validateChildren refuses children or type declarations at unsupported sites,
+// a child without a type, one declared twice or under the name
 // of one of the block's attributes, and a child's attribute without a name,
 // named twice, or of a kind a child does not take.
 func validateChildren(owner string, block Block) error {
-	if block.Site != TopLevel && (len(block.Children) > 0 || block.DeclaresType) {
-		return fmt.Errorf("HCL %s block %q of %s takes children or declares a type, which only a top-level block does",
+	if (block.Site != TopLevel && block.DeclaresType) || (block.Site != TopLevel && block.Site != InTable && len(block.Children) > 0) {
+		return fmt.Errorf("HCL %s block %q of %s declares a type outside top level or children outside top level and in-table sites",
 			block.Site, block.Type, owner)
 	}
 	taken := map[string]bool{"schema": readsOwnSchema(block.Naming)}
@@ -570,7 +578,7 @@ func validateChildren(owner string, block Block) error {
 				return fmt.Errorf("%w: HCL block %q of %s declares attribute %q twice", schemaext.ErrDuplicate, label, owner, attribute.Name)
 			}
 			names[attribute.Name] = true
-			if attribute.Kind == Ref || attribute.Kind == Refs {
+			if (attribute.Kind == Ref || attribute.Kind == Refs) && attribute.Refers != "column" {
 				return fmt.Errorf("HCL attribute %q of %s block %q is a %s, which a child does not take", attribute.Name, owner, label, attribute.Kind)
 			}
 			if err := validateKind(owner, label, attribute); err != nil {

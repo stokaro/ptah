@@ -33,7 +33,7 @@ func TestNewSet_KeepsChildrenAndTypeDeclarations(t *testing.T) {
 }
 
 // TestNewSet_RefusesChildShapes refuses children and a type declaration where
-// only a top-level block takes them, and a child the frontend could not read
+// the site does not take them, and a child the frontend could not read
 // as its owner means it.
 func TestNewSet_RefusesChildShapes(t *testing.T) {
 	decoder := answeringDecoder{}
@@ -47,12 +47,12 @@ func TestNewSet_RefusesChildShapes(t *testing.T) {
 		block   hclext.Block
 		wantErr string
 	}{
-		{name: "children in a table", block: hclext.Block{Site: hclext.InTable, Type: "shape", Children: []hclext.Child{{Type: "member"}}},
-			wantErr: `HCL in-table block "shape" of example.org/a takes children or declares a type, which only a top-level block does`},
+		{name: "children on index attributes", block: hclext.Block{Site: hclext.IndexAttributes, Type: "index", Children: []hclext.Child{{Type: "member"}}},
+			wantErr: `HCL index-attributes block "index" of example.org/a declares a type outside top level or children outside top level and in-table sites`},
 		{name: "a type declared in a table", block: hclext.Block{Site: hclext.InTable, Type: "shape", DeclaresType: true},
-			wantErr: `HCL in-table block "shape" of example.org/a takes children or declares a type, which only a top-level block does`},
+			wantErr: `HCL in-table block "shape" of example.org/a declares a type outside top level or children outside top level and in-table sites`},
 		{name: "a type declared by index attributes", block: hclext.Block{Site: hclext.IndexAttributes, Type: "index", DeclaresType: true},
-			wantErr: `HCL index-attributes block "index" of example.org/a takes children or declares a type, which only a top-level block does`},
+			wantErr: `HCL index-attributes block "index" of example.org/a declares a type outside top level or children outside top level and in-table sites`},
 		{name: "a child without a type", block: hclext.Block{Site: hclext.TopLevel, Type: "shape", Naming: hclext.SchemaAndName,
 			Children: []hclext.Child{{Type: " "}}},
 			wantErr: `HCL block "shape" of example.org/a declares a child without a type`},
@@ -116,7 +116,7 @@ func TestSet_Encode_KeepsChildrenInTheOwnersOrder(t *testing.T) {
 }
 
 // TestSet_Encode_RefusesChildrenTheWriterCannotWrite refuses children of a
-// block in a table, a child the writer could not label, one written twice
+// child with conflicting label settings, a child the writer could not label, one written twice
 // for one block, and a child's attribute refused as a block's is. A type is
 // written as SQL: the reader's TypeName is refused on a block and a child.
 func TestSet_Encode_RefusesChildrenTheWriterCannotWrite(t *testing.T) {
@@ -132,9 +132,8 @@ func TestSet_Encode_RefusesChildrenTheWriterCannotWrite(t *testing.T) {
 		block   hclext.EncodedBlock
 		wantErr string
 	}{
-		{name: "children in a table", block: hclext.EncodedBlock{Type: "shape", Placement: hclext.WithinTable, Table: &hclext.Table{Name: "t"},
-			Children: []hclext.EncodedChild{{Type: "member", Name: "a"}}},
-			wantErr: `invalid feature value: HCL encoder of example.org/a wrote block "shape" in a table with children, which only a top-level block takes`},
+		{name: "unlabeled child with a name", block: shape(hclext.EncodedChild{Type: "member", Name: "a", Unlabeled: true}),
+			wantErr: `invalid feature value: HCL encoder of example.org/a wrote unlabeled child "member" with name "a"`},
 		{name: "a child without a type", block: shape(hclext.EncodedChild{Type: " ", Name: "a"}),
 			wantErr: `invalid feature value: HCL encoder of example.org/a wrote block "shape" with child " " "a" without a type or a name, or under an attribute's name`},
 		{name: "a child without a name", block: shape(hclext.EncodedChild{Type: "member"}),
@@ -167,6 +166,39 @@ func TestSet_Encode_RefusesChildrenTheWriterCannotWrite(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(encoded, qt.DeepEquals, hclext.EncodeResult{})
+		})
+	}
+}
+
+// TestNewSet_TableChildrenSnapshot checks that child labels and reference
+// metadata survive registration without retaining mutable caller slices.
+func TestNewSet_TableChildrenSnapshot(t *testing.T) {
+	c := qt.New(t)
+	block := hclext.Block{Site: hclext.InTable, Type: "layout", Children: []hclext.Child{{Type: "by", Unlabeled: true,
+		Attributes: []hclext.Attribute{{Name: "column", Kind: hclext.Ref, Refers: "column", Optional: true}}}}}
+	set := must.Must(hclext.NewSet(extension("example.org/a", "example.org/a/x", answeringDecoder{}, block)))
+	block.Children[0].Unlabeled = false
+	block.Children[0].Attributes[0].Refers = "table"
+	shape, ok := set.Lookup(hclext.InTable, "layout")
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(shape.Block.Children[0].Unlabeled, qt.IsTrue)
+	c.Assert(shape.Block.Children[0].Attributes[0], qt.DeepEquals, hclext.Attribute{Name: "column", Kind: hclext.Ref, Refers: "column", Optional: true})
+}
+
+func TestSet_Encode_RefusesQualifiedColumnReferences(t *testing.T) {
+	for _, value := range []hclext.Value{
+		{Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "column", Schema: "app", Name: "x"}},
+		{Kind: hclext.Refs, References: []hclext.Reference{{Kind: "column", Schema: "app", Name: "x"}}},
+	} {
+		t.Run(string(value.Kind), func(t *testing.T) {
+			c := qt.New(t)
+			block := hclext.EncodedBlock{Type: "layout", Placement: hclext.WithinTable, Table: &hclext.Table{Name: "t"},
+				Attributes: []hclext.EncodedAttribute{{Name: "columns", Value: value}}}
+			set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x",
+				answeringEncoder{result: hclext.EncodeResult{Blocks: []hclext.EncodedBlock{block}}})))
+			result, err := set.Encode(t.Context(), hclext.EncodeRequest{})
+			c.Assert(err, qt.ErrorMatches, `invalid feature value: .*which the writer cannot write`)
+			c.Assert(result, qt.DeepEquals, hclext.EncodeResult{})
 		})
 	}
 }

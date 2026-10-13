@@ -83,10 +83,10 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 }
 
 // ownerChildren reads the blocks nested in block whose type is one of the
-// shape's children, in the document's order: each takes one label, no block
-// nested in it, and only the attributes its child shape lists, each read as
-// its kind. A second child of one type and name is refused at it. Every other
-// nested block is an unknown name, refused or dropped as this package's own
+// shape's children, in document order, with the label count and attributes
+// each child shape selects. A second named child of one type and name is
+// refused at it. Every other nested block is an unknown name, refused or
+// dropped as this package's own
 // are; name names the block in a refusal.
 func (p *parser) ownerChildren(block *hclsyntax.Block, shape hclext.Shape, name string) ([]hclext.ClaimChild, error) {
 	var children []hclext.ClaimChild
@@ -102,18 +102,19 @@ func (p *parser) ownerChildren(block *hclsyntax.Block, shape hclext.Shape, name 
 		}
 		child := shape.Block.Children[index]
 		label := block.Type + " " + nested.Type
-		if len(nested.Labels) != 1 {
-			return nil, p.blockError(nested, "%s requires exactly one name label", label)
+		childName, err := p.ownerChildName(nested, child, label)
+		if err != nil {
+			return nil, err
 		}
-		if read[key{nested.Type, nested.Labels[0]}] {
-			return nil, p.blockError(nested, "%s %q declares %s %q twice", block.Type, name, nested.Type, nested.Labels[0])
+		if !child.Unlabeled && read[key{nested.Type, childName}] {
+			return nil, p.blockError(nested, "%s %q declares %s %q twice", block.Type, name, nested.Type, childName)
 		}
-		read[key{nested.Type, nested.Labels[0]}] = true
+		read[key{nested.Type, childName}] = true
 		values, err := p.childValues(nested, child, label)
 		if err != nil {
 			return nil, err
 		}
-		children = append(children, hclext.ClaimChild{Type: nested.Type, Name: nested.Labels[0], Attributes: values, At: blockAt(nested)})
+		children = append(children, hclext.ClaimChild{Type: nested.Type, Name: childName, Attributes: values, At: blockAt(nested)})
 	}
 	return children, nil
 }
@@ -136,6 +137,9 @@ func (p *parser) childValues(nested *hclsyntax.Block, child hclext.Child, label 
 	values := make(map[string]hclext.Value, len(child.Attributes))
 	for _, attribute := range child.Attributes {
 		if nested.Body.Attributes[attribute.Name] == nil {
+			if attribute.Kind == hclext.Ref && !attribute.Optional {
+				return nil, p.blockError(nested, "%s requires %s", label, attribute.Name)
+			}
 			continue
 		}
 		value, present, err := p.ownerValue(nested, label, attribute)
@@ -257,7 +261,8 @@ func (p *parser) claimOwnerTableBlock(table *schemamodel.Table, position int, bl
 	if len(block.Labels) != 0 {
 		return p.blockError(block, "%s block does not accept labels", block.Type)
 	}
-	if err := p.rejectNestedBlocks(block, block.Type); err != nil {
+	children, err := p.ownerChildren(block, shape, table.Name)
+	if err != nil {
 		return err
 	}
 	if err := p.rejectUnsupportedAttrs(block, ownerAttributeNames(shape, false), block.Type); err != nil {
@@ -268,7 +273,7 @@ func (p *parser) claimOwnerTableBlock(table *schemamodel.Table, position int, bl
 		return err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
-		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Attributes: values, At: blockAt(block),
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Attributes: values, Children: children, At: blockAt(block),
 			Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
 	return nil
 }
@@ -331,6 +336,14 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 			values[attribute.Name] = hclext.Value{Kind: hclext.Ref, Reference: &hclext.Reference{Kind: attribute.Refers, Name: schema}}
 			continue
 		}
+		if attribute.Kind == hclext.Ref && attribute.Refers == "column" {
+			value, _, err := p.ownerColumnValue(block, attribute)
+			if err != nil {
+				return nil, nil, err
+			}
+			values[attribute.Name] = value
+			continue
+		}
 		if attribute.Kind == hclext.Ref {
 			// The reference this package reads anywhere, so a policy's
 			// `on` reads as a trigger's does; one to another type of
@@ -366,6 +379,9 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 // refusal.
 func (p *parser) ownerValue(block *hclsyntax.Block, label string, attribute hclext.Attribute) (hclext.Value, bool, error) {
 	attr := block.Body.Attributes[attribute.Name]
+	if (attribute.Kind == hclext.Ref || attribute.Kind == hclext.Refs) && attribute.Refers == "column" {
+		return p.ownerColumnValue(block, attribute)
+	}
 	switch attribute.Kind {
 	case hclext.String:
 		text, err := p.stringAttr(block, attribute.Name, label)
