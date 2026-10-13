@@ -144,15 +144,18 @@ func (c Catalog) KnownAttributes(directive string) map[string]bool {
 	return out
 }
 
-// RequiredAttributes returns every required attribute name for directive.
-func (c Catalog) RequiredAttributes(directive string) []string {
+// MissingRequiredAttributes returns required attributes whose values are absent
+// or empty without AllowEmpty. Parsing and export use the same predicate so a
+// directive an owner writes has the same meaning when the frontend reads it.
+func (c Catalog) MissingRequiredAttributes(directive string, values map[string]string) []string {
 	spec, ok := c.Lookup(directive)
 	if !ok {
 		return nil
 	}
 	var out []string
 	for _, attr := range spec.Attributes {
-		if attr.Required {
+		value, present := values[attr.Name]
+		if attr.Required && (!present || !attr.AllowEmpty && strings.TrimSpace(value) == "") {
 			out = append(out, attr.Name)
 		}
 	}

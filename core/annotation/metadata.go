@@ -48,6 +48,9 @@ type Attribute struct {
 	// as "string" or "boolean".
 	Value    string `json:"value"`
 	Required bool   `json:"required,omitempty"`
+	// AllowEmpty lets a required attribute hold an empty or whitespace-only
+	// string. The attribute must still be present.
+	AllowEmpty bool `json:"allow_empty,omitempty"`
 	// Boolean marks an attribute that may be written bare, meaning true.
 	Boolean bool `json:"boolean,omitempty"`
 	// AliasFor names the attribute this one is another spelling of.

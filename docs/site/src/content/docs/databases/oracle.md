@@ -113,6 +113,10 @@ is `APP`. A synonym through a database link is left as it is: a declaration has
 no place for the link, so it is neither dropped nor declared again. Public
 synonyms belong to `PUBLIC` and are not read.
 
+Go export preserves synonym names, schemas, targets, and declaration comments.
+The exported annotation binds the alias to Oracle and SQL Server. Export refuses
+incomplete coverage and an explicit target scope the annotation cannot preserve.
+
 ## Keys that defer their check
 
 A primary key and a `UNIQUE` can be `DEFERRABLE`, with `INITIALLY DEFERRED`
