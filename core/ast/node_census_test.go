@@ -19,7 +19,9 @@ import (
 // otherwise read as success. Growth is expected and lands in nodeCensus below;
 // a drop is a decision, and lowering this number is how that decision is
 // recorded.
-const nodeKindFloor = 82
+// SetUnloggedOperation is accounted for by pgtable.AlterPersistence in the
+// extraction departure ledger rather than by a common node.
+const nodeKindFloor = 81
 
 // censusRow is one node kind the census accepts.
 //
@@ -122,7 +124,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.SetCommentOperation{}},
 	{node: &ast.SetConstraintCommentOperation{}},
-	{node: &ast.SetUnloggedOperation{}},
 
 	// The type definitions and the ALTER TYPE operations. Each is rendered
 	// inside the CREATE TYPE or ALTER TYPE statement that carries it.

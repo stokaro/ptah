@@ -5,19 +5,34 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // unloggedDiff changes the table app.cache to unlogged, or back.
-func unloggedDiff(unlogged bool) *difftypes.SchemaDiff {
-	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
-		TableName: "app.cache", UnloggedChange: &difftypes.UnloggedChange{Current: !unlogged, Desired: unlogged},
-	}}}
+func unloggedDiff(c *qt.C, unlogged bool) *difftypes.SchemaDiff {
+	c.Helper()
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Cache", Schema: "app", Name: "cache", PrimaryKey: []string{"id"},
+			Facets: must.Must(pgtable.WithPersistence(schemaext.Facets{}, pgtable.Persistence{Unlogged: unlogged}))}},
+		Fields:          []schemamodel.Field{{StructName: "Cache", Name: "id", Type: "bigint", Primary: true}},
+		FeatureCoverage: must.Must(pgtable.PersistenceCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+	current := &catalog.Database{Tables: []catalog.Table{{Schema: "app", Name: "cache",
+		Facets:  must.Must(pgtable.WithObservedPersistence(schemaext.Facets{}, pgtable.Persistence{Unlogged: !unlogged})),
+		Columns: []catalog.Column{{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true}},
+	}}, FeatureCoverage: must.Must(pgtable.PersistenceCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, current, platform.Postgres, builtintest.Runtime()))
 }
 
 // TestUnloggedChange_HappyPath writes a table's change between logged and
@@ -28,18 +43,19 @@ func TestUnloggedChange_HappyPath(t *testing.T) {
 		unlogged bool
 		want     string
 	}{
-		{name: "made unlogged", unlogged: true, want: "-- ALTER statements: --\nALTER TABLE \"app\".\"cache\" SET UNLOGGED"},
-		{name: "made logged", unlogged: false, want: "-- ALTER statements: --\nALTER TABLE \"app\".\"cache\" SET LOGGED"},
+		{name: "made unlogged", unlogged: true, want: "ALTER TABLE \"app\".\"cache\" SET UNLOGGED"},
+		{name: "made logged", unlogged: false, want: "ALTER TABLE \"app\".\"cache\" SET LOGGED"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), builtintest.Runtime(),
-				unloggedDiff(test.unlogged), platform.Postgres)
+				unloggedDiff(c, test.unlogged), platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, []string{test.want})
+			c.Assert(statements, qt.HasLen, 1)
+			c.Assert(statements[0], qt.Contains, test.want)
 		})
 	}
 }
@@ -53,10 +69,10 @@ func TestUnloggedChange_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), builtintest.Runtime(),
-				unloggedDiff(true), dialect)
+				unloggedDiff(c, true), dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `.*`+dialect+`: ALTER TABLE \.\.\. SET UNLOGGED cannot be rendered: this target creates no unlogged table.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*SET UNLOGGED.*`+dialect+`.*this target creates no unlogged table.*`)
 			c.Assert(statements, qt.IsNil)
 		})
 	}

@@ -204,9 +204,6 @@ func reverseFeatureTableState(
 	if table.CommentChange != nil {
 		current.Table.Comment = table.CommentChange.Desired
 	}
-	if table.UnloggedChange != nil {
-		current.Table.Unlogged = table.UnloggedChange.Desired
-	}
 	if len(recovery) == 0 {
 		return current, nil
 	}

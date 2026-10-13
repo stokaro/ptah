@@ -634,10 +634,6 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 
-	unlogged, err := p.optionalTableBool(block, "unlogged", false)
-	if err != nil {
-		return err
-	}
 	apiName, err := p.stringAttr(block, "api_name", "table")
 	if err != nil {
 		return err
@@ -658,7 +654,6 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		APINames:   apiNames,
 		Engine:     p.optionalString(block.Body.Attributes["engine"]),
 		Collate:    p.optionalString(block.Body.Attributes["collate"]),
-		Unlogged:   unlogged,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Checks:     checks,
 		CustomSQL:  customSQL,
@@ -1974,7 +1969,6 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 		"collate":        true,
 		"strict":         true,
 		"without_rowid":  true,
-		"unlogged":       true,
 		"depends_on":     true,
 		"qualifier":      true,
 		"comment":        true,

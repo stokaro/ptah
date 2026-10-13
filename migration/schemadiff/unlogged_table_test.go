@@ -4,25 +4,28 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/dialect/postgres/pgtable"
 )
 
 // persistedTable declares `t (id)`, logged or unlogged.
 func persistedTable(unlogged bool) *schemamodel.Database {
 	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"}, Unlogged: unlogged}},
-		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "bigint", Primary: true}},
+		Tables:          []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"}, Facets: must.Must(pgtable.WithPersistence(schemaext.Facets{}, pgtable.Persistence{Unlogged: unlogged}))}},
+		FeatureCoverage: must.Must(pgtable.PersistenceCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		Fields:          []schemamodel.Field{{StructName: "T", Name: "id", Type: "bigint", Primary: true}},
 	}
 }
 
 // livePersistedTable is the same table as a reader reports it.
 func livePersistedTable(unlogged bool) *catalog.Database {
-	return &catalog.Database{Tables: []catalog.Table{{
-		Name: "t", Unlogged: unlogged,
+	return &catalog.Database{FeatureCoverage: must.Must(pgtable.PersistenceCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)), Tables: []catalog.Table{{
+		Name: "t", Facets: must.Must(pgtable.WithObservedPersistence(schemaext.Facets{}, pgtable.Persistence{Unlogged: unlogged})),
 		Columns: []catalog.Column{{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true}},
 	}}}
 }
@@ -45,8 +48,10 @@ func TestCompare_Unlogged_HappyPath(t *testing.T) {
 			diff := compareForDialect(platform.Postgres, persistedTable(test.desired), livePersistedTable(test.current))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
-			c.Assert(diff.TablesModified[0].UnloggedChange, qt.DeepEquals,
-				&difftypes.UnloggedChange{Current: test.current, Desired: test.desired})
+			c.Assert(diff.TablesModified[0].FeatureChanges, qt.HasLen, 1)
+			change := diff.TablesModified[0].FeatureChanges[0].Value.(*pgtable.PersistenceChange)
+			c.Assert(change.Before != nil && change.Before.Unlogged, qt.Equals, test.current)
+			c.Assert(change.After != nil && change.After.Unlogged, qt.Equals, test.desired)
 		})
 	}
 }

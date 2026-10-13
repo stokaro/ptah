@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -222,6 +223,9 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 		// PostgreSQL reader does, so the fixture's policies compare.
 		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
 	}
+
+	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PersistenceCoverage(
+		schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
@@ -434,6 +438,9 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 		Sequences:       []catalog.Sequence{{Schema: "public", Name: "s1"}},
 		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
 	}
+
+	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PersistenceCoverage(
+		schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))

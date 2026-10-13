@@ -205,8 +205,8 @@ func validatePatterns(extension Extension) error {
 }
 
 // FacetSite reports whether a value at site carries the owner's facets of its
-// subject and nothing else: [ViewClause], [TablePrefix], [TableOption], [ColumnOption],
-// [IndexOption] and [RoutineOption].
+// subject and nothing else: [ViewClause], [TablePrefix], [TableOption],
+// [ColumnOption], [IndexOption] and [RoutineOption].
 func FacetSite(site Site) bool {
 	switch site {
 	case ViewClause, TablePrefix, TableOption, ColumnOption, IndexOption, RoutineOption:

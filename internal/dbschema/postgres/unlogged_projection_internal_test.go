@@ -16,6 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -71,7 +72,10 @@ func TestReadTablesForSchema_AsksPostgresForRelationPersistence(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(query, qt.Contains, "c.relpersistence = 'u'")
 			c.Assert(tables, qt.HasLen, 1)
-			c.Assert(tables[0].Unlogged, qt.IsTrue)
+			persistence, found, err := pgtable.PersistenceOf(tables[0].Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(persistence.Unlogged, qt.IsTrue)
 		})
 	}
 }

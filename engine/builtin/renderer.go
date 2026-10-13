@@ -183,6 +183,7 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 // the preparation below would stop running -- with no compile error, at exit 0,
 // and with the AST-level refusals this type owns silently gone.
 type validatingRenderer struct {
+	omissions    *renderdiag.Sink
 	inner        renderer.RenderVisitor
 	dialect      string
 	capabilities capability.Capabilities
@@ -219,6 +220,10 @@ func (r *validatingRenderer) GetOutput() string  { return r.inner.GetOutput() }
 func (r *validatingRenderer) VisitNode(node ast.Node) error {
 	prepared, err := prepareNode(r.dialect, r.capabilities, node)
 	if err != nil {
+		r.Reset()
+		return nodeRefusal(r.dialect, node, err)
+	}
+	if err := r.recordOwnedOmissions(node); err != nil {
 		r.Reset()
 		return nodeRefusal(r.dialect, node, err)
 	}
@@ -307,6 +312,11 @@ func renderNodes(ctx context.Context, r renderer.RenderVisitor, nodes ...ast.Nod
 		prepared, err := prepareNodes(validating.dialect, validating.capabilities, nodes)
 		if err != nil {
 			return renderer.Result{}, err
+		}
+		for i, node := range nodes {
+			if err := validating.recordOwnedOmissions(node); err != nil {
+				return renderer.Result{}, &renderFailure{input: i, cause: nodeRefusal(validating.dialect, node, err)}
+			}
 		}
 		nodes = prepared
 	}

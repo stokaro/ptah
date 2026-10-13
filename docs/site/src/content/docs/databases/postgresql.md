@@ -575,6 +575,13 @@ skip the write-ahead log, which makes them faster and costs durability: the
 server truncates the table after a crash, and replication does not carry it.
 Use it for a cache or a staging table, not for data that has to survive.
 
+SQL uses `CREATE UNLOGGED TABLE`; HCL uses the table attribute `unlogged`.
+Go annotations use `platform.postgres.unlogged="true"` on the table directive.
+Go and HCL exports preserve the declaration. Embedders attach a
+`pgtable.DesiredPersistence` facet to the table. Complete source coverage treats
+an absent setting as logged; incomplete catalog coverage leaves the comparison
+undecided.
+
 `ptah db read` reports the property back, so a schema file built from a live
 database describes an unlogged table as one.
 

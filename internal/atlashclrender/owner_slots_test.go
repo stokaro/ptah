@@ -307,3 +307,28 @@ func TestRender_ReportsAnOwnersFacetNoBlockHolds(t *testing.T) {
 		Message: "feature facet example.org/custom/gadget is not represented in HCL"}
 	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{lost, lost})
 }
+
+func TestRender_WritesAnOwnersOtherTableAttributes(t *testing.T) {
+	c := qt.New(t)
+	db := gadgetDocument()
+	db.Tables[0].Facets = gadgetFacets("table")
+	owner := slotWriter{attributes: map[string][]hclext.EncodedAttribute{"table": {
+		{Name: "zeta", Value: hclext.Value{Kind: hclext.String, Text: "z"}},
+		{Name: "alpha", Value: hclext.Value{Kind: hclext.Bool, Bool: true}},
+	}}}
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "  zeta = \"z\"\n  alpha = true\n")
+}
+
+func TestRender_RefusesAnOwnerReplacingCommonTableAttributes(t *testing.T) {
+	for _, name := range []string{"schema", "comment", "collate", "column", "primary_key", "index", "platform"} {
+		c := qt.New(t)
+		db := gadgetDocument()
+		db.Tables[0].Facets = gadgetFacets("table")
+		owner := slotWriter{attributes: map[string][]hclext.EncodedAttribute{"table": {{Name: name, Value: hclext.Value{Kind: hclext.String, Text: "replace"}}}}}
+		result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
+		c.Assert(err, qt.ErrorMatches, `an HCL encoder wrote attribute "`+name+`" of table "t", which the writer writes itself`)
+		c.Assert(result.Data, qt.IsNil)
+	}
+}

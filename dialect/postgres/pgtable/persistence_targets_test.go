@@ -1,11 +1,11 @@
-package unloggedtable_test
+package pgtable_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/unloggedtable"
+	"ptah.run/dialect/postgres/pgtable"
 )
 
 // TestSupported_AnswersPerDialect pins the set, because every end of the round
@@ -38,7 +38,7 @@ func TestSupported_AnswersPerDialect(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(unloggedtable.Supported(test.dialect), qt.Equals, test.want)
+			c.Assert(pgtable.SupportsPersistence(test.dialect), qt.Equals, test.want)
 		})
 	}
 }

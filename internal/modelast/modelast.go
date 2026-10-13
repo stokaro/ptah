@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -495,7 +494,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableComment := table.Comment
 	tableEngine := table.Engine
 	tableCollate := table.Collate
-	tableUnlogged := table.Unlogged
 
 	platformOverrides, exists := schemaprep.PlatformOverrideGroup(table.Overrides, targetPlatform)
 	if !exists {
@@ -505,7 +503,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableComment = overrideString(platformOverrides, "comment", tableComment)
 	tableEngine = overrideString(platformOverrides, "engine", tableEngine)
 	tableCollate = overrideString(platformOverrides, "collate", tableCollate)
-	tableUnlogged = overrideBool(platformOverrides, "unlogged", tableUnlogged)
 
 	// Apply any other platform-specific options
 	for key, value := range platformOverrides {
@@ -518,7 +515,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	newTable.Comment = tableComment
 	newTable.Engine = tableEngine
 	newTable.Collate = tableCollate
-	newTable.Unlogged = tableUnlogged
 	return newTable
 }
 
@@ -527,18 +523,6 @@ func overrideString(overrides map[string]string, key, current string) string {
 		return value
 	}
 	return current
-}
-
-func overrideBool(overrides map[string]string, key string, current bool) bool {
-	value, ok := overrides[key]
-	if !ok {
-		return current
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return current
-	}
-	return parsed
 }
 
 func isKnownTablePlatformOverride(key string) bool {
@@ -685,11 +669,6 @@ func fromTableWithFieldConverter(
 	if newTable.Collate != "" {
 		createTable.SetOption("COLLATE", newTable.Collate)
 	}
-	// Every renderer reads it: the PostgreSQL renderer writes the keyword
-	// where the target creates an unlogged table
-	// (ptah.run/internal/unloggedtable), YDB's refuses it, and the others
-	// report it lost.
-	createTable.Unlogged = newTable.Unlogged
 	createTable.Partition = toASTPartition(newTable.Partition)
 	// Cloned rather than shared: the node travels to a renderer and a planner
 	// that must not be able to reach back through a pointer into the schema
