@@ -3019,10 +3019,16 @@ an owner's `Parser` every span of one document in one call and applies the
 operation declares, the owner's operation payload, or facets of a view, a
 table, a column or a key.
 
-A `ViewClause`, a `TableOption` after a CREATE TABLE's column list, a
-`ColumnOption` among a column's constraints and an `IndexOption` after a key's
+A `ViewClause`, a `TablePrefix` between CREATE and TABLE, a `TableOption`
+after a CREATE TABLE's column list, a `ColumnOption` among a column's
+constraints and an `IndexOption` after a key's
 parts carry facets alone, and no index or operation. Every facet a value
 carries is of one of the extension's `Facets` kinds.
+
+A `TablePrefix` span ends before TABLE or another owner's prefix. The shared
+parser reads the table name, columns and constraints, then supplies the full
+name in `Claim.Subject`. Each returned facet attaches to that table. A prefix
+without a valid CREATE TABLE is refused before any owner runs.
 
 A `ColumnOption` or `IndexOption` span ends where the element's next option
 begins: a clause or key option the reader parses itself, or the opening word
@@ -3172,7 +3178,8 @@ the attributes it takes and of which `Kind`. A top-level block is named by
 `SchemaAndName`, by `SchemaAndQualifiedName`, where a one-label `schema.name`
 names the schema too, or by `JoinedName`, where two labels join into one name
 and the block takes no `schema`. A shape at the `IndexAttributes` site adds
-attributes to the reader's own `index` block. A shape at the `InTable` site is
+attributes to the reader's own `index` block. `TableAttributes` does the same
+for a `table` block, with no `Naming`. A shape at the `InTable` site is
 a block inside a `table`, with no labels.
 
 - The reader checks a block against its shape with the refusals it gives its
@@ -3219,7 +3226,10 @@ a block inside a `table`, with no labels.
   the table its labels name, which the reader attaches once the load's tables
   are known. An owner of index attributes gets every `index` block, with the
   table, type and operator the reader read in `Claim.Index`, and returns the
-  `Facets` the reader adds to that index. An `InTable` claim carries its table
+  `Facets` the reader adds to that index. A `TableAttributes` owner receives
+  every table, including those without its attributes, with its schema, name
+  and struct identity in `Claim.Table`. Returned facets attach to that exact
+  table, so equal names in different schemas stay separate. An `InTable` claim carries its table
   in `Claim.Table`, and its `Facets` go to that table. `Claim.At` says where a
   block stands, for a refusal that names two blocks.
 - A `ClaimError` refuses one block, positioned at it. Of an owner's refusal and
