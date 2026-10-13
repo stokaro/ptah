@@ -1,5 +1,5 @@
-// Package pgexclude reads represented EXCLUDE catalog definitions for the
-// PostgreSQL reader and normalization probe. It is a leaf so orchestration
+// Package pgexclude reads represented EXCLUDE definitions for PostgreSQL
+// source documents, catalog reads, and normalization probes. It is a leaf so orchestration
 // can use the same grammar without linking provider models or registration.
 package pgexclude
 
@@ -25,26 +25,30 @@ type Definition struct {
 	Initially      string
 }
 
-// Parse reads one pg_get_constraintdef EXCLUDE definition. Quoted
+// Parse reads one EXCLUDE declaration or pg_get_constraintdef definition. Quoted
 // strings, identifiers, and comments do not delimit expression groups. It
 // accepts the represented element, predicate, and deferral clauses; an
 // unrepresented clause or malformed group returns nil and an error wrapping
 // schemaext.ErrInvalidValue. It neither evaluates expressions nor changes text
-// inside them.
+// inside them. An omitted index method selects btree. Deferral clauses may
+// appear in either order; INITIALLY DEFERRED implies DEFERRABLE.
 func Parse(text string) (*Definition, error) {
 	tokens, err := exclusionTokens(text)
 	if err != nil {
 		return nil, err
 	}
 	p := exclusionParser{text: text, tokens: tokens}
-	if !p.word("EXCLUDE") || !p.word("USING") {
-		return nil, exclusionSyntax("expected EXCLUDE USING")
+	if !p.word("EXCLUDE") {
+		return nil, exclusionSyntax("expected EXCLUDE")
 	}
-	if len(p.tokens) == 0 || !exclusionIdentifier(p.tokens[0]) {
-		return nil, exclusionSyntax("expected an index method after USING")
+	result := &Definition{UsingMethod: "btree"}
+	if p.word("USING") {
+		if len(p.tokens) == 0 || !exclusionIdentifier(p.tokens[0]) {
+			return nil, exclusionSyntax("expected an index method after USING")
+		}
+		result.UsingMethod = p.tokens[0].Value
+		p.tokens = p.tokens[1:]
 	}
-	result := &Definition{UsingMethod: p.tokens[0].Value}
-	p.tokens = p.tokens[1:]
 	result.Elements, err = p.group("elements")
 	if err != nil {
 		return nil, err
@@ -55,31 +59,58 @@ func Parse(text string) (*Definition, error) {
 			return nil, err
 		}
 	}
-	switch {
-	case p.word("DEFERRABLE"):
-		result.Deferrable = true
-	case p.word("NOT"):
-		if !p.word("DEFERRABLE") {
-			return nil, exclusionSyntax("expected DEFERRABLE after NOT")
-		}
-	}
-	if p.word("INITIALLY") {
-		switch {
-		case p.word("DEFERRED"):
-			if !result.Deferrable {
-				return nil, exclusionSyntax("INITIALLY DEFERRED requires DEFERRABLE")
-			}
-			result.Initially = "deferred"
-		case p.word("IMMEDIATE"):
-			result.Initially = "immediate"
-		default:
-			return nil, exclusionSyntax("expected DEFERRED or IMMEDIATE after INITIALLY")
-		}
-	}
-	if len(p.tokens) != 0 {
-		return nil, exclusionSyntax("unrepresented or unexpected clause " + p.tokens[0].Value)
+	if err := p.deferral(result); err != nil {
+		return nil, err
 	}
 	return result, nil
+}
+
+// deferral accepts repeated compatible clauses and refuses contradictory ones.
+func (p *exclusionParser) deferral(result *Definition) error {
+	notDeferrable := false
+	for len(p.tokens) > 0 {
+		switch {
+		case p.word("DEFERRABLE"):
+			result.Deferrable = true
+		case p.word("NOT"):
+			if !p.word("DEFERRABLE") {
+				return exclusionSyntax("expected DEFERRABLE after NOT")
+			}
+			notDeferrable = true
+		case p.word("INITIALLY"):
+			timing, err := p.initialTiming()
+			if err != nil {
+				return err
+			}
+			if result.Initially != "" && result.Initially != timing {
+				return exclusionSyntax("conflicting initial timing")
+			}
+			result.Initially = timing
+		default:
+			return exclusionSyntax("unrepresented or unexpected clause " + p.tokens[0].Value)
+		}
+	}
+	if result.Deferrable && notDeferrable {
+		return exclusionSyntax("conflicting deferral clauses")
+	}
+	if result.Initially == "deferred" {
+		if notDeferrable {
+			return exclusionSyntax("INITIALLY DEFERRED requires DEFERRABLE")
+		}
+		result.Deferrable = true
+	}
+	return nil
+}
+
+func (p *exclusionParser) initialTiming() (string, error) {
+	switch {
+	case p.word("DEFERRED"):
+		return "deferred", nil
+	case p.word("IMMEDIATE"):
+		return "immediate", nil
+	default:
+		return "", exclusionSyntax("expected DEFERRED or IMMEDIATE after INITIALLY")
+	}
 }
 
 func exclusionSyntax(reason string) error {
