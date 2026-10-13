@@ -1190,28 +1190,15 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 	})
 }
 
-// appendTableUnlogged emits the table's change between logged and unlogged,
-// if it has one.
-func appendTableUnlogged(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
-	if tableDiff.UnloggedChange == nil {
-		return result
-	}
-	return append(result, &ast.AlterTableNode{
-		Name:       tableDiff.TableName,
-		Operations: []ast.AlterOperation{&ast.SetUnloggedOperation{Unlogged: tableDiff.UnloggedChange.Desired}},
-	})
-}
-
 func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
-		// The table's own comment and its change between logged and unlogged
+		// The table's own comment
 		// are emitted before its columns' changes, so a table whose only
-		// difference is one of them still produces a statement: the condition
-		// below asks about columns, and both belong to the table
+		// difference is its comment still produces a statement: the condition
+		// below asks about columns, and the comment belongs to the table
 		// (stokaro/ptah#2168).
 		result = appendTableComment(result, tableDiff)
-		result = appendTableUnlogged(result, tableDiff)
 		if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsModified) > 0 {
 			// Track the initial length to see if any actual operations were added
 			initialLength := len(result)

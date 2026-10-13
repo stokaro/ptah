@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -66,6 +67,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: pgextension.Owner, codecs: pgextension.Codecs()},
 		{owner: pgtype.Owner, codecs: pgtype.Codecs()},
 		{owner: pgroutine.PropertiesOwner, codecs: pgroutine.PropertiesCodecs()},
+		{owner: pgtable.Owner, codecs: pgtable.PersistenceCodecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},
 		{owner: ydbschema.Owner, codecs: ydbschema.TTLCodecs()},

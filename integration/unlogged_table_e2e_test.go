@@ -20,8 +20,8 @@ import (
 // unloggedDocument declares the table cache, logged or unlogged.
 func unloggedDocument(unlogged bool) string {
 	return map[bool]string{
-		true:  "CREATE UNLOGGED TABLE cache (id bigint PRIMARY KEY, v text);\n",
-		false: "CREATE TABLE cache (id bigint PRIMARY KEY, v text);\n",
+		true:  "CREATE UNLOGGED TABLE cache (id bigint PRIMARY KEY, v text);\nCOMMENT ON TABLE cache IS 'persistence probe';\n",
+		false: "CREATE TABLE cache (id bigint PRIMARY KEY, v text);\nCOMMENT ON TABLE cache IS 'persistence probe';\n",
 	}[unlogged]
 }
 
@@ -66,11 +66,18 @@ func TestSchemaApplyChangesATableBetweenLoggedAndUnloggedPostgresE2E(t *testing.
 	applyUnloggedDocument(c, dev, true)
 	c.Assert(cachePersistence(c, dev), qt.Equals, "u")
 
+	_, err := dev.conn.ExecContext(c.Context(), "INSERT INTO cache VALUES (7, 'keep me')")
+	c.Assert(err, qt.IsNil)
+	before := cacheContents(c, dev)
+	c.Assert(before[1:], qt.DeepEquals, []string{"persistence probe", "keep me"})
+
 	applyUnloggedDocument(c, dev, false)
 	c.Assert(cachePersistence(c, dev), qt.Equals, "p")
+	c.Assert(cacheContents(c, dev), qt.DeepEquals, before)
 
 	applyUnloggedDocument(c, dev, true)
 	c.Assert(cachePersistence(c, dev), qt.Equals, "u")
+	c.Assert(cacheContents(c, dev), qt.DeepEquals, before)
 }
 
 // TestSchemaApplyAnUnloggedTableYugabyteDBE2E applies an unlogged declaration
@@ -82,4 +89,13 @@ func TestSchemaApplyAnUnloggedTableYugabyteDBE2E(t *testing.T) {
 
 	applyUnloggedDocument(c, dev, true)
 	c.Assert(cachePersistence(c, dev), qt.Equals, "p")
+}
+
+// cacheContents pins the table identity, comment and row across an ALTER.
+func cacheContents(c *qt.C, dev devDialectDatabase) [3]string {
+	c.Helper()
+	var values [3]string
+	c.Assert(dev.conn.QueryRowContext(c.Context(),
+		"SELECT 'cache'::regclass::oid::text, obj_description('cache'::regclass, 'pg_class'), (SELECT v FROM cache WHERE id=7)").Scan(&values[0], &values[1], &values[2]), qt.IsNil)
+	return values
 }

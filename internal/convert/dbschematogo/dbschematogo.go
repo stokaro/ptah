@@ -208,7 +208,6 @@ func convertTablesAndFields(
 			PrimaryKeyMethod:     primaryKey.method,
 			PrimaryKeyComment:    primaryKey.comment,
 			PrimaryKeyFacets:     primaryKey.facets,
-			Unlogged:             dbTable.Unlogged,
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).

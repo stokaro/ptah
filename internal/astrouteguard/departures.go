@@ -198,6 +198,7 @@ var recordedDepartures = []Departure{
 	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},
 	{Node: "SetRowDeletionPolicyOperation", Successors: []ExtensionKind{payload(spannerAST, "AlterRowDeletion"), payload(ydbAST, "AlterTTL")}},
 	{Node: "SetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
+	{Node: "SetUnloggedOperation", Successors: []ExtensionKind{payload("ptah.run/dialect/postgres/pgtable", "AlterPersistence")}},
 	{Node: "SetYDBColumnFamiliesOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterColumnFamilies")}},
 	{Node: "SetYDBTablePartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterTablePartitioning")}},
 }

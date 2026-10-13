@@ -164,7 +164,7 @@ func TestPerturb_LeavesWhatItCannotChange(t *testing.T) {
 		name  string
 		field string
 	}{
-		{name: "a bool", field: "schemamodel.Table.Unlogged"},
+		{name: "a bool", field: "schemamodel.Sequence.Cycle"},
 		{name: "a zero string", field: "schemamodel.Table.Engine"},
 		{name: "a struct", field: "schemamodel.Table.Partition"},
 	}

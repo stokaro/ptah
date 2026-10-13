@@ -109,20 +109,10 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			// reversal can swap them. None of them was swapped, or carried at
 			// all: a migration that changed a table's comment rolled back to
 			// "No rollback operations needed" (stokaro/ptah#2418).
-			CommentChange:  reverseCommentChange(tableDiff.CommentChange),
-			UnloggedChange: reverseUnloggedChange(tableDiff.UnloggedChange),
+			CommentChange: reverseCommentChange(tableDiff.CommentChange),
 		}
 	}
 	return reversed
-}
-
-// reverseUnloggedChange swaps a table's change between logged and unlogged,
-// so a rollback puts the table back the way it was.
-func reverseUnloggedChange(change *difftypes.UnloggedChange) *difftypes.UnloggedChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.UnloggedChange{Current: change.Desired, Desired: change.Current}
 }
 
 func clonedColumnChanges(changes difftypes.ColumnChanges) difftypes.ColumnChanges {

@@ -21,6 +21,7 @@ import (
 // target/role. Every target and role not named refuses the payload through the
 // common boundary.
 var extensionOwners = map[schemaext.Kind][]string{
+	"ptah.run/postgres/alter-table-persistence":           {"postgres/alter-table"},
 	"ptah.run/clickhouse/add-skipping-index":              {"clickhouse/alter-table"},
 	"ptah.run/clickhouse/alter-ttl":                       {"clickhouse/alter-table"},
 	"ptah.run/clickhouse/drop-skipping-index":             {"clickhouse/alter-table"},

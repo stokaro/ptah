@@ -257,9 +257,6 @@ type Table struct {
 	// apply to its owner as well. It is independent of RLSEnabled, which
 	// leaves the owner exempt (stokaro/ptah#3121).
 	RLSForced bool `json:"rls_forced,omitempty"`
-	// Unlogged reports pg_class.relpersistence = 'u': the table's writes skip
-	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
-	Unlogged bool `json:"unlogged,omitempty"`
 }
 
 // RawType is the type spelling a comparator holds a desired schema against.

@@ -5,10 +5,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -17,7 +20,7 @@ import (
 func unloggedDatabase(unlogged bool) *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{
-			StructName: "Cache", Name: "cache", Unlogged: unlogged,
+			StructName: "Cache", Name: "cache", Facets: must.Must(pgtable.WithPersistence(schemaext.Facets{}, pgtable.Persistence{Unlogged: unlogged})),
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "Cache", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true},

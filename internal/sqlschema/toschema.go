@@ -276,7 +276,6 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		// Carried for the same reason: `db read` emits CREATE UNLOGGED TABLE,
 		// and a schema file holding that output has to describe the table it
 		// came from rather than a logged one.
-		Unlogged: table.Unlogged,
 	}
 
 	// Extract ENGINE option if present
@@ -1582,9 +1581,6 @@ func MergeTableOverrides(baseTable schemamodel.Table, platformTables map[string]
 			if on := sqliteOption(platformTable, key); on != sqliteOption(baseTable, key) {
 				platformOverrides[key] = strconv.FormatBool(on)
 			}
-		}
-		if platformTable.Unlogged != baseTable.Unlogged {
-			platformOverrides["unlogged"] = strconv.FormatBool(platformTable.Unlogged)
 		}
 
 		// Store platform overrides if any differences were found

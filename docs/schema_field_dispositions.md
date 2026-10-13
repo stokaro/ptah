@@ -367,6 +367,7 @@ migration nobody asked for.
 | `pgroutine.DesiredProperties.Leakproof` | `ddl` | — |
 | `pgroutine.DesiredProperties.Parallel` | `ddl` | — |
 | `pgroutine.DesiredProperties.Strict` | `ddl` | — |
+| `pgtable.DesiredPersistence.Unlogged` | `ddl` | — |
 | `pgtype.Attribute.Name` | `ddl` | — |
 | `pgtype.Attribute.Type` | `ddl` | — |
 | `pgtype.DesiredComposite.Attributes` | `ddl` | — |
@@ -703,7 +704,6 @@ migration nobody asked for.
 | `schemamodel.Table.PrimaryKeyParts` | `ddl` | — |
 | `schemamodel.Table.Schema` | `ddl` | — |
 | `schemamodel.Table.StructName` | `ddl` | — |
-| `schemamodel.Table.Unlogged` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |

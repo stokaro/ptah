@@ -174,7 +174,6 @@ func toDBTables(
 			Columns:    toDBColumns(table, fieldsByStruct[table.StructName], dialect),
 			RLSEnabled: rlsEnabled,
 			RLSForced:  rlsEnabled && enablement.Forced,
-			Unlogged:   table.Unlogged,
 		})
 	}
 	return out

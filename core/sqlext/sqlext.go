@@ -56,8 +56,8 @@ const (
 	// the statement. Its [Value] carries the owner's facets of the view.
 	ViewClause Site = "view-clause"
 	// TablePrefix is an owned modifier between CREATE and TABLE. A span ends
-	// before TABLE or the next owner prefix. Its Value carries facets of the
-	// table. Claim.Subject identifies the table after the frontend reads it.
+	// before TABLE or the next owner's prefix. Its Value carries facets of the
+	// table, and its Claim.Subject names the table after the frontend reads it.
 	TablePrefix Site = "table-prefix"
 	// TableOption is an option of a CREATE TABLE statement after its column
 	// list, among the table's options. A span ends at the next top-level

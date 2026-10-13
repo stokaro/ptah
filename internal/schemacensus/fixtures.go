@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -884,7 +885,7 @@ func tableSQLiteFixture() schemamodel.Database {
 }
 
 func tableUnloggedFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{Name: "t", Unlogged: true})
+	return oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(pgtable.WithPersistence(schemaext.Facets{}, pgtable.Persistence{Unlogged: true}))})
 }
 
 func tableVirtualFixture() schemamodel.Database {
