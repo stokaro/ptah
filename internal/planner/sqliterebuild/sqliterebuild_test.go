@@ -153,9 +153,6 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// carry comments, so a SQLite table cannot have one to converge
 		// (stokaro/ptah#2168).
 		"CommentChange": false,
-		// SQLite has no unlogged table, and the comparison records the
-		// change only on a target that creates one (internal/unloggedtable).
-		"UnloggedChange": false,
 		// The table as the declaration holds it, which the rebuild renders FROM
 		// rather than a change it has to converge. It is present on every
 		// modification, including the ones ALTER TABLE expresses in place, so a

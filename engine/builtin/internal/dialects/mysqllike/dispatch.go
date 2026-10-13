@@ -185,7 +185,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameTableOperation,
 		*ast.SetCommentOperation,
 		*ast.SetConstraintCommentOperation,
-		*ast.SetUnloggedOperation,
 		*ast.AddEnumValueOperation,
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTypeOperation,

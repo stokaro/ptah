@@ -57,6 +57,10 @@ const (
 	// index's type may select the owner's reading without any of the
 	// owner's attributes. Its [Declaration] carries facets of the index.
 	IndexAttributes Site = "index-attributes"
+	// TableAttributes adds owner attributes to the frontend's table block.
+	// The block's Type is "table" and Naming is empty. Every table is claimed;
+	// Claim.Table retains its identity and Declaration.Facets carries its settings.
+	TableAttributes Site = "table-attributes"
 	// RoutineAttributes adds owner attributes to a function or procedure block.
 	// The frontend reads the signature and attaches the returned facets to that
 	// declaration, so overloaded functions keep separate settings.
@@ -249,7 +253,7 @@ type Claim struct {
 	// Index is the index an [IndexAttributes] claim is about, whose name is
 	// Name, and nil for a claim at another site.
 	Index *Index
-	// Table is the table an [InTable] claim stands in, and nil for a claim
+	// Table identifies an [InTable] or [TableAttributes] claim, and is nil for a claim
 	// at another site.
 	Table *Table
 	// Children are the blocks nested in the block whose type is one of the
@@ -275,7 +279,7 @@ type ClaimChild struct {
 	At string
 }
 
-// Table is what the frontend read of the table an [InTable] claim stands in.
+// Table is the identity read by the frontend for a table claim.
 type Table struct {
 	// Schema is the table's schema, or empty for none.
 	Schema string
@@ -317,7 +321,7 @@ type Declaration struct {
 	// setting of one table. Nil declares none.
 	TableSetting schemaext.Value
 	// Facets are settings of the claim's index, for an [IndexAttributes]
-	// claim, or of its table, for an [InTable] claim, each of one of the
+	// claim, or of its table, for an [InTable] or [TableAttributes] claim, each of one of the
 	// extension's Kinds. The frontend adds them to the index's or the
 	// table's facets.
 	Facets schemaext.Facets
@@ -595,6 +599,10 @@ func validateNaming(owner string, block Block) error {
 	case IndexAttributes:
 		if block.Type != "index" || block.Naming != "" {
 			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
+		}
+	case TableAttributes:
+		if block.Type != "table" || block.Naming != "" {
+			return fmt.Errorf("HCL %s block of %s must be a table with no naming", block.Site, owner)
 		}
 	case RoutineAttributes:
 		if (block.Type != "function" && block.Type != "procedure") || block.Naming != "" {

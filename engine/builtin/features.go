@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsrender"
@@ -202,6 +203,10 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
+	projected, err = pgtablerender.PrepareTableFacets(dialect, projected)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
 	if platform.IsPostgresFamily(dialect) {
 		return preparePostgresTableFacets(dialect, projected)
 	}
@@ -304,6 +309,13 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 		return schemaext.Facets{}, err
 	}
 	rest := projected.Without(tsschema.HypertableKind)
+	if platform.NormalizeDialect(dialect) == platform.Postgres {
+		_, remaining, err := pgtablerender.CreateTablePrefix(dialect, capability.Capabilities{}, "", rest)
+		if err != nil {
+			return schemaext.Facets{}, err
+		}
+		rest = remaining
+	}
 	if slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
 		if err := policyrender.ValidateTableFacets(projected); err != nil {
 			return schemaext.Facets{}, err

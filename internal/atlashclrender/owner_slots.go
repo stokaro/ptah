@@ -53,6 +53,8 @@ var slotPositions = map[hclext.SlotKind][]string{
 // A kind of block missing here has no such place, and refuses every
 // attribute its positions do not name.
 var slotOwnNames = map[hclext.SlotKind][]string{
+	hclext.SlotTable: {"schema", "qualifier", "depends_on", "api_name", "openapi_name", "graphql_name", "proto_name", "collate", "comment",
+		"checks", "custom", "platform", "row_security", "column", "primary_key", "index", "foreign_key", "check", "partition"},
 	hclext.SlotFunction:  {"schema", "params", "lang", "return", "return_set", "return_table", "security", "volatility", "set", "as", "comment", "arg"},
 	hclext.SlotProcedure: {"schema", "params", "lang", "security", "volatility", "set", "as", "comment", "arg"},
 	hclext.SlotIndex: {"unique", "type", "where", "comment", "ops", "nulls_distinct", "include", "page_per_range", "storage_params",

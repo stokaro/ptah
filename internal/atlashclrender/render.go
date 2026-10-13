@@ -795,6 +795,7 @@ func (r *renderer) renderTable(
 	r.slotAttr(1, slot, "auto_increment")
 	r.slotAttr(1, slot, "strict")
 	r.slotAttr(1, slot, "without_rowid")
+	r.slotOthers(1, slot, hclext.SlotTable)
 	if len(table.Checks) > 0 {
 		r.rawAttr(1, "checks", stringList(table.Checks))
 	}

@@ -630,10 +630,6 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 
-	unlogged, err := p.optionalTableBool(block, "unlogged", false)
-	if err != nil {
-		return err
-	}
 	apiName, err := p.stringAttr(block, "api_name", "table")
 	if err != nil {
 		return err
@@ -654,7 +650,6 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		APINames:   apiNames,
 		Engine:     p.optionalString(block.Body.Attributes["engine"]),
 		Collate:    p.optionalString(block.Body.Attributes["collate"]),
-		Unlogged:   unlogged,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Checks:     checks,
 		CustomSQL:  customSQL,
@@ -691,7 +686,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 	p.db.Tables = append(p.db.Tables, table)
-	return nil
+	return p.claimOwnerTable(block, len(p.db.Tables)-1)
 }
 
 func hclTableStructName(schema, name string) string {
@@ -1958,7 +1953,7 @@ func (p *parser) rejectUnsupportedEnumAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
+	allowed := map[string]bool{
 		"schema":         true,
 		"api_name":       true,
 		"openapi_name":   true,
@@ -1970,13 +1965,18 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 		"collate":        true,
 		"strict":         true,
 		"without_rowid":  true,
-		"unlogged":       true,
 		"depends_on":     true,
 		"qualifier":      true,
 		"comment":        true,
 		"checks":         true,
 		"custom":         true,
-	}, "table")
+	}
+	if shape, owned := p.owners.Lookup(hclext.TableAttributes, "table"); owned {
+		for _, attribute := range shape.Block.Attributes {
+			allowed[attribute.Name] = true
+		}
+	}
+	return p.rejectUnsupportedAttrs(block, allowed, "table")
 }
 
 func (p *parser) rejectUnsupportedPrimaryKeyAttrs(block *hclsyntax.Block) error {

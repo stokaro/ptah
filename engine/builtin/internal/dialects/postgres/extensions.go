@@ -20,6 +20,9 @@ import (
 // the common boundary, and a CREATE TABLE carrying a facet is refused rather
 // than rendered without it.
 type Owners struct {
+	// TablePrefix renders modifiers before TABLE and returns the facets the
+	// remaining owners consume. Nil contributes no prefix and retains all facets.
+	TablePrefix func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, schemaext.Facets, error)
 	// Extensions renders owned payloads. The zero value has no handler.
 	Extensions renderer.Extensions
 	// TableStorage returns the clause a CREATE TABLE's facets add after its
@@ -156,4 +159,12 @@ func (r *Renderer) renderOwnedTableStorage(node *ast.CreateTableNode, facets sch
 			Message: fmt.Sprintf("%s: table %q declares feature facet %q, which this target does not render", r.dialect, node.Name, kinds[0])}
 	}
 	return "", nil
+}
+
+// tablePrefix obtains modifiers without changing the caller's AST node.
+func (r *Renderer) tablePrefix(node *ast.CreateTableNode) (string, schemaext.Facets, error) {
+	if r.owners.TablePrefix == nil {
+		return "", node.Facets, nil
+	}
+	return r.owners.TablePrefix(r.dialect, r.capabilities(), node.Name, node.Facets)
 }

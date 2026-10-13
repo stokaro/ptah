@@ -1873,12 +1873,6 @@ type TableDiff struct {
 	// comment report `Schema is synced` forever (stokaro/ptah#2168).
 	CommentChange *CommentChange `json:"comment_change,omitzero"`
 
-	// UnloggedChange carries the table's change between logged and unlogged
-	// -- whether its writes skip the write-ahead log -- and is nil when the
-	// two sides agree. A comparison records one only on a target that creates
-	// an unlogged table and reads it back, which is PostgreSQL.
-	UnloggedChange *UnloggedChange `json:"unlogged_change,omitzero"`
-
 	// FeatureChanges carries owner-defined changes to individual table-owned subjects.
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
@@ -2009,15 +2003,6 @@ type CommentChange struct {
 	Current string `json:"current"`
 	// Desired is what the declaration asks for, empty to remove it.
 	Desired string `json:"desired"`
-}
-
-// UnloggedChange is one table's change between logged and unlogged; see
-// [TableDiff.UnloggedChange].
-type UnloggedChange struct {
-	// Current is whether the table the database holds is unlogged.
-	Current bool `json:"current"`
-	// Desired is whether the declaration asks for an unlogged table.
-	Desired bool `json:"desired"`
 }
 
 // CommentedObjectKind names the kind of object an [ObjectCommentChange] is

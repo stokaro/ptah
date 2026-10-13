@@ -235,6 +235,8 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 	switch site {
 	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption, sqlext.ColumnOption, sqlext.IndexOption:
 		return p.current.MatchOperatorValue(",")
+	case sqlext.TablePrefix:
+		return p.current.MatchIdentifierValue("TABLE")
 	case sqlext.ViewClause:
 		return p.current.MatchIdentifierValue("AS")
 	default:
@@ -251,6 +253,10 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 // version guard opens the next options too, since the reader reads the
 // guard's body as options; see [Parser.readGuardedKeyOptions].
 func (p *Parser) opensNextOption(site sqlext.Site) bool {
+	if site == sqlext.TablePrefix {
+		_, found := p.ownerCandidate(site)
+		return found
+	}
 	if site == sqlext.IndexOption && p.current.Type == lexer.TokenUnknown {
 		return true
 	}
@@ -574,4 +580,37 @@ func (p *Parser) placeDeclinedStatements(statements *ast.StatementList) error {
 	}
 	statements.Statements = placed
 	return nil
+}
+
+// parseOwnedTablePrefix claims modifiers before the common table grammar. The
+// owner receives the complete table identity after the frontend reads its name.
+func (p *Parser) parseOwnedTablePrefix() (*ast.CreateTableNode, bool, error) {
+	var table *ast.CreateTableNode
+	start := len(p.ownerClaims)
+	for p.claimOwnerSyntax(sqlext.TablePrefix, "", func(value sqlext.Value) error {
+		merged, err := table.Facets.Merge(value.Facets)
+		if err != nil {
+			return fmt.Errorf("table %s: %w", table.Name, err)
+		}
+		table.Facets = merged
+		return nil
+	}) {
+		p.skipWhitespace()
+	}
+	end := len(p.ownerClaims)
+	if start == end {
+		return nil, false, nil
+	}
+	if !p.current.MatchIdentifierValue("TABLE") {
+		return nil, true, fmt.Errorf("expected TABLE after a table prefix, found %s at position %d", p.current.Value, p.current.Start)
+	}
+	var err error
+	table, err = p.parseCreateTable()
+	if err != nil {
+		return nil, true, err
+	}
+	for i := start; i < end; i++ {
+		p.ownerClaims[i].match.Claim.Subject = table.Name
+	}
+	return table, true, nil
 }

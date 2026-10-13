@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/mysql/mysqlrender"
+	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
@@ -25,6 +26,9 @@ import (
 // render changes, and the renderer is built per statement, so building it per
 // renderer built the same handlers for every statement of a plan.
 var (
+	postgresRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
+		return renderer.NewExtensions(postgresFamilyHandlers(pgtablerender.Handlers()...)...)
+	})
 	postgresFamilyRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
 		return renderer.NewExtensions(postgresFamilyHandlers()...)
 	})
@@ -62,6 +66,8 @@ func lowerPostgresFamilyFacets(table string, facets schemaext.Facets) ([]ast.Ext
 // selected in [ownersFor], the one place at this composition boundary that
 // names them.
 type renderOwners struct {
+	// tablePrefix renders and consumes facets written before TABLE.
+	tablePrefix func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, schemaext.Facets, error)
 	// extensions builds the owners' handler registry; nil means none.
 	extensions func() (renderer.Extensions, error)
 	// tableStorage renders the clause owned facets add to a CREATE TABLE;
@@ -96,7 +102,9 @@ func ownersFor(dialect string) renderOwners {
 	case platform.Spanner:
 		return renderOwners{extensions: spannerRegistry, tableStorage: spannerrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}
-	case platform.Postgres, platform.YugabyteDB:
+	case platform.Postgres:
+		return renderOwners{extensions: postgresRegistry, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
+	case platform.YugabyteDB:
 		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.MySQL, platform.MariaDB:
 		return renderOwners{extensions: mysqlrender.Registry}
@@ -122,7 +130,7 @@ func postgresOwners(dialect string) (postgres.Owners, error) {
 		return postgres.Owners{}, err
 	}
 	owners := ownersFor(dialect)
-	return postgres.Owners{Extensions: registry, TableStorage: owners.tableStorage, LowerTableFacets: owners.lowerTableFacets}, nil
+	return postgres.Owners{Extensions: registry, TableStorage: owners.tableStorage, TablePrefix: owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets}, nil
 }
 
 func prepareExtensionStatement(dialect string, caps capability.Capabilities, node *ast.ExtensionStatement) (ast.Node, error) {

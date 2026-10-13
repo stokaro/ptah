@@ -657,3 +657,21 @@ func (p *parser) claimOwnerRoutine(block *hclsyntax.Block, position int) error {
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: routine.Name, Attributes: values, At: blockAt(block)}}})
 	return nil
 }
+
+// claimOwnerTable hands evaluated table attributes to their owner, retaining
+// the declaration position so equal names in different schemas stay separate.
+func (p *parser) claimOwnerTable(block *hclsyntax.Block, position int) error {
+	shape, owned := p.owners.Lookup(hclext.TableAttributes, "table")
+	if !owned {
+		return nil
+	}
+	table := p.db.Tables[position]
+	values, references, err := p.ownerValues(block, shape, table.Name)
+	if err != nil {
+		return err
+	}
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: table.Schema, Name: table.Name,
+			Attributes: values, At: blockAt(block), Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
+	return nil
+}

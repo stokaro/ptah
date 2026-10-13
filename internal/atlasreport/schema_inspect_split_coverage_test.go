@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/feature/pgextension"
@@ -197,6 +198,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(must.Must(sqlitetable.OptionsCoverage()))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(pgroutine.PropertiesCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(pgtable.PersistenceCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

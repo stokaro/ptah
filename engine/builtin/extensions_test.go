@@ -25,6 +25,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlast"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/spanner/spannerast"
 	"ptah.run/dialect/spanner/spannerdiff"
 	"ptah.run/dialect/spanner/spannerschema"
@@ -209,7 +210,7 @@ func mysqlReplaceIndexFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
+	return append(extensionFixtures(), extensionFixture{payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture())

@@ -100,6 +100,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/postgres/pglint`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/postgres/pgroutine`
+- `ptah.run/dialect/postgres/pgtable`
+- `ptah.run/dialect/postgres/pgtablerender`
 - `ptah.run/dialect/spanner/spannerast`
 - `ptah.run/dialect/spanner/spannercompare`
 - `ptah.run/dialect/spanner/spannerconvert`
@@ -501,6 +503,23 @@ provide versioned data contracts for conversion, comparison and reversal.
 read inspects. An unknown overload stays undecided. Function identity includes
 its input signature throughout source export and comparison. These properties
 are absent from common function structs; callers use the owner facet.
+
+`dialect/postgres/pgtable` owns table persistence. `DesiredPersistence` and
+`ObservedPersistence` attach to table facets; common table and AST structs carry
+no persistence flag. `PersistenceCodecs`, `PersistenceChangeCodec` and
+`PersistenceOperationCodec` define versioned data contracts. `PersistenceService`
+converts, compares, plans and reverses batches without database access. Planning
+requires captured parent state and refuses conflicting operands. A refused batch
+contains diagnostics and no executable prefix.
+
+Complete `PersistenceCoverage` makes a missing facet mean a logged table.
+Missing source coverage leaves persistence unmanaged; an unknown catalog value
+leaves the comparison undecided. `WithPersistence` adds a nondefault declaration;
+use `schemaext.NewFacets` with `DesiredPersistence{Unlogged: false}` to retain an
+explicit default. PostgreSQL plans `ALTER TABLE ... SET LOGGED` or `SET UNLOGGED`.
+Other targets report an omitted declaration, except YDB, which refuses it.
+`dialect/postgres/pgtablerender` renders the owner's prefix and typed operation.
+Its preparation and omission helpers preserve inputs and reject unknown targets.
 
 `dialect/mysql/mysqlroutine` is the MySQL owner's routine body reader for MySQL
 and MariaDB. `Reader` splits a compound body into the statements of its outer

@@ -320,6 +320,10 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 
 	p.skipWhitespace()
 
+	if table, claimed, err := p.parseOwnedTablePrefix(); claimed || err != nil {
+		return table, err
+	}
+
 	if p.current.Type != lexer.TokenIdentifier {
 		return nil, fmt.Errorf("expected CREATE target (%s), got %s at position %d",
 			createTargetList, p.current.Type, p.current.Start)
@@ -376,8 +380,6 @@ func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Nod
 		return p.parseCreateTemporary(target, statementStart)
 	case "UNIQUE":
 		return p.parseCreateUniqueIndexStatement()
-	case "UNLOGGED":
-		return p.parseCreateUnloggedTable()
 	default:
 		return p.parseCreateSchemaObject(target)
 	}
@@ -394,30 +396,8 @@ func (p *Parser) parseCreateUniqueIndexStatement() (ast.Node, error) {
 	return p.parseCreateUniqueIndex()
 }
 
-// parseCreateUnloggedTable reads the TABLE keyword the dispatch left, parses
-// the table, and marks it unlogged.
-//
-// The keyword is a property of the table rather than a different statement, so
-// this returns the same node an ordinary CREATE TABLE does with one field set.
-// A CREATE UNLOGGED of anything else is refused by name: PostgreSQL has no
-// other unlogged object, and accepting the word before, say, VIEW would parse a
-// statement no server takes.
-func (p *Parser) parseCreateUnloggedTable() (ast.Node, error) {
-	p.advance()
-	p.skipWhitespace()
-	if !p.current.MatchIdentifierValue("TABLE") {
-		return nil, fmt.Errorf("expected TABLE after UNLOGGED, found %s at position %d", p.current.Value, p.current.Start)
-	}
-	table, err := p.parseCreateTable()
-	if err != nil {
-		return nil, err
-	}
-	table.Unlogged = true
-	return table, nil
-}
-
 // createTargetList names the CREATE targets the grammar recognizes.
-const createTargetList = "TABLE, UNLOGGED TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
+const createTargetList = "TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
 	"TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION, SEQUENCE, ROLE"
 
 // parseCreateSchemaObject parses the CREATE targets for standalone PostgreSQL

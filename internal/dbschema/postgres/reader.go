@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
@@ -31,7 +32,6 @@ import (
 	"ptah.run/internal/sqlrunner"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
-	"ptah.run/internal/unloggedtable"
 )
 
 // Reader reads schema from PostgreSQL databases
@@ -187,6 +187,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
 	schema.Tables = tables
+	if err := r.persistenceCoverage(schema); err != nil {
+		return nil, err
+	}
 	if err := r.rowTTLCoverage(schema); err != nil {
 		return nil, err
 	}
@@ -322,7 +325,7 @@ func (r *Reader) readSchemaInfo(ctx context.Context, schemaName string) (catalog
 // table read rather than the one projection, so the constant is the safe answer
 // where the true one could only ever be false.
 func (r *Reader) unloggedExpr() string {
-	if !unloggedtable.Supported(r.dialect) {
+	if !pgtable.SupportsPersistence(r.dialect) {
 		return "false AS unlogged"
 	}
 	return "COALESCE(c.relpersistence = 'u', false) AS unlogged"
@@ -491,6 +494,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 	var tables []catalog.Table
 	for rows.Next() {
 		var table catalog.Table
+		var unlogged bool
 		var rowTTLOptions string
 		var rowDeletionPolicy string
 		err := rows.Scan(
@@ -503,7 +507,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 			&table.Partitioned,
 			&table.RLSEnabled,
 			&table.RLSForced,
-			&table.Unlogged,
+			&unlogged,
 			&rowTTLOptions,
 			&rowDeletionPolicy,
 		)
@@ -517,6 +521,12 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		}
 		if table.Facets, err = r.rowDeletionPolicyFacets(table.Facets, rowDeletionPolicy); err != nil {
 			return nil, fmt.Errorf("failed to read row deletion policy for table %s: %w", table.Name, err)
+		}
+
+		if pgtable.SupportsPersistence(r.dialect) {
+			if table.Facets, err = pgtable.WithObservedPersistence(table.Facets, pgtable.Persistence{Unlogged: unlogged}); err != nil {
+				return nil, err
+			}
 		}
 
 		tables = append(tables, table)

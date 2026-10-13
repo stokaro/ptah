@@ -1138,6 +1138,18 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-postgres-pgtable",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/postgres/pgtable",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-postgres-pgtablerender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/postgres/pgtablerender",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-spanner-spannerast",
       "kind": "public-package",
       "surface": "ptah.run/dialect/spanner/spannerast",

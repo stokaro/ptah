@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/internal/renderdiag"
 )
 
@@ -120,6 +121,7 @@ type omissionReporter interface {
 // does not declare is not promoted; without this the assertion below would
 // always fail and every render would report nothing.
 func (r *validatingRenderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.omissions = sink
 	if reporter, ok := r.inner.(omissionReporter); ok {
 		reporter.ReportOmissionsTo(sink)
 	}
@@ -148,4 +150,36 @@ func renderNodeReporting(
 	}
 	result, err := renderNodes(ctx, r, node)
 	return result.SQL(), err
+}
+
+// recordOwnedOmissions asks the selected owners what preparation removes.
+// Batch rendering calls it before replacing source nodes with prepared nodes;
+// direct visitor calls reach the same path. Prepared nodes cannot report a
+// consumed facet again.
+func (r *validatingRenderer) recordOwnedOmissions(node ast.Node) error {
+	if r.omissions == nil {
+		return nil
+	}
+	switch typed := node.(type) {
+	case *ast.StatementList:
+		for _, statement := range typed.Statements {
+			if err := r.recordOwnedOmissions(statement); err != nil {
+				return err
+			}
+		}
+	case *ast.CreateTableNode:
+		facets, err := projectFacets(r.dialect, typed.Facets)
+		if err != nil {
+			return err
+		}
+		omission, err := pgtablerender.PersistenceOmission(r.dialect, typed.Name, facets)
+		if err != nil {
+			return err
+		}
+		if omission != nil {
+			r.omissions.Record(renderdiag.Omission{Reason: renderdiag.Reason(omission.Reason), Kind: omission.Kind,
+				Name: omission.Name, Property: omission.Property, Detail: omission.Detail, Remedy: omission.Remedy})
+		}
+	}
+	return nil
 }
