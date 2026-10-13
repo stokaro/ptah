@@ -2370,10 +2370,28 @@ order. `engine.SchemaRuntime`, `migration/schemadiff.DatabaseRuntime` and
 `migration/generator.Runtime` include the method, so a live comparison
 normalizes declarations before it compares them.
 
+`engine.Provider.FacetNormalizations` registers the corresponding service for
+settings attached to common objects. A registration names its target, model
+kinds and common owner kinds, and requires both desired and observed codecs.
+`engine.Runtime.NormalizeFacets` sends each owner one batch of active settings,
+source coverage, parent presence and the probe session. Target exclusions and
+unregistered model kinds pass through without probes. A reply retains each
+subject, kind and target binding, plus the source coverage; errors and
+cancellation discard all batches. Returned records keep the input order.
+
+`schemaext.FacetNormalizationService` is part of the live comparison and
+migration runtime contracts. `CompareWithDatabase` binds facet subjects to the
+connection's identifier semantics before dispatch, then uses the returned
+settings for validation and comparison. An ordinary current table remains a
+present parent even when it has no facet. Pure comparison performs no probes.
+These request and result models keep owner payloads behind registered codecs;
+a transport adapter implements the same service and probe-session contract.
+
 A `schemaext.ProbeSession` runs one body inside a transaction it rolls back
 whatever the body does. It answers `ran == false` with a nil error when no
 isolated transaction is available; the body did not run, and an owner treats
-every probe as unanswered. A nil session is a request error the owner refuses.
+every probe as unanswered. Object normalizers refuse a nil session. A facet normalizer with a nil session
+performs no probes and leaves missing target facts unanswered.
 A `dbschema.DatabaseConnection` is a probe session.
 `schemadiff.Connection` is what a database-aware comparison takes: a probe
 session that also reports the server's `Info` and resolves identifier

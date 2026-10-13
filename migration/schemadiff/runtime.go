@@ -23,6 +23,7 @@ type DatabaseRuntime interface {
 	TargetRuntime
 	renderer.Service
 	schemaext.NormalizationService
+	schemaext.FacetNormalizationService
 }
 
 func selectedComparisonOptions(opts *config.CompareOptions, runtime schemaext.TargetResolver) (*config.CompareOptions, schemaext.TargetSelection, error) {
