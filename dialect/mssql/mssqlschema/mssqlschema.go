@@ -11,8 +11,8 @@
 // keeps its table, its function invocation, whether it filters reads or
 // blocks writes, and the exact operation a block predicate is evaluated for.
 //
-// The package also owns the principal a routine runs as when its header names
-// one, a facet of the routine; see [ExecuteAsKind].
+// The package also owns the options a routine's header writes, the principal
+// it runs as among them, a facet of the routine; see [RoutineOptionsKind].
 package mssqlschema
 
 import (

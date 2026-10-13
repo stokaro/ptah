@@ -49,19 +49,19 @@ func ExampleCodecs() {
 	// {"enabled":false,"predicates":[{"arguments":["tenant_id"],"function":{"name":"fn_tenant","schema":"rls"},"operation":"BEFORE UPDATE","table":{"name":"orders","schema":"app"},"type":"BLOCK"},{"arguments":["tenant_id"],"function":{"name":"fn_tenant","schema":"rls"},"table":{"name":"orders","schema":"app"},"type":"FILTER"},{"arguments":["tenant_id"],"function":{"name":"fn_tenant","schema":"rls"},"table":{"name":"invoices","schema":"billing"},"type":"FILTER"}]}
 }
 
-// ExampleWithExecuteAs attaches a named SQL Server principal to a routine's
+// ExampleWithRoutineOptions attaches a named SQL Server principal to a routine's
 // facets and reads it without changing the declaration.
-func ExampleWithExecuteAs() {
-	facets, err := mssqlschema.WithExecuteAs(schemaext.Facets{}, "auditor")
+func ExampleWithRoutineOptions() {
+	facets, err := mssqlschema.WithRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: "auditor"})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	principal, found, err := mssqlschema.ExecuteAsPrincipal(facets)
+	options, found, err := mssqlschema.RoutineOptionsOf(facets)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(principal, found)
+	fmt.Println(options.Principal, found)
 	// Output: auditor true
 }

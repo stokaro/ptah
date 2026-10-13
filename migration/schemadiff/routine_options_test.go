@@ -26,22 +26,22 @@ func principalRoutines(declared, held, body string) (*schemamodel.Database, *cat
 		Name: "dbo.f", Returns: "int", Language: "sql", Security: "DEFINER", Volatility: "VOLATILE", Body: body,
 	}}}
 	if declared != "" {
-		desired.Functions[0].Facets = must.Must(mssqlschema.WithExecuteAs(schemaext.Facets{}, declared))
+		desired.Functions[0].Facets = must.Must(mssqlschema.WithRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: declared}))
 	}
 	current := &catalog.Database{Functions: []catalog.Function{{
 		Schema: "dbo", Name: "f", Returns: "int", Language: "sql", Security: "DEFINER", Volatility: "VOLATILE", Body: "BEGIN RETURN 1; END",
 	}}}
 	if held != "" {
-		current.Functions[0].Facets = must.Must(mssqlschema.WithObservedExecuteAs(schemaext.Facets{}, held))
+		current.Functions[0].Facets = must.Must(mssqlschema.WithObservedRoutineOptions(schemaext.Facets{}, mssqlschema.RoutineOptions{Principal: held}))
 	}
-	current.FeatureCoverage = must.Must(mssqlschema.ExecuteAsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	current.FeatureCoverage = must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return desired, current
 }
 
 // describingPrincipals claims that desired's source states the clause, so a
 // routine it gives no principal runs as none.
 func describingPrincipals(desired *schemamodel.Database) *schemamodel.Database {
-	desired.FeatureCoverage = must.Must(mssqlschema.ExecuteAsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	desired.FeatureCoverage = must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return desired
 }
 
@@ -56,15 +56,15 @@ func TestCompareWithDialect_ASQLServerRoutinesPrincipalIsCompared(t *testing.T) 
 	for _, test := range []struct {
 		name           string
 		declared, held string
-		want           []*mssqldiff.ExecuteAs
+		want           []*mssqldiff.RoutineOptions
 	}{
 		{name: "one principal", declared: "auditor", held: "auditor"},
 		{name: "another user", declared: "reviewer", held: "auditor",
-			want: []*mssqldiff.ExecuteAs{{Before: &mssqlschema.ObservedExecuteAs{Principal: "auditor"}, After: &mssqlschema.DesiredExecuteAs{Principal: "reviewer"}}}},
+			want: []*mssqldiff.RoutineOptions{{Before: &mssqlschema.ObservedRoutineOptions{Principal: "auditor"}, After: &mssqlschema.DesiredRoutineOptions{Principal: "reviewer"}}}},
 		{name: "the owner instead of a user", declared: "", held: "auditor",
-			want: []*mssqldiff.ExecuteAs{{Before: &mssqlschema.ObservedExecuteAs{Principal: "auditor"}}}},
+			want: []*mssqldiff.RoutineOptions{{Before: &mssqlschema.ObservedRoutineOptions{Principal: "auditor"}}}},
 		{name: "a user instead of the owner", declared: "reviewer", held: "",
-			want: []*mssqldiff.ExecuteAs{{After: &mssqlschema.DesiredExecuteAs{Principal: "reviewer"}}}},
+			want: []*mssqldiff.RoutineOptions{{After: &mssqlschema.DesiredRoutineOptions{Principal: "reviewer"}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -73,12 +73,12 @@ func TestCompareWithDialect_ASQLServerRoutinesPrincipalIsCompared(t *testing.T) 
 			diff, err := schemadiff.CompareWithDialect(t.Context(), describingPrincipals(desired), current, "sqlserver", must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNil)
-			var got []*mssqldiff.ExecuteAs
+			var got []*mssqldiff.RoutineOptions
 			for _, routine := range diff.FunctionsModified {
 				c.Assert(routine.Changes, qt.HasLen, 0)
 				c.Assert(routine.Desired.Facets.Equal(desired.Functions[0].Facets), qt.IsTrue)
 				for _, change := range routine.FeatureChanges {
-					got = append(got, change.Value.(*mssqldiff.ExecuteAs))
+					got = append(got, change.Value.(*mssqldiff.RoutineOptions))
 				}
 			}
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -96,7 +96,7 @@ func TestCompareWithDialect_ARoutineIsNotReplacedWithoutThePrincipalItRunsAs(t *
 	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "sqlserver", must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*function dbo.f is replaced, and it holds "ptah.run/mssql/routine-execute-as", which the declaration's source has no way to state.*`)
+	c.Assert(err, qt.ErrorMatches, `.*function dbo.f is replaced, and it holds "ptah.run/mssql/routine-options", which the declaration's source has no way to state.*`)
 	c.Assert(diff, qt.IsNil)
 }
 
@@ -127,6 +127,6 @@ func TestCompareWithDialect_ARoutineWithNewParametersIsNotReplacedWithoutItsPrin
 	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "sqlserver", must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*function dbo.f is replaced, and it holds "ptah.run/mssql/routine-execute-as".*`)
+	c.Assert(err, qt.ErrorMatches, `.*function dbo.f is replaced, and it holds "ptah.run/mssql/routine-options".*`)
 	c.Assert(diff, qt.IsNil)
 }

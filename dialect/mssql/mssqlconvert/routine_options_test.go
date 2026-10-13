@@ -10,8 +10,9 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 )
 
-// A principal converts across representations unchanged, in both directions.
-func TestService_ConvertsExecuteAs(t *testing.T) {
+// Routine options convert across representations unchanged, in both
+// directions.
+func TestService_ConvertsRoutineOptions(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		from, to schemaext.Representation
@@ -19,9 +20,9 @@ func TestService_ConvertsExecuteAs(t *testing.T) {
 		want     schemaext.Value
 	}{
 		{name: "declared to observed", from: schemaext.Desired, to: schemaext.Observed,
-			value: &mssqlschema.DesiredExecuteAs{Principal: "auditor"}, want: &mssqlschema.ObservedExecuteAs{Principal: "auditor"}},
+			value: &mssqlschema.DesiredRoutineOptions{Principal: "auditor", SchemaBinding: true}, want: &mssqlschema.ObservedRoutineOptions{Principal: "auditor", SchemaBinding: true}},
 		{name: "observed to declared", from: schemaext.Observed, to: schemaext.Desired,
-			value: &mssqlschema.ObservedExecuteAs{Principal: "auditor"}, want: &mssqlschema.DesiredExecuteAs{Principal: "auditor"}},
+			value: &mssqlschema.ObservedRoutineOptions{Recompile: true}, want: &mssqlschema.DesiredRoutineOptions{Recompile: true}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

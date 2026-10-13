@@ -58,7 +58,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: mysqlschema.Owner, codecs: mysqlschema.IndexCodecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.IndexBlockSizeCodecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
-		{owner: mssqlschema.RoutineOwner, codecs: mssqlschema.ExecuteAsCodecs()},
+		{owner: mssqlschema.RoutineOwner, codecs: mssqlschema.RoutineOptionsCodecs()},
 		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
 		{owner: synonym.Owner, codecs: synonym.Codecs()},
 		{owner: pgpolicy.Owner, codecs: pgpolicy.Codecs()},

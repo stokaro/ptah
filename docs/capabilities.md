@@ -1300,8 +1300,8 @@ file, exactly as any other command reaching the same URL would.
 
   SQL Server declares `true`, for functions and procedures alike.
   `sys.parameters` reports the argument list and the return type as rows, so
-  only the body comes out of `sys.sql_modules.definition`, which holds the
-  whole `CREATE` statement. The body starts at the `AS` that opens it, not at
+  the body and explicit `INLINE` settings come out of
+  `sys.sql_modules.definition`, which holds the whole `CREATE` statement. The body starts at the `AS` that opens it, not at
   the `AS` of an `EXECUTE AS` clause or of a parameter written `@a AS INT`.
   A function may omit the body-opening `AS`.
   The principal a routine runs as is read from
@@ -1309,8 +1309,14 @@ file, exactly as any other command reaching the same URL would.
   CALLER`, -2 for `EXECUTE AS OWNER` and the user's id for `EXECUTE AS
   'name'` (measured on SQL Server 2025 RTM-CU9). The first two are the
   routine's security mode, `INVOKER` and `DEFINER`. A named user is a
-  `DEFINER` routine whose principal the SQL Server owner keeps as a routine
-  facet, so a comparison sees a change of user and a plan writes it.
+  `DEFINER` routine whose principal the SQL Server owner keeps in its routine
+  options facet, beside `SCHEMABINDING`, `RETURNS NULL ON NULL INPUT` and
+  `RECOMPILE`, which `is_schema_bound`, `null_on_null_input` and
+  `is_recompiled` report. A comparison sees a change of any of them, and a plan
+  writes it. A routine created `WITH ENCRYPTION`, `NATIVE_COMPILATION` or
+  an explicit `INLINE` setting is refused by name when the database is read.
+  The reader reports every routine `VOLATILE`: SQL Server's determinism verdict follows
+  from the body and `SCHEMABINDING`, and no clause states it.
 - **One answer shape for every safely skippable object kind (#929).**
   `sequences`, `role_management`, and `row_level_security` use the same named
   skip when a PostgreSQL-family preset disables them. That currently matters

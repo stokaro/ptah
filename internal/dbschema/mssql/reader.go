@@ -195,7 +195,7 @@ func (r *Reader) recordFunctions(ctx context.Context, schema *catalog.Database) 
 		return fmt.Errorf("sqlserver: read functions: %w", err)
 	}
 	schema.Functions = functions
-	executeAs, err := mssqlschema.ExecuteAsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	executeAs, err := mssqlschema.RoutineOptionsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
 	if err != nil {
 		return fmt.Errorf("sqlserver: record routine principals: %w", err)
 	}
