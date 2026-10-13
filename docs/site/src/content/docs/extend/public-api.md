@@ -57,7 +57,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlext` | The YAML schema contract: the owner claims a YAML parse selects. |
-| `core/hclext` | The HCL schema contract: the blocks an owner reads, matched as data, evaluated by the reader, and read in one call per document. |
+| `core/hclext` | HCL block shapes, dialect selection, evaluated claims, and encoded blocks exchanged with feature owners. |
 | `core/selectext` | The scope selection contract: the selector types and fields an owner registers as data, and its one batched call per filtered side. |
 | `core/sqlext` | The SQL schema contract: the syntax an owner adds to the shared grammar, matched as data and read in one call per document, or a target's whole grammar, read in one call per load. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
@@ -534,6 +534,12 @@ and refuses a second YAML document in the same stream, so a misspelled
 attribute cannot pass as an intentional setting. Use `core/schemasource` when
 the YAML is written by an external program rather than held in a file.
 
+For HCL extensions, `Block.Dialects` lets owners share a top-level block name
+across distinct dialects. `Set.ForDialect` selects the default reader; a
+block's `dialect` attribute takes precedence. Exported scoped blocks include
+their dialect so reading them with another default preserves their model.
+`schemasource.Formats.ReadHCL` takes the caller dialect as its third argument.
+
 An extension is the extension owner's object, `pgextension.DesiredExtension`,
 and `schemamodel.Database` has no extension list of its own. Its `Schema` is
 the PostgreSQL installation namespace, which the owner renders as `CREATE
@@ -570,6 +576,7 @@ The separate [`testkit`](https://github.com/stokaro/ptah-testkit) module
 databases. It keeps `testcontainers-go` out of Ptah's main module graph, lives
 in its own repository, and versions independently. It depends on Ptah one way
 and consumes a published release, so nothing here builds against it.
+
 
 ## Migration statement observation
 

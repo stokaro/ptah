@@ -242,7 +242,7 @@ func (p *parser) schemaReference(block *hclsyntax.Block, attr *hclsyntax.Attribu
 // ownerAttributeNames are the attributes a block of shape may write: the
 // shape's, and `schema` where its naming reads one.
 func ownerAttributeNames(shape hclext.Shape, withSchema bool) map[string]bool {
-	supported := map[string]bool{"schema": withSchema}
+	supported := map[string]bool{"schema": withSchema, "dialect": len(shape.Block.Dialects) > 0}
 	for _, attribute := range shape.Block.Attributes {
 		supported[attribute.Name] = true
 	}
@@ -631,4 +631,42 @@ func qualifiedName(claim hclext.Claim) string {
 		return claim.Name
 	}
 	return claim.Schema + "." + claim.Name
+}
+
+// parseOwnerTopBlock selects a scoped model before reading its attributes.
+// A known block with an unavailable dialect is refused even when unknown
+// names are tolerated; dropping it would discard an explicit declaration.
+func (p *parser) parseOwnerTopBlock(block *hclsyntax.Block) error {
+	if !p.owners.Scoped(hclext.TopLevel, block.Type) {
+		if shape, found := p.owners.Lookup(hclext.TopLevel, block.Type); found {
+			return p.claimOwnerBlock(block, shape)
+		}
+		return p.rejectUnsupportedBlock(block, TopLevelScope)
+	}
+	dialect, err := p.ownerDialect(block)
+	if err != nil {
+		return err
+	}
+	shape, found := p.owners.ForDialect(dialect).Lookup(hclext.TopLevel, block.Type)
+	if !found {
+		return p.blockError(block, "%s has no owner for dialect %q", block.Type, dialect)
+	}
+	return p.claimOwnerBlock(block, shape)
+}
+
+// ownerDialect evaluates the block's selector once, keeping the caller's
+// default only when the block leaves it out.
+func (p *parser) ownerDialect(block *hclsyntax.Block) (string, error) {
+	attribute, written := block.Body.Attributes["dialect"]
+	if !written {
+		return p.dialect, nil
+	}
+	dialect, err := p.stringAttr(block, "dialect", block.Type)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(dialect) == "" {
+		return "", p.attributeError(attribute, "%s dialect must not be empty", block.Type)
+	}
+	return dialect, nil
 }

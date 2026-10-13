@@ -148,6 +148,11 @@ const (
 
 // EncodedBlock is one top-level block an owner writes.
 type EncodedBlock struct {
+	// Dialect selects the block's reader independently of the caller's
+	// target. Set.Encode fills it for scoped shapes, using their first
+	// dialect when the encoder leaves it empty. The writer emits it as a
+	// dialect attribute. It is not the object's target scope.
+	Dialect string
 	// Type is the block's type, such as "synonym".
 	Type string
 	// Placement is where the block stands.
@@ -268,7 +273,7 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, error) {
 	var encoded EncodeResult
 	writers := make(map[slotAttribute]string)
-	for _, extension := range s.extensions {
+	for index, extension := range s.extensions {
 		if extension.Encoder == nil {
 			continue
 		}
@@ -278,6 +283,10 @@ func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, 
 			return EncodeResult{}, err
 		}
 		if err := ctx.Err(); err != nil {
+			return EncodeResult{}, err
+		}
+		result.Blocks = slices.Clone(result.Blocks)
+		if err := s.bindEncodedDialects(index, result.Blocks); err != nil {
 			return EncodeResult{}, err
 		}
 		if err := checkEncodeResult(extension, request, result); err != nil {
@@ -449,7 +458,7 @@ func checkEncodedBlock(extension Extension, block EncodedBlock) error {
 		return fmt.Errorf("%w: HCL encoder of %s wrote an object of kind %q, which its extension does not declare",
 			schemaext.ErrInvalidValue, extension.Owner, block.Object.Kind)
 	}
-	names := make(map[string]bool, len(block.Attributes))
+	names := map[string]bool{"dialect": block.Dialect != ""}
 	for _, attribute := range block.Attributes {
 		if strings.TrimSpace(attribute.Name) == "" || names[attribute.Name] || attribute.Name == "schema" {
 			return fmt.Errorf("%w: HCL encoder of %s wrote block %q with attribute %q unnamed, twice or as its naming's own",

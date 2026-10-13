@@ -3175,6 +3175,20 @@ and the block takes no `schema`. A shape at the `IndexAttributes` site adds
 attributes to the reader's own `index` block. A shape at the `InTable` site is
 a block inside a `table`, with no labels.
 
+Top-level shapes may share a block type when their `Dialects` do not overlap.
+`Unscoped` selects one reader when neither the caller nor the block names a
+dialect. `Set.ForDialect` returns a view with a default dialect and leaves the
+original set unchanged. Built-in aliases are normalized; custom dialect names
+remain distinct. An explicit block `dialect` attribute overrides the default,
+and `Claim.Dialect` carries the selected dialect. A missing reader is refused,
+even when unknown names are tolerated. The selector identifies the model; it
+does not narrow an object's target scope.
+
+`EncodedBlock.Dialect` selects the reader of an exported scoped block.
+`Set.Encode` fills an omitted selector from the shape's first dialect and
+refuses a selector that routes to another owner. The writer emits the selector
+so the block keeps its model under another caller's default dialect.
+
 - The reader checks a block against its shape with the refusals it gives its
   own blocks, including the tolerance for unknown names.
 - The reader evaluates every attribute in its own context. An owner receives
@@ -3228,8 +3242,8 @@ a block inside a `table`, with no labels.
   block, such as two blocks that declare one object, refuses the document as a
   whole. The reader reports it after its own checks of the whole document, and
   only when no owner refused a single block.
-- `Extension.Coverage` is the claim every HCL document makes, since a document
-  names no target. Its `CoverageRequest` holds the header entries of the kinds
+- `Extension.Coverage` is the claim every HCL document makes. A document can
+  mix block dialects. Its `CoverageRequest` holds the header entries of the kinds
   the extension lists in `Header`, and, when `CapturedCoverage` is set, the
   bodies of the document's `ptah:feature-coverage` header. A document with
   that header is refused when no selected owner reads it. `Declared` holds
@@ -4068,6 +4082,11 @@ a `schemasource.Formats`, the readers of each output format, because the SQL
 and HCL readers decode owner syntax and the package links no owner:
 `sourceformats.New` returns the bundled readers, with YAML, SQL and HCL read by
 the owners it is given.
+
+`Formats.ReadHCL` receives the document bytes, filename, and caller dialect.
+`schemasource.Command.Dialect` selects SQL grammar and the default reader of
+scoped HCL blocks. `atlascompat.ParseHCLOptions.Dialect` provides the same HCL
+selection to embedders.
 
 `sourceformats.Relations`, the last argument of `sourceformats.New`, says which
 table a SQL document's standalone objects are attached to, so a DROP TABLE

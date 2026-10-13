@@ -124,6 +124,9 @@ func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 	}
 	r.linef(`%s %s {`, block.Type, quote(block.Name))
 	r.writeOwnerSchema(block, schema)
+	if block.Dialect != "" {
+		r.stringAttr(1, "dialect", block.Dialect)
+	}
 	for _, attribute := range block.Attributes {
 		r.rawAttr(1, attribute.Name, r.ownerValue(attribute.Value))
 	}

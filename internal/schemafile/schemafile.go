@@ -512,6 +512,7 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
+			Dialect:            opts.Dialect,
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
 			RecordIgnored:      ignoredNameReporter(opts.ReportIgnored),
 			RecordSchemaBlock:  opts.recordSchemaBlock(),

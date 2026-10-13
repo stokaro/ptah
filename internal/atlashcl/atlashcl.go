@@ -2,6 +2,7 @@
 package atlashcl
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -29,6 +30,10 @@ import (
 
 // Options configures HCL schema parsing.
 type Options struct {
+	// Dialect selects the default model for scoped owner blocks. An explicit
+	// block dialect takes precedence. Empty uses the owner set's default.
+	Dialect string
+
 	// IgnoreUnknownNames accepts and drops HCL names this parser does not
 	// model instead of refusing the whole file.
 	//
@@ -162,7 +167,8 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		refContext:      columnRefContext(body),
 		declaredSchemas: schemaBlockNames(schemaBlocks),
 		vocabulary:      opts.CoverageVocabulary,
-		owners:          opts.HCL,
+		owners:          opts.HCL.ForDialect(cmp.Or(opts.Dialect, opts.HCL.Dialect())),
+		dialect:         cmp.Or(opts.Dialect, opts.HCL.Dialect()),
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -396,6 +402,7 @@ type parser struct {
 	// owners are the owners whose blocks the document may carry, and
 	// ownerClaims the blocks of theirs the walk claimed; see
 	// [parser.claimOwnerBlock].
+	dialect     string
 	owners      hclext.Set
 	ownerClaims []ownerClaim
 	// documentErr is an owner's refusal of the document as a whole, held
@@ -514,10 +521,7 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// Reaching them again here would parse a type constraint as a value.
 		return nil
 	default:
-		if shape, owned := p.owners.Lookup(hclext.TopLevel, block.Type); owned {
-			return p.claimOwnerBlock(block, shape)
-		}
-		return p.rejectUnsupportedBlock(block, TopLevelScope)
+		return p.parseOwnerTopBlock(block)
 	}
 }
 
@@ -2534,18 +2538,9 @@ var ownTypeBlocks = []hclext.Block{
 // name a type: its shape, this package's own or an owner's, says so with
 // DeclaresType. The shapes are the one list of such blocks.
 func (p *parser) declaresType(block string) bool {
-	shape, found := p.typeShape(block)
-	return found && shape.DeclaresType
-}
-
-// typeShape returns the shape of a top-level block of type block that may
-// declare a type: one of [ownTypeBlocks], or else an owner's.
-func (p *parser) typeShape(block string) (hclext.Block, bool) {
-	if index := slices.IndexFunc(ownTypeBlocks, func(shape hclext.Block) bool { return shape.Type == block }); index >= 0 {
-		return ownTypeBlocks[index], true
-	}
-	shape, owned := p.owners.Lookup(hclext.TopLevel, block)
-	return shape.Block, owned
+	return slices.ContainsFunc(ownTypeBlocks, func(shape hclext.Block) bool {
+		return shape.Type == block && shape.DeclaresType
+	}) || p.owners.DeclaresType(block)
 }
 
 // typeReferenceName resolves the raw text of a type position that names a

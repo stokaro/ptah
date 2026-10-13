@@ -68,6 +68,6 @@ func (r readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, er
 }
 
 // ReadHCL reads an Atlas HCL document, naming it filename in a refusal.
-func (r readers) ReadHCL(data []byte, filename string) (*schemamodel.Database, error) {
-	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary, HCL: r.hcl})
+func (r readers) ReadHCL(data []byte, filename, dialect string) (*schemamodel.Database, error) {
+	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary, HCL: r.hcl, Dialect: dialect})
 }
