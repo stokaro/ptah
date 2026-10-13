@@ -53,7 +53,7 @@ type EncodeRequest struct {
 
 // Slot names one declaration of the frontend's own directives the writer
 // writes: a table, its primary key, a field, an index or a constraint of it,
-// or a materialized view. It is comparable, and two declarations of one
+// a materialized view, or a routine. It is comparable, and two declarations of one
 // source do not share one.
 type Slot struct {
 	// Directive is the directive, such as "ptah:schema:index".
@@ -62,8 +62,11 @@ type Slot struct {
 	// materialized view.
 	Table Table
 	// Name is the name of a field, an index, a constraint or a materialized
-	// view, and empty for a table and its primary key.
+	// view or routine, and empty for a table and its primary key.
 	Name string
+	// Parameters distinguishes overloaded routine declarations with the same name.
+	// It is empty for other directives.
+	Parameters string
 	// PrimaryKey marks a primary key. On the table directive it is the key
 	// the table declares, whose settings [DirectiveAttributes.PrimaryKey]
 	// attributes spell. On the constraint directive it is a PRIMARY KEY

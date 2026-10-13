@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
@@ -227,8 +228,10 @@ CREATE FUNCTION "%[1]s".add_arrays(a integer[], b integer[]) RETURNS integer[]
 `})
 
 			c.Assert(live.Functions, qt.HasLen, 1)
-			c.Assert(live.Functions[0].Strict, qt.IsTrue)
-			c.Assert(live.Functions[0].Parallel, qt.Equals, "SAFE")
+			properties, _, err := pgroutine.PropertiesOf(live.Functions[0].Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(properties.Strict, qt.IsTrue)
+			c.Assert(properties.Parallel, qt.Equals, "SAFE")
 		})
 	}
 }

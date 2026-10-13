@@ -2073,24 +2073,6 @@ type CreateFunctionNode struct {
 	// server resolves it at definition time, so no declared form can equal what
 	// the catalog reports back, and normalizing it would claim otherwise.
 	Settings []string
-	// Leakproof renders LEAKPROOF, which lets the planner push a filter using
-	// this function past a security barrier such as a row-level-security
-	// predicate. It is a security property rather than a hint, which is why
-	// PostgreSQL reserves the attribute for a superuser.
-	//
-	// A procedure takes neither this nor Parallel: measured on PostgreSQL 17,
-	// `CREATE PROCEDURE ... LEAKPROOF` answers `ERROR: invalid attribute in
-	// procedure definition`, the refusal Volatility carries for the same
-	// reason.
-	Leakproof bool
-	// Parallel renders the PARALLEL level -- SAFE, RESTRICTED or UNSAFE.
-	// Empty renders no clause, which the server reads as UNSAFE.
-	Parallel string
-	// Strict renders STRICT: the function returns NULL without running when
-	// any argument is NULL. RETURNS NULL ON NULL INPUT is the same property,
-	// and false is CALLED ON NULL INPUT, the server's default. A procedure
-	// takes none of the three.
-	Strict bool
 	// Replace says the routine exists already and this statement replaces its
 	// definition. The PostgreSQL renderer writes CREATE OR REPLACE for it and a
 	// plain CREATE otherwise, so a plan says which of the two it does: a

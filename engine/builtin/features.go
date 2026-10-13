@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlrender"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsrender"
@@ -352,6 +353,15 @@ func prepareRoutineFacets(dialect string, facets schemaext.Facets) (schemaext.Fa
 	projected, err := projectFacets(dialect, facets)
 	if err != nil {
 		return schemaext.Facets{}, err
+	}
+	if platform.IsPostgresFamily(dialect) && platform.NormalizeDialect(dialect) != platform.Spanner {
+		if _, _, err := pgroutine.PropertiesOf(projected); err != nil {
+			return schemaext.Facets{}, err
+		}
+		if _, err := refuseActiveFacets(dialect, projected.Without(pgroutine.PropertiesKind)); err != nil {
+			return schemaext.Facets{}, err
+		}
+		return projected, nil
 	}
 	if platform.NormalizeDialect(dialect) != platform.SQLServer {
 		return refuseActiveFacets(dialect, projected)

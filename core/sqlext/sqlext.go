@@ -81,11 +81,10 @@ const (
 	// PRIMARY KEY constraint. A UNIQUE element with such an option is read as
 	// a unique index, as a key's options belong to its index.
 	IndexOption Site = "index-option"
-	// RoutineOption is one option of the WITH list of a CREATE FUNCTION or
-	// CREATE PROCEDURE statement, between the routine's signature and the AS
-	// that opens its body, such as T-SQL's EXECUTE AS or SCHEMABINDING. The
-	// frontend splits the list itself, so a span is one whole option. Its
-	// [Value] carries the owner's facets of the routine.
+	// RoutineOption is an owned clause of a CREATE FUNCTION or CREATE
+	// PROCEDURE header. A comma-separated WITH list supplies whole options.
+	// Adjacent function clauses end at the next shared clause or owner pattern.
+	// Its Value carries facets of the routine.
 	RoutineOption Site = "routine-option"
 	// Statement is a whole top-level statement. A span ends at the semicolon
 	// that ends the statement or at the end of the document. Its [Value] is

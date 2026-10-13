@@ -297,6 +297,10 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 	for _, i := range views {
 		add(annotationext.Slot{Directive: matviewDirective, Name: db.MaterializedViews[i].Name}, &db.MaterializedViews[i].Facets)
 	}
+	for i := range db.Functions {
+		function := &db.Functions[i]
+		add(routineAnnotationSlot(*function), &function.Facets)
+	}
 	collected.fields = ownerFieldDeclarations(db, declared)
 	collected.tables = declared
 	return collected
@@ -366,4 +370,12 @@ func (ctx *renderContext) undeclaredStructs(declared map[string]annotationext.Ta
 	}
 	slices.Sort(names)
 	return names
+}
+
+func routineAnnotationSlot(function schemamodel.Function) annotationext.Slot {
+	directive := "ptah:schema:function"
+	if function.IsProcedure() {
+		directive = "ptah:schema:procedure"
+	}
+	return annotationext.Slot{Directive: directive, Name: function.Name, Parameters: function.Parameters}
 }

@@ -1051,33 +1051,6 @@ type Function struct {
 	// routines that could never carry it (stokaro/ptah#2356).
 	Settings []string `json:",omitempty"`
 
-	// Leakproof declares LEAKPROOF, which lets the planner push a filter
-	// using this function past a security barrier such as a row-level-security
-	// predicate. It is therefore a security property rather than a hint: a
-	// function marked leakproof by mistake can reveal rows a policy withholds,
-	// which is why PostgreSQL reserves the attribute for a superuser.
-	//
-	// A procedure takes neither this nor [Function.Parallel]: measured on
-	// PostgreSQL 17, `CREATE PROCEDURE ... LEAKPROOF` answers `ERROR: invalid
-	// attribute in procedure definition`, the same refusal
-	// [Function.Volatility] carries.
-	Leakproof bool `json:",omitempty"`
-
-	// Parallel is the routine's PARALLEL level -- SAFE, RESTRICTED or UNSAFE.
-	//
-	// Empty means the routine states none, which the server reads as UNSAFE.
-	// The two are the same routine, so a comparison folds them together rather
-	// than planning a change between a declaration that omitted the clause and
-	// a catalog reporting the default.
-	Parallel string `json:",omitempty"`
-
-	// Strict declares STRICT, which PostgreSQL also spells RETURNS NULL ON NULL
-	// INPUT: the routine returns NULL without running when any argument is
-	// NULL. False is CALLED ON NULL INPUT, the server's default, so a
-	// declaration that states neither is the same routine as one that states
-	// the default. A procedure takes none of them, as it takes no LEAKPROOF.
-	Strict bool `json:",omitempty"`
-
 	Body    string // Function body/implementation
 	Comment string // Optional comment for documentation
 

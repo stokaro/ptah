@@ -753,3 +753,13 @@ v0.13.0 ptah.run/sourceformats
 # the set are the same. The JSON encoding is unchanged. Pre-v1, so no
 # compatibility is owed.
 v0.13.0 ptah.run/core/platform/capability
+
+# #4140 step 8.3c assigns function Leakproof, Strict and Parallel to
+# dialect/postgres/pgroutine. Common function structs carry these properties
+# through their Facets field. The owner supplies desired and observed models,
+# codecs, comparison and reversal; no compatibility fields remain. This changes
+# the Go API under the authorized #4140/#4204 clean-break policy. Pre-v1, so
+# compatibility with older Ptah is not owed.
+v0.13.0 ptah.run/core/schemamodel
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/core/ast

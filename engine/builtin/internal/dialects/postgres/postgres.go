@@ -2397,7 +2397,14 @@ func renderRoutineSetting(setting string) string {
 // that never asked about parallelism. LANGUAGE is the exception: the server
 // refuses a routine without one ("no language specified"), so a routine that
 // declares none is written in plpgsql, the language PostgreSQL routines are in.
-func routineAttributes(node *ast.CreateFunctionNode) []string {
+func routineAttributes(node *ast.CreateFunctionNode) ([]string, error) {
+	properties, found, err := pgroutine.PropertiesOf(node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	if found && node.IsProcedure() {
+		return nil, fmt.Errorf("procedure %s cannot declare LEAKPROOF, STRICT or PARALLEL", node.Name)
+	}
 	language := node.Language
 	if language == "" {
 		language = pgroutine.Language
@@ -2407,21 +2414,13 @@ func routineAttributes(node *ast.CreateFunctionNode) []string {
 		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
 	}
 	if node.IsProcedure() {
-		return append(attributes, routineSettingClauses(node)...)
+		return append(attributes, routineSettingClauses(node)...), nil
 	}
 	if node.Volatility != "" {
 		attributes = append(attributes, node.Volatility)
 	}
-	if node.Leakproof {
-		attributes = append(attributes, "LEAKPROOF")
-	}
-	if node.Strict {
-		attributes = append(attributes, "STRICT")
-	}
-	if node.Parallel != "" {
-		attributes = append(attributes, "PARALLEL "+node.Parallel)
-	}
-	return append(attributes, routineSettingClauses(node)...)
+	attributes = append(attributes, properties.Clauses()...)
+	return append(attributes, routineSettingClauses(node)...), nil
 }
 
 // routineSettingClauses renders the routine's own configuration settings.
@@ -2475,7 +2474,10 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 		parts = append(parts, "RETURNS", node.Returns)
 	}
 
-	attributes := routineAttributes(node)
+	attributes, err := routineAttributes(node)
+	if err != nil {
+		return err
+	}
 
 	if node.BodyKind == ast.FunctionBodyReturn || node.BodyKind == ast.FunctionBodyAtomic {
 		parts = append(parts, attributes...)
