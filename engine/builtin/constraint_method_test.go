@@ -81,19 +81,19 @@ func TestRender_ConstraintMethod_FailurePath(t *testing.T) {
 // constraint whose `using` is blank, which asks for no method.
 func TestRender_ConstraintMethod_HappyPath(t *testing.T) {
 	tests := []struct {
-		name       string
-		constraint schemamodel.Constraint
-		want       string
+		name     string
+		database *schemamodel.Database
+		want     string
 	}{
 		{
-			name:       "EXCLUDE keeps its method",
-			constraint: schemamodel.Constraint{Type: "EXCLUDE", UsingMethod: "gist", ExcludeElements: "a WITH ="},
-			want:       `EXCLUDE USING gist (a WITH =)`,
+			name:     "EXCLUDE keeps its method",
+			database: ownedExclusionSchema(),
+			want:     `EXCLUDE USING btree (room WITH =)`,
 		},
 		{
-			name:       "UNIQUE with a blank using",
-			constraint: schemamodel.Constraint{Type: "UNIQUE", Columns: []string{"a"}, UsingMethod: "  "},
-			want:       `CONSTRAINT "c_x" UNIQUE ("a")`,
+			name:     "UNIQUE with a blank using",
+			database: constraintMethodSchema(schemamodel.Constraint{Type: "UNIQUE", Columns: []string{"a"}, UsingMethod: "  "}),
+			want:     `CONSTRAINT "c_x" UNIQUE ("a")`,
 		},
 	}
 	for _, test := range tests {
@@ -101,7 +101,7 @@ func TestRender_ConstraintMethod_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
-				constraintMethodSchema(test.constraint), platform.Postgres, capability.Postgres18(),
+				test.database, platform.Postgres, capability.Postgres18(),
 			)
 
 			c.Assert(err, qt.IsNil)

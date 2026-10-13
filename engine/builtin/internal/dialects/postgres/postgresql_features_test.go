@@ -545,11 +545,9 @@ func TestPostgreSQLRenderer_ExcludeConstraints(t *testing.T) {
 	}{
 		{
 			name: "basic EXCLUDE constraint with GIST",
-			table: ast.NewCreateTable("user_sessions").
-				AddColumn(ast.NewColumn("user_id", "BIGINT").SetNotNull()).
-				AddColumn(ast.NewColumn("is_active", "BOOLEAN").SetNotNull()).
-				AddConstraint(ast.NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
-					SetWhereCondition("is_active = true")),
+			table: exclusionSourceTable("user_sessions", []*ast.ColumnNode{
+				ast.NewColumn("user_id", "BIGINT").SetNotNull(), ast.NewColumn("is_active", "BOOLEAN").SetNotNull(),
+			}, "one_active_session_per_user", pgtable.Exclusion{UsingMethod: "gist", Elements: "user_id WITH =", WhereCondition: "is_active = true"}),
 			expected: `-- POSTGRES TABLE: user_sessions --
 CREATE TABLE user_sessions (
   user_id BIGINT NOT NULL,
@@ -561,10 +559,9 @@ CREATE TABLE user_sessions (
 		},
 		{
 			name: "EXCLUDE constraint without WHERE clause",
-			table: ast.NewCreateTable("bookings").
-				AddColumn(ast.NewColumn("room_id", "INTEGER").SetNotNull()).
-				AddColumn(ast.NewColumn("during", "TSRANGE").SetNotNull()).
-				AddConstraint(ast.NewExcludeConstraint("no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&")),
+			table: exclusionSourceTable("bookings", []*ast.ColumnNode{
+				ast.NewColumn("room_id", "INTEGER").SetNotNull(), ast.NewColumn("during", "TSRANGE").SetNotNull(),
+			}, "no_overlapping_bookings", pgtable.Exclusion{UsingMethod: "gist", Elements: "room_id WITH =, during WITH &&"}),
 			expected: `-- POSTGRES TABLE: bookings --
 CREATE TABLE bookings (
   room_id INTEGER NOT NULL,
@@ -576,9 +573,8 @@ CREATE TABLE bookings (
 		},
 		{
 			name: "EXCLUDE constraint with BTREE method",
-			table: ast.NewCreateTable("unique_values").
-				AddColumn(ast.NewColumn("value", "INTEGER").SetNotNull()).
-				AddConstraint(ast.NewExcludeConstraint("unique_values_constraint", "btree", "value WITH =")),
+			table: exclusionSourceTable("unique_values", []*ast.ColumnNode{ast.NewColumn("value", "INTEGER").SetNotNull()},
+				"unique_values_constraint", pgtable.Exclusion{UsingMethod: "btree", Elements: "value WITH ="}),
 			expected: `-- POSTGRES TABLE: unique_values --
 CREATE TABLE unique_values (
   value INTEGER NOT NULL,
@@ -589,13 +585,8 @@ CREATE TABLE unique_values (
 		},
 		{
 			name: "EXCLUDE constraint without name",
-			table: ast.NewCreateTable("spatial_data").
-				AddColumn(ast.NewColumn("location", "GEOMETRY").SetNotNull()).
-				AddConstraint(&ast.ConstraintNode{
-					Type:            ast.ExcludeConstraint,
-					UsingMethod:     "gist",
-					ExcludeElements: "location WITH &&",
-				}),
+			table: exclusionSourceTable("spatial_data", []*ast.ColumnNode{ast.NewColumn("location", "GEOMETRY").SetNotNull()},
+				"", pgtable.Exclusion{UsingMethod: "gist", Elements: "location WITH &&"}),
 			expected: `-- POSTGRES TABLE: spatial_data --
 CREATE TABLE spatial_data (
   location GEOMETRY NOT NULL,
@@ -610,7 +601,7 @@ CREATE TABLE spatial_data (
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.New()
+			renderer := postgres.New().WithOwners(postgres.Owners{TableConstraints: pgtablerender.SourceExclusions})
 			result, err := renderer.Render(tt.table)
 
 			c.Assert(err, qt.IsNil)
@@ -716,13 +707,11 @@ func TestPostgreSQLRenderer_RejectsIdentityGeneratedColumnMix(t *testing.T) {
 func TestPostgreSQLRenderer_ExcludeConstraint_InCreateTable(t *testing.T) {
 	c := qt.New(t)
 
-	table := ast.NewCreateTable("user_sessions").
-		AddColumn(ast.NewColumn("user_id", "BIGINT").SetNotNull()).
-		AddColumn(ast.NewColumn("is_active", "BOOLEAN").SetNotNull().SetDefault("false")).
-		AddConstraint(ast.NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
-			SetWhereCondition("is_active = true"))
+	table := exclusionSourceTable("user_sessions", []*ast.ColumnNode{
+		ast.NewColumn("user_id", "BIGINT").SetNotNull(), ast.NewColumn("is_active", "BOOLEAN").SetNotNull().SetDefault("false"),
+	}, "one_active_session_per_user", pgtable.Exclusion{UsingMethod: "gist", Elements: "user_id WITH =", WhereCondition: "is_active = true"})
 
-	renderer := postgres.New()
+	renderer := postgres.New().WithOwners(postgres.Owners{TableConstraints: pgtablerender.SourceExclusions})
 	result, err := renderer.Render(table)
 
 	c.Assert(err, qt.IsNil)
@@ -773,23 +762,13 @@ func TestPostgreSQLRenderer_ExcludeConstraint_Errors(t *testing.T) {
 	}{
 		{
 			name: "missing using method",
-			table: ast.NewCreateTable("test_table").
-				AddColumn(ast.NewColumn("id", "INTEGER")).
-				AddConstraint(&ast.ConstraintNode{
-					Type:            ast.ExcludeConstraint,
-					Name:            "test_exclude",
-					ExcludeElements: "user_id WITH =",
-				}),
+			table: exclusionSourceTable("test_table", []*ast.ColumnNode{ast.NewColumn("id", "INTEGER")},
+				"test_exclude", pgtable.Exclusion{Elements: "user_id WITH ="}),
 		},
 		{
 			name: "missing exclude elements",
-			table: ast.NewCreateTable("test_table").
-				AddColumn(ast.NewColumn("id", "INTEGER")).
-				AddConstraint(&ast.ConstraintNode{
-					Type:        ast.ExcludeConstraint,
-					Name:        "test_exclude",
-					UsingMethod: "gist",
-				}),
+			table: exclusionSourceTable("test_table", []*ast.ColumnNode{ast.NewColumn("id", "INTEGER")},
+				"test_exclude", pgtable.Exclusion{UsingMethod: "gist"}),
 		},
 	}
 
@@ -797,9 +776,15 @@ func TestPostgreSQLRenderer_ExcludeConstraint_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.New()
+			renderer := postgres.New().WithOwners(postgres.Owners{TableConstraints: pgtablerender.SourceExclusions})
 			_, err := renderer.Render(tt.table)
 			c.Assert(err, qt.IsNotNil)
 		})
+	}
+}
+
+func exclusionSourceTable(name string, columns []*ast.ColumnNode, constraint string, value pgtable.Exclusion) *ast.CreateTableNode {
+	return &ast.CreateTableNode{Name: name, Columns: columns,
+		OwnedConstraints: []*ast.OwnedIndexConstraint{{Name: constraint, Value: &pgtable.DesiredExclusion{Exclusion: value}}},
 	}
 }

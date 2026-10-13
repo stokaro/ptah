@@ -116,7 +116,7 @@ func isMySQLFamily(sourcePlatform string) bool {
 // index of its own name.
 func isIndexBacked(constraint schemamodel.Constraint) bool {
 	switch strings.ToUpper(constraint.Type) {
-	case "UNIQUE", "PRIMARY KEY", "EXCLUDE":
+	case "UNIQUE", "PRIMARY KEY":
 		return true
 	default:
 		return false

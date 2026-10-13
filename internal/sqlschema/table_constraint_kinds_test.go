@@ -6,6 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -48,15 +51,6 @@ func TestToConstraint_CarriesEveryKindTheParserProduces(t *testing.T) {
 			wantCarry: true,
 		},
 		{
-			name: "a named EXCLUDE",
-			node: &ast.ConstraintNode{
-				Type: ast.ExcludeConstraint, Name: "w_room_excl",
-				UsingMethod: "gist", ExcludeElements: `"room" WITH =`,
-			},
-			wantType:  "EXCLUDE",
-			wantCarry: true,
-		},
-		{
 			name:      "a UNIQUE, which already worked",
 			node:      ast.NewUniqueConstraint("t_a_key", "a"),
 			wantType:  "UNIQUE",
@@ -93,19 +87,21 @@ func TestToConstraint_ACheckKeepsItsCondition(t *testing.T) {
 	c.Assert(constraint.CheckExpression, qt.Equals, "a > 0")
 }
 
-// TestToConstraint_AnExcludeKeepsItsThreeParts is the same for the kind whose
-// definition is three fields rather than one.
-func TestToConstraint_AnExcludeKeepsItsThreeParts(t *testing.T) {
+// The source owner retains the method, elements and predicate together.
+func TestRead_AnOwnedExclusionKeepsItsDefinition(t *testing.T) {
 	c := qt.New(t)
 
-	constraint, ok := sqlschema.ToConstraint(&ast.ConstraintNode{
-		Type: ast.ExcludeConstraint, Name: "w_room_excl", UsingMethod: "gist",
-		ExcludeElements: `"room" WITH =`, WhereCondition: "room IS NOT NULL",
-	}, "W", "w", "")
-
-	c.Assert(ok, qt.IsTrue)
+	database, _, err := sqlschema.ReadWith(t.Context(), []byte(`CREATE TABLE w (room integer,
+CONSTRAINT w_room_excl EXCLUDE USING gist ("room" WITH =) WHERE (room IS NOT NULL));`),
+		"postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
+	c.Assert(err, qt.IsNil)
+	object, found, err := database.FeatureObjects.Get(pgtable.ExclusionRef("w", "w_room_excl", identifier.ForDialect("postgres")))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(database.Constraints, qt.HasLen, 0)
+	constraint := object.Value.(*pgtable.DesiredExclusion)
 	c.Assert(constraint.UsingMethod, qt.Equals, "gist")
-	c.Assert(constraint.ExcludeElements, qt.Equals, `"room" WITH =`)
+	c.Assert(constraint.Elements, qt.Equals, `"room" WITH =`)
 	c.Assert(constraint.WhereCondition, qt.Equals, "room IS NOT NULL")
 }
 

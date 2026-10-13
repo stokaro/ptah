@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/parser"
 )
 
@@ -23,7 +24,8 @@ func TestParse_ExcludeWhereKeepsItsOperators(t *testing.T) {
 	}{
 		{name: "two-character comparisons", where: "n >= 0 AND t <> 'x'", want: "n >= 0 AND t <> 'x'"},
 		{name: "a cast", where: "t::text <> ''", want: "t::text <> ''"},
-		{name: "a run of whitespace", where: "n  >=\n 0", want: "n >= 0"},
+		{name: "a run of whitespace", where: "n  >=\n 0", want: "n  >=\n 0"},
+		{name: "spaces in a literal", where: "t = 'a  b'", want: "t = 'a  b'"},
 		{name: "a nested condition", where: "(n > 0) OR (t IS NULL)", want: "(n > 0) OR (t IS NULL)"},
 	}
 	for _, test := range tests {
@@ -31,13 +33,14 @@ func TestParse_ExcludeWhereKeepsItsOperators(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := parser.NewParser(
-				"CREATE TABLE ex (n int, t text, EXCLUDE USING btree (n WITH =) WHERE (" + test.where + "));",
+				"CREATE TABLE ex (n int, t text, EXCLUDE USING btree (n WITH =) WHERE ("+test.where+"));",
+				parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()),
 			).Parse()
 
 			c.Assert(err, qt.IsNil)
 			table := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(table.Constraints, qt.HasLen, 1)
-			c.Assert(table.Constraints[0].WhereCondition, qt.Equals, test.want)
+			c.Assert(table.OwnedConstraints, qt.HasLen, 1)
+			c.Assert(table.OwnedConstraints[0].Value.(*pgtable.DesiredExclusion).WhereCondition, qt.Equals, test.want)
 		})
 	}
 }

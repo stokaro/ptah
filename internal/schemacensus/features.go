@@ -69,6 +69,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: pgroutine.PropertiesOwner, codecs: pgroutine.PropertiesCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PersistenceCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PartitionCodecs()},
+		{owner: pgtable.Owner, codecs: pgtable.ExclusionCodecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},
 		{owner: ydbschema.Owner, codecs: ydbschema.TTLCodecs()},

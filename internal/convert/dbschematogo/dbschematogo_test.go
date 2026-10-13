@@ -8,9 +8,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
@@ -712,8 +714,7 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
 // arrive on the constraint or it goes with the index that was skipped.
 func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *testing.T) {
 	c := qt.New(t)
-	usingMethod := "gist"
-	elements := "room WITH =, during WITH &&"
+	ref := pgtable.ExclusionRef("public.booking", "booking_room_during_excl", identifier.ForDialect("postgres"))
 	dbSchema := &catalog.Database{
 		Tables: []catalog.Table{{Schema: "public", Name: "booking"}},
 		Indexes: []catalog.Index{
@@ -729,20 +730,18 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 				Schema:    "public",
 				TableName: "booking",
 				Name:      "booking_room_during_excl",
+				ManagedBy: ref,
 				Columns:   []string{"room", "during"},
 				Method:    "gist",
 				Requires:  []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 			},
 		},
-		Constraints: []catalog.Constraint{{
-			Schema:          "public",
-			TableName:       "booking",
-			Name:            "booking_room_during_excl",
-			Type:            "EXCLUDE",
-			UsingMethod:     &usingMethod,
-			ExcludeElements: &elements,
-			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: ref, Value: &pgtable.ObservedExclusion{
+				UsingMethod: "gist", Elements: "room WITH =, during WITH &&",
+				Dependencies: []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
+			},
+		})),
 	}
 
 	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "postgres", must.Must(builtin.New())))
@@ -750,8 +749,11 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "booking_room_gin")
 	c.Assert(result.Indexes[0].Requires, qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))})
-	c.Assert(result.Constraints, qt.HasLen, 1)
-	c.Assert(result.Constraints[0].Requires, qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
+	c.Assert(result.Constraints, qt.HasLen, 0)
+	objects, err := result.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value.(*pgtable.DesiredExclusion).Dependencies, qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 		qt.Commentf("the constraint-backed index is dropped here, so its requirement rides the constraint"))
 }
 

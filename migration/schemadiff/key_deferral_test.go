@@ -10,7 +10,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -20,6 +23,7 @@ import (
 // table, a UNIQUE over pos and an EXCLUDE over r, each deferring as given.
 func deferralDesired(deferrable bool, initially string) *schemamodel.Database {
 	return &schemamodel.Database{
+		FeatureCoverage: must.Must(pgtable.ExclusionCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		Tables: []schemamodel.Table{{
 			StructName: "S", Name: "slots", PrimaryKey: []string{"id"},
 			PrimaryKeyDeferrable: deferrable, PrimaryKeyInitially: initially,
@@ -34,11 +38,13 @@ func deferralDesired(deferrable bool, initially string) *schemamodel.Database {
 				StructName: "S", Table: "slots", Name: "slots_pos_key", Type: "UNIQUE", Columns: []string{"pos"},
 				Deferrable: deferrable, Initially: initially,
 			},
-			{
-				StructName: "S", Table: "slots", Name: "slots_r_excl", Type: "EXCLUDE", UsingMethod: "btree",
-				ExcludeElements: "r WITH =", Deferrable: deferrable, Initially: initially,
-			},
 		},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtable.ExclusionRef("slots", "slots_r_excl", identifier.ForDialect(platform.Postgres)),
+			Value: &pgtable.DesiredExclusion{StructName: "S", Exclusion: pgtable.Exclusion{
+				UsingMethod: "btree", Elements: "r WITH =", Deferrable: deferrable, Initially: initially,
+			}},
+		})),
 	}
 }
 
@@ -51,15 +57,20 @@ func deferralCurrent(deferrable bool, initially string) *catalog.Database {
 			Deferrable: deferrable, Initially: initially,
 		}
 	}
-	exclude := key("slots_r_excl", "EXCLUDE", "r")
-	exclude.UsingMethod, exclude.ExcludeElements = new("btree"), new("r WITH =")
 	return &catalog.Database{
+		FeatureCoverage: must.Must(pgtable.ExclusionCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		Tables: []catalog.Table{{Name: "slots", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			{Name: "pos", DataType: "integer", IsNullable: "YES", IsUnique: true},
 			{Name: "r", DataType: "integer", IsNullable: "YES"},
 		}}},
-		Constraints: []catalog.Constraint{key("slots_pkey", "PRIMARY KEY", "id"), key("slots_pos_key", "UNIQUE", "pos"), exclude},
+		Constraints: []catalog.Constraint{key("slots_pkey", "PRIMARY KEY", "id"), key("slots_pos_key", "UNIQUE", "pos")},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtable.ExclusionRef("slots", "slots_r_excl", identifier.ForDialect(platform.Postgres)),
+			Value: &pgtable.ObservedExclusion{
+				UsingMethod: "btree", Elements: "r WITH =", Deferrable: deferrable, Initially: initially,
+			},
+		})),
 	}
 }
 
@@ -89,6 +100,7 @@ func TestCompare_KeyDeferral_Synced(t *testing.T) {
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+			c.Assert(diff.FeatureChanges, qt.HasLen, 0)
 		})
 	}
 }
@@ -160,8 +172,10 @@ func TestCompare_AColumnPrimaryKeyAgainstADeferrableLiveKey(t *testing.T) {
 	desired := deferralDesired(false, "")
 	desired.Tables[0].PrimaryKey = nil
 	desired.Constraints = nil
+	desired.FeatureObjects = schemaext.Objects{}
 	current := deferralCurrent(true, "deferred")
 	current.Constraints = current.Constraints[:1]
+	current.FeatureObjects = schemaext.Objects{}
 	current.Tables[0].Columns[1].IsUnique = false
 
 	plan, err := planner.GenerateSchemaDiffSQLStatements(

@@ -6,7 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
@@ -37,6 +40,7 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 	tests := []struct {
 		name          string
 		constraints   []catalog.Constraint
+		managedBy     objectidentity.ID
 		desired       []schemamodel.Index
 		wantAdditions int
 		wantRemovals  int
@@ -46,7 +50,7 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 			// index, and the index it is enforced with was planned for a drop
 			// the server refuses.
 			name:          "the constraint's own index is left alone",
-			constraints:   widgetExclusion(),
+			managedBy:     pgtable.ExclusionRef("widget", "ex_widget_room", identifier.ForDialect("postgres")),
 			desired:       []schemamodel.Index{declaredUnrelatedWidgetIndex()},
 			wantAdditions: 0,
 			wantRemovals:  0,
@@ -57,8 +61,8 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 			// database row has to reach comparison to be replaced. Suppressed
 			// instead, the declaration would have nothing to match and the
 			// plan would carry the addition with no drop before it.
-			name:        "an index the description declares is still compared",
-			constraints: widgetExclusion(),
+			name:      "an index the description declares is still compared",
+			managedBy: pgtable.ExclusionRef("widget", "ex_widget_room", identifier.ForDialect("postgres")),
 			desired: []schemamodel.Index{
 				{Name: "ex_widget_room", TableName: "widget", Fields: []string{"code"}},
 				declaredUnrelatedWidgetIndex(),
@@ -84,10 +88,12 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			index := backingIndex
+			index.ManagedBy = test.managedBy
 			desired := &schemamodel.Database{Indexes: test.desired}
 			database := &catalog.Database{
 				Constraints: test.constraints,
-				Indexes:     []catalog.Index{backingIndex, unrelatedIndex},
+				Indexes:     []catalog.Index{index, unrelatedIndex},
 			}
 			diff := &difftypes.SchemaDiff{}
 
@@ -97,15 +103,6 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 			c.Assert(diff.IndexRemovals(), qt.HasLen, test.wantRemovals)
 		})
 	}
-}
-
-// widgetExclusion is the constraint as PostgreSQL reports it, beside the index
-// of the same name that the index catalog reports separately.
-func widgetExclusion() []catalog.Constraint {
-	return []catalog.Constraint{{
-		Name: "ex_widget_room", TableName: "widget", Type: "EXCLUDE",
-		UsingMethod: new("gist"), ExcludeElements: new("room WITH ="),
-	}}
 }
 
 // declaredUnrelatedWidgetIndex is in every row so no expectation can be met by

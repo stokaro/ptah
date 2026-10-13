@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacomparison"
@@ -316,7 +317,7 @@ func convertIndexes(
 		// The predicate is shared with migration/schemadiff rather than
 		// restated: the comparator recognized this shape and this converter did
 		// not, which is the duplication ADR 0015 D2 removes.
-		if indexbacking.Unaddressable(dbIndex, dialect) {
+		if indexbacking.Unaddressable(dbIndex, dialect) || dbIndex.ManagedBy != (objectidentity.ID{}) {
 			continue
 		}
 		if _, ok := constraintBackedIndexes[tableMemberKey{table: dbIndex.QualifiedTableName(), member: dbIndex.Name}]; ok {
@@ -882,10 +883,6 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		if catalogfield.IsNotNullRow(dbConstraint) {
 			return schemamodel.Constraint{}, false
 		}
-	case "EXCLUDE":
-		if dbConstraint.UsingMethod == nil || dbConstraint.ExcludeElements == nil {
-			return schemamodel.Constraint{}, false
-		}
 	default:
 		return schemamodel.Constraint{}, false
 	}
@@ -897,8 +894,6 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		Type:            constraintType,
 		Table:           dbConstraint.QualifiedTableName(),
 		UsingMethod:     derefString(dbConstraint.UsingMethod),
-		ExcludeElements: derefString(dbConstraint.ExcludeElements),
-		WhereCondition:  derefString(dbConstraint.WhereCondition),
 		CheckExpression: derefString(dbConstraint.CheckClause),
 		Columns:         columns,
 		IncludeColumns:  append([]string(nil), dbConstraint.IncludeColumns...),

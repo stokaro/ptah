@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -20,7 +21,7 @@ var exampleSource []byte
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings
 //
 //ptah:schema:table name="bookings"
-//ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
+//ptah:schema:exclude name="no_overlapping_bookings" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
 type Booking struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
@@ -38,7 +39,7 @@ type Booking struct {
 // Example 2: User session management with conditional EXCLUDE constraint
 //
 //ptah:schema:table name="user_sessions"
-//ptah:schema:constraint name="one_active_session_per_user" type="EXCLUDE" table="user_sessions" using="gist" elements="user_id WITH =" condition="is_active = true"
+//ptah:schema:exclude name="one_active_session_per_user" table="user_sessions" using="gist" elements="user_id WITH =" condition="is_active = true"
 type UserSession struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
@@ -56,7 +57,7 @@ type UserSession struct {
 // Example 3: Spatial data with EXCLUDE constraint to prevent overlapping regions
 //
 //ptah:schema:table name="territories"
-//ptah:schema:constraint name="no_overlapping_territories" type="EXCLUDE" table="territories" using="gist" elements="region WITH &&"
+//ptah:schema:exclude name="no_overlapping_territories" table="territories" using="gist" elements="region WITH &&"
 type Territory struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
@@ -74,7 +75,7 @@ type Territory struct {
 // Example 4: Multiple constraint types including EXCLUDE
 //
 //ptah:schema:table name="events"
-//ptah:schema:constraint name="no_overlapping_events" type="EXCLUDE" table="events" using="gist" elements="venue_id WITH =, event_time WITH &&" condition="status = 'confirmed'"
+//ptah:schema:exclude name="no_overlapping_events" table="events" using="gist" elements="venue_id WITH =, event_time WITH &&" condition="status = 'confirmed'"
 //ptah:schema:constraint name="unique_event_code" type="UNIQUE" table="events" columns="event_code"
 //ptah:schema:constraint name="positive_capacity" type="CHECK" table="events" check="capacity > 0"
 type Event struct {
@@ -121,12 +122,6 @@ func runExcludeConstraintsExample(w io.Writer) error {
 		fmt.Fprintf(w, "  Table: %s\n", constraint.Table)
 
 		switch constraint.Type {
-		case "EXCLUDE":
-			fmt.Fprintf(w, "  Using Method: %s\n", constraint.UsingMethod)
-			fmt.Fprintf(w, "  Elements: %s\n", constraint.ExcludeElements)
-			if constraint.WhereCondition != "" {
-				fmt.Fprintf(w, "  WHERE: %s\n", constraint.WhereCondition)
-			}
 		case "UNIQUE":
 			fmt.Fprintf(w, "  Columns: %v\n", constraint.Columns)
 		case "CHECK":
@@ -135,44 +130,34 @@ func runExcludeConstraintsExample(w io.Writer) error {
 		fmt.Fprintln(w)
 	}
 
-	// Generate SQL for PostgreSQL
+	objects, err := database.FeatureObjects.All()
+	if err != nil {
+		return fmt.Errorf("read exclusion constraints: %w", err)
+	}
+	for _, object := range objects {
+		constraint, ok := object.Value.(*pgtable.DesiredExclusion)
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(w, "Constraint: %s\n  Type: EXCLUDE\n", object.Ref.Name.Source)
+		fmt.Fprintf(w, "  Table: %s\n", pgtable.ExclusionTable(object.Ref).Name.Source)
+		fmt.Fprintf(w, "  Using Method: %s\n  Elements: %s\n", constraint.UsingMethod, constraint.Elements)
+		if constraint.WhereCondition != "" {
+			fmt.Fprintf(w, "  WHERE: %s\n", constraint.WhereCondition)
+		}
+		fmt.Fprintln(w)
+	}
+
+	// Render through the same owner runtime the CLI uses.
 	fmt.Fprintln(w, "Generated PostgreSQL SQL:")
 	fmt.Fprintln(w, "========================")
 
-	for _, table := range database.Tables {
-		// Find constraints for this table
-		var tableConstraints []schemamodel.Constraint
-		for _, constraint := range database.Constraints {
-			if constraint.Table == table.Name {
-				tableConstraints = append(tableConstraints, constraint)
-			}
-		}
-
-		if len(tableConstraints) > 0 {
-			fmt.Fprintf(w, "\n-- Constraints for table: %s\n", table.Name)
-			for _, constraint := range tableConstraints {
-				switch constraint.Type {
-				case "EXCLUDE":
-					sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s EXCLUDE USING %s (%s)",
-						constraint.Table, constraint.Name, constraint.UsingMethod, constraint.ExcludeElements)
-					if constraint.WhereCondition != "" {
-						sql += fmt.Sprintf(" WHERE (%s)", constraint.WhereCondition)
-					}
-					sql += ";"
-					fmt.Fprintln(w, sql)
-
-				case "UNIQUE":
-					sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);",
-						constraint.Table, constraint.Name, constraint.Columns[0])
-					fmt.Fprintln(w, sql)
-
-				case "CHECK":
-					sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s);",
-						constraint.Table, constraint.Name, constraint.CheckExpression)
-					fmt.Fprintln(w, sql)
-				}
-			}
-		}
+	statements, err := builtin.GetOrderedCreateStatements(&database, "postgres")
+	if err != nil {
+		return fmt.Errorf("render PostgreSQL schema: %w", err)
+	}
+	for _, statement := range statements {
+		fmt.Fprintln(w, statement)
 	}
 
 	fmt.Fprintln(w, "\nEXCLUDE Constraint Use Cases:")

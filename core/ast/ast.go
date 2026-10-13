@@ -142,8 +142,6 @@ const (
 	ForeignKeyConstraint
 	// CheckConstraint represents a CHECK constraint
 	CheckConstraint
-	// ExcludeConstraint represents an EXCLUDE constraint (PostgreSQL-specific)
-	ExcludeConstraint
 )
 
 // String returns the SQL representation of the constraint type.
@@ -160,8 +158,6 @@ func (ct ConstraintType) String() string {
 		return "FOREIGN KEY"
 	case CheckConstraint:
 		return "CHECK"
-	case ExcludeConstraint:
-		return "EXCLUDE"
 	default:
 		return "UNKNOWN"
 	}

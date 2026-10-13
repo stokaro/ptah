@@ -153,13 +153,13 @@ func TestParse_KeyDeferralThatChangesNothing_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres), parser.WithSQL(exclusionParserRuntime(c).SQL())).Parse()
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
 			table := statements.Statements[0].(*ast.CreateTableNode)
 			c.Assert(columnNames(table), qt.DeepEquals, test.columns)
-			c.Assert(table.Constraints, qt.HasLen, test.constraints)
+			c.Assert(len(table.Constraints)+len(table.OwnedConstraints), qt.Equals, test.constraints)
 		})
 	}
 }

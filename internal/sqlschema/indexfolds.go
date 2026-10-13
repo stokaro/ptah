@@ -7,7 +7,7 @@ import (
 	"ptah.run/internal/schemaprep"
 )
 
-// foldCreatedIndexConstraints takes out of the model every UNIQUE and EXCLUDE,
+// foldCreatedIndexConstraints takes out of the model every UNIQUE,
 // and every column's own UNIQUE, one CREATE TABLE declared that PostgreSQL does
 // not build, and gives a dropped constraint's name to the one the server keeps
 // when that one has none; see [schemaprep.FoldedIndexConstraints] for the rule.
@@ -32,7 +32,7 @@ func foldCreatedIndexConstraints(
 	database *schemamodel.Database,
 	table *schemamodel.Table,
 	fieldsStart, constraintsStart int,
-	places []int,
+	places, fieldPlaces []int,
 	sourcePlatform string,
 ) []int {
 	if !namesConstraintsLikePostgres(sourcePlatform) {
@@ -48,9 +48,9 @@ func foldCreatedIndexConstraints(
 	for _, fold := range folds {
 		if fold.Folded == schemaprep.ColumnKeyOutsideList {
 			dropColumnKey(fields, fold.Column)
-			moveToEarlierPlace(places, fold.Into, columnPlace(slices.IndexFunc(fields, func(field schemamodel.Field) bool {
+			moveToEarlierPlace(places, fold.Into, fieldPlaces[slices.IndexFunc(fields, func(field schemamodel.Field) bool {
 				return field.Name == fold.Column
-			})))
+			})])
 			continue
 		}
 		dropped[fold.Folded] = true

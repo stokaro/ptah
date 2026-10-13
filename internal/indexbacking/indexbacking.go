@@ -43,8 +43,6 @@ const (
 	PrimaryKey
 	// Unique is a UNIQUE constraint.
 	Unique
-	// Exclusion is an EXCLUDE constraint.
-	Exclusion
 	// ForeignKey is a FOREIGN KEY constraint.
 	ForeignKey
 )
@@ -62,8 +60,6 @@ func KindOf(constraintType string) Kind {
 		return PrimaryKey
 	case "UNIQUE":
 		return Unique
-	case "EXCLUDE":
-		return Exclusion
 	case "FOREIGN KEY":
 		return ForeignKey
 	default:
@@ -102,10 +98,6 @@ func ServerBacks(dialect string, kind Kind) bool {
 		// all (`UNIQUE (a)` in CREATE TABLE is a parse error), so a unique
 		// index there is an index of its own and backs nothing.
 		return normalized != platform.SQLServer && normalized != platform.YDB
-	case Exclusion:
-		// An EXCLUDE constraint is a PostgreSQL-family construct and is always
-		// implemented by an index.
-		return true
 	case ForeignKey:
 		// MySQL and MariaDB create an index for every foreign key unasked, and
 		// Spanner reports a backing index for one. The PostgreSQL family
@@ -136,11 +128,10 @@ func ServerBacks(dialect string, kind Kind) bool {
 // mark the reader puts on it, which [Unaddressable] reads. Attributing it from
 // a constraint's name would make the answer depend on a spelling instead.
 //
-// A name match is evidence about a name. This function says the two cases where
-// the servers make it evidence about an object as well.
+// A name match identifies a backing index only when the server guarantees it.
 func NamedAfterConstraint(dialect string, kind Kind) bool {
 	switch kind {
-	case Unique, Exclusion:
+	case Unique:
 		return ServerBacks(dialect, kind)
 	case PrimaryKey, ForeignKey, None:
 		return false

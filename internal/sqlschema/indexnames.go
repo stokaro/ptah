@@ -339,6 +339,8 @@ type namedElement struct {
 	// columnsBefore is how many of the table's columns the body writes before
 	// the element; see [bodyItems].
 	columnsBefore int
+	// place is the element position used by PostgreSQL constraint naming.
+	place int
 }
 
 // noPosition marks the half of a namedElement that is not set.

@@ -294,26 +294,6 @@ table "posts" {
 			wantErr: `parse HCL schema schema.hcl: foreign key "public.posts.posts_author_fk" is declared more than once;.*`,
 		},
 		{
-			name: "a named constraint block declared twice in one table",
-			source: `schema "public" {}
-table "users" {
-  schema = schema.public
-  column "id" { type = integer }
-  constraint "users_id_excl" {
-    type     = "EXCLUDE"
-    using    = "gist"
-    elements = "id WITH ="
-  }
-  constraint "users_id_excl" {
-    type     = "EXCLUDE"
-    using    = "gist"
-    elements = "id WITH ="
-  }
-}
-`,
-			wantErr: `parse HCL schema schema.hcl: constraint "public.users.users_id_excl" is declared more than once;.*`,
-		},
-		{
 			name: "a sequence declared twice",
 			source: `schema "public" {}
 sequence "order_seq" {

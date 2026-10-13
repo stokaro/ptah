@@ -20,6 +20,12 @@ import (
 // the common boundary, and a CREATE TABLE carrying a facet is refused rather
 // than rendered without it.
 type Owners struct {
+	// TableConstraints renders unresolved source declarations in their input
+	// order and their following comments. Nil refuses nonempty source syntax.
+	TableConstraints func(target string, caps capability.Capabilities, table string, constraints []*ast.OwnedIndexConstraint) ([]string, []string, error)
+	// TableObjects creates each named child after the table statement.
+	// Nil refuses any child left for this table to create.
+	TableObjects func(target string, caps capability.Capabilities, table string, objects schemaext.Objects) ([]string, error)
 	// TablePrefix renders modifiers before TABLE and returns the facets the
 	// remaining owners consume. Nil contributes no prefix and retains all facets.
 	TablePrefix func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, schemaext.Facets, error)
@@ -167,4 +173,31 @@ func (r *Renderer) tablePrefix(node *ast.CreateTableNode) (string, schemaext.Fac
 		return "", node.Facets, nil
 	}
 	return r.owners.TablePrefix(r.dialect, r.capabilities(), node.Name, node.Facets)
+}
+
+func (r *Renderer) renderOwnedTableObjects(node *ast.CreateTableNode) ([]string, error) {
+	if node.OwnedObjects.Len() == 0 {
+		return nil, nil
+	}
+	if r.owners.TableObjects == nil {
+		return nil, fmt.Errorf("%w: no table child renderer for %s", ptaherr.ErrUnsupportedFeature, r.dialect)
+	}
+	return r.owners.TableObjects(r.dialect, r.capabilities(), node.Name, node.OwnedObjects)
+}
+
+func (r *Renderer) renderSourceTableConstraints(node *ast.CreateTableNode) (clauses, comments []string, err error) {
+	if len(node.OwnedConstraints) == 0 {
+		return nil, nil, nil
+	}
+	if r.owners.TableConstraints == nil {
+		return nil, nil, fmt.Errorf("%w: no owned index constraint source renderer for %s", ptaherr.ErrUnsupportedFeature, r.dialect)
+	}
+	clauses, comments, err = r.owners.TableConstraints(r.dialect, r.capabilities(), node.Name, node.OwnedConstraints)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(clauses) != len(node.OwnedConstraints) {
+		return nil, nil, fmt.Errorf("%w: source constraint renderer changes the clause count", ptaherr.ErrInvalidSchemaDiff)
+	}
+	return clauses, comments, nil
 }

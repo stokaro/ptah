@@ -12,7 +12,9 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -85,7 +87,8 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(hclText, qt.Contains, `platform "mysql"`)
 	c.Assert(hclText, qt.Contains, `override "type"`)
 	c.Assert(hclText, qt.Contains, `params = "in user_id bigint, out display_value double precision"`)
-	c.Assert(hclText, qt.Contains, `constraint "users_no_overlap"`)
+	c.Assert(hclText, qt.Contains, `exclude {`)
+	c.Assert(hclText, qt.Contains, `name = "users_no_overlap"`)
 	c.Assert(hclText, qt.Not(qt.Contains), "embedded")
 
 	after, err := atlashcl.ParseFileWithOptions(output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
@@ -160,9 +163,11 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(constraints["users_email_key"].NullsDistinct, qt.DeepEquals, new(false))
 	c.Assert(constraints["named_keys_pk"].Type, qt.Equals, "PRIMARY KEY")
 	c.Assert(constraints["users_account_fk"].ForeignColumns, qt.DeepEquals, []string{"id"})
-	c.Assert(constraints["users_no_overlap"].UsingMethod, qt.Equals, "gist")
-	c.Assert(constraints["users_no_overlap"].ExcludeElements, qt.Equals, "id WITH =")
-	c.Assert(constraints["users_no_overlap"].WhereCondition, qt.Equals, "id > 0")
+	exclusion, found, err := after.FeatureObjects.Get(pgtable.ExclusionRef("app.users", "users_no_overlap", identifier.ForDialect("postgres")))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(exclusion.Value.(*pgtable.DesiredExclusion).Exclusion, qt.DeepEquals,
+		pgtable.Exclusion{UsingMethod: "gist", Elements: "id WITH =", WhereCondition: "id > 0", Comment: "No overlap"})
 
 	c.Assert(after.ManagedData, qt.HasLen, 1)
 	c.Assert(after.ManagedData[0].Schema, qt.Equals, "app")

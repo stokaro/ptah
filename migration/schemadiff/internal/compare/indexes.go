@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -266,14 +267,13 @@ func declaredPrimaryKeys(desired *schemamodel.Database, semantics identifier.Sem
 }
 
 // constraintOwnedIndexes is the database index identity of every constraint
-// that owns one, kept apart by the kind that owns it because the three are not
+// that owns one, kept apart by the kind that owns it because they are not
 // interchangeable: only the UNIQUE set also decides how a removal is SPELLED,
 // through [uniqueConstraintEnforcesTheIndex] and the `unique_protections_removed`
 // finding it feeds.
 type constraintOwnedIndexes struct {
 	foreignKeys map[difftypes.IndexRef]struct{}
 	unique      map[difftypes.IndexRef]struct{}
-	exclusions  map[difftypes.IndexRef]struct{}
 }
 
 func constraintBackedIndexIdentities(
@@ -287,7 +287,6 @@ func constraintBackedIndexIdentities(
 	owned := constraintOwnedIndexes{
 		foreignKeys: make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
 		unique:      make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
-		exclusions:  make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
 	}
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	for _, constraint := range database.Constraints {
@@ -321,8 +320,6 @@ func constraintBackedIndexIdentities(
 			}
 		case indexbacking.Unique:
 			owned.unique[ref] = struct{}{}
-		case indexbacking.Exclusion:
-			owned.exclusions[ref] = struct{}{}
 		case indexbacking.None, indexbacking.PrimaryKey:
 			// A primary key's index is recognized by its own mark rather than
 			// by attribution from the constraint; see unaddressableDatabaseIndex.
@@ -696,7 +693,7 @@ func collectDatabaseIndexes(
 		}
 		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
 		if _, isDeclared := declared[identity]; !isDeclared &&
-			constraintOwnedDatabaseIndex(index, dialect, identity, owned) {
+			constraintOwnedDatabaseIndex(index, identity, owned) {
 			continue
 		}
 		indexes[identity] = databaseIndexEntry{
@@ -759,66 +756,12 @@ func unaddressableDatabaseIndex(index catalog.Index, dialect string) bool {
 	return indexbacking.Unaddressable(index, dialect)
 }
 
-// constraintOwnedDatabaseIndex reports whether a database index is a
-// constraint's backing index, and so is created and dropped through that
-// constraint rather than on its own.
-//
-// On PostgreSQL, MySQL and MariaDB a UNIQUE constraint is enforced by an index
-// of the constraint's own name on its own table. (SQL Server keeps the two as
-// separate objects, and SQLite names the backing index itself --
-// `sqlite_autoindex_t_1` -- which [unaddressableDatabaseIndex] drops before the
-// pools are built.) MySQL and MariaDB additionally create one for every
-// FOREIGN KEY: with a bare
-// `CONSTRAINT ... FOREIGN KEY` and no `KEY` clause -- the ordinary way a MySQL
-// schema is written -- `information_schema.STATISTICS` reports an index named
-// `fk_posts_user` alongside the constraint named `fk_posts_user`. A desired
-// state that says nothing about either must not plan a DROP INDEX that would
-// take the constraint with it, which is what these two arms prevent.
-//
-// An EXCLUDE is enforced with an index too, and it is the one no filter written
-// in terms of the index ROW can see. Measured on PostgreSQL 17.6, the pg_index
-// row for `EXCLUDE USING gist (room WITH =)` reports indisprimary false and
-// indisunique false -- indistinguishable from an ordinary index -- and only
-// pg_constraint.conindid ties the two together, which is why the identity comes
-// from the constraint currentCatalog here. Dropping it is refused:
-//
-//	ERROR:  cannot drop index ex_widget_room because constraint ex_widget_room
-//	        on table widget requires it
-//
-// so such a plan cannot be applied at all (stokaro/ptah#2013). A CHECK is the
-// other clause constraint and is enforced with no index, so it gets no arm.
-//
-// The name-pattern arm is a guess about a naming convention where the identity
-// arms are facts read from the currentCatalog, but they are alike in what they mean
-// for the comparison, and all four are subject to the declaration narrowing in
-// [collectDatabaseIndexes] -- the FOREIGN KEY arm since
-// [#1258](https://github.com/stokaro/ptah/issues/1258), the EXCLUDE arm since
-// [#2013](https://github.com/stokaro/ptah/issues/2013), and the other two since
-// [#1245](https://github.com/stokaro/ptah/issues/1245).
-//
-// Only the UNIQUE set decides how a removal is spelled; an EXCLUDE's index
-// reaching a removal at all means the desired state declared an index under the
-// constraint's name, which is a separate question from this one.
-//
-// The three sets are the whole answer. A fourth branch reading the index's NAME
-// -- a name ending in `_key` that begins with the table's name, or a
-// single-column index whose name equals the column -- on every dialect but SQL
-// Server compensates for a catalog that reports a backing index without the
-// constraint behind it, which is a shape a fixture can have and a reader does
-// not produce: measured on PostgreSQL 18, a real
-// `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE` is reported as a constraint and
-// its index is caught by owned.unique above.
-//
-// What such a branch does instead is hide a user's own index. Same table, same
-// column, same desired schema declaring no index: `ptah schema compare` answers
-// "No schema differences detected" for one named `slug` or `tenants_slug_key`,
-// and plans `DROP INDEX` for the identical object named `tenants_slug`,
-// `uk_tenants_slug` or `idx_tenants_slug`. The removal the author asked for is
-// never planned, and `--dry-run` reports the database in sync
-// (stokaro/ptah#2615).
+// constraintOwnedDatabaseIndex recognizes catalog ownership rather than a name
+// pattern. Common UNIQUE and FOREIGN KEY constraints supply structural evidence;
+// feature owners mark their backing indexes with ManagedBy. Explicit index
+// declarations still reach comparison through collectDatabaseIndexes.
 func constraintOwnedDatabaseIndex(
 	index catalog.Index,
-	dialect string,
 	identity difftypes.IndexRef,
 	owned constraintOwnedIndexes,
 ) bool {
@@ -828,8 +771,7 @@ func constraintOwnedDatabaseIndex(
 	if _, foreignKeyBacked := owned.foreignKeys[identity]; foreignKeyBacked {
 		return true
 	}
-	_, exclusionBacked := owned.exclusions[identity]
-	return exclusionBacked
+	return index.ManagedBy != (objectidentity.ID{})
 }
 
 // indexComparison is what deciding whether two indexes are one index takes

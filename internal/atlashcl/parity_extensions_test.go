@@ -5,7 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/hclext"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/pgtablesource"
 )
 
 func TestParse_PtahParityExtensions_HappyPath(t *testing.T) {
@@ -55,8 +59,8 @@ table "users" {
     comment         = "Owner"
   }
 
-  constraint "users_no_overlap" {
-    type      = "EXCLUDE"
+  exclude {
+    name      = "users_no_overlap"
     using     = "gist"
     elements  = "id WITH ="
     condition = "id > 0"
@@ -89,7 +93,9 @@ data {
 }
 `)
 
-	db, err := atlashcl.Parse(source, "configs/schema.hcl")
+	owners, err := hclext.NewSet(pgtablesource.ExclusionHCL())
+	c.Assert(err, qt.IsNil)
+	db, err := atlashcl.ParseWithOptions(source, "configs/schema.hcl", atlashcl.Options{HCL: owners})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -106,13 +112,15 @@ data {
 		"mysql": {"type": "BIGINT AUTO_INCREMENT"},
 	})
 	c.Assert(db.Fields[1].Enum, qt.DeepEquals, []string{"active", "disabled"})
-	c.Assert(db.Constraints, qt.HasLen, 2)
+	c.Assert(db.Constraints, qt.HasLen, 1)
 	c.Assert(db.Constraints[0].ForeignColumns, qt.DeepEquals, []string{"id"})
 	c.Assert(db.Constraints[0].OnDelete, qt.Equals, "CASCADE")
 	c.Assert(db.Constraints[0].Comment, qt.Equals, "Owner")
-	c.Assert(db.Constraints[1].UsingMethod, qt.Equals, "gist")
-	c.Assert(db.Constraints[1].ExcludeElements, qt.Equals, "id WITH =")
-	c.Assert(db.Constraints[1].WhereCondition, qt.Equals, "id > 0")
+	object, found, err := db.FeatureObjects.Get(pgtable.ExclusionRef("app.users", "users_no_overlap", identifier.ForDialect("postgres")))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(object.Value.(*pgtable.DesiredExclusion).Exclusion, qt.DeepEquals,
+		pgtable.Exclusion{UsingMethod: "gist", Elements: "id WITH =", WhereCondition: "id > 0", Comment: "No overlap"})
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Operator, qt.Equals, "gin_trgm_ops")
 	c.Assert(db.Roles, qt.HasLen, 1)

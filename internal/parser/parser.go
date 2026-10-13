@@ -97,6 +97,8 @@ type Parser struct {
 	declaredIndexes map[*ast.ExtensionAlterOperation]sqlext.Index
 	// declaredObjects captures the child objects an owned ALTER operation adds.
 	declaredObjects map[*ast.ExtensionAlterOperation]schemaext.Objects
+	// declaredConstraints captures index constraints whose names the reader settles.
+	declaredConstraints map[*ast.ExtensionAlterOperation]*ast.OwnedIndexConstraint
 	// declared are the objects the documents read before this one declared;
 	// see [WithDeclared].
 	declared schemaext.Objects
@@ -3985,66 +3987,6 @@ func (p *Parser) handleTableConstraintCheck(constraint *ast.ConstraintNode) {
 	constraint.Type = ast.CheckConstraint
 }
 
-func (p *Parser) handleTableConstraintExclude(constraint *ast.ConstraintNode) error {
-	p.advance()
-	p.skipWhitespace()
-
-	// Expect USING keyword
-	if err := p.expect(lexer.TokenIdentifier, "USING"); err != nil {
-		return fmt.Errorf("expected USING after EXCLUDE: %w", err)
-	}
-
-	p.skipWhitespace()
-
-	// Get the index method (e.g., "gist", "btree")
-	usingMethod, err := p.expectIdentifier()
-	if err != nil {
-		return fmt.Errorf("expected index method after USING: %w", err)
-	}
-
-	p.skipWhitespace()
-
-	// Expect opening parenthesis for elements
-	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return fmt.Errorf("expected '(' after USING method: %w", err)
-	}
-
-	// Parse exclude elements until closing parenthesis
-	var elements strings.Builder
-	parenCount := 1
-	lastWasSpace := false
-
-	for parenCount > 0 && !p.isAtEnd() {
-		if p.current.Type == lexer.TokenOperator {
-			switch p.current.Value {
-			case "(":
-				parenCount++
-			case ")":
-				parenCount--
-			}
-		}
-		if parenCount > 0 {
-			if p.current.Type == lexer.TokenWhitespace {
-				// Only add one space if we haven't just added one
-				if !lastWasSpace && elements.Len() > 0 {
-					elements.WriteString(" ")
-					lastWasSpace = true
-				}
-			} else {
-				elements.WriteString(p.current.Value)
-				lastWasSpace = false
-			}
-		}
-		p.advance()
-	}
-
-	constraint.Type = ast.ExcludeConstraint
-	constraint.UsingMethod = usingMethod
-	constraint.ExcludeElements = strings.TrimSpace(elements.String())
-
-	return nil
-}
-
 // handleTableConstraintTypedIndex reads `SPATIAL|FULLTEXT INDEX|KEY [name] (cols)`.
 //
 // Assigning ast.UniqueConstraint and the fixed name "SPATIAL_INDEX" to SPATIAL
@@ -4166,8 +4108,8 @@ func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
 
 func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
-	// Skip for CHECK and EXCLUDE constraints as they have different syntax
-	if constraint.Type == ast.CheckConstraint || constraint.Type == ast.ExcludeConstraint {
+	// CHECK constraints carry expressions instead of column lists.
+	if constraint.Type == ast.CheckConstraint {
 		return nil
 	}
 	if err := p.expect(lexer.TokenOperator, "("); err != nil {
@@ -4318,8 +4260,6 @@ func (p *Parser) readTableElementKind(constraint *ast.ConstraintNode) (bool, str
 	case "CHECK":
 		p.handleTableConstraintCheck(constraint)
 		return false, "", nil
-	case "EXCLUDE":
-		return false, "", p.handleTableConstraintExclude(constraint)
 	case "SPATIAL", "FULLTEXT":
 		p.handleTableConstraintTypedIndex(constraint)
 		return true, constraintType, nil
@@ -4505,67 +4445,6 @@ func (p *Parser) handleTableCheck(constraint *ast.ConstraintNode) error {
 	}
 	constraint.Expression = expr
 	return nil
-}
-
-func (p *Parser) handleTableExcludeWhere(constraint *ast.ConstraintNode) error {
-	if constraint.Type != ast.ExcludeConstraint {
-		return nil
-	}
-
-	p.skipWhitespace()
-
-	// Check for optional WHERE clause
-	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "WHERE" {
-		whereCondition, err := p.parseExcludeWhereCondition()
-		if err != nil {
-			return err
-		}
-		constraint.WhereCondition = whereCondition
-	}
-
-	return nil
-}
-
-func (p *Parser) parseExcludeWhereCondition() (string, error) {
-	p.advance()
-	p.skipWhitespace()
-
-	// Expect opening parenthesis for WHERE condition
-	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return "", fmt.Errorf("expected '(' after WHERE: %w", err)
-	}
-
-	// Parse WHERE condition until closing parenthesis. The lexer reads an
-	// operator one character at a time, so the condition keeps the spacing it
-	// was written with -- a run of whitespace read as one space -- rather than
-	// a space between every two tokens, which would turn `n >= 0` into
-	// `n > = 0`, a condition PostgreSQL refuses.
-	var condition strings.Builder
-	parenCount := 1
-	lastWasSpace := false
-	for parenCount > 0 && !p.isAtEnd() {
-		if p.current.Type == lexer.TokenOperator {
-			switch p.current.Value {
-			case "(":
-				parenCount++
-			case ")":
-				parenCount--
-			}
-		}
-		if parenCount > 0 {
-			switch {
-			case p.current.Type != lexer.TokenWhitespace:
-				condition.WriteString(p.current.Value)
-				lastWasSpace = false
-			case !lastWasSpace && condition.Len() > 0:
-				condition.WriteString(" ")
-				lastWasSpace = true
-			}
-		}
-		p.advance()
-	}
-
-	return strings.TrimSpace(condition.String()), nil
 }
 
 // alterIndexKind names an index in the ALTER refusal. A plain index has no

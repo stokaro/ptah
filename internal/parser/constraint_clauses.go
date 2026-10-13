@@ -124,7 +124,7 @@ func refuseEnforcement(dialect, kind, clause string, start int) error {
 	switch {
 	case takesEnforced(dialect, kind):
 		return nil
-	case kind == primaryKeyElement || kind == uniqueElement || kind == excludeElement:
+	case kind == primaryKeyElement || kind == uniqueElement:
 		return fmt.Errorf("%s at position %d: %s constraints cannot be marked %s", clause, start, kind, clause)
 	case kind == indexElement:
 		return fmt.Errorf("%s at position %d: an index takes no %s clause", clause, start, clause)
@@ -140,7 +140,7 @@ func refuseEnforcement(dialect, kind, clause string, start int) error {
 // 2026.1.2 record such a constraint as validated.
 func (p *Parser) readNotValid(kind string, start int) error {
 	switch {
-	case kind == primaryKeyElement || kind == uniqueElement || kind == excludeElement:
+	case kind == primaryKeyElement || kind == uniqueElement:
 		return fmt.Errorf("NOT VALID at position %d: %s constraints cannot be marked NOT VALID", start, kind)
 	case kind != checkElement && kind != foreignKeyElement:
 		return fmt.Errorf("NOT VALID at position %d: an index takes no NOT VALID clause", start)

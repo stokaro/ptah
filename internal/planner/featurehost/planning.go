@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/featureops"
+	"ptah.run/internal/tableref"
 )
 
 // Result retains lowered contributions and explicit common-step rewrites.
@@ -92,9 +93,9 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 }
 
 func validateNames(request featureplan.Request, names map[objectidentity.Key]string) error {
-	captured := make(map[objectidentity.Key]bool, len(request.Tables))
+	captured := make(map[objectidentity.Key]featureplan.Table, len(request.Tables))
 	for _, table := range request.Tables {
-		captured[table.Subject.Key()] = true
+		captured[table.Subject.Key()] = table
 	}
 	views := make(map[objectidentity.Key]bool)
 	for _, change := range request.Changes {
@@ -104,11 +105,23 @@ func validateNames(request featureplan.Request, names map[objectidentity.Key]str
 	}
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for key, name := range names {
-		table := captured[key] && builder.Table(name).Key() == key
+		parent, found := captured[key]
+		table := found && matchesTableName(builder, parent, name)
 		view := views[key] && builder.SchemaScoped(objectidentity.KindMatView, name).Key() == key
 		if name == "" || !table && !view {
 			return fmt.Errorf("%w: feature table name disagrees with its captured identity", schemaext.ErrInvalidValue)
 		}
 	}
 	return nil
+}
+
+// A captured model holds logical components. Its emission name escapes dots
+// as SQL quotes, which must not become part of the captured identity. A request
+// without a model holds only its authored identity and compares that spelling.
+func matchesTableName(builder objectidentity.Builder, table featureplan.Table, name string) bool {
+	if !table.Desired.HasTable() && !table.Current.HasTable() {
+		return builder.Table(name).Key() == table.Subject.Key()
+	}
+	ref, ok := tableref.Parse(name)
+	return ok && builder.TableParts(ref.Schema, ref.Name).Key() == table.Subject.Key()
 }

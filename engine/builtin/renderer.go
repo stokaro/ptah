@@ -74,6 +74,7 @@ import (
 	"ptah.run/internal/accessscope"
 	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/mysqlindex"
@@ -611,6 +612,11 @@ func prepareCreateTableNode(
 	cloned.Columns = slices.Clone(node.Columns)
 	cloned.Constraints = slices.Clone(node.Constraints)
 	cloned.Options = maps.Clone(node.Options)
+	owned, err := prepareOwnedConstraints(dialect, caps, node.OwnedConstraints)
+	if err != nil {
+		return nil, err
+	}
+	cloned.OwnedConstraints = owned
 
 	for i, column := range cloned.Columns {
 		prepared, err := prepareColumnNode(dialect, caps, node.Name, column)
@@ -637,6 +643,7 @@ func prepareCreateTableNode(
 		}
 		cloned.Indexes[i] = prepared
 	}
+	prepareTableElements(node, &cloned)
 	if err := validateNamedFeatures(dialect, caps, node.OwnedObjects); err != nil {
 		return nil, err
 	}
@@ -2012,6 +2019,9 @@ func validateDeclaredKeysAndConstraints(
 	caps capability.Capabilities,
 	database *schemamodel.Database,
 ) error {
+	if err := validateDeclaredConstraintTypes(database); err != nil {
+		return err
+	}
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
 		return err
 	}
@@ -2031,6 +2041,18 @@ func validateDeclaredKeysAndConstraints(
 		return err
 	}
 	return validateDeclaredEnforcementAndMatch(dialect, caps, database)
+}
+
+// A common constraint must have a common kind. Owned constraints reach the
+// renderer through their provider, so an unknown string cannot become a no-op.
+func validateDeclaredConstraintTypes(database *schemamodel.Database) error {
+	for _, constraint := range database.Constraints {
+		if !constraintkind.Valid(constraint.Type) {
+			return fmt.Errorf("%w: constraint %q on %q has unsupported common kind %q", ptaherr.ErrUnsupportedFeature,
+				constraint.Name, constraintOwnerName(database.Tables, constraint), constraint.Type)
+		}
+	}
+	return nil
 }
 
 // validateDeclaredRoleNames refuses a role whose name or attributes the
@@ -2149,7 +2171,7 @@ func validateDeclaredKeyBlockSizes(dialect string, database *schemamodel.Databas
 
 // validateDeclaredConstraintMethods refuses an access method on a UNIQUE,
 // CHECK or FOREIGN KEY constraint. Every schema source accepts `using` on any
-// constraint, and only an EXCLUDE constraint and a primary key take a method;
+// constraint, and only a primary key takes a method;
 // on the other kinds the constraint was built without it and nothing said so
 // (stokaro/ptah#3958). A primary key's method is
 // [validateDeclaredPrimaryKeyOptions]'s.
@@ -2157,7 +2179,7 @@ func validateDeclaredConstraintMethods(dialect string, database *schemamodel.Dat
 	for _, constraint := range database.Constraints {
 		kind := strings.ToUpper(strings.TrimSpace(constraint.Type))
 		method := strings.TrimSpace(constraint.UsingMethod)
-		if method == "" || kind == ast.ExcludeConstraint.String() || kind == ast.PrimaryKeyConstraint.String() {
+		if method == "" || kind == ast.PrimaryKeyConstraint.String() {
 			continue
 		}
 		return fmt.Errorf("%w: %s: the %s constraint %q on %q asks for USING %s, and a %s constraint takes no access method",

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"ptah.run/core/hclext"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/systemschema"
 )
@@ -25,7 +27,27 @@ func (r *renderer) encodeOwnerBlocks(owners hclext.Set) (hclext.EncodeResult, er
 		return hclext.EncodeResult{}, err
 	}
 	request.Objects, request.Coverage = objects, r.db.FeatureCoverage
+	r.ownerRequirements = make(map[objectidentity.Key][]objectidentity.ID)
+	for _, object := range objects {
+		if value, ok := object.Value.(schemaext.Requirer); ok {
+			r.ownerRequirements[object.Ref.Key()] = slices.Clone(value.Requires())
+		}
+	}
 	return owners.Encode(context.Background(), request)
+}
+
+// ownerTablePresent uses the same component comparison as renderSlot so
+// omitted children cannot keep their dependencies in the rendered document.
+func (r *renderer) ownerTablePresent(block hclext.EncodedBlock) bool {
+	if block.Table == nil {
+		return false
+	}
+	for _, table := range r.layout.tables {
+		if block.Table.Schema == table.Schema && block.Table.Name == table.Name {
+			return true
+		}
+	}
+	return false
 }
 
 // renderAfterTables writes the blocks that stand for a table or are attached

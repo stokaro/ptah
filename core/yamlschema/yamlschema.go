@@ -268,8 +268,6 @@ type constraintSpec struct {
 	Type            stringScalar `yaml:"type"`
 	Table           stringScalar `yaml:"table"`
 	UsingMethod     stringScalar `yaml:"using"`
-	ExcludeElements stringScalar `yaml:"elements"`
-	WhereCondition  stringScalar `yaml:"condition"`
 	CheckExpression stringScalar `yaml:"check"`
 	Columns         stringList   `yaml:"columns"`
 	ForeignTable    stringScalar `yaml:"foreign_table"`
@@ -851,8 +849,6 @@ func buildConstraint(key, structName, tableName string, spec constraintSpec) (sc
 		Type:            constraintType,
 		Table:           constraintTable,
 		UsingMethod:     string(spec.UsingMethod),
-		ExcludeElements: string(spec.ExcludeElements),
-		WhereCondition:  string(spec.WhereCondition),
 		CheckExpression: string(spec.CheckExpression),
 		Columns:         columns,
 		ForeignTable:    string(spec.ForeignTable),
@@ -883,10 +879,6 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 	case "CHECK":
 		if spec.CheckExpression == "" {
 			return fmt.Errorf("constraint %q requires check", key)
-		}
-	case "EXCLUDE":
-		if spec.UsingMethod == "" || spec.ExcludeElements == "" {
-			return fmt.Errorf("constraint %q requires using and elements", key)
 		}
 	case "":
 		return fmt.Errorf("constraint %q requires type", key)

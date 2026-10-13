@@ -24,9 +24,9 @@ const commonOwner = "ptah.run/postgres"
 // creates with named children, to their owners and joins the contributed
 // operations to the common sequence through [featurehost.Graph], which places
 // each step in its window, orders the effects of different owners by their
-// lifecycle and refuses what no window can order. A created table's CREATE TABLE carries its attached settings and
-// none of its named children: each owner is sent the table as a
-// [featureplan.CreateTable] and creates its own children in its window. A diff
+// lifecycle and refuses what no window can order. A created table's CREATE TABLE carries its attached settings and inline
+// children. Each owner receives [featureplan.CreateTable] to account for those
+// children or create separately declared children in its window. A diff
 // with no feature change and no such table is returned as it was planned,
 // without asking the runtime.
 //
@@ -69,12 +69,15 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 			continue
 		}
 		subject := builder.Table(table.TableName)
+		if table.Desired.HasTable() {
+			subject = builder.TableParts(table.Desired.Table.Schema, table.Desired.Table.Name)
+		}
 		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Desired: table.Desired, Current: table.Current})
 		request.Changes = append(request.Changes, table.FeatureChanges...)
 		names[subject.Key()] = table.TableName
 	}
-	// A created table's named children are not part of its CREATE TABLE: each
-	// owner creates its own, in its window, after the objects they name.
+	// Every child owner accounts for the parent creation, whether CREATE TABLE
+	// contains the child or the owner creates it in a separate step.
 	for _, creation := range diff.TablesAdded {
 		if creation.OwnedObjects.IsZero() {
 			continue

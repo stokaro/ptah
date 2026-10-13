@@ -846,11 +846,6 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 			Expression:  constraint.CheckExpression,
 			NotEnforced: constraint.NotEnforced,
 		}
-	case "EXCLUDE":
-		node := ast.NewExcludeConstraint(constraint.Name, constraint.UsingMethod, constraint.ExcludeElements).
-			SetWhereCondition(constraint.WhereCondition)
-		node.Deferrable, node.Initially = constraint.Deferrable, constraint.Initially
-		return node
 	default:
 		return nil
 	}

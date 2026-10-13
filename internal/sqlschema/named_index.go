@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -22,6 +24,7 @@ type namedIndex struct {
 	position   int
 	index      *schemamodel.Index
 	constraint *schemamodel.Constraint
+	owned      *objectidentity.ID
 	primaryKey bool
 	column     *schemamodel.Field
 }
@@ -36,6 +39,8 @@ func (n namedIndex) backsConstraint() bool {
 // describe names the constraint the index backs, the way a refusal says it.
 func (n namedIndex) describe(name string) string {
 	switch {
+	case n.owned != nil:
+		return "constraint " + n.owned.Name.Source
 	case n.constraint != nil:
 		return fmt.Sprintf("%s constraint %s", strings.ToLower(n.constraint.Type), n.constraint.Name)
 	case n.primaryKey:
@@ -52,7 +57,10 @@ func (n namedIndex) drop() {
 }
 
 // rename gives the index, and the constraint it backs, the name to.
-func (n namedIndex) rename(database *schemamodel.Database, to string) {
+func (n namedIndex) rename(database *schemamodel.Database, to string) error {
+	if n.owned != nil {
+		return n.target.renameOwnedConstraint(n.owner, *n.owned, to)
+	}
 	switch {
 	case n.index != nil:
 		n.index.Name = to
@@ -63,6 +71,7 @@ func (n namedIndex) rename(database *schemamodel.Database, to string) {
 	default:
 		n.target.keyAsConstraint(database, n.column, to)
 	}
+	return nil
 }
 
 // findNamedIndex looks name up among the indexes of the tables in schema, a
@@ -98,12 +107,19 @@ func tableTarget(
 		sourcePlatform: sourcePlatform,
 		statement:      &alterStatement{},
 		keys:           &document.keys,
+		document:       document,
 	}
 }
 
 // namedIndex answers what the index name reaches on the table, if anything.
 func (t alterTarget) namedIndex(name string) (namedIndex, bool) {
 	for _, database := range t.databases {
+		for _, definition := range schemaext.DefinedConstraints(database.FeatureObjects) {
+			if definition.Indexed && t.ownsConstraint(definition.Ref) && normalizeSQLIdentifier("", definition.Ref.Name.Source) == name {
+				ref := definition.Ref
+				return namedIndex{target: t, owner: database, owned: &ref}, true
+			}
+		}
 		for i := range database.Indexes {
 			if t.ownsIndex(database.Indexes[i]) && database.Indexes[i].Name == name {
 				return namedIndex{target: t, owner: database, position: i, index: &database.Indexes[i]}, true

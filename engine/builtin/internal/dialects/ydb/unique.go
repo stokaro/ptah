@@ -2,7 +2,6 @@ package ydb
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -60,8 +59,6 @@ func uniqueConstraintIndex(table string, constraint *ast.ConstraintNode) (*ast.I
 		return nil, refuseFact(subject, "it is NOT ENFORCED, and YDB enforces every unique index")
 	case constraint.NotValid:
 		return nil, refuseKey(capability.AddConstraintNotValid, subject+" is NOT VALID")
-	case strings.TrimSpace(constraint.WhereCondition) != "":
-		return nil, refuseFact(subject, "YDB has no partial index")
 	case constraint.UsingMethod != "":
 		return nil, refuseFact(subject, fmt.Sprintf("it names the index method %q, and a YDB unique index is a global one", constraint.UsingMethod))
 	}

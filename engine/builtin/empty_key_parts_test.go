@@ -4,10 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -296,33 +300,32 @@ func TestRenderIndexNodeWithBlankParts_ASTFailurePath(t *testing.T) {
 // them. Two guards over one shape leave neither measurable: either could be
 // deleted with the tests still green.
 func TestRenderEmptyForeignKeyAndExclude_RefusedByTheirOwnGuards(t *testing.T) {
+	exclusion := ownedExclusionSchema()
+	exclusion.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+		Ref: pgtable.ExclusionRef("rooms", "no_overlap", identifier.ForDialect("postgres")), Value: &pgtable.DesiredExclusion{},
+	}))
 	tests := []struct {
-		name       string
-		constraint schemamodel.Constraint
-		wantErr    string
+		name     string
+		database *schemamodel.Database
+		wantErr  string
 	}{
 		{
-			name:       "foreign key with no columns",
-			constraint: schemamodel.Constraint{StructName: "T", Name: "fk", Type: "FOREIGN KEY", Table: "t"},
-			wantErr:    "0 local columns and 0 referenced columns",
+			name: "foreign key with no columns",
+			database: &schemamodel.Database{Tables: emptyKeyPartsTable(), Fields: emptyKeyPartsFields(),
+				Constraints: []schemamodel.Constraint{{StructName: "T", Name: "fk", Type: "FOREIGN KEY", Table: "t"}}},
+			wantErr: "0 local columns and 0 referenced columns",
 		},
 		{
-			name:       "exclude with no elements",
-			constraint: schemamodel.Constraint{StructName: "T", Name: "ex", Type: "EXCLUDE", Table: "t"},
-			wantErr:    "exclude constraint missing using method or elements",
+			name:     "exclude with no elements",
+			database: exclusion,
+			wantErr:  "EXCLUDE requires an index method and elements",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &schemamodel.Database{
-				Tables:      emptyKeyPartsTable(),
-				Fields:      emptyKeyPartsFields(),
-				Constraints: []schemamodel.Constraint{test.constraint},
-			}
-
-			statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
+			statements, err := builtin.GetOrderedCreateStatements(test.database, "postgres")
 
 			c.Assert(statements, qt.IsNil)
 			c.Assert(err, qt.IsNotNil)

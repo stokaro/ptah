@@ -39,7 +39,6 @@ func postgres18Rollback(c *qt.C, diff *difftypes.SchemaDiff, current *catalog.Da
 // constraint.
 func TestPlanBidirectionalSchemaDiff_DroppedConstraintComesBackWithItsClauses(t *testing.T) {
 	clause, parent, column := "n > 0", "parents", "id"
-	method, elements, predicate := "gist", "room WITH =, during WITH &&", "active"
 	tests := []struct {
 		name       string
 		constraint catalog.Constraint
@@ -54,11 +53,6 @@ func TestPlanBidirectionalSchemaDiff_DroppedConstraintComesBackWithItsClauses(t 
 			name:       "an unvalidated foreign key",
 			constraint: catalog.Constraint{Name: "orders_p_fkey", TableName: "orders", Schema: "app", Type: "FOREIGN KEY", ColumnName: "p", ColumnNames: []string{"p"}, ForeignTable: &parent, ForeignColumn: &column, ForeignColumns: []string{"id"}, NotValid: true},
 			want:       `FOREIGN KEY ("p") REFERENCES "parents"("id") NOT VALID;`,
-		},
-		{
-			name:       "a partial deferred exclusion",
-			constraint: catalog.Constraint{Name: "orders_period_excl", TableName: "orders", Schema: "app", Type: "EXCLUDE", UsingMethod: &method, ExcludeElements: &elements, WhereCondition: &predicate, Deferrable: true, Initially: "deferred"},
-			want:       `EXCLUDE USING gist (room WITH =, during WITH &&) WHERE (active) DEFERRABLE INITIALLY DEFERRED;`,
 		},
 		{
 			name: "a CHECK not enforced",

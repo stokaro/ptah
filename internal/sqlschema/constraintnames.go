@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlname"
@@ -281,7 +282,7 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 	case strings.EqualFold(constraint.Type, "CHECK"):
 		_, columns := tableColumns(target.databases, target.structName)
 		constraint.Name = claimCheckName(table, constraint.CheckExpression, columns, constraints)
-	case strings.EqualFold(constraint.Type, "UNIQUE"), strings.EqualFold(constraint.Type, "EXCLUDE"):
+	case strings.EqualFold(constraint.Type, "UNIQUE"):
 		nameIndexedConstraint(constraint, table, constraints, pgname.RelationNames(target.databases, schema))
 	case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
 		constraint.Name = claimDerivedName(table, constraint.Columns, foreignKeyLabel, constraints)
@@ -289,8 +290,8 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 	return nil
 }
 
-// nameIndexedConstraint names an unnamed UNIQUE or EXCLUDE on table, the two
-// kinds the server builds an index for. The index is a relation, so the name
+// nameIndexedConstraint names an unnamed UNIQUE on table.
+// The index is a relation, so the name
 // avoids every relation of the schema as well as every constraint, and claims
 // its place in both. Any other constraint, and one with a name, is left alone.
 func nameIndexedConstraint(
@@ -309,17 +310,14 @@ func nameIndexedConstraint(
 }
 
 // isIndexedConstraint reports whether the server builds an index for a
-// constraint: a UNIQUE or an EXCLUDE. The primary key is kept on the table.
+// common constraint: a UNIQUE. The primary key is kept on the table.
 func isIndexedConstraint(constraint schemamodel.Constraint) bool {
-	return strings.EqualFold(constraint.Type, "UNIQUE") || strings.EqualFold(constraint.Type, "EXCLUDE")
+	return strings.EqualFold(constraint.Type, "UNIQUE")
 }
 
-// indexedConstraintName answers the name PostgreSQL gives an unnamed UNIQUE or
-// EXCLUDE on table, numbered past every name taken answers true for.
+// indexedConstraintName answers the name PostgreSQL gives an unnamed UNIQUE
+// on table, numbered past every name taken answers true for.
 func indexedConstraintName(constraint schemamodel.Constraint, table string, taken func(string) bool) string {
-	if strings.EqualFold(constraint.Type, "EXCLUDE") {
-		return pgname.Exclude(table, constraint.ExcludeElements, taken)
-	}
 	return pgname.Unique(table, constraint.Columns, constraint.IncludeColumns, taken)
 }
 
@@ -364,6 +362,11 @@ func constraintNamesInSchema(databases []*schemamodel.Database, schema string) p
 	for _, database := range databases {
 		if database == nil {
 			continue
+		}
+		for _, defined := range schemaext.DefinedConstraints(database.FeatureObjects) {
+			if sameSchema("postgres", schema, defined.Ref.Schema.Authored()) {
+				names.Claim(defined.Ref.Name.Source)
+			}
 		}
 		tables := make(map[string]string, len(database.Tables))
 		for _, table := range database.Tables {

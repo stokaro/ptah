@@ -191,7 +191,7 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			name:    "ENFORCED after an EXCLUDE",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (r int, EXCLUDE USING btree (r WITH =) ENFORCED);",
-			wantErr: `ENFORCED at position 54: EXCLUDE constraints cannot be marked ENFORCED`,
+			wantErr: `(?s).*PostgreSQL EXCLUDE: unrepresented or unexpected clause ENFORCED.*`,
 		},
 		{
 			name:    "ENFORCED after an index",
@@ -369,7 +369,7 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect), parser.WithSQL(exclusionParserRuntime(c).SQL())).Parse()
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(statements, qt.IsNil)

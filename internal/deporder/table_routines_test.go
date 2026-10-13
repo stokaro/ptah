@@ -135,12 +135,12 @@ func TestTableExpressions_CarriesEveryClauseThatCanCallARoutine(t *testing.T) {
 			Check:               "column_check(v)",
 			GeneratedExpression: "generated(v)",
 		}},
-		[]schemamodel.Constraint{{CheckExpression: "constraint_check(v)", ExcludeElements: "exclude_element(v) WITH ="}},
+		[]schemamodel.Constraint{{CheckExpression: "constraint_check(v)"}},
 	)
 
 	for _, expression := range []string{
 		"table_check()", "literal_default", "default_expr()", "column_check(v)", "generated(v)",
-		"constraint_check(v)", "exclude_element(v) WITH =",
+		"constraint_check(v)",
 	} {
 		c.Assert(got, qt.Contains, expression)
 	}

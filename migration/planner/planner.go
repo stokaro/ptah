@@ -540,6 +540,10 @@ func GenerateSchemaDiffASTWithOptions(
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
+	diff, err = scopeCreatedObjects(runtime, diff, dialect)
+	if err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
 	nodes, err := planner.GenerateMigrationAST(
 		ctx, runtime,
 		diff,

@@ -22,7 +22,6 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
-	"ptah.run/internal/pgexclude"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/revisiontable"
@@ -225,6 +224,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
 	schema.Constraints = constraints
+	if err := r.readExclusions(ctx, schema); err != nil {
+		return nil, err
+	}
 
 	if err := r.readCapabilityGatedObjects(ctx, schema); err != nil {
 		return nil, err
@@ -2147,12 +2149,10 @@ func splitPostgresIndexColumns(value string) []string {
 	return columns
 }
 
-// readConstraints reads all constraints
+// readConstraints reads the constraints represented by the common model.
 func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, error) {
-	// A server without pg_catalog cannot answer either half below: the basic
-	// read is anchored in pg_constraint and aggregates with FILTER, and the
-	// second reads pg_constraint directly. The SQL-standard currentCatalog answers the
-	// same question with different joins (stokaro/ptah#942).
+	// The catalog read uses pg_constraint and FILTER. A server without those
+	// uses the information_schema read (stokaro/ptah#942).
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
 		var constraints []catalog.Constraint
 		for _, schemaName := range r.schemasToRead() {
@@ -2165,22 +2165,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, err
 		return constraints, nil
 	}
 
-	// First, read basic constraint information from information_schema
-	basicConstraints, err := r.readBasicConstraints(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Then, read PostgreSQL-specific constraints (like EXCLUDE) from pg_constraint
-	pgConstraints, err := r.readPostgreSQLConstraints(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Combine both sets of constraints
-	basicConstraints = append(basicConstraints, pgConstraints...)
-
-	return basicConstraints, nil
+	return r.readBasicConstraints(ctx)
 }
 
 // readBasicConstraints reads basic constraint information from information_schema
@@ -2556,119 +2541,6 @@ func unquotePostgresIdentifier(identifier string) string {
 		return trimmed
 	}
 	return strings.ReplaceAll(trimmed[1:len(trimmed)-1], `""`, `"`)
-}
-
-// readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
-func (r *Reader) readPostgreSQLConstraints(ctx context.Context) ([]catalog.Constraint, error) {
-	var constraints []catalog.Constraint
-	for _, schemaName := range r.schemasToRead() {
-		schemaConstraints, err := r.readPostgreSQLConstraintsForSchema(ctx, schemaName)
-		if err != nil {
-			return nil, err
-		}
-		constraints = append(constraints, schemaConstraints...)
-	}
-	return constraints, nil
-}
-
-func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
-	// Query PostgreSQL system catalogs for PostgreSQL-specific constraints
-	pgQuery := `
-			SELECT
-				n.nspname AS schema_name,
-				c.conname AS constraint_name,
-				cl.relname AS table_name,
-				c.contype AS constraint_type,
-			pg_get_constraintdef(c.oid) AS constraint_definition,
-			-- The extensions the backing index resolves to. An EXCLUDE element
-			-- prints its operator, and its operator class only when that class
-			-- is not the default, so EXCLUDE USING gist (room WITH =, ...) over
-			-- an integer column needs btree_gist and says nothing of it, while
-			-- (txt gist_trgm_ops WITH =) needs pg_trgm and does print the
-			-- class. See requiredExtensionsProjection.
-			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions,
-			COALESCE(obj_description(c.oid, 'pg_constraint'), '') AS constraint_comment,
-			c.condeferrable,
-			c.condeferred
-		FROM pg_constraint c
-		JOIN pg_class cl ON c.conrelid = cl.oid
-		JOIN pg_namespace n ON cl.relnamespace = n.oid
-		LEFT JOIN pg_index ix ON ix.indexrelid = c.conindid
-		LEFT JOIN pg_class ic ON ic.oid = c.conindid
-		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
-		AND n.nspname = $1
-		AND cl.relname NOT IN (` + revisiontable.NativeSQLNames + `)
-		ORDER BY cl.relname, c.conname`
-
-	rows, err := r.db.QueryContext(ctx, pgQuery, schemaName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query PostgreSQL constraints: %w", err)
-	}
-	defer rows.Close()
-
-	var constraints []catalog.Constraint
-	for rows.Next() {
-		var schemaName, constraintName, tableName, constraintType, definition string
-		var requiredExtensions, comment string
-		var deferrable, deferred bool
-		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition, &requiredExtensions,
-			&comment, &deferrable, &deferred)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
-		}
-
-		required, err := decodePostgresNameList(requiredExtensions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse required extensions for constraint %s: %w", constraintName, err)
-		}
-
-		// Convert PostgreSQL constraint type to standard type
-		var stdType string
-		switch constraintType {
-		case "x":
-			stdType = "EXCLUDE"
-		default:
-			continue // Skip unknown types
-		}
-
-		constraint := catalog.Constraint{
-			Name:       constraintName,
-			TableName:  tableName,
-			Schema:     r.outputSchema(schemaName),
-			Type:       stdType,
-			Requires:   extensionRequirements(required),
-			Comment:    comment,
-			Deferrable: deferrable,
-		}
-		if deferrable {
-			constraint.Initially = deferralTimings[deferred]
-		}
-
-		// Parse constraint definition for EXCLUDE constraints
-		if stdType == "EXCLUDE" {
-			parsed, err := pgexclude.Parse(definition)
-			if err != nil {
-				return nil, fmt.Errorf("read EXCLUDE constraint %s.%s.%s: %w", schemaName, tableName, constraintName, err)
-			}
-
-			if parsed.UsingMethod != "" {
-				constraint.UsingMethod = &parsed.UsingMethod
-			}
-			if parsed.Elements != "" {
-				constraint.ExcludeElements = &parsed.Elements
-			}
-			if parsed.WhereCondition != "" {
-				constraint.WhereCondition = &parsed.WhereCondition
-			}
-		}
-
-		constraints = append(constraints, constraint)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read constraints for schema %s: %w", schemaName, err)
-	}
-
-	return constraints, nil
 }
 
 // installedExtension is one row of pg_extension, as the extension owner

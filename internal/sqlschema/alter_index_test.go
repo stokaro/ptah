@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -149,7 +150,7 @@ func TestRead_AlterIndex_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(indexShapeOf(c, database), qt.DeepEquals, test.want, qt.Commentf("%+v", indexShapeOf(c, database)))

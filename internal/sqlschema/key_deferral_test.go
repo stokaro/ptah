@@ -1,12 +1,14 @@
 package sqlschema_test
 
 import (
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -33,11 +35,17 @@ func deferredKeysOf(database schemamodel.Database) []deferredKey {
 		}
 	}
 	for _, constraint := range database.Constraints {
-		if slices.Contains([]string{"UNIQUE", "EXCLUDE"}, constraint.Type) {
+		if constraint.Type == "UNIQUE" {
 			keys = append(keys, deferredKey{
 				Table: constraint.Table, Type: constraint.Type, Name: constraint.Name, Columns: constraint.Columns,
 				Deferrable: constraint.Deferrable, Initially: constraint.Initially,
 			})
+		}
+	}
+	for _, object := range must.Must(database.FeatureObjects.All()) {
+		if value, ok := object.Value.(*pgtable.DesiredExclusion); ok {
+			keys = append(keys, deferredKey{Table: object.Ref.Parent.Source, Type: "EXCLUDE", Name: object.Ref.Name.Source,
+				Deferrable: value.Deferrable, Initially: value.Initially})
 		}
 	}
 	return keys
@@ -61,7 +69,7 @@ CREATE TABLE p3 (x int);
 ALTER TABLE p3 ADD PRIMARY KEY (x) DEFERRABLE;`
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(sql), "postgres")
+	database, _, err := sqlschema.ReadWith(t.Context(), []byte(sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(deferredKeysOf(database), qt.DeepEquals, []deferredKey{
@@ -71,8 +79,8 @@ ALTER TABLE p3 ADD PRIMARY KEY (x) DEFERRABLE;`
 		{Table: "u1", Type: "UNIQUE", Name: "u1_x_key", Columns: []string{"x"}, Deferrable: true},
 		{Table: "u2", Type: "UNIQUE", Name: "u2_named", Columns: []string{"x"}, Deferrable: true, Initially: "deferred"},
 		{Table: "u3", Type: "UNIQUE", Name: "u3_x_key", Columns: []string{"x"}, Deferrable: true, Initially: "immediate"},
-		{Table: "e1", Type: "EXCLUDE", Name: "e1_r_excl", Deferrable: true, Initially: "deferred"},
 		{Table: "u4", Type: "UNIQUE", Name: "u4_k", Columns: []string{"x"}, Deferrable: true, Initially: "deferred"},
+		{Table: "e1", Type: "EXCLUDE", Name: "e1_r_excl", Deferrable: true, Initially: "deferred"},
 	})
 }
 

@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -183,7 +184,7 @@ func TestRead_PostgresCreatedConstraintNames_FailurePath(t *testing.T) {
 			// relation "c7_x_key" already exists
 			name:    "a column's UNIQUE takes the name a later EXCLUDE writes",
 			sql:     "CREATE TABLE c7 (id bigint PRIMARY KEY, x int UNIQUE, y int, CONSTRAINT c7_x_key EXCLUDE USING btree (y WITH =));",
-			wantErr: "CREATE TABLE c7 gives the name c7_x_key to the EXCLUDE (y WITH =), which the UNIQUE of column x already holds",
+			wantErr: "CREATE TABLE c7 gives the name c7_x_key to the ptah.run/postgres/exclusion-constraint constraint, which the UNIQUE of column x already holds",
 		},
 		{
 			// relation "c5_x_y_key" already exists
@@ -195,7 +196,7 @@ func TestRead_PostgresCreatedConstraintNames_FailurePath(t *testing.T) {
 			// relation "k14_b_key" already exists
 			name:    "an unnamed table UNIQUE takes the name a later EXCLUDE writes",
 			sql:     "CREATE TABLE k14 (a int, b int, UNIQUE (a), UNIQUE (b), CONSTRAINT k14_b_key EXCLUDE USING btree (a WITH =));",
-			wantErr: "CREATE TABLE k14 gives the name k14_b_key to the EXCLUDE (a WITH =), which the UNIQUE (b) already holds",
+			wantErr: "CREATE TABLE k14 gives the name k14_b_key to the ptah.run/postgres/exclusion-constraint constraint, which the UNIQUE (b) already holds",
 		},
 		{
 			// relation "w1_a_key" already exists: the key over a is built at
@@ -268,7 +269,7 @@ func TestRead_PostgresCreatedConstraintNames_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, statements, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, statements, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateConstraintName)
 			c.Assert(err.Error(), qt.Contains, test.wantErr+" when the server builds it, and PostgreSQL refuses the statement")

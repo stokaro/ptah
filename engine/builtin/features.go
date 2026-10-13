@@ -148,6 +148,10 @@ func validatePostgresFamilyObjects(dialect string, objects schemaext.Objects) er
 			if err := tsschema.ValidateDesiredContinuousAggregate(value); err != nil {
 				return err
 			}
+		case *pgtable.DesiredExclusion:
+			if err := validateExclusionObject(dialect, object, value); err != nil {
+				return err
+			}
 		case *pgpolicy.DesiredPolicy:
 			if !slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
 				return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
@@ -469,4 +473,14 @@ func refuseSharedRowSecurity(dialect string, database *schemamodel.Database) err
 	}
 	return fmt.Errorf("%w: shared row-level security declarations on %s; the PostgreSQL family declares "+
 		"row-level security through the row-security owner's models", ptaherr.ErrUnsupportedFeature, platform.NormalizeDialect(dialect))
+}
+
+func validateExclusionObject(target string, object schemaext.Object, value *pgtable.DesiredExclusion) error {
+	if err := pgtablerender.ValidateExclusionTarget(target); err != nil {
+		return err
+	}
+	if err := pgtable.ValidateExclusionRef(object.Ref); err != nil {
+		return err
+	}
+	return pgtable.ValidateDesiredExclusion(value)
 }

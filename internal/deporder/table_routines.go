@@ -30,8 +30,8 @@ type TableStep struct {
 
 // TableExpressions is the expression text a table's checks, columns and
 // constraints carry, in which it can call a routine: table CHECK clauses,
-// column defaults, CHECK clauses and generated columns, and CHECK and EXCLUDE
-// constraints. A MySQL-family ON UPDATE clause is not among them: MySQL and
+// column defaults, CHECK clauses and generated columns, and CHECK constraints.
+// Feature owners order their own constraints. A MySQL-family ON UPDATE clause is not among them: MySQL and
 // MariaDB accept only CURRENT_TIMESTAMP and its synonyms there, so it never
 // calls a routine.
 func TableExpressions(checks []string, fields []schemamodel.Field, constraints []schemamodel.Constraint) string {
@@ -53,8 +53,6 @@ func TableExpressions(checks []string, fields []schemamodel.Field, constraints [
 	}
 	for _, constraint := range constraints {
 		text.WriteString(constraint.CheckExpression)
-		text.WriteString("\n")
-		text.WriteString(constraint.ExcludeElements)
 		text.WriteString("\n")
 	}
 	return text.String()

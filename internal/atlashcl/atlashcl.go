@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
@@ -1119,8 +1120,12 @@ func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Bloc
 	if err != nil {
 		return schemamodel.Constraint{}, err
 	}
+	constraintType = strings.ToUpper(strings.TrimSpace(constraintType))
 	if constraintType == "" {
 		return schemamodel.Constraint{}, p.blockError(block, "constraint %q requires type", block.Labels[0])
+	}
+	if !constraintkind.Valid(constraintType) {
+		return schemamodel.Constraint{}, p.blockError(block, "constraint %q has unsupported common kind %q", block.Labels[0], constraintType)
 	}
 	columns, err := p.stringListAttr(block, "columns")
 	if err != nil {
@@ -1139,14 +1144,6 @@ func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Bloc
 		return schemamodel.Constraint{}, err
 	}
 	usingMethod, err := p.stringAttr(block, "using", "constraint")
-	if err != nil {
-		return schemamodel.Constraint{}, err
-	}
-	excludeElements, err := p.stringAttr(block, "elements", "constraint")
-	if err != nil {
-		return schemamodel.Constraint{}, err
-	}
-	whereCondition, err := p.stringAttr(block, "condition", "constraint")
 	if err != nil {
 		return schemamodel.Constraint{}, err
 	}
@@ -1176,8 +1173,6 @@ func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Bloc
 		Type:            constraintType,
 		Table:           table.QualifiedName(),
 		UsingMethod:     usingMethod,
-		ExcludeElements: excludeElements,
-		WhereCondition:  whereCondition,
 		CheckExpression: checkExpression,
 		Columns:         columns,
 		IncludeColumns:  include,
@@ -1972,8 +1967,6 @@ func (p *parser) rejectUnsupportedConstraintAttrs(block *hclsyntax.Block) error 
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"type":            true,
 		"using":           true,
-		"elements":        true,
-		"condition":       true,
 		"check":           true,
 		"columns":         true,
 		"include":         true,

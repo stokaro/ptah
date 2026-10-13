@@ -556,7 +556,7 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 		return fmt.Errorf("%w: SQL parser of %s declined its %s claim %q; only a statement claim may decline",
 			schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 	}
-	if value.Index != nil || value.Operation != nil || !value.Facets.IsZero() || value.Statement != nil || value.Table != nil ||
+	if value.Index != nil || value.Constraint != nil || value.Operation != nil || !value.Facets.IsZero() || value.Statement != nil || value.Table != nil ||
 		value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 || hasStatementRequirements(value) {
 		return fmt.Errorf("%w: SQL parser of %s declined its statement claim %q and answered a value beside it",
 			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
@@ -571,6 +571,8 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 func checkStatementValue(extension Extension, claim Claim, value Value) error {
 	var problem string
 	switch {
+	case value.Constraint != nil:
+		problem = "an inline constraint at a statement"
 	case value.Statement == nil && value.Table == nil:
 		problem = "no statement"
 	case value.Statement != nil && value.Table != nil:

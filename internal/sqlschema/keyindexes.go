@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -26,6 +27,8 @@ type Document struct {
 	YDBDatabasePath string
 	base            *schemamodel.Database
 	keys            keyIndexes
+	// comments holds final source edits until the owner receives a file batch.
+	comments map[objectidentity.Key]string
 	// notes is what the parse of the file being read found about its AST that
 	// no node carries, and nil for an AST that came without one; see
 	// [parseNotes].
@@ -45,6 +48,7 @@ type parseNotes interface {
 	ForeignKeyIndex(index *ast.IndexNode) bool
 	DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool)
 	DeclaredObjects(operation *ast.ExtensionAlterOperation) schemaext.Objects
+	DeclaredConstraint(operation *ast.ExtensionAlterOperation) *ast.OwnedIndexConstraint
 	OwnerStatement(statement *ast.ExtensionStatement) (parser.OwnerStatement, bool)
 }
 
@@ -214,4 +218,11 @@ func (d *Document) declaredObjects(operation *ast.ExtensionAlterOperation) schem
 		return schemaext.Objects{}
 	}
 	return d.notes.DeclaredObjects(operation)
+}
+
+func (d *Document) declaredConstraint(operation *ast.ExtensionAlterOperation) *ast.OwnedIndexConstraint {
+	if d == nil || d.notes == nil {
+		return nil
+	}
+	return d.notes.DeclaredConstraint(operation)
 }

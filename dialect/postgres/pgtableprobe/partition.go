@@ -1,5 +1,5 @@
-// Package pgtableprobe captures PostgreSQL partition-key normalization inside
-// rolled-back probe transactions. It attaches facts to owner declarations and
+// Package pgtableprobe captures PostgreSQL partition-key and exclusion-clause
+// normalization in rolled-back transactions. It attaches facts to declarations and
 // leaves catalog inspection, comparison and migration execution to their callers.
 package pgtableprobe
 

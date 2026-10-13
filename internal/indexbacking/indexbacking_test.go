@@ -17,7 +17,7 @@ func TestKindOf_HappyPath(t *testing.T) {
 	}{
 		{name: "primary key", constraintType: "PRIMARY KEY", want: indexbacking.PrimaryKey},
 		{name: "unique", constraintType: "UNIQUE", want: indexbacking.Unique},
-		{name: "exclude", constraintType: "EXCLUDE", want: indexbacking.Exclusion},
+		{name: "feature-owned constraints use catalog ownership", constraintType: "EXCLUDE", want: indexbacking.None},
 		{name: "foreign key", constraintType: "FOREIGN KEY", want: indexbacking.ForeignKey},
 		{name: "lower case", constraintType: "unique", want: indexbacking.Unique},
 		{name: "surrounded by space", constraintType: "  PRIMARY KEY  ", want: indexbacking.PrimaryKey},
@@ -46,7 +46,6 @@ func TestServerBacks_HappyPath(t *testing.T) {
 		{name: "sqlserver keeps them separate", dialect: "sqlserver", kind: indexbacking.Unique, want: false},
 		{name: "ydb has no unique constraint to back", dialect: "ydb", kind: indexbacking.Unique, want: false},
 		{name: "ydb keys a table without an index", dialect: "ydb", kind: indexbacking.PrimaryKey, want: true},
-		{name: "postgres exclusion", dialect: "postgres", kind: indexbacking.Exclusion, want: true},
 		{name: "mysql foreign key", dialect: "mysql", kind: indexbacking.ForeignKey, want: true},
 		{name: "mariadb foreign key", dialect: "mariadb", kind: indexbacking.ForeignKey, want: true},
 		{name: "spanner foreign key", dialect: "spanner", kind: indexbacking.ForeignKey, want: true},
@@ -85,7 +84,6 @@ func TestNamedAfterConstraint_IsNarrowerThanServerBacks(t *testing.T) {
 		{name: "spanner foreign key", dialect: "spanner", kind: indexbacking.ForeignKey, serverBacks: true, namedAfter: false},
 		{name: "primary key is read from its mark", dialect: "postgres", kind: indexbacking.PrimaryKey, serverBacks: true, namedAfter: false},
 		{name: "postgres unique agrees", dialect: "postgres", kind: indexbacking.Unique, serverBacks: true, namedAfter: true},
-		{name: "postgres exclusion agrees", dialect: "postgres", kind: indexbacking.Exclusion, serverBacks: true, namedAfter: true},
 		{name: "sqlserver unique agrees on false", dialect: "sqlserver", kind: indexbacking.Unique, serverBacks: false, namedAfter: false},
 	}
 

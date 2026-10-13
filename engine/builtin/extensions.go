@@ -66,6 +66,10 @@ func lowerPostgresFamilyFacets(table string, facets schemaext.Facets) ([]ast.Ext
 // selected in [ownersFor], the one place at this composition boundary that
 // names them.
 type renderOwners struct {
+	// tableConstraints renders unresolved source syntax within CREATE TABLE.
+	tableConstraints func(target string, caps capability.Capabilities, table string, constraints []*ast.OwnedIndexConstraint) ([]string, []string, error)
+	// tableObjects creates each named child after CREATE TABLE.
+	tableObjects func(target string, caps capability.Capabilities, table string, objects schemaext.Objects) ([]string, error)
 	// tablePrefix renders and consumes facets written before TABLE.
 	tablePrefix func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, schemaext.Facets, error)
 	// extensions builds the owners' handler registry; nil means none.
@@ -103,7 +107,8 @@ func ownersFor(dialect string) renderOwners {
 		return renderOwners{extensions: spannerRegistry, tableStorage: spannerrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres:
-		return renderOwners{extensions: postgresRegistry, tableStorage: pgtablerender.CreateTablePartition, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
+		return renderOwners{extensions: postgresRegistry, tableConstraints: pgtablerender.SourceExclusions, tableObjects: pgtablerender.CreateTableExclusionStatements, tableStorage: pgtablerender.CreateTablePartition,
+			tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.YugabyteDB:
 		return renderOwners{extensions: postgresFamilyRegistry, tableStorage: pgtablerender.CreateTablePartition, lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.MySQL, platform.MariaDB:
@@ -130,7 +135,11 @@ func postgresOwners(dialect string) (postgres.Owners, error) {
 		return postgres.Owners{}, err
 	}
 	owners := ownersFor(dialect)
-	return postgres.Owners{Extensions: registry, TableStorage: owners.tableStorage, TablePrefix: owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets}, nil
+	return postgres.Owners{
+		Extensions: registry, TableObjects: owners.tableObjects,
+		TableConstraints: owners.tableConstraints, TableStorage: owners.tableStorage,
+		TablePrefix: owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets,
+	}, nil
 }
 
 func prepareExtensionStatement(dialect string, caps capability.Capabilities, node *ast.ExtensionStatement) (ast.Node, error) {

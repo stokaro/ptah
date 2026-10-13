@@ -55,49 +55,6 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 		expectedSQL []string
 	}{
 		{
-			name: "EXCLUDE constraint added",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}, {Name: "positive_price"}},
-			},
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						StructName:      "Booking",
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-						WhereCondition:  "is_active = true",
-					},
-				},
-			},
-			expectedSQL: []string{
-				"ALTER TABLE bookings ADD CONSTRAINT no_overlapping_bookings EXCLUDE USING gist (room_id WITH =, during WITH &&) WHERE (is_active = true);",
-			},
-		},
-		{
-			name: "EXCLUDE constraint without WHERE clause",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "unique_locations"}},
-			},
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						StructName:      "Location",
-						Name:            "unique_locations",
-						Type:            "EXCLUDE",
-						Table:           "locations",
-						UsingMethod:     "gist",
-						ExcludeElements: "location WITH &&",
-					},
-				},
-			},
-			expectedSQL: []string{
-				"ALTER TABLE locations ADD CONSTRAINT unique_locations EXCLUDE USING gist (location WITH &&);",
-			},
-		},
-		{
 			name: "CHECK constraint added",
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "positive_price"}},
@@ -158,35 +115,6 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			},
 			expectedSQL: []string{
 				"ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;",
-			},
-		},
-		{
-			name: "Multiple constraints added",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}, {Name: "positive_price"}},
-			},
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						StructName:      "Booking",
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-					},
-					{
-						StructName:      "Product",
-						Name:            "positive_price",
-						Type:            "CHECK",
-						Table:           "products",
-						CheckExpression: "price > 0",
-					},
-				},
-			},
-			expectedSQL: []string{
-				"ALTER TABLE bookings ADD CONSTRAINT no_overlapping_bookings EXCLUDE USING gist (room_id WITH =, during WITH &&);",
-				"ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);",
 			},
 		},
 	}

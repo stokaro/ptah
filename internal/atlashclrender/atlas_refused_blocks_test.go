@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
@@ -539,7 +540,7 @@ func TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName(t *testin
 		{
 			name:      "an exclusion constraint prints the operator class",
 			database:  printedOpclassConstraintDatabase,
-			wantSpelt: "elements = \"txt gist_trgm_ops WITH =\"",
+			wantSpelt: `elements = sql("txt gist_trgm_ops WITH =")`,
 		},
 	}
 
@@ -653,7 +654,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo(
 			block:      "extension \"btree_gist\"",
 			blockPath:  "extensions.btree_gist",
 			absentName: "booking_room_during_excl",
-			orphanPath: "constraint booking_room_during_excl",
+			orphanPath: "tables.public.booking.exclusions.booking_room_during_excl",
 		},
 	}
 
@@ -822,15 +823,13 @@ func implicitOpclassConstraintDatabase() *schemamodel.Database {
 			{StructName: "Booking", Name: "room", Type: "integer"},
 			{StructName: "Booking", Name: "during", Type: "tsrange"},
 		},
-		Constraints: []schemamodel.Constraint{{
-			StructName:      "Booking",
-			Name:            "booking_room_during_excl",
-			Type:            "EXCLUDE",
-			Table:           "booking",
-			UsingMethod:     "gist",
-			ExcludeElements: "room WITH =, during WITH &&",
-			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtable.ExclusionRef("public.booking", "booking_room_during_excl", identifier.ForDialect(platform.Postgres)),
+			Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{
+				UsingMethod: "gist", Elements: "room WITH =, during WITH &&",
+				Dependencies: []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
+			}},
+		})),
 	}, "btree_gist", pgextension.DesiredExtension{Provides: []string{"gbt_int4_compress", "gbt_int4_consistent", "gbtreekey8"}})
 }
 
@@ -874,15 +873,13 @@ func printedOpclassConstraintDatabase() *schemamodel.Database {
 			{StructName: "Y", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Y", Name: "txt", Type: "text"},
 		},
-		Constraints: []schemamodel.Constraint{{
-			StructName:      "Y",
-			Name:            "y_txt_excl",
-			Type:            "EXCLUDE",
-			Table:           "y",
-			UsingMethod:     "gist",
-			ExcludeElements: "txt gist_trgm_ops WITH =",
-			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtable.ExclusionRef("public.y", "y_txt_excl", identifier.ForDialect(platform.Postgres)),
+			Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{
+				UsingMethod: "gist", Elements: "txt gist_trgm_ops WITH =",
+				Dependencies: []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
+			}},
+		})),
 	}, "pg_trgm", pgextension.DesiredExtension{Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"}})
 }
 
@@ -923,17 +920,14 @@ func orphanOpclassIndexDatabase() *schemamodel.Database {
 // table this render does not write, with an unrelated table kept so the
 // document is a document rather than a lone block.
 //
-// groupConstraintsByTable reports it through the same orphan branch the index
-// arm goes through, which is the point of the row: the collector and
-// renderTables have to agree for both object kinds, and an arm with no test is
-// where the next divergence lands.
+// The owner block host reports the orphan. Dependency collection must follow
+// the same decision so it does not retain an extension for an omitted block.
 func orphanOpclassConstraintDatabase() *schemamodel.Database {
 	db := implicitOpclassConstraintDatabase()
 	db.Tables = []schemamodel.Table{{StructName: "Src", Name: "src", Schema: "public"}}
 	db.Fields = []schemamodel.Field{
 		{StructName: "Src", Name: "id", Type: "integer", Primary: true},
 	}
-	db.Constraints[0].Table = "public.booking"
 	return db
 }
 

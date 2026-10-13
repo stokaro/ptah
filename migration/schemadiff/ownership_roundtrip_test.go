@@ -10,7 +10,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
@@ -21,21 +24,17 @@ import (
 // ownershipShape is one way a target reports an object that has both a semantic
 // identity and a physical backing.
 //
-// The shapes are the ones a READER produces, and that qualifier is the whole
-// content of this fixture. Five earlier drafts each reported a defect that was
-// the fixture instead: a primary-key constraint whose column carried no
-// IsPrimaryKey, an EXCLUDE with no UsingMethod or ExcludeElements (which
-// dbschematogo refuses by design), and a SQL Server UNIQUE constraint with a
-// same-named index beside it — a row the SQL Server reader cannot emit, because
-// its index query filters `is_unique_constraint = 0`. A shape no reader
-// produces is a shape whose handling nothing has to get right.
+// Each fixture matches a reader: primary keys carry IsPrimaryKey, feature-owned
+// constraints mark their backing indexes, and SQL Server reports a UNIQUE
+// constraint without the index its query excludes.
 type ownershipShape struct {
 	name string
 	// skip names the dialects whose reader cannot produce this shape, with the
 	// reason. A shape a reader cannot emit is a shape whose handling nothing has
 	// to get right, and asserting about it measures the fixture.
-	skip  map[string]string
-	build func(*catalog.Database)
+	skip     map[string]string
+	build    func(*catalog.Database)
+	dialects []string
 }
 
 func ownershipShapes() []ownershipShape {
@@ -74,15 +73,16 @@ func ownershipShapes() []ownershipShape {
 			},
 		},
 		{
-			name: "an EXCLUDE constraint and the index that backs it",
+			name:     "an EXCLUDE constraint and the index that backs it",
+			dialects: []string{"postgres"},
 			build: func(database *catalog.Database) {
-				using, elements := "gist", "a WITH ="
-				database.Constraints = []catalog.Constraint{{
-					Name: "t_excl", TableName: "t", Type: "EXCLUDE", ColumnNames: []string{"a"},
-					UsingMethod: &using, ExcludeElements: &elements,
-				}}
+				ref := pgtable.ExclusionRef("t", "t_excl", identifier.ForDialect("postgres"))
+				database.FeatureCoverage = must.Must(pgtable.ExclusionCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+					Ref: ref, Value: &pgtable.ObservedExclusion{UsingMethod: "gist", Elements: "a WITH ="},
+				}))
 				database.Indexes = []catalog.Index{{
-					Name: "t_excl", TableName: "t", Columns: []string{"a"},
+					Name: "t_excl", TableName: "t", Columns: []string{"a"}, ManagedBy: ref,
 				}}
 			},
 		},
@@ -162,7 +162,11 @@ type ownershipCell struct {
 func ownershipCells() []ownershipCell {
 	var cells []ownershipCell
 	for _, shape := range ownershipShapes() {
-		for _, dialect := range capability.DefaultDialects() {
+		dialects := shape.dialects
+		if len(dialects) == 0 {
+			dialects = capability.DefaultDialects()
+		}
+		for _, dialect := range dialects {
 			if _, skipped := shape.skip[dialect]; skipped {
 				continue
 			}
@@ -243,6 +247,7 @@ func TestOwnershipRoundTrip_ADroppedObjectIsStillReported(t *testing.T) {
 			desired := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ownershipCatalog(shape), "postgres", must.Must(builtin.New())))
 			desired.Indexes = nil
 			desired.Constraints = nil
+			desired.FeatureObjects = schemaext.Objects{}
 			for index := range desired.Tables {
 				desired.Tables[index].PrimaryKey = nil
 				desired.Tables[index].PrimaryKeyName = ""
@@ -270,6 +275,9 @@ func doublyRepresentedObjects(desired *schemamodel.Database) []string {
 	for _, constraint := range desired.Constraints {
 		constraints[constraint.Table+"."+constraint.Name] = struct{}{}
 	}
+	for _, constraint := range schemaext.DefinedConstraints(desired.FeatureObjects) {
+		constraints[schemamodel.QualifyTableName(constraint.Ref.Schema.Authored(), constraint.Ref.Parent.Source)+"."+constraint.Ref.Name.Source] = struct{}{}
+	}
 	var doubled []string
 	for _, index := range desired.Indexes {
 		identity := index.TableName + "." + index.Name
@@ -295,6 +303,14 @@ func objectChanges(diff *difftypes.SchemaDiff) []string {
 	}
 	for _, removed := range diff.ConstraintsRemoved {
 		changes = append(changes, fmt.Sprintf("constraint removed: %s on %s", removed.Name, removed.TableName))
+	}
+	for _, change := range diff.FeatureChanges {
+		changes = append(changes, fmt.Sprintf("feature changed: %s", change.Subject))
+	}
+	for _, table := range diff.TablesModified {
+		for _, change := range table.FeatureChanges {
+			changes = append(changes, fmt.Sprintf("feature changed: %s", change.Subject))
+		}
 	}
 	return changes
 }

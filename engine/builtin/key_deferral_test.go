@@ -5,11 +5,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -141,8 +145,7 @@ func TestRenderKeyDeferral_AddedConstraintOnAnUnsupportedTarget(t *testing.T) {
 	c.Assert(sql, qt.Equals, "")
 }
 
-// deferrableExcludeSchema is a table whose EXCLUDE defers its check, and whose
-// foreign key to itself defers too.
+// deferrableExcludeSchema declares an exclusion checked at transaction commit.
 func deferrableExcludeSchema() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Slot", Name: "slots", PrimaryKey: []string{"id"}}},
@@ -150,10 +153,12 @@ func deferrableExcludeSchema() *schemamodel.Database {
 			{StructName: "Slot", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Slot", Name: "r", Type: "INTEGER"},
 		},
-		Constraints: []schemamodel.Constraint{{
-			StructName: "Slot", Table: "slots", Name: "slots_r_excl", Type: "EXCLUDE",
-			UsingMethod: "btree", ExcludeElements: "r WITH =", Deferrable: true, Initially: "deferred",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtable.ExclusionRef("slots", "slots_r_excl", identifier.ForDialect("postgres")),
+			Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{
+				UsingMethod: "btree", Elements: "r WITH =", Deferrable: true, Initially: "deferred",
+			}},
+		})),
 	}
 }
 
@@ -161,13 +166,14 @@ func deferrableExcludeSchema() *schemamodel.Database {
 // table and in an added constraint.
 func TestRenderKeyDeferral_Exclude(t *testing.T) {
 	c := qt.New(t)
-	exclude := ast.NewExcludeConstraint("slots_r_excl", "btree", "r WITH =").SetWhereCondition("r > 0")
-	exclude.Deferrable = true
+	exclude := &pgtable.AlterExclusion{Name: "slots_r_excl", Change: pgtable.ExclusionChange{
+		After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "btree", Elements: "r WITH =", WhereCondition: "r > 0", Deferrable: true}},
+	}}
 
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(deferrableExcludeSchema(), "postgres", capability.Postgres18())
 	c.Assert(err, qt.IsNil)
 	added, err := builtin.RenderSQLWithCapabilities("postgres", capability.Postgres18(), &ast.AlterTableNode{
-		Name: "slots", Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: exclude}},
+		Name: "slots", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: exclude}},
 	})
 
 	c.Assert(err, qt.IsNil)

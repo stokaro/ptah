@@ -821,7 +821,15 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// The lines are rendered before the CREATE TABLE header so that a foreign
 	// key this target cannot host is named on its own line rather than left as
 	// a hole in the column list.
-	lines, refused, err := r.renderCreateTableLines(node)
+	source, sourceComments, err := r.renderSourceTableConstraints(node)
+	if err != nil {
+		return err
+	}
+	lines, refused, err := r.renderCreateTableLines(node, source)
+	if err != nil {
+		return err
+	}
+	owned, err := r.renderOwnedTableObjects(node)
 	if err != nil {
 		return err
 	}
@@ -866,6 +874,9 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
 	r.renderTableComments(node)
+	for _, statement := range append(owned, sourceComments...) {
+		r.w.WriteLine(statement)
+	}
 
 	return r.renderTableFacets(following)
 }
@@ -978,13 +989,15 @@ func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard, pr
 // the identities of the foreign keys this target cannot host. The caller names
 // those on their own lines; returning them rather than writing them keeps the
 // skip comments out of the parenthesized column list.
-func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) (lines, refused []string, err error) {
-	lines = make([]string, 0, len(node.Columns)+len(node.Constraints))
+func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode, owned []string) (lines, refused []string, err error) {
+	positions := make(map[any]int)
+	lines = make([]string, 0, len(node.Columns)+len(node.Constraints)+len(owned))
 	for _, column := range node.Columns {
 		line, err := r.renderColumn(r.namedColumnCheck(node.Name, column))
 		if err != nil {
 			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
 		}
+		positions[column] = len(lines)
 		lines = append(lines, line)
 	}
 
@@ -997,10 +1010,15 @@ func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) (lines, ref
 			refused = append(refused, foreignKeyIdentity(constraint))
 			continue
 		}
+		positions[constraint] = len(lines)
 		lines = append(lines, line)
 	}
 
-	return r.appendColumnForeignKeyLines(lines, refused, node.Columns)
+	for i, line := range owned {
+		positions[node.OwnedConstraints[i]] = len(lines)
+		lines = append(lines, line)
+	}
+	return r.appendColumnForeignKeyLines(orderedTableBody(node.Elements, lines, positions), refused, node.Columns)
 }
 
 func (r *Renderer) appendColumnForeignKeyLines(
@@ -1951,8 +1969,6 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 			check = fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(constraint.Name), constraint.Expression)
 		}
 		return check + notEnforcedClauses[constraint.NotEnforced], nil
-	case ast.ExcludeConstraint:
-		return r.renderExcludeConstraint(constraint)
 	default:
 		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
 	}
@@ -2064,29 +2080,7 @@ func (r *Renderer) deferrableClause(ref *ast.ForeignKeyRef, name string) (string
 	}
 }
 
-// renderExcludeConstraint renders an EXCLUDE constraint
-func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (string, error) {
-	if constraint.UsingMethod == "" || constraint.ExcludeElements == "" {
-		return "", fmt.Errorf("exclude constraint missing using method or elements")
-	}
-
-	// Build the constraint string
-	var result string
-	if constraint.Name != "" {
-		result = fmt.Sprintf("  CONSTRAINT %s EXCLUDE USING %s (%s)", r.escapeIdentifier(constraint.Name), constraint.UsingMethod, constraint.ExcludeElements)
-	} else {
-		result = fmt.Sprintf("  EXCLUDE USING %s (%s)", constraint.UsingMethod, constraint.ExcludeElements)
-	}
-
-	// Add optional WHERE clause
-	if constraint.WhereCondition != "" {
-		result += fmt.Sprintf(" WHERE (%s)", constraint.WhereCondition)
-	}
-
-	return r.withKeyDeferral(result, constraint)
-}
-
-// withKeyDeferral appends the deferral of a PRIMARY KEY, UNIQUE or EXCLUDE to
+// withKeyDeferral appends the deferral of a PRIMARY KEY or UNIQUE to
 // line. A key that is not deferrable gets no clause, which is what the server
 // assumes. The shared renderer has refused a deferrable key on a target
 // without deferrable keys, so one that reaches here is written.

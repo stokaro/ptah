@@ -7,6 +7,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/astbuilder"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -88,19 +91,20 @@ func ExampleNewIndex() {
 	// CREATE UNIQUE INDEX IF NOT EXISTS "uq_users_email" ON "users" ("email");
 }
 
-// ExampleNewTable_mixedWithAst appends a hand-built core/ast constraint to a
-// table the builder produced. Build returns a plain *ast.CreateTableNode, so a
-// construct the builders do not model — here a PostgreSQL EXCLUDE constraint —
-// stays reachable through core/ast directly, and the mixed result renders like
-// any other node.
+// ExampleNewTable_mixedWithAst attaches a PostgreSQL-owned constraint to a
+// table from the common builder. Its named child is created after the table.
 func ExampleNewTable_mixedWithAst() {
 	table := astbuilder.NewTable("bookings").
 		Column("room_id", "INTEGER").NotNull().End().
 		Column("during", "TSRANGE").NotNull().End().
 		Build()
 
-	table.AddConstraint(ast.NewExcludeConstraint(
-		"no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&"))
+	table.OwnedObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+		Ref: pgtable.ExclusionRef("bookings", "no_overlapping_bookings", identifier.ForDialect("postgres")),
+		Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{
+			UsingMethod: "gist", Elements: "room_id WITH =, during WITH &&",
+		}},
+	}))
 
 	r := must.Must(builtin.NewRenderer("postgresql"))
 	fmt.Print(must.Must(r.Render(table)))
@@ -109,9 +113,10 @@ func ExampleNewTable_mixedWithAst() {
 	// -- POSTGRES TABLE: bookings --
 	// CREATE TABLE "bookings" (
 	//   "room_id" INTEGER NOT NULL,
-	//   "during" TSRANGE NOT NULL,
-	//   CONSTRAINT "no_overlapping_bookings" EXCLUDE USING gist (room_id WITH =, during WITH &&)
+	//   "during" TSRANGE NOT NULL
 	// );
+	//
+	// ALTER TABLE "bookings" ADD CONSTRAINT "no_overlapping_bookings" EXCLUDE USING gist (room_id WITH =, during WITH &&);
 }
 
 // ExampleNewTable_generatedColumn declares a computed column with

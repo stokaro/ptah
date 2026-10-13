@@ -118,14 +118,23 @@ func childTable(databases []*schemamodel.Database, ref objectidentity.ID, source
 // declaredOwnerTable resolves a table identity from an owner's declaration.
 // An explicit default schema also reaches a table declared without a schema.
 func declaredOwnerTable(databases []*schemamodel.Database, ref objectidentity.ID, sourcePlatform string) *schemamodel.Table {
-	written := schemamodel.QualifyTableName(ref.Schema.Source, ref.Name.Source)
+	written := schemamodel.QualifyTableName(ownerName(ref.Schema), ownerName(ref.Name))
 	if table := resolveTable(databases, normalizeSQLTableReference("", written), sourcePlatform); table != nil {
 		return table
 	}
 	if ref.Schema.Normalized != identifier.ForDialect(sourcePlatform).DefaultSchema {
 		return nil
 	}
-	return resolveTable(databases, normalizeSQLTableReference("", ref.Name.Source), sourcePlatform)
+	return resolveTable(databases, normalizeSQLTableReference("", schemamodel.QualifyTableName("", ownerName(ref.Name))), sourcePlatform)
+}
+
+// Owner identities may retain SQL quotes or carry catalog components. Only a
+// part marked as quoted needs decoding before it becomes a table reference.
+func ownerName(part objectidentity.Part) string {
+	if part.Quoted {
+		return identifierPart("", part.Source)
+	}
+	return part.Source
 }
 
 // requiredOwnerTable resolves a table a statement requires at this point in

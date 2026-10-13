@@ -6,7 +6,6 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/pgname"
 )
 
 // PrimaryKeyOutsideList is the [IndexConstraintFold.Into] of a constraint that
@@ -19,7 +18,7 @@ const PrimaryKeyOutsideList = -1
 // list. [IndexConstraintFold.Column] names the column.
 const ColumnKeyOutsideList = -2
 
-// IndexConstraintFold is a UNIQUE or EXCLUDE constraint, or a column's own
+// IndexConstraintFold is a UNIQUE constraint, or a column's own
 // UNIQUE, that PostgreSQL does not build when one CREATE TABLE declares it,
 // because an index constraint the same statement declares builds the same
 // index.
@@ -35,7 +34,7 @@ type IndexConstraintFold struct {
 	Column string
 }
 
-// FoldedIndexConstraints answers which UNIQUE and EXCLUDE constraints of table,
+// FoldedIndexConstraints answers which UNIQUE constraints of table,
 // and which of its columns' own UNIQUEs, PostgreSQL leaves out of one CREATE
 // TABLE that declares the table's primary key, its columns and, in list order,
 // every constraint of constraints that belongs to table. fields may hold the
@@ -51,12 +50,7 @@ type IndexConstraintFold struct {
 // A CREATE TABLE and an ALTER TABLE that adds the second build both, and so do
 // two ADD clauses of one ALTER TABLE. Measured on PostgreSQL 18.6, which
 // also shows the key: the columns, the INCLUDE columns and NULLS NOT DISTINCT
-// of a PRIMARY KEY or UNIQUE, and the access method, the elements and the WHERE
-// predicate of an EXCLUDE. A UNIQUE and an EXCLUDE never fold together.
-//
-// Elements and predicates compare as [pgname.Tokens] reads them. Spellings
-// that differ in tokens and parse alike, such as a redundant pair of
-// parentheses, are not recognized, and the server folds a pair this keeps.
+// of a PRIMARY KEY or UNIQUE.
 // Deferral is part of the key too: `UNIQUE (a) DEFERRABLE, UNIQUE (a)` in one
 // CREATE TABLE builds two constraints on PostgreSQL 18.6, and so does a pair
 // that differs only in INITIALLY DEFERRED.
@@ -125,15 +119,12 @@ func FoldedIndexConstraints(
 
 // indexKey is what decides whether two index constraints build the same
 // index: the server builds one index for equal keys. A primary key and a UNIQUE
-// have the same kind of key, so they fold together. A list of names, or of
-// [pgname.Tokens] entries, is joined by [indexKeySeparator].
+// have the same kind of key, so they fold together. A list of names is joined
+// by [indexKeySeparator].
 type indexKey struct {
 	columns       string
 	include       string
 	notDistinct   bool
-	method        string
-	elements      string
-	where         string
 	deferrable    bool
 	deferredFirst bool
 }
@@ -159,21 +150,9 @@ func indexKeyOf(constraint schemamodel.Constraint) (indexKey, bool) {
 			deferrable:    constraint.Deferrable,
 			deferredFirst: initiallyDeferred(constraint.Initially),
 		}, true
-	case "EXCLUDE":
-		return indexKey{
-			method:        tokenText(constraint.UsingMethod),
-			elements:      tokenText(constraint.ExcludeElements),
-			where:         tokenText(constraint.WhereCondition),
-			deferrable:    constraint.Deferrable,
-			deferredFirst: initiallyDeferred(constraint.Initially),
-		}, true
 	default:
 		return indexKey{}, false
 	}
-}
-
-func tokenText(text string) string {
-	return strings.Join(pgname.Tokens(text), indexKeySeparator)
 }
 
 // primaryKeyIndex answers the key of table's primary key and its position in

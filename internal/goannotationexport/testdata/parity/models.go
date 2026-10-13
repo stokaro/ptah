@@ -33,7 +33,7 @@ type Account struct {
 //ptah:schema:constraint name="users_positive_id" type="CHECK" check="id > 0" comment="Positive identifier"
 //ptah:schema:constraint name="users_email_key" type="UNIQUE" columns="email" include="score" nulls_distinct="false" comment="Unique email"
 //ptah:schema:constraint name="users_account_fk" type="FOREIGN KEY" columns="account_id" foreign_table="app.accounts" foreign_columns="id" on_delete="CASCADE" on_update="RESTRICT" comment="Account owner"
-//ptah:schema:constraint name="users_no_overlap" type="EXCLUDE" using="gist" elements="id WITH =" condition="id > 0" comment="No overlap"
+//ptah:schema:exclude name="users_no_overlap" using="gist" elements="id WITH =" condition="id > 0" comment="No overlap"
 type User struct {
 	//ptah:schema:field name="id" type="BIGINT" not_null="true" identity_generation="ALWAYS" identity_start="100" identity_increment="5" identity_options="CACHE 20" platform.mysql.type="BIGINT AUTO_INCREMENT"
 	ID int64
