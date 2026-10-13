@@ -273,7 +273,7 @@ name.
 
 ## Comments
 
-`COMMENT ON CONSTRAINT` retains its executable form when parsed SQL is rendered.
+`COMMENT ON CONSTRAINT ... ON table` stays executable when parsed SQL is rendered.
 
 `COMMENT ON` sets a declared object's comment in the same file or a later
 schema file:
@@ -295,13 +295,12 @@ COMMENT ON CONSTRAINT positive ON app.notes IS 'ids start at one';
 COMMENT ON TYPE app.mood IS 'how a user feels';
 ```
 
-That covers a table, a column, an index, a constraint, a schema, a role, a
-view, a materialized view, a sequence, a domain, a composite, range or enum
-type, an extension, a function, a procedure, a trigger and a policy, and the
-plan writes each of them to the database. A function or a procedure may be
-named with its argument list, with or without argument names, or by its name
-alone when the document declares one routine of that name. A trigger, a policy
-and a constraint are named `ON` their table.
+Ptah plans comments for tables, columns, indexes, constraints, schemas, roles,
+views, materialized views, sequences, domains, composite types, ranges, enums,
+extensions, functions, procedures, triggers, and policies. Functions and
+procedures accept argument lists with optional argument names, or a bare name
+when the document declares one overload. Triggers, policies, and constraints
+are named `ON` their table.
 
 `IS NULL` clears a declared object's comment; `'NULL'` sets the text `NULL`.
 
