@@ -2648,8 +2648,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 		if stdType == "EXCLUDE" {
 			parsed, err := pgexclude.Parse(definition)
 			if err != nil {
-				// Log the error but continue processing other constraints
-				continue
+				return nil, fmt.Errorf("read EXCLUDE constraint %s.%s.%s: %w", schemaName, tableName, constraintName, err)
 			}
 
 			if parsed.UsingMethod != "" {

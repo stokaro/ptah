@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 )
@@ -74,4 +75,35 @@ func TestReadSchemaContext_ExcludeDeferral(t *testing.T) {
 			c.Assert(*schema.Constraints[0].WhereCondition, qt.Equals, "(r > 0)")
 		})
 	}
+}
+
+// A catalog that cannot be represented must fail the read rather than erase a
+// live constraint from the schema a plan receives.
+func TestReadSchemaContext_ExcludeDefinitionFailure(t *testing.T) {
+	for _, definition := range []string{
+		"EXCLUDE USING btree (r WITH =",
+		"EXCLUDE USING btree (r WITH =) INCLUDE (s)",
+		"EXCLUDE USING btree (r WITH =) WHERE ()",
+	} {
+		t.Run(definition, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(c, deferredExcludeCatalog(false, false, definition))
+			reader := postgres.NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
+			schema, err := reader.ReadSchemaContext(c.Context())
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, `(?s).*read EXCLUDE constraint public.slots.ex_r: .*`)
+			c.Assert(schema, qt.IsNil)
+		})
+	}
+}
+
+func TestReadSchemaContext_ExcludeQuotedParentheses(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(c, deferredExcludeCatalog(false, false, `EXCLUDE USING btree (replace(t, ')'::text, '('::text) WITH =) WHERE ((t <> ')'::text))`))
+	reader := postgres.NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
+	schema, err := reader.ReadSchemaContext(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.Constraints, qt.HasLen, 1)
+	c.Assert(*schema.Constraints[0].ExcludeElements, qt.Equals, `replace(t, ')'::text, '('::text) WITH =`)
+	c.Assert(*schema.Constraints[0].WhereCondition, qt.Equals, `(t <> ')'::text)`)
 }
