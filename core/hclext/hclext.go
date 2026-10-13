@@ -66,10 +66,6 @@ const (
 	// The frontend reads the signature and attaches the returned facets to that
 	// declaration, so overloaded functions keep separate settings.
 	RoutineAttributes Site = "routine-attributes"
-	// TableAttributes adds owner attributes to the frontend table block.
-	// The block type is "table" and Naming is empty. Every table is claimed;
-	// Claim.Table retains its identity and Declaration.Facets carries its settings.
-	TableAttributes Site = "table-attributes"
 	// InTable is a block inside a `table` block, beside its columns. The
 	// [Block] has no naming, and the block takes no labels. Its claim carries
 	// the table in [Claim.Table], and its [Declaration] carries facets of the
