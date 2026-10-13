@@ -6957,12 +6957,13 @@ func (p *Parser) parseCreateDomain() (*ast.CreateTypeNode, error) {
 // (MATERIALIZED VIEW) or a form of its own (CAST (a AS b)). The reader that
 // applies the statement decides which of them it models and refuses the rest
 // by name, so every form has to parse. The target ends at the IS that is
-// outside any parentheses and followed by the comment's string literal.
+// outside any parentheses and followed by a string literal or NULL.
 //
 // The literal is the opposite: it is read here, in whichever spelling the file
 // used, and written into the node as one standard single-quoted string. The
 // reader then meets one spelling of the text, whether the file continued it
-// on the next line, escaped it, or wrote it between dollar quotes.
+// on the next line, escaped it, or wrote it between dollar quotes. NULL stays
+// unquoted so the reader can distinguish clearing a comment from the text NULL.
 func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "COMMENT"); err != nil {
 		return nil, err
@@ -6992,6 +6993,11 @@ func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 			p.current.Start > start {
 			isAt := p.current.Start
 			p.advance()
+			p.skipWhitespace()
+			if p.current.MatchIdentifierValue("NULL") {
+				p.advance()
+				return ast.NewComment("COMMENT ON " + strings.TrimSpace(p.input[start:isAt]) + " IS NULL"), nil
+			}
 			text, err := p.stringConstant("the comment text")
 			if err != nil {
 				return nil, err

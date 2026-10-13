@@ -273,8 +273,8 @@ name.
 
 ## Comments
 
-A comment can be set with a separate `COMMENT ON`, the way `pg_dump` writes
-one, in the same file or in a later file of a schema directory:
+`COMMENT ON` sets a declared object's comment in the same file or a later
+schema file:
 
 ```sql
 CREATE TABLE notes (id integer PRIMARY KEY, body text);
@@ -301,6 +301,8 @@ named with its argument list, with or without argument names, or by its name
 alone when the document declares one routine of that name. A trigger, a policy
 and a constraint are named `ON` their table.
 
+`IS NULL` clears a declared object's comment; `'NULL'` sets the text `NULL`.
+
 A statement that cannot be applied is refused by name, with the file it came
 from:
 
@@ -309,8 +311,7 @@ from:
 - a routine named by its name alone when the document declares more than one
   overload of it, or a function named as a procedure;
 - a comment on a domain's constraint (`ON DOMAIN`) or on any other kind of
-  object, such as a foreign table or a cast;
-- `IS NULL`.
+  object, such as a foreign table or a cast.
 
 A document may declare several overloads of a function or a procedure, as
 `pg_dump` writes them. Each is a routine of its own, told apart by its input

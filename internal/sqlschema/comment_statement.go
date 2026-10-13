@@ -48,7 +48,10 @@ func parseCommentStatement(text string) (commentStatement, bool) {
 	if !found {
 		return commentStatement{}, false
 	}
-	statement := commentStatement{comment: unquoteSQLStringLiteral(literal)}
+	statement := commentStatement{}
+	if !strings.EqualFold(literal, "NULL") {
+		statement.comment = unquoteSQLStringLiteral(literal)
+	}
 	statement.kind, rest = cutCommentKind(target)
 	statement.name, rest = cutQualifiedName(rest)
 	if strings.HasPrefix(rest, "(") {
@@ -92,7 +95,7 @@ func cutCommentLiteral(text string) (target, literal string, found bool) {
 		case depth == 0 && isSpace(text[i]) && i+3 < len(text) && strings.EqualFold(text[i+1:i+3], "IS") &&
 			isSpace(text[i+3]):
 			literal = strings.TrimSpace(text[i+3:])
-			if strings.HasPrefix(literal, "'") {
+			if strings.HasPrefix(literal, "'") || strings.EqualFold(literal, "NULL") {
 				return strings.TrimSpace(text[:i]), literal, true
 			}
 		}
