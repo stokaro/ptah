@@ -81,3 +81,21 @@ func TestAcceptRefusesRewritingTheAuthoredIndex(t *testing.T) {
 	c.Assert(capture, qt.DeepEquals, schemapreparation.Capture{})
 	c.Assert(request.Tables[0].Desired.Indexes[0].Facets.TargetScope("example.org/labels"), qt.DeepEquals, []string{"clickhouse"})
 }
+
+func TestAcceptResolvesNamedConstraintFacetsWithinTheirTable(t *testing.T) {
+	c := qt.New(t)
+	request, _ := indexPreparationRequest()
+	request.Tables[0].Desired.Indexes = nil
+	request.Tables[0].Desired.Constraints = []schemamodel.Constraint{{Name: "fk.account", Type: "FOREIGN KEY", Facets: labelFacets("declared")}}
+	subject := objectidentity.NewBuilder(request.Identifiers).ConstraintParts("tenant", "events.with.dot", "fk.account")
+	reply := request.Clone()
+	reply.Tables[0].ResolvedFacets = []schemaext.FacetRecord{{Subject: subject, Values: labelFacets("resolved")}}
+	capture, err := schemapreparation.Accept(request, schemapreparation.Result{Complete: true, Tables: reply.Tables})
+	c.Assert(err, qt.IsNil)
+	c.Assert(capture.Prepared[0].ResolvedFacets[0].Values.Equal(labelFacets("resolved")), qt.IsTrue)
+	c.Assert(capture.Prepared[0].Desired.Constraints[0].Facets.Equal(labelFacets("declared")), qt.IsTrue)
+	reply.Tables[0].ResolvedFacets[0].Subject.Parent.Source = "another table"
+	refused, err := schemapreparation.Accept(request, schemapreparation.Result{Complete: true, Tables: reply.Tables})
+	c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+	c.Assert(refused, qt.DeepEquals, schemapreparation.Capture{})
+}

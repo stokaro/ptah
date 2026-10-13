@@ -2,6 +2,7 @@ package goschematodb
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
@@ -9,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/tableref"
 )
 
@@ -25,6 +27,20 @@ func creationFacetSlots(db *schemamodel.Database, semantics identifier.Semantics
 		subject := builder.TableParts(table.Schema, table.Name)
 		slots = append(slots, creationFacetSlot{subject, &table.Facets},
 			creationFacetSlot{objectidentity.PrimaryKeyOf(subject), schemacapture.DatabasePrimaryKeyFacets(db, table)})
+	}
+	for i := range db.Constraints {
+		constraint := &db.Constraints[i]
+		if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+			continue
+		}
+		owner, valid := tableref.Parse(constraintowner.TableName(*constraint, db.Tables))
+		if !valid {
+			continue
+		}
+		parent := builder.TableParts(owner.Schema, owner.Name)
+		if subject, named := schemacapture.ConstraintSubject(parent, constraint.Type, constraint.Name, semantics); named {
+			slots = append(slots, creationFacetSlot{subject, &constraint.Facets})
+		}
 	}
 	owners := schemamodel.ResolveIndexOwners(db.Indexes, db.Tables, db.MaterializedViews)
 	for i := range db.Indexes {

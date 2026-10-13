@@ -428,7 +428,10 @@ projection. `ConstraintsFor` and `EnumsFor` select independent child definitions
 `schemacapture.PrimaryKeyFacets` and `DatabasePrimaryKeyFacets` address the
 settings of a table's primary key: those of the first PRIMARY KEY constraint
 the table owns, or the table's `PrimaryKeyFacets`, so a comparison and an owner
-planning the key read the same place.
+planning the key read the same place. `ConstraintSubject` uses this identity for
+primary keys and a table-scoped identity for other named constraints. It retains
+the resolved catalog and schema of the table. An unnamed constraint cannot own
+separately addressed facets.
 
 `core/lintext` is the contract between migration lint and the engine owners
 that contribute to it. It carries no Go closure, so an owner may answer it
@@ -959,11 +962,17 @@ retains its actual settings for rebuild and reversal.
 both input surfaces before dispatch and returns no result if either fails.
 Installing a provider never enrolls its models in a captured source. The
 migration comparator consumes this combined service through
-`schemapreparation.Runtime`. It captures table and index facets on both sides and
-applies effective desired settings before common table captures. Index identities
-follow the selected table or schema namespace. Table-owned changes attach to the
-table diff; schema-scoped index changes use the schema diff. Other attachment
-points currently refuse because their comparison identity capture is not
+`schemapreparation.Runtime`. It captures facets of tables, columns, indexes,
+primary keys, named constraints, materialized views, and routines. Effective
+desired settings are applied before common table captures. Index identities
+follow the selected table or schema namespace; other named constraints are
+scoped to their table. Table-owned changes attach to the table diff;
+schema-scoped index changes use the schema diff.
+
+Preparation, CREATE prediction, and reverse projection preserve named constraint facets under the same identity.
+A single-column foreign key or unique constraint with facets stays a constraint
+when converted to a declaration; column shorthand cannot carry its settings.
+Other attachment points refuse because their comparison identity capture is not
 implemented. A successful runtime reply sets `Complete`;
 undecided diagnostics remain distinct from operational failures.
 

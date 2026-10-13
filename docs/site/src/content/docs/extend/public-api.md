@@ -275,10 +275,15 @@ neither changes nor diagnostics, even with complete coverage.
 
 `Runtime.CompareFeatures` validates named objects and facets before dispatch,
 discarding output if either comparison fails. Replies set `Complete`. The
-migration comparator applies effective table, index and materialized view
-facets before capturing common changes; index identity follows the target's
-table or schema namespace. Other attachment points refuse until identity
-capture exists. Registering providers never enrolls source coverage.
+migration comparator applies effective facets of tables, columns, indexes,
+primary keys, named constraints, materialized views, and routines before
+capturing common changes. Index identity follows the target's table or schema
+namespace; other named constraints are scoped to their table. Preparation,
+CREATE prediction, and reverse projection retain constraint facets under that
+identity. A constraint with facets stays a separate constraint during conversion,
+including a single-column foreign key or unique key. Other attachment points
+refuse until identity capture exists. Registering providers never enrolls source
+coverage.
 
 A change value implementing `schemaext.OwnerReplacement` says it needs its
 owner replaced. The comparator replaces a materialized view for it and refuses

@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/tableidentity"
@@ -40,6 +41,20 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 		tables[table.StructName] = subject
 	}
 	slots = append(slots, unownedPrimaryKeySlots(db, slots, target, semantics)...)
+	for i := range db.Constraints {
+		constraint := &db.Constraints[i]
+		if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+			continue
+		}
+		owner, valid := tableref.Parse(constraintowner.TableName(*constraint, db.Tables))
+		if !valid {
+			continue
+		}
+		parent := tableidentity.Subject(owner.Schema, owner.Name, target, semantics)
+		if subject, named := schemacapture.ConstraintSubject(parent, constraint.Type, constraint.Name, semantics); named {
+			slots = append(slots, facetOwnerSlot{subject, &constraint.Facets})
+		}
+	}
 	// A field is a column of the table its struct declares. A field of a
 	// struct that declares no table has no column identity, and a facet on it
 	// is refused by the caller's capture check.
@@ -165,11 +180,12 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 	// no owner identity, so the capture refuses a value on it.
 	for i := range db.Constraints {
 		constraint := &db.Constraints[i]
-		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+		parent := tableidentity.Subject(constraint.Schema, constraint.TableName, target, semantics)
+		subject, named := schemacapture.ConstraintSubject(parent, constraint.Type, constraint.Name, semantics)
+		if !named {
 			continue
 		}
-		subject := objectidentity.PrimaryKeyOf(tableidentity.Subject(constraint.Schema, constraint.TableName, target, semantics))
-		if !keys[subject.Key()] {
+		if subject.Kind != objectidentity.KindPrimaryKey || !keys[subject.Key()] {
 			keys[subject.Key()] = true
 			slots = append(slots, facetOwnerSlot{subject, &constraint.Facets})
 		}
