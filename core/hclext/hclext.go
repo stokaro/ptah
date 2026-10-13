@@ -622,10 +622,6 @@ func validateNaming(owner string, block Block) error {
 		if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName && block.Naming != JoinedName {
 			return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
 		}
-	case TableAttributes:
-		if block.Type != "table" || block.Naming != "" {
-			return fmt.Errorf("HCL %s block of %s must be a table with no naming", block.Site, owner)
-		}
 	case IndexAttributes:
 		if block.Type != "index" || block.Naming != "" {
 			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
