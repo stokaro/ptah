@@ -226,6 +226,7 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 
 	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PersistenceCoverage(
 		schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
+	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PartitionCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
@@ -441,6 +442,7 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 
 	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PersistenceCoverage(
 		schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
+	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PartitionCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))

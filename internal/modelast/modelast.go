@@ -669,7 +669,6 @@ func fromTableWithFieldConverter(
 	if newTable.Collate != "" {
 		createTable.SetOption("COLLATE", newTable.Collate)
 	}
-	createTable.Partition = toASTPartition(newTable.Partition)
 	// Cloned rather than shared: the node travels to a renderer and a planner
 	// that must not be able to reach back through a pointer into the schema
 	// this was built from (stokaro/ptah#2236).
@@ -740,17 +739,6 @@ func fromTableWithoutForeignKeys(
 	targetPlatform string,
 ) *ast.CreateTableNode {
 	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromFieldWithoutForeignKeys)
-}
-
-func toASTPartition(partition *schemamodel.PartitionSpec) *ast.PartitionSpec {
-	if partition == nil {
-		return nil
-	}
-	parts := make([]ast.PartitionPart, 0, len(partition.Parts))
-	for _, part := range partition.Parts {
-		parts = append(parts, ast.PartitionPart{Name: part.Name, Expr: part.Expr})
-	}
-	return &ast.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
 func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {

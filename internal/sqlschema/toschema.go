@@ -265,7 +265,6 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		Name:       tableName,
 		Schema:     tableSchemaName,
 		Comment:    table.Comment,
-		Partition:  toSchemaPartition(table.Partition, sourcePlatform),
 		// Carried, because the SQL surface is where an owner's table setting,
 		// such as a Spanner row deletion policy, a YDB TTL, YDB column
 		// families, a YDB table's partitioning or its column storage, is read
@@ -335,20 +334,6 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	// the table's sqlite platform properties.
 	tableSchema.Overrides = sqliteTableProperties(tableSchema.Overrides, table.Options)
 	return tableSchema
-}
-
-func toSchemaPartition(partition *ast.PartitionSpec, sourcePlatform string) *schemamodel.PartitionSpec {
-	if partition == nil {
-		return nil
-	}
-	parts := make([]schemamodel.PartitionPart, 0, len(partition.Parts))
-	for _, part := range partition.Parts {
-		parts = append(parts, schemamodel.PartitionPart{
-			Name: normalizeSQLIdentifier(sourcePlatform, part.Name),
-			Expr: part.Expr,
-		})
-	}
-	return &schemamodel.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
 func toPrimaryKeyParts(constraint *ast.ConstraintNode, sourcePlatform string) []schemamodel.PrimaryKeyPart {

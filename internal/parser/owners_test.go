@@ -7,6 +7,7 @@ import (
 	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/pgtablesource"
 )
 
 // clickHouseOwners selects the ClickHouse owner, whose syntax a ClickHouse
@@ -25,4 +26,8 @@ func withClickHouseOwners() parser.Option {
 // names no target too.
 func withMySQLOwners() parser.Option {
 	return parser.WithSQL(must.Must(sqlext.NewSet(mysqlsource.SQL())))
+}
+
+func withPostgresTableOwners() parser.Option {
+	return parser.WithSQL(must.Must(sqlext.NewSet(pgtablesource.SQL()...)))
 }

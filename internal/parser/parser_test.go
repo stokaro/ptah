@@ -10,7 +10,9 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 )
@@ -113,16 +115,18 @@ func TestParser_ParseCreateTable_PostgreSQLPartitionBy(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `CREATE TABLE metrics (x integer NOT NULL, y integer NOT NULL) PARTITION BY RANGE (x, (floor(y)), (y * 2));`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withPostgresTableOwners())
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(createTable.Partition, qt.DeepEquals, &ast.PartitionSpec{
+	partition, _, err := schemaext.FacetAs[*pgtable.DesiredPartition](createTable.Facets, pgtable.PartitionKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(partition, qt.DeepEquals, &pgtable.DesiredPartition{
 		Type: "RANGE",
-		Parts: []ast.PartitionPart{
+		Parts: []pgtable.PartitionPart{
 			{Name: "x"},
 			{Expr: "floor(y)"},
 			{Expr: "y * 2"},
@@ -134,10 +138,10 @@ func TestParser_ParseCreateTable_RejectsDuplicatePartitionBy(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `CREATE TABLE metrics (x integer NOT NULL) PARTITION BY RANGE (x) PARTITION BY LIST (x);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, withPostgresTableOwners())
 
 	_, err := p.Parse()
-	c.Assert(err, qt.ErrorMatches, `.*duplicate PARTITION BY clause.*`)
+	c.Assert(err, qt.ErrorMatches, `.*duplicate.*table-partition.*`)
 }
 
 func TestParser_ParseCreateIndexConcurrently(t *testing.T) {

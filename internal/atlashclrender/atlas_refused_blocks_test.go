@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -1022,5 +1023,16 @@ func TestRenderInspectedForAtlasCLIKeepsTheSQLServerBlocks(t *testing.T) {
 			c.Assert(string(result.Data), qt.Contains, block)
 			c.Assert(result.Diagnostics, qt.HasLen, 0)
 		})
+	}
+}
+
+func TestPartitionModifiersRetainTheirExtension(t *testing.T) {
+	for _, part := range []pgtable.PartitionPart{{Name: "value", OperatorClass: "special_ops"}, {Name: "value", Collation: "special_collation"}, {Expr: "special_func(value)"}} {
+		c := qt.New(t)
+		db := schemamodel.Database{Tables: []schemamodel.Table{{Name: "words", StructName: "Words", Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{Type: "RANGE", Parts: []pgtable.PartitionPart{part}}))}}, Fields: []schemamodel.Field{{StructName: "Words", Name: "value", Type: "text"}}}
+		db = *withExtension(&db, "special", pgextension.DesiredExtension{Provides: []string{"special_ops", "special_collation", "special_func"}})
+		result, err := atlashclrender.RenderInspectedForAtlasCLI(&db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
+		c.Assert(err, qt.IsNil)
+		c.Assert(string(result.Data), qt.Contains, `extension "special"`)
 	}
 }

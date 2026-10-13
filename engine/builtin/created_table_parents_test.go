@@ -36,6 +36,7 @@ func TestBundledOwnersAccountForACreatedTable(t *testing.T) {
 		{name: "a hypertable", target: "postgres", facet: &tsschema.DesiredHypertable{Column: "at"}, want: []string{
 			"ptah.run/pgpolicy/policy: create the table's policies after the objects their expressions may name",
 			"ptah.run/pgpolicy/table-state: set the table's declared row-security switches in the statements after its CREATE TABLE",
+			"ptah.run/postgres/table-partition: CREATE TABLE carries or reports the declared partition key",
 			"ptah.run/postgres/table-persistence: CREATE TABLE carries declared persistence",
 			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",
 		}},
@@ -43,10 +44,12 @@ func TestBundledOwnersAccountForACreatedTable(t *testing.T) {
 			"ptah.run/cockroachdb/row-ttl: create the row-level TTL with the table; its CREATE TABLE carries the storage parameters",
 			"ptah.run/pgpolicy/policy: create the table's policies after the objects their expressions may name",
 			"ptah.run/pgpolicy/table-state: set the table's declared row-security switches in the statements after its CREATE TABLE",
+			"ptah.run/postgres/table-partition: CREATE TABLE carries or reports the declared partition key",
 			"ptah.run/postgres/table-persistence: the target has no table persistence setting; CREATE TABLE reports omitted declarations",
 			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",
 		}},
 		{name: "a row deletion policy", target: "spanner", facet: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "at", Interval: "30 days"}}, want: []string{
+			"ptah.run/postgres/table-partition: CREATE TABLE carries or reports the declared partition key",
 			"ptah.run/postgres/table-persistence: the target has no table persistence setting; CREATE TABLE reports omitted declarations",
 			"ptah.run/spanner/row-deletion-policy: create the row deletion policy with the table; its CREATE TABLE carries the policy",
 			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",

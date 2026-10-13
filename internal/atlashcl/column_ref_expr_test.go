@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/atlashcl"
+	"ptah.run/dialect/postgres/pgtable"
 )
 
 // A `column` value is read from the PARSED expression, so every spelling that
@@ -128,7 +129,7 @@ table "t" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			db, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
@@ -179,7 +180,7 @@ table "t" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			db, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
@@ -193,7 +194,7 @@ table "t" {
 func TestParseReadsAPrimaryKeyColumnThroughTheParsedExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 table "t" {
   column "n" { type = int }
   primary_key {
@@ -211,7 +212,7 @@ table "t" {
 func TestParseReadsAPartitionColumnThroughTheParsedExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 table "t" {
   column "n" { type = int }
   partition {
@@ -223,9 +224,11 @@ table "t" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &schemamodel.PartitionSpec{
+	partition, _, err := schemaext.FacetAs[*pgtable.DesiredPartition](db.Tables[0].Facets, pgtable.PartitionKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(partition, qt.DeepEquals, &pgtable.DesiredPartition{
 		Type:  "RANGE",
-		Parts: []schemamodel.PartitionPart{{Name: "n"}},
+		Parts: []pgtable.PartitionPart{{Name: "n"}},
 	})
 }
 
@@ -374,7 +377,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
@@ -440,7 +443,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}

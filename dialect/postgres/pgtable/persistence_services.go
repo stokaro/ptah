@@ -35,18 +35,22 @@ func persistenceContext(ctx context.Context, target string) error {
 // changes the representation only; it does not establish engine support or
 // report a database observation.
 func (PersistenceService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
+	return convertTableFeatures(ctx, request, "table persistence", convertPersistence)
+}
+
+func convertTableFeatures(ctx context.Context, request schemaext.ConversionRequest, label string, convert func(schemaext.Representation, schemaext.Value) (schemaext.Value, error)) ([]schemaext.Value, error) {
 	if err := persistenceContext(ctx, request.Target); err != nil {
 		return nil, err
 	}
 	if request.From == request.To || request.From != schemaext.Desired && request.From != schemaext.Observed || request.To != schemaext.Desired && request.To != schemaext.Observed {
-		return nil, fmt.Errorf("%w: invalid table persistence conversion direction", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: invalid %s conversion direction", schemaext.ErrInvalidValue, label)
 	}
 	result := make([]schemaext.Value, 0, len(request.Values))
 	for _, value := range request.Values {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		converted, err := convertPersistence(request.From, value)
+		converted, err := convert(request.From, value)
 		if err != nil {
 			return nil, err
 		}

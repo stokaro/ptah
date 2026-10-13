@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/internal/renderdiag"
@@ -172,13 +173,15 @@ func (r *validatingRenderer) recordOwnedOmissions(node ast.Node) error {
 		if err != nil {
 			return err
 		}
-		omission, err := pgtablerender.PersistenceOmission(r.dialect, typed.Name, facets)
-		if err != nil {
-			return err
-		}
-		if omission != nil {
-			r.omissions.Record(renderdiag.Omission{Reason: renderdiag.Reason(omission.Reason), Kind: omission.Kind,
-				Name: omission.Name, Property: omission.Property, Detail: omission.Detail, Remedy: omission.Remedy})
+		for _, report := range []func(string, string, schemaext.Facets) (*renderer.Omission, error){pgtablerender.PersistenceOmission, pgtablerender.PartitionOmission} {
+			omission, err := report(r.dialect, typed.Name, facets)
+			if err != nil {
+				return err
+			}
+			if omission != nil {
+				r.omissions.Record(renderdiag.Omission{Reason: renderdiag.Reason(omission.Reason), Kind: omission.Kind,
+					Name: omission.Name, Property: omission.Property, Detail: omission.Detail, Remedy: omission.Remedy})
+			}
 		}
 	}
 	return nil

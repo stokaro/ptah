@@ -117,6 +117,9 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 	const unknownFacet = "declared only by the census's unknown-facet fixture, which every target refuses"
 	const noServerSpelling = "no census fixture declares a server's spelling; a connected comparison attaches one"
 	return []UnmeasuredEntry{
+		{Field: "pgtable.DesiredPartition.Normalized", Reason: noServerSpelling},
+		{Field: "pgtable.NormalizedPartition.SourceKey", Reason: noServerSpelling},
+		{Field: "pgtable.NormalizedPartition.Key", Reason: noServerSpelling},
 		{Field: "mssqlschema.DesiredSecurityPolicy.Normalized", Reason: noServerSpelling},
 		{Field: "pgtype.DesiredDomain.Normalized", Reason: noServerSpelling},
 		{Field: "pgtype.NormalizedDomain.Check", Reason: noServerSpelling},
@@ -349,30 +352,6 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.MaterializedView.Dialects", Dialects: []string{"spanner"}, Directions: nil, Reason: gapToCatalog},
-	{
-		Field:      "schemamodel.PartitionPart.Expr",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapToCatalog,
-	},
-	{
-		Field:      "schemamodel.PartitionPart.Name",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapToCatalog,
-	},
-	{
-		Field:      "schemamodel.PartitionSpec.Parts",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapToCatalog,
-	},
-	{
-		Field:      "schemamodel.PartitionSpec.Type",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapToCatalog,
-	},
 	{Field: "schemamodel.PrimaryKeyPart.Desc", Dialects: []string{"mariadb", "mysql", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.PrimaryKeyPart.Name", Dialects: []string{"clickhouse"}, Directions: []Direction{ToCatalog}, Reason: gapComparison},
 	{
@@ -404,12 +383,6 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Table.Engine", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Table.Facets", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Table.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
-	{
-		Field:      "schemamodel.Table.Partition",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
-		Directions: nil,
-		Reason:     gapToCatalog,
-	},
 	{Field: "schemamodel.Table.PrimaryKeyFacets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Table.PrimaryKeyMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
@@ -448,6 +421,16 @@ var roundTripGaps = []Unreached{
 func RoundTripExemptions() []Unreached { return slices.Clone(roundTripExemptions) }
 
 var roundTripExemptions = []Unreached{
+	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
+	{Field: "pgtable.DesiredPartition.Parts", Dialects: []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.DesiredPartition.Parts", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
+	{Field: "pgtable.PartitionPart.Name", Dialects: []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.PartitionPart.Name", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
+	{Field: "pgtable.PartitionPart.Expr", Dialects: []string{"mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.PartitionPart.Expr", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
+	{Field: "pgtable.PartitionPart.Collation", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
+	{Field: "pgtable.PartitionPart.OperatorClass", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
 	{Field: "chschema.GranularitySetting.State", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptCoupledGranularity},
 	{Field: "chschema.RoleSelection.All", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptCoupledRoleSelection},
 	{Field: "chschema.Setting.State", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptCoupledSetting},

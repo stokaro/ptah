@@ -166,7 +166,7 @@ func TestPerturb_LeavesWhatItCannotChange(t *testing.T) {
 	}{
 		{name: "a bool", field: "schemamodel.Sequence.Cycle"},
 		{name: "a zero string", field: "schemamodel.Table.Engine"},
-		{name: "a struct", field: "schemamodel.Table.Partition"},
+		{name: "a struct", field: "pgtable.DesiredPartition.Normalized"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

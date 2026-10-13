@@ -5,11 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -63,10 +66,10 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedTablePartitio
 	}
 
 	database := nodeSchema()
-	database.Tables[0].Partition = &schemamodel.PartitionSpec{
+	database.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 		Type:  "RANGE",
-		Parts: []schemamodel.PartitionPart{{Name: "day"}},
-	}
+		Parts: []pgtable.PartitionPart{{Name: "day"}},
+	}))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -84,18 +87,18 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedTablePartitio
 func TestGetOrderedCreateStatementsReportingOmissions_APartitionIsNamedInTheRecord(t *testing.T) {
 	tests := []struct {
 		name string
-		spec *schemamodel.PartitionSpec
+		spec *pgtable.DesiredPartition
 		want string
 	}{
 		{
 			name: "a column key",
-			spec: &schemamodel.PartitionSpec{Type: "RANGE", Parts: []schemamodel.PartitionPart{{Name: "day"}}},
-			want: "RANGE (day)",
+			spec: &pgtable.DesiredPartition{Type: "RANGE", Parts: []pgtable.PartitionPart{{Name: "day"}}},
+			want: `RANGE ("day")`,
 		},
 		{
 			name: "an expression key",
-			spec: &schemamodel.PartitionSpec{Type: "HASH", Parts: []schemamodel.PartitionPart{{Expr: "abs(id)"}}},
-			want: "HASH (abs(id))",
+			spec: &pgtable.DesiredPartition{Type: "HASH", Parts: []pgtable.PartitionPart{{Expr: "abs(id)"}}},
+			want: "HASH ((abs(id)))",
 		},
 	}
 
@@ -103,7 +106,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_APartitionIsNamedInTheReco
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			database := nodeSchema()
-			database.Tables[0].Partition = test.spec
+			database.Tables[0].Facets = must.Must(schemaext.NewFacets(test.spec))
 
 			_, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(
 				database, platform.SQLite, capability.ForDialect(platform.SQLite))
@@ -232,10 +235,10 @@ func TestGetOrderedCreateStatementsReportingOmissions_ARefreshScheduleBelongsToC
 // keepers.
 func TestGetOrderedCreateStatementsReportingOmissions_ATargetWritesTheNodeClausesItKeeps(t *testing.T) {
 	partitioned := nodeSchema()
-	partitioned.Tables[0].Partition = &schemamodel.PartitionSpec{
+	partitioned.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 		Type:  "RANGE",
-		Parts: []schemamodel.PartitionPart{{Name: "day"}},
-	}
+		Parts: []pgtable.PartitionPart{{Name: "day"}},
+	}))
 	withSchema := nodeSchema()
 	withSchema.Schemas = []schemamodel.Schema{{Name: "app", Charset: "utf8mb4", Collate: "utf8mb4_bin"}}
 	withRole := nodeSchema()

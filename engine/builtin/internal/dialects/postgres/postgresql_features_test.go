@@ -4,8 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 )
 
@@ -739,16 +743,16 @@ func TestPostgreSQLRenderer_TablePartition(t *testing.T) {
 	table := ast.NewCreateTable("metrics").
 		AddColumn(ast.NewColumn("x", "integer").SetNotNull()).
 		AddColumn(ast.NewColumn("y", "integer").SetNotNull())
-	table.Partition = &ast.PartitionSpec{
+	table.Facets = must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 		Type: "RANGE",
-		Parts: []ast.PartitionPart{
+		Parts: []pgtable.PartitionPart{
 			{Name: "x"},
 			{Expr: "floor(y)"},
 			{Expr: "y * 2"},
 		},
-	}
+	}))
 
-	renderer := postgres.New()
+	renderer := postgres.New().WithOwners(postgres.Owners{TableStorage: pgtablerender.CreateTablePartition})
 	result, err := renderer.Render(table)
 
 	c.Assert(err, qt.IsNil)
