@@ -4443,6 +4443,11 @@ replacement of a routine that holds a facet the declaration's source has no way
 to state is refused with `ptaherr.ErrUnsupportedFeature`, since the routine
 would be created without it.
 
+Routine facet coverage uses the same identity as the routine. An unqualified
+name takes the connection's default schema. An explicit schema and the overload
+signature stay attached to the claim. Claims that collide after binding are
+refused, and coverage for an excluded routine is excluded with its owner.
+
 `migration/schemadiff/difftypes.DomainDiff`, `CompositeTypeDiff` and
 `RangeDiff` each carry a `Desired` field, off the wire, holding the definition
 the change is reconciled to. PostgreSQL has no in-place ALTER for a domain's
