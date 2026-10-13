@@ -556,6 +556,19 @@ The common table and AST models carry the feature through facets.
 `hclext.EncodedBlock.References` carries the SQL names a table child uses, so
 HCL export retains extensions required by key expressions and modifiers.
 
+PostgreSQL exclusion constraints are independently named
+`pgtable.DesiredExclusion` and `ObservedExclusion` objects. `ExclusionRef`
+includes the parent table, so equal constraint names on different tables remain
+distinct. Common constraint structs and constraint AST nodes accept only
+PRIMARY KEY, UNIQUE, FOREIGN KEY and CHECK.
+
+`ExclusionService` converts, compares, plans and reverses captured batches.
+A definition change uses a transactional drop and creation; a comment-only
+change retains the constraint. `pgtableprobe.ExclusionService` resolves desired
+expressions through the connected PostgreSQL server and binds the result to the
+source definition. A stale or missing answer cannot establish equality.
+`catalog.Index.ManagedBy` identifies the owner of a backing index, preventing
+ordinary index export and comparison from treating it as an independent object.
 
 `dialect/mysql/mysqlroutine` is the MySQL owner's routine body reader for MySQL
 and MariaDB. `Reader` splits a compound body into the statements of its outer
@@ -631,11 +644,10 @@ error identities. The common planning host performs this conversion before
 lowering operations. Transport adapters carry the diagnostic data.
 
 A captured table's `Action` requests `DropTable` or `RebuildTable` assessment.
-`CreateTable` asks owners about a table the plan creates: its CREATE TABLE
-carries the settings attached to it, and each owner creates the table's named
-children in steps of its own. The PostgreSQL-family planner sends every
-created table that has a named child, and a child no owner accounts for is
-refused rather than dropped.
+`CreateTable` asks owners about a table the plan creates. Its CREATE TABLE
+carries attached settings. Each owner creates named children in its own steps.
+The PostgreSQL-family planner sends every created table that has a named child
+for owner assessment. An unaccounted child is refused.
 
 The zero action supplies context only. The runtime calls every assigned parent
 model for the target even without child changes, concrete feature values, or
@@ -757,10 +769,17 @@ refuses duplicate objects, a child of a table the request does not declare,
 unregistered kinds, missing receipts, and unaccounted operations before
 returning a successful reply.
 
-`DeclarationRuntime.DeclaresKind` says which
-kinds a target declares: a whole-schema render plans a table's child of such a
-kind through its owner, scheduled against the common creation steps, and
-creates any other child with its table.
+`DeclarationRuntime.DeclaresKind` identifies kinds with separate creation
+steps. A whole-schema render schedules those children through their owners
+against the common creation steps. Other children stay with their tables.
+PostgreSQL exclusions use separate `ALTER TABLE ... ADD CONSTRAINT` steps so
+equivalent definitions retain every declared name and comment.
+
+`catalog.Index.ManagedBy` identifies the feature object that creates and
+removes a backing index. Its zero value reports no feature ownership. The
+catalog retains the index metadata; schema export describes the index through
+its owner. Comparison leaves an owned index alone when the desired schema
+declares no standalone index at that identity.
 
 `DeclarationResult.Diagnostics` records completed refusals with optional object
 indexes. Any refusal discards every operation and receipt; provider failures
@@ -3167,7 +3186,7 @@ an owner's `Parser` every span of one document in one call and applies the
 or an ALTER TABLE operation declares, the owner's operation payload, or facets of a view, a
 table, a column, a key or a routine.
 
-A `TableElement` returns either `Index` or `Objects`, never both. An
+A `TableElement` returns one of `Index`, `Objects` or `Constraint`. An
 `AlterOperation` requires its operation payload and may also declare an index
 or child objects. Each child uses an extension's declared kind and identifies
 its subject table as its parent. The schema reader refuses a child of another
@@ -3175,6 +3194,24 @@ table and duplicate identities, including declarations in earlier files.
 `CreateTableNode.OwnedObjects` holds inline values, and `TableElement.Objects`
 records their identities in the table body's order. A shared DROP TABLE
 removes those children with their table.
+
+`Value.Constraint` carries an `ast.OwnedIndexConstraint`: an owner value and
+source metadata for an index-backed constraint. `Name` may be empty;
+`NameParts` and `NameSuffix` describe the target-derived name. `FoldKey`
+identifies equal declarations of the same kind within one CREATE TABLE. An
+empty key disables folding. PostgreSQL resolves these declarations alongside
+common constraints in body order and preserves a later explicit name when it
+folds that declaration into an unnamed one. ALTER additions never fold.
+`CreateTableNode.OwnedConstraints` and `TableElement.OwnedConstraint` retain
+the declarations until the schema reader resolves them.
+
+`Extension.Comments` accepts a `CommentRequest` containing final `CommentEdit`
+values for one source file. The shared reader resolves each name and tracks
+renames, drops and table lifetimes before calling an owner once for its batch.
+Empty comment text clears a comment. `Set.ApplyComments` snapshots inputs and
+refuses missing editors, changed identities or scopes, malformed results and
+provider failures. A canceled call returns no objects. An editor changes typed
+values; it does not resolve the shared SQL statement grammar.
 
 A `ViewClause`, a `TablePrefix` between CREATE and TABLE, a `TableOption`
 after a CREATE TABLE's column list, a
@@ -3274,8 +3311,9 @@ declares nothing else.
 
 `engine.Provider.SQL` registers an extension, and `engine.Runtime.SQL` returns
 the frozen set. An extension reads targets its provider registers. A provider
-that does not register a target may still read statements of its own there:
-every pattern is a `Statement`, and each of its `Kinds` is a model whose
+that does not register a target may still declare its objects there through
+`Statement`, `TableElement` or `AlterOperation` patterns. Each of its `Kinds`
+is a model whose
 desired codec the provider owns and which it compares or plans on that
 target. The PostgreSQL extension owner reads CREATE EXTENSION on every
 PostgreSQL-family target so. Two patterns one document could consult at one
@@ -4043,8 +4081,9 @@ desired and current schemas, normalized dialect capabilities, and concurrent
 index policy into one result with forward and reverse diffs, AST nodes, exact
 table-qualified concurrent-index references, and an independent
 `RequiresNoTransaction` classification for each direction. The reverse restores
-captured table removals and the surrounding current schema. Restored constraints
-retain their validation status, exclusion elements, and exclusion predicates.
+captured table removals and the surrounding current schema. Restored common
+constraints retain their validation status. The EXCLUDE owner restores its
+elements, predicate, timing and comment from the captured feature objects.
 The entry point takes the caller's context and propagates service failures and
 cancellation. `PriorSchema` retains the converted rollback target, so rendering
 does not select another runtime or reconstruct the target again.

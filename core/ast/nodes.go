@@ -85,6 +85,8 @@ func (n *EnumNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 type CreateTableNode struct {
 	// OwnedObjects captures the named child objects created with this table.
 	OwnedObjects schemaext.Objects
+	// OwnedConstraints are source declarations awaiting shared naming and folding.
+	OwnedConstraints []*OwnedIndexConstraint
 	// Facets carries inline settings interpreted by the selected feature owner.
 	Facets schemaext.Facets
 	// Name is the name of the table to create
@@ -239,6 +241,8 @@ type TableElement struct {
 	// Objects names the child declarations this element contributes. Their
 	// values live in CreateTableNode.OwnedObjects; this slice records order.
 	Objects []objectidentity.ID
+	// OwnedConstraint is an owner-defined index constraint awaiting naming.
+	OwnedConstraint *OwnedIndexConstraint
 }
 
 // AddConstraint adds a table-level constraint and returns the table node for chaining.
@@ -604,7 +608,7 @@ type ConstraintColumn struct {
 	Desc bool
 }
 
-// ConstraintNode represents table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK, EXCLUDE).
+// ConstraintNode represents common table constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK).
 //
 // Table-level constraints can span multiple columns and are defined separately
 // from column definitions. This is different from column-level constraints
@@ -629,7 +633,7 @@ type ConstraintNode struct {
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not specified.
 	NullsDistinct *bool
-	// Deferrable marks a PRIMARY KEY, UNIQUE or EXCLUDE constraint whose check
+	// Deferrable marks a PRIMARY KEY or UNIQUE constraint whose check
 	// may be postponed to the end of a transaction. A foreign key carries its
 	// own on [ForeignKeyRef.Deferrable]. A renderer for a target without
 	// deferrable keys refuses the constraint rather than write it plain.
@@ -658,12 +662,8 @@ type ConstraintNode struct {
 	// the clause refuses the constraint rather than write one that checks
 	// every row (stokaro/ptah#3853).
 	NotEnforced bool
-	// UsingMethod specifies the index method for EXCLUDE constraints (e.g., "gist", "btree")
+	// UsingMethod specifies the primary key index access method.
 	UsingMethod string
-	// ExcludeElements contains the exclude elements specification (e.g., "user_id WITH =", "during WITH &&")
-	ExcludeElements string
-	// WhereCondition contains the optional WHERE clause for EXCLUDE constraints
-	WhereCondition string
 	// Comment is the constraint's description.
 	//
 	// PostgreSQL stores it through COMMENT ON CONSTRAINT, which is its own

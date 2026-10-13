@@ -8,6 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 )
@@ -39,11 +41,11 @@ func commentedConstraintCatalog(comment string) dbtest.QueryHandler {
 				Columns: []string{
 					"schema_name", "constraint_name", "table_name", "constraint_type",
 					"constraint_definition", "required_extensions", "constraint_comment",
-					"condeferrable", "condeferred",
+					"condeferrable", "condeferred", "backing_index",
 				},
 				Rows: [][]driver.Value{{
 					"public", "ex_room", "bookings", "x", "EXCLUDE USING gist (room WITH =)", "[]", comment,
-					false, false,
+					false, false, "ex_room",
 				}},
 			}, nil
 		}
@@ -66,6 +68,11 @@ func TestReadSchemaContext_ConstraintCommentHappyPath(t *testing.T) {
 	for _, constraint := range schema.Constraints {
 		comments[constraint.Name] = constraint.Comment
 	}
+	object, found, err := schema.FeatureObjects.Get(pgtable.ExclusionRef("bookings", "ex_room", identifier.ForDialect("postgres")))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	comments[object.Ref.Name.Source] = object.Value.(*pgtable.ObservedExclusion).Comment
+	c.Assert(schema.Constraints, qt.HasLen, 1)
 	c.Assert(comments, qt.DeepEquals, map[string]string{
 		"ck_total": "a total is positive",
 		"ex_room":  "a total is positive",

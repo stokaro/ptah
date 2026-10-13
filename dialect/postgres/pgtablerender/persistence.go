@@ -15,9 +15,9 @@ import (
 	"ptah.run/internal/sqlident"
 )
 
-// Handlers returns the owned in-place persistence operation handler.
+// Handlers returns the owned persistence and exclusion operation handlers.
 func Handlers() []renderer.ExtensionHandler {
-	return []renderer.ExtensionHandler{renderer.TypedHandler(&pgtable.AlterPersistence{}, ast.AlterExtension, validatePersistence, renderPersistence)}
+	return append(ExclusionHandlers(), renderer.TypedHandler(&pgtable.AlterPersistence{}, ast.AlterExtension, validatePersistence, renderPersistence))
 }
 
 func validatePersistence(ctx renderer.ExtensionContext, op *pgtable.AlterPersistence) error {

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	schemacoverage "ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -151,8 +152,13 @@ func convert(
 	}
 	document.notes, document.relations = parsed, relations
 	defer func() { document.notes, document.relations = nil, nil }()
+	document.comments = make(map[objectidentity.Key]string)
+	defer func() { document.comments = nil }()
 	database, err := toDatabase(ctx, statements, dialect, document)
 	if err != nil {
+		return schemamodel.Database{}, nil, err
+	}
+	if err := document.applyOwnedComments(ctx, &database, dialect, owners); err != nil {
 		return schemamodel.Database{}, nil, err
 	}
 	return database, statements, nil

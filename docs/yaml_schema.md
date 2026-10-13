@@ -385,8 +385,7 @@ constraints:
     on_delete: CASCADE
 ```
 
-Supported `type` values are `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY`, `CHECK`,
-and `EXCLUDE`.
+Supported `type` values are `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY` and `CHECK`.
 
 | Type | Required keys |
 |---|---|
@@ -394,12 +393,36 @@ and `EXCLUDE`.
 | `UNIQUE` | `columns` |
 | `FOREIGN KEY` | `columns`, `foreign_table`, `foreign_column` |
 | `CHECK` | `check` |
-| `EXCLUDE` | `using`, `elements` |
 
-Top-level constraints also require `table`. `condition` is supported for
-`EXCLUDE` constraints. `using` is an `EXCLUDE` constraint's index method, or a
-`PRIMARY KEY`'s on MySQL and MariaDB (`BTREE` or `HASH`); on the other types it
-is refused.
+Top-level constraints also require `table`. A `PRIMARY KEY` on MySQL and
+MariaDB accepts `using: BTREE` or `using: HASH`; other common constraint
+types refuse `using`.
+
+PostgreSQL exclusion constraints belong under the top-level `exclusions` map:
+
+```yaml
+tables:
+  bookings:
+    columns:
+      room:
+        type: INTEGER
+exclusions:
+  one_booking_per_room:
+    table: bookings
+    using: btree
+    elements: room WITH =
+    condition: room > 0
+    deferrable: true
+    initially: deferred
+    comment: One positive room per booking
+```
+
+Each entry requires `table`, `using` and `elements`. The map key supplies the
+constraint name unless `name` overrides it. Optional keys are `condition`,
+`deferrable`, `initially`, `comment`, `requires`, `struct_name` and
+`dialects`. `requires` lists extension names whose operator classes the
+constraint needs. PostgreSQL plans a changed definition as a drop and creation
+in one transaction; a comment-only change retains the constraint.
 
 ## Default Privileges
 

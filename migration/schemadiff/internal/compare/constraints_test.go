@@ -21,38 +21,15 @@ func TestConstraints(t *testing.T) {
 		expected *difftypes.SchemaDiff
 	}{
 		{
-			name: "new EXCLUDE constraint added",
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						StructName:      "Booking",
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-						WhereCondition:  "is_active = true",
-					},
-				},
-			},
-			database: &catalog.Database{
-				// Empty database - no existing constraints
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
-			},
-		},
-		{
 			name: "multiple constraints added",
 			desired: &schemamodel.Database{
 				Constraints: []schemamodel.Constraint{
 					{
-						StructName:      "Booking",
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
+						StructName: "Booking",
+						Name:       "bookings_pk",
+						Type:       "PRIMARY KEY",
+						Table:      "bookings",
+						Columns:    []string{"room_id", "during"},
 					},
 					{
 						StructName:      "Product",
@@ -74,7 +51,7 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}, {Name: "positive_price"}, {Name: "unique_user_email"}},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "bookings_pk"}, {Name: "positive_price"}, {Name: "unique_user_email"}},
 			},
 		},
 		{
@@ -767,203 +744,6 @@ func TestConstraints_EdgeCases(t *testing.T) {
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
-}
-
-func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
-	tests := []struct {
-		name     string
-		desired  *schemamodel.Database
-		database *catalog.Database
-		expected *difftypes.SchemaDiff
-	}{
-		{
-			name: "EXCLUDE constraint added",
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-						WhereCondition:  "is_active = true",
-					},
-				},
-			},
-			database: &catalog.Database{
-				Constraints: make([]catalog.Constraint, 0),
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
-			},
-		},
-		{
-			name: "EXCLUDE constraint removed",
-			desired: &schemamodel.Database{
-				Constraints: make([]schemamodel.Constraint, 0),
-			},
-			database: &catalog.Database{
-				Constraints: []catalog.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						TableName:       "bookings",
-						Type:            "EXCLUDE",
-						UsingMethod:     new("gist"),
-						ExcludeElements: new("room_id WITH =, during WITH &&"),
-						WhereCondition:  new("is_active = true"),
-					},
-				},
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
-			},
-		},
-		{
-			name: "EXCLUDE constraint modified - using method changed",
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "btree",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-						WhereCondition:  "is_active = true",
-					},
-				},
-			},
-			database: &catalog.Database{
-				Constraints: []catalog.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						TableName:       "bookings",
-						Type:            "EXCLUDE",
-						UsingMethod:     new("gist"),
-						ExcludeElements: new("room_id WITH =, during WITH &&"),
-						WhereCondition:  new("is_active = true"),
-					},
-				},
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
-				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
-			},
-		},
-		{
-			name: "EXCLUDE constraint modified - elements changed",
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, time_range WITH &&",
-						WhereCondition:  "is_active = true",
-					},
-				},
-			},
-			database: &catalog.Database{
-				Constraints: []catalog.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						TableName:       "bookings",
-						Type:            "EXCLUDE",
-						UsingMethod:     new("gist"),
-						ExcludeElements: new("room_id WITH =, during WITH &&"),
-						WhereCondition:  new("is_active = true"),
-					},
-				},
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
-				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
-			},
-		},
-		{
-			name: "EXCLUDE constraint modified - WHERE condition changed",
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-						WhereCondition:  "status = 'confirmed'",
-					},
-				},
-			},
-			database: &catalog.Database{
-				Constraints: []catalog.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						TableName:       "bookings",
-						Type:            "EXCLUDE",
-						UsingMethod:     new("gist"),
-						ExcludeElements: new("room_id WITH =, during WITH &&"),
-						WhereCondition:  new("is_active = true"),
-					},
-				},
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
-				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
-			},
-		},
-		{
-			name: "EXCLUDE constraint unchanged",
-			desired: &schemamodel.Database{
-				Constraints: []schemamodel.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						Type:            "EXCLUDE",
-						Table:           "bookings",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =, during WITH &&",
-						WhereCondition:  "is_active = true",
-					},
-				},
-			},
-			database: &catalog.Database{
-				Constraints: []catalog.Constraint{
-					{
-						Name:            "no_overlapping_bookings",
-						TableName:       "bookings",
-						Type:            "EXCLUDE",
-						UsingMethod:     new("gist"),
-						ExcludeElements: new("room_id WITH =, during WITH &&"),
-						WhereCondition:  new("is_active = true"),
-					},
-				},
-			},
-			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   difftypes.ConstraintAdditions{},
-				ConstraintsRemoved: difftypes.ConstraintRemovals{},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.desired, tt.database, diff, nil)
-
-			// Check constraints added
-			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
-			for _, expected := range tt.expected.ConstraintsAdded {
-				c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, expected.Name)
-			}
-
-			// Check constraints removed
-			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved))
-			for _, expected := range tt.expected.ConstraintsRemoved {
-				c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, expected.Name)
-			}
-		})
-	}
 }
 
 // TestConstraints_FieldLevelCheck covers issue #112 — column-level `check=`

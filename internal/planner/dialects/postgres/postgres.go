@@ -3321,20 +3321,6 @@ func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.Con
 		constraint.NullsDistinct = cloneBoolPtr(add.NullsDistinct)
 		constraint.Deferrable, constraint.Initially = add.Deferrable, add.Initially
 		return constraint
-	case "EXCLUDE":
-		// Both halves are required: an EXCLUDE with no method or no elements is
-		// not something PostgreSQL can be given, and half of one would render a
-		// statement that fails where the record was simply incomplete -- which
-		// the caller is told about instead.
-		if add.UsingMethod == "" || add.ExcludeElements == "" {
-			return nil
-		}
-		exclude := ast.NewExcludeConstraint(add.Name, add.UsingMethod, add.ExcludeElements)
-		if add.WhereCondition != "" {
-			exclude = exclude.SetWhereCondition(add.WhereCondition)
-		}
-		exclude.Deferrable, exclude.Initially = add.Deferrable, add.Initially
-		return exclude
 	default:
 		return nil
 	}

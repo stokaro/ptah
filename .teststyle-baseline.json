@@ -235,12 +235,6 @@
       "count": 1
     },
     {
-      "path": "integration/gonative/exclude_constraints_integration_test.go",
-      "function": "TestExcludeConstraints_EndToEnd_PostgreSQL",
-      "kind": "if",
-      "count": 2
-    },
-    {
       "path": "integration/gonative/extension_functions_test.go",
       "function": "TestPostgreSQLReader_CustomFunctionIncluded_Integration",
       "kind": "if",

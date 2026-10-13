@@ -7,7 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -22,9 +25,13 @@ func indexConstraints(database schemamodel.Database) []string {
 		}
 	}
 	for _, constraint := range database.Constraints {
-		switch strings.ToUpper(constraint.Type) {
-		case "UNIQUE", "EXCLUDE":
+		if strings.EqualFold(constraint.Type, "UNIQUE") {
 			listed = append(listed, constraint.Table+" "+constraint.Type+" "+constraint.Name)
+		}
+	}
+	for _, ref := range database.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(pgtable.ExclusionKind) {
+			listed = append(listed, ref.Parent.Source+" EXCLUDE "+ref.Name.Source)
 		}
 	}
 	slices.Sort(listed)
@@ -101,7 +108,7 @@ func TestRead_PostgresFoldedIndexConstraints(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(indexConstraints(database), qt.DeepEquals, test.want)
@@ -134,6 +141,16 @@ func TestRead_PostgresIndexConstraintsTheServerKeeps(t *testing.T) {
 			want: []string{"t10 EXCLUDE t10_r_excl", "t10 EXCLUDE t10_r_excl1"},
 		},
 		{
+			name: "another exclusion operator",
+			sql:  "CREATE TABLE t_operator (r int, EXCLUDE USING gist (r WITH =), EXCLUDE USING gist (r WITH <>));",
+			want: []string{"t_operator EXCLUDE t_operator_r_excl", "t_operator EXCLUDE t_operator_r_excl1"},
+		},
+		{
+			name: "an exclusion with a predicate beside one without",
+			sql:  "CREATE TABLE t_predicate (r int, EXCLUDE USING btree (r WITH =) WHERE (r > 0), EXCLUDE USING btree (r WITH =));",
+			want: []string{"t_predicate EXCLUDE t_predicate_r_excl", "t_predicate EXCLUDE t_predicate_r_excl1"},
+		},
+		{
 			name: "a UNIQUE and an EXCLUDE",
 			sql:  "CREATE TABLE t12 (a int, UNIQUE (a), EXCLUDE USING btree (a WITH =));",
 			want: []string{"t12 EXCLUDE t12_a_excl", "t12 UNIQUE t12_a_key"},
@@ -158,7 +175,7 @@ func TestRead_PostgresIndexConstraintsTheServerKeeps(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(indexConstraints(database), qt.DeepEquals, test.want)

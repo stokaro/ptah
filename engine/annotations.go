@@ -147,7 +147,7 @@ func (r *Runtime) HCL() hclext.Set {
 // registerSQL freezes every provider's SQL extensions into one set. An
 // extension must name its provider as the owner and read only targets that
 // provider registers, under their canonical names, or targets it reads
-// statements or facets of its own on; see [Runtime.readsStatements] and
+// statements or facets of its own on; see [Runtime.readsObjects] and
 // [Runtime.readsFacets].
 func (r *Runtime) registerSQL(providers []Provider) error {
 	var extensions []sqlext.Extension
@@ -159,7 +159,7 @@ func (r *Runtime) registerSQL(providers []Provider) error {
 			for _, target := range extension.Targets {
 				selected, found := r.targets[target]
 				if !found || selected.name != target || (selected.owner != provider.ID &&
-					!r.readsStatements(provider.ID, extension, target) && !r.readsFacets(provider.ID, extension, target)) {
+					!r.readsObjects(provider.ID, extension, target) && !r.readsFacets(provider.ID, extension, target)) {
 					return fmt.Errorf("%w: provider %q registers SQL syntax for target %q it does not register", ErrInvalidRegistration, provider.ID, target)
 				}
 			}
@@ -174,18 +174,17 @@ func (r *Runtime) registerSQL(providers []Provider) error {
 	return nil
 }
 
-// readsStatements reports whether owner may read statements on target, a
-// target another provider registers: the extension adds whole statements and
-// nothing else, and every object kind they declare is owner's and served on
+// readsObjects reports whether owner may read statements on target, a
+// target another provider registers: the extension declares objects through statements or table child sites, and every object kind they declare is owner's and served on
 // target. The PostgreSQL extension owner reads CREATE EXTENSION so on every
-// PostgreSQL-family target. Syntax inside another owner's statements, and a
-// grammar of a whole document, stay the target's owner's.
-func (r *Runtime) readsStatements(owner string, extension sqlext.Extension, target string) bool {
+// PostgreSQL-family target. Other inline syntax and a grammar of a whole
+// document require the target owner or a registered facet service.
+func (r *Runtime) readsObjects(owner string, extension sqlext.Extension, target string) bool {
 	if extension.Grammar != nil || len(extension.Patterns) == 0 || len(extension.Kinds) == 0 {
 		return false
 	}
 	for _, pattern := range extension.Patterns {
-		if pattern.Site != sqlext.Statement {
+		if pattern.Site != sqlext.Statement && pattern.Site != sqlext.TableElement && pattern.Site != sqlext.AlterOperation {
 			return false
 		}
 	}
@@ -203,7 +202,7 @@ func (r *Runtime) readsStatements(owner string, extension sqlext.Extension, targ
 // kind the extension declares is the owner's and compared on target. The MySQL
 // owner reads a MariaDB column's character set and ON UPDATE clause so.
 func (r *Runtime) readsFacets(owner string, extension sqlext.Extension, target string) bool {
-	if len(extension.Patterns) == 0 {
+	if len(extension.Patterns) == 0 || len(extension.Facets) == 0 {
 		return false
 	}
 	for _, pattern := range extension.Patterns {

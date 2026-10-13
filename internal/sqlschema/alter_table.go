@@ -423,6 +423,9 @@ func applyRenameColumn(target alterTarget, operation *ast.RenameColumnOperation)
 // rendered view over a dropped column fails the same way.
 func columnReference(target alterTarget, column string) string {
 	for _, database := range target.databases {
+		if reference := ownedConstraintColumnReference(target, database, column); reference != "" {
+			return reference
+		}
 		for _, constraint := range database.Constraints {
 			if reference := constraintColumnReference(target, constraint, column); reference != "" {
 				return reference
@@ -450,9 +453,7 @@ func constraintColumnReference(target alterTarget, constraint schemamodel.Constr
 	reaches := func(name string) bool { return target.reachesColumn(name, column) }
 	if constraint.StructName == target.structName &&
 		(slices.ContainsFunc(constraint.Columns, reaches) || slices.ContainsFunc(constraint.IncludeColumns, reaches) ||
-			expressionMentions(target, constraint.CheckExpression, column) ||
-			expressionMentions(target, constraint.ExcludeElements, column) ||
-			expressionMentions(target, constraint.WhereCondition, column)) {
+			expressionMentions(target, constraint.CheckExpression, column)) {
 		return fmt.Sprintf("%s constraint %s", strings.ToLower(constraint.Type), name)
 	}
 	if strings.EqualFold(constraint.Type, "FOREIGN KEY") &&
@@ -537,6 +538,13 @@ func expressionMentions(target alterTarget, expression, column string) bool {
 // is not in the model, so dropping it is refused rather than guessed at,
 // unless the statement says IF EXISTS.
 func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperation) error {
+	if !operation.PrimaryKey && !operation.ForeignKey && !operation.Check && !operation.Unique {
+		if holder, ref, found := target.ownedConstraint(normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)); found {
+			holder.FeatureObjects = holder.FeatureObjects.Without(ref)
+			delete(target.document.comments, ref.Key())
+			return nil
+		}
+	}
 	if operation.PrimaryKey {
 		if len(target.table.PrimaryKey) == 0 && !target.hasPrimaryField() {
 			return fmt.Errorf("ALTER TABLE %s DROP PRIMARY KEY: the table declares no primary key", target.written)
@@ -582,6 +590,9 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 func applyRenameConstraint(database *schemamodel.Database, target alterTarget, operation *ast.RenameConstraintOperation) error {
 	from, to := normalizeSQLIdentifier(target.sourcePlatform, operation.From),
 		normalizeSQLIdentifier(target.sourcePlatform, operation.To)
+	if holder, ref, found := target.ownedConstraint(from); found {
+		return target.renameOwnedConstraint(holder, ref, to)
+	}
 	if target.renameNamedConstraint(from, to) {
 		return nil
 	}

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/internal/planner/featurehost"
@@ -108,6 +109,23 @@ func TestHostRetainsSourceNamesAndCompleteGraphMetadata(t *testing.T) {
 	c.Assert(plan.Steps[1].Transaction, qt.Equals, plangraph.TransactionForbidden)
 	_, err = plangraph.Schedule(t.Context(), result.Contributions...)
 	c.Assert(err, qt.ErrorIs, plangraph.ErrInvalid)
+}
+
+func TestHostBindsCapturedTableWithLiteralDots(t *testing.T) {
+	c := qt.New(t)
+	request, reply, _ := fixture()
+	parent := objectidentity.NewBuilder(request.Identifiers).TableParts("App.Space", "Orders.Log")
+	request.Tables[0].Subject = parent
+	request.Tables[0].Desired.Table = schemamodel.Table{Schema: "App.Space", Name: "Orders.Log"}
+	reply.Contributions[0].Steps[0].Payload.Parent = parent
+	reply.Contributions[0].Steps[0].Effects[0].Subject = parent
+	selected := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) { return reply, nil }}
+	names := map[objectidentity.Key]string{parent.Key(): `"App.Space"."Orders.Log"`}
+	result, err := featurehost.Plan(t.Context(), selected, request, names)
+	c.Assert(err, qt.IsNil)
+	alter := result.Contributions[0].Steps[0].Payload[1].(*ast.AlterTableNode)
+	c.Assert(alter.Name, qt.Equals, `"App.Space"."Orders.Log"`)
+	c.Assert(result.Contributions[0].Steps[0].Effects[0].Subject, qt.DeepEquals, parent)
 }
 
 func TestHostLowersStandaloneOperationsWithoutTableBindings(t *testing.T) {

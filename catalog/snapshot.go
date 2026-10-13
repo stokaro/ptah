@@ -39,8 +39,6 @@ func (c Constraint) Clone() Constraint {
 	c.CheckClause = cloneScalar(c.CheckClause)
 	c.NullsDistinct = cloneScalar(c.NullsDistinct)
 	c.UsingMethod = cloneScalar(c.UsingMethod)
-	c.ExcludeElements = cloneScalar(c.ExcludeElements)
-	c.WhereCondition = cloneScalar(c.WhereCondition)
 	return c
 }
 

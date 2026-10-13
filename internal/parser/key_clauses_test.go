@@ -127,7 +127,7 @@ func TestParse_KeyIndexClause_FailurePath(t *testing.T) {
 		{
 			name:    "storage parameters after an EXCLUDE",
 			sql:     "CREATE TABLE c (r int, EXCLUDE USING btree (r WITH =) WITH (fillfactor = 70));",
-			wantErr: `EXCLUDE WITH \(\.\.\.\) at position 54: .*`,
+			wantErr: `(?s).*PostgreSQL EXCLUDE: unrepresented or unexpected clause WITH.*`,
 		},
 		{
 			name:    "storage parameters after a column PRIMARY KEY",
@@ -144,7 +144,7 @@ func TestParse_KeyIndexClause_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres)).Parse()
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres), parser.WithSQL(exclusionParserRuntime(c).SQL())).Parse()
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(statements, qt.IsNil)

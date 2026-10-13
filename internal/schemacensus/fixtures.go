@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	platformidentifier "ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
@@ -162,7 +163,9 @@ func corpus() []Fixture {
 		{Name: "constraint-unique", Schema: constraintUniqueFixture()},
 		{Name: "constraint-unique-include", Schema: constraintUniqueIncludeFixture()},
 		{Name: "constraint-pk", Schema: constraintPrimaryKeyFixture()},
-		{Name: "constraint-exclude", Schema: constraintExcludeFixture()},
+		{Name: "constraint-pk-method", Schema: constraintPrimaryKeyMethodFixture()},
+		{Name: "constraint-exclude", Schema: constraintExcludeFixture("deferred")},
+		{Name: "constraint-exclude-deferrable", Schema: constraintExcludeFixture("")},
 		{Name: "index-basic", Schema: indexBasicFixture()},
 		{Name: "index-partial", Schema: indexPartialFixture()},
 		{Name: "index-nulls-not-distinct", Schema: indexNullsNotDistinctFixture()},
@@ -1121,16 +1124,25 @@ func constraintPrimaryKeyFixture() schemamodel.Database {
 	}
 }
 
-func constraintExcludeFixture() schemamodel.Database {
+func constraintExcludeFixture(initially string) schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"},
 		schemamodel.Field{StructName: "T", FieldName: "S", Name: "s", Type: "VARCHAR(32)", Nullable: true})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(declaredExtension("btree_gist")))
+	db.FeatureObjects = must.Must(schemaext.NewObjects(declaredExtension("btree_gist"), schemaext.Object{
+		Ref: pgtable.ExclusionRef("t", "t_excl", platformidentifier.ForDialect("postgres")),
+		Value: &pgtable.DesiredExclusion{StructName: "T", Exclusion: pgtable.Exclusion{
+			Elements: "s WITH =", UsingMethod: "gist", WhereCondition: "s IS NOT NULL",
+			Deferrable: true, Initially: initially, Comment: "Distinct non-null values",
+			Dependencies: []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
+		}},
+	}))
 	db.FeatureCoverage = must.Must(pgextension.CompleteCoverage(schemaext.Desired))
-	db.Constraints = []schemamodel.Constraint{{
-		StructName: "T", Table: "t", Name: "t_excl", Type: "EXCLUDE",
-		ExcludeElements: "s WITH =", UsingMethod: "gist", WhereCondition: "s IS NOT NULL",
-		Requires: []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
-	}}
+	db.FeatureCoverage = must.Must(db.FeatureCoverage.Combine(must.Must(pgtable.ExclusionCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
+	return db
+}
+
+func constraintPrimaryKeyMethodFixture() schemamodel.Database {
+	db := constraintPrimaryKeyFixture()
+	db.Constraints[0].UsingMethod = "HASH"
 	return db
 }
 

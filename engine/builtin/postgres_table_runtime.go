@@ -15,8 +15,8 @@ import (
 
 func postgresTableProvider() engine.Provider {
 	provider := engine.Provider{ID: pgtable.Owner, Codecs: pgtable.PartitionCodecs(),
-		Annotations: []annotation.Extension{pgtablesource.Annotations()},
-		HCL:         []hclext.Extension{pgtablesource.HCL()}, YAML: []yamlext.Extension{pgtablesource.YAML()}, SQL: pgtablesource.SQL(),
+		Annotations: []annotation.Extension{pgtablesource.Annotations(), pgtablesource.ExclusionAnnotations()},
+		HCL:         []hclext.Extension{pgtablesource.HCL(), pgtablesource.ExclusionHCL()}, YAML: []yamlext.Extension{pgtablesource.YAML(), pgtablesource.ExclusionYAML()}, SQL: pgtablesource.SQL(),
 	}
 	for _, target := range pgtable.PersistenceTargets() {
 		provider.Planning = append(provider.Planning, engine.Planning{Target: target, ParentKinds: []schemaext.Kind{pgtable.PartitionKind}, Service: pgtable.PartitionService{}})
@@ -52,5 +52,28 @@ func postgresTableProvider() engine.Provider {
 			Kinds: []schemaext.Kind{pgtable.PersistenceChangeKind}, ParentKinds: []schemaext.Kind{pgtable.PersistenceKind},
 			OperationKinds: []schemaext.Kind{pgtable.PersistenceOperationKind}, Service: service})
 	}
+	registerExclusions(&provider)
 	return provider
+}
+
+func registerExclusions(provider *engine.Provider) {
+	service := pgtable.ExclusionService{}
+	provider.Codecs = append(provider.Codecs, pgtable.ExclusionCodecs()...)
+	provider.Codecs = append(provider.Codecs, pgtable.ExclusionChangeCodec(), pgtable.ExclusionOperationCodec())
+	for _, target := range pgtable.PersistenceTargets() {
+		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: []schemaext.Kind{pgtable.ExclusionKind}, Service: service})
+	}
+	provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: platform.Postgres, Kinds: []schemaext.Kind{pgtable.ExclusionKind}, ChangeKinds: []schemaext.Kind{pgtable.ExclusionChangeKind}, Service: service})
+	provider.Normalizations = append(provider.Normalizations, engine.Normalization{Target: platform.Postgres, Kinds: []schemaext.Kind{pgtable.ExclusionKind}, Service: pgtableprobe.ExclusionService{}})
+	provider.Planning = append(provider.Planning, engine.Planning{Target: platform.Postgres, Kinds: []schemaext.Kind{pgtable.ExclusionChangeKind}, ParentKinds: []schemaext.Kind{pgtable.ExclusionKind},
+		OperationKinds: []schemaext.Kind{pgtable.ExclusionOperationKind}, Service: service})
+	provider.Reversals = append(provider.Reversals, engine.Reversal{Target: platform.Postgres, Kinds: []schemaext.Kind{pgtable.ExclusionChangeKind}, Service: service})
+	provider.Declarations = append(provider.Declarations, engine.DeclarationPlanning{
+		Target: platform.Postgres, Kinds: []schemaext.Kind{pgtable.ExclusionKind},
+		OperationKinds: []schemaext.Kind{pgtable.ExclusionOperationKind}, Service: service,
+	})
+	provider.OffTarget = append(provider.OffTarget, engine.OffTargetPolicy{Kinds: []schemaext.Kind{pgtable.ExclusionKind}, Action: schemaext.OffTargetRefuse, Label: "PostgreSQL EXCLUDE constraint"})
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: pgtable.ExclusionReports(), Service: service})
+	}
 }

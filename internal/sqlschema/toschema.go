@@ -725,7 +725,7 @@ func changeDeclared(
 	case *ast.AlterIndexNode:
 		return true, applyAlterIndex(database, document, node, sourcePlatform)
 	case *ast.CommentNode:
-		return true, applyComment(database, document.base, node, sourcePlatform)
+		return true, applyComment(database, document, node, sourcePlatform)
 	case *ast.DropTableNode:
 		return true, applyDropTable(ctx, database, document.base, document, node, sourcePlatform)
 	case *ast.DropIndexNode:
@@ -871,17 +871,19 @@ func appendCreateTable(
 	constraintsStart := len(database.Constraints)
 	order := declaredOrder(database, document, node, tableSchema, sourcePlatform)
 	places := constraintPlaces(order, constraintsStart, len(database.Constraints)-constraintsStart)
+	fieldPlaces := createdFieldPlaces(node)
+	owned := foldOwnedConstraints(node, sourcePlatform)
 
 	// A UNIQUE or EXCLUDE the server folds into another one is not built.
 	created := &database.Tables[len(database.Tables)-1]
-	places = foldCreatedIndexConstraints(database, created, fieldsStart, constraintsStart, places, sourcePlatform)
+	places = foldCreatedIndexConstraints(database, created, fieldsStart, constraintsStart, places, fieldPlaces, sourcePlatform)
 	tableSchema = *created
 
 	// A UNIQUE or foreign key the author left unnamed gets the name its server
 	// gives it, which is the name the other side of a comparison reads from the
 	// catalog.
 	if err := nameCreatedConstraints(
-		database, base, tableSchema, createdRange{fields: fieldsStart, constraints: constraintsStart, places: places},
+		database, base, tableSchema, createdRange{fields: fieldsStart, constraints: constraintsStart, places: places, fieldPlaces: fieldPlaces, owned: owned},
 		sourcePlatform,
 	); err != nil {
 		return err
@@ -903,6 +905,9 @@ func appendCreateTable(
 		return err
 	}
 	recordCreatedKeyIndexes(database, document, tableSchema, keyIndexes)
+	if err := appendOwnedConstraints(database, document, tableSchema, owned, sourcePlatform); err != nil {
+		return err
+	}
 	return appendTableObjects(database, declaringDatabases(database, base), tableSchema, node.OwnedObjects, sourcePlatform)
 }
 
@@ -932,13 +937,17 @@ func declaredOrder(
 	recordsColumns := ordersColumnsAndConstraints(node)
 	columns := 0
 	order := make([]namedElement, 0, len(node.Elements))
-	for _, element := range node.Elements {
-		if len(element.Objects) > 0 {
+	for position, element := range node.Elements {
+		if len(element.Objects) > 0 || element.OwnedConstraint != nil {
 			continue
 		}
 		if element.Column != nil {
 			columns++
 			continue
+		}
+		place := 2*(len(node.Columns)+position) + 1
+		if recordsColumns {
+			place = 2*position + 1
 		}
 		before := len(node.Columns)
 		if recordsColumns {
@@ -948,7 +957,7 @@ func declaredOrder(
 			database.Indexes = append(database.Indexes, ToIndex(element.Index, sourcePlatform))
 			order = append(order, namedElement{
 				constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: document.foreignKeyIndex(element.Index),
-				columnsBefore: before,
+				columnsBefore: before, place: place,
 			})
 			continue
 		}
@@ -958,7 +967,7 @@ func declaredOrder(
 		}
 		database.Constraints = append(database.Constraints, converted)
 		order = append(order, namedElement{
-			constraint: len(database.Constraints) - 1, index: noPosition, columnsBefore: before})
+			constraint: len(database.Constraints) - 1, index: noPosition, columnsBefore: before, place: place})
 	}
 	return order
 }
@@ -969,7 +978,7 @@ func ordersEverything(node *ast.CreateTableNode) bool {
 	indexes, constraints := 0, 0
 	for _, element := range node.Elements {
 		switch {
-		case element.Column != nil, len(element.Objects) > 0:
+		case element.Column != nil, len(element.Objects) > 0, element.OwnedConstraint != nil:
 		case element.Index != nil:
 			indexes++
 		default:
@@ -992,13 +1001,13 @@ func unorderedElements(
 		}
 		database.Constraints = append(database.Constraints, converted)
 		order = append(order, namedElement{
-			constraint: len(database.Constraints) - 1, index: noPosition, columnsBefore: len(node.Columns)})
+			constraint: len(database.Constraints) - 1, index: noPosition, columnsBefore: len(node.Columns), place: 2*(len(node.Columns)+len(order)) + 1})
 	}
 	for _, index := range node.Indexes {
 		database.Indexes = append(database.Indexes, ToIndex(index, sourcePlatform))
 		order = append(order, namedElement{
 			constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: document.foreignKeyIndex(index),
-			columnsBefore: len(node.Columns),
+			columnsBefore: len(node.Columns), place: 2*(len(node.Columns)+len(order)) + 1,
 		})
 	}
 	return order
@@ -1024,7 +1033,7 @@ func appendAlterTable(
 	for i, op := range node.Operations {
 		if comment, ok := op.(*ast.SetConstraintCommentOperation); ok {
 			statement := commentStatement{kind: "CONSTRAINT", name: comment.Constraint, table: node.Name, comment: comment.Comment}
-			if err := applyCommentStatement(database, base, statement, sourcePlatform); err != nil {
+			if err := applyCommentStatement(database, document, statement, sourcePlatform); err != nil {
 				return err
 			}
 			continue
@@ -1051,16 +1060,7 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.ExtensionAlterOperation:
-		if objects := target.document.declaredObjects(typed); objects.Len() > 0 {
-			return appendTableObjects(database, target.databases, *target.table, objects, sourcePlatform)
-		}
-		if index, declared := target.document.declaredIndex(typed); declared {
-			return appendDeclaredIndex(database, target, index, sourcePlatform)
-		}
-		if added, ok := typed.Payload.(*ydbast.AddChangefeed); ok {
-			return appendChangefeed(target, added.Changefeed)
-		}
-		return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(op))
+		return applyOwnedAlterOperation(database, target, typed, sourcePlatform)
 	case *ast.AddColumnOperation:
 		added := len(database.Fields)
 		if err := applyAlterTableAddColumn(database, base, target, typed); err != nil {
@@ -1101,6 +1101,24 @@ func applyAlterOperation(
 	default:
 		return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(op))
 	}
+}
+
+func applyOwnedAlterOperation(
+	database *schemamodel.Database, target alterTarget, operation *ast.ExtensionAlterOperation, sourcePlatform string,
+) error {
+	if constraint := target.document.declaredConstraint(operation); constraint != nil {
+		return appendAddedOwnedConstraint(database, target, constraint)
+	}
+	if objects := target.document.declaredObjects(operation); objects.Len() > 0 {
+		return appendTableObjects(database, target.databases, *target.table, objects, sourcePlatform)
+	}
+	if index, declared := target.document.declaredIndex(operation); declared {
+		return appendDeclaredIndex(database, target, index, sourcePlatform)
+	}
+	if added, ok := operation.Payload.(*ydbast.AddChangefeed); ok {
+		return appendChangefeed(target, added.Changefeed)
+	}
+	return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(operation))
 }
 
 func applyAddIndex(database *schemamodel.Database, target alterTarget, typed *ast.AddIndexOperation, sourcePlatform string) error {
@@ -1390,18 +1408,6 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			CheckExpression: constraint.Expression,
 			NotEnforced:     constraint.NotEnforced,
 			NotValid:        constraint.NotValid,
-		}, true
-	case ast.ExcludeConstraint:
-		return schemamodel.Constraint{
-			StructName:      structName,
-			Name:            normalizeSQLIdentifier(sourcePlatform, constraint.Name),
-			Type:            "EXCLUDE",
-			Table:           ownerTable,
-			UsingMethod:     constraint.UsingMethod,
-			ExcludeElements: constraint.ExcludeElements,
-			WhereCondition:  constraint.WhereCondition,
-			Deferrable:      constraint.Deferrable,
-			Initially:       constraint.Initially,
 		}, true
 	case ast.PrimaryKeyConstraint:
 		// The only kind this deliberately declines. A table-level PRIMARY KEY

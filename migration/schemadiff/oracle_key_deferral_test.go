@@ -11,6 +11,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -44,6 +45,8 @@ func TestCompare_OracleKeyDeferral_Synced(t *testing.T) {
 	c := qt.New(t)
 	desired := deferralDesired(true, "deferred")
 	desired.Constraints = desired.Constraints[:1]
+	desired.FeatureObjects = schemaext.Objects{}
+	desired.FeatureCoverage = schemaext.Coverage{}
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, oracleSlotsCatalog(true, "deferred"), platform.Oracle, must.Must(builtin.New())))
 
@@ -57,6 +60,8 @@ func TestCompare_OracleKeyDeferral_Changed(t *testing.T) {
 	c := qt.New(t)
 	desired := deferralDesired(true, "deferred")
 	desired.Constraints = desired.Constraints[:1]
+	desired.FeatureObjects = schemaext.Objects{}
+	desired.FeatureCoverage = schemaext.Coverage{}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, oracleSlotsCatalog(false, ""), platform.Oracle, must.Must(builtin.New())))
 
 	plan, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(

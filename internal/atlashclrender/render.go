@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -293,10 +294,11 @@ type renderer struct {
 	// ownerBlocks the blocks they wrote, ownerHeader the lines they write in
 	// the header, and slots what they add to this writer's own blocks; see
 	// [renderer.writeOwnerBlock] and [renderer.ownerSlot].
-	owners      hclext.Set
-	ownerBlocks []hclext.EncodedBlock
-	ownerHeader []string
-	slots       map[hclext.Slot]ownerSlot
+	owners            hclext.Set
+	ownerBlocks       []hclext.EncodedBlock
+	ownerRequirements map[objectidentity.Key][]objectidentity.ID
+	ownerHeader       []string
+	slots             map[hclext.Slot]ownerSlot
 	// layout is the tables this render writes, with their columns, indexes
 	// and constraints.
 	layout      tableLayout
@@ -760,6 +762,11 @@ func (r *renderer) renderTables() {
 	for _, constraint := range r.layout.orphanConstraints {
 		r.warn("constraint "+constraint.Name, "constraint cannot be rendered because the target table is absent from the exported schema")
 	}
+	for _, block := range r.ownerBlocks {
+		if block.Placement == hclext.WithinTable && !r.ownerTablePresent(block) {
+			r.warn(block.Path, block.Type+" cannot be rendered because the target table is absent from the exported schema")
+		}
+	}
 	for _, rlsEnabled := range orphanRLSEnabledTables {
 		r.warn("rls_enabled_tables."+rlsEnabled.Table, "RLS enablement cannot be rendered because the target table is absent from the exported schema")
 	}
@@ -1083,8 +1090,6 @@ func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
 	r.linef(`  constraint %s {`, quote(constraint.Name))
 	r.stringAttr(2, "type", constraint.Type)
 	r.stringAttr(2, "using", constraint.UsingMethod)
-	r.stringAttr(2, "elements", constraint.ExcludeElements)
-	r.stringAttr(2, "condition", constraint.WhereCondition)
 	r.stringAttr(2, "check", constraint.CheckExpression)
 	if len(constraint.Columns) > 0 {
 		r.rawAttr(2, "columns", stringList(constraint.Columns))
@@ -1106,8 +1111,6 @@ func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
 func atlasCheckConstraint(constraint schemamodel.Constraint) bool {
 	return constraint.CheckExpression != "" &&
 		constraint.UsingMethod == "" &&
-		constraint.ExcludeElements == "" &&
-		constraint.WhereCondition == "" &&
 		len(constraint.Columns) == 0 &&
 		len(constraint.IncludeColumns) == 0 &&
 		constraint.NullsDistinct == nil &&
@@ -1122,8 +1125,6 @@ func atlasUniqueConstraint(constraint schemamodel.Constraint) bool {
 	return constraint.Name != "" &&
 		len(constraint.Columns) > 0 &&
 		constraint.UsingMethod == "" &&
-		constraint.ExcludeElements == "" &&
-		constraint.WhereCondition == "" &&
 		constraint.CheckExpression == "" &&
 		constraint.ForeignTable == "" &&
 		len(constraint.ForeignColumnsOrDefault()) == 0 &&
@@ -1137,8 +1138,6 @@ func atlasForeignKeyConstraint(constraint schemamodel.Constraint) bool {
 		constraint.ForeignTable != "" &&
 		len(constraint.ForeignColumnsOrDefault()) == len(constraint.Columns) &&
 		constraint.UsingMethod == "" &&
-		constraint.ExcludeElements == "" &&
-		constraint.WhereCondition == "" &&
 		constraint.CheckExpression == "" &&
 		len(constraint.IncludeColumns) == 0 &&
 		constraint.NullsDistinct == nil &&
@@ -1149,8 +1148,6 @@ func atlasPrimaryKeyConstraint(constraint schemamodel.Constraint) bool {
 	return constraint.Name == "" &&
 		len(constraint.Columns) > 0 &&
 		constraint.UsingMethod == "" &&
-		constraint.ExcludeElements == "" &&
-		constraint.WhereCondition == "" &&
 		constraint.CheckExpression == "" &&
 		constraint.NullsDistinct == nil &&
 		constraint.ForeignTable == "" &&

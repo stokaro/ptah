@@ -1693,8 +1693,6 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		strings.Join(constraint.IncludeColumns, "\x01"),
 		nullsDistinct,
 		constraint.UsingMethod,
-		constraint.ExcludeElements,
-		constraint.WhereCondition,
 		constraint.CheckExpression,
 		constraint.ForeignTable,
 		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),

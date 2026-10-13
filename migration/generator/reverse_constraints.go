@@ -131,7 +131,7 @@ func reverseConstraintAdditions(
 	// name-only key would collapse them onto one host.
 	dbConstraintByTableName := make(map[tableMemberKey]catalog.Constraint)
 	for _, c := range dbSchema.Constraints {
-		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" && c.Type != "EXCLUDE" {
+		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" {
 			continue
 		}
 		dbConstraintByTableName[tableMemberKey{table: c.QualifiedTableName(), member: c.Name}] = c
@@ -158,7 +158,7 @@ func reverseConstraintAdditions(
 }
 
 // priorConstraintAddition restores the full definition read before removal.
-// Validation status and exclusion predicates belong to that definition too.
+// Validation status belongs to that definition too.
 func priorConstraintAddition(removed difftypes.ConstraintRemovalInfo, current catalog.Constraint, semantics identifier.Semantics) (difftypes.ConstraintAdditionInfo, bool) {
 	if removed.Type == "FOREIGN KEY" {
 		return foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, current, semantics), true
@@ -171,10 +171,6 @@ func priorConstraintAddition(removed difftypes.ConstraintRemovalInfo, current ca
 		}
 	case "CHECK":
 		if derefString(current.CheckClause) == "" {
-			return difftypes.ConstraintAdditionInfo{}, false
-		}
-	case "EXCLUDE":
-		if derefString(current.ExcludeElements) == "" {
 			return difftypes.ConstraintAdditionInfo{}, false
 		}
 	default:
@@ -191,7 +187,6 @@ func priorConstraintAddition(removed difftypes.ConstraintRemovalInfo, current ca
 		Deferrable:    current.Deferrable, Initially: current.Initially,
 		Comment: current.Comment, NotEnforced: current.NotEnforced, NotValid: current.NotValid,
 		CheckExpression: derefString(current.CheckClause), UsingMethod: derefString(current.UsingMethod),
-		ExcludeElements: derefString(current.ExcludeElements), WhereCondition: derefString(current.WhereCondition),
 	}, true
 }
 

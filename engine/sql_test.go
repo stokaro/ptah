@@ -116,8 +116,8 @@ func TestRuntimeSQL_AFeatureOwnerReadsNothingElse(t *testing.T) {
 		providers []engine.Provider
 		wantErr   string
 	}{
-		{name: "syntax inside a statement",
-			providers: []engine.Provider{hostProvider(), statementReader(sqlext.TableElement, []schemaext.Kind{conversionFirst}, "custom")},
+		{name: "object declaration at a facet site",
+			providers: []engine.Provider{hostProvider(), statementReader(sqlext.TableOption, []schemaext.Kind{conversionFirst}, "custom")},
 			wantErr:   `.*provider "example.org/converter" registers SQL syntax for target "custom" it does not register`},
 		{name: "statements of no kind",
 			providers: []engine.Provider{hostProvider(), statementReader(sqlext.Statement, nil, "custom")},
@@ -222,6 +222,16 @@ func TestRuntimeSQL_AFacetOwnerReadsNothingElse(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(runtime, qt.IsNil)
+		})
+	}
+}
+
+func TestRuntimeSQL_AFeatureOwnerReadsItsTableChildren(t *testing.T) {
+	for _, site := range []sqlext.Site{sqlext.TableElement, sqlext.AlterOperation} {
+		t.Run(string(site), func(t *testing.T) {
+			c := qt.New(t)
+			runtime := mustRuntime(c, hostProvider(), statementReader(site, []schemaext.Kind{conversionFirst}, "custom"))
+			c.Assert(runtime.SQL().Candidates("custom", site), qt.HasLen, 1)
 		})
 	}
 }

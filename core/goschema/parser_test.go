@@ -887,30 +887,6 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		expected schemamodel.Constraint
 	}{
 		{
-			name:    "EXCLUDE constraint with all fields",
-			comment: `//ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&" condition="is_active = true" comment="Prevent overlapping bookings"`,
-			expected: schemamodel.Constraint{
-				StructName:      "TestStruct",
-				Name:            "no_overlapping_bookings",
-				Type:            "EXCLUDE",
-				UsingMethod:     "gist",
-				ExcludeElements: "room_id WITH =, during WITH &&",
-				WhereCondition:  "is_active = true",
-				Comment:         "Prevent overlapping bookings",
-			},
-		},
-		{
-			name:    "EXCLUDE constraint without WHERE clause",
-			comment: `//ptah:schema:constraint name="unique_locations" type="EXCLUDE" using="gist" elements="location WITH &&"`,
-			expected: schemamodel.Constraint{
-				StructName:      "TestStruct",
-				Name:            "unique_locations",
-				Type:            "EXCLUDE",
-				UsingMethod:     "gist",
-				ExcludeElements: "location WITH &&",
-			},
-		},
-		{
 			name:    "CHECK constraint",
 			comment: `//ptah:schema:constraint name="positive_price" type="CHECK" check="price > 0"`,
 			expected: schemamodel.Constraint{
@@ -984,8 +960,6 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 			c.Assert(constraint.Name, qt.Equals, tt.expected.Name)
 			c.Assert(constraint.Type, qt.Equals, tt.expected.Type)
 			c.Assert(constraint.UsingMethod, qt.Equals, tt.expected.UsingMethod)
-			c.Assert(constraint.ExcludeElements, qt.Equals, tt.expected.ExcludeElements)
-			c.Assert(constraint.WhereCondition, qt.Equals, tt.expected.WhereCondition)
 			c.Assert(constraint.CheckExpression, qt.Equals, tt.expected.CheckExpression)
 			c.Assert(constraint.Columns, qt.DeepEquals, tt.expected.Columns)
 			c.Assert(constraint.IncludeColumns, qt.DeepEquals, tt.expected.IncludeColumns)

@@ -39,14 +39,6 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 		wantSQL    string
 	}{
 		{
-			name: "EXCLUDE",
-			constraint: schemamodel.Constraint{
-				StructName: "Booking", Name: "no_overlap", Type: "EXCLUDE",
-				UsingMethod: "gist", ExcludeElements: "room WITH =",
-			},
-			wantSQL: `ALTER TABLE "bookings" ADD CONSTRAINT "no_overlap" EXCLUDE USING gist (room WITH =);`,
-		},
-		{
 			name: "CHECK",
 			constraint: schemamodel.Constraint{
 				StructName: "Booking", Name: "positive_price", Type: "CHECK",

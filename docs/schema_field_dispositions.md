@@ -79,17 +79,17 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-640 fields are reachable from the desired schema, and each one carries
+651 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 534 | reaches rendered SQL on at least one target |
-| `comparison` | 31 | read when two schemas are compared, and written into no statement |
+| `ddl` | 539 | reaches rendered SQL on at least one target |
+| `comparison` | 35 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 32 | identifies the source text the declaration was read from |
-| `export` | 12 | what a generated document carries, or reports that it cannot |
+| `source` | 33 | identifies the source text the declaration was read from |
+| `export` | 13 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
 ### Fields that should render and do not
@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-70 known gaps: a conversion or the comparison drops each one on the dialects named.
+71 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -128,6 +128,7 @@ migration nobody asked for.
 | `mysqlschema.DesiredTable.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.CompositeType.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Constraint.UsingMethod` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -248,11 +249,15 @@ migration nobody asked for.
 
 ### Compared fields the round trip cannot ask about
 
-16, besides the ones only a recorded loss hides.
+20, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
 | `pgtable.DesiredPartition.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.DesiredExclusion.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedExclusion.SourceKey` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedExclusion.Elements` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedExclusion.WhereCondition` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtable.NormalizedPartition.SourceKey` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtable.NormalizedPartition.Key` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `mssqlschema.DesiredSecurityPolicy.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
@@ -375,10 +380,23 @@ migration nobody asked for.
 | `pgroutine.DesiredProperties.Leakproof` | `ddl` | — |
 | `pgroutine.DesiredProperties.Parallel` | `ddl` | — |
 | `pgroutine.DesiredProperties.Strict` | `ddl` | — |
+| `pgtable.DesiredExclusion.Exclusion` | `ddl` | — |
+| `pgtable.DesiredExclusion.Normalized` | `comparison` | the connected server's expression spelling; source encoders preserve the declaration |
+| `pgtable.DesiredExclusion.StructName` | `source` | the Go struct the declaration belongs to; its table and name are the object identity |
 | `pgtable.DesiredPartition.Normalized` | `comparison` | the connected server's key for the declaration; source encoders preserve the declared spelling |
 | `pgtable.DesiredPartition.Parts` | `ddl` | — |
 | `pgtable.DesiredPartition.Type` | `ddl` | — |
 | `pgtable.DesiredPersistence.Unlogged` | `ddl` | — |
+| `pgtable.Exclusion.Comment` | `ddl` | — |
+| `pgtable.Exclusion.Deferrable` | `ddl` | — |
+| `pgtable.Exclusion.Dependencies` | `export` | catalog dependencies preserve required extensions during export even when the SQL definition omits their operator classes |
+| `pgtable.Exclusion.Elements` | `ddl` | — |
+| `pgtable.Exclusion.Initially` | `ddl` | — |
+| `pgtable.Exclusion.UsingMethod` | `ddl` | — |
+| `pgtable.Exclusion.WhereCondition` | `ddl` | — |
+| `pgtable.NormalizedExclusion.Elements` | `comparison` | the server's expression spelling, compared with the catalog and never rendered |
+| `pgtable.NormalizedExclusion.SourceKey` | `comparison` | binds the normalized expressions to the declaration |
+| `pgtable.NormalizedExclusion.WhereCondition` | `comparison` | the server's predicate spelling, compared with the catalog and never rendered |
 | `pgtable.NormalizedPartition.Key` | `comparison` | the server's normalized partition key, compared with the catalog and never rendered |
 | `pgtable.NormalizedPartition.SourceKey` | `comparison` | binds the normalized answer to its declaration |
 | `pgtable.PartitionPart.Collation` | `ddl` | — |
@@ -421,7 +439,6 @@ migration nobody asked for.
 | `schemamodel.Constraint.Columns` | `ddl` | — |
 | `schemamodel.Constraint.Comment` | `ddl` | — |
 | `schemamodel.Constraint.Deferrable` | `ddl` | — |
-| `schemamodel.Constraint.ExcludeElements` | `ddl` | — |
 | `schemamodel.Constraint.Facets` | `ddl` | — |
 | `schemamodel.Constraint.ForeignColumn` | `ddl` | — |
 | `schemamodel.Constraint.ForeignColumns` | `ddl` | — |
@@ -441,7 +458,6 @@ migration nobody asked for.
 | `schemamodel.Constraint.Table` | `ddl` | — |
 | `schemamodel.Constraint.Type` | `ddl` | — |
 | `schemamodel.Constraint.UsingMethod` | `ddl` | — |
-| `schemamodel.Constraint.WhereCondition` | `ddl` | — |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.DefaultPrivileges` | `ddl` | — |

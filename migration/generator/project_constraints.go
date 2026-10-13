@@ -125,7 +125,6 @@ func projectedConstraintDefinition(change difftypes.ConstraintAdditionInfo, tabl
 		Deferrable: change.Deferrable, Initially: change.Initially, Match: change.Match,
 		OnDeleteColumns: slices.Clone(change.OnDeleteColumns),
 		CheckClause:     optionalConstraintText(change.CheckExpression), UsingMethod: optionalConstraintText(change.UsingMethod),
-		ExcludeElements: optionalConstraintText(change.ExcludeElements), WhereCondition: optionalConstraintText(change.WhereCondition),
 	}
 	if len(change.Columns) > 0 {
 		constraint.ColumnName = change.Columns[0]

@@ -367,7 +367,6 @@ func TestConstraintType_Constants(t *testing.T) {
 	c.Assert(int(ast.UniqueConstraint), qt.Equals, 1)
 	c.Assert(int(ast.ForeignKeyConstraint), qt.Equals, 2)
 	c.Assert(int(ast.CheckConstraint), qt.Equals, 3)
-	c.Assert(int(ast.ExcludeConstraint), qt.Equals, 4)
 }
 
 // Test that constraint types are distinct
@@ -379,10 +378,9 @@ func TestConstraintType_Distinct(t *testing.T) {
 		ast.UniqueConstraint:     true,
 		ast.ForeignKeyConstraint: true,
 		ast.CheckConstraint:      true,
-		ast.ExcludeConstraint:    true,
 	}
 
-	c.Assert(types, qt.HasLen, 5)
+	c.Assert(types, qt.HasLen, 4)
 }
 
 // Test default value edge cases

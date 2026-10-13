@@ -32,13 +32,13 @@ const excludeLabel = "excl"
 //	EXCLUDE USING gist (r WITH =, r WITH <>) on h             h_r_r1_excl
 //	EXCLUDE USING btree (r WITH =) on kk, beside an index kk_r_excl   kk_r_excl1
 func Exclude(table, elements string, taken func(string) bool) string {
-	return Constraint(table, excludeElementNames(elements), excludeLabel, taken)
+	return Constraint(table, ExcludeElementNames(elements), excludeLabel, taken)
 }
 
-// excludeElementNames names the elements of an EXCLUDE constraint as
+// ExcludeElementNames names the elements of an EXCLUDE constraint as
 // ChooseIndexColumnNames does: each by [elementName], then numbered by
 // [indexColumnNames].
-func excludeElementNames(elements string) []string {
+func ExcludeElementNames(elements string) []string {
 	var names []string
 	for _, element := range splitTopLevel(significantTokens(elements)) {
 		names = append(names, elementName(element))

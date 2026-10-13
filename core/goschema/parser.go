@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
+	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
@@ -404,6 +405,10 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
 	}
 	constraint := parseConstraintComment(s.kv, comment, structName)
+	if !constraintkind.Valid(constraint.Type) {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName),
+			fmt.Errorf("%w: constraint %q has unsupported common kind %q", ptaherr.ErrUnsupportedFeature, constraint.Name, constraint.Type))
+	}
 	constraint.Facets = facets
 	s.schemaConstraints = append(s.schemaConstraints, constraint)
 	return nil
@@ -431,13 +436,10 @@ func parseConstraintComment(kvParser parseutils.KeyValueParser, comment *ast.Com
 	return schemamodel.Constraint{
 		StructName: structName,
 		Name:       kv["name"],
-		Type:       strings.ToUpper(kv["type"]), // EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
+		Type:       strings.ToUpper(strings.TrimSpace(kv["type"])),
 		Table:      tableName,
 
-		// EXCLUDE constraint specific fields
-		UsingMethod:     kv["using"],     // Index method (gist, btree, etc.)
-		ExcludeElements: kv["elements"],  // Elements specification
-		WhereCondition:  kv["condition"], // WHERE clause
+		UsingMethod: kv["using"], // Primary-key index method.
 
 		// CHECK constraint specific fields
 		CheckExpression: kv["check"], // Check expression

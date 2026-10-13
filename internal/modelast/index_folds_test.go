@@ -4,9 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -25,10 +29,15 @@ func keyedTable(constraints ...schemamodel.Constraint) *schemamodel.Database {
 	return database
 }
 
-func excludeOnR(name, method string) schemamodel.Constraint {
-	return schemamodel.Constraint{
-		StructName: "E", Table: "ex", Name: name, Type: "EXCLUDE", UsingMethod: method, ExcludeElements: "r WITH =",
-	}
+func excludeOnR(name, method string) schemaext.Object {
+	return schemaext.Object{Ref: pgtable.ExclusionRef("ex", name, identifier.ForDialect("postgres")),
+		Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: method, Elements: "r WITH ="}}}
+}
+
+func exclusionKeyedTable(objects ...schemaext.Object) *schemamodel.Database {
+	database := keyedTable()
+	database.FeatureObjects = must.Must(schemaext.NewObjects(objects...))
+	return database
 }
 
 func uniqueOn(name string, columns ...string) schemamodel.Constraint {
@@ -50,9 +59,10 @@ func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *test
 	}{
 		{
 			name:     "an EXCLUDE declared twice",
-			database: keyedTable(excludeOnR("ex_r_excl", "btree"), excludeOnR("ex_r_excl1", "btree")),
+			database: exclusionKeyedTable(excludeOnR("ex_r_excl", "btree"), excludeOnR("ex_r_excl1", "btree")),
 			want: []string{
-				table + ",\n  CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =)\n);\n\n",
+				table + "\n);\n\n",
+				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =);\n\n",
 				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl1\" EXCLUDE USING btree (r WITH =);\n\n",
 			},
 		},
@@ -85,33 +95,30 @@ func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *test
 	}
 }
 
-// TestGetOrderedCreateStatements_IndexConstraintsTheServerKeepsStayInTheTable
-// is the control: constraints PostgreSQL builds one index each for, and
-// constraints on a dialect this rule does not describe, stay in the CREATE
-// TABLE.
-func TestGetOrderedCreateStatements_IndexConstraintsTheServerKeepsStayInTheTable(t *testing.T) {
+// Every declared identity survives when definitions or the target differ.
+func TestGetOrderedCreateStatements_KeepsDistinctIndexConstraints(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
 		database *schemamodel.Database
-		want     string
+		want     []string
 	}{
 		{
 			name:     "an EXCLUDE under two access methods",
 			dialect:  platform.Postgres,
-			database: keyedTable(excludeOnR("ex_r_excl", "btree"), excludeOnR("ex_r_excl1", "hash")),
-			want: "-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
-				"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER NOT NULL,\n" +
-				"  CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =),\n" +
-				"  CONSTRAINT \"ex_r_excl1\" EXCLUDE USING hash (r WITH =)\n);\n\n",
+			database: exclusionKeyedTable(excludeOnR("ex_r_excl", "btree"), excludeOnR("ex_r_excl1", "hash")),
+			want: []string{"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+				"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER NOT NULL\n);\n\n",
+				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =);\n\n",
+				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl1\" EXCLUDE USING hash (r WITH =);\n\n"},
 		},
 		{
 			name:     "a UNIQUE declared twice on MySQL",
 			dialect:  platform.MySQL,
 			database: keyedTable(uniqueOn("ex_r_key", "r"), uniqueOn("ex_r_key1", "r")),
-			want: "-- MYSQL TABLE: ex --\nCREATE TABLE `ex` (\n" +
+			want: []string{"-- MYSQL TABLE: ex --\nCREATE TABLE `ex` (\n" +
 				"  `id` INTEGER PRIMARY KEY,\n  `r` INTEGER NOT NULL,\n" +
-				"  CONSTRAINT `ex_r_key` UNIQUE (`r`),\n  CONSTRAINT `ex_r_key1` UNIQUE (`r`)\n);\n\n",
+				"  CONSTRAINT `ex_r_key` UNIQUE (`r`),\n  CONSTRAINT `ex_r_key1` UNIQUE (`r`)\n);\n\n"},
 		},
 	}
 	for _, test := range tests {
@@ -121,7 +128,7 @@ func TestGetOrderedCreateStatements_IndexConstraintsTheServerKeepsStayInTheTable
 			statements, err := builtin.GetOrderedCreateStatements(test.database, test.dialect)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, []string{test.want})
+			c.Assert(statements, qt.DeepEquals, test.want)
 		})
 	}
 }

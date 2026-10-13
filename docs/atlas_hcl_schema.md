@@ -76,8 +76,10 @@ current schema IR:
   `granularity` in a nested `platform "clickhouse"` block, and the Ptah `ops`
   parity extension preserves the Go annotation operator class
 - Ptah `constraint` blocks when complete annotation metadata cannot fit the
-  Atlas-native `check`, `unique`, `primary_key`, or `foreign_key` shape, and
-  for `EXCLUDE` constraints
+  Atlas-native `check`, `unique`, `primary_key`, or `foreign_key` shape
+- Ptah `exclude` blocks within a table for PostgreSQL exclusion constraints,
+  with `name`, `using`, `elements` and optional `condition`, `deferrable`,
+  `initially`, `comment` and `requires`
 - `unique` blocks with `columns`; PostgreSQL unique constraints also support
   `include` and `nulls_distinct`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
@@ -359,11 +361,11 @@ table "users" {
     }
   }
 
-  constraint "users_no_overlap" {
-    type      = "EXCLUDE"
+  exclude {
+    name      = "users_no_overlap"
     using     = "gist"
-    elements  = "id WITH ="
-    condition = "id > 0"
+    elements  = sql("id WITH =")
+    condition = sql("id > 0")
     comment   = "No overlapping identifiers"
   }
 }

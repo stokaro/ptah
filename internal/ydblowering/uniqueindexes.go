@@ -105,7 +105,7 @@ func constraintTable(tables []schemamodel.Table, constraint schemamodel.Constrai
 // unique index cannot hold.
 func lowersToIndex(constraint schemamodel.Constraint) bool {
 	return !constraint.Deferrable && constraint.Initially == "" && !constraint.NotEnforced && !constraint.NotValid &&
-		strings.TrimSpace(constraint.WhereCondition) == "" && constraint.UsingMethod == "" &&
+		constraint.UsingMethod == "" &&
 		constraint.Facets.IsZero()
 }
 

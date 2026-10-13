@@ -441,14 +441,6 @@
               "description": "Constraint comment.",
               "type": "string"
             },
-            "condition": {
-              "description": "Constraint WHERE condition.",
-              "type": "string"
-            },
-            "elements": {
-              "description": "EXCLUDE constraint elements.",
-              "type": "string"
-            },
             "foreign_column": {
               "description": "Single referenced column for FOREIGN KEY constraints.",
               "type": "string"
@@ -494,11 +486,11 @@
               "type": "string"
             },
             "type": {
-              "description": "Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY, or EXCLUDE.",
+              "description": "Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY.",
               "type": "string"
             },
             "using": {
-              "description": "EXCLUDE index method.",
+              "description": "Primary-key index method.",
               "type": "string"
             }
           },
@@ -807,6 +799,72 @@
         },
         "directive": {
           "const": "ptah:schema:enum"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.exclude": {
+      "additionalProperties": false,
+      "description": "Declares a PostgreSQL EXCLUDE constraint.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Constraint comment.",
+              "type": "string"
+            },
+            "condition": {
+              "description": "Optional index predicate.",
+              "type": "string"
+            },
+            "deferrable": {
+              "description": "Allows checking at transaction commit.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "elements": {
+              "description": "Expressions and their exclusion operators.",
+              "type": "string"
+            },
+            "initially": {
+              "description": "Initial check timing: immediate or deferred.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Constraint name.",
+              "type": "string"
+            },
+            "requires": {
+              "description": "CSV list of exact required extension names.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Owning table; defaults to the struct's table.",
+              "type": "string"
+            },
+            "using": {
+              "description": "Index access method.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "elements",
+            "name",
+            "using"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:exclude"
         }
       },
       "required": [
@@ -3060,6 +3118,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.coordinationnode"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.exclude"
     },
     {
       "$ref": "#/$defs/ptah.schema.extendedproperty"

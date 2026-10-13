@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
@@ -905,15 +906,12 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "bookings", StructName: "Booking"}},
 		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "Booking", Primary: true}},
-		Constraints: []schemamodel.Constraint{{
-			Name:            "no_overlap",
-			Type:            "EXCLUDE",
-			StructName:      "Booking",
-			UsingMethod:     "gist",
-			ExcludeElements: "room_id WITH =",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref:   pgtable.ExclusionRef("bookings", "no_overlap", identifier.ForDialect("postgres")),
+			Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "room_id WITH ="}},
+		})),
 	}
-	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("sqlite"), "bookings")}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "bookings")}
 
 	nodes, err := planner.GenerateSchemaDiffAST(
 		context.Background(), must.Must(builtin.New()),
@@ -925,7 +923,7 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s)sqlite: table bookings declares EXCLUDE constraint no_overlap: SQLite has no EXCLUDE constraint.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*EXCLUDE.*`)
 }
 
 // TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange pins the

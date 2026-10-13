@@ -474,11 +474,9 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
 			attr("name", "Constraint name.", valueString, false, false),
-			attr("type", "Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY, or EXCLUDE.", valueString, false, false),
+			attr("type", "Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY.", valueString, false, false),
 			attr("table", "Explicit target table.", valueString, false, false),
-			attr("using", "EXCLUDE index method.", valueString, false, false),
-			attr("elements", "EXCLUDE constraint elements.", valueSQL, false, false),
-			attr("condition", "Constraint WHERE condition.", valueSQL, false, false),
+			attr("using", "Primary-key index method.", valueString, false, false),
 			attr("check", "CHECK expression.", valueSQL, false, false),
 			attr("columns", "Comma-separated local columns.", valueList, false, false),
 			attr("include", "Comma-separated PostgreSQL INCLUDE columns for covering UNIQUE constraints.", valueList, false, false),

@@ -445,6 +445,11 @@ func (r *renderer) omitsRefusedBlock(block string, names ...string) bool {
 func (r *renderer) documentRequiresExtension(name string) bool {
 	if r.requiredExtensions == nil {
 		r.requiredExtensions = collectRequiredExtensions(r.db)
+		for _, block := range r.ownerBlocks {
+			if block.Placement == hclext.WithinTable && !block.Unwritten && r.ownerTablePresent(block) {
+				addRequiredExtensions(r.requiredExtensions, r.ownerRequirements[block.Object.Key()])
+			}
+		}
 	}
 	return r.requiredExtensions[strings.ToLower(strings.TrimSpace(name))]
 }
@@ -486,29 +491,30 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 // while both documents applied at exit 0.
 func collectRequiredExtensions(db *schemamodel.Database) map[string]bool {
 	required := make(map[string]bool)
-	add := func(refs []objectidentity.ID) {
-		for _, ref := range refs {
-			if ref.Kind != objectidentity.KindExtension {
-				continue
-			}
-			if name := strings.ToLower(strings.TrimSpace(ref.Name.Source)); name != "" {
-				required[name] = true
-			}
-		}
-	}
 	for _, index := range db.Indexes {
 		if resolveTable(db.Tables, index.StructName, index.TableName) == nil {
 			continue
 		}
-		add(index.Requires)
+		addRequiredExtensions(required, index.Requires)
 	}
 	for _, constraint := range db.Constraints {
 		if resolveTable(db.Tables, constraint.StructName, constraint.Table) == nil {
 			continue
 		}
-		add(constraint.Requires)
+		addRequiredExtensions(required, constraint.Requires)
 	}
 	return required
+}
+
+func addRequiredExtensions(required map[string]bool, refs []objectidentity.ID) {
+	for _, ref := range refs {
+		if ref.Kind != objectidentity.KindExtension {
+			continue
+		}
+		if name := strings.ToLower(strings.TrimSpace(ref.Name.Source)); name != "" {
+			required[name] = true
+		}
+	}
 }
 
 // documentNamesAny reports whether anything the surviving document emits names
@@ -539,7 +545,7 @@ func (r *renderer) documentNamesAny(names []string) bool {
 	if r.references == nil {
 		r.references = collectReferencedNames(r.db)
 		for _, block := range r.ownerBlocks {
-			if block.Placement != hclext.WithinTable || block.Unwritten {
+			if block.Placement != hclext.WithinTable || block.Unwritten || !r.ownerTablePresent(block) {
 				continue
 			}
 			for _, name := range block.References {
@@ -596,8 +602,6 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 	}
 	for _, constraint := range db.Constraints {
 		add(constraint.CheckExpression)
-		add(constraint.WhereCondition)
-		add(constraint.ExcludeElements)
 	}
 	for _, index := range db.Indexes {
 		add(index.Condition)
@@ -611,10 +615,8 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 		// reading it omitted pg_trgm from a document whose index block spelled
 		// gin_trgm_ops, and the document then failed to apply with `operator
 		// class "gin_trgm_ops" does not exist for access method "gin"` --
-		// measured on PostgreSQL 17.10 (stokaro/ptah#1286). The constraint arm
-		// has always been read, through ExcludeElements above, which is where
-		// the same class is printed for `EXCLUDE USING gist (txt gist_trgm_ops
-		// WITH =)`.
+		// measured on PostgreSQL 17.10 (stokaro/ptah#1286). Feature owners
+		// supply their printed names through EncodedBlock.References.
 		add(index.Operator)
 		for _, part := range index.Parts {
 			add(part.Expr)

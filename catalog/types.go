@@ -705,6 +705,11 @@ const (
 // ClickHouse reader, for a data-skipping index's key expression; that index's
 // type and granularity are an observed facet the ClickHouse owner reads.
 type Index struct {
+	// ManagedBy identifies the feature object that creates and removes this
+	// index. Zero means no feature ownership is reported. The reader retains
+	// the index metadata, but an export describes it through its owner, and a
+	// comparison does not remove it when no standalone index is declared.
+	ManagedBy objectidentity.ID `json:"managed_by,omitzero"`
 	// Facets carries typed settings owned by feature providers.
 	Facets    schemaext.Facets `json:"facets,omitzero"`
 	Name      string           `json:"name"`
@@ -842,7 +847,8 @@ func (i Index) QualifiedTableName() string {
 }
 
 // Constraint represents one database constraint -- a PRIMARY KEY, FOREIGN
-// KEY, UNIQUE, CHECK, or EXCLUDE row, as Type spells it.
+// KEY, UNIQUE, or CHECK row, as Type spells it. FeatureObjects carries owned
+// constraints such as PostgreSQL EXCLUDE.
 //
 // The column lists exist in two spellings. ColumnName and ForeignColumn are
 // the legacy single-column fields; ColumnNames and ForeignColumns are the
@@ -860,7 +866,7 @@ type Constraint struct {
 	Name           string           `json:"name"`
 	TableName      string           `json:"table_name"`
 	Schema         string           `json:"schema,omitempty"`
-	Type           string           `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
+	Type           string           `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK
 	ColumnName     string           `json:"column_name"`
 	ColumnNames    []string         `json:"column_names,omitempty"`
 	ForeignTable   *string          `json:"foreign_table"` // For foreign keys
@@ -903,10 +909,8 @@ type Constraint struct {
 	// IncludeColumns carries PostgreSQL INCLUDE columns for covering UNIQUE
 	// and PRIMARY KEY constraints.
 	IncludeColumns []string `json:"include_columns,omitempty"`
-	// EXCLUDE constraint specific fields (PostgreSQL only)
-	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
-	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
-	WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
+	// UsingMethod is the index access method of a PRIMARY KEY, when reported.
+	UsingMethod *string `json:"using_method"`
 
 	// Requires names the objects the index backing this constraint cannot be
 	// built without, read from that index exactly as [Index.Requires] is.
@@ -914,13 +918,8 @@ type Constraint struct {
 	// It is a separate field rather than a lookup because the backing index is
 	// not part of the entity model: a constraint owns its index, and the
 	// converter drops the index row so the constraint is rendered once. The
-	// dependency is as hard to read off the text here as on a plain index, and
-	// for the same reason. Measured on PostgreSQL 17.10,
-	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
-	// needs btree_gist and pg_get_constraintdef prints no token of it, while
-	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
-	// the class, because a class is printed exactly when it is not the default
-	// (stokaro/ptah#1286).
+	// dependency metadata survives conversion even when the backing index is
+	// omitted from the declaration.
 	Requires []objectidentity.ID `json:"requires,omitempty"`
 
 	// Comment is the constraint's description, empty when it has none. A

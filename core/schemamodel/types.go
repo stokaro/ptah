@@ -43,7 +43,7 @@ type Database struct {
 	Tables                     []Table
 	Fields                     []Field
 	Indexes                    []Index
-	Constraints                []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
+	Constraints                []Constraint // Common table constraints: PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK.
 	Enums                      []Enum
 	EmbeddedFields             []EmbeddedField
 	Functions                  []Function                     // PostgreSQL custom functions
@@ -501,28 +501,8 @@ type Index struct {
 	Requires []objectidentity.ID
 }
 
-// Constraint represents a table-level constraint definition parsed from Go struct annotations.
-// Constraints are used to enforce data integrity rules at the table level, such as EXCLUDE
-// constraints for preventing overlapping data, CHECK constraints for data validation, etc.
-//
-// Constraint is created by parsing //ptah:schema:constraint annotations:
-//
-//	type Booking struct {
-//	    //ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&"
-//	    RoomID int64
-//	    During string // TSRANGE type
-//
-//	    //ptah:schema:constraint name="one_active_session_per_user" type="EXCLUDE" using="gist" elements="user_id WITH =" condition="is_active = true"
-//	    UserID int64
-//	    IsActive bool
-//	}
-//
-// The Constraint supports different constraint types:
-//   - EXCLUDE: PostgreSQL EXCLUDE constraints for preventing conflicts
-//   - CHECK: Table-level CHECK constraints for data validation
-//   - UNIQUE: Table-level UNIQUE constraints spanning multiple columns
-//   - PRIMARY KEY: Composite primary key constraints
-//   - FOREIGN KEY: Table-level foreign key constraints
+// Constraint declares a common table-level CHECK, UNIQUE, PRIMARY KEY or
+// FOREIGN KEY constraint. Feature-owned constraints live in Database.FeatureObjects.
 type Constraint struct {
 	// Facets carries typed settings owned by feature providers. On a
 	// PRIMARY KEY constraint they are the settings of the table's primary
@@ -530,14 +510,12 @@ type Constraint struct {
 	// table.
 	Facets     schemaext.Facets `json:"facets,omitzero"`
 	StructName string           // Name of the Go struct this constraint belongs to
-	Name       string           // Constraint name (e.g., "no_overlapping_bookings")
-	Type       string           // Constraint type: EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
+	Name       string           // Constraint name (e.g., "positive_total")
+	Type       string           // Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
 	Table      string           // Table name (if different from struct name)
 
-	// EXCLUDE constraint specific fields
-	UsingMethod     string // Index method for EXCLUDE constraints (e.g., "gist", "btree")
-	ExcludeElements string // Elements specification (e.g., "room_id WITH =, during WITH &&")
-	WhereCondition  string // Optional WHERE clause for EXCLUDE constraints
+	// UsingMethod is the index access method of a PRIMARY KEY.
+	UsingMethod string
 
 	// CHECK constraint specific fields
 	CheckExpression string // Check expression for CHECK constraints
@@ -557,7 +535,7 @@ type Constraint struct {
 	ForeignColumns []string // Referenced column names for composite foreign keys
 	OnDelete       string   // ON DELETE action
 	OnUpdate       string   // ON UPDATE action
-	// Deferrable marks a FOREIGN KEY, UNIQUE or EXCLUDE constraint whose check
+	// Deferrable marks a FOREIGN KEY, UNIQUE or PRIMARY KEY constraint whose check
 	// may be postponed to the end of a transaction. See
 	// [ptah.run/core/ast.ForeignKeyRef.Deferrable] and
 	// [ptah.run/core/ast.ConstraintNode.Deferrable]. A target without the
@@ -587,14 +565,8 @@ type Constraint struct {
 	NotValid bool
 
 	// Requires names the objects the index backing this constraint cannot be
-	// built without, as the catalog resolved them rather than as
-	// ExcludeElements spells them. It is filled in for EXCLUDE constraints read
-	// from a live PostgreSQL catalog, where an element prints its operator and
-	// prints its operator class only when that class is not the default:
-	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
-	// needs btree_gist and says so nowhere, while
-	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and does name
-	// the class (stokaro/ptah#1286). See [Index.Requires].
+	// built without, as the catalog resolves them. The dependency metadata
+	// survives conversion even when the backing index is omitted. See [Index.Requires].
 	Requires []objectidentity.ID
 
 	Comment string // Constraint comment/description

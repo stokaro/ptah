@@ -741,8 +741,6 @@ func constraintAnnotation(constraint schemamodel.Constraint, owned []attr) strin
 	attrs = append(attrs, owned...)
 	return annotation("ptah:schema:constraint", append(attrs, []attr{
 		{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
-		{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
-		{name: "condition", value: constraint.WhereCondition, set: constraint.WhereCondition != ""},
 		{name: "check", value: constraint.CheckExpression, set: constraint.CheckExpression != ""},
 		{name: "foreign_table", value: constraint.ForeignTable, set: constraint.ForeignTable != ""},
 		{name: "foreign_column", value: constraint.ForeignColumn, set: constraint.ForeignColumn != "" && len(constraint.ForeignColumns) <= 1},

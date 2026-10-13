@@ -2,12 +2,14 @@ package sqlschema_test
 
 import (
 	"slices"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -15,9 +17,9 @@ import (
 // sorted.
 func excludeNames(database schemamodel.Database) []string {
 	var names []string
-	for _, constraint := range database.Constraints {
-		if strings.EqualFold(constraint.Type, "EXCLUDE") {
-			names = append(names, constraint.Table+" "+constraint.Name)
+	for _, ref := range database.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(pgtable.ExclusionKind) {
+			names = append(names, ref.Parent.Source+" "+ref.Name.Source)
 		}
 	}
 	slices.Sort(names)
@@ -86,7 +88,7 @@ func TestRead_PostgresUnnamedExcludeNames_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(excludeNames(database), qt.DeepEquals, test.want)

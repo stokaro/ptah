@@ -201,6 +201,10 @@ type Value struct {
 	// Index is the index a table element or an ALTER TABLE operation
 	// declares. A table element requires an index or Objects, never both.
 	Index *Index
+	// Constraint is an owner-defined index constraint. It replaces Index and
+	// Objects at a table element or ALTER TABLE addition. The frontend settles
+	// its name with common constraints before declaring a schema object.
+	Constraint *ast.OwnedIndexConstraint
 	// Operation is the owner's payload of an ALTER TABLE operation, which an
 	// alter operation requires.
 	Operation ast.ExtensionPayload
@@ -320,6 +324,8 @@ type Extension struct {
 	// Parser reads the spans the patterns claim. It is required with
 	// Patterns.
 	Parser Parser
+	// Comments applies resolved comments to objects of Kinds in a file batch.
+	Comments CommentEditor
 	// Grammar reads the whole of every document of Targets, which are then
 	// not written in the shared grammar. It excludes Patterns, and one
 	// target takes one grammar.

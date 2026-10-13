@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/sqlschema"
 )
@@ -32,6 +33,9 @@ func constraintNamesOf(database schemamodel.Database) []string {
 	var names []string
 	for _, constraint := range database.Constraints {
 		names = append(names, constraint.Name)
+	}
+	for _, constraint := range schemaext.DefinedConstraints(database.FeatureObjects) {
+		names = append(names, constraint.Ref.Name.Source)
 	}
 	return names
 }

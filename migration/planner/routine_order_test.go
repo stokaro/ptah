@@ -30,6 +30,29 @@ type routineOrderCase struct {
 // measured on PostgreSQL 18.6, plus the two that must stay early.
 var routineOrderCases = []routineOrderCase{
 	{
+		name: "an owned constraint expression calls a routine reading another table",
+		sql: `CREATE TABLE rates (pct integer NOT NULL);
+CREATE FUNCTION key_of(n integer) RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT max(pct) + n FROM rates $$;
+CREATE TABLE rooms (room integer NOT NULL, EXCLUDE USING btree (key_of(room) WITH =));`,
+		order: []string{`CREATE TABLE "rates"`, `FUNCTION "key_of"`, `ALTER TABLE "rooms" ADD CONSTRAINT`},
+	},
+	{
+		name: "an owned constraint predicate calls a routine reading another table",
+		sql: `CREATE TABLE rates (pct integer NOT NULL);
+CREATE FUNCTION eligible(n integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT n > max(pct) FROM rates $$;
+CREATE TABLE rooms (room integer NOT NULL, EXCLUDE USING btree (room WITH =) WHERE (eligible(room)));`,
+		order: []string{`CREATE TABLE "rates"`, `FUNCTION "eligible"`, `ALTER TABLE "rooms" ADD CONSTRAINT`},
+	},
+
+	{
+		name: "an owned constraint calls a routine reading its own new table",
+		sql: `CREATE TABLE rooms (room integer NOT NULL);
+CREATE FUNCTION key_of(n integer) RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT coalesce(max(room), 0) + n FROM rooms $$;
+ALTER TABLE rooms ADD CONSTRAINT keyed EXCLUDE USING btree (key_of(room) WITH =);`,
+		order: []string{`CREATE TABLE "rooms"`, `FUNCTION "key_of"`, `ALTER TABLE "rooms" ADD CONSTRAINT`},
+	},
+
+	{
 		name: "a LANGUAGE sql body reads a table",
 		sql: `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
 CREATE FUNCTION order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM orders $$;`,
@@ -157,4 +180,20 @@ CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT defau
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `FUNCTION "default_pct"`), qt.Equals, 1, qt.Commentf("%s", sql))
+}
+
+func TestOwnedConstraintRoutinesPrecedeRenderedConstraints(t *testing.T) {
+	for _, test := range routineOrderCases[:3] {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
+			c.Assert(err, qt.IsNil)
+			statements, err := builtin.GetOrderedCreateStatements(&desired, platform.Postgres)
+			c.Assert(err, qt.IsNil)
+			sql := strings.Join(statements, "\n")
+			found := positions(sql, test.order)
+			c.Assert(found, qt.Not(qt.Contains), -1, qt.Commentf("%s", sql))
+			c.Assert(slices.IsSorted(found), qt.IsTrue, qt.Commentf("%s", sql))
+		})
+	}
 }

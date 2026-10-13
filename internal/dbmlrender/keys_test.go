@@ -4,8 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/dbmlrender"
 )
@@ -48,11 +52,11 @@ func keyedSchema() *schemamodel.Database {
 			},
 			{StructName: "ch", Name: "ch_ab_uq", Type: "UNIQUE", Table: "ch", Columns: []string{"a", "b"}},
 			{StructName: "two", Name: "two_id_positive", Type: "CHECK", Table: "two", CheckExpression: "id > 0"},
-			{
-				StructName: "bookings", Name: "bookings_room_excl", Type: "EXCLUDE", Table: "bookings",
-				UsingMethod: "gist", ExcludeElements: "room WITH =",
-			},
 		},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref:   pgtable.ExclusionRef("bookings", "bookings_room_excl", identifier.ForDialect("postgres")),
+			Value: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "room WITH ="}},
+		})),
 	}
 }
 
@@ -124,7 +128,7 @@ func TestRender_NamesWhatTheKeysCannotCarry(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omitted, qt.DeepEquals, []string{
 		"DEFERRABLE on keys (1)",
-		"EXCLUDE constraints (1)",
+		"PostgreSQL exclusion constraints (1)",
 	})
 }
 

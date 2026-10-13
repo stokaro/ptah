@@ -16,12 +16,6 @@ func foldUnique(name string, columns ...string) schemamodel.Constraint {
 	return schemamodel.Constraint{StructName: "T", Name: name, Type: "UNIQUE", Columns: columns}
 }
 
-func foldExclude(method, elements, where string) schemamodel.Constraint {
-	return schemamodel.Constraint{
-		StructName: "T", Type: "EXCLUDE", UsingMethod: method, ExcludeElements: elements, WhereCondition: where,
-	}
-}
-
 // TestFoldedIndexConstraints_Folds lists constraints PostgreSQL leaves out of
 // a CREATE TABLE. Each row was run on PostgreSQL 18.6 as one CREATE TABLE, and
 // pg_constraint held one index constraint for each fold.
@@ -53,21 +47,6 @@ func TestFoldedIndexConstraints_Folds(t *testing.T) {
 				{StructName: "T", Type: "UNIQUE", Columns: []string{"id"}, Deferrable: true, Initially: "deferred"},
 			},
 			wantFolds: []schemaprep.IndexConstraintFold{{Folded: 0, Into: schemaprep.PrimaryKeyOutsideList}},
-		},
-		{
-			name:        "an EXCLUDE declared twice",
-			table:       foldTable,
-			constraints: []schemamodel.Constraint{foldExclude("btree", "r WITH =", ""), foldExclude("btree", "r WITH =", "")},
-			wantFolds:   []schemaprep.IndexConstraintFold{{Folded: 1, Into: 0}},
-		},
-		{
-			name:  "an EXCLUDE spelled in other case and spacing",
-			table: foldTable,
-			constraints: []schemamodel.Constraint{
-				foldExclude("BTREE", "R  WITH =", "r > 0"),
-				foldExclude("btree", "r WITH =", "R>0"),
-			},
-			wantFolds: []schemaprep.IndexConstraintFold{{Folded: 1, Into: 0}},
 		},
 		{
 			name:        "a UNIQUE over the columns of the table's key",
@@ -289,30 +268,6 @@ func TestFoldedIndexConstraints_Keeps(t *testing.T) {
 			},
 		},
 		{
-			name:        "an EXCLUDE under another access method",
-			dialect:     platform.Postgres,
-			table:       foldTable,
-			constraints: []schemamodel.Constraint{foldExclude("btree", "r WITH =", ""), foldExclude("hash", "r WITH =", "")},
-		},
-		{
-			name:        "an EXCLUDE over another operator",
-			dialect:     platform.Postgres,
-			table:       foldTable,
-			constraints: []schemamodel.Constraint{foldExclude("gist", "r WITH =", ""), foldExclude("gist", "r WITH &&", "")},
-		},
-		{
-			name:        "an EXCLUDE with another predicate",
-			dialect:     platform.Postgres,
-			table:       foldTable,
-			constraints: []schemamodel.Constraint{foldExclude("btree", "r WITH =", "r > 0"), foldExclude("btree", "r WITH =", "")},
-		},
-		{
-			name:        "a UNIQUE and an EXCLUDE over one column",
-			dialect:     platform.Postgres,
-			table:       foldTable,
-			constraints: []schemamodel.Constraint{foldUnique("", "r"), foldExclude("btree", "r WITH =", "")},
-		},
-		{
 			name:        "a column's own UNIQUE beside a UNIQUE over another column",
 			dialect:     platform.Postgres,
 			table:       foldTable,
@@ -370,12 +325,6 @@ func TestFoldedIndexConstraints_Keeps(t *testing.T) {
 			dialect:     platform.MySQL,
 			table:       foldTable,
 			constraints: []schemamodel.Constraint{foldUnique("", "a"), foldUnique("", "a")},
-		},
-		{
-			name:        "an EXCLUDE declared twice on CockroachDB",
-			dialect:     platform.CockroachDB,
-			table:       foldTable,
-			constraints: []schemamodel.Constraint{foldExclude("btree", "r WITH =", ""), foldExclude("btree", "r WITH =", "")},
 		},
 	}
 	for _, test := range tests {

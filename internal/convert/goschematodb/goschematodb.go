@@ -517,10 +517,6 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 			NullsDistinct:  clonePtr(constraint.NullsDistinct),
 			IncludeColumns: append([]string(nil), constraint.IncludeColumns...),
 			UsingMethod:    optionalStringPtr(constraint.UsingMethod),
-			ExcludeElements: optionalStringPtr(
-				constraint.ExcludeElements,
-			),
-			WhereCondition: optionalStringPtr(constraint.WhereCondition),
 			NotValid:       constraint.NotValid,
 			Comment:        constraint.Comment,
 			Deferrable:     constraint.Deferrable,
@@ -583,8 +579,6 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 		strings.Join(constraint.ColumnNamesOrDefault(), "\x01"),
 		deref(constraint.CheckClause),
 		deref(constraint.UsingMethod),
-		deref(constraint.ExcludeElements),
-		deref(constraint.WhereCondition),
 		constraint.QualifiedForeignTableName(),
 		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),
 		// Two constraints that differ only in how they check their rows are

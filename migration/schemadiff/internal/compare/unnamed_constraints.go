@@ -31,8 +31,6 @@ type unnamedDefinition struct {
 	columns        []string
 	check          string
 	usingMethod    string
-	excludes       string
-	where          string
 	foreignTable   string
 	foreignColumns []string
 	// match and notEnforced tell apart two constraints that differ only in
@@ -47,8 +45,6 @@ func unnamedDeclaredDefinition(constraint schemamodel.Constraint) unnamedDefinit
 		columns:        constraint.Columns,
 		check:          constraint.CheckExpression,
 		usingMethod:    constraint.UsingMethod,
-		excludes:       constraint.ExcludeElements,
-		where:          constraint.WhereCondition,
 		foreignTable:   constraint.ForeignTable,
 		foreignColumns: constraint.ForeignColumnsOrDefault(),
 		match:          constraint.Match,
@@ -63,8 +59,6 @@ func unnamedCatalogDefinition(constraint catalog.Constraint) unnamedDefinition {
 		columns:        constraint.ColumnNamesOrDefault(),
 		check:          getStringValue(constraint.CheckClause),
 		usingMethod:    getStringValue(constraint.UsingMethod),
-		excludes:       getStringValue(constraint.ExcludeElements),
-		where:          getStringValue(constraint.WhereCondition),
 		foreignTable:   getStringValue(constraint.ForeignTable),
 		foreignColumns: constraint.ForeignColumnsOrDefault(),
 		match:          constraint.Match,
@@ -91,8 +85,6 @@ func (d unnamedDefinition) member(semantics identifier.Semantics) string {
 		foldNames(d.columns, semantics),
 		normalizeCheckExpression(d.check),
 		strings.ToLower(strings.TrimSpace(d.usingMethod)),
-		strings.Join(strings.Fields(d.excludes), " "),
-		normalizeCheckExpression(d.where),
 		semantics.IndexIdentityKey(foreignTable),
 		foldNames(d.foreignColumns, semantics),
 		normalizeMatchType(d.match),

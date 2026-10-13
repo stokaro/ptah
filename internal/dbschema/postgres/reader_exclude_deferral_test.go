@@ -8,7 +8,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 )
@@ -28,10 +30,10 @@ func deferredExcludeCatalog(deferrable, deferred bool, definition string) dbtest
 				Columns: []string{
 					"schema_name", "constraint_name", "table_name", "constraint_type",
 					"constraint_definition", "required_extensions", "constraint_comment",
-					"condeferrable", "condeferred",
+					"condeferrable", "condeferred", "backing_index",
 				},
 				Rows: [][]driver.Value{{
-					"public", "ex_r", "slots", "x", definition, "[]", "", deferrable, deferred,
+					"public", "ex_r", "slots", "x", definition, "[]", "", deferrable, deferred, "ex_r",
 				}},
 			}, nil
 		}
@@ -69,10 +71,14 @@ func TestReadSchemaContext_ExcludeDeferral(t *testing.T) {
 			schema, err := reader.ReadSchemaContext(c.Context())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(schema.Constraints, qt.HasLen, 1)
-			c.Assert(schema.Constraints[0].Deferrable, qt.Equals, test.deferrable)
-			c.Assert(schema.Constraints[0].Initially, qt.Equals, test.wantInitially)
-			c.Assert(*schema.Constraints[0].WhereCondition, qt.Equals, "(r > 0)")
+			c.Assert(schema.Constraints, qt.HasLen, 0)
+			object, found, err := schema.FeatureObjects.Get(pgtable.ExclusionRef("slots", "ex_r", identifier.ForDialect("postgres")))
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			exclusion := object.Value.(*pgtable.ObservedExclusion)
+			c.Assert(exclusion.Deferrable, qt.Equals, test.deferrable)
+			c.Assert(exclusion.Initially, qt.Equals, test.wantInitially)
+			c.Assert(exclusion.WhereCondition, qt.Equals, "(r > 0)")
 		})
 	}
 }
@@ -103,7 +109,11 @@ func TestReadSchemaContext_ExcludeQuotedParentheses(t *testing.T) {
 	reader := postgres.NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
 	schema, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(schema.Constraints, qt.HasLen, 1)
-	c.Assert(*schema.Constraints[0].ExcludeElements, qt.Equals, `replace(t, ')'::text, '('::text) WITH =`)
-	c.Assert(*schema.Constraints[0].WhereCondition, qt.Equals, `(t <> ')'::text)`)
+	c.Assert(schema.Constraints, qt.HasLen, 0)
+	object, found, err := schema.FeatureObjects.Get(pgtable.ExclusionRef("slots", "ex_r", identifier.ForDialect("postgres")))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	exclusion := object.Value.(*pgtable.ObservedExclusion)
+	c.Assert(exclusion.Elements, qt.Equals, `replace(t, ')'::text, '('::text) WITH =`)
+	c.Assert(exclusion.WhereCondition, qt.Equals, `(t <> ')'::text)`)
 }

@@ -7,8 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -20,8 +18,8 @@ import (
 //
 // The declaration leaves `Table` empty whenever it matches the struct's table,
 // which is the ordinary case, and the empty value reached the renderer as
-// `ALTER TABLE ""`. EXCLUDE is PostgreSQL's alone and is refused here with a
-// warning instead, so the kinds that reach the node are CHECK and UNIQUE.
+// `ALTER TABLE ""`. These rows cover CHECK and UNIQUE. Feature-owned constraints
+// are validated by the selected runtime.
 func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -91,63 +89,4 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `archived_bookings` ADD CONSTRAINT `positive_price` CHECK (price > 0);")
-}
-
-// TestPlanner_ExcludeConstraintIsReportedRatherThanEmitted pins the third
-// answer this pass can give.
-//
-// A named addition the diff does not describe is refused; a described CHECK the
-// target does not enforce is reported (issue #226); and an EXCLUDE is described
-// but has no spelling on any server this planner serves, so it is reported too.
-// Answering the first for either of the others is the mistake, and this test
-// and TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced are what say
-// so — the behavior was covered only by an integration test before, which
-// `go test ./...` never compiles (stokaro/ptah#2315).
-func TestPlanner_ExcludeConstraintIsReportedRatherThanEmitted(t *testing.T) {
-	tests := []struct {
-		name    string
-		planner *mysql.Planner
-		dialect string
-		want    string
-	}{
-		{
-			name:    "mysql",
-			planner: mysql.New(),
-			dialect: "mysql",
-			want:    "WARNING: EXCLUDE constraint one_active_session_per_user not supported in MySQL (PostgreSQL-specific feature)",
-		},
-		{
-			// The label names the server the author is pointed at. Oracle and
-			// SQL Server borrow this planner, and being told MySQL cannot hold
-			// the constraint is an answer about a server they are not running.
-			name:    "oracle",
-			planner: mysql.NewForDialect(platform.Oracle, capability.Oracle23()),
-			dialect: "oracle",
-			want:    "WARNING: EXCLUDE constraint one_active_session_per_user not supported in Oracle (PostgreSQL-specific feature)",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			desired := &schemamodel.Database{
-				Tables: []schemamodel.Table{{StructName: "UserSession", Name: "user_sessions"}},
-				Constraints: []schemamodel.Constraint{{
-					StructName: "UserSession", Name: "one_active_session_per_user", Type: "EXCLUDE",
-					Table: "user_sessions", UsingMethod: "gist", ExcludeElements: "user_id WITH =",
-				}},
-			}
-			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "one_active_session_per_user")}
-
-			nodes, err := test.planner.GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
-				withDeclaredObjects(diff, desired),
-			)
-
-			c.Assert(err, qt.IsNil)
-			sql, err := builtin.RenderSQL(test.dialect, nodes...)
-			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Contains, test.want)
-		})
-	}
 }

@@ -408,8 +408,6 @@ Declares a table constraint.
 | `check` | No | CHECK expression. |
 | `columns` | No | Comma-separated local columns. |
 | `comment` | No | Constraint comment. |
-| `condition` | No | Constraint WHERE condition. |
-| `elements` | No | EXCLUDE constraint elements. |
 | `foreign_column` | No | Single referenced column for FOREIGN KEY constraints. |
 | `foreign_columns` | No | Comma-separated referenced columns for composite FOREIGN KEY constraints. |
 | `foreign_table` | No | Referenced table for FOREIGN KEY constraints. |
@@ -420,8 +418,8 @@ Declares a table constraint.
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_update` | No | Foreign key ON UPDATE action. |
 | `table` | No | Explicit target table. |
-| `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY, or EXCLUDE. |
-| `using` | No | Access method: an EXCLUDE constraint's index method, or a PRIMARY KEY's on MySQL and MariaDB (`BTREE` or `HASH`). Refused on UNIQUE, CHECK and FOREIGN KEY. |
+| `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY. |
+| `using` | No | PRIMARY KEY access method on MySQL and MariaDB (`BTREE` or `HASH`). Refused on UNIQUE, CHECK and FOREIGN KEY. |
 
 `include` belongs to a UNIQUE or a PRIMARY KEY constraint, and the two accept it
 on different targets:
@@ -438,7 +436,7 @@ the same payload; it has no covering primary key, and the Spanner PostgreSQL
 dialect answers `<INCLUDE> clause is not supported in constraints` for either
 kind, so both are refused there.
 
-`include` on a CHECK, FOREIGN KEY, or EXCLUDE constraint is refused on every
+`include` on a CHECK or FOREIGN KEY constraint is refused on every
 target: those constraints carry no payload to render. Omit `include` when there
 are none; a present list with an empty element is refused rather than trimmed.
 
@@ -452,6 +450,34 @@ A PRIMARY KEY constraint's `name` is the name the key is built with on
 PostgreSQL; without one the server names it `<table>_pkey`. MySQL and MariaDB
 call every primary key `PRIMARY` whatever it is declared as, so there the
 comparison matches the key without its name.
+
+### `//ptah:schema:exclude`
+
+Declares a named PostgreSQL exclusion constraint on the annotated struct's
+table. An explicit `table` selects another table. Other targets refuse the
+declaration; use `dialects="postgres"` to limit its scope.
+
+```go
+//ptah:schema:exclude name="no_overlap" using="gist" elements="room WITH =, during WITH &&" requires="btree_gist"
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Constraint name. |
+| `elements` | Yes | Ordered expressions and operators, without outer parentheses. |
+| `using` | Yes | Index access method, such as `btree` or `gist`. |
+| `condition` | No | Optional WHERE predicate, without outer parentheses. |
+| `deferrable` | No | Allows deferred enforcement. Bare form allowed. |
+| `initially` | No | `immediate` or `deferred`. Deferred timing requires `deferrable`. |
+| `comment` | No | Constraint comment. |
+| `table` | No | Explicit target table. |
+| `dialects` | No | Comma-separated target names. |
+| `requires` | No | Comma-separated extension dependencies. |
+
+Each name declares a separate constraint, including when definitions match.
+A comment-only change uses `COMMENT ON CONSTRAINT`. A definition change drops
+and recreates the constraint and restores its desired comment. The backing
+index belongs to the constraint and is omitted from independent index exports.
 
 ### `//ptah:schema:columnfamily`
 

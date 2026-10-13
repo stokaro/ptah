@@ -7,12 +7,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/parser"
 )
 
 // keyDeferral is what one key of a table carries.
 type keyDeferral struct {
-	Type       ast.ConstraintType
+	Type       string
 	Name       string
 	Columns    []string
 	Deferrable bool
@@ -24,13 +25,13 @@ type keyDeferral struct {
 // adds. It also lists the columns that keep a key of their own.
 func keysOf(c *qt.C, sql string) ([]keyDeferral, []string) {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres), parser.WithSQL(exclusionParserRuntime(c).SQL())).Parse()
 	c.Assert(err, qt.IsNil)
 	var keys []keyDeferral
 	var columnKeys []string
 	add := func(constraint *ast.ConstraintNode) {
 		keys = append(keys, keyDeferral{
-			Type: constraint.Type, Name: constraint.Name, Columns: constraint.Columns,
+			Type: constraint.Type.String(), Name: constraint.Name, Columns: constraint.Columns,
 			Deferrable: constraint.Deferrable, Initially: constraint.Initially,
 		})
 	}
@@ -47,6 +48,10 @@ func keysOf(c *qt.C, sql string) ([]keyDeferral, []string) {
 			}
 			for _, constraint := range node.Constraints {
 				add(constraint)
+			}
+			for _, constraint := range node.OwnedConstraints {
+				value := constraint.Value.(*pgtable.DesiredExclusion)
+				keys = append(keys, keyDeferral{Type: "EXCLUDE", Name: constraint.Name, Deferrable: value.Deferrable, Initially: value.Initially})
 			}
 		case *ast.AlterTableNode:
 			for _, operation := range node.Operations {
@@ -75,27 +80,27 @@ func TestParse_KeyDeferral_HappyPath(t *testing.T) {
 		{
 			name:     "a deferrable UNIQUE",
 			sql:      "CREATE TABLE c (a int, UNIQUE (a) DEFERRABLE);",
-			wantKeys: []keyDeferral{{Type: ast.UniqueConstraint, Columns: []string{"a"}, Deferrable: true}},
+			wantKeys: []keyDeferral{{Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true}},
 		},
 		{
 			name: "a deferred EXCLUDE",
 			sql:  "CREATE TABLE c (r int, EXCLUDE USING btree (r WITH =) INITIALLY DEFERRED);",
 			wantKeys: []keyDeferral{
-				{Type: ast.ExcludeConstraint, Deferrable: true, Initially: "deferred"},
+				{Type: "EXCLUDE", Deferrable: true, Initially: "deferred"},
 			},
 		},
 		{
 			name: "a deferrable named PRIMARY KEY",
 			sql:  "CREATE TABLE c (a int, CONSTRAINT c_pk PRIMARY KEY (a) DEFERRABLE INITIALLY IMMEDIATE);",
 			wantKeys: []keyDeferral{
-				{Type: ast.PrimaryKeyConstraint, Name: "c_pk", Columns: []string{"a"}, Deferrable: true, Initially: "immediate"},
+				{Type: "PRIMARY KEY", Name: "c_pk", Columns: []string{"a"}, Deferrable: true, Initially: "immediate"},
 			},
 		},
 		{
 			name: "a column's deferrable UNIQUE",
 			sql:  "CREATE TABLE c (a int UNIQUE DEFERRABLE, b int UNIQUE);",
 			wantKeys: []keyDeferral{
-				{Type: ast.UniqueConstraint, Columns: []string{"a"}, Deferrable: true},
+				{Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true},
 			},
 			wantColumnKeys: []string{"b UNIQUE"},
 		},
@@ -103,14 +108,14 @@ func TestParse_KeyDeferral_HappyPath(t *testing.T) {
 			name: "a column's deferred PRIMARY KEY",
 			sql:  "CREATE TABLE c (a int PRIMARY KEY INITIALLY DEFERRED);",
 			wantKeys: []keyDeferral{
-				{Type: ast.PrimaryKeyConstraint, Columns: []string{"a"}, Deferrable: true, Initially: "deferred"},
+				{Type: "PRIMARY KEY", Columns: []string{"a"}, Deferrable: true, Initially: "deferred"},
 			},
 		},
 		{
 			name: "a column's named deferrable UNIQUE",
 			sql:  "CREATE TABLE c (a int CONSTRAINT c_a_uq UNIQUE DEFERRABLE);",
 			wantKeys: []keyDeferral{
-				{Type: ast.UniqueConstraint, Name: "c_a_uq", Columns: []string{"a"}, Deferrable: true},
+				{Type: "UNIQUE", Name: "c_a_uq", Columns: []string{"a"}, Deferrable: true},
 			},
 		},
 		{
@@ -122,7 +127,7 @@ func TestParse_KeyDeferral_HappyPath(t *testing.T) {
 			name: "ALTER TABLE adds a deferred UNIQUE",
 			sql:  "CREATE TABLE c (a int);\nALTER TABLE c ADD CONSTRAINT u UNIQUE (a) DEFERRABLE INITIALLY DEFERRED;",
 			wantKeys: []keyDeferral{
-				{Type: ast.UniqueConstraint, Name: "u", Columns: []string{"a"}, Deferrable: true, Initially: "deferred"},
+				{Type: "UNIQUE", Name: "u", Columns: []string{"a"}, Deferrable: true, Initially: "deferred"},
 			},
 		},
 	}

@@ -21,7 +21,8 @@ import (
 // The object may come from an earlier file of the same document; the comment
 // is then set on base, in place, as an ALTER TABLE is. A kind the model keeps
 // no comment for, and an object the document does not declare, are refused.
-func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, sourcePlatform string) error {
+func applyComment(database *schemamodel.Database, document *Document, node *ast.CommentNode, sourcePlatform string) error {
+	base := document.base
 	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
 		return applyYQLComment(database, base, node.Text)
 	}
@@ -29,13 +30,17 @@ func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, s
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnmodeledStatement, node.Text)
 	}
-	return applyCommentStatement(database, base, statement, sourcePlatform)
+	return applyCommentStatement(database, document, statement, sourcePlatform)
 }
 
-func applyCommentStatement(database, base *schemamodel.Database, statement commentStatement, sourcePlatform string) error {
+func applyCommentStatement(database *schemamodel.Database, document *Document, statement commentStatement, sourcePlatform string) error {
+	base := document.base
 	databases := []*schemamodel.Database{database}
 	if base != nil {
 		databases = append(databases, base)
+	}
+	if document.ownedConstraintComment(databases, statement, sourcePlatform) {
+		return nil
 	}
 	target, found := commentTarget(databases, statement, sourcePlatform)
 	switch {

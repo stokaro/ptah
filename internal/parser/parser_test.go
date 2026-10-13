@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 )
@@ -2510,7 +2511,7 @@ func TestParser_ParseAlterTableOnlyAddExcludeConstraint(t *testing.T) {
 	sql := `ALTER TABLE ONLY t
     ADD CONSTRAINT name3 EXCLUDE USING gist (id WITH =, cid WITH -|-),
     ADD CONSTRAINT name4 EXCLUDE USING gist (id WITH =, cid WITH -|-);`
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
@@ -2521,17 +2522,23 @@ func TestParser_ParseAlterTableOnlyAddExcludeConstraint(t *testing.T) {
 	c.Assert(alterTable.Name, qt.Equals, "t")
 	c.Assert(alterTable.Operations, qt.HasLen, 2)
 
-	firstOp, ok := alterTable.Operations[0].(*ast.AddConstraintOperation)
+	firstOp, ok := alterTable.Operations[0].(*ast.ExtensionAlterOperation)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(firstOp.Constraint.Name, qt.Equals, "name3")
-	c.Assert(firstOp.Constraint.Type, qt.Equals, ast.ExcludeConstraint)
-	c.Assert(firstOp.Constraint.UsingMethod, qt.Equals, "gist")
-	c.Assert(firstOp.Constraint.ExcludeElements, qt.Equals, "id WITH =, cid WITH -|-")
+	first := firstOp.Payload.(*pgtable.AlterExclusion)
+	c.Assert(first.Name, qt.Equals, "name3")
+	c.Assert(first.Change.After.UsingMethod, qt.Equals, "gist")
+	c.Assert(first.Change.After.Elements, qt.Equals, "id WITH =, cid WITH -|-")
 
-	secondOp, ok := alterTable.Operations[1].(*ast.AddConstraintOperation)
+	secondOp, ok := alterTable.Operations[1].(*ast.ExtensionAlterOperation)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(secondOp.Constraint.Name, qt.Equals, "name4")
-	c.Assert(secondOp.Constraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(secondOp.Payload.(*pgtable.AlterExclusion).Name, qt.Equals, "name4")
+}
+
+func exclusionParserRuntime(c *qt.C) *engine.Runtime {
+	c.Helper()
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	return runtime
 }
 
 func TestParser_ParseAlterTableQualifiedName(t *testing.T) {
@@ -5191,7 +5198,7 @@ func TestParser_ParseExcludeConstraint_Basic(t *testing.T) {
 		EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
 	);`
 
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
@@ -5199,15 +5206,15 @@ func TestParser_ParseExcludeConstraint_Basic(t *testing.T) {
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "user_sessions")
 	c.Assert(createTable.Columns, qt.HasLen, 2)
-	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	c.Assert(createTable.OwnedConstraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint
-	excludeConstraint := createTable.Constraints[0]
-	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	source := createTable.OwnedConstraints[0]
+	excludeConstraint := source.Value.(*pgtable.DesiredExclusion)
 	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
-	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "user_id WITH =")
+	c.Assert(excludeConstraint.Elements, qt.Equals, "user_id WITH =")
 	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "is_active = true")
-	c.Assert(excludeConstraint.Name, qt.Equals, "")
+	c.Assert(source.Name, qt.Equals, "")
 }
 
 func TestParser_ParseExcludeConstraint_WithName(t *testing.T) {
@@ -5219,20 +5226,20 @@ func TestParser_ParseExcludeConstraint_WithName(t *testing.T) {
 		CONSTRAINT one_active_session_per_user EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
 	);`
 
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	c.Assert(createTable.OwnedConstraints, qt.HasLen, 1)
 
 	// Check named EXCLUDE constraint
-	excludeConstraint := createTable.Constraints[0]
-	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
-	c.Assert(excludeConstraint.Name, qt.Equals, "one_active_session_per_user")
+	source := createTable.OwnedConstraints[0]
+	excludeConstraint := source.Value.(*pgtable.DesiredExclusion)
+	c.Assert(source.Name, qt.Equals, "one_active_session_per_user")
 	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
-	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "user_id WITH =")
+	c.Assert(excludeConstraint.Elements, qt.Equals, "user_id WITH =")
 	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "is_active = true")
 }
 
@@ -5245,19 +5252,18 @@ func TestParser_ParseExcludeConstraint_ComplexElements(t *testing.T) {
 		EXCLUDE USING gist (room_id WITH =, during WITH &&)
 	);`
 
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	c.Assert(createTable.OwnedConstraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint with complex elements
-	excludeConstraint := createTable.Constraints[0]
-	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	excludeConstraint := createTable.OwnedConstraints[0].Value.(*pgtable.DesiredExclusion)
 	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
-	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "room_id WITH =, during WITH &&")
+	c.Assert(excludeConstraint.Elements, qt.Equals, "room_id WITH =, during WITH &&")
 	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "")
 }
 
@@ -5269,19 +5275,18 @@ func TestParser_ParseExcludeConstraint_WithoutWhere(t *testing.T) {
 		EXCLUDE USING gist (location WITH &&)
 	);`
 
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	c.Assert(createTable.OwnedConstraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint without WHERE clause
-	excludeConstraint := createTable.Constraints[0]
-	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	excludeConstraint := createTable.OwnedConstraints[0].Value.(*pgtable.DesiredExclusion)
 	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
-	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "location WITH &&")
+	c.Assert(excludeConstraint.Elements, qt.Equals, "location WITH &&")
 	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "")
 }
 
@@ -5293,19 +5298,18 @@ func TestParser_ParseExcludeConstraint_BtreeMethod(t *testing.T) {
 		EXCLUDE USING btree (value WITH =)
 	);`
 
-	p := parser.NewParser(sql)
+	p := parser.NewParser(sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	c.Assert(createTable.OwnedConstraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint with btree method
-	excludeConstraint := createTable.Constraints[0]
-	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	excludeConstraint := createTable.OwnedConstraints[0].Value.(*pgtable.DesiredExclusion)
 	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "btree")
-	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "value WITH =")
+	c.Assert(excludeConstraint.Elements, qt.Equals, "value WITH =")
 	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "")
 }
 
@@ -5334,7 +5338,7 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 			}{
 				name:            "",
 				usingMethod:     "gist",
-				excludeElements: "id WITH =",
+				excludeElements: "id  WITH  =",
 				whereCondition:  "",
 			},
 		},
@@ -5372,7 +5376,7 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 			}{
 				name:            "test_constraint",
 				usingMethod:     "gist",
-				excludeElements: "id WITH =",
+				excludeElements: "id  WITH  =",
 				whereCondition:  "",
 			},
 		},
@@ -5392,8 +5396,8 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 			}{
 				name:            "",
 				usingMethod:     "gist",
-				excludeElements: "id WITH =",
-				whereCondition:  "is_active = true",
+				excludeElements: "id  WITH  =",
+				whereCondition:  "is_active  =  true",
 			},
 		},
 		{
@@ -5411,7 +5415,7 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 			}{
 				name:            "",
 				usingMethod:     "gist",
-				excludeElements: "room_id WITH = , during WITH &&",
+				excludeElements: "room_id  WITH  =  ,  during  WITH  &&",
 				whereCondition:  "",
 			},
 		},
@@ -5435,8 +5439,8 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 			}{
 				name:            "one_active_per_user",
 				usingMethod:     "gist",
-				excludeElements: "user_id WITH =",
-				whereCondition:  "is_active = true",
+				excludeElements: "user_id  WITH  =",
+				whereCondition:  "is_active  =  true",
 			},
 		},
 	}
@@ -5445,19 +5449,19 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			p := parser.NewParser(tt.sql)
+			p := parser.NewParser(tt.sql, parser.WithDialect("postgres"), parser.WithSQL(exclusionParserRuntime(c).SQL()))
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(createTable.Constraints, qt.HasLen, 1)
+			c.Assert(createTable.OwnedConstraints, qt.HasLen, 1)
 
-			constraint := createTable.Constraints[0]
-			c.Assert(constraint.Type, qt.Equals, ast.ExcludeConstraint)
-			c.Assert(constraint.Name, qt.Equals, tt.expected.name)
+			source := createTable.OwnedConstraints[0]
+			constraint := source.Value.(*pgtable.DesiredExclusion)
+			c.Assert(source.Name, qt.Equals, tt.expected.name)
 			c.Assert(constraint.UsingMethod, qt.Equals, tt.expected.usingMethod)
-			c.Assert(constraint.ExcludeElements, qt.Equals, tt.expected.excludeElements)
+			c.Assert(constraint.Elements, qt.Equals, tt.expected.excludeElements)
 			c.Assert(constraint.WhereCondition, qt.Equals, tt.expected.whereCondition)
 		})
 	}

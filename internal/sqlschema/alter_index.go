@@ -53,8 +53,7 @@ func applyAlterIndex(database *schemamodel.Database, document *Document, node *a
 		return fmt.Errorf("ALTER INDEX %s RENAME TO %s: table %s already holds a constraint named %s",
 			node.Name, node.NewName, index.target.table.Name, to)
 	}
-	index.rename(database, to)
-	return nil
+	return index.rename(database, to)
 }
 
 // holdsConstraint reports whether a constraint of the table holds name: one
@@ -65,6 +64,9 @@ func applyAlterIndex(database *schemamodel.Database, document *Document, node *a
 // behind a constraint renamed onto its name with `constraint "x" for relation
 // "c" already exists`, and leaves a plain index free to take it.
 func (t alterTarget) holdsConstraint(name string) bool {
+	if _, _, found := t.ownedConstraint(name); found {
+		return true
+	}
 	for _, database := range t.databases {
 		if slices.ContainsFunc(database.Constraints, func(constraint schemamodel.Constraint) bool {
 			return constraint.StructName == t.structName && constraint.Name == name

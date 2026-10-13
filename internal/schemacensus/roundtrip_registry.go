@@ -118,6 +118,10 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 	const noServerSpelling = "no census fixture declares a server's spelling; a connected comparison attaches one"
 	return []UnmeasuredEntry{
 		{Field: "pgtable.DesiredPartition.Normalized", Reason: noServerSpelling},
+		{Field: "pgtable.DesiredExclusion.Normalized", Reason: noServerSpelling},
+		{Field: "pgtable.NormalizedExclusion.SourceKey", Reason: noServerSpelling},
+		{Field: "pgtable.NormalizedExclusion.Elements", Reason: noServerSpelling},
+		{Field: "pgtable.NormalizedExclusion.WhereCondition", Reason: noServerSpelling},
 		{Field: "pgtable.NormalizedPartition.SourceKey", Reason: noServerSpelling},
 		{Field: "pgtable.NormalizedPartition.Key", Reason: noServerSpelling},
 		{Field: "mssqlschema.DesiredSecurityPolicy.Normalized", Reason: noServerSpelling},
@@ -232,6 +236,9 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Constraint.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
+	// MySQL access-method comparison needs the storage engine (#2834), as
+	// the table-level PrimaryKeyMethod entry records for the same key.
+	{Field: "schemamodel.Constraint.UsingMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Schemas",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "spanner", "sqlserver"},

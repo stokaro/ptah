@@ -196,23 +196,21 @@ func TestConstraintIncludeEmptyColumnFailsClosed(t *testing.T) {
 	)
 }
 
-// Only a PRIMARY KEY and a UNIQUE constraint render an INCLUDE payload, so a
-// payload on any other kind is dropped on every dialect, PostgreSQL included.
-// That is a declaration error rather than a capability one, and it is refused as
-// one.
-//
-// This is the other thing only the declared gate sees. FromConstraint builds a
-// CHECK, FOREIGN KEY or EXCLUDE node without copying IncludeColumns at all, so
-// the payload is gone before prepareConstraintNode is reached and the AST gate
-// has nothing left to refuse.
+// Declared INCLUDE payloads must be refused before lowering can omit them.
+// An owner-specific kind in the common model fails at kind validation.
 func TestConstraintIncludeOnAKindThatCannotCarryItFailsClosed(t *testing.T) {
 	tests := []struct {
 		name           string
 		constraintType string
+		wantIs         error
+		want           string
 	}{
-		{name: "check", constraintType: "CHECK"},
-		{name: "foreign key", constraintType: "FOREIGN KEY"},
-		{name: "exclude", constraintType: "EXCLUDE"},
+		{name: "check", constraintType: "CHECK", wantIs: ptaherr.ErrInvalidSchemaDiff,
+			want: `CHECK constraint "uq_accounts_email" carries INCLUDE columns; only a PRIMARY KEY or UNIQUE constraint can`},
+		{name: "foreign key", constraintType: "FOREIGN KEY", wantIs: ptaherr.ErrInvalidSchemaDiff,
+			want: `FOREIGN KEY constraint "uq_accounts_email" carries INCLUDE columns; only a PRIMARY KEY or UNIQUE constraint can`},
+		{name: "exclude", constraintType: "EXCLUDE", wantIs: ptaherr.ErrUnsupportedFeature,
+			want: `unsupported feature: constraint "uq_accounts_email" on "accounts" has unsupported common kind "EXCLUDE"`},
 	}
 
 	for _, test := range tests {
@@ -224,16 +222,8 @@ func TestConstraintIncludeOnAKindThatCannotCarryItFailsClosed(t *testing.T) {
 			statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
 
 			c.Assert(statements, qt.IsNil)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(
-				err,
-				qt.ErrorMatches,
-				fmt.Sprintf(
-					`%s constraint "uq_accounts_email" carries INCLUDE columns; `+
-						`only a PRIMARY KEY or UNIQUE constraint can`,
-					test.constraintType,
-				),
-			)
+			c.Assert(err, qt.ErrorIs, test.wantIs)
+			c.Assert(err, qt.ErrorMatches, test.want)
 		})
 	}
 }

@@ -23,6 +23,7 @@ func TestRun(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "PostgreSQL parser demo completed successfully!")
-	c.Assert(out.String(), qt.Contains, "ALTER TABLE events ADD CONSTRAINT positive_capacity CHECK (capacity > 0);")
+	c.Assert(out.String(), qt.Contains, `CONSTRAINT "positive_capacity" CHECK (capacity > 0)`)
+	c.Assert(out.String(), qt.Contains, `ALTER TABLE "bookings" ADD CONSTRAINT "no_overlapping_bookings" EXCLUDE USING gist (room_id WITH =, during WITH &&)`)
 	c.Assert(out.String(), qt.Contains, "Found 4 tables with constraints:")
 }

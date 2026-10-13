@@ -326,6 +326,16 @@ func (p *Parser) claimOwnerTableElement(table *ast.CreateTableNode) bool {
 	index := &ast.IndexNode{Table: table.Name}
 	position := len(table.Elements)
 	claimed := p.claimOwnerSyntax(sqlext.TableElement, table.Name, func(value sqlext.Value) error {
+		if value.Constraint != nil {
+			constraint, err := value.Constraint.Clone()
+			if err != nil {
+				return err
+			}
+			table.OwnedConstraints = append(table.OwnedConstraints, constraint)
+			table.Indexes = slices.DeleteFunc(table.Indexes, func(candidate *ast.IndexNode) bool { return candidate == index })
+			table.Elements[position] = ast.TableElement{OwnedConstraint: constraint}
+			return nil
+		}
 		if value.Index == nil {
 			objects, err := schemaext.NewObjects(value.Objects...)
 			if err != nil {
@@ -361,6 +371,16 @@ func (p *Parser) claimOwnerAlterOperation(table string) (ast.AlterOperation, boo
 			return fmt.Errorf("%w: an owner's ALTER TABLE %s operation carries no payload", schemaext.ErrInvalidValue, table)
 		}
 		operation.Payload = value.Operation
+		if value.Constraint != nil {
+			constraint, err := value.Constraint.Clone()
+			if err != nil {
+				return err
+			}
+			if p.declaredConstraints == nil {
+				p.declaredConstraints = make(map[*ast.ExtensionAlterOperation]*ast.OwnedIndexConstraint)
+			}
+			p.declaredConstraints[operation] = constraint
+		}
 		if len(value.Objects) > 0 {
 			objects, err := schemaext.NewObjects(value.Objects...)
 			if err != nil {
@@ -642,4 +662,10 @@ func (p *Parser) parseOwnedTablePrefix() (*ast.CreateTableNode, bool, error) {
 // owned ALTER TABLE operation. An unrecorded operation returns an empty set.
 func (p *Parser) DeclaredObjects(operation *ast.ExtensionAlterOperation) schemaext.Objects {
 	return p.declaredObjects[operation]
+}
+
+// DeclaredConstraint returns the owned index constraint an ALTER operation
+// declares, or nil. The schema reader settles its name in source order.
+func (p *Parser) DeclaredConstraint(operation *ast.ExtensionAlterOperation) *ast.OwnedIndexConstraint {
+	return p.declaredConstraints[operation]
 }

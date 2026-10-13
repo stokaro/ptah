@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
@@ -38,29 +39,39 @@ type createdRange struct {
 	fields      int
 	constraints int
 	places      []int
+	fieldPlaces []int
+	owned       []placedOwnedConstraint
 }
 
 // constraintPlaces answers where the body of one CREATE TABLE writes each
 // constraint the statement appended at constraintsStart, as a place: a
-// column's own constraints sit at [columnPlace], and a table element written
-// after n columns sits between the n-th column and the next. order is what
-// [declaredOrder] handed back.
+// column or table element keeps its position in the complete body. order is
+// what [declaredOrder] handed back.
 func constraintPlaces(order []namedElement, constraintsStart, count int) []int {
 	places := make([]int, count)
 	for _, element := range order {
 		if element.constraint != noPosition {
-			places[element.constraint-constraintsStart] = 2*element.columnsBefore - 1
+			places[element.constraint-constraintsStart] = element.place
 		}
 	}
 	return places
 }
 
-// columnPlace answers the place of the constraints the column at position of
-// the statement's columns declares. A constraint read from the column onto the
-// table, such as a named UNIQUE or a second CHECK, is written after the column
-// and sits after its place.
-func columnPlace(position int) int {
-	return 2 * position
+// createdFieldPlaces retains the positions of columns among every table
+// element, including the declarations an owner contributes.
+func createdFieldPlaces(node *ast.CreateTableNode) []int {
+	places := make([]int, len(node.Columns))
+	for i := range places {
+		places[i] = 2 * i
+	}
+	if ordersColumnsAndConstraints(node) {
+		for position, element := range node.Elements {
+			if element.Column != nil {
+				places[slices.Index(node.Columns, element.Column)] = 2 * position
+			}
+		}
+	}
+	return places
 }
 
 // createdConstraint is one constraint a PostgreSQL CREATE TABLE declares, with
@@ -155,6 +166,7 @@ func nameCreatedConstraints(
 		fields:      database.Fields[created.fields:],
 		constraints: database.Constraints[created.constraints:],
 		places:      created.places,
+		fieldPlaces: created.fieldPlaces, owned: created.owned,
 	}
 	if err := names.settle(statement.checks()); err != nil {
 		return err
@@ -282,6 +294,8 @@ type createdStatement struct {
 	fields      []schemamodel.Field
 	constraints []schemamodel.Constraint
 	places      []int
+	fieldPlaces []int
+	owned       []placedOwnedConstraint
 	// numbered holds the column-level UNIQUEs the server numbers, to be read
 	// as UNIQUEs on the table once every name is settled. They are appended
 	// afterwards because an append can move the constraints the naming pass
@@ -317,7 +331,7 @@ func (s *createdStatement) checks() []createdConstraint {
 			continue
 		}
 		checks = append(checks, createdConstraint{
-			place:   columnPlace(i),
+			place:   s.fieldPlaces[i],
 			written: field.CheckName,
 			derive: func(taken func(string) bool) string {
 				return pgname.Check(s.table.Name, field.Check, columns, taken)
@@ -366,13 +380,13 @@ func (s *createdStatement) primaryKey() []createdConstraint {
 // UNIQUE among them. A column's own UNIQUE keeps its derived name in the model
 // only when the server numbers it; see [nameCreatedConstraints].
 func (s *createdStatement) keys() []createdConstraint {
-	var keys []createdConstraint
+	keys := s.ownedKeys()
 	for i, field := range s.fields {
 		if !field.Unique || strings.TrimSpace(field.UniqueExpr) != "" {
 			continue
 		}
 		keys = append(keys, createdConstraint{
-			place: columnPlace(i),
+			place: s.fieldPlaces[i],
 			derive: func(taken func(string) bool) string {
 				name, _ := columnkey.Name(platform.Postgres, s.table.Name, field.Name, taken)
 				return name
@@ -415,7 +429,7 @@ func (s *createdStatement) foreignKeys() []createdConstraint {
 			continue
 		}
 		keys = append(keys, createdConstraint{
-			place:   columnPlace(i),
+			place:   s.fieldPlaces[i],
 			written: field.ForeignKeyName,
 			derive: func(taken func(string) bool) string {
 				return pgname.Constraint(s.table.Name, []string{field.Name}, foreignKeyLabel, taken)
@@ -442,11 +456,8 @@ func (s *createdStatement) foreignKeys() []createdConstraint {
 	return keys
 }
 
-// describeIndexedConstraint names a UNIQUE or an EXCLUDE for an error.
+// describeIndexedConstraint names a UNIQUE for an error.
 func describeIndexedConstraint(constraint schemamodel.Constraint) string {
-	if strings.EqualFold(constraint.Type, "EXCLUDE") {
-		return fmt.Sprintf("the EXCLUDE (%s)", constraint.ExcludeElements)
-	}
 	described := fmt.Sprintf("the UNIQUE (%s)", strings.Join(constraint.Columns, ", "))
 	if len(constraint.IncludeColumns) > 0 {
 		described += fmt.Sprintf(" INCLUDE (%s)", strings.Join(constraint.IncludeColumns, ", "))

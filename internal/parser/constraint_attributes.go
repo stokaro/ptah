@@ -199,7 +199,6 @@ const (
 	indexElement      = "index"
 	primaryKeyElement = "PRIMARY KEY"
 	uniqueElement     = "UNIQUE"
-	excludeElement    = "EXCLUDE"
 	foreignKeyElement = "FOREIGN KEY"
 	checkElement      = "CHECK"
 )
@@ -211,8 +210,6 @@ func tableElementKind(constraint *ast.ConstraintNode) string {
 		return primaryKeyElement
 	case ast.UniqueConstraint:
 		return uniqueElement
-	case ast.ExcludeConstraint:
-		return excludeElement
 	case ast.ForeignKeyConstraint:
 		return foreignKeyElement
 	case ast.CheckConstraint:
@@ -224,7 +221,7 @@ func tableElementKind(constraint *ast.ConstraintNode) string {
 
 // readConstraintClauses reads what may follow a table constraint's key or
 // expression, in PostgreSQL's order: INCLUDE, the clauses of the index behind
-// a key, REFERENCES, the CHECK expression, the EXCLUDE predicate, and the
+// a key, REFERENCES, the CHECK expression, and the
 // deferral clauses with `[NOT] ENFORCED` and `NOT VALID` on either side of
 // them.
 func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind string) error {
@@ -238,9 +235,6 @@ func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind stri
 		return err
 	}
 	if err := p.handleTableCheck(constraint); err != nil {
-		return err
-	}
-	if err := p.handleTableExcludeWhere(constraint); err != nil {
 		return err
 	}
 	var enforced enforcement
@@ -278,7 +272,7 @@ func (d deferral) applyToTableElement(constraint *ast.ConstraintNode, kind strin
 		return nil
 	case checkElement:
 		return d.refuseOnCheck()
-	case primaryKeyElement, uniqueElement, excludeElement:
+	case primaryKeyElement, uniqueElement:
 		return d.applyToKey(constraint, kind)
 	default:
 		return fmt.Errorf("deferral clause at position %d: an index takes none", d.start)
@@ -375,7 +369,7 @@ func (p *Parser) parseColumnDeferral(table *ast.CreateTableNode, column *ast.Col
 // builds the index with them, so reading on would describe another index. An
 // kind of any other element is left alone.
 func (p *Parser) refuseKeyIndexClause(kind string) error {
-	if kind != primaryKeyElement && kind != uniqueElement && kind != excludeElement {
+	if kind != primaryKeyElement && kind != uniqueElement {
 		return nil
 	}
 	p.skipWhitespace()
