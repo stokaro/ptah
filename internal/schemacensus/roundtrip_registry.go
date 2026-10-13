@@ -153,6 +153,9 @@ func alternates() map[string][]any {
 		// Another mode is valid only without an OFFSET; the AFTER fixture
 		// changes to EVERY.
 		"chschema.Schedule.Mode": {"EVERY"},
+		// Constraint contexts reject unknown kinds. A different common kind
+		// lets the probe measure comparison rather than input validation.
+		"schemamodel.Constraint.Type": {"UNIQUE"},
 		// Removing a ClickHouse index's type leaves an index the comparison
 		// refuses as not inspected; another type is a change it can plan.
 		"schemamodel.Index.Overrides": {map[string]map[string]string{"clickhouse": {"type": "minmax", "granularity": "4"}}},

@@ -990,6 +990,15 @@ A change requires declared intent and observed state; an explicit subject limit
 takes priority over a partial concrete value. Parent creation and removal own
 their attached state, so they cannot also produce separate facet changes.
 
+`DesiredConstraints` and `CurrentConstraints` carry `schemaext.ConstraintContext`
+values for each source side. A context supplies the constraint kind and local
+columns in key order. Providers can compare a setting that selects columns
+against the complete key without querying the database. Missing context means
+the definition is unknown. It does not mean the key has no columns. The runtime
+validates each context against its common owner and source side, then gives
+each service independent snapshots for its declared `OwnerKinds`. The migration
+comparator captures these definitions even when a constraint has no facet value.
+
 Facet providers check `FacetComparisonRequest.Includes` for each model and
 common owner. A source binding can exclude one model while retaining another
 on the same owner. Excluded values are removed before codec checks; their

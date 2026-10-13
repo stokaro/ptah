@@ -87,6 +87,8 @@ func TestComparisonCapturesNamedConstraintFacets(t *testing.T) {
 			c.Assert(service.request.Owners, qt.DeepEquals, owners)
 			c.Assert(service.request.Desired.Records, qt.HasLen, 2)
 			c.Assert(service.request.Current.Records, qt.HasLen, 2)
+			c.Assert(service.request.DesiredConstraints, qt.HasLen, 2)
+			c.Assert(service.request.CurrentConstraints, qt.HasLen, 2)
 			c.Assert(diff.TablesModified, qt.HasLen, 2)
 			for i, table := range diff.TablesModified {
 				c.Assert(table.Desired.Constraints, qt.HasLen, 1)
@@ -94,7 +96,13 @@ func TestComparisonCapturesNamedConstraintFacets(t *testing.T) {
 				c.Assert(table.Desired.Constraints[0].Facets.Equal(desired.Constraints[i].Facets), qt.IsTrue)
 				c.Assert(table.Current.Constraints[0].Facets.Equal(current.Constraints[i].Facets), qt.IsTrue)
 				c.Assert(service.request.Desired.Records[i].Subject, qt.Equals, owners[i].Subject)
+				c.Assert(service.request.DesiredConstraints[i], qt.DeepEquals, schemaext.ConstraintContext{Subject: owners[i].Subject, Type: kind, Columns: []string{"id"}})
+				c.Assert(service.request.CurrentConstraints[i], qt.DeepEquals, service.request.DesiredConstraints[i])
 			}
+			service.request.DesiredConstraints[0].Columns[0] = "changed"
+			service.request.CurrentConstraints[0].Columns[0] = "changed"
+			c.Assert(desired.Constraints[0].Columns, qt.DeepEquals, []string{"id"})
+			c.Assert(current.Constraints[0].ColumnNames, qt.DeepEquals, []string{"id"})
 		})
 	}
 }
@@ -108,4 +116,38 @@ func TestComparisonRefusesFacetsWithoutAConstraintIdentity(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(diff, qt.IsNil)
 	c.Assert(service.request.Owners, qt.HasLen, 0)
+}
+
+// A setting may be present on only one side. Its comparer still needs both
+// common definitions to decide whether the missing setting means the same key.
+func TestConstraintContextIncludesTheSideWithoutFacetValues(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		declared schemaext.Facets
+		observed schemaext.Facets
+	}{
+		{name: "declared setting", declared: constraintLabelFacets("selected")},
+		{name: "observed setting", observed: constraintLabelFacets("selected")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			service := &constraintComparison{}
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+				Constraints: []schemamodel.Constraint{{Name: "customer_fk", StructName: "Order", Type: "FOREIGN KEY",
+					Columns: []string{"tenant", "customer"}, ForeignTable: "customers", ForeignColumns: []string{"tenant", "id"}, Facets: test.declared}},
+			}
+			current := &catalog.Database{
+				Tables: []catalog.Table{{Name: "orders"}},
+				Constraints: []catalog.Constraint{{Name: "customer_fk", TableName: "orders", Type: "FOREIGN KEY",
+					ColumnNames: []string{"tenant", "customer"}, ForeignTable: new("customers"), ForeignColumns: []string{"tenant", "id"}, Facets: test.observed}},
+			}
+			_, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "postgres", constraintComparisonRuntime(service))
+			c.Assert(err, qt.IsNil)
+			subject := objectidentity.NewBuilder(identifier.ForDialect("postgres")).Constraint("orders", "customer_fk")
+			want := []schemaext.ConstraintContext{{Subject: subject, Type: "FOREIGN KEY", Columns: []string{"tenant", "customer"}}}
+			c.Assert(service.request.DesiredConstraints, qt.DeepEquals, want)
+			c.Assert(service.request.CurrentConstraints, qt.DeepEquals, want)
+		})
+	}
 }

@@ -156,6 +156,14 @@ func (r *Runtime) snapshotFacetComparison(ctx context.Context, request schemaext
 		seen[ref.Key()] = true
 	}
 	slices.SortFunc(request.Owners, func(a, b schemaext.ParentState) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
+	request.DesiredConstraints, err = snapshotConstraintContexts(request.DesiredConstraints, request.Owners, schemaext.Desired)
+	if err != nil {
+		return schemaext.FacetComparisonRequest{}, err
+	}
+	request.CurrentConstraints, err = snapshotConstraintContexts(request.CurrentConstraints, request.Owners, schemaext.Observed)
+	if err != nil {
+		return schemaext.FacetComparisonRequest{}, err
+	}
 	if err := facetInputSubjects(request); err != nil {
 		return schemaext.FacetComparisonRequest{}, err
 	}

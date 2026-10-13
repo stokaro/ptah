@@ -39,6 +39,13 @@ type FacetComparisonRequest struct {
 	Desired      FacetState
 	Current      FacetState
 	Owners       []ParentState
+	// DesiredConstraints and CurrentConstraints describe common constraints
+	// on their respective source sides. A service can compare a setting that
+	// selects columns against the actual key without inspecting a database.
+	// The runtime validates ownership and gives each service independent
+	// snapshots for the common owner kinds that service handles.
+	DesiredConstraints []ConstraintContext
+	CurrentConstraints []ConstraintContext
 }
 
 // Includes reports whether a prepared request compares kind on subject. The

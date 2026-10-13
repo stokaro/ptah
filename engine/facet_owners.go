@@ -59,6 +59,8 @@ func facetOwnersOfKinds(owners []schemaext.ParentState, kinds []objectidentity.K
 
 func selectFacetOwners(request schemaext.FacetComparisonRequest, kinds []objectidentity.Kind) (schemaext.FacetComparisonRequest, schemaext.FacetState) {
 	request.Owners = facetOwnersOfKinds(request.Owners, kinds)
+	request.DesiredConstraints = constraintContextsOfKinds(request.DesiredConstraints, kinds)
+	request.CurrentConstraints = constraintContextsOfKinds(request.CurrentConstraints, kinds)
 	retained := schemaext.FacetState{}
 	var records []schemaext.FacetRecord
 	for _, record := range request.Desired.Records {
