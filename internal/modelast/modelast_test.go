@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
@@ -2253,22 +2254,23 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 			table: schemamodel.Table{
 				StructName: "Metric",
 				Name:       "metrics",
-				Partition: &schemamodel.PartitionSpec{
+				Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 					Type: "RANGE",
-					Parts: []schemamodel.PartitionPart{
+					Parts: []pgtable.PartitionPart{
 						{Name: "x"},
 						{Expr: "floor(y)"},
 					},
-				},
+				})),
 			},
 			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "postgres",
 			expected: func(table *ast.CreateTableNode) bool {
-				return table.Partition != nil &&
-					table.Partition.Type == "RANGE" &&
-					len(table.Partition.Parts) == 2 &&
-					table.Partition.Parts[0].Name == "x" &&
-					table.Partition.Parts[1].Expr == "floor(y)"
+				partition, found, err := pgtable.PartitionOf(table.Facets)
+				return err == nil && found &&
+					partition.Type == "RANGE" &&
+					len(partition.Parts) == 2 &&
+					partition.Parts[0].Name == "x" &&
+					partition.Parts[1].Expr == "floor(y)"
 			},
 		},
 	}

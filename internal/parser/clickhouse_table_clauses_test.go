@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
@@ -21,7 +22,7 @@ import (
 func parseOneTable(c *qt.C, sql string) *ast.CreateTableNode {
 	c.Helper()
 
-	statements, err := parser.NewParser(sql).Parse()
+	statements, err := parser.NewParser(sql, withPostgresTableOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	table, ok := statements.Statements[0].(*ast.CreateTableNode)
@@ -124,8 +125,10 @@ func TestParserKeepsPostgreSQLPartitioningSeparate(t *testing.T) {
 			// ClickHouse option.
 			table := parseOneTable(c, "CREATE TABLE t (d date NOT NULL) "+tt.clause+";")
 
-			c.Assert(table.Partition, qt.IsNotNil)
-			c.Assert(table.Partition.Type, qt.Equals, tt.wantType)
+			partition, found, err := pgtable.PartitionOf(table.Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(partition.Type, qt.Equals, tt.wantType)
 			c.Assert(table.Options["PARTITION_BY"], qt.Equals, "")
 		})
 	}

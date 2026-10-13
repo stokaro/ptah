@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -537,6 +538,14 @@ func collectRequiredExtensions(db *schemamodel.Database) map[string]bool {
 func (r *renderer) documentNamesAny(names []string) bool {
 	if r.references == nil {
 		r.references = collectReferencedNames(r.db)
+		for _, block := range r.ownerBlocks {
+			if block.Placement != hclext.WithinTable || block.Unwritten {
+				continue
+			}
+			for _, name := range block.References {
+				r.references[strings.ToLower(name)] = true
+			}
+		}
 	}
 	for _, name := range names {
 		name = strings.ToLower(strings.TrimSpace(name))
@@ -583,11 +592,6 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 		add(table.CustomSQL)
 		for _, check := range table.Checks {
 			add(check)
-		}
-		if table.Partition != nil {
-			for _, part := range table.Partition.Parts {
-				add(part.Expr)
-			}
 		}
 	}
 	for _, constraint := range db.Constraints {

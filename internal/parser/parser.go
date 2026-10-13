@@ -2067,8 +2067,11 @@ func (p *Parser) parseCreateTableSuffix(table *ast.CreateTableNode) error {
 	for {
 		p.skipWhitespace()
 		position := p.current.Start
+		if p.claimOwnerTableOption(table) {
+			continue
+		}
 		if p.current.MatchIdentifierValue("PARTITION") {
-			if err := p.parsePostgreSQLPartitionClause(table); err != nil {
+			if err := p.parseTablePartitionExpression(table); err != nil {
 				return err
 			}
 			continue
@@ -2093,19 +2096,10 @@ func (p *Parser) parseCreateTableSuffix(table *ast.CreateTableNode) error {
 	return nil
 }
 
-// parsePostgreSQLPartitionClause reads a PARTITION BY clause, which two
-// dialects spell the same way and mean differently.
-//
-// PostgreSQL declares a partitioned table: `PARTITION BY RANGE (created_at)`,
-// always one of three strategy keywords followed by a parenthesised key.
-// ClickHouse names a partition expression: `PARTITION BY toYYYYMM(created_at)`,
-// any expression at all. The strategy keyword is what separates them, so the
-// decision is made from the syntax rather than from a dialect flag -- the
-// parser is reached with no dialect on paths that only classify a file, and
-// refusing a valid ClickHouse table for want of one is the shape this whole
-// clause family was broken by (stokaro/ptah#1571).
-func (p *Parser) parsePostgreSQLPartitionClause(table *ast.CreateTableNode) error {
-	if table.Partition != nil {
+// parseTablePartitionExpression reads an unclaimed expression clause. Selected
+// owners claim their table syntax before this generic option path runs.
+func (p *Parser) parseTablePartitionExpression(table *ast.CreateTableNode) error {
+	if _, taken := table.Options["PARTITION_BY"]; taken {
 		return fmt.Errorf("duplicate PARTITION BY clause at position %d", p.current.Start)
 	}
 	if err := p.expect(lexer.TokenIdentifier, "PARTITION"); err != nil {
@@ -2113,138 +2107,10 @@ func (p *Parser) parsePostgreSQLPartitionClause(table *ast.CreateTableNode) erro
 	}
 	p.skipWhitespace()
 	if err := p.expect(lexer.TokenIdentifier, "BY"); err != nil {
-		return fmt.Errorf("expected BY after PARTITION: %w", err)
-	}
-	p.skipWhitespace()
-	if !isPostgreSQLPartitionStrategy(p.current.Value) {
-		if _, taken := table.Options["PARTITION_BY"]; taken {
-			return fmt.Errorf("duplicate PARTITION BY clause at position %d", p.current.Start)
-		}
-		return p.captureTableClause(table, "PARTITION_BY")
-	}
-	partitionType, err := p.expectIdentifier()
-	if err != nil {
-		return fmt.Errorf("expected partition type: %w", err)
-	}
-	p.skipWhitespace()
-	body, err := p.collectParenthesizedBody("partition key")
-	if err != nil {
 		return err
 	}
-	parts, err := parsePartitionPartsSQL(body)
-	if err != nil {
-		return err
-	}
-	table.Partition = &ast.PartitionSpec{Type: strings.ToUpper(partitionType), Parts: parts}
-	return nil
-}
-
-func parsePartitionPartsSQL(body string) ([]ast.PartitionPart, error) {
-	items, err := splitTopLevelComma(body)
-	if err != nil {
-		return nil, err
-	}
-	parts := make([]ast.PartitionPart, 0, len(items))
-	for _, item := range items {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			return nil, fmt.Errorf("empty partition key")
-		}
-		if isBarePartitionColumn(item) {
-			parts = append(parts, ast.PartitionPart{Name: item})
-			continue
-		}
-		if unwrapped, ok := stripEnclosingParens(item); ok {
-			item = unwrapped
-		}
-		parts = append(parts, ast.PartitionPart{Expr: item})
-	}
-	return parts, nil
-}
-
-func stripEnclosingParens(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	if !strings.HasPrefix(value, "(") || !strings.HasSuffix(value, ")") {
-		return "", false
-	}
-	depth := 0
-	for i, r := range value {
-		switch r {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 && i != len(value)-1 {
-				return "", false
-			}
-		}
-		if depth < 0 {
-			return "", false
-		}
-	}
-	if depth != 0 {
-		return "", false
-	}
-	return strings.TrimSpace(value[1 : len(value)-1]), true
-}
-
-func isBarePartitionColumn(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return false
-	}
-	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
-		return !strings.Contains(value[1:len(value)-1], `"`)
-	}
-	for i, r := range value {
-		if r == '_' || r == '$' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' {
-			continue
-		}
-		if i > 0 && r >= '0' && r <= '9' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func splitTopLevelComma(body string) ([]string, error) {
-	var items []string
-	start := 0
-	depth := 0
-	var quote rune
-	for pos, r := range body {
-		if quote != 0 {
-			if r == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch r {
-		case '\'', '"':
-			quote = r
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth < 0 {
-				return nil, fmt.Errorf("unbalanced partition expression")
-			}
-		case ',':
-			if depth == 0 {
-				items = append(items, body[start:pos])
-				start = pos + len(string(r))
-			}
-		}
-	}
-	if quote != 0 {
-		return nil, fmt.Errorf("unterminated quoted partition expression")
-	}
-	if depth != 0 {
-		return nil, fmt.Errorf("unbalanced partition expression")
-	}
-	items = append(items, body[start:])
-	return items, nil
+	p.skipWhitespace()
+	return p.captureTableClause(table, "PARTITION_BY")
 }
 
 func (p *Parser) parseCreateTableSelectBody(table *ast.CreateTableNode) error {
@@ -5088,18 +4954,6 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 func isCreateTableOptionBoundary(option string) bool {
 	switch option {
 	case "AS", "SELECT", "GO", "PARTITION":
-		return true
-	default:
-		return false
-	}
-}
-
-// isPostgreSQLPartitionStrategy reports whether value is one of the three
-// strategies PostgreSQL's PARTITION BY takes. Anything else after PARTITION BY
-// is an expression, which is ClickHouse's meaning of the same words.
-func isPostgreSQLPartitionStrategy(value string) bool {
-	switch strings.ToUpper(value) {
-	case "RANGE", "LIST", "HASH":
 		return true
 	default:
 		return false

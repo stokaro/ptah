@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/postgres/pgroutine"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/sqlite/sqlitetable"
@@ -308,7 +309,7 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 	if err := tsrender.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
-	rest := projected.Without(tsschema.HypertableKind)
+	rest := projected.Without(tsschema.HypertableKind).Without(pgtable.PartitionKind)
 	if platform.NormalizeDialect(dialect) == platform.Postgres {
 		_, remaining, err := pgtablerender.CreateTablePrefix(dialect, capability.Capabilities{}, "", rest)
 		if err != nil {

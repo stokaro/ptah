@@ -187,6 +187,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
 	schema.Tables = tables
+	if err := r.readPartitions(ctx, schema); err != nil {
+		return nil, err
+	}
 	if err := r.persistenceCoverage(schema); err != nil {
 		return nil, err
 	}

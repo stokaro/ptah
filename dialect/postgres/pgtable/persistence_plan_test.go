@@ -91,3 +91,14 @@ func TestPersistencePlanning_ParentLifecycle(t *testing.T) {
 		c.Assert(result.Parents[0].Action, qt.Equals, action)
 	}
 }
+
+func TestPersistencePlanning_RefusesUnloggedPartitionedTable(t *testing.T) {
+	c := qt.New(t)
+	request := persistencePlan()
+	request.Tables[0].Current.Table.Partitioned = true
+	result, err := (pgtable.PersistenceService{}).PlanFeatures(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.Parents, qt.HasLen, 0)
+}

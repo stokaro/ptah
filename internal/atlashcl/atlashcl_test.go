@@ -9,7 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
@@ -170,7 +172,7 @@ table "invoices" {
 func TestParseTablePartition(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 schema "main" {}
 
 table "metrics" {
@@ -196,9 +198,11 @@ table "metrics" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &schemamodel.PartitionSpec{
+	partition, _, err := schemaext.FacetAs[*pgtable.DesiredPartition](db.Tables[0].Facets, pgtable.PartitionKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(partition, qt.DeepEquals, &pgtable.DesiredPartition{
 		Type: "RANGE",
-		Parts: []schemamodel.PartitionPart{
+		Parts: []pgtable.PartitionPart{
 			{Name: "x"},
 			{Expr: "floor(y)"},
 		},
@@ -211,7 +215,7 @@ table "metrics" {
 func TestParseTablePartitionRequiresColumnOrBy(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseWithOwners([]byte(`
 table "metrics" {
   column "x" {
     type = integer
@@ -222,7 +226,7 @@ table "metrics" {
   }
 }
 `), "schema.hcl")
-	c.Assert(err, qt.ErrorMatches, `.*partition requires at least one column.*`)
+	c.Assert(err, qt.ErrorMatches, `.*partition requires at least one key.*`)
 }
 
 func TestParsePostgreSQLEnumBlock(t *testing.T) {

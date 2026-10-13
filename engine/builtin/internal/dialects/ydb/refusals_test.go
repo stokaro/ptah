@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
@@ -279,8 +282,8 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 			node:    &ast.CreateTableNode{Name: "t", Options: map[string]string{"TTL": "x"}, Columns: []*ast.ColumnNode{ast.NewColumn("id", "BIGINT").SetPrimary()}},
 			wantErr: `table "t": the YDB renderer writes no table option TTL=x; a table's YDB settings are declared through .*`},
 		{name: "a PostgreSQL partition",
-			node:    &ast.CreateTableNode{Name: "t", Partition: &ast.PartitionSpec{Type: "RANGE"}, Columns: []*ast.ColumnNode{ast.NewColumn("id", "BIGINT").SetPrimary()}},
-			wantErr: `table "t": PARTITION BY is PostgreSQL's; .*`},
+			node:    &ast.CreateTableNode{Name: "t", Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{Type: "RANGE"})), Columns: []*ast.ColumnNode{ast.NewColumn("id", "BIGINT").SetPrimary()}},
+			wantErr: `table "t": unsupported feature: YDB table facet "ptah.run/postgres/table-partition" is not supported`},
 		{name: "a view without a query", node: &ast.CreateViewNode{Name: "v", Body: " ; -- nothing"},
 			wantErr: `view v: a YDB view needs a query`},
 		{name: "a view WITH CHECK OPTION", node: &ast.CreateViewNode{Name: "v", Body: "SELECT 1 AS a", WithCheck: true},

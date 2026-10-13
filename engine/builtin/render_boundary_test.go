@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -359,9 +362,9 @@ func restrictForeignKeyTable() *ast.CreateTableNode {
 // input that makes a preflighted kind fail after it has already written.
 func partitionTableMissingItsType() *ast.CreateTableNode {
 	return &ast.CreateTableNode{
-		Name:      "events",
-		Columns:   []*ast.ColumnNode{{Name: "id", Type: "BIGINT"}},
-		Partition: &ast.PartitionSpec{Parts: []ast.PartitionPart{{Name: "id"}}},
+		Name:    "events",
+		Columns: []*ast.ColumnNode{{Name: "id", Type: "BIGINT"}},
+		Facets:  must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{Parts: []pgtable.PartitionPart{{Name: "id"}}})),
 	}
 }
 
@@ -392,7 +395,7 @@ func TestRenderer_BufferContractOnFailure(t *testing.T) {
 		{
 			name:    "the wrapper refuses during preparation",
 			failing: func() ast.Node { return partitionTableMissingItsType() },
-			wantErr: "postgres partition requires type",
+			wantErr: `.*partition type must be RANGE, LIST, or HASH`,
 		},
 		{
 			name:    "the dialect refuses while rendering",

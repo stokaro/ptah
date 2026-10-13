@@ -254,9 +254,6 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 		return refuseFact(subject, "a YDB table needs at least its key column")
 	case strings.TrimSpace(node.SelectBody) != "":
 		return refuseFact(subject, "the YDB renderer writes no CREATE TABLE ... AS SELECT")
-	case node.Partition != nil:
-		return refuseFact(subject, "PARTITION BY is PostgreSQL's; a YDB row table splits itself by key range, "+
-			"which is a table setting rather than a clause")
 	}
 	var dropped map[string]string
 	// Sorted, so that of two options YDB cannot carry the refusal names the

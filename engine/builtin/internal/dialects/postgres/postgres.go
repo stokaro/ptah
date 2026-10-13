@@ -841,15 +841,6 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 
 	r.w.Write(")")
 
-	if node.Partition != nil {
-		partition, err := r.renderPartition(node.Partition)
-		if err != nil {
-			return err
-		}
-		r.w.Write(" ")
-		r.w.Write(partition)
-	}
-
 	// An owned table clause takes this position: CockroachDB row-level TTL as
 	// a WITH clause of storage parameters, or the Spanner row deletion policy
 	// as a TTL clause; no engine has both. The table options the node carries
@@ -1010,38 +1001,6 @@ func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) (lines, ref
 	}
 
 	return r.appendColumnForeignKeyLines(lines, refused, node.Columns)
-}
-
-func (r *Renderer) renderPartition(partition *ast.PartitionSpec) (string, error) {
-	partitionType := strings.ToUpper(strings.TrimSpace(partition.Type))
-	if partitionType == "" {
-		return "", fmt.Errorf("postgres partition requires type")
-	}
-	if len(partition.Parts) == 0 {
-		return "", fmt.Errorf("postgres partition requires at least one key")
-	}
-	parts := make([]string, 0, len(partition.Parts))
-	for _, part := range partition.Parts {
-		switch {
-		case part.Name != "" && part.Expr != "":
-			return "", fmt.Errorf("postgres partition key cannot set both column and expression")
-		case part.Name != "":
-			parts = append(parts, r.escapeIdentifier(part.Name))
-		case part.Expr != "":
-			parts = append(parts, renderPartitionExpression(part.Expr))
-		default:
-			return "", fmt.Errorf("postgres partition key cannot be empty")
-		}
-	}
-	return fmt.Sprintf("PARTITION BY %s (%s)", partitionType, strings.Join(parts, ", ")), nil
-}
-
-func renderPartitionExpression(expr string) string {
-	expr = strings.TrimSpace(expr)
-	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
-		return expr
-	}
-	return "(" + expr + ")"
 }
 
 func (r *Renderer) appendColumnForeignKeyLines(

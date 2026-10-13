@@ -825,7 +825,6 @@ func (r *renderer) renderTable(
 		r.renderColumn(r.ownerSlot(hclext.Slot{Kind: hclext.SlotColumn, Table: owner, Name: field.Name}, field.Facets), field)
 	}
 	r.renderPrimaryKey(r.ownerSlot(hclext.Slot{Kind: hclext.SlotKey, Table: owner, Primary: true}, table.PrimaryKeyFacets), table, fields)
-	r.renderPartition(table.Partition)
 	r.renderFieldForeignKeys(table, fields, constraints)
 	for _, constraint := range constraints {
 		r.renderConstraint(r.ownerSlot(hclext.Slot{Kind: hclext.SlotKey, Table: owner, Name: constraint.Name}, constraint.Facets), constraint)
@@ -1012,23 +1011,6 @@ func renderPrimaryKeyMethod(r *renderer, method string) {
 	if mysqlindex.Method(method) != "" {
 		r.rawAttr(2, "type", "HASH")
 	}
-}
-
-func (r *renderer) renderPartition(partition *schemamodel.PartitionSpec) {
-	if partition == nil {
-		return
-	}
-	r.line("  partition {")
-	r.stringAttr(2, "type", partition.Type)
-	for _, part := range partition.Parts {
-		r.line("    by {")
-		if part.Name != "" {
-			r.rawAttr(3, "column", columnRef(part.Name))
-		}
-		r.stringAttr(3, "expr", part.Expr)
-		r.line("  }")
-	}
-	r.line("  }")
 }
 
 // renderConstraint writes a constraint, reporting first what the owners say

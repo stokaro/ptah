@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlasreport"
@@ -717,7 +718,7 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 
 func hasTablePartitioning(database *schemamodel.Database) bool {
 	return slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool {
-		return table.Partition != nil
+		return slices.Contains(table.Facets.DeclaredKinds(), pgtable.PartitionKind)
 	})
 }
 

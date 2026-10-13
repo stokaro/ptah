@@ -11,8 +11,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
@@ -131,10 +133,10 @@ func partitionedParentDesiredSchema() *schemamodel.Database {
 			{
 				Name:       "events",
 				StructName: "Event",
-				Partition: &schemamodel.PartitionSpec{
+				Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 					Type:  "RANGE",
-					Parts: []schemamodel.PartitionPart{{Name: "created_at"}},
-				},
+					Parts: []pgtable.PartitionPart{{Name: "created_at"}},
+				})),
 			},
 			{Name: "events_2026", StructName: "Event2026"},
 		},

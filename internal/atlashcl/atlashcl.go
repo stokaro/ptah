@@ -775,15 +775,6 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 		}
 		constraint.Table = table.QualifiedName()
 		p.db.Constraints = append(p.db.Constraints, constraint)
-	case "partition":
-		partition, err := p.parsePartition(block)
-		if err != nil {
-			return err
-		}
-		if table.Partition != nil {
-			return p.blockError(block, "table %q has multiple partition blocks", table.Name)
-		}
-		table.Partition = partition
 	default:
 		return p.parseAdditionalTableBlock(table, block)
 	}
@@ -1559,101 +1550,6 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 	return primaryKeySpec{columns: columns, parts: parts, include: include, method: p.primaryKeyMethod(block)}, nil
 }
 
-func (p *parser) parsePartition(block *hclsyntax.Block) (*schemamodel.PartitionSpec, error) {
-	if len(block.Labels) != 0 {
-		return nil, p.blockError(block, "partition block does not accept labels")
-	}
-	if err := p.rejectUnsupportedPartitionAttrs(block); err != nil {
-		return nil, err
-	}
-	partitionType := strings.ToUpper(p.optionalString(block.Body.Attributes["type"]))
-	if partitionType == "" {
-		return nil, p.blockError(block, "partition requires type")
-	}
-	// Gated before the mix check so a dropped block name does not read as a
-	// `by` block and turn tolerance into "cannot mix columns with by blocks".
-	byBlocks, err := p.partitionByBlocks(block)
-	if err != nil {
-		return nil, err
-	}
-	if block.Body.Attributes["columns"] != nil {
-		if len(byBlocks) > 0 {
-			return nil, p.blockError(byBlocks[0], "partition cannot mix columns attribute with by blocks")
-		}
-		columns, err := p.parseColumnsAttr(block, "columns")
-		if err != nil {
-			return nil, err
-		}
-		if len(columns) == 0 {
-			return nil, p.blockError(block, "partition requires at least one column")
-		}
-		return &schemamodel.PartitionSpec{Type: partitionType, Parts: partitionColumnParts(columns)}, nil
-	}
-
-	parts, err := p.parsePartitionParts(block, byBlocks)
-	if err != nil {
-		return nil, err
-	}
-	return &schemamodel.PartitionSpec{Type: partitionType, Parts: parts}, nil
-}
-
-// partitionByBlocks returns the partition body's `by` blocks, sending every
-// other block type through the unknown-name gate.
-func (p *parser) partitionByBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, error) {
-	byBlocks := make([]*hclsyntax.Block, 0, len(block.Body.Blocks))
-	for _, nested := range block.Body.Blocks {
-		if nested.Type != "by" {
-			if err := p.rejectUnsupportedBlock(nested, "partition"); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		byBlocks = append(byBlocks, nested)
-	}
-	return byBlocks, nil
-}
-
-func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsyntax.Block) ([]schemamodel.PartitionPart, error) {
-	parts := make([]schemamodel.PartitionPart, 0, len(byBlocks))
-	for _, nested := range byBlocks {
-		if err := p.rejectUnsupportedPartitionByAttrs(nested); err != nil {
-			return nil, err
-		}
-		columnAttr := nested.Body.Attributes["column"]
-		exprAttr := nested.Body.Attributes["expr"]
-		if columnAttr == nil && exprAttr == nil {
-			return nil, p.blockError(nested, "partition by block requires column or expr")
-		}
-		if columnAttr != nil && exprAttr != nil {
-			return nil, p.blockError(nested, "partition by block cannot set both column and expr")
-		}
-		if columnAttr != nil {
-			name, err := p.columnNameFromExpr(nested, "partition by", columnAttr)
-			if err != nil {
-				return nil, err
-			}
-			parts = append(parts, schemamodel.PartitionPart{Name: name})
-			continue
-		}
-		parts = append(parts, schemamodel.PartitionPart{Expr: p.exprString(exprAttr)})
-	}
-	// Checked after the walk, not before it: under the unknown-name policy a
-	// body holding nothing but dropped block names leaves no parts behind, and
-	// that is the same structural gap as an empty body.
-	if len(parts) == 0 {
-		return nil, p.blockError(block, "partition requires columns attribute or by blocks")
-	}
-	return parts, nil
-}
-
-func partitionColumnParts(columns []string) []schemamodel.PartitionPart {
-	parts := make([]schemamodel.PartitionPart, 0, len(columns))
-	for _, column := range columns {
-		parts = append(parts, schemamodel.PartitionPart{Name: column})
-	}
-	return parts
-}
-
 // primaryKeyMethod is the access method a primary_key block's `type` asks for,
 // which [parser.validatePrimaryKeyType] has admitted.
 func (p *parser) primaryKeyMethod(block *hclsyntax.Block) string {
@@ -1700,7 +1596,7 @@ func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]schemamodel.Pri
 			Desc:   desc,
 		})
 	}
-	// See parsePartitionParts: dropped block names leave no parts behind.
+	// Dropped block names leave no key parts behind.
 	if len(parts) == 0 {
 		return nil, p.blockError(block, "primary_key requires columns attribute or on blocks")
 	}
@@ -1997,20 +1893,6 @@ func (p *parser) rejectUnsupportedPrimaryKeyOnAttrs(block *hclsyntax.Block) erro
 		"prefix": true,
 		"desc":   true,
 	}, "primary_key on")
-}
-
-func (p *parser) rejectUnsupportedPartitionAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"type":    true,
-		"columns": true,
-	}, "partition")
-}
-
-func (p *parser) rejectUnsupportedPartitionByAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"column": true,
-		"expr":   true,
-	}, "partition by")
 }
 
 func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {

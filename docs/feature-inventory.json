@@ -1144,6 +1144,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-postgres-pgtableprobe",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/postgres/pgtableprobe",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-postgres-pgtablerender",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgtablerender",

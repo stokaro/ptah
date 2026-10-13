@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/atlashcl"
+	"ptah.run/dialect/postgres/pgtable"
 )
 
 // A `column` attribute holds a column REFERENCE, and Atlas HCL's sql() escape
@@ -90,14 +91,14 @@ table "t" {
   }
 }
 `,
-			match: `.*partition by column contains unsupported reference "sql\(\\"n\\"\)"`,
+			match: `.*by attribute "column" requires a local column reference`,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
@@ -123,7 +124,7 @@ func TestParseKeepsColumnAttributesThatNameAColumn(t *testing.T) {
 		// refusal replaced by a silent relocation would otherwise pass.
 		wantIndexParts      [][]schemamodel.IndexPart
 		wantPrimaryKeyParts []schemamodel.PrimaryKeyPart
-		wantPartition       *schemamodel.PartitionSpec
+		wantPartition       *pgtable.DesiredPartition
 	}{
 		{
 			name: "index on column reference",
@@ -172,9 +173,9 @@ table "t" {
   }
 }
 `,
-			wantPartition: &schemamodel.PartitionSpec{
+			wantPartition: &pgtable.DesiredPartition{
 				Type:  "RANGE",
-				Parts: []schemamodel.PartitionPart{{Name: "n"}},
+				Parts: []pgtable.PartitionPart{{Name: "n"}},
 			},
 		},
 		{
@@ -195,13 +196,15 @@ table "t" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			db, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
 			c.Assert(indexPartsPerIndex(db), qt.DeepEquals, test.wantIndexParts)
 			c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, test.wantPrimaryKeyParts)
-			c.Assert(db.Tables[0].Partition, qt.DeepEquals, test.wantPartition)
+			partition, _, err := schemaext.FacetAs[*pgtable.DesiredPartition](db.Tables[0].Facets, pgtable.PartitionKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(partition, qt.DeepEquals, test.wantPartition)
 		})
 	}
 }
@@ -227,7 +230,7 @@ func indexPartsPerIndex(db *schemamodel.Database) [][]schemamodel.IndexPart {
 func TestParseKeepsRawSQLInTheIndexExprAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseWithOwners([]byte(`
 table "t" {
   column "n" { type = int }
   index "idx_n" {

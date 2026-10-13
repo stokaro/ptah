@@ -423,7 +423,7 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, strictErr := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
+			_, strictErr := parseWithOwners([]byte(tt.hcl), "schema.hcl")
 			c.Assert(strictErr, qt.ErrorMatches, tt.strictErr)
 
 			tolerant, err := atlashcl.ParseWithOptions(
@@ -959,7 +959,7 @@ func TestParseIgnoreUnknownNamesKeepsStructuralRefusals(t *testing.T) {
   }
 }
 `,
-			wantErr: `.*partition requires columns attribute or by blocks.*`,
+			wantErr: `.*partition requires at least one key.*`,
 		},
 		{
 			name: "primary_key left with no on blocks",
