@@ -447,6 +447,9 @@ source. Do not rerun export after manual removal starts; an export with no
 annotations or no exportable HCL object fails without replacing an existing HCL
 file.
 
+Table features in HCL export stay attached by database schema and table name.
+Changing the Go struct name does not change their placement.
+
 Cleanup also verifies every recognized standalone annotation against the Go AST
 and the parsed schema before publishing HCL. A directive in an unsupported
 location, such as a role annotation attached to a constant, or a file-scoped RLS

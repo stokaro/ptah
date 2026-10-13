@@ -408,6 +408,9 @@ materialized-view, and trigger bodies as opaque HCL strings and reports a
 warning for each body. Because cleanup is destructive, any such warning prevents
 `--cleanup-go-annotations` from publishing HCL or removing annotations.
 
+Table features in HCL export stay attached by database schema and table name.
+Changing the Go struct name does not change their placement.
+
 Cleanup also refuses any recognized standalone Go directive that is attached at
 an unsupported scope or did not produce a parsed schema object. The diagnostic
 names the source file and line, and the operation leaves both the output and Go

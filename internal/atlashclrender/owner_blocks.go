@@ -61,7 +61,7 @@ type slotEntry struct {
 // schema that is only where an object is installed does not order it.
 func (r *renderer) renderSlot(placement hclext.Placement, table *hclext.Table, entries ...slotEntry) {
 	for _, block := range r.ownerBlocks {
-		if block.Placement != placement || (table != nil && *block.Table != *table) {
+		if block.Placement != placement || (table != nil && (block.Table.Schema != table.Schema || block.Table.Name != table.Name)) {
 			continue
 		}
 		schema := r.ownerSchema(block)

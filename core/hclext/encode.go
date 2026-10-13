@@ -177,7 +177,8 @@ type EncodedBlock struct {
 	// such as the table of a policy; the writer orders blocks by it before
 	// the name, and writes nothing for it.
 	Scope string
-	// Table is the table a [WithinTable] block stands in.
+	// Table is the table a [WithinTable] block stands in. Placement matches
+	// Schema and Name; Struct records source metadata and does not affect it.
 	Table *Table
 	// Attributes are the attributes the block writes, in order. An attribute
 	// the owner leaves out is not written.
