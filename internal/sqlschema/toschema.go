@@ -908,6 +908,9 @@ func appendCreateTable(
 	if err := appendOwnedConstraints(database, document, tableSchema, owned, sourcePlatform); err != nil {
 		return err
 	}
+	for _, column := range node.Columns {
+		liftInlineReference(database, tableSchema, column, sourcePlatform)
+	}
 	return appendTableObjects(database, declaringDatabases(database, base), tableSchema, node.OwnedObjects, sourcePlatform)
 }
 
@@ -1069,6 +1072,7 @@ func applyAlterOperation(
 		if err := nameAddedColumnForeignKeys(database.Fields[added:], target); err != nil {
 			return err
 		}
+		liftInlineReference(database, schemamodel.Table{StructName: target.structName, Name: target.qualified}, typed.Column, sourcePlatform)
 		target.buildColumnKeyIndexes(database.Fields[added:])
 		return nil
 	case *ast.AddConstraintOperation:
@@ -1361,6 +1365,12 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 	// not folded a second time: folding `Docs`, the name of a table declared as
 	// `"Docs"`, would put the constraint on `docs`. The constraint's own names
 	// are SQL as written and are read through sourcePlatform.
+	result, ok := constraintDefinition(constraint, structName, tableName, sourcePlatform)
+	result.Facets = constraint.Facets
+	return result, ok
+}
+
+func constraintDefinition(constraint *ast.ConstraintNode, structName, tableName, sourcePlatform string) (schemamodel.Constraint, bool) {
 	ownerTable := normalizeSQLTableReference("", tableName)
 	switch constraint.Type {
 	case ast.UniqueConstraint:
@@ -1392,7 +1402,6 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			fk.ForeignColumns = normalizeSQLIdentifiers(sourcePlatform, ref.Columns)
 			fk.OnDelete = ref.OnDelete
 			fk.OnUpdate = ref.OnUpdate
-			fk.OnDeleteColumns = normalizeSQLIdentifiers(sourcePlatform, ref.OnDeleteColumns)
 			fk.Deferrable = ref.Deferrable
 			fk.Initially = ref.Initially
 			fk.Match = ref.Match

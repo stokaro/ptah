@@ -30,7 +30,7 @@ var (
 		return renderer.NewExtensions(postgresFamilyHandlers(pgtablerender.Handlers()...)...)
 	})
 	postgresFamilyRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(postgresFamilyHandlers()...)
+		return renderer.NewExtensions(postgresFamilyHandlers(pgtablerender.DeleteColumnsHandlers()...)...)
 	})
 	cockroachDBRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
 		return renderer.NewExtensions(postgresFamilyHandlers(crdbrender.Handlers()...)...)
@@ -138,7 +138,8 @@ func postgresOwners(dialect string) (postgres.Owners, error) {
 	return postgres.Owners{
 		Extensions: registry, TableObjects: owners.tableObjects,
 		TableConstraints: owners.tableConstraints, TableStorage: owners.tableStorage,
-		TablePrefix: owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets,
+		ForeignKeyDelete: pgtablerender.DeleteColumnsSuffix,
+		TablePrefix:      owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets,
 	}, nil
 }
 

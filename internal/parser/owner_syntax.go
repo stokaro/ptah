@@ -223,6 +223,9 @@ func (p *Parser) ownerSpan(site sqlext.Site, pattern sqlext.Pattern) (string, in
 		}
 		end = p.current.End
 		p.advance()
+		if site == sqlext.ReferenceOption && pattern.Words[0] == "(" && depth == 0 {
+			break
+		}
 	}
 	return p.input[start:end], start
 }
@@ -234,7 +237,7 @@ func (p *Parser) endsOwnerSpan(site sqlext.Site) bool {
 		return true
 	}
 	switch site {
-	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption, sqlext.ColumnOption, sqlext.IndexOption:
+	case sqlext.TableElement, sqlext.AlterOperation, sqlext.TableOption, sqlext.ColumnOption, sqlext.IndexOption, sqlext.ReferenceOption:
 		return p.current.MatchOperatorValue(",")
 	case sqlext.TablePrefix:
 		return p.current.MatchIdentifierValue("TABLE")
@@ -265,7 +268,7 @@ func (p *Parser) opensNextOption(site sqlext.Site) bool {
 		return false
 	}
 	switch site {
-	case sqlext.ColumnOption:
+	case sqlext.ColumnOption, sqlext.ReferenceOption:
 		if columnClauseStart(p.current.Value) {
 			return true
 		}
@@ -668,4 +671,23 @@ func (p *Parser) DeclaredObjects(operation *ast.ExtensionAlterOperation) schemae
 // declares, or nil. The schema reader settles its name in source order.
 func (p *Parser) DeclaredConstraint(operation *ast.ExtensionAlterOperation) *ast.OwnedIndexConstraint {
 	return p.declaredConstraints[operation]
+}
+
+// claimOwnerReferenceOption captures a suffix and the common action it extends.
+// The destination is the table constraint, or the column's inline reference.
+func (p *Parser) claimOwnerReferenceOption(event, action string, columns []string, facets *schemaext.Facets) bool {
+	claimed := p.claimOwnerSyntax(sqlext.ReferenceOption, "", func(value sqlext.Value) error {
+		merged, err := facets.Merge(value.Facets)
+		if err != nil {
+			return err
+		}
+		*facets = merged
+		return nil
+	})
+	if claimed {
+		claim := &p.ownerClaims[len(p.ownerClaims)-1].match.Claim
+		claim.Definition = p.definitions
+		claim.Reference = &sqlext.ReferenceContext{Event: event, Action: action, Columns: slices.Clone(columns)}
+	}
+	return claimed
 }

@@ -347,3 +347,33 @@ func TestNone_IsSelectedWithoutOwners(t *testing.T) {
 	c.Assert(sqlext.Set{}.Selected(), qt.IsFalse)
 	c.Assert(sqlext.ErrUnselected.Error(), qt.Contains, "SQL")
 }
+
+// referenceParser retains the batch so the test can mutate the owner's copy.
+type referenceParser struct{ requests *[]sqlext.Request }
+
+func (p referenceParser) ParseSQL(_ context.Context, request sqlext.Request) (sqlext.Result, error) {
+	*p.requests = append(*p.requests, request)
+	return sqlext.Result{Values: make([]sqlext.Value, len(request.Claims))}, nil
+}
+
+// TestSet_Parse_ReferenceContextIsIsolated protects both the caller's context
+// and the other claims in a batch when their original context is shared.
+func TestSet_Parse_ReferenceContextIsIsolated(t *testing.T) {
+	c := qt.New(t)
+	var requests []sqlext.Request
+	set := must.Must(sqlext.NewSet(extension("example.org/a", "x", referenceParser{requests: &requests},
+		sqlext.Pattern{Name: "selection", Site: sqlext.ReferenceOption, Words: []string{"("}},
+	)))
+	reference := &sqlext.ReferenceContext{Event: "DELETE", Action: "SET NULL", Columns: []string{"tenant", "parent_id"}}
+	candidate := set.Candidates("x", sqlext.ReferenceOption)[0]
+	match := sqlext.Match{Candidate: candidate, Claim: sqlext.Claim{Pattern: "selection", Site: sqlext.ReferenceOption, Text: "(parent_id)", Reference: reference}}
+	values, err := set.Parse(t.Context(), "x", []sqlext.Match{match, match}, sqlext.Document{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(values, qt.HasLen, 2)
+	c.Assert(requests, qt.HasLen, 1)
+	requests[0].Claims[0].Reference.Action = "CASCADE"
+	requests[0].Claims[0].Reference.Columns[0] = "changed"
+	want := &sqlext.ReferenceContext{Event: "DELETE", Action: "SET NULL", Columns: []string{"tenant", "parent_id"}}
+	c.Assert(reference, qt.DeepEquals, want)
+	c.Assert(requests[0].Claims[1].Reference, qt.DeepEquals, want)
+}

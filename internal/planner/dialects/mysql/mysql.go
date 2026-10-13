@@ -2140,13 +2140,14 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 		// rather than the planner dropping it here. The same holds for the
 		// deferral and enforcement, which neither engine takes on a foreign
 		// key, and the MATCH type MySQL keeps (stokaro/ptah#3853).
-		OnDeleteColumns: append([]string(nil), add.OnDeleteColumns...),
-		Deferrable:      add.Deferrable,
-		Initially:       add.Initially,
-		Match:           add.Match,
-		NotEnforced:     add.NotEnforced,
+		Deferrable:  add.Deferrable,
+		Initially:   add.Initially,
+		Match:       add.Match,
+		NotEnforced: add.NotEnforced,
 	}
-	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
+	node := p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
+	node.Operations[0].(*ast.AddConstraintOperation).Constraint.Facets = add.Facets
+	return node
 }
 
 func (p *Planner) checkNotEnforcedMessage() string {

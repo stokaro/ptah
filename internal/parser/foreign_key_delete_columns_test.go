@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/parser"
 )
 
@@ -13,7 +14,7 @@ import (
 // statement declares, at table or column level.
 func foreignKeyReferenceOf(c *qt.C, sql string) *ast.ForeignKeyRef {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect("postgres")).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect("postgres"), withPostgresTableOwners()).Parse()
 	c.Assert(err, qt.IsNil)
 	var references []*ast.ForeignKeyRef
 	for _, statement := range statements.Statements {
@@ -26,13 +27,17 @@ func foreignKeyReferenceOf(c *qt.C, sql string) *ast.ForeignKeyRef {
 			}
 			for _, constraint := range node.Constraints {
 				if constraint.Reference != nil {
-					references = append(references, constraint.Reference)
+					reference := *constraint.Reference
+					reference.Facets = constraint.Facets
+					references = append(references, &reference)
 				}
 			}
 		case *ast.AlterTableNode:
 			for _, operation := range node.Operations {
 				if add, ok := operation.(*ast.AddConstraintOperation); ok && add.Constraint.Reference != nil {
-					references = append(references, add.Constraint.Reference)
+					reference := *add.Constraint.Reference
+					reference.Facets = add.Constraint.Facets
+					references = append(references, &reference)
 				}
 			}
 		}
@@ -42,8 +47,7 @@ func foreignKeyReferenceOf(c *qt.C, sql string) *ast.ForeignKeyRef {
 }
 
 // The column list PostgreSQL 15 takes after ON DELETE SET NULL and SET DEFAULT
-// is read onto the reference. A list was a syntax error here, so the schema
-// file that raised stokaro/ptah#3562 could not be read at all.
+// is read as owned state on the constraint, including an inline reference.
 func TestParse_OnDeleteColumnList_HappyPath(t *testing.T) {
 	rows := []struct {
 		name         string
@@ -80,12 +84,11 @@ func TestParse_OnDeleteColumnList_HappyPath(t *testing.T) {
 			wantColumns:  []string{"a"},
 		},
 		{
-			// Kept as written, quotes included, as the key's own columns are;
-			// the model normalizes both the same way.
+			// The owner retains the logical name of a quoted column.
 			name:         "a quoted column",
 			sql:          `CREATE TABLE c ("X" int, "Aa" int, FOREIGN KEY ("X", "Aa") REFERENCES p (a, b) ON DELETE SET NULL ("Aa"));`,
 			wantOnDelete: "SET NULL",
-			wantColumns:  []string{`"Aa"`},
+			wantColumns:  []string{"Aa"},
 		},
 		{
 			name:         "a column-level REFERENCES naming its own column",
@@ -114,7 +117,9 @@ func TestParse_OnDeleteColumnList_HappyPath(t *testing.T) {
 
 			c.Assert(reference.OnDelete, qt.Equals, row.wantOnDelete)
 			c.Assert(reference.OnUpdate, qt.Equals, row.wantOnUpdate)
-			c.Assert(reference.OnDeleteColumns, qt.DeepEquals, row.wantColumns)
+			columns, _, err := pgtable.DeleteColumnsOf(reference.Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(columns, qt.DeepEquals, row.wantColumns)
 		})
 	}
 }
@@ -132,48 +137,48 @@ func TestParse_OnDeleteColumnList_FailurePath(t *testing.T) {
 			// for ON DELETE actions".
 			name:    "after ON UPDATE SET NULL",
 			sql:     "CREATE TABLE c (x int, a int, FOREIGN KEY (x, a) REFERENCES p (a, b) ON UPDATE SET NULL (a));",
-			wantErr: `a column list after ON UPDATE SET NULL at position \d+: only ON DELETE SET NULL and ON DELETE SET DEFAULT take one`,
+			wantErr: `.*a column list after ON UPDATE SET NULL is not supported; only ON DELETE SET NULL and ON DELETE SET DEFAULT take one`,
 		},
 		{
 			// PostgreSQL 18.6: syntax error at or near "(".
 			name:    "after CASCADE",
 			sql:     "CREATE TABLE c (x int, a int, FOREIGN KEY (x, a) REFERENCES p (a, b) ON DELETE CASCADE (a));",
-			wantErr: `a column list after ON DELETE CASCADE at position \d+: only ON DELETE SET NULL and ON DELETE SET DEFAULT take one`,
+			wantErr: `.*a column list after ON DELETE CASCADE is not supported; only ON DELETE SET NULL and ON DELETE SET DEFAULT take one`,
 		},
 		{
 			// PostgreSQL 18.6: column "b" referenced in ON DELETE SET action
 			// must be part of foreign key.
 			name:    "a column-level list naming another column",
 			sql:     "CREATE TABLE c (a int REFERENCES p1 (id) ON DELETE SET NULL (b), b int);",
-			wantErr: `column a: ON DELETE SET NULL names column b, which is not part of the foreign key; a column-level REFERENCES covers only its own column`,
+			wantErr: `.*ON DELETE SET NULL names column "b", which is not part of the foreign key`,
 		},
 		{
 			name:    "the same check on ALTER TABLE ... ADD COLUMN",
 			sql:     "ALTER TABLE c ADD COLUMN a int REFERENCES p1 (id) ON DELETE SET NULL (b);",
-			wantErr: `column a: ON DELETE SET NULL names column b, which is not part of the foreign key; .*`,
+			wantErr: `.*ON DELETE SET NULL names column "b", which is not part of the foreign key`,
 		},
 		{
 			// A quoted name keeps its case, so "A" and a are two columns.
 			name:    "a quoted column-level name in another case",
 			sql:     `CREATE TABLE c ("A" int REFERENCES p1 (id) ON DELETE SET NULL (a));`,
-			wantErr: `column "A": ON DELETE SET NULL names column a, which is not part of the foreign key; .*`,
+			wantErr: `.*ON DELETE SET NULL names column "a", which is not part of the foreign key`,
 		},
 		{
 			name:    "an empty list",
 			sql:     "CREATE TABLE c (x int, a int, FOREIGN KEY (x, a) REFERENCES p (a, b) ON DELETE SET NULL ());",
-			wantErr: `expected column name in ON DELETE SET NULL \(\.\.\.\): .*`,
+			wantErr: `.*ON DELETE column list: expected a nonempty parenthesized column list`,
 		},
 		{
 			name:    "an unterminated list",
 			sql:     "CREATE TABLE c (x int, a int, FOREIGN KEY (x, a) REFERENCES p (a, b) ON DELETE SET NULL (a b));",
-			wantErr: `expected '\)' after the ON DELETE SET NULL column list: .*`,
+			wantErr: `.*ON DELETE column list: expected a comma between column names`,
 		},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := parser.NewParser(row.sql, parser.WithDialect("postgres")).Parse()
+			statements, err := parser.NewParser(row.sql, parser.WithDialect("postgres"), withPostgresTableOwners()).Parse()
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 			c.Assert(statements, qt.IsNil)

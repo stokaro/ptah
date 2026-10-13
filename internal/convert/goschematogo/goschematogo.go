@@ -83,9 +83,6 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if err := validateMaterializedViewFacets(db.MaterializedViews, opts.Annotations); err != nil {
 		return nil, err
 	}
-	if err := refuseNarrowedDeleteActions(db.Constraints); err != nil {
-		return nil, err
-	}
 	// The key annotations have no attribute for a deferral (stokaro/ptah#3824).
 	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {
 		return nil, fmt.Errorf("%s defers its check, which a Go annotation cannot represent", keys[0])
@@ -128,22 +125,6 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 		return nil, err
 	}
 	return files, nil
-}
-
-// refuseNarrowedDeleteActions refuses a foreign key whose ON DELETE action is
-// limited to some of its columns. The foreign_key annotation has no attribute
-// for the list, and writing the key without it would set every referencing
-// column where the schema sets some (stokaro/ptah#3562).
-func refuseNarrowedDeleteActions(constraints []schemamodel.Constraint) error {
-	for _, constraint := range constraints {
-		if constraint.NarrowsDeleteAction() {
-			return fmt.Errorf(
-				"foreign key %q limits ON DELETE %s to columns %s, which a Go annotation cannot represent",
-				constraint.Name, constraint.OnDelete, strings.Join(constraint.OnDeleteColumns, ", "),
-			)
-		}
-	}
-	return nil
 }
 
 func validateIndexIncludeColumns(indexes []schemamodel.Index) error {

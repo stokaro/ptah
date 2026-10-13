@@ -17,25 +17,30 @@ func PersistenceReports() []schemaext.ReportDefinition {
 // ReportValues reports an ordered batch without inspecting a server. Invalid
 // representations, values, nil contexts and cancellation return no partial batch.
 func (PersistenceService) ReportValues(ctx context.Context, request schemaext.ReportingRequest) ([]schemaext.ValueReport, error) {
+	return reportTableValues(ctx, request, PersistenceKind, "persistence", "postgres_unlogged_tables", persistenceCount)
+}
+func reportTableValues(ctx context.Context, request schemaext.ReportingRequest,
+	kind schemaext.Kind, label, metric string, countValue func(schemaext.Representation, schemaext.Value) (int, error),
+) ([]schemaext.ValueReport, error) {
 	if ctx == nil {
-		return nil, fmt.Errorf("%w: persistence reporting requires a context", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: %s reporting requires a context", schemaext.ErrInvalidValue, label)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if request.Representation != schemaext.Desired && request.Representation != schemaext.Observed {
-		return nil, fmt.Errorf("%w: persistence reporting requires a schema representation", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: %s reporting requires a schema representation", schemaext.ErrInvalidValue, label)
 	}
 	reports := make([]schemaext.ValueReport, 0, len(request.Values))
 	for _, value := range request.Values {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		count, err := persistenceCount(request.Representation, value)
+		count, err := countValue(request.Representation, value)
 		if err != nil {
 			return nil, err
 		}
-		reports = append(reports, schemaext.ValueReport{Kind: PersistenceKind, Counts: []schemaext.MetricCount{{Name: "postgres_unlogged_tables", Value: count}}})
+		reports = append(reports, schemaext.ValueReport{Kind: kind, Counts: []schemaext.MetricCount{{Name: metric, Value: count}}})
 	}
 	return completedPersistence(ctx, reports)
 }

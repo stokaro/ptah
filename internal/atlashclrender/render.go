@@ -172,18 +172,6 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 	dialect := opts.Dialect
-	// Atlas HCL has no attribute for the column list of ON DELETE SET NULL or
-	// SET DEFAULT. Writing the key without it would set every referencing
-	// column where the schema sets some, so the export refuses instead
-	// (stokaro/ptah#3562).
-	for _, constraint := range db.Constraints {
-		if constraint.NarrowsDeleteAction() {
-			return Result{}, fmt.Errorf(
-				"foreign key %q limits ON DELETE %s to columns %s, which Atlas HCL cannot represent",
-				constraint.Name, constraint.OnDelete, strings.Join(constraint.OnDeleteColumns, ", "),
-			)
-		}
-	}
 	// Nor for a key that defers its check. Atlas writes a UNIQUE as a unique
 	// index, which cannot defer, and has no deferral on a primary key.
 	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {

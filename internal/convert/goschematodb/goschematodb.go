@@ -533,7 +533,6 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 			dbConstraint.ForeignColumns = append([]string(nil), constraint.ForeignColumnsOrDefault()...)
 			dbConstraint.DeleteRule = optionalStringPtr(constraint.OnDelete)
 			dbConstraint.UpdateRule = optionalStringPtr(constraint.OnUpdate)
-			dbConstraint.OnDeleteColumns = append([]string(nil), constraint.OnDeleteColumns...)
 		}
 		appendConstraint(dbConstraint)
 	}

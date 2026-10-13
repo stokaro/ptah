@@ -263,15 +263,22 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 }
 
 // prepareConstraintFacets projects a table constraint's facets onto the
-// target. The MySQL family writes a primary key's block-size hint in its
-// definition; every other active value, and every value on another target, is
-// refused rather than rendered without it.
+// target and asks its selected constraint owner to validate active values.
+// A target without a renderer for an active value refuses it.
 func prepareConstraintFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
 	projected, err := projectFacets(dialect, facets)
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
+	if err := pgtable.ValidateDeleteTarget(dialect, projected); err != nil {
+		return schemaext.Facets{}, err
+	}
 	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.YugabyteDB:
+		if err := pgtablerender.ValidateConstraintFacets(projected); err != nil {
+			return schemaext.Facets{}, err
+		}
+		return projected, nil
 	case platform.MySQL, platform.MariaDB:
 		if err := mysqlrender.ValidateConstraintFacets(projected); err != nil {
 			return schemaext.Facets{}, err

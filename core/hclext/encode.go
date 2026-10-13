@@ -75,8 +75,18 @@ type Slot struct {
 	Primary bool
 }
 
+// KeyContext carries the common definition beside a key's owned settings.
+// Type names the constraint kind and Columns are logical local column names.
+// Each encoder receives independent columns. No context means unknown facts.
+type KeyContext struct {
+	Type    string
+	Columns []string
+}
+
 // SlotFacets is one of the writer's own blocks and facets it holds.
 type SlotFacets struct {
+	// Key holds a common constraint definition for a SlotKey, or nil.
+	Key *KeyContext
 	// Slot is the block.
 	Slot Slot
 	// Facets are the facets.
@@ -385,7 +395,11 @@ func (e Extension) selectSlots(slots []SlotFacets) []SlotFacets {
 	var selected []SlotFacets
 	for _, slot := range slots {
 		if facets := e.selectFacets(slot.Facets); facets.Len() > 0 {
-			selected = append(selected, SlotFacets{Slot: slot.Slot, Facets: facets})
+			selectedSlot := SlotFacets{Slot: slot.Slot, Facets: facets}
+			if slot.Key != nil {
+				selectedSlot.Key = &KeyContext{Type: slot.Key.Type, Columns: slices.Clone(slot.Key.Columns)}
+			}
+			selected = append(selected, selectedSlot)
 		}
 	}
 	return selected

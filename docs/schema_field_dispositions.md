@@ -380,6 +380,7 @@ migration nobody asked for.
 | `pgroutine.DesiredProperties.Leakproof` | `ddl` | — |
 | `pgroutine.DesiredProperties.Parallel` | `ddl` | — |
 | `pgroutine.DesiredProperties.Strict` | `ddl` | — |
+| `pgtable.DesiredDeleteColumns.Columns` | `ddl` | — |
 | `pgtable.DesiredExclusion.Exclusion` | `ddl` | — |
 | `pgtable.DesiredExclusion.Normalized` | `comparison` | the connected server's expression spelling; source encoders preserve the declaration |
 | `pgtable.DesiredExclusion.StructName` | `source` | the Go struct the declaration belongs to; its table and name are the object identity |
@@ -451,7 +452,6 @@ migration nobody asked for.
 | `schemamodel.Constraint.NotValid` | `ddl` | — |
 | `schemamodel.Constraint.NullsDistinct` | `ddl` | — |
 | `schemamodel.Constraint.OnDelete` | `ddl` | — |
-| `schemamodel.Constraint.OnDeleteColumns` | `ddl` | — |
 | `schemamodel.Constraint.OnUpdate` | `ddl` | — |
 | `schemamodel.Constraint.Requires` | `planning` | the objects, such as extensions, that must exist before this constraint can be created; it orders the statements and appears in none of them |
 | `schemamodel.Constraint.StructName` | `ddl` | — |

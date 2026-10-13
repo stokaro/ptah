@@ -202,10 +202,10 @@ func validatePatterns(extension Extension) error {
 
 // FacetSite reports whether a value at site carries the owner's facets of its
 // subject and nothing else: [ViewClause], [TablePrefix], [TableOption],
-// [ColumnOption], [IndexOption] and [RoutineOption].
+// [ColumnOption], [IndexOption], [ReferenceOption] and [RoutineOption].
 func FacetSite(site Site) bool {
 	switch site {
-	case ViewClause, TablePrefix, TableOption, ColumnOption, IndexOption, RoutineOption:
+	case ViewClause, TablePrefix, TableOption, ColumnOption, IndexOption, ReferenceOption, RoutineOption:
 		return true
 	default:
 		return false
@@ -214,7 +214,7 @@ func FacetSite(site Site) bool {
 
 func knownSite(site Site) bool {
 	switch site {
-	case TableElement, AlterOperation, ViewClause, TablePrefix, TableOption, ColumnOption, IndexOption, RoutineOption, Statement:
+	case TableElement, AlterOperation, ViewClause, TablePrefix, TableOption, ColumnOption, IndexOption, ReferenceOption, RoutineOption, Statement:
 		return true
 	default:
 		return false
@@ -460,7 +460,12 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match, document
 		}
 		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index])), Declared: owned, DroppedTables: slices.Clone(document.DroppedTables)}
 		for _, position := range positions[index] {
-			request.Claims = append(request.Claims, matches[position].Claim)
+			claim := matches[position].Claim
+			if claim.Reference != nil {
+				claim.Reference = new(*claim.Reference)
+				claim.Reference.Columns = slices.Clone(claim.Reference.Columns)
+			}
+			request.Claims = append(request.Claims, claim)
 		}
 		result, err := extension.Parser.ParseSQL(ctx, request)
 		if err != nil {

@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/mssql/mssqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine"
 	"ptah.run/internal/builtintest"
@@ -456,7 +457,7 @@ func TestRender_RefusesAnOwnersModelWhereNoOwnerIsHandedIt(t *testing.T) {
 func TestRender_ChecksTheSelectionBeforeTheSchema(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{Constraints: []schemamodel.Constraint{{Name: "fk", Type: "FOREIGN KEY", Table: "t",
-		Columns: []string{"a", "b"}, ForeignTable: "u", ForeignColumns: []string{"a", "b"}, OnDelete: "SET NULL", OnDeleteColumns: []string{"b"}}}}
+		Columns: []string{"a", "b"}, ForeignTable: "u", ForeignColumns: []string{"a", "b"}, OnDelete: "SET NULL", Facets: must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, []string{"b"}))}}}
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
 

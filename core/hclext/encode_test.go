@@ -352,3 +352,25 @@ func TestSet_Unrecorded(t *testing.T) {
 	c.Assert(set.Unrecorded("example.org/a/other"), qt.IsFalse)
 	c.Assert(hclext.None().Unrecorded("example.org/a/secret"), qt.IsFalse)
 }
+
+// TestSet_Encode_KeyContextIsIsolated keeps each owner's mutable context
+// separate from the caller and the other owners of the same key.
+func TestSet_Encode_KeyContextIsIsolated(t *testing.T) {
+	c := qt.New(t)
+	document := slotDocument()
+	document.Keys[0].Key = &hclext.KeyContext{Type: "FOREIGN KEY", Columns: []string{"tenant", "parent_id"}}
+	var first, second []hclext.EncodeRequest
+	set := must.Must(hclext.NewSet(
+		encodingExtension("example.org/a", "example.org/a/x", slotEncoder{requests: &first}),
+		encodingExtension("example.org/b", "example.org/b/x", slotEncoder{requests: &second}),
+	))
+	_, err := set.Encode(t.Context(), document)
+	c.Assert(err, qt.IsNil)
+	c.Assert(first, qt.HasLen, 1)
+	c.Assert(second, qt.HasLen, 1)
+	first[0].Keys[0].Key.Type = "UNIQUE"
+	first[0].Keys[0].Key.Columns[0] = "changed"
+	want := &hclext.KeyContext{Type: "FOREIGN KEY", Columns: []string{"tenant", "parent_id"}}
+	c.Assert(document.Keys[0].Key, qt.DeepEquals, want)
+	c.Assert(second[0].Keys[0].Key, qt.DeepEquals, want)
+}

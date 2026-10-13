@@ -224,6 +224,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
 	schema.Constraints = constraints
+	if err := r.deleteColumnsCoverage(schema); err != nil {
+		return nil, err
+	}
 	if err := r.readExclusions(ctx, schema); err != nil {
 		return nil, err
 	}
@@ -2340,7 +2343,14 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 		constraint.HashShardBuckets = hashShardBuckets(r.dialect, constraintDefinition)
 		constraint.NotEnforced = postgresNotEnforcedFromDefinition(constraintDefinition)
 		if constraint.Type == "FOREIGN KEY" {
-			constraint.OnDeleteColumns = postgresDeleteColumnsFromDefinition(constraintDefinition)
+			columns, err := pgtable.DeleteColumnsFromDefinition(constraintDefinition)
+			if err != nil {
+				return nil, fmt.Errorf("read ON DELETE column list for constraint %s: %w", constraint.Name, err)
+			}
+			constraint.Facets, err = pgtable.WithObservedDeleteColumns(constraint.Facets, columns)
+			if err != nil {
+				return nil, err
+			}
 			constraint.Match = postgresMatchFromDefinition(constraintDefinition)
 		}
 		constraint.NotValid = postgresNotValidFromDefinition(constraintDefinition)
@@ -2405,53 +2415,6 @@ func postgresIncludeColumnsFromDefinition(definition string) []string {
 		}
 	}
 	return nil
-}
-
-// postgresDeleteColumnsFromDefinition reads the column list of an ON DELETE
-// SET NULL or SET DEFAULT out of a foreign key's pg_get_constraintdef, or nil
-// where the definition has none.
-//
-// The definition is read rather than pg_constraint.confdelsetcols because the
-// column does not exist before PostgreSQL 15, nor on CockroachDB, and this
-// query serves every line of the family. The server prints the list after the
-// action, before any DEFERRABLE, and only when one was written: measured on
-// PostgreSQL 18.6, `FOREIGN KEY (x, a) REFERENCES p(a, b) ON UPDATE CASCADE ON
-// DELETE SET NULL (a)` (stokaro/ptah#3562).
-func postgresDeleteColumnsFromDefinition(definition string) []string {
-	for _, action := range []string{" ON DELETE SET NULL", " ON DELETE SET DEFAULT"} {
-		index := strings.LastIndex(definition, action)
-		if index < 0 {
-			continue
-		}
-		remaining := strings.TrimLeft(definition[index+len(action):], " ")
-		if !strings.HasPrefix(remaining, "(") {
-			return nil
-		}
-		end := closingParenthesis(remaining)
-		if end < 0 {
-			return nil
-		}
-		return unquotePostgresIdentifiers(splitQuotedIdentifierList(remaining[1:end]))
-	}
-	return nil
-}
-
-// splitQuotedIdentifierList splits a comma-separated identifier list, keeping
-// a comma inside a quoted identifier as part of its name.
-func splitQuotedIdentifierList(list string) []string {
-	var identifiers []string
-	quoted := false
-	start := 0
-	for i := range len(list) {
-		switch {
-		case list[i] == '"':
-			quoted = !quoted
-		case list[i] == ',' && !quoted:
-			identifiers = append(identifiers, strings.TrimSpace(list[start:i]))
-			start = i + 1
-		}
-	}
-	return append(identifiers, strings.TrimSpace(list[start:]))
 }
 
 // closingParenthesis returns the index of the parenthesis that closes the one

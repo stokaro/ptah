@@ -903,7 +903,6 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		ForeignColumns:  dbConstraint.ForeignColumnsOrDefault(),
 		OnDelete:        derefString(dbConstraint.DeleteRule),
 		OnUpdate:        derefString(dbConstraint.UpdateRule),
-		OnDeleteColumns: slices.Clone(dbConstraint.OnDeleteColumns),
 		Deferrable:      dbConstraint.Deferrable,
 		Initially:       dbConstraint.Initially,
 		Match:           dbConstraint.Match,

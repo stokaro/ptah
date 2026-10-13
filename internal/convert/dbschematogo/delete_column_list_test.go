@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -32,7 +34,7 @@ func deleteListCatalog() *catalog.Database {
 			TableName: "children", Name: "children_parent_fk", Type: "FOREIGN KEY",
 			ColumnNames: []string{"tenant", "parent_id"}, ForeignTable: &parents,
 			ForeignColumns: []string{"tenant", "id"},
-			DeleteRule:     &setNull, OnDeleteColumns: []string{"parent_id"},
+			DeleteRule:     &setNull, Facets: must.Must(pgtable.WithObservedDeleteColumns(schemaext.Facets{}, []string{"parent_id"})),
 		}},
 	}
 }
@@ -46,12 +48,16 @@ func TestConvertDBSchemaToGoSchema_CarriesTheDeleteColumnList(t *testing.T) {
 	declared := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), deleteListCatalog(), "postgres", must.Must(builtin.New())))
 	var lists [][]string
 	for _, constraint := range declared.Constraints {
-		lists = append(lists, constraint.OnDeleteColumns)
+		columns, _, err := pgtable.DeleteColumnsOf(constraint.Facets)
+		c.Assert(err, qt.IsNil)
+		lists = append(lists, columns)
 	}
 	roundTrip := must.Must(goschematodb.ToDBSchema(t.Context(), declared, "postgres", must.Must(builtin.New())))
 	var roundTripLists [][]string
 	for _, constraint := range roundTrip.Constraints {
-		roundTripLists = append(roundTripLists, constraint.OnDeleteColumns)
+		columns, _, err := pgtable.DeleteColumnsOf(constraint.Facets)
+		c.Assert(err, qt.IsNil)
+		roundTripLists = append(roundTripLists, columns)
 	}
 
 	c.Assert(lists, qt.DeepEquals, [][]string{{"parent_id"}})

@@ -477,6 +477,10 @@
               "description": "Foreign key ON DELETE action.",
               "type": "string"
             },
+            "on_delete_columns": {
+              "description": "CSV list of local columns set by PostgreSQL ON DELETE SET NULL or SET DEFAULT.",
+              "type": "string"
+            },
             "on_update": {
               "description": "Foreign key ON UPDATE action.",
               "type": "string"

@@ -891,11 +891,6 @@ type Constraint struct {
 	// not check: pg_constraint.conenforced false on PostgreSQL 18, and
 	// TABLE_CONSTRAINTS.ENFORCED `NO` on MySQL.
 	NotEnforced bool `json:"not_enforced,omitempty"`
-	// OnDeleteColumns are the referencing columns an ON DELETE SET NULL or
-	// SET DEFAULT action changes, as the definition lists them. It is empty
-	// when the definition lists none, which means every referencing column
-	// (stokaro/ptah#3562).
-	OnDeleteColumns []string `json:"on_delete_columns,omitempty"`
 	// NotValid reports a CHECK or foreign key the server has not validated
 	// against the rows the table held when it was added, as
 	// pg_get_constraintdef marks it with NOT VALID. A constraint declared NOT

@@ -20,6 +20,9 @@ import (
 // the common boundary, and a CREATE TABLE carrying a facet is refused rather
 // than rendered without it.
 type Owners struct {
+	// ForeignKeyDelete renders owner suffixes of a foreign key's ON DELETE
+	// action. Nil refuses any facets on the constraint.
+	ForeignKeyDelete func(target string, caps capability.Capabilities, constraint *ast.ConstraintNode) (string, error)
 	// TableConstraints renders unresolved source declarations in their input
 	// order and their following comments. Nil refuses nonempty source syntax.
 	TableConstraints func(target string, caps capability.Capabilities, table string, constraints []*ast.OwnedIndexConstraint) ([]string, []string, error)
@@ -200,4 +203,14 @@ func (r *Renderer) renderSourceTableConstraints(node *ast.CreateTableNode) (clau
 		return nil, nil, fmt.Errorf("%w: source constraint renderer changes the clause count", ptaherr.ErrInvalidSchemaDiff)
 	}
 	return clauses, comments, nil
+}
+
+func (r *Renderer) foreignKeyDeleteSuffix(constraint *ast.ConstraintNode) (string, error) {
+	if r.owners.ForeignKeyDelete != nil {
+		return r.owners.ForeignKeyDelete(r.dialect, r.capabilities(), constraint)
+	}
+	if kinds := constraint.Facets.Kinds(); len(kinds) > 0 {
+		return "", fmt.Errorf("%w: no foreign-key facet renderer for %s", ptaherr.ErrUnsupportedFeature, kinds[0])
+	}
+	return "", nil
 }

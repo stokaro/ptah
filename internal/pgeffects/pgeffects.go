@@ -1,5 +1,5 @@
 // Package pgeffects describes what a common statement does to the relations,
-// columns, routines and roles it names: which ones it creates, changes or
+// columns, constraints, routines and roles it names: which ones it creates, changes or
 // drops. Feature owners order their operations against these effects, both
 // in a migration plan and in a whole-schema render. The PostgreSQL-family
 // hosts and the SQL Server host read it, since the nodes it reads are the
@@ -32,7 +32,8 @@ func Sequence(builder objectidentity.Builder, nodes []ast.Node) [][]plangraph.Ef
 }
 
 // Statement describes the objects one statement creates, changes or drops,
-// read on its own: tables, the columns an ALTER TABLE adds or drops, views and
+// read on its own: tables, the columns and named constraints an ALTER TABLE adds
+// or drops, views and
 // materialized views, functions and procedures, and roles. Any other statement
 // keeps an unknown footprint, and the result is nil; so does an object with no
 // name, which names nothing an owner could order itself against.
@@ -68,18 +69,7 @@ func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 		}
 		return dedupe(effects)
 	case *ast.AlterTableNode:
-		effects := []plangraph.Effect{{Subject: builder.Table(typed.Name), Action: plangraph.Alter}}
-		for _, operation := range typed.Operations {
-			switch column := operation.(type) {
-			case *ast.AddColumnOperation:
-				if column.Column != nil {
-					effects = append(effects, plangraph.Effect{Subject: builder.Column(typed.Name, column.Column.Name), Action: plangraph.Create})
-				}
-			case *ast.DropColumnOperation:
-				effects = append(effects, plangraph.Effect{Subject: builder.Column(typed.Name, column.ColumnName), Action: plangraph.Drop})
-			}
-		}
-		return dedupe(effects)
+		return alterTableEffects(builder, typed)
 	case *ast.CreateFunctionNode:
 		action := plangraph.Create
 		if typed.Replace {
@@ -164,4 +154,27 @@ func dedupe(effects []plangraph.Effect) []plangraph.Effect {
 		seen[key] = true
 		return false
 	})
+}
+
+func alterTableEffects(builder objectidentity.Builder, node *ast.AlterTableNode) []plangraph.Effect {
+	effects := []plangraph.Effect{{Subject: builder.Table(node.Name), Action: plangraph.Alter}}
+	for _, operation := range node.Operations {
+		switch column := operation.(type) {
+		case *ast.AddColumnOperation:
+			if column.Column != nil {
+				effects = append(effects, plangraph.Effect{Subject: builder.Column(node.Name, column.Column.Name), Action: plangraph.Create})
+			}
+		case *ast.DropColumnOperation:
+			effects = append(effects, plangraph.Effect{Subject: builder.Column(node.Name, column.ColumnName), Action: plangraph.Drop})
+		case *ast.AddConstraintOperation:
+			if column.Constraint != nil && column.Constraint.Name != "" {
+				effects = append(effects, plangraph.Effect{Subject: builder.Constraint(node.Name, column.Constraint.Name), Action: plangraph.Create})
+			}
+		case *ast.DropConstraintOperation:
+			if column.ConstraintName != "" {
+				effects = append(effects, plangraph.Effect{Subject: builder.Constraint(node.Name, column.ConstraintName), Action: plangraph.Drop})
+			}
+		}
+	}
+	return dedupe(effects)
 }

@@ -509,7 +509,6 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			ForeignColumns:  append([]string(nil), declared.ForeignColumnsOrDefault()...),
 			OnDelete:        declared.OnDelete,
 			OnUpdate:        declared.OnUpdate,
-			OnDeleteColumns: append([]string(nil), declared.OnDeleteColumns...),
 			Deferrable:      declared.Deferrable,
 			Initially:       declared.Initially,
 			Match:           declared.Match,
@@ -725,11 +724,6 @@ type ConstraintAdditionInfo struct {
 	// declaration said it does not (stokaro/ptah#3853).
 	Match       string `json:"match,omitempty"`
 	NotEnforced bool   `json:"not_enforced,omitempty"`
-	// OnDeleteColumns carries the columns an ON DELETE SET NULL or SET DEFAULT
-	// is limited to, for the same reason: an addition built without it sets
-	// every referencing column where the declaration named some
-	// (stokaro/ptah#3562).
-	OnDeleteColumns []string `json:"on_delete_columns,omitempty"`
 	// NotValid asks for the constraint to be added without checking the rows
 	// the table holds, as the declaration allows; see
 	// [ptah.run/core/schemamodel.Constraint.NotValid].
