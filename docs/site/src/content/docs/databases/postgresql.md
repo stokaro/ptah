@@ -299,6 +299,12 @@ declaration is spelled by the server first, as
 [How a declaration is compared with what the server stored](#how-a-declaration-is-compared-with-what-the-server-stored)
 describes; without one the texts are compared as written.
 
+Catalog inspection preserves parentheses inside quoted strings and identifiers
+in `EXCLUDE` elements and predicates. A malformed or unrepresented definition
+stops the read and names the constraint. `INCLUDE`, storage parameters, and an
+index tablespace on an `EXCLUDE` are not represented; inspection refuses those
+clauses.
+
 One `CREATE TABLE` builds a single constraint for index constraints that
 share a key. For a primary key or a `UNIQUE` the key is the columns, the
 `INCLUDE` columns and `NULLS NOT DISTINCT`. For an `EXCLUDE` it is the access

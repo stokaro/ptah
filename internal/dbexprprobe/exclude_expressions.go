@@ -106,10 +106,7 @@ func resolveOneExcludeExpression(
 	}
 	parsed, err := pgexclude.Parse(definition)
 	if err != nil {
-		// The server printed a definition the reader's own parser cannot
-		// split. The reader skips such a constraint too, so there is nothing
-		// on the other side to compare with.
-		return config.ExcludeExpression{}, nil
+		return config.ExcludeExpression{}, fmt.Errorf("read normalized EXCLUDE constraint %q: %w", probe.Key, err)
 	}
 	return config.ExcludeExpression{Elements: parsed.Elements, Where: parsed.WhereCondition, Resolved: true}, nil
 }
