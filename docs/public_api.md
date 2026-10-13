@@ -697,6 +697,19 @@ refuses such a change, each with `ErrInvalidValue`. A migration plan and a whole
 render create a routine whose signature names such a type after the type, as
 they do for an enum.
 
+`schemaext.ConstraintDefiner` exposes a local `DefinedConstraint` projection
+of an owned table constraint. The projection retains its feature identity and
+parent and states whether it owns an index of the same name. `Expressions`
+carries SQL expressions for consumers that inspect column and routine references.
+`DefinedConstraints` returns projections in identity order with independent
+expression lists. Collections refuse changed identities and missing parents
+with `ErrInvalidValue`. The zero collection returns no projections.
+
+PostgreSQL source naming reserves these constraint names and backing index
+names alongside common declarations. Quoted names retain their case and literal
+dots. The accessor performs no I/O; a provider adapter captures its projection
+with the decoded value.
+
 `featureplan.Request.Types` supplies desired and observed type identities and
 references, including unchanged types and types owned by another provider.
 `DeclarationRequest.Types` supplies the declared side during whole-schema
