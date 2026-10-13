@@ -172,6 +172,10 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
+	request.DeclaredRoles, err = snapshotDeclaredRoles(request.DeclaredRoles)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
 	request.Exclusions = slices.Clone(request.Exclusions)
 	request.DeclaredColumns = slices.Clone(request.DeclaredColumns)
 	request.Required, err = snapshotRequired(request.Required)
@@ -204,6 +208,20 @@ func snapshotDeclaredRelations(refs []objectidentity.ID) ([]objectidentity.ID, e
 	for _, ref := range refs {
 		if (ref.Kind != objectidentity.KindView && ref.Kind != objectidentity.KindMatView) || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || ref.Signature != "" {
 			return nil, fmt.Errorf("%w: invalid declared relation %s", schemaext.ErrInvalidValue, ref)
+		}
+	}
+	slices.SortFunc(refs, schemaext.CompareRefs)
+	return refs, nil
+}
+
+// snapshotDeclaredRoles copies and orders the managed roles. A role has no
+// catalog, schema, parent, or overload signature.
+func snapshotDeclaredRoles(refs []objectidentity.ID) ([]objectidentity.ID, error) {
+	refs = slices.Clone(refs)
+	for _, ref := range refs {
+		if ref.Kind != objectidentity.KindRole || ref.Name.Source == "" || ref.Name.Normalized == "" ||
+			!ref.Catalog.Empty() || !ref.Schema.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
+			return nil, fmt.Errorf("%w: invalid declared role %s", schemaext.ErrInvalidValue, ref)
 		}
 	}
 	slices.SortFunc(refs, schemaext.CompareRefs)

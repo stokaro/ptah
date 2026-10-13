@@ -101,6 +101,7 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, semantics),
 		DatabasePath: current.DatabasePath, DesiredLimits: desired.NotDescribed, CurrentLimits: current.NotDescribed,
 		Exclusions: opts.Exclusions(), DeclaredColumns: declaredColumns(desired, semantics),
+		DeclaredRoles:      declaredRoles(desired, semantics),
 		DesiredConstraints: declaredConstraints, CurrentConstraints: observedConstraints})
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -128,6 +129,20 @@ func declaredColumns(desired *schemamodel.Database, semantics identifier.Semanti
 		}
 	}
 	return columns
+}
+
+// declaredRoles captures the common roles the desired schema manages. Owners
+// use this authority without receiving the common schema or reading the server.
+func declaredRoles(desired *schemamodel.Database, semantics identifier.Semantics) []objectidentity.ID {
+	builder := objectidentity.NewBuilder(semantics)
+	var roles []objectidentity.ID
+	for _, role := range desired.Roles {
+		ref := builder.Role(role.Name)
+		if ref.Name.Source != "" && ref.Name.Normalized != "" {
+			roles = append(roles, ref)
+		}
+	}
+	return roles
 }
 
 // declaredRelations names the views and materialized views the desired
