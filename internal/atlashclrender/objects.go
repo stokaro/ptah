@@ -308,19 +308,9 @@ func (r *renderer) renderFunction(function schemamodel.Function) {
 	r.renderFunctionArgs(function)
 	r.stringAttr(1, "security", function.Security)
 	r.stringAttr(1, "volatility", function.Volatility)
-	// The planner attributes and the routine's settings, which the reader
-	// takes and an export that left them out would drop: a LEAKPROOF lost on
-	// the way out lets no filter past a row-level security predicate once the
-	// export is applied (stokaro/ptah#3630).
-	if !function.IsProcedure() {
-		if function.Leakproof {
-			r.trueAttr(1, "leakproof")
-		}
-		r.stringAttr(1, "parallel", function.Parallel)
-		if function.Strict {
-			r.trueAttr(1, "strict")
-		}
-	}
+	slot := routineSlot(function)
+	owned := r.ownerSlot(slot, function.Facets)
+	r.slotOthers(1, owned, slot.Kind)
 	r.renderRoutineSettings(function.Settings)
 	r.stringAttr(1, "as", function.Body)
 	r.stringAttr(1, "comment", function.Comment)

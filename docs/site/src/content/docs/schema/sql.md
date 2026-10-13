@@ -316,6 +316,10 @@ A document may declare several overloads of a function or a procedure, as
 `pg_dump` writes them. Each is a routine of its own, told apart by its input
 argument types, so `COMMENT ON FUNCTION app.f(integer, text)` names one of them.
 
+PostgreSQL functions retain `LEAKPROOF`, `STRICT` and `PARALLEL` through
+conversion and export. Complete declarations without these clauses request
+defaults. Property changes use `CREATE OR REPLACE FUNCTION`.
+
 ## Row-level security
 
 PostgreSQL, CockroachDB and YugabyteDB schema files declare row-level security

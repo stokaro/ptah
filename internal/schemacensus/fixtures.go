@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -1442,7 +1443,7 @@ func functionPlannerPropertiesFixture() schemamodel.Database {
 	db.Functions = []schemamodel.Function{{
 		StructName: "F", Name: "pure", Parameters: "a integer", Returns: "integer",
 		Language: "sql", Volatility: "IMMUTABLE", Body: "SELECT a;",
-		Leakproof: true, Parallel: "SAFE", Strict: true, Kind: "function",
+		Facets: must.Must(pgroutine.WithProperties(schemaext.Facets{}, pgroutine.Properties{Leakproof: true, Parallel: "SAFE", Strict: true})), Kind: "function",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db

@@ -98,12 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-6 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+5 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `function-planner-properties` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops LEAKPROOF, STRICT and PARALLEL; stokaro/ptah#4140 step 8.3c moves them to PostgreSQL facets, which the conversion already carries |
 | `function-procedure` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
 | `grant-routine` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
 | `grant-routine` | `postgres` | from-catalog | dbschematogo drops the EXECUTE that PUBLIC holds on a procedure, so the converted-back declaration revokes it |
@@ -112,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-78 known gaps: a conversion or the comparison drops each one on the dialects named.
+75 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -150,9 +149,6 @@ migration nobody asked for.
 | `schemamodel.Function.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Function.Kind` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Function.Kind` | `mariadb`, `mysql`, `sqlserver` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
-| `schemamodel.Function.Leakproof` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet |
-| `schemamodel.Function.Parallel` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet |
-| `schemamodel.Function.Strict` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | goschematodb drops it; stokaro/ptah#4140 step 8.3c moves it to a PostgreSQL facet |
 | `schemamodel.Index.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Fields` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -368,6 +364,9 @@ migration nobody asked for.
 | `pgpolicy.NormalizedPolicy.WithCheck` | `comparison` | the server's spelling of a declared WITH CHECK expression, compared with the catalog's and never rendered |
 | `pgpolicy.RoleSelector.Keyword` | `ddl` | — |
 | `pgpolicy.RoleSelector.Name` | `ddl` | — |
+| `pgroutine.DesiredProperties.Leakproof` | `ddl` | — |
+| `pgroutine.DesiredProperties.Parallel` | `ddl` | — |
+| `pgroutine.DesiredProperties.Strict` | `ddl` | — |
 | `pgtype.Attribute.Name` | `ddl` | — |
 | `pgtype.Attribute.Type` | `ddl` | — |
 | `pgtype.DesiredComposite.Attributes` | `ddl` | — |
@@ -543,14 +542,11 @@ migration nobody asked for.
 | `schemamodel.Function.Facets` | `ddl` | — |
 | `schemamodel.Function.Kind` | `ddl` | — |
 | `schemamodel.Function.Language` | `ddl` | — |
-| `schemamodel.Function.Leakproof` | `ddl` | — |
 | `schemamodel.Function.Name` | `ddl` | — |
-| `schemamodel.Function.Parallel` | `ddl` | — |
 | `schemamodel.Function.Parameters` | `ddl` | — |
 | `schemamodel.Function.Returns` | `ddl` | — |
 | `schemamodel.Function.Security` | `ddl` | — |
 | `schemamodel.Function.Settings` | `ddl` | — |
-| `schemamodel.Function.Strict` | `ddl` | — |
 | `schemamodel.Function.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Function.Volatility` | `ddl` | — |
 | `schemamodel.Grant.Columns` | `ddl` | — |

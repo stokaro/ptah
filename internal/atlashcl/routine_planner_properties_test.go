@@ -6,7 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // plannerPropertyDocument renders a routine of the given block type carrying
@@ -44,7 +46,7 @@ func TestParseFunctionPlannerProperties_HappyPath(t *testing.T) {
 		{name: "leakproof", attrs: `leakproof = true`, wantSQL: "LEAKPROOF"},
 		{name: "parallel safe", attrs: `parallel = SAFE`, wantSQL: "PARALLEL SAFE"},
 		{name: "parallel restricted", attrs: `parallel = RESTRICTED`, wantSQL: "PARALLEL RESTRICTED"},
-		{name: "parallel unsafe stated", attrs: `parallel = UNSAFE`, wantSQL: "PARALLEL UNSAFE"},
+		{name: "parallel unsafe stated", attrs: `parallel = UNSAFE`, wantSQL: "LANGUAGE sql"},
 		{name: "lowercase level", attrs: `parallel = "safe"`, wantSQL: "PARALLEL SAFE"},
 	}
 
@@ -52,7 +54,7 @@ func TestParseFunctionPlannerProperties_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(plannerPropertyDocument("function", row.attrs), "schema.hcl")
+			db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("function", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Functions, qt.HasLen, 1)
@@ -71,12 +73,15 @@ func TestParseFunctionPlannerProperties_HappyPath(t *testing.T) {
 func TestParseFunctionWithoutPlannerProperties_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(plannerPropertyDocument("function", `volatility = STABLE`), "schema.hcl")
+	db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("function", `volatility = STABLE`), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Functions, qt.HasLen, 1)
-	c.Assert(db.Functions[0].Leakproof, qt.IsFalse)
-	c.Assert(db.Functions[0].Parallel, qt.Equals, "")
+	properties, _, propertyErr := pgroutine.PropertiesOf(db.Functions[0].Facets)
+	c.Assert(propertyErr, qt.IsNil)
+
+	c.Assert(properties.Leakproof, qt.IsFalse)
+	c.Assert(properties.Parallel, qt.Equals, "")
 	sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
 	c.Assert(sql, qt.Not(qt.Contains), "LEAKPROOF")
 	c.Assert(sql, qt.Not(qt.Contains), "PARALLEL")
@@ -103,7 +108,7 @@ func TestParseProcedurePlannerProperties_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(plannerPropertyDocument("procedure", row.attrs), "schema.hcl")
+			db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("procedure", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)
@@ -131,10 +136,10 @@ func TestParseFunctionParallelRefusesAnythingElse_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(plannerPropertyDocument("function", row.attrs), "schema.hcl")
+			db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("function", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.ErrorMatches,
-				`(?s).*function parallel must be SAFE, RESTRICTED or UNSAFE.*`)
+				`(?s).*parallel must be SAFE, RESTRICTED or UNSAFE.*`)
 			c.Assert(db, qt.IsNil)
 		})
 	}

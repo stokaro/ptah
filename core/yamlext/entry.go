@@ -16,6 +16,8 @@ const (
 	// EntryIndex is an index entry, of a table's indexes or of the top-level
 	// indexes key.
 	EntryIndex = "indexes"
+	// EntryFunction is an entry of the functions key.
+	EntryFunction = "functions"
 )
 
 // EntryAttributes are scalar keys an owner adds to one of the frontend's
@@ -57,7 +59,7 @@ type EntrySection struct {
 
 func (s *Set) claimEntryKeys(index int, extension Extension) error {
 	for _, group := range extension.EntryAttributes {
-		if (group.Entry != EntryTable && group.Entry != EntryIndex) || (group.Decode == nil && group.Parameters == nil) {
+		if (group.Entry != EntryTable && group.Entry != EntryIndex && group.Entry != EntryFunction) || (group.Decode == nil && group.Parameters == nil) {
 			return fmt.Errorf("YAML extension of %s declares entry attributes without an entry or a decoder", extension.Owner)
 		}
 		for _, key := range group.Attributes {

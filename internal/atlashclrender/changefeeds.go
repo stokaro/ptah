@@ -63,6 +63,9 @@ func (r *renderer) reportFacets() {
 	for i := range r.db.Fields {
 		blocks[&r.db.Fields[i].Facets] = true
 	}
+	for i := range r.db.Functions {
+		blocks[&r.db.Functions[i].Facets] = true
+	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
 			if blocks[facets] && r.owners.Encodes(kind) {

@@ -33,6 +33,8 @@ type EncodeRequest struct {
 	Columns []SlotFacets
 	Indexes []SlotFacets
 	Keys    []SlotFacets
+	// Routines are function and procedure blocks carrying owner facets.
+	Routines []SlotFacets
 	// Coverage is what the document knows of the extension's Kinds, such
 	// as a limit the format may have no spelling for.
 	Coverage schemaext.Coverage
@@ -50,10 +52,14 @@ const (
 	SlotIndex SlotKind = "index"
 	// SlotKey is a table's primary key, or a constraint of it.
 	SlotKey SlotKind = "key"
+	// SlotFunction is a function block.
+	SlotFunction SlotKind = "function"
+	// SlotProcedure is a procedure block.
+	SlotProcedure SlotKind = "procedure"
 )
 
 // Slot names one of the writer's own blocks: a table, or a column, an index,
-// the primary key or a constraint of one. It is comparable, and two blocks of
+// the primary key or a constraint of one, or a routine. It is comparable, and two blocks of
 // one document do not share one.
 type Slot struct {
 	// Kind is the kind of block.
@@ -63,6 +69,8 @@ type Slot struct {
 	// Name is the name of a column, an index or a constraint, and empty for a
 	// table, a primary key and a constraint without a name.
 	Name string
+	// Parameters distinguishes overloaded routine blocks. Other kinds leave it empty.
+	Parameters string
 	// Primary marks a table's primary key, a [SlotKey] without a name.
 	Primary bool
 }
@@ -334,6 +342,8 @@ func (s Slot) String() string {
 	switch {
 	case s.Kind == SlotTable:
 		return fmt.Sprintf("table %q", table)
+	case s.Kind == SlotFunction || s.Kind == SlotProcedure:
+		return fmt.Sprintf("%s %s(%s)", s.Kind, s.Name, s.Parameters)
 	case s.Primary:
 		return fmt.Sprintf("the primary key of table %q", table)
 	default:
@@ -358,6 +368,7 @@ func (e Extension) selectRequest(document EncodeRequest) EncodeRequest {
 	request.Columns = e.selectSlots(document.Columns)
 	request.Indexes = e.selectSlots(document.Indexes)
 	request.Keys = e.selectSlots(document.Keys)
+	request.Routines = e.selectSlots(document.Routines)
 	return request
 }
 
@@ -426,6 +437,8 @@ func (r EncodeRequest) hands(slot Slot) bool {
 		return handed(r.Indexes)
 	case SlotKey:
 		return handed(r.Keys)
+	case SlotFunction, SlotProcedure:
+		return handed(r.Routines)
 	default:
 		return false
 	}

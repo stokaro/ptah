@@ -53,6 +53,8 @@ var slotPositions = map[hclext.SlotKind][]string{
 // A kind of block missing here has no such place, and refuses every
 // attribute its positions do not name.
 var slotOwnNames = map[hclext.SlotKind][]string{
+	hclext.SlotFunction:  {"schema", "params", "lang", "return", "return_set", "return_table", "security", "volatility", "set", "as", "comment", "arg"},
+	hclext.SlotProcedure: {"schema", "params", "lang", "security", "volatility", "set", "as", "comment", "arg"},
 	hclext.SlotIndex: {"unique", "type", "where", "comment", "ops", "nulls_distinct", "include", "page_per_range", "storage_params",
 		"platform", "on", "columns"},
 }
@@ -91,7 +93,20 @@ func (r *renderer) slotRequest() (hclext.EncodeRequest, error) {
 			return hclext.EncodeRequest{}, err
 		}
 	}
+	for _, routine := range r.db.Functions {
+		if err := slots.add(&request.Routines, routineSlot(routine), routine.Facets); err != nil {
+			return hclext.EncodeRequest{}, err
+		}
+	}
 	return request, nil
+}
+
+func routineSlot(routine schemamodel.Function) hclext.Slot {
+	kind := hclext.SlotFunction
+	if routine.IsProcedure() {
+		kind = hclext.SlotProcedure
+	}
+	return hclext.Slot{Kind: kind, Name: routine.Name, Parameters: routine.Parameters}
 }
 
 // tableSlots adds a table's columns, primary key, constraints and indexes
