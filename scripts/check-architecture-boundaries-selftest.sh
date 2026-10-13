@@ -221,4 +221,28 @@ require_refusal "a source frontend linking an owner"
 rm -f "$tree/core/goschema/boundaries_selftest_defect.go"
 require_acceptance "the repaired source frontend"
 
-echo "check-architecture-boundaries-selftest: OK (11 refusals, 2 false-positive controls)"
+# Go annotation export consumes selected encoders. Concrete owner imports in
+# its tests are valid fixtures; production imports must fail the owner rule.
+target="$tree/internal/convert/goschematogo/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package goschematogo
+
+import _ "ptah.run/feature/boundaryfixture"
+GO
+(cd "$tree" && go build ./internal/convert/goschematogo)
+require_refusal "Go annotation export directly linking a concrete feature"
+rm -f "$target"
+require_acceptance "the repaired Go annotation writer"
+
+# Moving the owner import behind an internal helper must not evade the rule.
+cat >"$target" <<'GO'
+package goschematogo
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./internal/convert/goschematogo)
+require_refusal "Go annotation export transitively linking a concrete feature"
+rm -f "$target"
+require_acceptance "the repaired Go annotation writer's import graph"
+
+echo "check-architecture-boundaries-selftest: OK (13 refusals, 2 false-positive controls)"

@@ -36,7 +36,7 @@ features, database implementations, or external modules.
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
-| `neutral-packages-link-owners` | Models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner. | 0 |
+| `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build.
@@ -51,12 +51,19 @@ number would let the debt return to it with the gate green the whole way.
 `neutral-packages-link-owners` holds the neutral layer of the
 [#4140](https://github.com/stokaro/ptah/issues/4140) design to its import rule.
 The layer is every package at or under `catalog`, `core`, `engine` (except
-`engine/builtin`), `migration/planner` and `migration/schemadiff`. A finding is
+`engine/builtin`), `internal/convert/goschematogo`, `migration/planner` and
+`migration/schemadiff`. A finding is
 one neutral package and one owner it links through any chain of imports:
 `dialect/<name>`, `feature/<name>` or `engine/builtin`. Moving a type between two
 packages of one owner does not change the count; a neutral package that starts
 linking another owner does. The count is zero, so the first such link fails the
 build. Run `go run ./internal/cmd/boundaries -json` for the current list.
+
+Go annotation export receives encoders through `core/annotation.Set`.
+The owner rule follows the writer's full import graph, including internal
+helpers. Its mutation tests compile direct and indirect owner imports, then
+verify that the gate refuses both. The writer must load for the gate to pass;
+renaming or omitting that package cannot silently reduce the measured scope.
 
 Two seams keep the YDB owner out of the layer:
 

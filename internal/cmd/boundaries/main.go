@@ -184,7 +184,7 @@ func rules() []rule {
 		},
 		{
 			ID:         "neutral-packages-link-owners",
-			Summary:    "models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner",
+			Summary:    "models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner",
 			violations: neutralOwnerLinks,
 		},
 	}
