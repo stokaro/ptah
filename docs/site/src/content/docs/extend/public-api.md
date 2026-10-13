@@ -59,7 +59,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/yamlext` | The YAML schema contract: the owner claims a YAML parse selects. |
 | `core/hclext` | HCL block shapes, dialect selection, evaluated claims, and encoded blocks exchanged with feature owners. |
 | `core/selectext` | The scope selection contract: the selector types and fields an owner registers as data, and its one batched call per filtered side. |
-| `core/sqlext` | The SQL schema contract: the syntax an owner adds to the shared grammar, matched as data and read in one call per document, or a target's whole grammar, read in one call per load. |
+| `core/sqlext` | The SQL schema contract: the syntax an owner adds to the shared grammar, matched as data and read in one call per document, including named table children, or a target's whole grammar, read in one call per load. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/mysql/mysqllint` | The MySQL owner's migration lint rules for MySQL and MariaDB, published as data and checked once per run. |

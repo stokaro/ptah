@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -320,12 +321,24 @@ func (p *Parser) readOwnerClaims(ctx context.Context) error {
 }
 
 // claimOwnerTableElement claims an owner's element of a CREATE TABLE column
-// list. It stands where the element stood, as the index it declares.
+// list. It retains the element's order and its index or child declarations.
 func (p *Parser) claimOwnerTableElement(table *ast.CreateTableNode) bool {
 	index := &ast.IndexNode{Table: table.Name}
+	position := len(table.Elements)
 	claimed := p.claimOwnerSyntax(sqlext.TableElement, table.Name, func(value sqlext.Value) error {
 		if value.Index == nil {
-			return fmt.Errorf("%w: an owner's table element of %s declares no index", schemaext.ErrInvalidValue, table.Name)
+			objects, err := schemaext.NewObjects(value.Objects...)
+			if err != nil {
+				return err
+			}
+			combined, err := table.OwnedObjects.Merge(objects)
+			if err != nil {
+				return err
+			}
+			table.OwnedObjects = combined
+			table.Indexes = slices.DeleteFunc(table.Indexes, func(candidate *ast.IndexNode) bool { return candidate == index })
+			table.Elements[position] = ast.TableElement{Objects: objects.Refs()}
+			return nil
 		}
 		index.Name = value.Index.Name
 		index.Columns = []string{value.Index.Expression}
@@ -339,8 +352,8 @@ func (p *Parser) claimOwnerTableElement(table *ast.CreateTableNode) bool {
 }
 
 // claimOwnerAlterOperation claims an owner's ALTER TABLE operation. It stands
-// where the operation stood, as the owner's operation, and the index it
-// declares is a note of the parse.
+// where the operation stood, as the owner's operation. Its index or child
+// declarations are captured as notes of the parse.
 func (p *Parser) claimOwnerAlterOperation(table string) (ast.AlterOperation, bool) {
 	operation := &ast.ExtensionAlterOperation{}
 	claimed := p.claimOwnerSyntax(sqlext.AlterOperation, table, func(value sqlext.Value) error {
@@ -348,6 +361,16 @@ func (p *Parser) claimOwnerAlterOperation(table string) (ast.AlterOperation, boo
 			return fmt.Errorf("%w: an owner's ALTER TABLE %s operation carries no payload", schemaext.ErrInvalidValue, table)
 		}
 		operation.Payload = value.Operation
+		if len(value.Objects) > 0 {
+			objects, err := schemaext.NewObjects(value.Objects...)
+			if err != nil {
+				return err
+			}
+			if p.declaredObjects == nil {
+				p.declaredObjects = make(map[*ast.ExtensionAlterOperation]schemaext.Objects)
+			}
+			p.declaredObjects[operation] = objects
+		}
 		if value.Index != nil {
 			if p.declaredIndexes == nil {
 				p.declaredIndexes = make(map[*ast.ExtensionAlterOperation]sqlext.Index)
@@ -613,4 +636,10 @@ func (p *Parser) parseOwnedTablePrefix() (*ast.CreateTableNode, bool, error) {
 		p.ownerClaims[i].match.Claim.Subject = table.Name
 	}
 	return table, true, nil
+}
+
+// DeclaredObjects returns the immutable child declarations captured for an
+// owned ALTER TABLE operation. An unrecorded operation returns an empty set.
+func (p *Parser) DeclaredObjects(operation *ast.ExtensionAlterOperation) schemaext.Objects {
+	return p.declaredObjects[operation]
 }

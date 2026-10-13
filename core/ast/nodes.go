@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -101,8 +102,8 @@ type CreateTableNode struct {
 	// and a live server's SHOW CREATE TABLE returns them that way, so a reader
 	// that only understood standalone CREATE INDEX lost them (stokaro/ptah#1574).
 	Indexes []*IndexNode
-	// Elements is the order the table body declared its columns, constraints
-	// and indexes in.
+	// Elements is the order the table body declared its columns, constraints,
+	// indexes and owned objects in.
 	//
 	// Columns, Constraints and Indexes above are three slices, so between them
 	// they cannot say which came first, and on MySQL and MariaDB that is
@@ -225,9 +226,9 @@ func (n *CreateTableNode) SetSelectBody(body string) *CreateTableNode {
 
 // TableElement is one entry in a table body's declaration order.
 //
-// Exactly one field is set. Pointers rather than slice indexes, because an
-// index into a slice that is still being appended to is a second piece of
-// state to keep true, and a pointer cannot go stale.
+// Exactly one field is set. Common elements point to their nodes instead of
+// recording indexes into growing slices. Owned elements name their objects
+// by stable identities in CreateTableNode.OwnedObjects.
 type TableElement struct {
 	// Column is the element, when it was a column definition.
 	Column *ColumnNode
@@ -235,6 +236,9 @@ type TableElement struct {
 	Constraint *ConstraintNode
 	// Index is the element, when it was an inline index.
 	Index *IndexNode
+	// Objects names the child declarations this element contributes. Their
+	// values live in CreateTableNode.OwnedObjects; this slice records order.
+	Objects []objectidentity.ID
 }
 
 // AddConstraint adds a table-level constraint and returns the table node for chaining.

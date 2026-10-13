@@ -3140,9 +3140,18 @@ words it opens with, the words that may or may not follow them, the words that
 end it, and whether a document that names no target consults it too.
 Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
-`Value` it returns for each: an index a table element or an ALTER TABLE
-operation declares, the owner's operation payload, or facets of a view, a
+`Value` it returns for each: an index or named child objects a table element
+or an ALTER TABLE operation declares, the owner's operation payload, or facets of a view, a
 table, a column, a key or a routine.
+
+A `TableElement` returns either `Index` or `Objects`, never both. An
+`AlterOperation` requires its operation payload and may also declare an index
+or child objects. Each child uses an extension's declared kind and identifies
+its subject table as its parent. The schema reader refuses a child of another
+table and duplicate identities, including declarations in earlier files.
+`CreateTableNode.OwnedObjects` holds inline values, and `TableElement.Objects`
+records their identities in the table body's order. A shared DROP TABLE
+removes those children with their table.
 
 A `ViewClause`, a `TablePrefix` between CREATE and TABLE, a `TableOption`
 after a CREATE TABLE's column list, a
@@ -3216,11 +3225,13 @@ copy of the removal records, so it can end pending state without parsing the
 shared DROP TABLE grammar. A DROP TABLE removes the table's children and the subject coverage of
 the table and its children, including facet and child-namespace claims.
 
-A `Statement` pattern may read the name of the statement's object before it
-decides: `AfterName` are the words that must follow the qualified name, which
+A `Statement`, `TableElement` or `AlterOperation` pattern may read the
+object's name before it decides: `AfterName` are the words that must follow the qualified name, which
 the reader reads with its own grammar, and `Next` and `NotNext` then apply to
 the word after them. `CREATE TYPE x AS (` and `CREATE TYPE x AS ENUM` are
-told apart so, and `Candidate.MatchesNamed` is the test. An owner whose
+told apart so, as are `CONSTRAINT name WIDGET` and ordinary constraints.
+`Candidate.MatchesNamed` tests the pattern. A set freezes the registered
+patterns and returns independent candidates. An owner whose
 statement pattern matched syntax it does not own answers `Value.Declined`,
 with no other field: the reader reads the statement's text by itself with
 the shared grammar and places what it reads where the statement stood. Only

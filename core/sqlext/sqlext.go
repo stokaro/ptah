@@ -44,12 +44,12 @@ const (
 	// TableElement is an element of a CREATE TABLE column list, where a
 	// column or a table constraint stands. A span ends at the next top-level
 	// comma or at the parenthesis that closes the list. Its [Value] declares
-	// an index of the table.
+	// an index or named child objects of the table.
 	TableElement Site = "table-element"
 	// AlterOperation is one operation of an ALTER TABLE statement. A span
 	// ends at the next top-level comma or at the end of the statement. Its
 	// [Value] is the owner's operation, and may declare an index of the
-	// table too.
+	// table or named child objects too.
 	AlterOperation Site = "alter-operation"
 	// ViewClause is a clause of a CREATE MATERIALIZED VIEW statement between
 	// the view's name and AS. A span ends at a top-level AS or at the end of
@@ -112,7 +112,8 @@ type Pattern struct {
 	// as AS in `CREATE TYPE app.addr AS (`. The frontend reads the name with
 	// its own grammar for one: an identifier, then a dot and an identifier as
 	// often as the document writes them. Next and NotNext then apply to the
-	// word after AfterName. Only a [Statement] pattern takes it.
+	// word after AfterName. Statement, TableElement and AlterOperation
+	// patterns take it, including `CONSTRAINT name EXCLUDE` elements.
 	AfterName []string
 	// Next, when it is not empty, lists the words one of which must follow
 	// Words, or AfterName where the pattern has it.
@@ -198,7 +199,7 @@ type TableDeclaration struct {
 // Value is the owner's reading of one claim.
 type Value struct {
 	// Index is the index a table element or an ALTER TABLE operation
-	// declares. A table element requires one.
+	// declares. A table element requires an index or Objects, never both.
 	Index *Index
 	// Operation is the owner's payload of an ALTER TABLE operation, which an
 	// alter operation requires.
@@ -217,9 +218,10 @@ type Value struct {
 	// a Statement, never both, and a statement that declares a table declares
 	// and amends no object besides it.
 	Table *TableDeclaration
-	// Objects are the objects a statement declares, each of one of the
-	// extension's Kinds. The reader adds them to the document and refuses an
-	// object the document declares twice.
+	// Objects are the objects a statement, table element or ALTER TABLE
+	// operation declares, each of one of the extension's Kinds. Elements and
+	// operations require children of their subject table and take no Index
+	// beside them. The reader refuses duplicate child declarations.
 	Objects []schemaext.Object
 	// Replaces are new values of objects declared before the statement, in
 	// the document or in [Request.Declared], such as the comment a COMMENT ON
@@ -327,7 +329,7 @@ type Extension struct {
 	// the common coverage vocabulary, such as a YDB topic the document
 	// leaves unmanaged.
 	Header []coverage.Kind
-	// Kinds are the object kinds the owner's statements declare and amend.
+	// Kinds are the object kinds the owner's syntax declares and amends.
 	// A statement's objects must be of these kinds, and a request carries
 	// the objects of these kinds that earlier documents declared.
 	Kinds []schemaext.Kind
