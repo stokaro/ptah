@@ -93,6 +93,10 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
+	desired, err = normalizeFeatureFacets(ctx, conn, desired, database, info, runtime)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	checks, err := resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics)
 	if err != nil {
 		return nil, Diagnostics{}, err

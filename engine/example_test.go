@@ -91,3 +91,39 @@ func ExampleRuntime_NormalizeObjects() {
 	// a 6
 	// b 5
 }
+
+// ExampleRuntime_NormalizeFacets shows an owner attaching a target fact to a
+// table setting. The example supplies an offline answer instead of a probe.
+func ExampleRuntime_NormalizeFacets() {
+	provider := facetNormalizationProvider(facetNormalizationFunc(func(_ context.Context, request schemaext.FacetNormalizationRequest) (schemaext.FacetNormalizationResult, error) {
+		values, err := request.Desired.Records[0].Values.Replace(&conversionValue{ID: conversionFirst, Number: 12})
+		if err != nil {
+			return schemaext.FacetNormalizationResult{}, err
+		}
+		request.Desired.Records[0].Values = values
+		return schemaext.FacetNormalizationResult{Complete: true, Desired: request.Desired}, nil
+	}))
+	runtime, err := engine.New(provider)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	result, err := runtime.NormalizeFacets(context.Background(), facetNormalizationRequest())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, record := range result.Desired.Records {
+		values, err := record.Values.Values()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		for _, value := range values {
+			fmt.Println(record.Subject.Name.Source, value.Kind(), value.(*conversionValue).Number)
+		}
+	}
+	// Output:
+	// orders example.org/first 12
+	// orders example.org/second 2
+}
