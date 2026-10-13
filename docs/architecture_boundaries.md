@@ -51,7 +51,8 @@ number would let the debt return to it with the gate green the whole way.
 `neutral-packages-link-owners` holds the neutral layer of the
 [#4140](https://github.com/stokaro/ptah/issues/4140) design to its import rule.
 The layer is every package at or under `catalog`, `core`, `engine` (except
-`engine/builtin`), `internal/convert/goschematogo`, `migration/planner` and
+`engine/builtin`), `internal/convert/goschematogo`, `internal/goannotationcleanup`,
+`migration/planner` and
 `migration/schemadiff`. A finding is
 one neutral package and one owner it links through any chain of imports:
 `dialect/<name>`, `feature/<name>` or `engine/builtin`. Moving a type between two

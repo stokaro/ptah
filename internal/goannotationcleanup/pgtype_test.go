@@ -1,6 +1,7 @@
 package goannotationcleanup_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgtype"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationcleanup"
 )
 
@@ -46,7 +48,7 @@ func TestValidateParsed_AcceptsTypesTheOwnerHolds(t *testing.T) {
 	c := qt.New(t)
 	plan := typesPlan(c)
 
-	err := plan.ValidateParsed(&schemamodel.Database{}, ownerTypes("text", "int4"))
+	err := plan.ValidateParsed(context.Background(), builtintest.Annotations(), &schemamodel.Database{}, ownerTypes("text", "int4"))
 
 	c.Assert(err, qt.IsNil)
 }
@@ -76,7 +78,7 @@ func TestValidateParsed_RefusesATypeTheOwnerHoldsDifferently(t *testing.T) {
 			c := qt.New(t)
 			plan := typesPlan(c)
 
-			err := plan.ValidateParsed(&schemamodel.Database{}, test.exported)
+			err := plan.ValidateParsed(context.Background(), builtintest.Annotations(), &schemamodel.Database{}, test.exported)
 
 			c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
 			c.Assert(err, qt.ErrorMatches, test.want)

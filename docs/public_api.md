@@ -329,6 +329,16 @@ claim. `Set.Reader` reads one file's owner declarations for the frontend.
 `engine.Provider.Annotations` registers extensions, and
 `engine.Runtime.Annotations` returns the frozen set.
 
+`Extension.Retainer` checks whether an export retains the meaning of directives
+before source cleanup. `Set.Retained` sends each owner one batch per source file:
+its declarations, the file's table bindings, and the exported objects and table
+facets of its kinds. Results follow declaration order. A missing retainer leaves
+those directives unsafe to remove. Errors, cancellation and a result count that
+differs from the declaration count discard the whole reply. The shared cleaner
+selects owners through the same directive and target-scope routes as parsing;
+it imports no concrete feature model.
+
+
 Every goschema entry point takes the set first. The zero set is refused with
 `ErrUnselected`, and `None` reads the frontend's own directives only. A parse
 that does not select an owner ignores the owner's directives, as it ignores a

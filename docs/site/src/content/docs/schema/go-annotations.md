@@ -266,6 +266,12 @@ the [Go annotation reference](../../reference/go-annotations/) and must produce
 the corresponding parsed schema object. A misplaced role/function directive or
 a file-scoped RLS directive that resolves to no RLS object stops the operation
 with its source file and line; neither the HCL output nor Go sources change.
+For owner-defined directives, the selected owner also verifies that the HCL
+retains their settings and dialect scope. PostgreSQL extensions retain their
+schema, version, comment and creation guard; row-security policies retain their
+roles, clauses and composition, and table switches retain enablement and force.
+An owner without this verification cannot authorize annotation cleanup.
+
 Comments that only share a prefix with a directive, such as
 `//ptah:schema:tableau`, are ordinary comments and remain byte-for-byte intact.
 

@@ -47,8 +47,9 @@ func Annotations() annotation.Extension {
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
 			return pgpolicy.CompleteCoverage(schemaext.Desired)
 		},
-		Encoder: annotationEncoder{},
-		Encodes: []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind},
+		Encoder:  annotationEncoder{},
+		Retainer: annotationRetainer{},
+		Encodes:  []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind},
 	}
 }
 

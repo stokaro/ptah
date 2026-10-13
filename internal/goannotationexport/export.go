@@ -3,6 +3,7 @@ package goannotationexport
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -282,7 +283,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 		return renderedExport{}, ErrNoExportableSchema
 	}
 	if plan.options.Cleanup {
-		if err := plan.cleanup.ValidateParsed(db, exportedDB); err != nil {
+		if err := plan.cleanup.ValidateParsed(context.Background(), plan.options.Annotations, db, exportedDB); err != nil {
 			return renderedExport{}, fmt.Errorf("validate Go annotation cleanup coverage: %w", err)
 		}
 	}
