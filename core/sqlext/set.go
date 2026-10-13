@@ -43,11 +43,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 		extension.Facets = slices.Clone(extension.Facets)
 		patterns := make([]Pattern, 0, len(extension.Patterns))
 		for _, pattern := range extension.Patterns {
-			pattern.Words = slices.Clone(pattern.Words)
-			pattern.Next = slices.Clone(pattern.Next)
-			pattern.NotNext = slices.Clone(pattern.NotNext)
-			pattern.Stops = slices.Clone(pattern.Stops)
-			patterns = append(patterns, pattern)
+			patterns = append(patterns, clonePattern(pattern))
 		}
 		extension.Patterns = patterns
 		set.extensions = append(set.extensions, extension)
@@ -196,8 +192,8 @@ func validatePatterns(extension Extension) error {
 		if len(pattern.Words) == 0 || slices.ContainsFunc(pattern.Words, blankWord) {
 			return fmt.Errorf("SQL pattern %q of %s opens with no words", pattern.Name, extension.Owner)
 		}
-		if len(pattern.AfterName) > 0 && (pattern.Site != Statement || slices.ContainsFunc(pattern.AfterName, blankWord)) {
-			return fmt.Errorf("SQL pattern %q of %s names words after a name, which only a statement pattern takes, and each a word",
+		if len(pattern.AfterName) > 0 && (!namesObjects(pattern.Site) || slices.ContainsFunc(pattern.AfterName, blankWord)) {
+			return fmt.Errorf("SQL pattern %q of %s names words after a name, which require a statement, table element or alter operation pattern, and each a word",
 				pattern.Name, extension.Owner)
 		}
 	}
@@ -385,7 +381,7 @@ func (s Set) Candidates(target string, site Site) []Candidate {
 			if pattern.Site != site || (target == "" && pattern.Targeted) {
 				continue
 			}
-			candidates = append(candidates, Candidate{Pattern: pattern, extension: index})
+			candidates = append(candidates, Candidate{Pattern: clonePattern(pattern), extension: index})
 		}
 	}
 	return candidates
@@ -507,7 +503,8 @@ func ownedObjects(extension Extension, declared schemaext.Objects) ([]schemaext.
 
 // checkValue refuses a value that does not fit its claim's site: a statement
 // carries the owner's statement or the table it declares, one and not both,
-// only a statement declares a table or declares or amends objects, a
+// only a statement declares a table or amends objects, table elements and
+// operations may declare child objects, a
 // statement that declares a table names it and declares and amends nothing
 // else, a site that takes facets alone takes no index and no operation, every
 // facet is of one of the extension's Facets kinds, and every object is of one
@@ -527,7 +524,7 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 		}
 	}
 	if claim.Site != Statement {
-		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 ||
+		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || (!namesObjects(claim.Site) && len(value.Objects) > 0) || len(value.Replaces) > 0 ||
 			hasStatementRequirements(value) {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
@@ -536,9 +533,10 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with an index or an operation, which the site does not take",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}
-		return nil
-	}
-	if err := checkStatementValue(extension, claim, value); err != nil {
+		if err := checkElementValue(extension, claim, value); err != nil {
+			return err
+		}
+	} else if err := checkStatementValue(extension, claim, value); err != nil {
 		return err
 	}
 	for _, object := range slices.Concat(value.Objects, value.Replaces) {
@@ -656,4 +654,15 @@ func checkCombinedDeclarations(extension Extension, claims []Claim, values []Val
 // requirement must reject it both on another site and beside a declined claim.
 func hasStatementRequirements(value Value) bool {
 	return len(value.TableReferences) > 0 || value.UnmodeledReason != "" || value.DescribedBy != 0
+}
+
+// clonePattern isolates both registered grammar and the candidates handed to
+// callers. Each collection remains independent of the registration inputs.
+func clonePattern(pattern Pattern) Pattern {
+	pattern.Words = slices.Clone(pattern.Words)
+	pattern.AfterName = slices.Clone(pattern.AfterName)
+	pattern.Next = slices.Clone(pattern.Next)
+	pattern.NotNext = slices.Clone(pattern.NotNext)
+	pattern.Stops = slices.Clone(pattern.Stops)
+	return pattern
 }

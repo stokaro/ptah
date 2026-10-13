@@ -119,14 +119,14 @@ func TestNewSet_AcceptsNamedPatternsToldApart(t *testing.T) {
 	}
 }
 
-// TestNewSet_RefusesAfterNameOutsideAStatement pins that only a statement
-// pattern reads a name, and that every word after it is one word.
-func TestNewSet_RefusesAfterNameOutsideAStatement(t *testing.T) {
+// TestNewSet_RefusesAfterNameAtFacetSites pins that a named-object
+// pattern at a facet site cannot read a name, and every following word is one word.
+func TestNewSet_RefusesAfterNameAtFacetSites(t *testing.T) {
 	tests := []struct {
 		name    string
 		pattern sqlext.Pattern
 	}{
-		{name: "a table element", pattern: sqlext.Pattern{Name: "shape", Site: sqlext.TableElement, Words: []string{"INDEX"}, AfterName: []string{"ON"}}},
+		{name: "a table option", pattern: sqlext.Pattern{Name: "shape", Site: sqlext.TableOption, Words: []string{"INDEX"}, AfterName: []string{"ON"}}},
 		{name: "a blank word", pattern: sqlext.Pattern{Name: "shape", Site: sqlext.Statement, Words: []string{"CREATE", "TYPE"}, AfterName: []string{" "}}},
 	}
 	for _, test := range tests {
@@ -135,7 +135,7 @@ func TestNewSet_RefusesAfterNameOutsideAStatement(t *testing.T) {
 
 			set, err := sqlext.NewSet(extension("example.org/a", "a", shortParser{}, test.pattern))
 
-			c.Assert(err, qt.ErrorMatches, `SQL pattern "shape" of example.org/a names words after a name, which only a statement pattern takes, and each a word`)
+			c.Assert(err, qt.ErrorMatches, `SQL pattern "shape" of example.org/a names words after a name, which require a statement, table element or alter operation pattern, and each a word`)
 			c.Assert(set.Selected(), qt.IsFalse)
 		})
 	}

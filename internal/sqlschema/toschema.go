@@ -903,7 +903,7 @@ func appendCreateTable(
 		return err
 	}
 	recordCreatedKeyIndexes(database, document, tableSchema, keyIndexes)
-	return nil
+	return appendTableObjects(database, declaringDatabases(database, base), tableSchema, node.OwnedObjects, sourcePlatform)
 }
 
 // declaredOrder appends this table's indexes and constraints to the model and
@@ -933,6 +933,9 @@ func declaredOrder(
 	columns := 0
 	order := make([]namedElement, 0, len(node.Elements))
 	for _, element := range node.Elements {
+		if len(element.Objects) > 0 {
+			continue
+		}
 		if element.Column != nil {
 			columns++
 			continue
@@ -966,7 +969,7 @@ func ordersEverything(node *ast.CreateTableNode) bool {
 	indexes, constraints := 0, 0
 	for _, element := range node.Elements {
 		switch {
-		case element.Column != nil:
+		case element.Column != nil, len(element.Objects) > 0:
 		case element.Index != nil:
 			indexes++
 		default:
@@ -1041,6 +1044,9 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.ExtensionAlterOperation:
+		if objects := target.document.declaredObjects(typed); objects.Len() > 0 {
+			return appendTableObjects(database, target.databases, *target.table, objects, sourcePlatform)
+		}
 		if index, declared := target.document.declaredIndex(typed); declared {
 			return appendDeclaredIndex(database, target, index, sourcePlatform)
 		}

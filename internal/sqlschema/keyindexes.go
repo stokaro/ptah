@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/featureselect"
@@ -43,6 +44,7 @@ type Document struct {
 type parseNotes interface {
 	ForeignKeyIndex(index *ast.IndexNode) bool
 	DeclaredIndex(operation *ast.ExtensionAlterOperation) (sqlext.Index, bool)
+	DeclaredObjects(operation *ast.ExtensionAlterOperation) schemaext.Objects
 	OwnerStatement(statement *ast.ExtensionStatement) (parser.OwnerStatement, bool)
 }
 
@@ -205,4 +207,11 @@ func (k *keyIndexes) isDeclaredKeyIndex(table, name string) bool {
 	return slices.ContainsFunc(k.entries, func(entry keyIndex) bool {
 		return entry.table == table && entry.declared && strings.EqualFold(entry.name, name)
 	})
+}
+
+func (d *Document) declaredObjects(operation *ast.ExtensionAlterOperation) schemaext.Objects {
+	if d == nil || d.notes == nil {
+		return schemaext.Objects{}
+	}
+	return d.notes.DeclaredObjects(operation)
 }

@@ -95,6 +95,8 @@ type Parser struct {
 	// declaredIndexes are the indexes owners' ALTER TABLE operations declare;
 	// see [Parser.DeclaredIndex].
 	declaredIndexes map[*ast.ExtensionAlterOperation]sqlext.Index
+	// declaredObjects captures the child objects an owned ALTER operation adds.
+	declaredObjects map[*ast.ExtensionAlterOperation]schemaext.Objects
 	// declared are the objects the documents read before this one declared;
 	// see [WithDeclared].
 	declared schemaext.Objects
