@@ -42,7 +42,8 @@ func (r TableCreationRequest) Clone() TableCreationRequest {
 }
 
 // TableCreation contains computed effects, separate from authored intent. Facets
-// identifies the captured table or index owning each computed value set, using
+// identifies the captured table, index, primary key, or named constraint owning
+// each computed value set, using
 // the Desired representation for subsequent owner conversion to Observed.
 // They may supply undeclared defaults, but cannot restore an excluded kind.
 // Values carry no target bindings; the host retains existing bindings and binds
@@ -56,7 +57,7 @@ type TableCreation struct {
 	// declared values do not convert to, because it depends on the table
 	// rather than on the value alone: a conversion sees one value at a time,
 	// so it cannot know it. Each record names the table or one of its
-	// declared indexes and holds complete values in the Observed
+	// declared indexes or constraints and holds complete values in the Observed
 	// representation. A value replaces the conversion of its owner's value of
 	// that kind, or adds one where the declaration holds none, after every
 	// declared value has been converted. It cannot restore an excluded kind.

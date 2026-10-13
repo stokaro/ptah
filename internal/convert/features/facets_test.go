@@ -11,6 +11,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
@@ -52,6 +55,10 @@ func (s *facetService) ConvertFeatures(_ context.Context, request schemaext.Conv
 }
 
 func facetRuntime(c *qt.C, service *facetService) *engine.Runtime {
+	return facetRuntimeWithCreations(c, service, schemaprojection.IdentityCreations{})
+}
+
+func facetRuntimeWithCreations(c *qt.C, service *facetService, creations schemaprojection.TableCreationService) *engine.Runtime {
 	var codecs []schemaext.Codec
 	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 		encode := func(value schemaext.Payload) (json.RawMessage, error) { return json.Marshal(value) }
@@ -61,7 +68,7 @@ func facetRuntime(c *qt.C, service *facetService) *engine.Runtime {
 			Encode:     encode, Canonical: encode, Decode: func(data json.RawMessage) (schemaext.Payload, error) { return schemaext.DecodeJSON[*facetValue](data) },
 		})
 	}
-	runtime, err := engine.New(engine.Provider{ID: "example.org/facets", Targets: []engine.Target{{Name: "postgres", Preparation: schemapreparation.Identity{}, Creations: schemaprojection.IdentityCreations{}}}, Codecs: codecs,
+	runtime, err := engine.New(engine.Provider{ID: "example.org/facets", Targets: []engine.Target{{Name: "postgres", Preparation: schemapreparation.Identity{}, Creations: creations}}, Codecs: codecs,
 		Conversions: []engine.Conversion{{Target: "postgres", Kinds: []schemaext.Kind{facetKind}, Service: service}},
 	})
 	c.Assert(err, qt.IsNil)
@@ -204,4 +211,72 @@ func TestSchemaConversionPreservesFacetBindingsAndExclusions(t *testing.T) {
 	c.Assert(restored.Tables[0].Facets.Len(), qt.Equals, 0)
 	c.Assert(restored.Tables[0].Facets.IsZero(), qt.IsFalse)
 	c.Assert(desired.Tables[0].Facets.Len(), qt.Equals, 1)
+}
+
+type constraintCreations struct{}
+
+func (constraintCreations) ProjectTableCreations(_ context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {
+	result := schemaprojection.TableCreationResult{Complete: true}
+	for _, input := range request.Tables {
+		output := schemaprojection.TableCreation{Subject: input.Subject}
+		for _, constraint := range input.Declaration.Constraints {
+			subject, _ := schemacapture.ConstraintSubject(input.Subject, constraint.Type, constraint.Name, request.Identifiers)
+			output.Facets = append(output.Facets, schemaext.FacetRecord{Subject: subject, Values: must.Must(schemaext.NewFacets(&facetValue{Number: 20, Representation: schemaext.Desired}))})
+			output.Observed = append(output.Observed, schemaext.FacetRecord{Subject: subject, Values: must.Must(schemaext.NewFacets(&facetValue{Number: 30, Representation: schemaext.Observed}))})
+		}
+		result.Tables = append(result.Tables, output)
+	}
+	return result, nil
+}
+
+func TestSchemaConversionProjectsNamedConstraintFacets(t *testing.T) {
+	c := qt.New(t)
+	runtime := facetRuntimeWithCreations(c, &facetService{}, constraintCreations{})
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "items", StructName: "Item"}},
+		Constraints: []schemamodel.Constraint{{Name: "positive", StructName: "Item", Type: "CHECK", CheckExpression: "id > 0",
+			Facets: must.Must(schemaext.NewFacets(&facetValue{Number: 10, Representation: schemaext.Desired}))}}}
+	models := runtime.Codecs().Definitions()
+	model := slices.IndexFunc(models, func(model schemaext.CodecIdentity) bool { return model.Representation == schemaext.Desired })
+	desired.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: models[model], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil))
+	projected, err := goschematodb.ToDBSchema(t.Context(), desired, "postgres", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(projected.Constraints, qt.HasLen, 1)
+	value, found, err := schemaext.FacetAs[*facetValue](projected.Constraints[0].Facets, facetKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*value, qt.Equals, facetValue{Number: 30, Representation: schemaext.Observed})
+	restored, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), projected, "postgres", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(restored.Constraints, qt.HasLen, 1)
+	source, _, err := schemaext.FacetAs[*facetValue](desired.Constraints[0].Facets, facetKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(source.Number, qt.Equals, 10)
+	subject := objectidentity.NewBuilder(identifier.ForDialect("postgres")).ConstraintParts("", "items", "positive")
+	c.Assert(projected.FeatureCoverage.Lookup(facetKind, subject).State, qt.Equals, schemaext.Complete)
+}
+
+// Column shorthand cannot carry a constraint's attached owner state.
+func TestSchemaConversionKeepsFacetedSingleColumnConstraints(t *testing.T) {
+	for _, kind := range []string{"UNIQUE", "FOREIGN KEY"} {
+		t.Run(kind, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := facetRuntime(c, &facetService{})
+			held := must.Must(schemaext.NewFacets(&facetValue{Number: 7, Representation: schemaext.Observed}))
+			observed := &catalog.Database{Tables: []catalog.Table{{Name: "items", Columns: []catalog.Column{{Name: "id", DataType: "integer", IsUnique: kind == "UNIQUE"}}}},
+				Constraints: []catalog.Constraint{{Name: "items_id_key", TableName: "items", Type: kind, ColumnName: "id", ColumnNames: []string{"id"},
+					ForeignTable: new("parent"), ForeignColumn: new("id"), ForeignColumns: []string{"id"}, Facets: held}}}
+			restored, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observed, "postgres", runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(restored.Constraints, qt.HasLen, 1)
+			value, found, err := schemaext.FacetAs[*facetValue](restored.Constraints[0].Facets, facetKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(*value, qt.Equals, facetValue{Number: 7, Representation: schemaext.Desired})
+			c.Assert(restored.Fields[0].Foreign, qt.Equals, "")
+			roundTrip, err := goschematodb.ToDBSchema(t.Context(), restored, "postgres", runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(roundTrip.Constraints, qt.HasLen, 1)
+			c.Assert(roundTrip.Constraints[0].Facets.Equal(held), qt.IsTrue)
+		})
+	}
 }

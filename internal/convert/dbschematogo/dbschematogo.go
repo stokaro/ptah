@@ -839,10 +839,10 @@ func convertConstraints(
 // carriedByItsColumn reports whether a constraint is a foreign key over at most
 // one column, which the column carries unless another key over it does. A key
 // the server has not validated is not: a column's reference has no room for
-// NOT VALID, so it stays a constraint of the table.
+// NOT VALID or owner facets, so either keeps it a constraint of the table.
 func carriedByItsColumn(dbConstraint catalog.Constraint) bool {
 	return strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") && len(dbConstraint.ColumnNamesOrDefault()) <= 1 &&
-		!dbConstraint.NotValid
+		!dbConstraint.NotValid && dbConstraint.Facets.IsZero()
 }
 
 func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[string]string) (schemamodel.Constraint, bool) {
@@ -872,7 +872,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		// key is the other exception, for the same reason
 		// (stokaro/ptah#3824).
 		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) &&
-			!nullsNotDistinct(dbConstraint) && !dbConstraint.Deferrable {
+			!nullsNotDistinct(dbConstraint) && !dbConstraint.Deferrable && dbConstraint.Facets.IsZero() {
 			return schemamodel.Constraint{}, false
 		}
 	case "CHECK":
@@ -1294,8 +1294,8 @@ func indexForeignKeysByColumn(dbSchema *catalog.Database) columnForeignKeys {
 	for _, c := range dbSchema.Constraints {
 		// A key the server has not validated stays a constraint of the table:
 		// a column's reference has no room for NOT VALID.
-		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil ||
-			len(c.ColumnNamesOrDefault()) != 1 || c.NotValid {
+		if !carriedByItsColumn(c) || c.ColumnName == "" || c.ForeignTable == nil ||
+			len(c.ColumnNamesOrDefault()) != 1 {
 			continue
 		}
 		column := tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}

@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
-	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
@@ -18,7 +16,7 @@ import (
 func projectTableFeatures(ctx context.Context, current schemacapture.TableObservation, recovery []schemaext.Reversal, semantics identifier.Semantics, codecs schemaext.Registry) (schemacapture.TableObservation, error) {
 	builder := objectidentity.NewBuilder(semantics)
 	parent := builder.TableParts(current.Table.Schema, current.Table.Name)
-	// The table, each captured index and the primary key own a facet record.
+	// The table, each captured index and each named constraint own a facet record.
 	// An index facet is projected onto the index it names, never onto the
 	// table or a new record, and a key's onto the key.
 	records := []schemaext.FacetRecord{{Subject: parent, Values: current.Table.Facets}}
@@ -29,14 +27,13 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 		records = append(records, schemaext.FacetRecord{Subject: indexes[i], Values: index.Facets})
 		owners[indexes[i].Key()] = true
 	}
-	// So does the table's primary key, whose PRIMARY KEY constraint holds
-	// its settings whatever the server named it.
-	key, primary := objectidentity.PrimaryKeyOf(parent), slices.IndexFunc(current.Constraints, func(constraint catalog.Constraint) bool {
-		return strings.EqualFold(constraint.Type, "PRIMARY KEY")
-	})
-	if primary >= 0 {
-		records = append(records, schemaext.FacetRecord{Subject: key, Values: current.Constraints[primary].Facets})
-		owners[key.Key()] = true
+	constraints, constraintRecords, err := capturedConstraintFacets(current, parent, semantics)
+	if err != nil {
+		return schemacapture.TableObservation{}, err
+	}
+	records = append(records, constraintRecords...)
+	for _, record := range constraintRecords {
+		owners[record.Subject.Key()] = true
 	}
 	var objects []schemaext.ObjectProjection
 	var facets []schemaext.FacetProjection
@@ -80,9 +77,9 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 	for i, subject := range indexes {
 		current.Indexes[i].Facets = projected[subject.Key()]
 	}
-	if primary >= 0 {
-		current.Constraints = slices.Clone(current.Constraints)
-		current.Constraints[primary].Facets = projected[key.Key()]
+	current.Constraints = slices.Clone(current.Constraints)
+	for i, subject := range constraints {
+		current.Constraints[i].Facets = projected[subject.Key()]
 	}
 	return current, nil
 }
@@ -90,4 +87,30 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 func projectedChildOf(parent, child objectidentity.ID) bool {
 	return child.Catalog.Normalized == parent.Catalog.Normalized && child.Schema.Normalized == parent.Schema.Normalized &&
 		child.Parent.Normalized != "" && child.Parent.Normalized == parent.Name.Normalized
+}
+
+func capturedConstraintFacets(current schemacapture.TableObservation, parent objectidentity.ID, semantics identifier.Semantics) (map[int]objectidentity.ID, []schemaext.FacetRecord, error) {
+	constraints := make(map[int]objectidentity.ID, len(current.Constraints))
+	var records []schemaext.FacetRecord
+	owners := make(map[objectidentity.Key]bool)
+	builder := objectidentity.NewBuilder(semantics)
+	for i, constraint := range current.Constraints {
+		if constraint.TableName != "" && builder.TableParts(constraint.Schema, constraint.TableName).Key() != parent.Key() {
+			return nil, nil, fmt.Errorf("%w: constraint %q is captured under another table", schemaext.ErrInvalidValue, constraint.Name)
+		}
+		subject, named := schemacapture.ConstraintSubject(parent, constraint.Type, constraint.Name, semantics)
+		if !named {
+			if !constraint.Facets.IsZero() {
+				return nil, nil, fmt.Errorf("%w: an unnamed constraint cannot own projected facets", schemaext.ErrInvalidValue)
+			}
+			continue
+		}
+		if owners[subject.Key()] {
+			return nil, nil, fmt.Errorf("%w: duplicate captured facet owner %s", schemaext.ErrInvalidValue, subject)
+		}
+		constraints[i] = subject
+		records = append(records, schemaext.FacetRecord{Subject: subject, Values: constraint.Facets})
+		owners[subject.Key()] = true
+	}
+	return constraints, records, nil
 }

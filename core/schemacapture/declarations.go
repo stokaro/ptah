@@ -111,3 +111,23 @@ func nilWhenEmpty[T any](values []T) []T {
 	}
 	return values
 }
+
+// ConstraintSubject identifies the owner of a common constraint's facets.
+// A primary key uses its table's key identity regardless of its name. Every
+// other constraint needs a name, scoped to the supplied table. An unnamed
+// constraint or table returns false; it cannot own separately addressed state.
+// The table's resolved catalog and schema are preserved verbatim.
+func ConstraintSubject(table objectidentity.ID, kind, name string, semantics identifier.Semantics) (objectidentity.ID, bool) {
+	if table.Name.Empty() {
+		return objectidentity.ID{}, false
+	}
+	if strings.EqualFold(strings.TrimSpace(kind), "PRIMARY KEY") {
+		return objectidentity.PrimaryKeyOf(table), true
+	}
+	if name == "" {
+		return objectidentity.ID{}, false
+	}
+	subject := objectidentity.NewBuilder(semantics).ConstraintParts(table.Schema.Source, table.Name.Source, name)
+	subject.Catalog, subject.Schema, subject.Parent = table.Catalog, table.Schema, table.Name
+	return subject, !subject.Name.Empty()
+}
