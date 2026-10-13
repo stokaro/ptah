@@ -301,6 +301,10 @@ named with its argument list, with or without argument names, or by its name
 alone when the document declares one routine of that name. A trigger, a policy
 and a constraint are named `ON` their table.
 
+Use `COMMENT ON ... IS NULL` to clear a comment. The object must already be
+declared, in the same file or an earlier file. A quoted `'NULL'` sets the
+comment to the text `NULL`.
+
 A statement that cannot be applied is refused by name, with the file it came
 from:
 
@@ -309,8 +313,7 @@ from:
 - a routine named by its name alone when the document declares more than one
   overload of it, or a function named as a procedure;
 - a comment on a domain's constraint (`ON DOMAIN`) or on any other kind of
-  object, such as a foreign table or a cast;
-- `IS NULL`.
+  object, such as a foreign table or a cast.
 
 A document may declare several overloads of a function or a procedure, as
 `pg_dump` writes them. Each is a routine of its own, told apart by its input
