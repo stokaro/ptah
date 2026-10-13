@@ -1,19 +1,18 @@
 package goannotationcleanup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/feature/pgextension"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
-	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 )
@@ -22,14 +21,19 @@ import (
 // attachment and that directives the parser can collapse or skip produced the
 // corresponding schema object. Callers must run this against the same captured
 // source view before destructive cleanup.
-func (p *Plan) ValidateParsed(sourceDB, exportedDB *schemamodel.Database) error {
+func (p *Plan) ValidateParsed(ctx context.Context, owners annotation.Set, sourceDB, exportedDB *schemamodel.Database) error {
+	owned, err := p.retainedOwners(ctx, owners, sourceDB, exportedDB)
+	if err != nil {
+		return err
+	}
 	var validationErrors []error
 	for _, removal := range p.removals() {
 		if err := annotationAttachmentError(p.catalog, removal); err != nil {
 			validationErrors = append(validationErrors, err)
 			continue
 		}
-		if !annotationRepresented(removal, sourceDB, exportedDB) {
+		retained, handled := owned[removal.annotation.Path][removal.annotation.Line]
+		if !retained && (handled || !annotationRepresented(removal, sourceDB, exportedDB)) {
 			validationErrors = append(validationErrors, fmt.Errorf(
 				"%w: %s:%d: //%s did not produce a schema object",
 				ErrUnexportedAnnotation,
@@ -103,7 +107,6 @@ var representationMatchers = map[string]representationMatcher{
 	"ptah:schema:schema":           schemaRepresented,
 	"ptah:schema:constraint":       constraintRepresented,
 	"ptah:schema:enum":             enumRepresented,
-	"ptah:schema:extension":        extensionRepresented,
 	"ptah:schema:function":         functionRepresented,
 	"ptah:schema:sequence":         sequenceRepresented,
 	"ptah:schema:domain":           domainRepresented,
@@ -144,13 +147,6 @@ func enumRepresented(removal removedLine, _, exportedDB *schemamodel.Database) b
 			enum.Schema == removal.values["schema"] &&
 			slices.Equal(enum.Values, splitAnnotationList(removal.values["values"]))
 	})
-}
-
-// extensionRepresented reports whether the export holds the extension the
-// removed annotation named, as the extension owner's object.
-func extensionRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
-	_, owned, err := exportedDB.FeatureObjects.Get(pgextension.Ref(removal.values["name"]))
-	return owned && err == nil
 }
 
 func functionRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
@@ -480,7 +476,7 @@ func embeddedModeMaterializesFields(mode string) bool {
 }
 
 func rlsPolicyRepresented(removal removedLine, database *schemamodel.Database) bool {
-	return ownerPolicyRepresented(removal, database) || slices.ContainsFunc(database.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
+	return slices.ContainsFunc(database.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
 		return policy.Name == removal.values["name"] &&
 			sameTableRef(policy.Table, removal.values["table"]) &&
 			policy.PolicyFor == canonicalRLSPolicyFor(removal.values["for"]) &&
@@ -491,44 +487,6 @@ func rlsPolicyRepresented(removal removedLine, database *schemamodel.Database) b
 	})
 }
 
-// ownerPolicyRepresented reports whether the PostgreSQL row-security owner
-// holds the policy the removed annotation declared: one of its name on its
-// table, declaring what the annotation's attributes declare.
-func ownerPolicyRepresented(removal removedLine, database *schemamodel.Database) bool {
-	declared, err := pgpolicysource.Attributes{
-		For: removal.values["for"], To: removal.values["to"], Using: removal.values["using"],
-		WithCheck: removal.values["with_check"], Comment: removal.values["comment"],
-		Restrictive: strings.EqualFold(strings.TrimSpace(removal.values["as"]), "RESTRICTIVE"),
-	}.Policy()
-	if err != nil {
-		return false
-	}
-	objects, err := database.FeatureObjects.All()
-	if err != nil {
-		return false
-	}
-	return slices.ContainsFunc(objects, func(object schemaext.Object) bool {
-		table := schemamodel.QualifyTableName(object.Ref.Schema.Authored(), object.Ref.Parent.Source)
-		return object.Ref.Name.Source == removal.values["name"] && sameTableRef(table, removal.values["table"]) &&
-			object.Value.Equal(&declared)
-	})
-}
-
-// ownerSwitchesFor returns the row-level security switches the owner holds
-// for the table a removed annotation names.
-func ownerSwitchesFor(database *schemamodel.Database, removal removedLine) []*pgpolicy.DesiredTableState {
-	var switches []*pgpolicy.DesiredTableState
-	for _, table := range database.Tables {
-		if !sameTableRef(table.QualifiedName(), removal.values["table"]) && !sameTableRef(table.Name, removal.values["table"]) {
-			continue
-		}
-		if state, found, err := schemaext.FacetAs[*pgpolicy.DesiredTableState](table.Facets, pgpolicy.TableStateKind); err == nil && found {
-			switches = append(switches, state)
-		}
-	}
-	return switches
-}
-
 func canonicalRLSPolicyFor(value string) string {
 	if value == "" {
 		return "ALL"
@@ -537,12 +495,6 @@ func canonicalRLSPolicyFor(value string) string {
 }
 
 func rlsEnableRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
-	if source := ownerSwitchesFor(sourceDB, removal); len(source) > 0 {
-		exported := ownerSwitchesFor(exportedDB, removal)
-		return len(exported) == len(source) && slices.EqualFunc(source, exported, func(a, b *pgpolicy.DesiredTableState) bool {
-			return a.Enabled == b.Enabled && a.Forced == b.Forced && a.Comment == b.Comment
-		})
-	}
 	tables := sourceRLSEnabledTablesForRemoval(sourceDB, removal)
 	if len(tables) == 0 {
 		return false

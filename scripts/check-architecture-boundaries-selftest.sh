@@ -245,4 +245,18 @@ require_refusal "Go annotation export transitively linking a concrete feature"
 rm -f "$target"
 require_acceptance "the repaired Go annotation writer's import graph"
 
-echo "check-architecture-boundaries-selftest: OK (13 refusals, 2 false-positive controls)"
+# Cleanup checks selected owners through the annotation contract too.
+target="$tree/internal/goannotationcleanup/boundaries_selftest_defect.go"
+for dependency in feature/boundaryfixture internal/boundaryfixture; do
+  cat >"$target" <<GO
+package goannotationcleanup
+
+import _ "ptah.run/$dependency"
+GO
+  (cd "$tree" && go build ./internal/goannotationcleanup)
+  require_refusal "Go annotation cleanup linking $dependency"
+  rm -f "$target"
+  require_acceptance "the repaired Go annotation cleanup"
+done
+
+echo "check-architecture-boundaries-selftest: OK (15 refusals, 2 false-positive controls)"

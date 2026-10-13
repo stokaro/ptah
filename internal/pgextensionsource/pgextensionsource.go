@@ -45,9 +45,10 @@ func Annotations() annotation.Extension {
 		Kinds: []schemaext.Kind{pgextension.ExtensionKind},
 		TargetScopes: []annotation.TargetScope{{Directive: Directive, Targets: Family(), Unscoped: true,
 			Label: "PostgreSQL-family targets"}},
-		Decode:  decodeDirective,
-		Encoder: annotationEncoder{},
-		Encodes: []schemaext.Kind{pgextension.ExtensionKind},
+		Decode:   decodeDirective,
+		Encoder:  annotationEncoder{},
+		Retainer: annotationRetainer{},
+		Encodes:  []schemaext.Kind{pgextension.ExtensionKind},
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
 			return pgextension.CompleteCoverage(schemaext.Desired)
 		},

@@ -170,6 +170,9 @@ type Extension struct {
 	// the writer refuses an object or a facet of Kinds it has no spelling of
 	// its own for.
 	Encoder Encoder
+	// Retainer proves that an export preserves directives before source cleanup.
+	// Without it, cleanup refuses the owner's directives.
+	Retainer Retainer
 	// Encodes are the models of Kinds the Encoder writes. It is required with
 	// an Encoder and refused without one. A model of Kinds it leaves out, such
 	// as a setting the writer spells as a platform property, is not handed

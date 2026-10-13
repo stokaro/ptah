@@ -1,6 +1,7 @@
 package goannotationcleanup_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationcleanup"
 )
 
@@ -23,7 +25,7 @@ func TestValidateParsed_AcceptsAnExtensionTheOwnerHolds(t *testing.T) {
 	exported := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{}))))}
 
-	err := plan.ValidateParsed(&schemamodel.Database{}, exported)
+	err := plan.ValidateParsed(context.Background(), builtintest.Annotations(), &schemamodel.Database{}, exported)
 
 	c.Assert(err, qt.IsNil)
 }
@@ -37,7 +39,7 @@ func TestValidateParsed_RefusesAnExtensionTheOwnerDoesNotHold(t *testing.T) {
 	exported := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		must.Must(pgextension.DesiredObject(pgextension.Ref("PG_TRGM"), pgextension.DesiredExtension{}))))}
 
-	err := plan.ValidateParsed(&schemamodel.Database{}, exported)
+	err := plan.ValidateParsed(context.Background(), builtintest.Annotations(), &schemamodel.Database{}, exported)
 
 	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
 	c.Assert(err, qt.ErrorMatches, `.*//ptah:schema:extension did not produce a schema object`)
