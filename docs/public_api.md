@@ -3193,11 +3193,18 @@ a block inside a `table`, with no labels.
   any other value as `Text` reads it, with `Kind` Text. An owner can then tell
   an expression from a literal. `Number` is the writer's alone, and a shape
   that lists one is refused.
-- A top-level shape may list `Children`: blocks nested in it one level deep,
-  each with one label and its own attribute list, which takes no reference.
-  The owner gets them in `Claim.Children` in document order. The reader
-  refuses a second child of one type and name, an attribute the child does not
-  list, and a nested block that is no child, positioned at it.
+- A `TopLevel` or `InTable` shape may list `Children`, nested one level deep.
+  Each child takes one name label unless `Child.Unlabeled` is true. Unlabeled
+  children take no labels and may repeat. The owner receives `Claim.Children`
+  in document order. Named children of one type have distinct names. Unknown
+  attributes and blocks are refused at their source positions. Children may
+  declare references to local columns; other reference kinds are refused.
+- `Ref` and `Refs` with `Refers: "column"` carry local column names, including
+  names with literal dots. The reader accepts parsed references such as
+  `column["tenant.id"]`, parentheses, conditional references, and literal names.
+  It refuses qualified table references and values that name no local column.
+  The owner checks whether a referenced column exists. The writer emits these
+  values as column references and refuses a column reference with a schema.
 - A `Ref` attribute is a required reference to an object of the type its
   `Refers` names, which the owner receives as a `Reference{Kind, Schema,
   Name}`. A reference to a `table` the document declares carries that table's
@@ -3259,11 +3266,11 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
   does not depend on registration. `UserTypes` stands after the sequences and
   before the enums, and the writer's own domains, composite types and ranges
   are ordered there with the owners' blocks by the same rule.
-- A top-level block may write `Children`, each an `EncodedChild` with a type,
-  one label and its attributes. The writer writes them after the block's
-  attributes in the owner's order and never sorts them. `Set.Encode` refuses
-  a child of a block in a table, a child without a type or a name, one
-  written twice, and one whose type is an attribute of the block.
+- Top-level blocks and blocks `WithinTable` may write `Children`. Each
+  `EncodedChild` has a type, attributes, and either a name or `Unlabeled: true`.
+  An unlabeled child requires an empty name. Children follow the block's
+  attributes in the owner's order. `Set.Encode` refuses duplicate named
+  children, missing required names, and child types that clash with attributes.
 - A block's `Losses` are reported at its `Path`, the owner's display path, which
   nothing parses, before the block; an `Unwritten` block reports them and is
   left out. The Atlas-compatible surface leaves out an owner's block of a type

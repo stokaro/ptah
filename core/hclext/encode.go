@@ -146,7 +146,7 @@ const (
 	WithinTable Placement = "within-table"
 )
 
-// EncodedBlock is one top-level block an owner writes.
+// EncodedBlock is one top-level block or table child an owner writes.
 type EncodedBlock struct {
 	// Type is the block's type, such as "synonym".
 	Type string
@@ -171,8 +171,8 @@ type EncodedBlock struct {
 	Attributes []EncodedAttribute
 	// Children are blocks nested in the block, one level deep, such as the
 	// fields of a composite type. The writer writes them after the
-	// attributes, in the owner's order, and never sorts them. Only a
-	// top-level block takes children.
+	// attributes, in the owner's order, and never sorts them. Top-level
+	// blocks and blocks WithinTable take children.
 	Children []EncodedChild
 	// Path names the block in a diagnostic: the writer reports Losses at it,
 	// and the Atlas-compatible surface's decision to leave the block out. It
@@ -197,10 +197,12 @@ type EncodedBlock struct {
 	Targets []string
 }
 
-// EncodedChild is a block nested in an [EncodedBlock]. It writes one label,
-// its name, and its attributes in order, which may be none. No two children
-// of a block share a type and a name.
+// EncodedChild is a block nested in an [EncodedBlock]. It writes its
+// attributes in order. Named children of one type have distinct names;
+// unlabeled children may repeat and keep their order.
 type EncodedChild struct {
+	// Unlabeled writes no label and requires Name to be empty.
+	Unlabeled bool
 	// Type is the child's type, such as "field".
 	Type string
 	// Name is its label.
@@ -464,23 +466,23 @@ func checkEncodedBlock(extension Extension, block EncodedBlock) error {
 	return checkEncodedChildren(extension, block, names)
 }
 
-// checkEncodedChildren refuses children of a block in a table, a child
-// without a type or a name, one written twice or whose type is the name of
+// checkEncodedChildren refuses a child without a type or a required name,
+// a duplicate named child or one whose type is the name of
 // one of the block's attributes, and a child's attribute the writer cannot
 // write. attributes are the names of the block's attributes.
 func checkEncodedChildren(extension Extension, block EncodedBlock, attributes map[string]bool) error {
-	if len(block.Children) > 0 && block.Placement == WithinTable {
-		return fmt.Errorf("%w: HCL encoder of %s wrote block %q in a table with children, which only a top-level block takes",
-			schemaext.ErrInvalidValue, extension.Owner, block.Type)
-	}
 	type key struct{ kind, name string }
 	written := make(map[key]bool, len(block.Children))
 	for _, child := range block.Children {
-		if strings.TrimSpace(child.Type) == "" || strings.TrimSpace(child.Name) == "" || attributes[child.Type] {
+		if child.Unlabeled && child.Name != "" {
+			return fmt.Errorf("%w: HCL encoder of %s wrote unlabeled child %q with name %q",
+				schemaext.ErrInvalidValue, extension.Owner, child.Type, child.Name)
+		}
+		if strings.TrimSpace(child.Type) == "" || (!child.Unlabeled && strings.TrimSpace(child.Name) == "") || attributes[child.Type] {
 			return fmt.Errorf("%w: HCL encoder of %s wrote block %q with child %q %q without a type or a name, or under an attribute's name",
 				schemaext.ErrInvalidValue, extension.Owner, block.Type, child.Type, child.Name)
 		}
-		if written[key{child.Type, child.Name}] {
+		if !child.Unlabeled && written[key{child.Type, child.Name}] {
 			return fmt.Errorf("%w: HCL encoder of %s wrote %s %q of block %q twice",
 				schemaext.ErrDuplicate, extension.Owner, child.Type, child.Name, block.Type)
 		}
@@ -531,8 +533,8 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 }
 
 // writable reports whether the writer can write value: a string, a bool,
-// decimal digits, SQL text, a reference to a table, or a list of roles and of
-// names of no kind. The writer quotes any SQL text inside its sql() call. A
+// decimal digits, SQL text, a table or local column reference, or a list of
+// local columns, roles and names of no kind. The writer quotes any SQL text inside its sql() call. A
 // [Text] and a [TypeName] are what the reader reads, and an owner writes a
 // type as SQL.
 func writable(value Value) bool {
@@ -542,10 +544,10 @@ func writable(value Value) bool {
 	case Number:
 		return value.Text != "" && strings.TrimFunc(value.Text, func(r rune) bool { return r >= '0' && r <= '9' }) == ""
 	case Ref:
-		return value.Reference != nil && value.Reference.Kind == "table" && value.Reference.Name != ""
+		return value.Reference != nil && value.Reference.Name != "" && (value.Reference.Kind == "table" || (value.Reference.Kind == "column" && value.Reference.Schema == ""))
 	case Refs:
 		return !slices.ContainsFunc(value.References, func(element Reference) bool {
-			return element.Name == "" || (element.Kind != "" && element.Kind != "role")
+			return element.Name == "" || (element.Kind != "" && element.Kind != "role" && element.Kind != "column") || (element.Kind == "column" && element.Schema != "")
 		})
 	default:
 		return false
