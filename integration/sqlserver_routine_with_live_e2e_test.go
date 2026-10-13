@@ -97,7 +97,7 @@ func principalProcedure(principal, body string) string {
 // login, auditor and reviewer, for a routine to run as.
 func principalDatabase(c *qt.C, ctx context.Context) (string, *sql.DB) {
 	c.Helper()
-	url, db := newSQLServerMigrationDatabase(c, ctx, dbtarget.URL(c, dbtarget.SQLServer))
+	url, db := newSQLServerMigrationDatabase(c, ctx, dbtarget.URL(c, dbtarget.SQLServer), "")
 	for _, user := range []string{"auditor", "reviewer"} {
 		_, err := db.ExecContext(ctx, "CREATE USER "+user+" WITHOUT LOGIN")
 		c.Assert(err, qt.IsNil)
@@ -337,10 +337,8 @@ func TestSchemaApplySQLServerPrincipalCaseLiveE2E(t *testing.T) {
 			c := qt.New(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
-			url, db := newSQLServerMigrationDatabase(c, ctx, dbtarget.URL(c, dbtarget.SQLServer))
-			_, err := db.ExecContext(ctx, "ALTER DATABASE CURRENT COLLATE "+test.collation)
-			c.Assert(err, qt.IsNil)
-			_, err = db.ExecContext(ctx, test.users)
+			url, db := newSQLServerMigrationDatabase(c, ctx, dbtarget.URL(c, dbtarget.SQLServer), test.collation)
+			_, err := db.ExecContext(ctx, test.users)
 			c.Assert(err, qt.IsNil)
 			first := writeSQLSchema(c, principalProcedure("'auditor'", "SELECT 1;"))
 			out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", first, "--auto-approve")
