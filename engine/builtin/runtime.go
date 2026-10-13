@@ -35,6 +35,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/lintscan"
+	"ptah.run/internal/mssqlroutineprep"
 	mysqlrules "ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
 	ydbplanner "ptah.run/internal/planner/dialects/ydb"
@@ -100,6 +101,7 @@ func New() (*engine.Runtime, error) {
 			// The SQL Server owner judges PolyBase's drops, which a safety
 			// assessment reads in place of their words.
 			provider.Targets[0].Splitter = mssqllint.Splitter{}
+			provider.Targets[0].Lowering = mssqlroutineprep.Service{}
 			registerSQLServerRoutineServices(&provider)
 		}
 		if name == platform.YDB {
