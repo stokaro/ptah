@@ -223,9 +223,6 @@ type renderContext struct {
 	owned           ownerSlots
 	ownerDirectives map[ownerPlace][]string
 	ownerAttributes map[ownerSlot][]attr
-	// extensions are the declared extensions in name order, from the common
-	// model and from the extension owner alike.
-	extensions []extensionDeclaration
 	// fieldTypes are the Go types the owners give fields of their target.
 	fieldTypes         map[annotationext.Slot]annotationext.FieldType
 	db                 *schemamodel.Database
@@ -371,7 +368,6 @@ func (ctx *renderContext) renderFile(writeBody func(*sourceWriter)) ([]byte, err
 // is silently not read, and the export loses the object with every gate green.
 func (ctx *renderContext) hasGlobalObjects() bool {
 	return len(ctx.db.Schemas) > 0 ||
-		len(ctx.extensions) > 0 ||
 		len(ctx.db.Functions) > 0 ||
 		len(ctx.db.Views) > 0 ||
 		len(ctx.db.MaterializedViews) > 0 ||
@@ -444,9 +440,6 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	for _, sequence := range sortedSequences(ctx.db.Sequences) {
 		w.writeComment(sequenceAnnotation(sequence))
-	}
-	for _, extension := range ctx.extensions {
-		w.writeComment(extension.annotation())
 	}
 	for _, function := range sortedFunctions(ctx.db.Functions) {
 		w.writeComment(functionAnnotation(function))

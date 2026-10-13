@@ -37,14 +37,17 @@ func Family() []string {
 // Annotations is the extension owner's contribution to the Go annotation
 // frontend. It reads the extension declarations that name no target, or only
 // PostgreSQL-family targets, and claims that a Go annotation source describes
-// every extension: one the source leaves out is absent.
+// every extension: one the source leaves out is absent. Its encoder writes
+// extension declarations back in name order and refuses incomplete coverage.
 func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner: pgextension.Owner,
 		Kinds: []schemaext.Kind{pgextension.ExtensionKind},
 		TargetScopes: []annotation.TargetScope{{Directive: Directive, Targets: Family(), Unscoped: true,
 			Label: "PostgreSQL-family targets"}},
-		Decode: decodeDirective,
+		Decode:  decodeDirective,
+		Encoder: annotationEncoder{},
+		Encodes: []schemaext.Kind{pgextension.ExtensionKind},
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
 			return pgextension.CompleteCoverage(schemaext.Desired)
 		},

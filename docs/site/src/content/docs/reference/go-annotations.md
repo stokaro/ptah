@@ -596,6 +596,10 @@ Declares a database schema or namespace.
 
 Declares a PostgreSQL extension.
 
+Go export preserves the installation schema, version, comment, existence guard,
+and target scope. Extensions are written in name order. An export refuses
+incomplete extension coverage rather than treating unread extensions as absent.
+
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | Extension comment. |
