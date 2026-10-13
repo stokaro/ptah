@@ -39,7 +39,7 @@ func TestMigrationsUpEndsATSQLProcedureWhereItsBlocksEndLiveE2E(t *testing.T) {
 			c := qt.New(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
-			databaseURL, db := newSQLServerMigrationDatabase(c, ctx, dbURL)
+			databaseURL, db := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
 			dir := c.TempDir()
 			up := fmt.Sprintf("CREATE PROCEDURE dbo.split_probe AS\nBEGIN\n  %s\nEND;\nCREATE TABLE dbo.after_probe (id int);\n", test.body)
 			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte(up), 0o600), qt.IsNil)
@@ -60,7 +60,7 @@ func TestMigrationsUpEndsATSQLProcedureWhereItsBlocksEndLiveE2E(t *testing.T) {
 
 // newSQLServerMigrationDatabase creates a throwaway database and returns its
 // URL and an open handle on it.
-func newSQLServerMigrationDatabase(c *qt.C, ctx context.Context, dbURL string) (string, *sql.DB) {
+func newSQLServerMigrationDatabase(c *qt.C, ctx context.Context, dbURL, collation string) (string, *sql.DB) {
 	c.Helper()
 
 	adminDB, err := sql.Open("sqlserver", dbURL)
@@ -68,7 +68,15 @@ func newSQLServerMigrationDatabase(c *qt.C, ctx context.Context, dbURL string) (
 	c.Cleanup(func() { _ = adminDB.Close() })
 
 	name := fmt.Sprintf("ptah_split_%d", time.Now().UnixNano())
-	_, err = adminDB.ExecContext(ctx, "CREATE DATABASE ["+name+"]")
+	// Set the collation before opening the target pool. SQL Server rejects
+	// resetting a pooled connection when its database collation differs from
+	// the login state, with errors 4021 and 596.
+	// #nosec G202 -- The database name is generated above; collation comes from test constants.
+	statement := "CREATE DATABASE [" + name + "]"
+	if collation != "" {
+		statement += " COLLATE " + collation
+	}
+	_, err = adminDB.ExecContext(ctx, statement)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		_, dropErr := adminDB.ExecContext(context.Background(),

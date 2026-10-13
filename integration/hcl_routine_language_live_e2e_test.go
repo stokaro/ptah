@@ -117,7 +117,7 @@ func TestSchemaApplyCreatesAProcedureThatDeclaresNoLanguageLiveE2E(t *testing.T)
 func languageDatabase(c *qt.C, ctx context.Context, engine dbtarget.Engine) (url, schema string, db *sql.DB) {
 	c.Helper()
 	if engine == dbtarget.SQLServer {
-		url, db := newSQLServerMigrationDatabase(c, ctx, dbtarget.URL(c, engine))
+		url, db := newSQLServerMigrationDatabase(c, ctx, dbtarget.URL(c, engine), "")
 		return url, "dbo", db
 	}
 	adminDB, err := sql.Open("mysql", dbtarget.DriverDSN(c, engine))
