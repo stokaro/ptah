@@ -14,6 +14,11 @@ func TestParse_HappyPath(t *testing.T) {
 		name, sql string
 		want      pgexclude.Definition
 	}{
+		{"default method", "EXCLUDE (r WITH =)", pgexclude.Definition{UsingMethod: "btree", Elements: "r WITH ="}},
+		{"implicit deferral", "EXCLUDE (r WITH =) INITIALLY DEFERRED", pgexclude.Definition{UsingMethod: "btree", Elements: "r WITH =", Deferrable: true, Initially: "deferred"}},
+		{"timing before deferral", "EXCLUDE (r WITH =) INITIALLY DEFERRED DEFERRABLE", pgexclude.Definition{UsingMethod: "btree", Elements: "r WITH =", Deferrable: true, Initially: "deferred"}},
+		{"compatible repetitions", "EXCLUDE (r WITH =) DEFERRABLE DEFERRABLE INITIALLY DEFERRED INITIALLY DEFERRED", pgexclude.Definition{UsingMethod: "btree", Elements: "r WITH =", Deferrable: true, Initially: "deferred"}},
+		{"immediate before not deferrable", "EXCLUDE (r WITH =) INITIALLY IMMEDIATE NOT DEFERRABLE", pgexclude.Definition{UsingMethod: "btree", Elements: "r WITH =", Initially: "immediate"}},
 		{"elements", "EXCLUDE USING gist (room_id WITH =, during WITH &&)", pgexclude.Definition{UsingMethod: "gist", Elements: "room_id WITH =, during WITH &&"}},
 		{"predicate", "EXCLUDE USING btree (r WITH =) WHERE ((r > 0))", pgexclude.Definition{UsingMethod: "btree", Elements: "r WITH =", WhereCondition: "(r > 0)"}},
 		{"quoted close in element", `EXCLUDE USING btree (replace(t, ')', '(') WITH =)`, pgexclude.Definition{UsingMethod: "btree", Elements: `replace(t, ')', '(') WITH =`}},
@@ -37,7 +42,7 @@ func TestParse_HappyPath(t *testing.T) {
 
 func TestParse_FailurePath(t *testing.T) {
 	for _, test := range []struct{ name, sql, reason string }{
-		{"another constraint", "CHECK (r > 0)", "expected EXCLUDE USING"},
+		{"another constraint", "CHECK (r > 0)", "expected EXCLUDE"},
 		{"method", "EXCLUDE USING", "expected an index method after USING"},
 		{"opening group", "EXCLUDE USING btree r WITH =", `expected '\(' before elements`},
 		{"unclosed group", "EXCLUDE USING btree (r WITH =", "unclosed elements"},
@@ -51,6 +56,9 @@ func TestParse_FailurePath(t *testing.T) {
 		{"extra expression", "EXCLUDE USING btree (r WITH =) WHERE (r > 0) OR (r < 0)", "unrepresented or unexpected clause OR"},
 		{"incomplete timing", "EXCLUDE USING btree (r WITH =) DEFERRABLE INITIALLY", "expected DEFERRED or IMMEDIATE after INITIALLY"},
 		{"contradictory timing", "EXCLUDE USING btree (r WITH =) NOT DEFERRABLE INITIALLY DEFERRED", "INITIALLY DEFERRED requires DEFERRABLE"},
+		{"conflicting deferral", "EXCLUDE (r WITH =) DEFERRABLE NOT DEFERRABLE", "conflicting deferral clauses"},
+		{"conflicting timing", "EXCLUDE (r WITH =) INITIALLY DEFERRED INITIALLY IMMEDIATE", "conflicting initial timing"},
+		{"reversed contradictory timing", "EXCLUDE (r WITH =) INITIALLY DEFERRED NOT DEFERRABLE", "INITIALLY DEFERRED requires DEFERRABLE"},
 		{"statement separator", "EXCLUDE USING btree (r WITH =); DROP TABLE t", "unexpected token ;"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
