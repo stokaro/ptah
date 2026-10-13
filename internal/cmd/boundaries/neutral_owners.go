@@ -12,7 +12,9 @@ import (
 // neutralRoots are the neutral layer of the stokaro/ptah#4140 design (section
 // 5): the authored and observed models, the provider contracts, the extension
 // and diff envelopes, the runtime that assembles supplied providers, and the
-// comparison and planning orchestration. Every package at or under a root
+// comparison and planning orchestration, and the Go annotation writer. The
+// writer uses selected annotation services so an external provider can supply
+// its own encoders without linking bundled owners. Every package at or under a root
 // belongs to the layer, so a package added below one is held to the rule
 // without an edit here. engine/builtin is the composition of bundled owners and
 // sits above the layer.
