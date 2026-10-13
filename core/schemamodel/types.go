@@ -551,9 +551,6 @@ type Constraint struct {
 	// NotEnforced marks a CHECK or a FOREIGN KEY the server keeps and does not
 	// check. See [ptah.run/core/ast.ConstraintNode.NotEnforced].
 	NotEnforced bool
-	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
-	// referencing columns. See [ptah.run/core/ast.ForeignKeyRef.OnDeleteColumns].
-	OnDeleteColumns []string
 	// NotValid marks a CHECK or FOREIGN KEY constraint that may stay
 	// unvalidated: the server checks new rows and has not checked the rows the
 	// table held when the constraint was added. A database that holds it
@@ -582,23 +579,6 @@ func (c Constraint) ForeignColumnsOrDefault() []string {
 		return []string{c.ForeignColumn}
 	}
 	return nil
-}
-
-// NarrowsDeleteAction reports whether OnDeleteColumns limits the ON DELETE
-// action to some of the key's columns. An empty list and a list naming every
-// column in Columns both mean the action applies to all of them, so both
-// report false. Names compare exactly, and a nil or zero Constraint reports
-// false.
-func (c Constraint) NarrowsDeleteAction() bool {
-	if len(c.OnDeleteColumns) == 0 {
-		return false
-	}
-	for _, column := range c.Columns {
-		if !slices.Contains(c.OnDeleteColumns, column) {
-			return true
-		}
-	}
-	return false
 }
 
 // Table represents a database table configuration parsed from Go struct annotations.

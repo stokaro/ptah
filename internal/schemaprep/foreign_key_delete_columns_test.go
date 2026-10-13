@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/schemaprep"
 )
 
@@ -18,7 +21,7 @@ func TestAssignDefaultForeignKeyNames_KeysDifferingInTheDeleteColumnList(t *test
 		return schemamodel.Constraint{
 			StructName: "Child", Table: "children", Type: "FOREIGN KEY",
 			Columns: []string{"tenant", "parent_id"}, ForeignTable: "parents",
-			ForeignColumns: []string{"tenant", "id"}, OnDelete: "SET NULL", OnDeleteColumns: listed,
+			ForeignColumns: []string{"tenant", "id"}, OnDelete: "SET NULL", Facets: must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, listed)),
 		}
 	}
 	database := &schemamodel.Database{

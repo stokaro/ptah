@@ -1079,7 +1079,7 @@ func foreignKeyCompositeFixture() schemamodel.Database {
 func constraintDeleteColumnListFixture() schemamodel.Database {
 	db := foreignKeyCompositeFixture()
 	db.Constraints[0].OnDelete = "SET NULL"
-	db.Constraints[0].OnDeleteColumns = []string{"parent_id"}
+	db.Constraints[0].Facets = must.Must(pgtable.WithDeleteColumns(db.Constraints[0].Facets, []string{"parent_id"}))
 	return db
 }
 

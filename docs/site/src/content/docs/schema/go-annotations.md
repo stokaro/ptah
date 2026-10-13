@@ -105,6 +105,19 @@ attempts the built-in review targets and emits separate labeled sections only
 if every target can render the schema. Any unsupported feature fails atomically
 with empty standard output.
 
+### Limit a foreign-key delete action
+
+Use `on_delete_columns` on a `FOREIGN KEY` constraint to select the local
+columns that `ON DELETE SET NULL` or `ON DELETE SET DEFAULT` changes:
+
+```go
+//ptah:schema:constraint name="children_parent_fk" type="FOREIGN KEY" columns="tenant,parent_id" foreign_table="parents" foreign_columns="tenant,id" on_delete="SET NULL" on_delete_columns="parent_id"
+```
+
+The attribute holds a CSV list of logical column names. Go export preserves it.
+The [SQL source guide](../sql/#limit-on-delete-to-some-columns) describes server
+support, validation, and migration behavior.
+
 ### Add an INCLUDE covering index
 
 Use `include` to keep payload columns in a covering index without making them

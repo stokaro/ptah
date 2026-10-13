@@ -130,6 +130,9 @@ func (r *renderer) tableSlots(slots *slotCollector, request *hclext.EncodeReques
 		if err := slots.add(&request.Keys, hclext.Slot{Kind: hclext.SlotKey, Table: owner, Name: constraint.Name}, constraint.Facets); err != nil {
 			return err
 		}
+		if constraint.Facets.Len() > 0 {
+			request.Keys[len(request.Keys)-1].Key = &hclext.KeyContext{Type: constraint.Type, Columns: slices.Clone(constraint.Columns)}
+		}
 	}
 	for _, index := range r.layout.indexesByTable[table.QualifiedName()] {
 		if err := slots.add(&request.Indexes, hclext.Slot{Kind: hclext.SlotIndex, Table: owner, Name: index.Name}, index.Facets); err != nil {

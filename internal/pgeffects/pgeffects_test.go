@@ -110,3 +110,18 @@ func routineOf(kind objectidentity.Kind, name, signature string) objectidentity.
 	ref.Kind = kind
 	return ref
 }
+
+// TestSequence_NamedConstraintReplacement exposes the drop and creation to
+// owners without changing the identity of a punctuated constraint name.
+func TestSequence_NamedConstraintReplacement(t *testing.T) {
+	c := qt.New(t)
+	nodes := []ast.Node{
+		&ast.AlterTableNode{Name: "app.children", Operations: []ast.AlterOperation{&ast.DropConstraintOperation{ConstraintName: "Parent.Key"}}},
+		&ast.AlterTableNode{Name: "app.children", Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{Name: "Parent.Key", Type: ast.ForeignKeyConstraint}}}},
+	}
+	got := pgeffects.Sequence(builder, nodes)
+	c.Assert(got, qt.DeepEquals, [][]plangraph.Effect{
+		{effect(builder.Table("app.children"), plangraph.Alter), effect(builder.Constraint("app.children", "Parent.Key"), plangraph.Drop)},
+		{effect(builder.Table("app.children"), plangraph.Alter), effect(builder.Constraint("app.children", "Parent.Key"), plangraph.Create)},
+	})
+}

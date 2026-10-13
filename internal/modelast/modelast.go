@@ -827,17 +827,16 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 		return node
 	case "FOREIGN KEY":
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
-			Table:           constraint.ForeignTable,
-			Column:          constraint.ForeignColumn,
-			Columns:         constraint.ForeignColumns,
-			OnDelete:        constraint.OnDelete,
-			OnUpdate:        constraint.OnUpdate,
-			Name:            constraint.Name,
-			Deferrable:      constraint.Deferrable,
-			Initially:       constraint.Initially,
-			Match:           constraint.Match,
-			NotEnforced:     constraint.NotEnforced,
-			OnDeleteColumns: append([]string(nil), constraint.OnDeleteColumns...),
+			Table:       constraint.ForeignTable,
+			Column:      constraint.ForeignColumn,
+			Columns:     constraint.ForeignColumns,
+			OnDelete:    constraint.OnDelete,
+			OnUpdate:    constraint.OnUpdate,
+			Name:        constraint.Name,
+			Deferrable:  constraint.Deferrable,
+			Initially:   constraint.Initially,
+			Match:       constraint.Match,
+			NotEnforced: constraint.NotEnforced,
 		})
 	case "CHECK":
 		return &ast.ConstraintNode{

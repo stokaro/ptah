@@ -1643,12 +1643,14 @@ func deduplicateTriggers(triggers []Trigger) []Trigger {
 // The fallback is needed before NormalizeTableScopedNames fills .Table for
 // annotations that rely on struct association.
 func deduplicateConstraints(constraints []Constraint) []Constraint {
-	seen := make(map[string]bool)
+	seen := make(map[string][]Constraint)
 	deduplicated := make([]Constraint, 0, len(constraints))
 	for _, c := range constraints {
 		key := constraintDedupKey(c)
-		if !seen[key] {
-			seen[key] = true
+		// Settings participate in equality without exposing owner payloads.
+		// Two unnamed constraints may differ only in an attached setting.
+		if !slices.ContainsFunc(seen[key], func(other Constraint) bool { return c.Facets.Equal(other.Facets) }) {
+			seen[key] = append(seen[key], c)
 			deduplicated = append(deduplicated, c)
 		}
 	}
@@ -1698,7 +1700,6 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),
 		constraint.OnDelete,
 		constraint.OnUpdate,
-		strings.Join(constraint.OnDeleteColumns, "\x01"),
 		// Two constraints that differ only in deferral are two constraints:
 		// PostgreSQL 18.6 builds both of `UNIQUE (a) DEFERRABLE, UNIQUE (a)`.
 		strconv.FormatBool(constraint.Deferrable),

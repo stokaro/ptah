@@ -17,7 +17,7 @@ func TestCommonStepCloneIsolatesColumnOperands(t *testing.T) {
 	original := featureplan.CommonStep{
 		Effects: []plangraph.Effect{{Action: plangraph.Create}},
 		AddedColumn: &ast.ColumnNode{Name: "account", Default: &ast.DefaultValue{Value: "0"},
-			ForeignKey: &ast.ForeignKeyRef{Columns: []string{"id"}, OnDeleteColumns: []string{"account"}}},
+			ForeignKey: &ast.ForeignKeyRef{Columns: []string{"id"}}},
 	}
 	snapshot := original.Clone()
 	c.Assert(snapshot, qt.DeepEquals, original)
@@ -25,12 +25,10 @@ func TestCommonStepCloneIsolatesColumnOperands(t *testing.T) {
 	snapshot.AddedColumn.Name = "changed"
 	snapshot.AddedColumn.Default.Value = "1"
 	snapshot.AddedColumn.ForeignKey.Columns[0] = "changed"
-	snapshot.AddedColumn.ForeignKey.OnDeleteColumns[0] = "changed"
 	c.Assert(original.Effects[0].Action, qt.Equals, plangraph.Create)
 	c.Assert(original.AddedColumn.Name, qt.Equals, "account")
 	c.Assert(original.AddedColumn.Default.Value, qt.Equals, "0")
 	c.Assert(original.AddedColumn.ForeignKey.Columns, qt.DeepEquals, []string{"id"})
-	c.Assert(original.AddedColumn.ForeignKey.OnDeleteColumns, qt.DeepEquals, []string{"account"})
 }
 
 func TestPlanningRefusalCannotRetainCommonRewriteClaims(t *testing.T) {

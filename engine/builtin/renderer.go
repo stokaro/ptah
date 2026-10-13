@@ -59,6 +59,7 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -1272,12 +1273,20 @@ func prepareColumnNode(
 	if err != nil {
 		return nil, err
 	}
-	if err := validateDeleteColumnList(
-		dialect, caps, []string{cloned.Name}, cloned.ForeignKey.OnDelete, cloned.ForeignKey.OnDeleteColumns,
+	if err := pgtable.ValidateDeleteSelection(
+		dialect, caps, []string{cloned.Name}, cloned.ForeignKey.OnDelete, cloned.ForeignKey.Facets,
 	); err != nil {
 		return nil, err
 	}
-	if !cloned.Nullable && foreignKeySetsColumnNull(cloned.ForeignKey, cloned.Name) {
+	cloned.ForeignKey.Facets, err = prepareConstraintFacets(dialect, cloned.ForeignKey.Facets)
+	if err != nil {
+		return nil, err
+	}
+	setsNull, err := foreignKeySetsColumnNull(cloned.ForeignKey, cloned.ForeignKey.Facets, cloned.Name)
+	if err != nil {
+		return nil, err
+	}
+	if !cloned.Nullable && setsNull {
 		return nil, invalidASTForeignKeyError(
 			dialect,
 			fmt.Sprintf("column %q uses SET NULL but is NOT NULL", cloned.Name),
@@ -1299,7 +1308,11 @@ func validateCreateTableForeignKeyColumns(dialect string, node *ast.CreateTableN
 					fmt.Sprintf("table %q has no local foreign-key column %q", node.Name, columnName),
 				)
 			}
-			if !column.Nullable && foreignKeySetsColumnNull(constraint.Reference, columnName) {
+			setsNull, err := foreignKeySetsColumnNull(constraint.Reference, constraint.Facets, columnName)
+			if err != nil {
+				return err
+			}
+			if !column.Nullable && setsNull {
 				return invalidASTForeignKeyError(
 					dialect,
 					fmt.Sprintf(
@@ -1323,72 +1336,14 @@ func createTableColumn(columns []*ast.ColumnNode, name string) *ast.ColumnNode {
 	return nil
 }
 
-// foreignKeySetsColumnNull reports whether a referential action of reference
-// can set column to NULL. ON UPDATE SET NULL sets every referencing column;
-// ON DELETE SET NULL sets the listed ones, or every one when there is no list.
-// A NOT NULL column the delete action leaves alone is a valid declaration:
-// PostgreSQL 18.6 applies `FOREIGN KEY (x, a) ... ON DELETE SET NULL (a)` over
-// a NOT NULL x and clears only a.
-func foreignKeySetsColumnNull(reference *ast.ForeignKeyRef, column string) bool {
+// foreignKeySetsColumnNull combines the common update action with the selected
+// owner's delete-action semantics.
+func foreignKeySetsColumnNull(reference *ast.ForeignKeyRef, facets schemaext.Facets, column string) (bool, error) {
 	if reference == nil {
-		return false
+		return false, nil
 	}
-	return reference.OnUpdate == "SET NULL" ||
-		deleteActionSetsColumnNull(reference.OnDelete, reference.OnDeleteColumns, column)
-}
-
-// deleteActionSetsColumnNull is the ON DELETE half of the question above,
-// shared by the AST and the schema-model validation so the two cannot come to
-// read the list differently.
-func deleteActionSetsColumnNull(onDelete string, onDeleteColumns []string, column string) bool {
-	return onDelete == "SET NULL" && (len(onDeleteColumns) == 0 || slices.Contains(onDeleteColumns, column))
-}
-
-// validateDeleteColumnList refuses an ON DELETE column list the target cannot
-// write or that no engine would accept.
-//
-// A target without the clause refuses the list rather than render the action
-// without it: that would set every referencing column to NULL or its default
-// where the declaration asked for some. The list follows only SET NULL and
-// SET DEFAULT, and names referencing columns of the same key, as PostgreSQL
-// requires.
-func validateDeleteColumnList(
-	dialect string,
-	caps capability.Capabilities,
-	localColumns []string,
-	onDelete string,
-	onDeleteColumns []string,
-) error {
-	if len(onDeleteColumns) == 0 {
-		return nil
-	}
-	if !caps.Has(capability.ForeignKeyDeleteColumnList) {
-		return &ptaherr.CapabilityError{
-			Dialect: dialect,
-			Feature: "foreign key ON DELETE column list",
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf(
-				"%s does not support a column list on ON DELETE %s",
-				platform.NormalizeDialect(dialect),
-				onDelete,
-			),
-		}
-	}
-	if onDelete != "SET NULL" && onDelete != "SET DEFAULT" {
-		return invalidASTForeignKeyError(
-			dialect,
-			fmt.Sprintf("an ON DELETE column list needs SET NULL or SET DEFAULT, not %q", referentialActionOrDefault(onDelete)),
-		)
-	}
-	for _, column := range onDeleteColumns {
-		if !slices.Contains(localColumns, column) {
-			return invalidASTForeignKeyError(
-				dialect,
-				fmt.Sprintf("ON DELETE %s names column %q, which is not one of the key's columns %v", onDelete, column, localColumns),
-			)
-		}
-	}
-	return nil
+	setsNull, err := pgtable.DeleteSetsColumnNull(reference.OnDelete, facets, column)
+	return reference.OnUpdate == "SET NULL" || setsNull, err
 }
 
 func prepareConstraintNode(
@@ -1402,6 +1357,9 @@ func prepareConstraintNode(
 	// The hint is checked before the facets are prepared, so a target
 	// without it refuses it by name rather than as an unregistered facet.
 	if err := validateConstraintBlockSize(dialect, node.Type.String(), node.Name, indexBlockSize(node.Facets)); err != nil {
+		return nil, err
+	}
+	if err := pgtable.ValidateDeleteConstraint(node.Type.String(), node.Facets); err != nil {
 		return nil, err
 	}
 	facets, err := prepareConstraintFacets(dialect, node.Facets)
@@ -1465,8 +1423,8 @@ func prepareConstraintNode(
 	if err != nil {
 		return nil, err
 	}
-	if err := validateDeleteColumnList(
-		dialect, caps, cloned.Columns, cloned.Reference.OnDelete, cloned.Reference.OnDeleteColumns,
+	if err := pgtable.ValidateDeleteSelection(
+		dialect, caps, cloned.Columns, cloned.Reference.OnDelete, cloned.Facets,
 	); err != nil {
 		return nil, err
 	}
@@ -1479,7 +1437,6 @@ func cloneForeignKeyRef(reference *ast.ForeignKeyRef) *ast.ForeignKeyRef {
 	}
 	cloned := *reference
 	cloned.Columns = slices.Clone(reference.Columns)
-	cloned.OnDeleteColumns = slices.Clone(reference.OnDeleteColumns)
 	return &cloned
 }
 
@@ -1925,26 +1882,12 @@ func prepareDatabaseForRendering(
 			return schemamodel.Database{}, err
 		}
 	}
-	for i := range prepared.Constraints {
-		constraint := &prepared.Constraints[i]
-		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
-			continue
-		}
-		hasForeignKeys = true
-		if err := validateTableForeignKey(*constraint, dialect); err != nil {
-			return schemamodel.Database{}, err
-		}
-		var err error
-		constraint.OnDelete, constraint.OnUpdate, err = normalizeReferentialActions(dialect, constraint.OnDelete, constraint.OnUpdate)
-		if err != nil {
-			return schemamodel.Database{}, err
-		}
-		if err := validateDeleteColumnList(
-			dialect, caps, constraint.Columns, constraint.OnDelete, constraint.OnDeleteColumns,
-		); err != nil {
-			return schemamodel.Database{}, err
-		}
+	constraintKeys, err := prepareForeignKeyConstraints(prepared.Constraints, dialect, caps)
+	if err != nil {
+		return schemamodel.Database{}, err
 	}
+	hasForeignKeys = hasForeignKeys || constraintKeys
+
 	if hasForeignKeys && !caps.Has(capability.ForeignKeys) {
 		return schemamodel.Database{}, foreignKeysUnsupportedError(dialect)
 	}
@@ -3239,7 +3182,7 @@ func (v foreignKeyValidation) fieldKeys() ([]foreignKeyBinding, error) {
 			referencedColumns,
 			field.OnDelete,
 			field.OnUpdate,
-			nil,
+			schemaext.Facets{},
 		); err != nil {
 			return nil, err
 		}
@@ -3293,7 +3236,7 @@ func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
 			columns,
 			constraint.OnDelete,
 			constraint.OnUpdate,
-			constraint.OnDeleteColumns,
+			constraint.Facets,
 		); err != nil {
 			return nil, err
 		}
@@ -3412,7 +3355,7 @@ func validateSchemaForeignKeyColumns(
 	referencedColumns []string,
 	onDelete,
 	onUpdate string,
-	onDeleteColumns []string,
+	facets schemaext.Facets,
 ) error {
 	if err := validateForeignKeyColumnLists(localColumns, referencedColumns); err != nil {
 		return invalidSchemaForeignKeyError(dialect, err.Error())
@@ -3443,7 +3386,7 @@ func validateSchemaForeignKeyColumns(
 			referencedField,
 			onDelete,
 			onUpdate,
-			onDeleteColumns,
+			facets,
 		); err != nil {
 			return err
 		}
@@ -3490,21 +3433,15 @@ func validateForeignKeyColumnCompatibility(
 	referenced schemamodel.Field,
 	onDelete,
 	onUpdate string,
-	onDeleteColumns []string,
+	facets schemaext.Facets,
 ) error {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	local = schemaprep.EffectiveFieldForPlatform(local, normalizedDialect)
 	referenced = schemaprep.EffectiveFieldForPlatform(referenced, normalizedDialect)
-	if (onUpdate == "SET NULL" || deleteActionSetsColumnNull(onDelete, onDeleteColumns, local.Name)) && !local.Nullable {
-		return invalidSchemaForeignKeyError(
-			dialect,
-			fmt.Sprintf(
-				"foreign key on %q.%q uses SET NULL but the local column is NOT NULL",
-				owner.QualifiedName(),
-				local.Name,
-			),
-		)
+	if err := validateForeignKeyNullability(dialect, owner, local, onDelete, onUpdate, facets); err != nil {
+		return err
 	}
+
 	if normalizedDialect == platform.SQLite {
 		return nil
 	}
@@ -4212,4 +4149,50 @@ func mysqlIndexParser(index schemamodel.Index) string {
 		return ""
 	}
 	return options.Parser
+}
+
+func prepareForeignKeyConstraints(constraints []schemamodel.Constraint, dialect string, caps capability.Capabilities) (bool, error) {
+	hasForeignKeys := false
+	for i := range constraints {
+		constraint := &constraints[i]
+		if err := pgtable.ValidateDeleteConstraint(constraint.Type, constraint.Facets); err != nil {
+			return false, err
+		}
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
+			continue
+		}
+		hasForeignKeys = true
+		if err := validateTableForeignKey(*constraint, dialect); err != nil {
+			return false, err
+		}
+		var err error
+		constraint.OnDelete, constraint.OnUpdate, err = normalizeReferentialActions(dialect, constraint.OnDelete, constraint.OnUpdate)
+		if err != nil {
+			return false, err
+		}
+		if err := pgtable.ValidateDeleteSelection(
+			dialect, caps, constraint.Columns, constraint.OnDelete, constraint.Facets,
+		); err != nil {
+			return false, err
+		}
+	}
+	return hasForeignKeys, nil
+}
+
+func validateForeignKeyNullability(dialect string, owner schemamodel.Table, local schemamodel.Field, onDelete, onUpdate string, facets schemaext.Facets) error {
+	setsNull, err := pgtable.DeleteSetsColumnNull(onDelete, facets, local.Name)
+	if err != nil {
+		return err
+	}
+	if (onUpdate == "SET NULL" || setsNull) && !local.Nullable {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf(
+				"foreign key on %q.%q uses SET NULL but the local column is NOT NULL",
+				owner.QualifiedName(),
+				local.Name,
+			),
+		)
+	}
+	return nil
 }

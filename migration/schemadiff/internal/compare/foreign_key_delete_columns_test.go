@@ -1,15 +1,21 @@
 package compare_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/internal/builtintest"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
-	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 // deleteListDeclaration is a child table whose composite foreign key sets the
@@ -24,14 +30,14 @@ func deleteListDeclaration(listed ...string) *schemamodel.Database {
 			{StructName: "Parent", Name: "tenant", Type: "INTEGER"},
 			{StructName: "Parent", Name: "id", Type: "INTEGER"},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
-			{StructName: "Child", Name: "tenant", Type: "INTEGER"},
+			{StructName: "Child", Name: "tenant", Type: "INTEGER", Nullable: true},
 			{StructName: "Child", Name: "pid", Type: "INTEGER", Nullable: true},
 		},
 		Constraints: []schemamodel.Constraint{{
 			StructName: "Child", Table: "child", Name: "fk_child_parent", Type: "FOREIGN KEY",
 			Columns: []string{"tenant", "pid"}, ForeignTable: "parent",
 			ForeignColumns: []string{"tenant", "id"},
-			OnDelete:       "SET NULL", OnDeleteColumns: listed,
+			OnDelete:       "SET NULL", Facets: must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, listed)),
 		}},
 	}
 }
@@ -48,7 +54,7 @@ func deleteListCatalog(listed ...string) *catalog.Database {
 			}},
 			{Name: "child", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
-				{Name: "tenant", DataType: "integer", IsNullable: "NO"},
+				{Name: "tenant", DataType: "integer", IsNullable: "YES"},
 				{Name: "pid", DataType: "integer", IsNullable: "YES"},
 			}},
 		},
@@ -56,15 +62,15 @@ func deleteListCatalog(listed ...string) *catalog.Database {
 			TableName: "child", Name: "fk_child_parent", Type: "FOREIGN KEY",
 			ColumnNames: []string{"tenant", "pid"}, ForeignTable: &parent,
 			ForeignColumns: []string{"tenant", "id"},
-			DeleteRule:     &setNull, OnDeleteColumns: listed,
+			DeleteRule:     &setNull, Facets: must.Must(pgtable.WithObservedDeleteColumns(schemaext.Facets{}, listed)),
 		}},
 	}
 }
 
 func deleteListDiff(desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
-	diff := &difftypes.SchemaDiff{}
-	compare.ConstraintsWithSemantics(desired, current, diff, nil, identifier.ForDialect("postgres"))
-	return diff
+	desired.FeatureCoverage = must.Must(pgtable.DeleteColumnsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	current.FeatureCoverage = must.Must(pgtable.DeleteColumnsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return must.Must(schemadiff.CompareWithDialect(context.Background(), desired, current, "postgres", builtintest.Runtime()))
 }
 
 // The list is a set of the key's columns, and no list means all of them, so
@@ -91,12 +97,13 @@ func TestConstraints_TheSameDeleteColumnSetIsNotPlanned(t *testing.T) {
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
 }
 
 // The control: a list that changes which columns the action clears is a
-// difference, and the addition that applies it carries the declared list.
+// difference owned by PostgreSQL, without a common constraint replacement.
 func TestConstraints_AChangedDeleteColumnSetIsPlanned(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -113,8 +120,29 @@ func TestConstraints_AChangedDeleteColumnSetIsPlanned(t *testing.T) {
 
 			diff := deleteListDiff(deleteListDeclaration(tt.declared...), deleteListCatalog(tt.live...))
 
-			c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
-			c.Assert(diff.ConstraintsAdded[0].OnDeleteColumns, qt.DeepEquals, tt.declared)
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].FeatureChanges, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].FeatureChanges[0].Value.Kind(), qt.Equals, pgtable.DeleteColumnsChangeKind)
 		})
 	}
+}
+
+// TestConstraints_CommonAndOwnedDeleteChangesReplaceOnce drives comparison
+// through SQL planning, so both halves use the host's actual effect metadata.
+func TestConstraints_CommonAndOwnedDeleteChangesReplaceOnce(t *testing.T) {
+	c := qt.New(t)
+	desired := deleteListDeclaration("tenant")
+	desired.Constraints[0].OnDelete = "SET DEFAULT"
+	desired.Constraints[0].OnUpdate = "CASCADE"
+	desired.Constraints[0].Comment = "Parent key"
+	diff := deleteListDiff(desired, deleteListCatalog("pid"))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), builtintest.Runtime(), diff, "postgres")
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+	c.Assert(strings.Count(sql, "DROP CONSTRAINT"), qt.Equals, 1)
+	c.Assert(strings.Count(sql, "ADD CONSTRAINT"), qt.Equals, 1)
+	c.Assert(sql, qt.Contains, `ON DELETE SET DEFAULT ("tenant") ON UPDATE CASCADE`)
+	c.Assert(sql, qt.Contains, "IS 'Parent key'")
 }

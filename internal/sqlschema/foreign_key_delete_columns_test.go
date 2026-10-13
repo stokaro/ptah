@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/sqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 )
 
 // A table-level foreign key's ON DELETE column list reaches the model's
@@ -39,28 +39,33 @@ func TestRead_OnDeleteColumnListReachesTheConstraint_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, _, err := readWithOwners([]byte(test.sql), "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Constraints, qt.HasLen, 1)
-			c.Assert(database.Constraints[0].OnDeleteColumns, qt.DeepEquals, test.wantColumns)
+			columns, _, err := pgtable.DeleteColumnsOf(database.Constraints[0].Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(columns, qt.DeepEquals, test.wantColumns)
 		})
 	}
 }
 
-// A column-level REFERENCES whose list names the column itself describes the
-// whole key, which the field already says; the list adds nothing to keep.
+// An inline reference with owned settings is lifted to a constraint, so its
+// explicitly declared column selection survives SQL conversion.
 func TestRead_ColumnLevelDeleteColumnListNamingItsColumn(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(
+	database, _, err := readWithOwners([]byte(
 		"CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (a int REFERENCES p (id) ON DELETE SET NULL (a));",
 	), "postgres")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Constraints, qt.HasLen, 0)
-	c.Assert(database.Fields[1].Foreign, qt.Equals, "p(id)")
-	c.Assert(database.Fields[1].OnDelete, qt.Equals, "SET NULL")
+	c.Assert(database.Constraints, qt.HasLen, 1)
+	c.Assert(database.Fields[1].Foreign, qt.Equals, "")
+	c.Assert(database.Constraints[0].OnDelete, qt.Equals, "SET NULL")
+	columns, _, err := pgtable.DeleteColumnsOf(database.Constraints[0].Facets)
+	c.Assert(err, qt.IsNil)
+	c.Assert(columns, qt.DeepEquals, []string{"a"})
 }
 
 // A column-level list naming any other column is refused, as PostgreSQL
@@ -68,12 +73,29 @@ func TestRead_ColumnLevelDeleteColumnListNamingItsColumn(t *testing.T) {
 func TestRead_ColumnLevelDeleteColumnListNamingAnotherColumn(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(
+	database, _, err := readWithOwners([]byte(
 		"CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (a int REFERENCES p (id) ON DELETE SET NULL (b), b int);",
 	), "postgres")
 
 	c.Assert(err, qt.ErrorMatches,
-		`column a: ON DELETE SET NULL names column b, which is not part of the foreign key; `+
-			`a column-level REFERENCES covers only its own column`)
+		`.*ON DELETE SET NULL names column "b", which is not part of the foreign key`)
 	c.Assert(database.Tables, qt.HasLen, 0)
+}
+
+// TestRead_AddedInlineDeleteSelectionPreservesIdentity covers the ADD COLUMN
+// path and identifiers whose punctuation is part of their logical name.
+func TestRead_AddedInlineDeleteSelectionPreservesIdentity(t *testing.T) {
+	c := qt.New(t)
+	database, _, err := readWithOwners([]byte(`CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int);
+ALTER TABLE c ADD COLUMN "Parent,ID" int CONSTRAINT "Parent.Key" REFERENCES p (id) ON DELETE SET NULL ("Parent,ID");`), "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Constraints, qt.HasLen, 1)
+	key := database.Constraints[0]
+	c.Assert(key.Name, qt.Equals, "Parent.Key")
+	c.Assert(key.Columns, qt.DeepEquals, []string{"Parent,ID"})
+	columns, _, err := pgtable.DeleteColumnsOf(key.Facets)
+	c.Assert(err, qt.IsNil)
+	c.Assert(columns, qt.DeepEquals, []string{"Parent,ID"})
+	c.Assert(database.Fields[2].Foreign, qt.Equals, "")
 }

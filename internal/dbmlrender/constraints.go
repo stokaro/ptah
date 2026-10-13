@@ -227,7 +227,4 @@ func countConstraint(counts map[string]int, constraint schemamodel.Constraint) {
 	if constraint.NullsDistinct != nil && !*constraint.NullsDistinct {
 		counts["NULLS NOT DISTINCT on keys"]++
 	}
-	if len(constraint.OnDeleteColumns) > 0 {
-		counts["ON DELETE column lists"]++
-	}
 }

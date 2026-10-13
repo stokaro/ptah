@@ -15,8 +15,10 @@ import (
 
 func postgresTableProvider() engine.Provider {
 	provider := engine.Provider{ID: pgtable.Owner, Codecs: pgtable.PartitionCodecs(),
-		Annotations: []annotation.Extension{pgtablesource.Annotations(), pgtablesource.ExclusionAnnotations()},
-		HCL:         []hclext.Extension{pgtablesource.HCL(), pgtablesource.ExclusionHCL()}, YAML: []yamlext.Extension{pgtablesource.YAML(), pgtablesource.ExclusionYAML()}, SQL: pgtablesource.SQL(),
+		Annotations: []annotation.Extension{pgtablesource.Annotations(), pgtablesource.ExclusionAnnotations(), pgtablesource.DeleteColumnsAnnotations()},
+		HCL:         []hclext.Extension{pgtablesource.HCL(), pgtablesource.ExclusionHCL(), pgtablesource.DeleteColumnsHCL()},
+		YAML:        []yamlext.Extension{pgtablesource.YAML(), pgtablesource.ExclusionYAML(), pgtablesource.DeleteColumnsYAML()},
+		SQL:         pgtablesource.SQL(),
 	}
 	for _, target := range pgtable.PersistenceTargets() {
 		provider.Planning = append(provider.Planning, engine.Planning{Target: target, ParentKinds: []schemaext.Kind{pgtable.PartitionKind}, Service: pgtable.PartitionService{}})
@@ -53,6 +55,7 @@ func postgresTableProvider() engine.Provider {
 			OperationKinds: []schemaext.Kind{pgtable.PersistenceOperationKind}, Service: service})
 	}
 	registerExclusions(&provider)
+	registerDeleteColumns(&provider)
 	return provider
 }
 
@@ -76,4 +79,25 @@ func registerExclusions(provider *engine.Provider) {
 	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: pgtable.ExclusionReports(), Service: service})
 	}
+}
+
+func registerDeleteColumns(provider *engine.Provider) {
+	service := pgtable.DeleteColumnsService{}
+	provider.Codecs = append(provider.Codecs, pgtable.DeleteColumnsCodecs()...)
+	provider.Codecs = append(provider.Codecs, pgtable.DeleteColumnsChangeCodec(), pgtable.DeleteColumnsOperationCodec())
+	for _, target := range pgtable.PersistenceTargets() {
+		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: []schemaext.Kind{pgtable.DeleteColumnsKind}, Service: service})
+	}
+	for _, target := range []string{platform.Postgres, platform.YugabyteDB} {
+		provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{Target: target,
+			OwnerKinds: []objectidentity.Kind{objectidentity.KindConstraint}, Kinds: []schemaext.Kind{pgtable.DeleteColumnsKind},
+			ChangeKinds: []schemaext.Kind{pgtable.DeleteColumnsChangeKind}, Service: service})
+		provider.Reversals = append(provider.Reversals, engine.Reversal{Target: target, Kinds: []schemaext.Kind{pgtable.DeleteColumnsChangeKind}, Service: service})
+		provider.Planning = append(provider.Planning, engine.Planning{Target: target, Kinds: []schemaext.Kind{pgtable.DeleteColumnsChangeKind},
+			ParentKinds: []schemaext.Kind{pgtable.DeleteColumnsKind}, OperationKinds: []schemaext.Kind{pgtable.DeleteColumnsOperationKind}, Service: service})
+	}
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: pgtable.DeleteColumnsReports(), Service: service})
+	}
+	provider.OffTarget = append(provider.OffTarget, engine.OffTargetPolicy{Kinds: []schemaext.Kind{pgtable.DeleteColumnsKind}, Action: schemaext.OffTargetRefuse, Label: "PostgreSQL foreign-key ON DELETE column list"})
 }

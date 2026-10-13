@@ -416,6 +416,7 @@ Declares a table constraint.
 | `name` | No | Constraint name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `on_delete` | No | Foreign key ON DELETE action. |
+| `on_delete_columns` | No | CSV list of local columns changed by PostgreSQL `ON DELETE SET NULL` or `SET DEFAULT`. |
 | `on_update` | No | Foreign key ON UPDATE action. |
 | `table` | No | Explicit target table. |
 | `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY. |

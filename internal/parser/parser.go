@@ -2359,45 +2359,13 @@ func (p *Parser) refuseModifyReferences() error {
 func (p *Parser) handleReferences(column *ast.ColumnNode) error {
 	// Handle REFERENCES
 	p.advance()
-	fkRef, err := p.parseForeignKeyReference()
+	fkRef, err := p.parseForeignKeyReference([]string{column.Name}, nil)
 	if err != nil {
 		return fmt.Errorf("expected foreign key reference: %w", err)
 	}
-	if err := refuseForeignDeleteColumns(column.Name, fkRef); err != nil {
-		return err
-	}
+
 	column.ForeignKey = fkRef
 	return nil
-}
-
-// refuseForeignDeleteColumns refuses an ON DELETE column list on a
-// column-level REFERENCES that names anything but the column itself.
-//
-// PostgreSQL refuses such a list too: "column ... referenced in ON DELETE SET
-// action must be part of foreign key". It is checked here, where every column
-// definition is read, so CREATE TABLE and ALTER TABLE ... ADD COLUMN cannot
-// disagree. A list naming the column is the whole key, which is what no list
-// means, so the model's field needs no list of its own.
-func refuseForeignDeleteColumns(columnName string, reference *ast.ForeignKeyRef) error {
-	for _, listed := range reference.OnDeleteColumns {
-		if foldIdentifier(listed) != foldIdentifier(columnName) {
-			return fmt.Errorf(
-				"column %s: ON DELETE %s names column %s, which is not part of the foreign key; "+
-					"a column-level REFERENCES covers only its own column",
-				columnName, reference.OnDelete, listed,
-			)
-		}
-	}
-	return nil
-}
-
-// foldIdentifier spells an identifier the way PostgreSQL resolves it: a
-// quoted name exactly as written, an unquoted one in lower case.
-func foldIdentifier(name string) string {
-	if unquoted, ok := strings.CutPrefix(name, `"`); ok {
-		return strings.ReplaceAll(strings.TrimSuffix(unquoted, `"`), `""`, `"`)
-	}
-	return strings.ToLower(name)
 }
 
 func (p *Parser) handleAs(column *ast.ColumnNode) error {
@@ -3566,7 +3534,7 @@ func (p *Parser) parseCheckExpression() (string, error) {
 }
 
 // parseForeignKeyReference parses a REFERENCES clause.
-func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
+func (p *Parser) parseForeignKeyReference(localColumns []string, facets *schemaext.Facets) (*ast.ForeignKeyRef, error) {
 	p.skipWhitespace()
 
 	// Get referenced table name
@@ -3621,7 +3589,10 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 		return nil, err
 	}
 	fkRef.Match = match
-	if err := p.parseReferentialActions(fkRef); err != nil {
+	if facets == nil {
+		facets = &fkRef.Facets
+	}
+	if err := p.parseReferentialActions(fkRef, localColumns, facets); err != nil {
 		return nil, err
 	}
 	return fkRef, nil
@@ -3629,7 +3600,7 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 
 // parseReferentialActions reads the optional ON DELETE and ON UPDATE clauses
 // after a reference's column list onto fkRef.
-func (p *Parser) parseReferentialActions(fkRef *ast.ForeignKeyRef) error {
+func (p *Parser) parseReferentialActions(fkRef *ast.ForeignKeyRef, localColumns []string, facets *schemaext.Facets) error {
 	for {
 		p.skipWhitespace()
 
@@ -3674,55 +3645,12 @@ func (p *Parser) parseReferentialActions(fkRef *ast.ForeignKeyRef) error {
 		}
 
 		p.skipWhitespace()
-		if p.current.MatchOperatorValue("(") {
-			columns, err := p.parseReferentialActionColumns(action, actionValue)
-			if err != nil {
-				return err
-			}
-			fkRef.OnDeleteColumns = columns
+		for p.claimOwnerReferenceOption(action, actionValue, localColumns, facets) {
+			p.skipWhitespace()
 		}
 	}
 
 	return nil
-}
-
-// parseReferentialActionColumns reads the column list PostgreSQL 15 takes
-// after ON DELETE SET NULL and ON DELETE SET DEFAULT, with the cursor on its
-// opening parenthesis.
-//
-// The list is read here for every dialect, and a target without the clause
-// refuses it when it renders (capability.ForeignKeyDeleteColumnList): that is
-// where the release line is known. A list after any other action is refused
-// here, because no engine takes one there -- PostgreSQL answers that the list
-// is only supported for ON DELETE actions, or a syntax error.
-func (p *Parser) parseReferentialActionColumns(action, actionValue string) ([]string, error) {
-	start := p.current.Start
-	if action != "DELETE" || (actionValue != "SET NULL" && actionValue != "SET DEFAULT") {
-		return nil, fmt.Errorf(
-			"a column list after ON %s %s at position %d: only ON DELETE SET NULL and ON DELETE SET DEFAULT take one",
-			action, actionValue, start,
-		)
-	}
-	p.advance()
-	p.skipWhitespace()
-	var columns []string
-	for {
-		column, err := p.expectIdentifier()
-		if err != nil {
-			return nil, fmt.Errorf("expected column name in ON DELETE %s (...): %w", actionValue, err)
-		}
-		columns = append(columns, column)
-		p.skipWhitespace()
-		if !p.current.MatchOperatorValue(",") {
-			break
-		}
-		p.advance()
-		p.skipWhitespace()
-	}
-	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
-		return nil, fmt.Errorf("expected ')' after the ON DELETE %s column list: %w", actionValue, err)
-	}
-	return columns, nil
 }
 
 // handleTableConstraintName reads the CONSTRAINT keyword and the symbol after
@@ -4427,7 +4355,7 @@ func (p *Parser) handleTableForeignKey(constraint *ast.ConstraintNode) error {
 		return fmt.Errorf("expected REFERENCES after FOREIGN KEY: %w", err)
 	}
 
-	fkRef, err := p.parseForeignKeyReference()
+	fkRef, err := p.parseForeignKeyReference(constraint.Columns, &constraint.Facets)
 	if err != nil {
 		return err
 	}

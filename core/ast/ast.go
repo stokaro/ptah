@@ -1,5 +1,7 @@
 package ast
 
+import "ptah.run/core/schemaext"
+
 // Visitor renders one AST node.
 //
 // A dialect implements this by dispatching on the node's concrete type and
@@ -102,13 +104,9 @@ type ForeignKeyRef struct {
 	// renderer for a target without the clause refuses the key rather than
 	// write one that checks every row.
 	NotEnforced bool
-	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
-	// referencing columns (PostgreSQL 15 and later); the other referencing
-	// columns keep their values. Empty means every referencing column, which
-	// is also what a list naming all of them means. A renderer for a target
-	// without the clause refuses a non-empty list rather than widen the
-	// action to every column.
-	OnDeleteColumns []string
+	// Facets holds owner settings of a column-level reference. A table-level
+	// foreign key stores its settings on ConstraintNode.Facets.
+	Facets schemaext.Facets
 }
 
 // ReferencedColumns returns the referenced column list, falling back to Column

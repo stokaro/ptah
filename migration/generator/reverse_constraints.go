@@ -208,7 +208,6 @@ func foreignKeyAdditionFromDBConstraint(
 		OnUpdate:  derefString(dbFK.UpdateRule),
 		// The down migration restores the list too, or it would set every
 		// referencing column where the prior key set some.
-		OnDeleteColumns: append([]string(nil), dbFK.OnDeleteColumns...),
 		// And the comment the dropped key carried, which the statement that
 		// adds it back writes.
 		Comment: dbFK.Comment,

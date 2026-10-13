@@ -1053,12 +1053,12 @@ func (r *Renderer) appendColumnForeignKeyLines(
 func columnForeignKeyConstraint(column *ast.ColumnNode) *ast.ConstraintNode {
 	reference := *column.ForeignKey
 	reference.Columns = slices.Clone(column.ForeignKey.Columns)
-	reference.OnDeleteColumns = slices.Clone(column.ForeignKey.OnDeleteColumns)
 	return &ast.ConstraintNode{
 		Type:      ast.ForeignKeyConstraint,
 		Name:      reference.Name,
 		Columns:   []string{column.Name},
 		Reference: &reference,
+		Facets:    reference.Facets,
 	}
 }
 
@@ -2026,12 +2026,13 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
-		// The shared renderer has refused a list the target cannot take, so
-		// one that reaches here is written rather than dropped.
-		if len(ref.OnDeleteColumns) > 0 {
-			result += fmt.Sprintf(" (%s)", strings.Join(r.escapeIdentifierList(ref.OnDeleteColumns), ", "))
-		}
 	}
+
+	suffix, err := r.foreignKeyDeleteSuffix(constraint)
+	if err != nil {
+		return "", err
+	}
+	result += suffix
 
 	if ref.OnUpdate != "" {
 		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)

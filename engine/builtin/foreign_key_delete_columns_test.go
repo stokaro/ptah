@@ -5,11 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -33,7 +36,7 @@ func deleteListSchema(onDelete string, listed ...string) *schemamodel.Database {
 			StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
 			Columns: []string{"tenant", "parent_id"}, ForeignTable: "parents",
 			ForeignColumns: []string{"tenant", "id"},
-			OnDelete:       onDelete, OnDeleteColumns: listed,
+			OnDelete:       onDelete, Facets: must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, listed)),
 		}},
 	}
 }
@@ -82,15 +85,15 @@ func TestRenderDeleteColumnList_UnsupportedTarget(t *testing.T) {
 		{name: "PostgreSQL 14", dialect: "postgres", caps: capability.Postgres14(), wantErr: `postgres does not support a column list on ON DELETE SET NULL`},
 		{name: "PostgreSQL 13", dialect: "postgres", caps: capability.Postgres13(), wantErr: `postgres does not support a column list on ON DELETE SET NULL`},
 		{name: "YugabyteDB 2024", dialect: "yugabytedb", caps: capability.YugabyteDB24(), wantErr: `yugabytedb does not support a column list on ON DELETE SET NULL`},
-		{name: "CockroachDB", dialect: "cockroachdb", caps: capability.ForDialect("cockroachdb"), wantErr: `cockroachdb does not support a column list on ON DELETE SET NULL`},
-		{name: "MySQL", dialect: "mysql", caps: capability.ForDialect("mysql"), wantErr: `mysql does not support a column list on ON DELETE SET NULL`},
-		{name: "MariaDB", dialect: "mariadb", caps: capability.ForDialect("mariadb"), wantErr: `mariadb does not support a column list on ON DELETE SET NULL`},
-		{name: "SQLite", dialect: "sqlite", caps: capability.ForDialect("sqlite"), wantErr: `sqlite does not support a column list on ON DELETE SET NULL`},
-		{name: "SQL Server", dialect: "sqlserver", caps: capability.ForDialect("sqlserver"), wantErr: `sqlserver does not support a column list on ON DELETE SET NULL`},
-		{name: "Oracle", dialect: "oracle", caps: capability.ForDialect("oracle"), wantErr: `oracle does not support a column list on ON DELETE SET NULL`},
-		{name: "ClickHouse", dialect: "clickhouse", caps: capability.ForDialect("clickhouse"), wantErr: `clickhouse does not support a column list on ON DELETE SET NULL`},
+		{name: "CockroachDB", dialect: "cockroachdb", caps: capability.ForDialect("cockroachdb"), wantErr: `cockroachdb does not support a foreign key ON DELETE column list`},
+		{name: "MySQL", dialect: "mysql", caps: capability.ForDialect("mysql"), wantErr: `mysql does not support a foreign key ON DELETE column list`},
+		{name: "MariaDB", dialect: "mariadb", caps: capability.ForDialect("mariadb"), wantErr: `mariadb does not support a foreign key ON DELETE column list`},
+		{name: "SQLite", dialect: "sqlite", caps: capability.ForDialect("sqlite"), wantErr: `sqlite does not support a foreign key ON DELETE column list`},
+		{name: "SQL Server", dialect: "sqlserver", caps: capability.ForDialect("sqlserver"), wantErr: `sqlserver does not support a foreign key ON DELETE column list`},
+		{name: "Oracle", dialect: "oracle", caps: capability.ForDialect("oracle"), wantErr: `oracle does not support a foreign key ON DELETE column list`},
+		{name: "ClickHouse", dialect: "clickhouse", caps: capability.ForDialect("clickhouse"), wantErr: `clickhouse does not support a foreign key ON DELETE column list`},
 		// Spanner refuses the action before it reaches the list.
-		{name: "Spanner", dialect: "spanner", caps: capability.ForDialect("spanner"), wantErr: `spanner does not support ON DELETE SET NULL`},
+		{name: "Spanner", dialect: "spanner", caps: capability.ForDialect("spanner"), wantErr: `spanner does not support a foreign key ON DELETE column list`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -123,11 +126,11 @@ func TestRenderDeleteColumnList_InvalidDeclaration(t *testing.T) {
 		},
 		{
 			name: "a list after CASCADE", onDelete: "CASCADE", listed: []string{"parent_id"},
-			wantErr: `invalid foreign key: an ON DELETE column list needs SET NULL or SET DEFAULT, not "CASCADE"`,
+			wantErr: `invalid schema diff: an ON DELETE column list needs SET NULL or SET DEFAULT, not "CASCADE"`,
 		},
 		{
 			name: "a column outside the key", onDelete: "SET NULL", listed: []string{"id"},
-			wantErr: `invalid foreign key: ON DELETE SET NULL names column "id", which is not one of the key's columns \[tenant parent_id\]`,
+			wantErr: `invalid schema diff: ON DELETE SET NULL names column "id", which is not one of the key's columns \[tenant parent_id\]`,
 		},
 	}
 	for _, tt := range tests {
@@ -150,11 +153,11 @@ func deleteListTableNode(listed ...string) *ast.CreateTableNode {
 	table.AddColumn(ast.NewColumn("tenant", "INTEGER").SetNotNull())
 	table.AddColumn(ast.NewColumn("parent_id", "INTEGER"))
 	table.AddConstraint(ast.NewForeignKeyConstraint("fk_children_parent", []string{"tenant", "parent_id"}, &ast.ForeignKeyRef{
-		Table:           "parents",
-		Columns:         []string{"tenant", "id"},
-		OnDelete:        "SET NULL",
-		OnDeleteColumns: listed,
+		Table:    "parents",
+		Columns:  []string{"tenant", "id"},
+		OnDelete: "SET NULL",
 	}))
+	table.Constraints[0].Facets = must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, listed))
 	return table
 }
 
@@ -182,7 +185,7 @@ func TestRenderSQLDeleteColumnList_FailurePath(t *testing.T) {
 		},
 		{
 			name: "a target without the clause", dialect: "mysql", listed: []string{"parent_id"},
-			wantErr: `mysql does not support a column list on ON DELETE SET NULL`,
+			wantErr: `mysql does not support a foreign key ON DELETE column list`,
 		},
 	}
 	for _, tt := range tests {

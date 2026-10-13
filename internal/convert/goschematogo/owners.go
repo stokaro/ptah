@@ -283,7 +283,7 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 		}
 		for i := range db.Constraints {
 			if constraintOwner(db.Constraints[i]) == name {
-				add(constraintSlot(table, db.Constraints[i]), &db.Constraints[i].Facets)
+				collected.addConstraint(table, &db.Constraints[i])
 			}
 		}
 	}
@@ -378,4 +378,11 @@ func routineAnnotationSlot(function schemamodel.Function) annotationext.Slot {
 		directive = "ptah:schema:procedure"
 	}
 	return annotationext.Slot{Directive: directive, Name: function.Name, Parameters: function.Parameters}
+}
+
+func (o *ownerSlots) addConstraint(table annotationext.Table, key *schemamodel.Constraint) {
+	o.handed[&key.Facets] = true
+	if key.Facets.Len() > 0 {
+		o.slots = append(o.slots, annotationext.SlotFacets{Slot: constraintSlot(table, *key), Facets: key.Facets, Reads: map[string]string{"type": key.Type}})
+	}
 }

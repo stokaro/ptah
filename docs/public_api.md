@@ -556,6 +556,20 @@ The common table and AST models carry the feature through facets.
 `hclext.EncodedBlock.References` carries the SQL names a table child uses, so
 HCL export retains extensions required by key expressions and modifiers.
 
+`pgtable.DesiredDeleteColumns` and `ObservedDeleteColumns` attach PostgreSQL
+`ON DELETE SET NULL` and `SET DEFAULT` selections to a foreign key's facets.
+`DeleteColumnsService` compares sets using captured common key columns: under
+complete coverage, an absent selection means every local column. Unknown
+coverage leaves comparison undecided. Planning replaces a changed selection in
+one transaction and restores the declared constraint comment; a common key
+replacement already carries the selection. Conversion, change, and operation
+codecs carry versioned data for process adapters.
+
+SQL owners receive `sqlext.ReferenceContext` with each referential-action suffix
+in their document batch. Each claim has an independent context snapshot. Go
+annotations read and write `on_delete_columns`; HCL export receives an
+independent `hclext.KeyContext` and refuses a selection it cannot express.
+
 PostgreSQL exclusion constraints are independently named
 `pgtable.DesiredExclusion` and `ObservedExclusion` objects. `ExclusionRef`
 includes the parent table, so equal constraint names on different tables remain

@@ -85,6 +85,12 @@ const (
 	// PRIMARY KEY constraint. A UNIQUE element with such an option is read as
 	// a unique index, as a key's options belong to its index.
 	IndexOption Site = "index-option"
+	// ReferenceOption is an owned suffix of a referential action. A suffix
+	// opening with a parenthesis ends when its balanced group closes. Other
+	// suffixes end at the next shared reference or column clause. Its Value
+	// carries facets of the foreign key, and Claim.Reference supplies the
+	// action and local columns without callbacks into the frontend.
+	ReferenceOption Site = "reference-option"
 	// RoutineOption is an owned clause of a CREATE FUNCTION or CREATE
 	// PROCEDURE header. A comma-separated WITH list supplies whole options.
 	// Adjacent function clauses end at the next shared clause or owner pattern.
@@ -144,8 +150,8 @@ type Claim struct {
 	Subject string
 	// Text is the span's source text, its opening words included.
 	Text string
-	// Definition numbers the element a ColumnOption, IndexOption or
-	// RoutineOption claim belongs to, a column definition, a key or a
+	// Definition numbers the element a ColumnOption, IndexOption,
+	// ReferenceOption or RoutineOption claim belongs to, a column, a key or a
 	// routine header, from 1 in document order. The claims of one element
 	// share it, so an owner can combine several options of one element into
 	// one facet: it answers the facet on one claim and an empty value, which
@@ -155,9 +161,21 @@ type Claim struct {
 	// parts, FULLTEXT or SPATIAL in upper case, and empty for any other key
 	// and at every other site.
 	IndexType string
+	// Reference describes the action a ReferenceOption extends. It is nil
+	// at other sites. Each parser receives an independent column snapshot.
+	Reference *ReferenceContext
 	// Offset is the byte offset of the span in the document, which an error
 	// the owner returns about the span is positioned against.
 	Offset int
+}
+
+// ReferenceContext describes a shared referential action. Event is DELETE or
+// UPDATE, Action is its SQL action in upper case, and Columns are the local
+// column identifiers as the SQL document writes them.
+type ReferenceContext struct {
+	Event   string
+	Action  string
+	Columns []string
 }
 
 // Index is an index an owner's syntax declares on its subject.

@@ -29,7 +29,6 @@ func (c Constraint) Clone() Constraint {
 	c.Columns = slices.Clone(c.Columns)
 	c.IncludeColumns = slices.Clone(c.IncludeColumns)
 	c.ForeignColumns = slices.Clone(c.ForeignColumns)
-	c.OnDeleteColumns = slices.Clone(c.OnDeleteColumns)
 	c.Requires = slices.Clone(c.Requires)
 	if c.NullsDistinct != nil {
 		c.NullsDistinct = new(*c.NullsDistinct)

@@ -12,7 +12,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
@@ -55,9 +57,11 @@ func TestGenerateDownMigration_RestoresTheDeleteColumnList(t *testing.T) {
 			ColumnNames: []string{"tenant", "parent_id"}, ForeignTable: new("parents"),
 			ForeignColumns: []string{"tenant", "id"},
 			DeleteRule:     new("SET NULL"), UpdateRule: new("NO ACTION"),
-			OnDeleteColumns: []string{"parent_id"},
+			Facets: must.Must(pgtable.WithObservedDeleteColumns(schemaext.Facets{}, []string{"parent_id"})),
 		}},
 	}
+	desired.FeatureCoverage = must.Must(pgtable.DeleteColumnsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	current.FeatureCoverage = must.Must(pgtable.DeleteColumnsCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 		desired, current, "postgres", must.Must(builtin.New()),
 	))

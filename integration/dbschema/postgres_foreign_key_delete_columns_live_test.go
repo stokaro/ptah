@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
@@ -58,8 +59,9 @@ CREATE TABLE "%[1]s".children (
     ` + tenant + `,
     parent_id integer,
     CONSTRAINT children_parent_fk FOREIGN KEY (tenant, parent_id)
-        REFERENCES "%[1]s".parents (tenant, id) ` + action + `
+        REFERENCES "%[1]s".parents (tenant, id) ` + action + ` DEFERRABLE INITIALLY DEFERRED
 );
+COMMENT ON CONSTRAINT children_parent_fk ON "%[1]s".children IS 'Parent key comment';
 `
 }
 
@@ -108,7 +110,9 @@ func liveDeleteColumns(c *qt.C, conn *dbschema.DatabaseConnection, schemaName st
 		}
 	}
 	c.Assert(constraints, qt.HasLen, 1)
-	return constraints[0].OnDeleteColumns
+	columns, _, err := pgtable.DeleteColumnsOf(constraints[0].Facets)
+	c.Assert(err, qt.IsNil)
+	return columns
 }
 
 // The key is created with its list over a NOT NULL tenant, compares clean
@@ -173,6 +177,15 @@ func TestPostgresLiveForeignKeyDeleteColumnListChangePlans(t *testing.T) {
 			execDeleteListStatements(c, conn, statements)
 			c.Assert(planDeleteListDocument(c, conn, schemaName, deleteListDocument(nullableTenant, test.to)), qt.HasLen, 0)
 			c.Assert(liveDeleteColumns(c, conn, schemaName), qt.DeepEquals, test.wantColumns)
+			var comment string
+			var deferrable, deferred bool
+			err := conn.QueryRowContext(c.Context(), `SELECT obj_description(c.oid, 'pg_constraint'), c.condeferrable, c.condeferred
+FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+WHERE n.nspname = $1 AND c.conname = 'children_parent_fk'`, schemaName).Scan(&comment, &deferrable, &deferred)
+			c.Assert(err, qt.IsNil)
+			c.Assert(comment, qt.Equals, "Parent key comment")
+			c.Assert(deferrable, qt.IsTrue)
+			c.Assert(deferred, qt.IsTrue)
 		})
 	}
 }

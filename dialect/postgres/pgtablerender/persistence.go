@@ -15,9 +15,10 @@ import (
 	"ptah.run/internal/sqlident"
 )
 
-// Handlers returns the owned persistence and exclusion operation handlers.
+// Handlers returns PostgreSQL persistence, exclusion, and foreign-key selection handlers.
 func Handlers() []renderer.ExtensionHandler {
-	return append(ExclusionHandlers(), renderer.TypedHandler(&pgtable.AlterPersistence{}, ast.AlterExtension, validatePersistence, renderPersistence))
+	handlers := append(ExclusionHandlers(), DeleteColumnsHandlers()...)
+	return append(handlers, renderer.TypedHandler(&pgtable.AlterPersistence{}, ast.AlterExtension, validatePersistence, renderPersistence))
 }
 
 func validatePersistence(ctx renderer.ExtensionContext, op *pgtable.AlterPersistence) error {

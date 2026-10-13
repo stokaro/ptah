@@ -39,7 +39,6 @@ func (s CommonStep) Clone() CommonStep {
 		if s.AddedColumn.ForeignKey != nil {
 			s.AddedColumn.ForeignKey = new(*s.AddedColumn.ForeignKey)
 			s.AddedColumn.ForeignKey.Columns = slices.Clone(s.AddedColumn.ForeignKey.Columns)
-			s.AddedColumn.ForeignKey.OnDeleteColumns = slices.Clone(s.AddedColumn.ForeignKey.OnDeleteColumns)
 		}
 	}
 	return s

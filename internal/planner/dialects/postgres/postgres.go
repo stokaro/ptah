@@ -3289,6 +3289,7 @@ func constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.Constrain
 		return nil
 	}
 	node.Comment = add.Comment
+	node.Facets = add.Facets
 	return node
 }
 
@@ -3436,16 +3437,15 @@ func (p *Planner) appendScopedDrop(
 // that re-derived the table from a Go struct name.
 func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.AlterTableNode {
 	fkRef := &ast.ForeignKeyRef{
-		Table:           add.ForeignTable,
-		Column:          add.ForeignColumn,
-		Columns:         add.ForeignColumns,
-		OnDelete:        add.OnDelete,
-		OnUpdate:        add.OnUpdate,
-		Deferrable:      add.Deferrable,
-		Initially:       add.Initially,
-		Match:           add.Match,
-		NotEnforced:     add.NotEnforced,
-		OnDeleteColumns: append([]string(nil), add.OnDeleteColumns...),
+		Table:       add.ForeignTable,
+		Column:      add.ForeignColumn,
+		Columns:     add.ForeignColumns,
+		OnDelete:    add.OnDelete,
+		OnUpdate:    add.OnUpdate,
+		Deferrable:  add.Deferrable,
+		Initially:   add.Initially,
+		Match:       add.Match,
+		NotEnforced: add.NotEnforced,
 	}
 	fkRef.Name = add.Name
 	constraint := ast.NewForeignKeyConstraint(add.Name, add.Columns, fkRef)
@@ -3454,6 +3454,7 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 	// comparison plans its comment on its own.
 	constraint.Comment = add.Comment
 	constraint.NotValid = add.NotValid
+	constraint.Facets = add.Facets
 	return &ast.AlterTableNode{
 		Name:       add.TableName,
 		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},

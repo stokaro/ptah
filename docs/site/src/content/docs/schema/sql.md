@@ -140,8 +140,11 @@ parent row is deleted, is refused:
 
 A target without the clause refuses the list instead of widening the action to
 every column: PostgreSQL before 15, YugabyteDB 2024.2, CockroachDB, and the
-other engines. The Go annotation and Atlas HCL exports refuse such a key for
-the same reason, because neither format can write the list.
+other engines. Go annotations preserve `on_delete_columns`. Atlas HCL export
+refuses a narrowed list; it can omit a list covering the whole key.
+
+A change replaces the key in a transaction, preserving its declared settings
+and comment. Reordering or repeating columns produces no migration.
 
 ## Defer a check to the end of the transaction
 

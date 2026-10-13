@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 )
@@ -29,13 +32,13 @@ func TestRender_NarrowedDeleteAction(t *testing.T) {
 		Constraints: []schemamodel.Constraint{{
 			StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
 			Columns: []string{"tenant", "parent_id"}, ForeignTable: "parents",
-			ForeignColumns: []string{"tenant", "id"}, OnDelete: "SET NULL", OnDeleteColumns: []string{"parent_id"},
+			ForeignColumns: []string{"tenant", "id"}, OnDelete: "SET NULL", Facets: must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, []string{"parent_id"})),
 		}},
 	}
 
 	result, err := atlashclrender.RenderInspected(database, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches,
-		`foreign key "fk_children_parent" limits ON DELETE SET NULL to columns parent_id, which Atlas HCL cannot represent`)
+		`unsupported feature: foreign key "fk_children_parent" limits ON DELETE to columns parent_id, which Atlas HCL cannot represent`)
 	c.Assert(result, qt.DeepEquals, atlashclrender.Result{})
 }

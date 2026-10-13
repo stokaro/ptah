@@ -8,7 +8,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -22,7 +24,7 @@ func deleteListAdditionDiff() *difftypes.SchemaDiff {
 		Constraints: []schemamodel.Constraint{{
 			StructName: "Child", Table: "children", Name: "children_parent_fk", Type: "FOREIGN KEY",
 			Columns: []string{"tenant", "parent_id"}, ForeignTable: "parents",
-			ForeignColumns: []string{"tenant", "id"}, OnDelete: "SET NULL", OnDeleteColumns: []string{"parent_id"},
+			ForeignColumns: []string{"tenant", "id"}, OnDelete: "SET NULL", Facets: must.Must(pgtable.WithDeleteColumns(schemaext.Facets{}, []string{"parent_id"})),
 		}},
 	}
 	return &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "children_parent_fk")}
@@ -54,6 +56,6 @@ func TestGenerateSchemaDiffSQLStatements_RefusesTheDeleteColumnListOnMySQL(t *te
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*mysql does not support a column list on ON DELETE SET NULL.*`)
+	c.Assert(err, qt.ErrorMatches, `.*mysql does not support a foreign key ON DELETE column list.*`)
 	c.Assert(statements, qt.IsNil)
 }
