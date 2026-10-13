@@ -242,7 +242,8 @@ func TestCollectDatabase_RefusesUnloweredFacetsBeforeVisiting(t *testing.T) {
 	database := unloweredFacetsFixture()
 	slots := loweringFacetSlots(reflect.ValueOf(&database).Elem())
 	c.Assert(len(slots) >= 16, qt.IsTrue)
-	lowered := append([]uintptr{reflect.ValueOf(&database.Tables[0].Facets).Pointer(), reflect.ValueOf(&database.MaterializedViews[0].Facets).Pointer()},
+	lowered := append([]uintptr{reflect.ValueOf(&database.Tables[0].Facets).Pointer(), reflect.ValueOf(&database.MaterializedViews[0].Facets).Pointer(),
+		reflect.ValueOf(&database.Functions[0].Facets).Pointer()},
 		tableFieldFacets(&database)...)
 	unsupported := slices.DeleteFunc(slices.Clone(slots), func(slot reflect.Value) bool {
 		return slices.Contains(lowered, slot.Addr().Pointer())

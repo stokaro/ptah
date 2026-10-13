@@ -345,6 +345,26 @@ func prepareMaterializedViewFacets(dialect string, facets schemaext.Facets) (sch
 	return projected, nil
 }
 
+// prepareRoutineFacets projects a routine's facets onto the target. SQL Server
+// interprets the principal a routine runs as; any other active value, and
+// every value on another target, is refused rather than rendered without it.
+func prepareRoutineFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
+	projected, err := projectFacets(dialect, facets)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+		return refuseActiveFacets(dialect, projected)
+	}
+	if _, _, err := mssqlschema.ExecuteAsPrincipal(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	if _, err := refuseActiveFacets(dialect, projected.Without(mssqlschema.ExecuteAsKind)); err != nil {
+		return schemaext.Facets{}, err
+	}
+	return projected, nil
+}
+
 func validateDeclaredFacets(dialect string, database *schemamodel.Database) error {
 	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error),
 		len(database.Tables)+len(database.Indexes)+len(database.MaterializedViews))
@@ -363,6 +383,9 @@ func validateDeclaredFacets(dialect string, database *schemamodel.Database) erro
 	}
 	for i := range database.Fields {
 		owners[&database.Fields[i].Facets] = prepareColumnFacets
+	}
+	for i := range database.Functions {
+		owners[&database.Functions[i].Facets] = prepareRoutineFacets
 	}
 	for _, facets := range database.FacetSlots() {
 		prepare := prepareFacets

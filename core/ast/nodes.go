@@ -2028,6 +2028,9 @@ func (n *DropTriggerNode) Accept(visitor Visitor) error { return visitor.VisitNo
 // It supports various PostgreSQL function attributes like SECURITY DEFINER,
 // STABLE, IMMUTABLE, etc.
 type CreateFunctionNode struct {
+	// Facets carries settings interpreted by the selected feature owner, such
+	// as the principal a SQL Server routine runs as.
+	Facets schemaext.Facets
 	// Name is the name of the function to create
 	Name string
 	// Kind separates a function from a procedure. Empty means function.

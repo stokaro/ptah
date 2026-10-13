@@ -713,8 +713,8 @@ func appendFamilyStatement(
 	if handled, err := applyOwnerStatement(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
-	if appendRoutine(database, stmt, sourcePlatform) {
-		return true, nil
+	if handled, err := appendRoutine(database, stmt, sourcePlatform); handled {
+		return true, err
 	}
 	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
 		return true, err
@@ -791,7 +791,8 @@ func firstLine(sql string) string {
 const unmodeledStatementQuote = 80
 
 // appendRoutine records the routine nodes CREATE PROCEDURE parses to, and
-// reports whether it recognized one.
+// reports whether it recognized one. A routine whose header states what the
+// model has no place for is refused; see [toSQLServerRoutine].
 //
 // Separate from the statement switch because three more cases took that
 // function past the cyclomatic threshold, and because these three answer one
@@ -802,18 +803,22 @@ const unmodeledStatementQuote = 80
 // dropped in silence, and these three were missed anyway. A comment is read by
 // whoever is already thinking about the switch, which is never the person
 // adding a node kind (stokaro/ptah#932, stokaro/ptah#2435).
-func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) bool {
+func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
 	switch node := stmt.(type) {
 	case *ast.PostgresRoutineNode:
 		database.Functions = append(database.Functions, toPostgresRoutine(node, sourcePlatform))
 	case *ast.SQLServerRoutineNode:
-		database.Functions = append(database.Functions, toSQLServerRoutine(node, sourcePlatform))
+		function, err := toSQLServerRoutine(node, sourcePlatform)
+		if err != nil {
+			return true, err
+		}
+		database.Functions = append(database.Functions, function)
 	case *ast.MySQLRoutineNode:
 		database.Functions = append(database.Functions, toMySQLRoutine(node, sourcePlatform))
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 // appendPrivilegeDeclaration records the statements that declare access, and

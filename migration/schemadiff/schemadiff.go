@@ -179,6 +179,9 @@ func compareReportingUndecidedAdditions(
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.FunctionsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.RoutineArguments, rules.Routines)
+	if err := attachRoutineChanges(diff, desired, database, comparisonChanges(featureResult), identifierSemantics); err != nil {
+		return nil, Diagnostics{}, err
+	}
 
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
 	compare.SequencesWithSemantics(desired, database, diff, cov, identifierSemantics)

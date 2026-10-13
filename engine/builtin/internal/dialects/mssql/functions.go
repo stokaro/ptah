@@ -1,10 +1,13 @@
 package mssql
 
 import (
+	"fmt"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/internal/mysqlroutine"
 )
 
@@ -74,6 +77,10 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 			routineWord(node), node.Name)
 		return nil
 	}
+	clause, err := executeAsClause(node)
+	if err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -103,16 +110,47 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 			strings.TrimSpace(node.Parameters))
 		r.w.WriteLinef("RETURNS %s", strings.TrimSpace(node.Returns))
 	}
-	// SECURITY DEFINER does have a T-SQL spelling, and it was nearly written off
-	// as absent: `WITH EXECUTE AS OWNER` is what the catalog reports back as a
-	// principal id on sys.sql_modules.execute_as_principal_id. CALLER is the
-	// default and needs no clause, which is what INVOKER means.
-	if strings.EqualFold(strings.TrimSpace(node.Security), "DEFINER") {
-		r.w.WriteLinef("WITH EXECUTE AS OWNER")
+	if clause != "" {
+		r.w.WriteLinef("%s", clause)
 	}
 	r.w.WriteLinef("AS")
 	r.w.WriteLinef("%s;", strings.TrimSpace(node.Body))
 	return nil
+}
+
+// executeAsClause returns the EXECUTE AS clause of a routine's header, or the
+// empty string for one that runs as its caller.
+//
+// SECURITY DEFINER has a T-SQL spelling: `WITH EXECUTE AS OWNER`, which the
+// catalog reports back as a principal id on
+// sys.sql_modules.execute_as_principal_id. A routine that runs as a named
+// principal states it in the owner's EXECUTE AS facet, and is written `WITH
+// EXECUTE AS N'auditor'`. CALLER is the default and needs no clause, which is
+// what INVOKER means, so a named principal beside INVOKER contradicts itself
+// and is refused. A setting this target has no clause for is refused too,
+// rather than created without it.
+func executeAsClause(node *ast.CreateFunctionNode) (string, error) {
+	for _, kind := range node.Facets.Kinds() {
+		if kind != mssqlschema.ExecuteAsKind {
+			return "", fmt.Errorf("%w: %s %q carries %q, which SQL Server has no clause for",
+				ptaherr.ErrUnsupportedFeature, routineWord(node), node.Name, kind)
+		}
+	}
+	principal, named, err := mssqlschema.ExecuteAsPrincipal(node.Facets)
+	if err != nil {
+		return "", err
+	}
+	security := strings.ToUpper(strings.TrimSpace(node.Security))
+	switch {
+	case named && security == "INVOKER":
+		return "", fmt.Errorf("%w: %s %q runs as its caller and as %q at once; a named principal is a definer's rights",
+			ptaherr.ErrUnsupportedFeature, routineWord(node), node.Name, principal)
+	case named:
+		return "WITH EXECUTE AS N'" + strings.ReplaceAll(principal, "'", "''") + "'", nil
+	case security == "DEFINER":
+		return "WITH EXECUTE AS OWNER", nil
+	}
+	return "", nil
 }
 
 // renderDropFunction renders a T-SQL DROP FUNCTION.

@@ -213,6 +213,7 @@ func corpus() []Fixture {
 		{Name: "owned-coordination-node", Schema: ownedCoordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
 		{Name: "security-policy", Schema: securityPolicyFixture()},
+		{Name: "routine-execute-as", Schema: routineExecuteAsFixture()},
 		{Name: "pgpolicy-policy", Schema: tablePolicyFixture()},
 		{Name: "pgpolicy-policy-declared", Schema: tableDeclaredPolicyFixture()},
 		{Name: "pgpolicy-table-state", Schema: tableRowSecurityFixture()},

@@ -1,6 +1,7 @@
 // Package mssqlcompare compares SQL Server security policies, declared against
-// observed, into changes that carry their access assessment. It reads only
-// the captured states it is handed: no database, no source file.
+// observed, into changes that carry their access assessment, and the
+// principal a routine runs as. It reads only the captured states it is
+// handed: no database, no source file.
 package mssqlcompare
 
 import (

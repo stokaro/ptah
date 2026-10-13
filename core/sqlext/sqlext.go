@@ -81,6 +81,12 @@ const (
 	// PRIMARY KEY constraint. A UNIQUE element with such an option is read as
 	// a unique index, as a key's options belong to its index.
 	IndexOption Site = "index-option"
+	// RoutineOption is one option of the WITH list of a CREATE FUNCTION or
+	// CREATE PROCEDURE statement, between the routine's signature and the AS
+	// that opens its body, such as T-SQL's EXECUTE AS or SCHEMABINDING. The
+	// frontend splits the list itself, so a span is one whole option. Its
+	// [Value] carries the owner's facets of the routine.
+	RoutineOption Site = "routine-option"
 	// Statement is a whole top-level statement. A span ends at the semicolon
 	// that ends the statement or at the end of the document. Its [Value] is
 	// the owner's statement, and may declare objects of the owner or amend
@@ -134,12 +140,12 @@ type Claim struct {
 	Subject string
 	// Text is the span's source text, its opening words included.
 	Text string
-	// Definition numbers the element a ColumnOption or IndexOption claim
-	// belongs to, a column definition or a key, from 1 in document order.
-	// The claims of one element share it, so an owner can combine several
-	// options of one element into one facet: it answers the facet on one
-	// claim and an empty value, which adds nothing, on the others. It is
-	// zero at every other site.
+	// Definition numbers the element a ColumnOption, IndexOption or
+	// RoutineOption claim belongs to, a column definition, a key or a
+	// routine header, from 1 in document order. The claims of one element
+	// share it, so an owner can combine several options of one element into
+	// one facet: it answers the facet on one claim and an empty value, which
+	// adds nothing, on the others. It is zero at every other site.
 	Definition int
 	// IndexType is the type an IndexOption claim's key declares before its
 	// parts, FULLTEXT or SPATIAL in upper case, and empty for any other key

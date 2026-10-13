@@ -61,6 +61,7 @@ var registry = []Entry{
 	{Field: "mssqlproperty.Property.Schema", Disposition: DDL},
 	{Field: "mssqlproperty.Property.Table", Disposition: DDL},
 	{Field: "mssqlproperty.Property.Value", Disposition: DDL},
+	{Field: "mssqlschema.DesiredExecuteAs.Principal", Disposition: DDL},
 	{Field: "mssqlschema.DesiredSecurityPolicy.Enabled", Disposition: DDL},
 	{Field: "mssqlschema.DesiredSecurityPolicy.Normalized", Disposition: Comparison, Reason: "a connected server's spelling of the declared predicates, attached before a live comparison; a statement writes the predicates as declared"},
 	{Field: "mssqlschema.DesiredSecurityPolicy.NotForReplication", Disposition: DDL},

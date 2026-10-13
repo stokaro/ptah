@@ -691,9 +691,20 @@ func (b Builder) Role(role string) ID {
 // model without the signature cannot say that, and a comparator built on one
 // plans a replacement of whichever it happened to see first.
 func (b Builder) Function(qualified, signature string) ID {
+	return b.routine(KindFunction, qualified, signature)
+}
+
+// Procedure builds the identity of a procedure as [Builder.Function] builds a
+// function's. The kinds differ because one schema may hold a function and a
+// procedure of one name on the MySQL family.
+func (b Builder) Procedure(qualified, signature string) ID {
+	return b.routine(KindProcedure, qualified, signature)
+}
+
+func (b Builder) routine(kind Kind, qualified, signature string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
-		Kind:      KindFunction,
+		Kind:      kind,
 		Schema:    b.schemaPart(schema),
 		Name:      b.namePart(name, b.semantics.TableIdentityKey),
 		Signature: normalizeSignature(signature),

@@ -100,6 +100,7 @@ func New() (*engine.Runtime, error) {
 			// The SQL Server owner judges PolyBase's drops, which a safety
 			// assessment reads in place of their words.
 			provider.Targets[0].Splitter = mssqllint.Splitter{}
+			registerSQLServerRoutineServices(&provider)
 		}
 		if name == platform.YDB {
 			// YDB answers nothing it cannot hold with a skip comment, since

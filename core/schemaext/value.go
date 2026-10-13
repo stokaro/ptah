@@ -32,6 +32,16 @@ type Value interface {
 	Equal(Value) bool
 }
 
+// IdentifierValue exposes the catalog identifiers an owner-defined value names.
+// A host includes them when resolving target identifier equivalence before
+// comparison. IdentifierNames returns unquoted logical names and performs no
+// I/O. Callers must copy the result before changing it. An empty slice names
+// no identifiers. Implementations do not mutate the value.
+type IdentifierValue interface {
+	Value
+	IdentifierNames() []string
+}
+
 // CloneValue validates the interface and its clone's identity. Owners remain
 // responsible for copying nested mutable state; their conformance tests must
 // prove isolation. Reflection is confined to this dispatch boundary.

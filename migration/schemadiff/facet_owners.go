@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/tableidentity"
 )
@@ -61,6 +62,11 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 	for _, i := range standingMaterializedViews(db.MaterializedViews, semantics) {
 		view := &db.MaterializedViews[i]
 		slots = append(slots, facetOwnerSlot{declaredMaterializedViewSubject(view.Name, semantics), &view.Facets})
+	}
+	builder := objectidentity.NewBuilder(semantics)
+	for i := range db.Functions {
+		function := &db.Functions[i]
+		slots = append(slots, facetOwnerSlot{routineargs.Subject(builder, function.Kind, function.Name, function.Parameters), &function.Facets})
 	}
 	return slots, nil
 }
@@ -185,6 +191,10 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 		view := &db.MatViews[i]
 		subject := objectidentity.NewBuilder(semantics).SchemaScopedParts(objectidentity.KindMatView, view.Schema, view.Name)
 		slots = append(slots, facetOwnerSlot{subject, &view.Facets})
+	}
+	for i := range db.Functions {
+		function := &db.Functions[i]
+		slots = append(slots, facetOwnerSlot{routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters), &function.Facets})
 	}
 	return slots
 }

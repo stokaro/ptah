@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routineargs"
 	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -202,8 +203,9 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 	}
 	for _, change := range changes {
 		// A materialized view's changes join its entry once the view
-		// comparison has run; see attachMaterializedViewChanges.
-		if change.Subject.Kind == objectidentity.KindMatView {
+		// comparison has run, and a routine's once the routine comparison
+		// has; see attachMaterializedViewChanges and attachRoutineChanges.
+		if change.Subject.Kind == objectidentity.KindMatView || isRoutineSubject(change.Subject) {
 			continue
 		}
 		// Only a materialized view can be replaced for an attached setting:
@@ -374,4 +376,111 @@ func (v materializedViewChanges) attach(change schemaext.ChangeRecord) error {
 	view := &v.diff.MaterializedViewsModified[position]
 	view.FeatureChanges = append(view.FeatureChanges, change)
 	return nil
+}
+
+// isRoutineSubject reports whether subject is a function or a procedure.
+func isRoutineSubject(subject objectidentity.ID) bool {
+	return subject.Kind == objectidentity.KindFunction || subject.Kind == objectidentity.KindProcedure
+}
+
+// attachRoutineChanges joins each owner's change to a routine's attached
+// settings to that routine's entry, which it adds where the common comparison
+// found no other difference. A change that requires replacing the routine is
+// planned as the routine's replacement, which renders from the declaration
+// and so carries the settings; one its owner applies in place is planned by
+// its owner. A replaced routine that would lose a setting the declaration's
+// source cannot state is refused; see [refuseLossyRoutineReplacements].
+func attachRoutineChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, changes []schemaext.ChangeRecord, semantics identifier.Semantics) error {
+	builder := objectidentity.NewBuilder(semantics)
+	declared := make(map[objectidentity.Key]schemamodel.Function, len(desired.Functions))
+	for _, function := range desired.Functions {
+		declared[routineargs.Subject(builder, function.Kind, function.Name, function.Parameters).Key()] = function
+	}
+	observed := make(map[objectidentity.Key]catalog.Function, len(current.Functions))
+	for _, function := range current.Functions {
+		observed[routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters).Key()] = function
+	}
+	positions := make(map[objectidentity.Key]int, len(diff.FunctionsModified))
+	for i, entry := range diff.FunctionsModified {
+		positions[routineargs.Subject(builder, entry.Desired.Kind, entry.Desired.Name, entry.Desired.Parameters).Key()] = i
+	}
+	for _, change := range changes {
+		if !isRoutineSubject(change.Subject) {
+			continue
+		}
+		if !schemaext.ReplacesOwner(change.Value) {
+			diff.FeatureChanges = append(diff.FeatureChanges, change)
+			continue
+		}
+		key := change.Subject.Key()
+		position, found := positions[key]
+		if !found {
+			function, isDeclared := declared[key]
+			routine, isObserved := observed[key]
+			if !isDeclared || !isObserved {
+				return fmt.Errorf("%w: feature change %q names %s, which is not a routine both sides hold",
+					ptaherr.ErrInvalidSchemaDiff, change.Value.Kind(), change.Subject)
+			}
+			position = len(diff.FunctionsModified)
+			positions[key] = position
+			diff.FunctionsModified = append(diff.FunctionsModified, difftypes.FunctionDiff{
+				FunctionName: function.Name, Changes: make(map[string]string), Desired: function, CurrentSignature: routine.DropIdentity(),
+			})
+		}
+		diff.FunctionsModified[position].FeatureChanges = append(diff.FunctionsModified[position].FeatureChanges, change)
+	}
+	slices.SortStableFunc(diff.FunctionsModified, func(a, b difftypes.FunctionDiff) int {
+		return strings.Compare(a.FunctionName, b.FunctionName)
+	})
+	return refuseLossyRoutineReplacements(diff, desired, current, builder)
+}
+
+// refuseLossyRoutineReplacements refuses to replace a routine whose current
+// side holds an attached setting the declaration neither states nor asks to
+// remove, because its source has no way to say either: the replacement
+// creates the routine from the declaration, so the setting would be gone with
+// no change saying so. A SQL Server routine that runs as a named principal,
+// declared by a source that cannot write EXECUTE AS, is the case: replaced, it
+// would run as its owner.
+func refuseLossyRoutineReplacements(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, builder objectidentity.Builder) error {
+	// Paired by identity, and by kind and name where the arguments are
+	// spelled differently on the two sides: the routine comparison pairs a
+	// target without overloads by name, and the routine is replaced either way.
+	exact := make(map[objectidentity.Key]catalog.Function, len(current.Functions))
+	named := make(map[objectidentity.Key]catalog.Function, len(current.Functions))
+	for _, function := range current.Functions {
+		exact[routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters).Key()] = function
+		named[routineargs.Subject(builder, function.Kind, function.QualifiedName(), "").Key()] = function
+	}
+	for _, entry := range diff.FunctionsModified {
+		subject := routineargs.Subject(builder, entry.Desired.Kind, entry.Desired.Name, entry.Desired.Parameters)
+		routine, found := exact[subject.Key()]
+		if !found {
+			routine, found = named[routineargs.Subject(builder, entry.Desired.Kind, entry.Desired.Name, "").Key()]
+		}
+		if !found {
+			continue
+		}
+		for _, kind := range routine.Facets.Kinds() {
+			if _, declared, err := entry.Desired.Facets.Get(kind); err != nil || declared {
+				continue
+			}
+			switch desired.FeatureCoverage.Lookup(kind, subject).State {
+			case schemaext.Complete, schemaext.Absent, schemaext.Defaulted:
+				continue
+			}
+			return &RefusalError{cause: fmt.Errorf("%w: %s %s is replaced, and it holds %q, which the declaration's source has no way to state, "+
+				"so the replacement would create it without that setting; declare the routine in a source that states it, "+
+				"or leave the routine's definition unchanged", ptaherr.ErrUnsupportedFeature, routineWord(entry.Desired), entry.FunctionName, kind)}
+		}
+	}
+	return nil
+}
+
+// routineWord names a routine's kind the way a message says it.
+func routineWord(function schemamodel.Function) string {
+	if function.IsProcedure() {
+		return schemamodel.FunctionKindProcedure
+	}
+	return schemamodel.FunctionKindFunction
 }

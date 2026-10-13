@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-632 fields are reachable from the desired schema, and each one carries
+633 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 529 | reaches rendered SQL on at least one target |
+| `ddl` | 530 | reaches rendered SQL on at least one target |
 | `comparison` | 28 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -322,6 +322,7 @@ migration nobody asked for.
 | `mssqlproperty.Property.Schema` | `ddl` | — |
 | `mssqlproperty.Property.Table` | `ddl` | — |
 | `mssqlproperty.Property.Value` | `ddl` | — |
+| `mssqlschema.DesiredExecuteAs.Principal` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.Enabled` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.Normalized` | `comparison` | a connected server's spelling of the declared predicates, attached before a live comparison; a statement writes the predicates as declared |
 | `mssqlschema.DesiredSecurityPolicy.NotForReplication` | `ddl` | — |

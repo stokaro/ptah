@@ -2,7 +2,8 @@
 // policy: the policy a read observed, the policy a declaration asks for, and
 // the owner's assessment of what the change does to access. It also derives
 // the statements a change needs, which the renderer writes and the planner
-// sizes its transaction by. It contains no rendering or database access.
+// sizes its transaction by. A change of the principal a routine runs as is
+// here too. It contains no rendering or database access.
 package mssqldiff
 
 import (
@@ -91,7 +92,8 @@ func (v *SecurityPolicy) Effect() schemaext.Effect {
 var changeShape = schemaext.ObjectShape{Name: "security policy change",
 	Allowed: []string{"before", "after", "access"}, Required: []string{"before", "after", "access"}, Nullable: []string{"before", "after"}}
 
-// Codecs returns the version-one change codec.
+// Codecs returns the version-one security policy change codec. The EXECUTE AS
+// change has its own, [ExecuteAsCodec], since another provider owns it.
 func Codecs() []schemaext.Codec { return []schemaext.Codec{Codec()} }
 
 // Codec returns the change codec. Each operand takes the model's own observed

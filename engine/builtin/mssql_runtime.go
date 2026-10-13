@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlast"
@@ -18,6 +19,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/engine"
 	"ptah.run/internal/mssqlpolicysource"
+	"ptah.run/internal/mssqlroutinesource"
 )
 
 // mssqlProvider assembles the SQL Server security policy owner of ADR 0020 on
@@ -50,4 +52,32 @@ func mssqlProvider() engine.Provider {
 			Definitions: mssqlreport.Definitions(), Service: mssqlreport.Service{}})
 	}
 	return provider
+}
+
+// registerSQLServerRoutineServices gives the SQL Server target's provider the
+// principal a routine runs as: the facet's codecs, its conversion, its
+// comparison, the reversal of its change, and the SQL syntax that reads it.
+// A change of it replaces the routine, which the host plans as the routine's
+// CREATE OR ALTER, so no owner plan is registered for it.
+func registerSQLServerRoutineServices(provider *engine.Provider) {
+	target := platform.SQLServer
+	provider.Codecs = slices.Concat(provider.Codecs, mssqlschema.ExecuteAsCodecs(), []schemaext.Codec{mssqldiff.ExecuteAsCodec()})
+	provider.Conversions = append(provider.Conversions, engine.Conversion{
+		Target:  target,
+		Kinds:   []schemaext.Kind{mssqlschema.ExecuteAsKind},
+		Service: mssqlconvert.Service{},
+	})
+	provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{
+		Target:      target,
+		OwnerKinds:  []objectidentity.Kind{objectidentity.KindFunction, objectidentity.KindProcedure},
+		Kinds:       []schemaext.Kind{mssqlschema.ExecuteAsKind},
+		ChangeKinds: []schemaext.Kind{mssqldiff.ExecuteAsKind},
+		Service:     mssqlcompare.ExecuteAsService{},
+	})
+	provider.Reversals = append(provider.Reversals, engine.Reversal{
+		Target:  target,
+		Kinds:   []schemaext.Kind{mssqldiff.ExecuteAsKind},
+		Service: mssqlreverse.ExecuteAsService{},
+	})
+	provider.SQL = append(provider.SQL, mssqlroutinesource.SQL())
 }

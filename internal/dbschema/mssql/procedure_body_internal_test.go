@@ -125,3 +125,38 @@ func TestProcedureAwareReturns_AnswersNothingForAProcedure(t *testing.T) {
 	c.Assert(procedureAwareReturns("P ", "int"), qt.Equals, "")
 	c.Assert(procedureAwareReturns("FN", "int"), qt.Equals, "int")
 }
+
+// TestProcedureBody_SkipsAParametersAs holds the other AS a header can carry:
+// T-SQL accepts `@a AS INT` in a procedure's parameter list, and the
+// definition keeps it, measured on SQL Server 2025 RTM-CU9.
+func TestProcedureBody_SkipsAParametersAs(t *testing.T) {
+	c := qt.New(t)
+
+	body := procedureBody("CREATE PROCEDURE dbo.p @a AS INT AS SELECT @a AS a;")
+
+	c.Assert(body, qt.Equals, "SELECT @a AS a")
+}
+
+// TestFunctionBody_SkipsTheExecuteAsClause is the function's half of
+// TestProcedureBody_SkipsTheExecuteAsClause. A function created `RETURNS int
+// WITH EXECUTE AS OWNER AS BEGIN ... END` has the body `BEGIN ... END`. Read
+// from the clause's AS, it would be `OWNER AS BEGIN ... END`, and the function
+// would be replanned on every run.
+func TestFunctionBody_SkipsTheExecuteAsClause(t *testing.T) {
+	c := qt.New(t)
+
+	body := functionBody("CREATE FUNCTION dbo.f() RETURNS int WITH EXECUTE AS OWNER AS BEGIN RETURN 1; END;")
+
+	c.Assert(body, qt.Equals, "BEGIN RETURN 1; END")
+}
+
+// A function's optional AS does not become part of its catalog body.
+func TestFunctionBody_OptionalAS(t *testing.T) {
+	for _, test := range []struct{ name, definition, body string }{
+		{"scalar", "CREATE FUNCTION dbo.f() RETURNS INT WITH EXECUTE AS OWNER BEGIN RETURN 1; END;", "BEGIN RETURN 1; END"},
+		{"inline table", "CREATE FUNCTION dbo.f() RETURNS TABLE RETURN SELECT 1 AS id;", "RETURN SELECT 1 AS id"},
+		{"return variable", "CREATE FUNCTION dbo.f() RETURNS @begin TABLE (id INT) WITH EXECUTE AS OWNER BEGIN INSERT @begin VALUES (1); RETURN; END;", "BEGIN INSERT @begin VALUES (1); RETURN; END"},
+	} {
+		t.Run(test.name, func(t *testing.T) { c := qt.New(t); c.Assert(functionBody(test.definition), qt.Equals, test.body) })
+	}
+}

@@ -94,6 +94,13 @@ func TestIdentity_DefectFixtures(t *testing.T) {
 			right: builder.Function("public.f", "text"),
 		},
 		{
+			// The kind axis: one schema may hold a function and a procedure
+			// of one name, and a setting of one is not the other's.
+			name:  "a procedure and a function of one name",
+			left:  builder.Function("public.f", "int"),
+			right: builder.Procedure("public.f", "int"),
+		},
+		{
 			// A primary key is its table's, so two tables have two keys.
 			name:  "the primary keys of two tables",
 			left:  builder.PrimaryKeyParts("public", "orders"),
@@ -162,6 +169,11 @@ func TestIdentity_EqualityHoldsWhereItShould(t *testing.T) {
 			name:  "a routine signature folds case and spacing",
 			left:  builder.Function("public.f", "( INT , TEXT )"),
 			right: builder.Function("public.f", "int,text"),
+		},
+		{
+			name:  "a procedure signature folds case and spacing",
+			left:  builder.Procedure("public.p", "( INT , TEXT )"),
+			right: builder.Procedure("public.p", "int,text"),
 		},
 		{
 			// A trailing parenthesis that closes a type modifier is part of the

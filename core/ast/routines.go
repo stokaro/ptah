@@ -3,6 +3,8 @@ package ast
 import (
 	"slices"
 	"strings"
+
+	"ptah.run/core/schemaext"
 )
 
 // PostgresDoBlockNode represents a PostgreSQL DO statement parsed through the
@@ -73,10 +75,28 @@ type SQLServerRoutineNode struct {
 	Parameters string
 	// Returns contains the raw T-SQL RETURNS clause for functions.
 	Returns string
+	// Options are what the header writes between the signature and the body:
+	// each WITH option, such as EXECUTE AS OWNER or RECOMPILE, and FOR
+	// REPLICATION.
+	Options []SQLServerRoutineOption
+	// Facets are the settings the owners' SQL syntax read from the options;
+	// see [SQLServerRoutineOption.Read].
+	Facets schemaext.Facets
 	// Form classifies the SQL Server routine shape.
 	Form SQLServerRoutineForm
 	// Body is the routine body text.
 	Body SQLServerRoutineBody
+}
+
+// SQLServerRoutineOption is one option a SQL Server routine's header writes
+// between its signature and the AS that opens its body.
+type SQLServerRoutineOption struct {
+	// Text is the option with its keywords upper-cased and a principal's
+	// string as written, such as EXECUTE AS OWNER or EXECUTE AS 'auditor'.
+	Text string
+	// Read reports that an owner's SQL syntax read the option, and holds what
+	// it read in the routine's [SQLServerRoutineNode.Facets].
+	Read bool
 }
 
 // SQLServerRoutineForm identifies SQL Server function and procedure shapes.

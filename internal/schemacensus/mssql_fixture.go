@@ -26,3 +26,17 @@ func securityPolicyFixture() schemamodel.Database {
 	db.FeatureCoverage = must.Must(mssqlschema.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
+
+// routineExecuteAsFixture declares a SQL Server function that runs as a named
+// principal, so removing the principal changes what is rendered: EXECUTE AS
+// OWNER in place of EXECUTE AS N'auditor'.
+func routineExecuteAsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Functions = []schemamodel.Function{{
+		StructName: "F", Name: "dbo.audit_it", Returns: "int", Language: "sql", Security: "DEFINER",
+		Body:   "BEGIN RETURN 1; END",
+		Facets: must.Must(mssqlschema.WithExecuteAs(schemaext.Facets{}, "auditor")),
+	}}
+	db.FeatureCoverage = must.Must(mssqlschema.ExecuteAsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return db
+}

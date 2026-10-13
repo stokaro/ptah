@@ -108,8 +108,9 @@ type Parser struct {
 	// each read again by the shared grammar where it stood; see
 	// [Parser.placeDeclinedStatements].
 	declinedStatements map[*ast.ExtensionStatement]OwnerStatement
-	// definitions counts the column definitions and keys read so far, which
-	// numbers the claims of owners' column and index options; see
+	// definitions counts the column definitions, keys and routine headers
+	// read so far, which numbers the claims of owners' column, index and
+	// routine options; see
 	// [sqlext.Claim.Definition].
 	definitions int
 }
@@ -921,7 +922,7 @@ func (p *Parser) collectRawSQLServerRoutine(statementStart int, semicolonMode sq
 			return sql, nil
 		}
 
-		if p.current.Type == lexer.TokenIdentifier {
+		if p.current.Type == lexer.TokenIdentifier && !p.previous.MatchOperatorValue("@") {
 			nextValue := sqlServerRawRoutineNextSignificantValue(p.input, p.current.End)
 			if complete := trackSQLServerRawRoutineKeyword(strings.ToUpper(p.current.Value), nextValue, &blockDepth, &caseDepth); complete {
 				end := p.current.End
