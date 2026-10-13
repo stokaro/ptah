@@ -28,7 +28,6 @@ package renderdiag
 
 import (
 	"cmp"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -511,27 +510,4 @@ const (
 // RecordLostTableStorage records partitioning a CREATE TABLE declares
 // on a target that cannot carry it.
 func (s *Sink) RecordLostTableStorage(node *ast.CreateTableNode) {
-	s.RecordLostPartition(node.Name, node.Partition)
-}
-
-// RecordLostPartition records a table partitioning the target does not carry.
-// A table declaring none records nothing.
-//
-// The spec is described here rather than by each renderer. Five targets drop
-// it, and five descriptions of the same declaration are five sentences to keep in
-// step; taking the node is what makes the sentence one.
-func (s *Sink) RecordLostPartition(table string, spec *ast.PartitionSpec) {
-	if s == nil || spec == nil {
-		return
-	}
-	keys := make([]string, 0, len(spec.Parts))
-	for _, part := range spec.Parts {
-		if part.Expr != "" {
-			keys = append(keys, part.Expr)
-			continue
-		}
-		keys = append(keys, part.Name)
-	}
-	s.RecordLostProperty(TableKind, table, PartitionProperty,
-		fmt.Sprintf("%s (%s)", spec.Type, strings.Join(keys, ", ")))
 }

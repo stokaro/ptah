@@ -272,6 +272,7 @@ func corpus() []Fixture {
 		{Name: "trigger-transition-tables", Schema: triggerTransitionTablesFixture()},
 		{Name: "function-procedure", Schema: functionProcedureFixture()},
 		{Name: "partition-expression", Schema: partitionExpressionFixture()},
+		{Name: "partition-modifiers", Schema: partitionModifiersFixture()},
 		{Name: "sequence-scoped", Schema: sequenceScopedFixture()},
 		{Name: "constraint-host-struct-only", Schema: constraintHostStructOnlyFixture()},
 		{Name: "index-host-struct-only", Schema: indexHostStructOnlyFixture()},
@@ -591,10 +592,10 @@ func partitionExpressionFixture() schemamodel.Database {
 		Tables: []schemamodel.Table{{
 			StructName: "T", Name: "t",
 			PrimaryKey: []string{"id"},
-			Partition: &schemamodel.PartitionSpec{
+			Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 				Type:  "HASH",
-				Parts: []schemamodel.PartitionPart{{Expr: "(id % 4)"}},
-			},
+				Parts: []pgtable.PartitionPart{{Expr: "(id % 4)"}},
+			})),
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "ID", Name: "id", Type: "BIGINT"},
@@ -855,10 +856,10 @@ func tablePartitionFixture() schemamodel.Database {
 		Tables: []schemamodel.Table{{
 			StructName: "T", Name: "t",
 			PrimaryKey: []string{"tenant"},
-			Partition: &schemamodel.PartitionSpec{
+			Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 				Type:  "RANGE",
-				Parts: []schemamodel.PartitionPart{{Name: "tenant"}},
-			},
+				Parts: []pgtable.PartitionPart{{Name: "tenant"}},
+			})),
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "Tenant", Name: "tenant", Type: "VARCHAR(16)"},
@@ -2043,4 +2044,9 @@ func tableColumnStoreFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(store))})
 	db.Fields[0].Type = "BIGINT UNSIGNED"
 	return db
+}
+
+func partitionModifiersFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{Type: "RANGE", Parts: []pgtable.PartitionPart{{Name: "label", Collation: `"C"`, OperatorClass: "text_pattern_ops"}}}))},
+		schemamodel.Field{StructName: "T", FieldName: "Label", Name: "label", Type: "TEXT"})
 }

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -225,7 +226,7 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "default privileges", database: &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{}}}},
 		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
 		{name: "API export metadata", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", APIName: "Account"}}}},
-		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Partition: &schemamodel.PartitionSpec{}}}}},
+		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{}))}}}},
 		{name: "platform overrides", database: &schemamodel.Database{Fields: []schemamodel.Field{{Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}}}}}},
 		{name: "enum comments", database: &schemamodel.Database{Enums: []schemamodel.Enum{{Name: "mood", Values: []string{"ok"}, Comment: "x"}}}},
 	}
@@ -383,7 +384,7 @@ func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {
 	database := &schemamodel.Database{
 		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("citext"), pgextension.DesiredExtension{})))),
 		Tables: []schemamodel.Table{{
-			Partition: &schemamodel.PartitionSpec{Type: "RANGE"},
+			Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{Type: "RANGE"})),
 		}},
 		Fields: []schemamodel.Field{{
 			Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}},

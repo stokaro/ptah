@@ -197,6 +197,10 @@ type EncodedBlock struct {
 	// extension's types and functions. The Atlas-compatible surface keeps a
 	// block it would leave out when the document names one of them.
 	Provides []string
+	// References are SQL identifiers used by this block, including names in
+	// string-valued attributes. Surviving table children retain the extension
+	// that supplies one of these names. The writer does not emit this metadata.
+	References []string
 	// Object is the object the block writes, and Targets the targets reading
 	// the block back binds that object to. An object whose declared target
 	// scope is exactly Targets keeps its scope through the document; the

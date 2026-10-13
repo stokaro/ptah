@@ -79,13 +79,13 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-636 fields are reachable from the desired schema, and each one carries
+640 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 533 | reaches rendered SQL on at least one target |
-| `comparison` | 28 | read when two schemas are compared, and written into no statement |
+| `ddl` | 534 | reaches rendered SQL on at least one target |
+| `comparison` | 31 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 32 | identifies the source text the declaration was read from |
@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-75 known gaps: a conversion or the comparison drops each one on the dialects named.
+70 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -163,10 +163,6 @@ migration nobody asked for.
 | `schemamodel.IndexPart.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.PartitionPart.Expr` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.PartitionPart.Name` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.PartitionSpec.Parts` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.PartitionSpec.Type` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Desc` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Name` | `clickhouse` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.PrimaryKeyPart.Name` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -178,7 +174,6 @@ migration nobody asked for.
 | `schemamodel.Table.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.Overrides` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Table.Partition` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.PrimaryKeyFacets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.PrimaryKeyMethod` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.PrimaryKeyName` | `cockroachdb`, `oracle`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -193,10 +188,20 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-43 exemptions, each with the reason it is right.
+53 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
+| `pgtable.DesiredPartition.Type` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.DesiredPartition.Type` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
+| `pgtable.DesiredPartition.Parts` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.DesiredPartition.Parts` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
+| `pgtable.PartitionPart.Name` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.PartitionPart.Name` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
+| `pgtable.PartitionPart.Expr` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.PartitionPart.Expr` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
+| `pgtable.PartitionPart.Collation` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
+| `pgtable.PartitionPart.OperatorClass` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
 | `chschema.GranularitySetting.State` | `clickhouse` | both | a granularity's state changes only with its value: an explicit one carries a value and no other state may, so no single change of the state is valid. The value beside it is reached |
 | `chschema.RoleSelection.All` | `clickhouse` | both | TO ALL changes only with its exceptions: exceptions stand only beside TO ALL, and the fixture that sets it names one. The selection's names and exceptions are reached |
 | `chschema.Setting.State` | `clickhouse` | both | a setting's state changes only with its value: an explicit one carries a value and no other state may, so no single change of the state is valid. The value beside it is reached |
@@ -243,10 +248,13 @@ migration nobody asked for.
 
 ### Compared fields the round trip cannot ask about
 
-13, besides the ones only a recorded loss hides.
+16, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
+| `pgtable.DesiredPartition.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedPartition.SourceKey` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedPartition.Key` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `mssqlschema.DesiredSecurityPolicy.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtype.DesiredDomain.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtype.NormalizedDomain.Check` | no census fixture declares a server's spelling; a connected comparison attaches one |
@@ -367,7 +375,16 @@ migration nobody asked for.
 | `pgroutine.DesiredProperties.Leakproof` | `ddl` | — |
 | `pgroutine.DesiredProperties.Parallel` | `ddl` | — |
 | `pgroutine.DesiredProperties.Strict` | `ddl` | — |
+| `pgtable.DesiredPartition.Normalized` | `comparison` | the connected server's key for the declaration; source encoders preserve the declared spelling |
+| `pgtable.DesiredPartition.Parts` | `ddl` | — |
+| `pgtable.DesiredPartition.Type` | `ddl` | — |
 | `pgtable.DesiredPersistence.Unlogged` | `ddl` | — |
+| `pgtable.NormalizedPartition.Key` | `comparison` | the server's normalized partition key, compared with the catalog and never rendered |
+| `pgtable.NormalizedPartition.SourceKey` | `comparison` | binds the normalized answer to its declaration |
+| `pgtable.PartitionPart.Collation` | `ddl` | — |
+| `pgtable.PartitionPart.Expr` | `ddl` | — |
+| `pgtable.PartitionPart.Name` | `ddl` | — |
+| `pgtable.PartitionPart.OperatorClass` | `ddl` | — |
 | `pgtype.Attribute.Name` | `ddl` | — |
 | `pgtype.Attribute.Type` | `ddl` | — |
 | `pgtype.DesiredComposite.Attributes` | `ddl` | — |
@@ -606,10 +623,6 @@ migration nobody asked for.
 | `schemamodel.MaterializedView.Facets` | `ddl` | — |
 | `schemamodel.MaterializedView.Name` | `ddl` | — |
 | `schemamodel.MaterializedView.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.PartitionPart.Expr` | `ddl` | — |
-| `schemamodel.PartitionPart.Name` | `ddl` | — |
-| `schemamodel.PartitionSpec.Parts` | `ddl` | — |
-| `schemamodel.PartitionSpec.Type` | `ddl` | — |
 | `schemamodel.PrimaryKeyPart.Desc` | `ddl` | — |
 | `schemamodel.PrimaryKeyPart.Name` | `ddl` | — |
 | `schemamodel.PrimaryKeyPart.Prefix` | `ddl` | — |
@@ -692,7 +705,6 @@ migration nobody asked for.
 | `schemamodel.Table.Facets` | `ddl` | — |
 | `schemamodel.Table.Name` | `ddl` | — |
 | `schemamodel.Table.Overrides` | `ddl` | — |
-| `schemamodel.Table.Partition` | `ddl` | — |
 | `schemamodel.Table.PrimaryKey` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyComment` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyDeferrable` | `ddl` | — |

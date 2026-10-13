@@ -67,6 +67,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/postgres/pglint` | The PostgreSQL owner's migration lint rules, published as data and checked once per run. |
 | `dialect/postgres/pgroutine` | The PostgreSQL owner's routine body reader and typed function evaluation properties. |
 | `dialect/postgres/pgtable` | Typed PostgreSQL table persistence, comparison, planning, and reversal. |
+| `dialect/postgres/pgtableprobe` | Connected partition-key normalization in rolled-back probe transactions. |
 | `dialect/postgres/pgtablerender` | PostgreSQL table persistence prefixes and ALTER statements. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |

@@ -13,16 +13,23 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// SQL reads UNLOGGED before TABLE on targets with a defined persistence
-// policy, and marks a PostgreSQL document's table
-// persistence as complete. An untargeted document reads the syntax without
-// extending coverage to tables whose target is unknown.
+// SQL reads UNLOGGED prefixes and PARTITION BY keys through table extension
+// sites. Targeted documents describe absence as well as present declarations;
+// an untargeted document adds no target-wide coverage.
 func SQL() []sqlext.Extension {
 	foreign := slices.DeleteFunc(pgtable.PersistenceTargets(), func(target string) bool { return target == platform.Postgres || target == platform.YDB })
 	return []sqlext.Extension{
+		{Owner: pgtable.Owner, Targets: []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner},
+			Facets: []schemaext.Kind{pgtable.PartitionKind}, Patterns: []sqlext.Pattern{{Name: "partition", Site: sqlext.TableOption,
+				Words: []string{"PARTITION", "BY"}, Next: []string{"RANGE", "LIST", "HASH"},
+				Stops: []string{"PARTITION", "WITH", "TABLESPACE", "AS", "ENGINE", "ORDER", "PRIMARY", "SAMPLE", "TTL", "SETTINGS"}}}, Parser: partitionSQL{}, Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) {
+				return pgtable.PartitionCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+			}},
 		{Owner: pgtable.Owner, Targets: []string{platform.Postgres}, Facets: []schemaext.Kind{pgtable.PersistenceKind},
 			Patterns: []sqlext.Pattern{{Name: "unlogged", Site: sqlext.TablePrefix, Words: []string{"UNLOGGED"}, Targeted: true}}, Parser: persistenceSQL{},
-			Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) { return Coverage() }},
+			Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) {
+				return pgtable.PersistenceCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+			}},
 		{Owner: pgtable.Owner, Targets: foreign, Facets: []schemaext.Kind{pgtable.PersistenceKind},
 			Patterns: []sqlext.Pattern{{Name: "unlogged", Site: sqlext.TablePrefix, Words: []string{"UNLOGGED"}}}, Parser: persistenceSQL{}},
 	}

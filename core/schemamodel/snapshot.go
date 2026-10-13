@@ -14,9 +14,6 @@ func (t Table) Clone() Table {
 	t.Checks = slices.Clone(t.Checks)
 	t.DependsOn = slices.Clone(t.DependsOn)
 	t.Overrides = cloneOverrides(t.Overrides)
-	if t.Partition != nil {
-		t.Partition = &PartitionSpec{Type: t.Partition.Type, Parts: slices.Clone(t.Partition.Parts)}
-	}
 	return t
 }
 

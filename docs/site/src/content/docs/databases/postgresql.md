@@ -596,6 +596,26 @@ opposite. PostgreSQL rewrites the table to do it, under a lock that blocks
 readers and writers, and the `PG307` lint rule reports the statement in a
 migration that contains one.
 
+## Table partition keys
+
+SQL declarations support `PARTITION BY RANGE`, `LIST` and `HASH`. Keys retain
+column order, quoted column names, expressions, collation and operator class.
+HCL uses a table `partition` block with `type` and either `columns` or ordered
+`by` blocks. A `by` block takes `column` or `expr`, plus optional `collate` and
+`ops` strings. Go table annotations use
+`platform.postgres.partition_by="RANGE (tenant)"`; YAML uses `partition_by`
+in the table's `postgres` platform group. YugabyteDB uses its own platform group.
+
+The reader captures the server's partition key. Connected comparison normalizes
+expressions and default key modifiers through a temporary table in a rolled-back
+transaction. This accounts for implicit casts without changing the source SQL.
+A probe that the server refuses leaves the comparison undecided.
+
+An existing partition key cannot change in place. Ptah refuses that change by
+name and refuses to rebuild a partitioned table without a partition-tree strategy.
+An unlogged partitioned table is refused. Complete source coverage distinguishes
+an ordinary table from a partitioned one; unknown coverage establishes neither.
+
 ## Function changes
 
 A function the database does not have yet is planned as `CREATE FUNCTION`, and

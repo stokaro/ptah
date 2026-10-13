@@ -59,10 +59,10 @@ func TestTTLPlanOrdersColumnDependenciesAndPreservesOperands(t *testing.T) {
 	result, err := runtime.PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Err(request), qt.IsNil)
-	// Registered owners account for storage, indexes, policies and omitted persistence.
-	c.Assert(result.Parents, qt.HasLen, 4)
-	c.Assert([]schemaext.Kind{result.Parents[0].Kind, result.Parents[1].Kind, result.Parents[2].Kind, result.Parents[3].Kind}, qt.DeepEquals,
-		[]schemaext.Kind{chschema.TableKind, chschema.IndexKind, chschema.RowPolicyKind, pgtable.PersistenceKind})
+	// Registered owners account for storage, indexes, policies, and omitted PostgreSQL table settings.
+	c.Assert(result.Parents, qt.HasLen, 5)
+	c.Assert([]schemaext.Kind{result.Parents[0].Kind, result.Parents[1].Kind, result.Parents[2].Kind, result.Parents[3].Kind, result.Parents[4].Kind}, qt.DeepEquals,
+		[]schemaext.Kind{chschema.TableKind, chschema.IndexKind, chschema.RowPolicyKind, pgtable.PartitionKind, pgtable.PersistenceKind})
 	c.Assert(result.Changes, qt.HasLen, 1)
 	c.Assert(result.Contributions, qt.HasLen, 1)
 	feature := result.Contributions[0]

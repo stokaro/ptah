@@ -101,6 +101,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/postgres/pgroutine`
 - `ptah.run/dialect/postgres/pgtable`
+- `ptah.run/dialect/postgres/pgtableprobe`
 - `ptah.run/dialect/postgres/pgtablerender`
 - `ptah.run/dialect/spanner/spannerast`
 - `ptah.run/dialect/spanner/spannercompare`
@@ -520,6 +521,18 @@ explicit default. PostgreSQL plans `ALTER TABLE ... SET LOGGED` or `SET UNLOGGED
 Other targets report an omitted declaration, except YDB, which refuses it.
 `dialect/postgres/pgtablerender` renders the owner's prefix and typed operation.
 Its preparation and omission helpers preserve inputs and reject unknown targets.
+
+`pgtable.DesiredPartition` and `ObservedPartition` carry ordered RANGE, LIST and
+HASH keys, including expression SQL, collation and operator class. `PartitionService`
+converts captured values, compares keys and accounts for parent table actions.
+An existing key cannot change in place. Unknown coverage or unresolved server
+spelling leaves the comparison undecided. `dialect/postgres/pgtableprobe.Service`
+normalizes a declaration in a rolled-back transaction through `ProbeSession`.
+It attaches a source-bound `NormalizedPartition` without changing the declaration.
+The common table and AST models carry the feature through facets.
+`hclext.EncodedBlock.References` carries the SQL names a table child uses, so
+HCL export retains extensions required by key expressions and modifiers.
+
 
 `dialect/mysql/mysqlroutine` is the MySQL owner's routine body reader for MySQL
 and MariaDB. `Reader` splits a compound body into the statements of its outer

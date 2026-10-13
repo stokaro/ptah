@@ -96,8 +96,6 @@ type CreateTableNode struct {
 	Constraints []*ConstraintNode
 	// Options contains dialect-specific table options like ENGINE for MySQL
 	Options map[string]string
-	// Partition stores PostgreSQL PARTITION BY metadata.
-	Partition *PartitionSpec
 	// Indexes carries indexes declared inside the column list rather than as
 	// separate statements. ClickHouse writes its data-skipping indexes there,
 	// and a live server's SHOW CREATE TABLE returns them that way, so a reader
@@ -141,22 +139,6 @@ type CreateTableNode struct {
 	CustomSQL string
 	// Comment is an optional table comment
 	Comment string
-}
-
-// PartitionSpec represents a table PARTITION BY clause.
-type PartitionSpec struct {
-	// Type is the partitioning method, such as RANGE, LIST, or HASH.
-	Type string
-	// Parts contains column references or expressions used as partition keys.
-	Parts []PartitionPart
-}
-
-// PartitionPart represents one partition key column or expression.
-type PartitionPart struct {
-	// Name is the partition key column name.
-	Name string
-	// Expr is the raw partition key expression.
-	Expr string
 }
 
 // NewCreateTable creates a new CREATE TABLE node with the specified table name.

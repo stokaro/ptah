@@ -1,4 +1,4 @@
-// Package pgtable owns PostgreSQL table persistence and its schema contracts.
+// Package pgtable owns PostgreSQL table persistence, partition keys and their schema contracts.
 package pgtable
 
 import (

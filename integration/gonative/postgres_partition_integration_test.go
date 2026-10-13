@@ -8,10 +8,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
+	"github.com/go-extras/go-kit/must"
+	_ "github.com/jackc/pgx/v5/stdlib" // Register the pgx driver for database/sql.
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 )
 
@@ -29,13 +32,13 @@ func TestPostgreSQLPartitionedTableExecuteIntegration(t *testing.T) {
 	table := ast.NewCreateTable("ptah_partition_metrics").
 		AddColumn(ast.NewColumn("x", "integer").SetNotNull()).
 		AddColumn(ast.NewColumn("y", "integer").SetNotNull())
-	table.Partition = &ast.PartitionSpec{
+	table.Facets = must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 		Type: "RANGE",
-		Parts: []ast.PartitionPart{
+		Parts: []pgtable.PartitionPart{
 			{Name: "x"},
 			{Expr: "y * 2"},
 		},
-	}
+	}))
 
 	sqlText, err := builtin.RenderSQL("postgres", table)
 	c.Assert(err, qt.IsNil)

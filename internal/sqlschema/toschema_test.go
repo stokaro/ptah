@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -357,22 +358,23 @@ func TestToTable_BasicTable(t *testing.T) {
 			name: "PostgreSQL partition",
 			table: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("metrics")
-				table.Partition = &ast.PartitionSpec{
+				table.Facets = must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
 					Type: "RANGE",
-					Parts: []ast.PartitionPart{
+					Parts: []pgtable.PartitionPart{
 						{Name: "x"},
 						{Expr: "floor(y)"},
 					},
-				}
+				}))
 				return table
 			}(),
 			sourcePlatform: "postgres",
 			expected: func(table schemamodel.Table) bool {
-				return table.Partition != nil &&
-					table.Partition.Type == "RANGE" &&
-					len(table.Partition.Parts) == 2 &&
-					table.Partition.Parts[0].Name == "x" &&
-					table.Partition.Parts[1].Expr == "floor(y)"
+				partition, found, err := pgtable.PartitionOf(table.Facets)
+				return err == nil && found &&
+					partition.Type == "RANGE" &&
+					len(partition.Parts) == 2 &&
+					partition.Parts[0].Name == "x" &&
+					partition.Parts[1].Expr == "floor(y)"
 			},
 		},
 	}

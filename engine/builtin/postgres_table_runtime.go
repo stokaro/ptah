@@ -8,15 +8,28 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/dialect/postgres/pgtableprobe"
 	"ptah.run/engine"
 	"ptah.run/internal/pgtablesource"
 )
 
 func postgresTableProvider() engine.Provider {
-	provider := engine.Provider{ID: pgtable.Owner,
+	provider := engine.Provider{ID: pgtable.Owner, Codecs: pgtable.PartitionCodecs(),
 		Annotations: []annotation.Extension{pgtablesource.Annotations()},
 		HCL:         []hclext.Extension{pgtablesource.HCL()}, YAML: []yamlext.Extension{pgtablesource.YAML()}, SQL: pgtablesource.SQL(),
 	}
+	for _, target := range pgtable.PersistenceTargets() {
+		provider.Planning = append(provider.Planning, engine.Planning{Target: target, ParentKinds: []schemaext.Kind{pgtable.PartitionKind}, Service: pgtable.PartitionService{}})
+		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: []schemaext.Kind{pgtable.PartitionKind}, Service: pgtable.PartitionService{}})
+		provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{Target: target,
+			OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: []schemaext.Kind{pgtable.PartitionKind}, Service: pgtable.PartitionService{}})
+	}
+	for _, target := range []string{platform.Postgres, platform.YugabyteDB} {
+		provider.FacetNormalizations = append(provider.FacetNormalizations, engine.FacetNormalization{Target: target,
+			Kinds: []schemaext.Kind{pgtable.PartitionKind}, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Service: pgtableprobe.Service{}})
+	}
+	provider.Properties = append(provider.Properties, engine.PropertySource{Target: platform.YugabyteDB,
+		Format: schemaext.TablePlatformProperties, Definitions: []schemaext.PropertyDefinition{{Kind: pgtable.PartitionKind, Keys: []string{"partition_by"}}}, Service: pgtablesource.Service{}})
 	service := pgtable.PersistenceService{}
 	registerTableFacetOwner(&provider, platform.Postgres, tableFacetOwner{
 		codecs:     append(pgtable.PersistenceCodecs(), pgtable.PersistenceChangeCodec(), pgtable.PersistenceOperationCodec()),

@@ -10,11 +10,11 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 )
 
-// HCL reads and writes the table's unlogged attribute. Expressions are evaluated
-// by the frontend; the owner receives typed values and returns model facets.
+// HCL reads and writes table persistence and partition keys. The frontend
+// evaluates HCL expressions; the owner receives typed values and returns facets.
 func HCL() hclext.Extension {
-	return hclext.Extension{Owner: pgtable.Owner, Kinds: []schemaext.Kind{pgtable.PersistenceKind},
-		Blocks:  []hclext.Block{{Type: "table", Site: hclext.TableAttributes, Attributes: []hclext.Attribute{{Name: "unlogged", Kind: hclext.Bool}}}},
+	return hclext.Extension{Owner: pgtable.Owner, Kinds: []schemaext.Kind{pgtable.PersistenceKind, pgtable.PartitionKind},
+		Blocks:  []hclext.Block{{Type: "table", Site: hclext.TableAttributes, Attributes: []hclext.Attribute{{Name: "unlogged", Kind: hclext.Bool}}}, partitionBlock()},
 		Decoder: hclCodec{}, Encoder: hclCodec{}, Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) { return Coverage() }}
 }
 
@@ -42,6 +42,9 @@ func (hclCodec) DecodeHCL(ctx context.Context, request hclext.Request) (hclext.R
 }
 
 func hclPersistence(claim hclext.Claim) (schemaext.Facets, error) {
+	if claim.Block == "partition" {
+		return hclPartition(claim)
+	}
 	if claim.Block != "table" || claim.Table == nil {
 		return schemaext.Facets{}, fmt.Errorf("%w: persistence requires a table claim", schemaext.ErrInvalidValue)
 	}
@@ -69,6 +72,13 @@ func (hclCodec) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (hc
 		if err := ctx.Err(); err != nil {
 			return hclext.EncodeResult{}, err
 		}
+		partition, err := encodePartition(table)
+		if err != nil {
+			return hclext.EncodeResult{}, err
+		}
+		if partition != nil {
+			result.Blocks = append(result.Blocks, *partition)
+		}
 		value, found, err := pgtable.PersistenceOf(table.Facets)
 		if err != nil {
 			return hclext.EncodeResult{}, err
@@ -87,13 +97,13 @@ func (hclCodec) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (hc
 
 func exportCoverage(coverage schemaext.Coverage) error {
 	for _, record := range coverage.SubjectRecords() {
-		if record.Kind == pgtable.PersistenceKind && (record.Knowledge.State == schemaext.Uninspected || record.Knowledge.State == schemaext.Unrepresentable) {
-			return fmt.Errorf("%w: table %s persistence cannot be exported without losing its coverage: %s", ptaherr.ErrUnsupportedFeature, record.Subject, record.Knowledge.Reason)
+		if (record.Kind == pgtable.PersistenceKind || record.Kind == pgtable.PartitionKind) && (record.Knowledge.State == schemaext.Uninspected || record.Knowledge.State == schemaext.Unrepresentable) {
+			return fmt.Errorf("%w: table %s %s cannot be exported without losing its coverage: %s", ptaherr.ErrUnsupportedFeature, record.Subject, record.Kind, record.Knowledge.Reason)
 		}
 	}
 	for _, record := range coverage.KindRecords() {
-		if record.Model.Kind == pgtable.PersistenceKind && record.Knowledge.State == schemaext.Unrepresentable {
-			return fmt.Errorf("%w: table persistence cannot be exported without losing its coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason)
+		if (record.Model.Kind == pgtable.PersistenceKind || record.Model.Kind == pgtable.PartitionKind) && record.Knowledge.State == schemaext.Unrepresentable {
+			return fmt.Errorf("%w: table %s cannot be exported without losing its coverage: %s", ptaherr.ErrUnsupportedFeature, record.Model.Kind, record.Knowledge.Reason)
 		}
 	}
 	return nil

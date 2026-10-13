@@ -103,9 +103,9 @@ func ownersFor(dialect string) renderOwners {
 		return renderOwners{extensions: spannerRegistry, tableStorage: spannerrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres:
-		return renderOwners{extensions: postgresRegistry, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
+		return renderOwners{extensions: postgresRegistry, tableStorage: pgtablerender.CreateTablePartition, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.YugabyteDB:
-		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: lowerPostgresFamilyFacets}
+		return renderOwners{extensions: postgresFamilyRegistry, tableStorage: pgtablerender.CreateTablePartition, lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.MySQL, platform.MariaDB:
 		return renderOwners{extensions: mysqlrender.Registry}
 	default:
