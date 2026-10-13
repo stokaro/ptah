@@ -6964,7 +6964,8 @@ func (p *Parser) parseCreateDomain() (*ast.CreateTypeNode, error) {
 // reader then meets one spelling of the text, whether the file continued it
 // on the next line, escaped it, or wrote it between dollar quotes. NULL stays
 // unquoted so the reader can distinguish clearing a comment from the text NULL.
-func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
+// A table constraint uses a typed comment operation so rendering executes it.
+func (p *Parser) parseCommentStatement() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "COMMENT"); err != nil {
 		return nil, err
 	}
@@ -6996,15 +6997,14 @@ func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 			p.skipWhitespace()
 			if p.current.MatchIdentifierValue("NULL") {
 				p.advance()
-				return ast.NewComment("COMMENT ON " + strings.TrimSpace(p.input[start:isAt]) + " IS NULL"), nil
+				return constraintCommentNode(strings.TrimSpace(p.input[start:isAt]), "", "NULL")
 			}
 			text, err := p.stringConstant("the comment text")
 			if err != nil {
 				return nil, err
 			}
 			target := strings.TrimSpace(p.input[start:isAt])
-			commentText := fmt.Sprintf("COMMENT ON %s IS %s", target, quotedStringConstant(text))
-			return ast.NewComment(commentText), nil
+			return constraintCommentNode(target, text, quotedStringConstant(text))
 		}
 		p.advance()
 	}

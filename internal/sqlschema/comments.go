@@ -29,6 +29,10 @@ func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, s
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnmodeledStatement, node.Text)
 	}
+	return applyCommentStatement(database, base, statement, sourcePlatform)
+}
+
+func applyCommentStatement(database, base *schemamodel.Database, statement commentStatement, sourcePlatform string) error {
 	databases := []*schemamodel.Database{database}
 	if base != nil {
 		databases = append(databases, base)
