@@ -54,6 +54,10 @@ type ComparisonRequest struct {
 	// DeclaredColumns are the columns the desired schema declares, for an
 	// owner whose objects a common column may depend on; see [DeclaredColumn].
 	DeclaredColumns []DeclaredColumn
+	// DesiredConstraints and CurrentConstraints supply common constraint
+	// definitions to attached-setting comparisons; see ConstraintContext.
+	DesiredConstraints []ConstraintContext
+	CurrentConstraints []ConstraintContext
 }
 
 // ComparisonResult joins the selected object and facet owners' replies. No

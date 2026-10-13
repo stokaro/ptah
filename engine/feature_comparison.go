@@ -209,9 +209,11 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 	}
 	facets := schemaext.FacetComparisonRequest{
 		Target: request.Target, Identifiers: request.Identifiers, Capabilities: request.Capabilities,
-		Owners:  request.Owners,
-		Desired: schemaext.FacetState{Records: request.Desired.Facets, Coverage: request.Desired.Coverage.SelectKinds(facetKinds)},
-		Current: schemaext.FacetState{Records: request.Current.Facets, Coverage: request.Current.Coverage.SelectKinds(facetKinds)},
+		Owners:             request.Owners,
+		Desired:            schemaext.FacetState{Records: request.Desired.Facets, Coverage: request.Desired.Coverage.SelectKinds(facetKinds)},
+		Current:            schemaext.FacetState{Records: request.Current.Facets, Coverage: request.Current.Coverage.SelectKinds(facetKinds)},
+		DesiredConstraints: request.DesiredConstraints,
+		CurrentConstraints: request.CurrentConstraints,
 	}
 	objects, err = r.snapshotComparison(ctx, objects)
 	if err != nil {
