@@ -35,6 +35,9 @@ type ComparisonRequest struct {
 	// named-object kind; see [ChangeRequest].
 	Requests          []ChangeRequest
 	DeclaredRelations []objectidentity.ID
+	// DeclaredRoles names the roles the desired schema manages. An empty list
+	// manages none. See [ObjectComparisonRequest.DeclaredRoles].
+	DeclaredRoles []objectidentity.ID
 	// DatabasePath is the absolute path of the database the current state
 	// describes, such as /local, and empty when the target has none or the
 	// caller does not know it. An owner whose objects name other objects by

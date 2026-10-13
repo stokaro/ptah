@@ -57,10 +57,16 @@ type ObjectComparisonRequest struct {
 	Parents           []ParentState
 	Requests          []ChangeRequest
 	DeclaredRelations []objectidentity.ID
-	DatabasePath      string
-	Exclusions        []Exclusion
-	DeclaredColumns   []DeclaredColumn
-	Required          []objectidentity.ID
+	// DeclaredRoles names the roles the desired schema manages, under the
+	// request's identifier rules. These are unqualified KindRole identities,
+	// not every role the server holds or a privilege names. An empty list
+	// manages none. The runtime orders them by identity and gives each service
+	// an independent copy, so an owner can decide which state it may remove.
+	DeclaredRoles   []objectidentity.ID
+	DatabasePath    string
+	Exclusions      []Exclusion
+	DeclaredColumns []DeclaredColumn
+	Required        []objectidentity.ID
 }
 
 // Exclusion is one subject the run's configuration leaves out of a

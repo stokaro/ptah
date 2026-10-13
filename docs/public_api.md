@@ -2503,6 +2503,14 @@ entry that is not a named view or materialized view with
 `schemaext.ErrInvalidValue`, sends the owner a copy in identity order, and
 leaves the caller's slice unchanged. A nil list declares none.
 
+`schemaext.ComparisonRequest.DeclaredRoles` and
+`schemaext.ObjectComparisonRequest.DeclaredRoles` name the common roles the
+desired schema manages, under the request's identifier rules. They do not add
+roles found only in the catalog or named only by a privilege. An empty list
+manages none. The runtime validates unqualified role identities, orders them,
+and gives each service an independent copy. Owners can decide which existing
+state they may remove from this captured batch without reading the server.
+
 `schemaext.ComparisonRequest.Exclusions` and `DeclaredColumns`, and the same
 fields of `schemaext.ObjectComparisonRequest`, give an owner the run's context.
 An `Exclusion` is a subject the configuration leaves out, by a kind of the

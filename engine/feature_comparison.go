@@ -197,6 +197,7 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		Current:           schemaext.ObjectState{Objects: request.Current.Objects, Coverage: request.Current.Coverage.SelectKinds(objectKinds)},
 		Requests:          request.Requests,
 		DeclaredRelations: request.DeclaredRelations,
+		DeclaredRoles:     request.DeclaredRoles,
 		DatabasePath:      request.DatabasePath,
 		Exclusions:        request.Exclusions,
 		DeclaredColumns:   request.DeclaredColumns,
