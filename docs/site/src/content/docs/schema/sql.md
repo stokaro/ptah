@@ -273,8 +273,8 @@ name.
 
 ## Comments
 
-A comment can be set with a separate `COMMENT ON`, the way `pg_dump` writes
-one, in the same file or in a later file of a schema directory:
+`COMMENT ON` sets a declared object's comment in the same file or a later
+schema file:
 
 ```sql
 CREATE TABLE notes (id integer PRIMARY KEY, body text);
@@ -301,9 +301,7 @@ named with its argument list, with or without argument names, or by its name
 alone when the document declares one routine of that name. A trigger, a policy
 and a constraint are named `ON` their table.
 
-Use `COMMENT ON ... IS NULL` to clear a comment. The object must already be
-declared, in the same file or an earlier file. A quoted `'NULL'` sets the
-comment to the text `NULL`.
+`IS NULL` clears a declared object's comment; `'NULL'` sets the text `NULL`.
 
 A statement that cannot be applied is refused by name, with the file it came
 from:
