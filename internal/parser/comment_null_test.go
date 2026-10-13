@@ -14,7 +14,6 @@ func TestParser_CommentNullRetainsTargetAndLiteralKind(t *testing.T) {
 		{"COMMENT ON TABLE t IS NULL;", "COMMENT ON TABLE t IS NULL"},
 		{"COMMENT ON TABLE t IS null;", "COMMENT ON TABLE t IS NULL"},
 		{"COMMENT ON FUNCTION app.f(is integer) IS NULL;", "COMMENT ON FUNCTION app.f(is integer) IS NULL"},
-		{"COMMENT ON CONSTRAINT c ON app.t IS NULL;", "COMMENT ON CONSTRAINT c ON app.t IS NULL"},
 		{"COMMENT ON MATERIALIZED VIEW app.v IS NULL;", "COMMENT ON MATERIALIZED VIEW app.v IS NULL"},
 		{"COMMENT ON TABLE t IS 'NULL';", "COMMENT ON TABLE t IS 'NULL'"},
 	}

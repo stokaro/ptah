@@ -273,6 +273,8 @@ name.
 
 ## Comments
 
+`COMMENT ON CONSTRAINT` retains its executable form when parsed SQL is rendered.
+
 `COMMENT ON` sets a declared object's comment in the same file or a later
 schema file:
 

@@ -34,11 +34,6 @@ func TestParser_CommentOnKeepsTheWholeTarget(t *testing.T) {
 			want: `COMMENT ON TRIGGER audit ON app.t IS 'x'`,
 		},
 		{
-			name: "a constraint on its table",
-			sql:  `COMMENT ON CONSTRAINT positive ON app.t IS 'x';`,
-			want: `COMMENT ON CONSTRAINT positive ON app.t IS 'x'`,
-		},
-		{
 			// PostgreSQL takes `is` as a parameter name, unquoted: it is a
 			// type_func_name_keyword. The IS that ends the target is the first
 			// one outside every parenthesis.

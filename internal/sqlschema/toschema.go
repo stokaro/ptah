@@ -1022,6 +1022,13 @@ func appendAlterTable(
 	target, declared := findAlterTarget(database, base, node.Name, sourcePlatform)
 	statement := newAlterStatement(target, node.Operations)
 	for i, op := range node.Operations {
+		if comment, ok := op.(*ast.SetConstraintCommentOperation); ok {
+			statement := commentStatement{kind: "CONSTRAINT", name: comment.Constraint, table: node.Name, comment: comment.Comment}
+			if err := applyCommentStatement(database, base, statement, sourcePlatform); err != nil {
+				return err
+			}
+			continue
+		}
 		if !declared {
 			return undeclaredTableError(node.Name, describeAlterOperation(op))
 		}
