@@ -67,6 +67,9 @@ func cloneObject(object Object) (Object, error) {
 	if err := validDefinedObject(Object{Ref: object.Ref, Value: value}); err != nil {
 		return Object{}, err
 	}
+	if err := validDefinedConstraint(Object{Ref: object.Ref, Value: value}); err != nil {
+		return Object{}, err
+	}
 	targets, err := normalizeTargetScope(object.Targets)
 	if err != nil {
 		return Object{}, err

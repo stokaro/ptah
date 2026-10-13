@@ -1,6 +1,8 @@
 package pgname
 
 import (
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 )
@@ -28,7 +30,7 @@ func (n Names) Claim(name string) {
 
 // ConstraintNames collects every constraint name the databases give the tables
 // of one schema: table constraints, the names a column carries for its own
-// constraints, and a table's named primary key. A column's own UNIQUE is not
+// constraints, owned constraint projections, and a table's named primary key. A column's own UNIQUE is not
 // among them, because the model keeps no name for it.
 //
 // Explicit names and derived ones are the only names that can collide with a
@@ -39,6 +41,11 @@ func ConstraintNames(databases []*schemamodel.Database, schema string) Names {
 	for _, database := range databases {
 		if database == nil {
 			continue
+		}
+		for _, defined := range schemaext.DefinedConstraints(database.FeatureObjects) {
+			if constraintSchema(defined.Ref) == schema {
+				names.Claim(storedConstraintPart(defined.Ref.Name))
+			}
 		}
 		inSchema := tablesInSchema(database, schema)
 		for _, table := range database.Tables {
@@ -64,7 +71,8 @@ func ConstraintNames(databases []*schemamodel.Database, schema string) Names {
 }
 
 // RelationNames collects the names of the relations the databases declare in
-// one schema -- tables, views, materialized views, sequences and indexes --
+// one schema -- tables, views, materialized views, sequences, indexes and the
+// backing indexes of owned constraints --
 // which the index behind a UNIQUE may not take either. Measured, an index or a
 // table already called `q_a_key` makes `UNIQUE (a)` on `q` become `q_a_key1`.
 func RelationNames(databases []*schemamodel.Database, schema string) Names {
@@ -73,6 +81,7 @@ func RelationNames(databases []*schemamodel.Database, schema string) Names {
 		if database == nil {
 			continue
 		}
+		claimOwnedRelations(names, database.FeatureObjects, schema)
 		inSchema := tablesInSchema(database, schema)
 		for _, table := range database.Tables {
 			if table.Schema == schema {
@@ -133,4 +142,27 @@ func splitTable(qualified string) (schema, name string) {
 		return "", qualified
 	}
 	return ref.Schema, ref.Name
+}
+
+func claimOwnedRelations(names Names, objects schemaext.Objects, schema string) {
+	for _, defined := range schemaext.DefinedConstraints(objects) {
+		if defined.Indexed && constraintSchema(defined.Ref) == schema {
+			names.Claim(storedConstraintPart(defined.Ref.Name))
+		}
+	}
+}
+
+func constraintSchema(ref objectidentity.ID) string {
+	if ref.Schema.Defaulted {
+		return ""
+	}
+	return storedConstraintPart(ref.Schema)
+}
+
+// The namespace holds catalog spellings; projections retain SQL quoting.
+func storedConstraintPart(part objectidentity.Part) string {
+	if part.Quoted {
+		return unquoteIdentifier(part.Source)
+	}
+	return foldUnquoted(part.Source)
 }
