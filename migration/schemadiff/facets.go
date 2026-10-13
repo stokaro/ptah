@@ -89,12 +89,11 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 }
 
 // followOwners drops the knowledge a side holds about the attached settings
-// of an owner that side no longer has: a table, column, index, primary key or
-// materialized view a dialect scope, an exclusion or a schema selection took
-// out of the comparison. Knowledge of an object that is not there describes
-// nothing, and kept, it refused the comparison the selection was meant to
-// narrow (stokaro/ptah#4278). Knowledge of named feature objects is the
-// objects' own.
+// of an owner outside that side of the comparison: a table, column, index,
+// primary key, materialized view, function, or procedure. A dialect scope,
+// exclusion, or schema selection can remove the owner. Its attached knowledge
+// follows it, so the comparison describes the selected objects. Knowledge of
+// named feature objects belongs to those objects (stokaro/ptah#4278).
 func followOwners(coverage schemaext.Coverage, slots []facetOwnerSlot) schemaext.Coverage {
 	owners := make(map[objectidentity.Key]bool, len(slots))
 	for _, slot := range slots {
@@ -102,7 +101,7 @@ func followOwners(coverage schemaext.Coverage, slots []facetOwnerSlot) schemaext
 	}
 	return coverage.SelectSubjects(func(subject objectidentity.ID) bool {
 		switch subject.Kind {
-		case objectidentity.KindTable, objectidentity.KindColumn, objectidentity.KindIndex, objectidentity.KindPrimaryKey, objectidentity.KindMatView:
+		case objectidentity.KindTable, objectidentity.KindColumn, objectidentity.KindIndex, objectidentity.KindPrimaryKey, objectidentity.KindMatView, objectidentity.KindFunction, objectidentity.KindProcedure:
 			return owners[subject.Key()]
 		default:
 			return true

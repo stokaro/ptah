@@ -55,6 +55,18 @@ func bindFacetCoverage(coverage schemaext.Coverage, target string, semantics ide
 	subjects := coverage.SubjectRecords()
 	for i, record := range subjects {
 		ref := record.Subject
+		if ref.Kind == objectidentity.KindFunction || ref.Kind == objectidentity.KindProcedure {
+			if !ref.Catalog.Empty() || !ref.Parent.Empty() {
+				return schemaext.Coverage{}, fmt.Errorf("%w: invalid routine coverage identity %s", schemaext.ErrInvalidValue, ref)
+			}
+			schema := ref.Schema.Source
+			if ref.Schema.Defaulted {
+				schema = ""
+			}
+			subjects[i].Subject = objectidentity.NewBuilder(semantics).SchemaScopedParts(ref.Kind, schema, ref.Name.Source)
+			subjects[i].Subject.Signature = ref.Signature
+			continue
+		}
 		if ref.Kind != objectidentity.KindIndex {
 			continue
 		}
