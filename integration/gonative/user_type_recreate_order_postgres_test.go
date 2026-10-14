@@ -24,9 +24,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
 )
@@ -126,8 +128,8 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 			// the types on their old shape.
 			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
-			c.Assert(findLiveDomain(c, applied.Domains, test.wantDomain).BaseType, qt.Equals, test.wantBaseType)
-			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantComposite), qt.DeepEquals, test.wantCompositeSQL)
+			c.Assert(findLiveDomain(c, applied.FeatureObjects, test.wantDomain).BaseType, qt.Equals, test.wantBaseType)
+			c.Assert(liveCompositeFieldTypes(c, applied.FeatureObjects, test.wantComposite), qt.DeepEquals, test.wantCompositeSQL)
 
 			// The other direction: the converged database plans nothing
 			// against the same target, so the plan above was not a churn that
@@ -192,8 +194,8 @@ func TestPostgreSQLUserTypeRecreate_DropsADomainBeforeTheDomainItNames(t *testin
 
 			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
-			c.Assert(findLiveDomain(c, applied.Domains, test.wantBase).BaseType, qt.Equals, test.wantBaseType)
-			c.Assert(findLiveDomain(c, applied.Domains, test.wantDependent).BaseType, qt.Equals, test.wantDependentType)
+			c.Assert(findLiveDomain(c, applied.FeatureObjects, test.wantBase).BaseType, qt.Equals, test.wantBaseType)
+			c.Assert(findLiveDomain(c, applied.FeatureObjects, test.wantDependent).BaseType, qt.Equals, test.wantDependentType)
 
 			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
@@ -250,8 +252,8 @@ func TestPostgreSQLUserTypeRecreate_DropsACompositeBeforeTheCompositeItNames(t *
 
 			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
-			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantBase), qt.DeepEquals, test.wantBaseFieldSQL)
-			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantDependent), qt.DeepEquals, test.wantDependentFieldSQL)
+			c.Assert(liveCompositeFieldTypes(c, applied.FeatureObjects, test.wantBase), qt.DeepEquals, test.wantBaseFieldSQL)
+			c.Assert(liveCompositeFieldTypes(c, applied.FeatureObjects, test.wantDependent), qt.DeepEquals, test.wantDependentFieldSQL)
 
 			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
@@ -312,31 +314,35 @@ func prepareUserTypeRecreatePlan(
 	return plan
 }
 
-func findLiveDomain(c *qt.C, domains []catalog.Domain, name string) catalog.Domain {
+func findLiveDomain(c *qt.C, objects schemaext.Objects, name string) *pgtype.ObservedDomain {
 	c.Helper()
 
-	for _, candidate := range domains {
-		if candidate.Name == name {
-			return candidate
-		}
-	}
-	c.Fatalf("the read schema has no domain %q", name)
-	return catalog.Domain{}
+	value, ok := liveUserType(c, objects, pgtype.DomainKind, name).(*pgtype.ObservedDomain)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("domain %q is not an observed domain", name))
+	return value
 }
 
-func liveCompositeFieldTypes(c *qt.C, composites []catalog.CompositeType, name string) []string {
+func liveCompositeFieldTypes(c *qt.C, objects schemaext.Objects, name string) []string {
 	c.Helper()
 
-	for _, candidate := range composites {
-		if candidate.Name != name {
-			continue
-		}
-		fieldTypes := make([]string, len(candidate.Fields))
-		for i, field := range candidate.Fields {
-			fieldTypes[i] = field.Type
-		}
-		return fieldTypes
+	value, ok := liveUserType(c, objects, pgtype.CompositeKind, name).(*pgtype.ObservedComposite)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("composite type %q is not an observed composite", name))
+	fieldTypes := make([]string, len(value.Attributes))
+	for i, attribute := range value.Attributes {
+		fieldTypes[i] = attribute.Type
 	}
-	c.Fatalf("the read schema has no composite type %q", name)
-	return nil
+	return fieldTypes
+}
+
+// liveUserType is the value of the one type of kind named name in a read. The
+// pgtype owner reports domains and composites as feature objects.
+func liveUserType(c *qt.C, objects schemaext.Objects, kind schemaext.Kind, name string) schemaext.Value {
+	c.Helper()
+
+	found, err := objects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(kind) && ref.Name.Source == name
+	}).All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.HasLen, 1, qt.Commentf("the read schema has no %s %q", kind, name))
+	return found[0].Value
 }
