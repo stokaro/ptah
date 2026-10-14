@@ -43,8 +43,8 @@ func (r *renderer) reportFeatureObjects() {
 }
 
 // reportFacets reports each facet the document leaves out: a facet of a
-// table, a column, an index, a primary key or a constraint that no owner of
-// the render writes, and every facet anywhere else. A table's facets name the
+// table, column, index, primary key, constraint, routine, or materialized view
+// that no owner of the render writes, and every facet anywhere else. A table's facets name the
 // table, so the reader knows which table's setting is missing; any other slot
 // names the kind alone.
 func (r *renderer) reportFacets() {
@@ -65,6 +65,9 @@ func (r *renderer) reportFacets() {
 	}
 	for i := range r.db.Functions {
 		blocks[&r.db.Functions[i].Facets] = true
+	}
+	for i := range r.db.MaterializedViews {
+		blocks[&r.db.MaterializedViews[i].Facets] = true
 	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {

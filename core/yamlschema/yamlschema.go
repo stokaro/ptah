@@ -335,8 +335,9 @@ type matViewSpec struct {
 	// nothing about why a correctly spelled key stopped working
 	// (stokaro/ptah#1625). It is a yaml.Node so that `refresh_strategy:` with
 	// no value, and an empty string, are refused as well as a real value.
-	RefreshStrategy yaml.Node    `yaml:"refresh_strategy"`
-	Comment         stringScalar `yaml:"comment"`
+	RefreshStrategy yaml.Node            `yaml:"refresh_strategy"`
+	Comment         stringScalar         `yaml:"comment"`
+	Owned           map[string]yaml.Node `yaml:",inline"`
 }
 
 type triggerSpec struct {
@@ -494,7 +495,7 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 	if err := d.addViews(db); err != nil {
 		return nil, err
 	}
-	if err := d.addMaterializedViews(db); err != nil {
+	if err := d.addMaterializedViews(db, owners); err != nil {
 		return nil, err
 	}
 	if err := d.addTriggers(db); err != nil {
@@ -946,8 +947,8 @@ func (d document) addViews(db *schemamodel.Database) error {
 	return nil
 }
 
-// addCoordinationNodes reads the YDB coordination nodes, in key order.
-func (d document) addMaterializedViews(db *schemamodel.Database) error {
+// addMaterializedViews reads each view and its owner attributes in key order.
+func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.Set) error {
 	for _, key := range sortedKeys(d.MaterializedViews) {
 		spec := d.MaterializedViews[key]
 		if string(spec.Body) == "" {
@@ -956,7 +957,16 @@ func (d document) addMaterializedViews(db *schemamodel.Database) error {
 		if spec.RefreshStrategy.Kind != 0 {
 			return matviewrefresh.Refuse(valueOrDefault(spec.Name, key))
 		}
+		attributes, _, err := ownedKeys(owners, yamlext.EntryMaterializedView, fmt.Sprintf("materialized view %q", key), spec.Owned)
+		if err != nil {
+			return err
+		}
+		facets, err := owners.DecodeEntryAttributes(yamlext.EntryMaterializedView, attributes)
+		if err != nil {
+			return fmt.Errorf("materialized view %q: %w", key, err)
+		}
 		db.MaterializedViews = append(db.MaterializedViews, schemamodel.MaterializedView{
+			Facets:     facets,
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),

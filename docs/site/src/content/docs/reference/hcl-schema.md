@@ -113,7 +113,7 @@ for the message and the flag it names.
 | `default_privilege` | Ptah block: a PostgreSQL default privilege, with `for_role`, `schema`, `object_type`, `to`, `privileges`, `grantable`, `revoked` (privileges the grantee must not hold by default) and `comment`. Without `schema` it is the global default, which applies in every schema. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
 | `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
-| `view` / `materialized` | SQL body plus schema and comments. |
+| `view` / `materialized` | SQL body plus schema and comments. A `materialized` block accepts a ClickHouse `refresh` clause. |
 | `trigger` | Trigger timing and every event its timing block sets (`insert`, `update`, `delete`, `truncate`), target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
@@ -194,15 +194,24 @@ extended_property "MS_Description" {
 }
 ```
 
-A `materialized` block accepts no `refresh_strategy`. Ptah does not refresh
-materialized views: one is populated when it is created, a changed `as` body is
-reconciled as a drop and a create that populates it again, and it goes stale
-only when its source data changes, which schema reconciliation cannot observe.
-Refresh from your own scheduler.
+A `materialized` block accepts a ClickHouse `refresh` string:
 
-The attribute is refused on presence while the document is parsed -- before its
-value expression is read, so a bare identifier is refused the same way a string
-is -- and the refusal names the materialized view and the reason.
+```hcl
+materialized "event_stats" {
+  as      = "SELECT count() AS c FROM events"
+  refresh = "EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 30 MINUTE APPEND"
+}
+```
+
+The clause supports `EVERY`, `AFTER`, `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON`,
+and `APPEND`. Omitting `refresh` or writing `refresh = ""` declares no schedule.
+Removing a schedule replaces the view and discards its stored rows. HCL export
+preserves supported schedules and refuses schedules the catalog cannot capture.
+The schedule applies only to ClickHouse; see its [refresh rules](../../databases/clickhouse/#views-and-materialized-views).
+
+The shared `refresh_strategy` attribute is refused on presence, before its
+expression is read. For PostgreSQL materialized views, run refreshes from your
+own scheduler.
 
 Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
 explicit schema declaration, even when an extension also refers to it, and is

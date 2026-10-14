@@ -393,11 +393,15 @@ func (r *renderer) renderMaterializedView(view schemamodel.MaterializedView) {
 		r.warn("materialized_views."+view.Name, "materialized view body is required for HCL schema export")
 		return
 	}
+	slot := materializedViewSlot(view)
+	owned := r.ownerSlot(slot, view.Facets)
+	r.reportSlotLosses("materialized_views."+view.Name, owned)
 	name := objectNameFromQualified(view.Name)
 	r.linef(`materialized %s {`, quote(name))
 	if schema := r.schemaFor(schemaNameFromQualified(view.Name)); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
+	r.slotOthers(1, owned, slot.Kind)
 	r.stringAttr(1, "as", view.Body)
 	r.stringAttr(1, "comment", view.Comment)
 	r.line("}")

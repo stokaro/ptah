@@ -62,6 +62,22 @@ tables:
         where: deleted_at IS NULL
 ```
 
+## Materialized-view refresh schedules
+
+For ClickHouse, a `matviews` entry accepts a `refresh` string:
+
+```yaml
+matviews:
+  event_stats:
+    body: SELECT count() AS c FROM events
+    refresh: EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 30 MINUTE APPEND
+```
+
+The clause supports `EVERY`, `AFTER`, `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON`,
+and `APPEND`. Omitting `refresh` or writing `refresh: ""` declares no schedule.
+Removing a schedule replaces the view and discards its stored rows. The
+schedule applies only to ClickHouse; see its [refresh rules](../../databases/clickhouse/#views-and-materialized-views).
+
 ## Top-level objects
 
 Top-level objects are maps. Their keys are used as default object names when a
@@ -74,7 +90,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `extensions` | PostgreSQL extension declarations. |
 | `functions` | PostgreSQL-style function metadata and SQL bodies. |
 | `views` | View definitions. |
-| `materialized_views` | Materialized view definitions. |
+| `matviews` / `materialized_views` | Materialized view definitions, with a ClickHouse `refresh` clause. |
 | `triggers` | Trigger definitions. |
 | `rls_policies` | Row-level security policies, with the attributes of `//ptah:schema:rls:policy`, `as` included. An entry and an `rls_enabled_tables` entry take `dialects`: without it, or scoped to the PostgreSQL family, it is PostgreSQL row-level security and other targets refuse it. An entry scoped to ClickHouse is refused. |
 | `row_policies` | ClickHouse row policies, keyed by name, with the attributes of `//ptah:schema:rowpolicy`; `struct_name` may name the table instead. See [row policies](../../databases/clickhouse/#row-policies). |

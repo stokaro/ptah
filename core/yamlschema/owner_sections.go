@@ -25,9 +25,10 @@ var ownKeys = sync.OnceValue(func() []string { return yamlKeys(reflect.TypeFor[d
 // adds keys to.
 var entryKeys = sync.OnceValue(func() map[string][]string {
 	return map[string][]string{
-		yamlext.EntryTable:    yamlKeys(reflect.TypeFor[tableSpec]()),
-		yamlext.EntryIndex:    yamlKeys(reflect.TypeFor[indexSpec]()),
-		yamlext.EntryFunction: yamlKeys(reflect.TypeFor[functionSpec]()),
+		yamlext.EntryTable:            yamlKeys(reflect.TypeFor[tableSpec]()),
+		yamlext.EntryIndex:            yamlKeys(reflect.TypeFor[indexSpec]()),
+		yamlext.EntryFunction:         yamlKeys(reflect.TypeFor[functionSpec]()),
+		yamlext.EntryMaterializedView: yamlKeys(reflect.TypeFor[matViewSpec]()),
 	}
 })
 

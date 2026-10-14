@@ -374,3 +374,22 @@ func TestSet_Encode_KeyContextIsIsolated(t *testing.T) {
 	c.Assert(document.Keys[0].Key, qt.DeepEquals, want)
 	c.Assert(second[0].Keys[0].Key, qt.DeepEquals, want)
 }
+
+func TestSet_Encode_HandsEachOwnerItsMaterializedViews(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.EncodeRequest
+	slot := hclext.Slot{Kind: hclext.SlotMaterializedView, Name: "app.mv"}
+	attributes := hclext.SlotAttributes{Slot: slot, Attributes: []hclext.EncodedAttribute{{Name: "hint", Value: hclext.Value{Kind: hclext.String, Text: "owned"}}}}
+	set := must.Must(hclext.NewSet(encodingExtension("example.org/a", "example.org/a/x", slotEncoder{slots: []hclext.SlotAttributes{attributes}, requests: &requests})))
+	both := must.Must(schemaext.NewFacets(&widget{kind: "example.org/a/x"}, &widget{kind: "example.org/b/x"}))
+	other := must.Must(schemaext.NewFacets(&widget{kind: "example.org/b/x"}))
+	encoded, err := set.Encode(c.Context(), hclext.EncodeRequest{MaterializedViews: []hclext.SlotFacets{
+		{Slot: slot, Facets: both}, {Slot: hclext.Slot{Kind: hclext.SlotMaterializedView, Name: "other"}, Facets: other},
+	}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded.Attributes, qt.DeepEquals, []hclext.SlotAttributes{attributes})
+	c.Assert(requests, qt.HasLen, 1)
+	c.Assert(requests[0].MaterializedViews, qt.HasLen, 1)
+	c.Assert(requests[0].MaterializedViews[0].Slot, qt.Equals, slot)
+	c.Assert(requests[0].MaterializedViews[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{"example.org/a/x"})
+}

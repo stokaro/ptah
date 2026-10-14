@@ -424,7 +424,7 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 		Comment:   p.optionalString(block.Body.Attributes["comment"]),
 		DependsOn: p.objectRefListAttr(block, "depends_on"),
 	})
-	return nil
+	return p.claimOwnerMaterializedView(block, len(p.db.MaterializedViews)-1)
 }
 
 func (p *parser) parseTrigger(block *hclsyntax.Block) error {
@@ -1094,13 +1094,22 @@ func (p *parser) rejectUnsupportedMaterializedAttrs(block *hclsyntax.Block) erro
 	if err := p.rejectNestedBlocksExcept(block, "materialized", viewColumnBlock); err != nil {
 		return err
 	}
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
+	supported := map[string]bool{
 		"schema":           true,
 		"as":               true,
 		"refresh_strategy": true,
 		"comment":          true,
 		"depends_on":       true,
-	}, "materialized")
+	}
+	if shape, found := p.owners.Lookup(hclext.MaterializedViewAttributes, "materialized"); found {
+		for _, attribute := range shape.Block.Attributes {
+			if supported[attribute.Name] {
+				return p.blockError(block, "owner attribute %q conflicts with a materialized attribute", attribute.Name)
+			}
+			supported[attribute.Name] = true
+		}
+	}
+	return p.rejectUnsupportedAttrs(block, supported, "materialized")
 }
 
 func (p *parser) rejectUnsupportedTriggerAttrs(block *hclsyntax.Block) error {

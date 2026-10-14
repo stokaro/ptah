@@ -30,6 +30,7 @@ import (
 func registerClickHouseServices(provider *engine.Provider, name string) {
 	provider.Annotations = append(provider.Annotations, chsource.Annotations())
 	provider.YAML = append(provider.YAML, chsource.YAML())
+	provider.HCL = append(provider.HCL, chsource.HCL())
 	provider.SQL = append(provider.SQL, chsource.SQL())
 	provider.Targets[0].Preparation = chprepare.Service{}
 	provider.Targets[0].Creations = chprepare.Service{}

@@ -66,6 +66,9 @@ const (
 	// The frontend reads the signature and attaches the returned facets to that
 	// declaration, so overloaded functions keep separate settings.
 	RoutineAttributes Site = "routine-attributes"
+	// MaterializedViewAttributes adds owner attributes to a materialized block.
+	// The frontend attaches Declaration.Facets to the exact view declaration.
+	MaterializedViewAttributes Site = "materialized-view-attributes"
 	// InTable is a block inside a `table` block, beside its columns. The
 	// [Block] has no naming, and the block takes no labels. Its claim carries
 	// the table in [Claim.Table], and its [Declaration] carries facets of the
@@ -343,8 +346,8 @@ type Declaration struct {
 	TableSetting schemaext.Value
 	// Facets are settings of the claim's index, for an [IndexAttributes]
 	// claim, or of its table, for an [InTable] or [TableAttributes] claim. Each
-	// facet has one of the extension's Kinds. The frontend attaches the facets
-	// to that index or table.
+	// facet has one of the extension's Kinds. RoutineAttributes and
+	// MaterializedViewAttributes attach facets to their declared object.
 	Facets schemaext.Facets
 }
 
@@ -633,6 +636,10 @@ func validateNaming(owner string, block Block) error {
 	case RoutineAttributes:
 		if (block.Type != "function" && block.Type != "procedure") || block.Naming != "" {
 			return fmt.Errorf("HCL %s block of %s must be a function or procedure with no naming", block.Site, owner)
+		}
+	case MaterializedViewAttributes:
+		if block.Type != "materialized" || block.Naming != "" {
+			return fmt.Errorf("HCL %s block of %s must be materialized with no naming", block.Site, owner)
 		}
 	case InTable:
 		if block.Naming != "" {

@@ -1530,13 +1530,13 @@ builds. `Schedule.Clause` renders the clause the CREATE carries, and
 `Schedule.Clone` copies a schedule without sharing its dependency list.
 
 `chsource.RefreshFacets` reads a declared clause into a facet bound to the
-clickhouse target, in the spelling the server stores, and refuses a clause the
-server would refuse. `chsource.Annotations` adds the `refresh` attribute to
-`//ptah:schema:matview` and makes the claim `chsource.RefreshCoverage` builds,
-so a Go source that selects the owner and declares a view without a schedule
-asks for a plain view. A Go parse without the owner refuses `refresh` as an
-unknown attribute; YAML, HCL and SQL sources enroll none and leave a server's
-schedule unmanaged.
+ClickHouse target, in the spelling the server stores, and refuses an unsupported
+clause. `chsource.Annotations`, `chsource.YAML`, `chsource.HCL`, and
+`chsource.SQL` use that model. Each selected source claims complete refresh
+coverage, so a view without a schedule declares a plain view. Go, YAML, and HCL
+also accept an empty `refresh` string for that declaration. A parse without the
+owner refuses its attributes and leaves its coverage unknown. Go and HCL
+exports refuse an uncaptured schedule instead of declaring a plain view.
 
 `chcompare.RefreshService` compares schedules of views both sides hold, reading
 both in the spelling the server stores, with dependencies qualified by the
@@ -3207,7 +3207,8 @@ reaches the owner as the attribute map the Go annotation of the same
 declaration carries, so one reader serves both frontends. `Extension.Cover`
 narrows the document's claim by what it declares of the owner's models.
 
-An owner may add keys to the frontend's table and index entries too. An
+An owner may add keys to the frontend's table, index, function, and
+materialized-view entries too. `EntryMaterializedView` selects `matviews`. An
 `EntryAttributes` names scalar keys and the entry's own keys it reads, such
 as an index's type, in the shape of `annotation.DirectiveAttributes`, so the
 YDB owner reads an index's partitioning from Go and from YAML with one
@@ -3425,6 +3426,13 @@ and the block takes no `schema`. A shape at the `IndexAttributes` site adds
 attributes to the reader's own `index` block. `TableAttributes` does the same
 for a `table` block, with no `Naming`. A shape at the `InTable` site is
 a block inside a `table`, with no labels.
+
+`MaterializedViewAttributes` adds
+attributes to a `materialized` block, also with no `Naming`. Its returned facets
+attach to the exact view, including equal names in different schemas.
+`EncodeRequest.MaterializedViews` supplies the owner's facets to its writer;
+`SlotMaterializedView` identifies each view by its complete model name. The
+frontend reserves its own attributes at both entry points.
 
 Top-level shapes may share a block type when their `Dialects` do not overlap.
 `Unscoped` selects one reader when neither the caller nor the block names a
