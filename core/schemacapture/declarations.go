@@ -10,9 +10,10 @@ import (
 )
 
 // ConstraintsFor returns independent constraints owned by a table, preserving
-// input order. Struct, bare table, and qualified table references are accepted.
-// An explicit table reference takes precedence over a struct name. Empty input
-// returns nil. No identity normalization or target policy is applied.
+// input order. Struct, bare table, and qualified table references are accepted
+// as [Owns] decides. An explicit table reference takes precedence over a struct
+// name. Empty input returns nil. No identity normalization or target policy is
+// applied.
 func ConstraintsFor(constraints []schemamodel.Constraint, table schemamodel.Table) []schemamodel.Constraint {
 	owned := make([]schemamodel.Constraint, 0, len(constraints))
 	for _, constraint := range constraints {
@@ -24,12 +25,30 @@ func ConstraintsFor(constraints []schemamodel.Constraint, table schemamodel.Tabl
 }
 
 // Owns reports whether table owns constraint, by the rule [ConstraintsFor]
-// captures a table's constraints with: an explicit table reference, bare or
-// qualified, or else the owning struct.
+// captures a table's constraints with: an explicit table reference, or else
+// the owning struct. A qualified reference names one table. A bare reference
+// names the table of that name outside any schema, and reaches a table in a
+// schema only when the constraint names no struct or the table's own: the
+// same name in another schema is another table, so the constraints of
+// app.children and of a bare children stay apart.
 func Owns(table schemamodel.Table, constraint schemamodel.Constraint) bool {
-	named := strings.TrimSpace(constraint.Table)
-	return named == table.QualifiedName() || named == table.Name ||
-		(named == "" && constraint.StructName != "" && constraint.StructName == table.StructName)
+	return references(table, constraint.Table, constraint.StructName)
+}
+
+// references reports whether a child naming tableRef and declared on the
+// struct structName belongs to table, by the rule [Owns] states. Constraints
+// and indexes share it, because both name their table the same two ways.
+func references(table schemamodel.Table, tableRef, structName string) bool {
+	switch named := strings.TrimSpace(tableRef); named {
+	case "":
+		return structName != "" && structName == table.StructName
+	case table.QualifiedName():
+		return true
+	case table.Name:
+		return structName == "" || structName == table.StructName
+	default:
+		return false
+	}
 }
 
 // DatabasePrimaryKeyFacets is [PrimaryKeyFacets] for a table of db, with the
@@ -60,7 +79,8 @@ func PrimaryKeyFacets(table *schemamodel.Table, owned []*schemamodel.Constraint)
 
 // DeclareTable captures one table and its declared children without mutating
 // the source. Fields include embedded declarations. Indexes and constraints
-// match their explicit table or owning struct; triggers match the table name.
+// match their explicit table or owning struct as [Owns] decides; triggers
+// match the table name.
 // Feature scopes and knowledge limits are retained. Nil source captures only
 // the supplied table; empty child lists are nil.
 func DeclareTable(desired *schemamodel.Database, table schemamodel.Table, semantics identifier.Semantics) TableDeclaration {
@@ -87,8 +107,7 @@ func DeclareTable(desired *schemamodel.Database, table schemamodel.Table, semant
 
 	indexes := make([]schemamodel.Index, 0, len(desired.Indexes))
 	for _, index := range desired.Indexes {
-		named := strings.TrimSpace(index.TableName)
-		if named == qualified || named == table.Name || (named == "" && index.StructName == table.StructName) {
+		if references(table, index.TableName, index.StructName) {
 			indexes = append(indexes, index.Clone())
 		}
 	}
