@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/chindexkey"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/indexbacking"
@@ -1127,9 +1128,33 @@ func indexDefinitionsChanged(
 		return postgresIndexDefinitionChanged(desired, database, semantics, resolved)
 	case platform.MySQL, platform.MariaDB:
 		return mysqlIndexDefinitionChanged(desired, database, semantics, dialect)
+	case platform.ClickHouse:
+		return clickhouseIndexKeyChanged(desired, database)
 	default:
 		return false
 	}
+}
+
+// clickhouseIndexKeyChanged answers whether a ClickHouse data-skipping
+// index's key differs, the one part of its definition this comparison owns.
+//
+// A skipping index's key is one expression, and system.data_skipping_indices
+// reports it whole: `INDEX i (a, b)` reads back as the single key `a, b`. So
+// the keys are compared as the expression each side writes, in the form
+// [chindexkey.Same] reads ClickHouse's own formatting into. The type and the
+// granularity are the ClickHouse owner's index facet, compared there. An
+// index has no uniqueness and no key direction on ClickHouse, which the
+// renderer reports as lost rather than writes, so neither is compared.
+func clickhouseIndexKeyChanged(desired schemamodel.Index, database catalog.Index) bool {
+	desiredKeys := make([]string, 0, len(desired.Parts))
+	for _, part := range effectiveGeneratedIndexParts(desired) {
+		desiredKeys = append(desiredKeys, cmp.Or(strings.TrimSpace(part.Expr), part.Name))
+	}
+	databaseKeys := make([]string, 0, len(database.Parts))
+	for _, part := range effectiveDatabaseIndexParts(database) {
+		databaseKeys = append(databaseKeys, cmp.Or(strings.TrimSpace(part.Expr), part.Name))
+	}
+	return !chindexkey.Same(desiredKeys, databaseKeys)
 }
 
 // indexPayloadChanged answers whether an index's payload columns -- INCLUDE on
