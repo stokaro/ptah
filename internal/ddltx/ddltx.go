@@ -12,13 +12,16 @@
 // could notice a dialect that had never been assigned an answer — which is the
 // failure mode issue #999 asks tests to rule out.
 //
-// [ClassOf] is that name. It has one arm per dialect and no catch-all, so a
-// target added to core/platform/capability without a decision here reads as
-// [Unclassified] and fails the guard in this package's tests rather than
-// silently inheriting the transactional contract.
+// [ClassOf] is that name. It reads the class each dialect's descriptor states
+// and has no default, so a target added to core/platform/capability whose
+// descriptor states no decision reads as [Unclassified] and fails the guard in
+// this package's tests rather than silently inheriting the transactional
+// contract.
 package ddltx
 
 import (
+	"slices"
+
 	"ptah.run/core/platform"
 )
 
@@ -61,85 +64,25 @@ func Classes() []Class {
 }
 
 // ClassOf returns the DDL transaction contract Ptah's migrator implements for
-// a dialect. The dialect is normalized through platform.NormalizeDialect, so
+// a dialect: the DDLTransactions its descriptor in the process registry
+// states. The dialect is folded as platform.NormalizeDialect folds it, so
 // every accepted spelling of a target answers the same.
 //
-// Each arm states what the answer rests on. Three of them are proven against a
-// live server by the revision-completion matrix in migration/migrator; the
-// rest record the contract the migrator's code path already implements and are
-// marked as not yet driven live.
+// A dialect the registry does not know, or whose descriptor states no
+// contract or one this package does not declare, is [Unclassified]. Each
+// built-in descriptor says beside its value what the answer rests on: a live
+// revision-completion test in migration/migrator, or the code path the
+// migrator implements where no test drives one yet.
 func ClassOf(dialect string) Class {
-	switch platform.NormalizeDialect(dialect) {
-	// Proven live by TestRevisionCompletionFailure_PostgresTransactionalLive
-	// and, in process, by the SQLite case of the same matrix.
-	case platform.Postgres, platform.SQLite:
-		return Transactional
-
-	// Not yet driven live for revision completion. These three reach the
-	// database through the same transactional migrator path PostgreSQL takes:
-	// dbschema routes CockroachDB and YugabyteDB onto the PostgreSQL driver,
-	// and SQL Server has its own writer with a real transaction. Their
-	// contract is therefore the one the code implements, not a measurement.
-	case platform.CockroachDB, platform.YugabyteDB, platform.SQLServer:
-		return Transactional
-
-	// Proven live by TestRevisionCompletionFailure_MySQLImplicitCommitLive and
-	// TestRevisionCompletionFailure_MariaDBImplicitCommitLive.
-	case platform.MySQL, platform.MariaDB:
-		return ImplicitCommit
-
-	// Proven live by TestRevisionCompletionFailure_ClickHouseNoTransactionLive.
-	// The ClickHouse writer's BeginTransaction returns a transaction whose
-	// Commit and Rollback are no-ops.
-	case platform.ClickHouse:
-		return NoTransaction
-
-	// Oracle commits the transaction in progress before every schema
-	// statement: measured on 23.26.2.0.0 and 21.3.0.0.0, a CREATE TABLE issued
-	// inside an explicit transaction is still in user_tables after the
-	// ROLLBACK (stokaro/ptah#1875). So the Oracle writer opens no transaction at
-	// all. Its BeginTransaction returns one whose Commit and Rollback are
-	// no-ops, as the ClickHouse writer's does, and every statement the migrator
-	// sends -- body and revision write alike -- commits on its own. That is
-	// this class rather than ImplicitCommit, because nothing stays open for a
-	// failure to roll back: TestOracleMigratorKeepsEveryStatementItRanLive
-	// finds the INSERT that ran before a failing statement still there.
-	// ImplicitCommit would select the MySQL-family progress witness, whose
-	// InnoDB and sql_mode preflight Oracle cannot answer (stokaro/ptah#3298).
-	case platform.Oracle:
-		return NoTransaction
-
-	// Spanner's PostgreSQL interface refuses a schema statement inside an
-	// explicit transaction: measured on the Cloud Spanner emulator behind
-	// PGAdapter, every wrapped statement answers `DDL statements are only
-	// allowed outside explicit transactions`, SQLSTATE 25000
-	// (stokaro/ptah#1793). Its preset answers false for
-	// capability.DDLInsideTransaction, and internal/sqliterebuild turns that
-	// into a transaction whose Commit and Rollback do nothing, on every
-	// migrator apply and rollback. So every statement -- body and revision
-	// write alike -- commits on its own, which is this class rather than
-	// Transactional: a rollback here undoes nothing, so a body that fails
-	// partway keeps the statements that already ran.
-	// TestSpannerMigratorKeepsEveryStatementItRanLive measures that against the
-	// emulator (stokaro/ptah#3320).
-	case platform.Spanner:
-		return NoTransaction
-
-	// YDB runs no schema statement inside a transaction: measured on
-	// 26.2.1.14, CREATE TABLE inside an interactive transaction answers
-	// `Scheme operations cannot be executed inside transaction`, and DDL and
-	// DML cannot share one query (`Queries with mixed data and scheme
-	// operations are not supported`). A query holding several DDL statements
-	// is not atomic either: everything before a failing statement stays
-	// applied. So every query commits on its own, body and revision write
-	// alike. TestYDBMigrator_ResumesWhereAFailedMigrationStopped finds the
-	// table and the row that ran before a failing statement still there.
-	case platform.YDB:
-		return NoTransaction
-
-	default:
+	described, found := platform.Lookup(dialect)
+	if !found {
 		return Unclassified
 	}
+	class := Class(described.DDLTransactions)
+	if !slices.Contains(Classes(), class) {
+		return Unclassified
+	}
+	return class
 }
 
 // BodySurvivesRevisionCompletionFailure reports whether a migration body that

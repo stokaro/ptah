@@ -70,19 +70,21 @@ func Schema(resolved, databaseURL string) string {
 		// every dialect outside the PostgreSQL family wants anyway.
 		return resolved
 	}
-	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
+	described, _ := platform.Lookup(dialect)
+	switch described.RevisionTable.AtlasSchema {
+	case "database":
 		if urlNamesDatabase(databaseURL) {
 			return resolved
 		}
 		return AtlasSchema
-	}
-	if !platform.IsPostgresFamily(dialect) {
+	case "search-path":
+		if urlPinsSchema(databaseURL) {
+			return resolved
+		}
+		return AtlasSchema
+	default:
 		return resolved
 	}
-	if urlPinsSchema(databaseURL) {
-		return resolved
-	}
-	return AtlasSchema
 }
 
 // urlNamesDatabase reports whether a MySQL-family URL names a database. One

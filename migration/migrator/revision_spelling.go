@@ -3,8 +3,6 @@ package migrator
 import (
 	"fmt"
 	"strings"
-
-	"ptah.run/core/platform"
 )
 
 // RevisionSpellingError reports Atlas-format revision rows whose version spells
@@ -125,15 +123,11 @@ func (m *Migrator) refuseRespelledRevisions(revisions []MigrationRevision) error
 // file's spelling. Both versions are decimal digits, which is what makes
 // quoting them as literals safe.
 func respellRevisionStatements(dialect, table string, row RevisionSpelling) []string {
-	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
-		return []string{
-			fmt.Sprintf("INSERT INTO %s SELECT '%s', * EXCEPT (version) FROM %s WHERE version = '%s'",
-				table, row.File, table, row.Recorded),
-			fmt.Sprintf("ALTER TABLE %s DELETE WHERE version = '%s' SETTINGS mutations_sync = 1",
-				table, row.Recorded),
-		}
+	fill := strings.NewReplacer("{table}", table, "{file}", row.File, "{recorded}", row.Recorded)
+	templates := revisionTableFor(dialect).Respell
+	statements := make([]string, len(templates))
+	for i, template := range templates {
+		statements[i] = fill.Replace(template)
 	}
-	return []string{
-		fmt.Sprintf("UPDATE %s SET version = '%s' WHERE version = '%s'", table, row.File, row.Recorded),
-	}
+	return statements
 }

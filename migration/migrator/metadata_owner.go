@@ -129,14 +129,7 @@ func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string)
 // so the qualified name is one quoted path rather than two quoted parts, which
 // YQL would read as a cluster and a table.
 func (m *Migrator) qualifiedMetadataTable(table string) string {
-	schema := m.metadataTableSchemaName()
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
-		return sqlident.Qualified(platform.YDB, schema, table)
-	}
-	if schema != "" {
-		return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
-	}
-	return m.quoteIdentifier(table)
+	return sqlident.Qualified(m.connectionDialect(), m.metadataTableSchemaName(), table)
 }
 
 // ErrUnaddressableMetadataTable is returned when the log table's derived name
@@ -290,8 +283,8 @@ WHERE n.nspname = COALESCE(NULLIF(?, ''), pg_catalog.current_schema())
 //
 // ALL_OBJECTS rather than ALL_TABLES, for the reason the PostgreSQL arm takes
 // no relkind: a view holding the name collides with CREATE TABLE the same way
-// a table does, and [oracleCreateTableIfAbsent] suppresses ORA-00955 for the
-// collision, so a lookup that saw only tables would report the name free and
+// a table does, and the PL/SQL block that creates Oracle's revision table
+// suppresses ORA-00955 for the collision, so a lookup that saw only tables would report the name free and
 // hand a crafted view with an INSTEAD OF trigger the adoption this refuses.
 //
 // No object-type filter either. An object type in its own namespace -- an

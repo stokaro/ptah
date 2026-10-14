@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/revisiontable"
 )
@@ -200,66 +199,15 @@ func (m *Migrator) migrationLogObjectName() string {
 	return table
 }
 
-// ptahMigrationLogDDL is the log table, in the spelling each engine takes.
-//
-// The primary key is (run_id, seq) rather than a generated identity: every
-// engine spells auto-increment differently -- SERIAL, IDENTITY, AUTOINCREMENT,
-// GENERATED AS IDENTITY -- and the ordering this table needs is the order the
-// migrator wrote its entries in, which the migrator already knows.
-func ptahMigrationLogDDL(dialect, qualifiedTable, sqlServerObjectLiteral, engine string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer:
-		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
-BEGIN
-    CREATE TABLE %s (
-        run_id NVARCHAR(64) NOT NULL,
-        seq BIGINT NOT NULL,
-        operation NVARCHAR(32) NOT NULL,
-        version BIGINT NOT NULL,
-        state NVARCHAR(32) NOT NULL,
-        actor NVARCHAR(256) NULL,
-        actor_source NVARCHAR(32) NOT NULL,
-        checksum NVARCHAR(64) NULL,
-        logged_at DATETIME2 NOT NULL,
-        error NVARCHAR(MAX) NULL,
-        PRIMARY KEY (run_id, seq)
-    )
-END`, sqlServerObjectLiteral, qualifiedTable)
-	case platform.Oracle:
-		// The same three refusals the revision table records: no BIGINT, no
-		// TEXT, and DEFAULT before NOT NULL. Every text column Ptah can write
-		// empty is nullable, because Oracle stores '' as NULL.
-		return oracleCreateTableIfAbsent(fmt.Sprintf(`CREATE TABLE %s (
-    run_id VARCHAR2(64) NOT NULL,
-    seq NUMBER(19) NOT NULL,
-    operation VARCHAR2(32) NOT NULL,
-    version NUMBER(19) NOT NULL,
-    state VARCHAR2(32) NOT NULL,
-    actor VARCHAR2(256) NULL,
-    actor_source VARCHAR2(32) NOT NULL,
-    checksum VARCHAR2(64) NULL,
-    logged_at TIMESTAMP NOT NULL,
-    error CLOB NULL,
-    PRIMARY KEY (run_id, seq)
-)`, qualifiedTable))
-	case platform.YDB:
-		return ydbMigrationLogDDL(qualifiedTable)
-	default:
-		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    run_id VARCHAR(64) NOT NULL,
-    seq BIGINT NOT NULL,
-    operation VARCHAR(32) NOT NULL,
-    version BIGINT NOT NULL,
-    state VARCHAR(32) NOT NULL,
-    actor VARCHAR(256) NULL,
-    actor_source VARCHAR(32) NOT NULL,
-    checksum VARCHAR(64) NULL,
-    logged_at %s NOT NULL,
-    error TEXT NULL,
-    PRIMARY KEY (run_id, seq)
-)%s`, qualifiedTable, revisionTimestampType(dialect),
-			revisionEngineClauseFor(dialect, engine))
-	}
+// ptahMigrationLogDDL is the log table, in the spelling the engine's revision
+// table states.
+func ptahMigrationLogDDL(dialect, qualifiedTable, objectLiteral, engine string) string {
+	return expandTableStatement(
+		revisionTableFor(dialect).CreateLog,
+		qualifiedTable,
+		objectLiteral,
+		revisionEngineClauseFor(dialect, engine),
+	)
 }
 
 // createMigrationLogTableSQL is the DDL for this migrator's log table.
@@ -427,7 +375,7 @@ func (m *Migrator) nullableText(value string) any {
 	if value != "" {
 		return value
 	}
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
+	if m.revisionTable().TypedNulls {
 		return (*string)(nil)
 	}
 	return nil

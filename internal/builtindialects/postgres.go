@@ -54,5 +54,12 @@ func postgres() descriptor.Dialect {
 		// The grammars the planner asks for non-blocking DDL in.
 		ConcurrentIndexes: true,
 		OnlineAlter:       descriptor.OnlineAlterNotValid,
+
+		// Migrations: what the migrator reads.
+		// DDL joins the client's transaction, so a body and the revision that
+		// records it commit together, measured by
+		// TestRevisionCompletionFailure_PostgresTransactionalLive.
+		DDLTransactions: "transactional",
+		RevisionTable:   postgresFamilyRevisionTable(),
 	}
 }

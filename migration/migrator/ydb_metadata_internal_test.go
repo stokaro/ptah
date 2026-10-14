@@ -55,7 +55,7 @@ func TestYDBMetadataTables_SpellTheTablesYDBTakes(t *testing.T) {
 		},
 		{
 			name:   "tags",
-			ddl:    ydbMigrationTagsTableDDL("`ptah_migration_tags`"),
+			ddl:    expandTableStatement(revisionTableFor(platform.YDB).CreateTags, "`ptah_migration_tags`", "", ""),
 			want:   []string{"tag Utf8 NOT NULL,", "version Int64 NOT NULL,", "recorded_at Timestamp NOT NULL,", "PRIMARY KEY (tag)"},
 			absent: []string{"BIGINT", "VARCHAR", "TIMESTAMPTZ", "ENGINE"},
 		},
@@ -78,7 +78,7 @@ func TestYDBMetadataTables_SpellTheTablesYDBTakes(t *testing.T) {
 // order, and nothing else.
 func TestYDBNativeRevisionColumns_MatchTheDDL(t *testing.T) {
 	c := qt.New(t)
-	ddl := ydbRevisionsTableDDL("`t`")
+	ddl := ptahRevisionsTableDDL(platform.YDB, "`t`", "", "")
 
 	var positions []int
 	for _, column := range ydbNativeRevisionColumns {

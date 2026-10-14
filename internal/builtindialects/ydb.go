@@ -74,5 +74,100 @@ func ydb() descriptor.Dialect {
 		// reads strings and comments by rules YQL does not share: it would
 		// rewrite a delimiter inside an @@...@@ literal.
 		Scripts: descriptor.Scripts{ClientDelimiters: false},
+
+		// Migrations: what the migrator reads.
+		DDLTransactions: "no_transaction",
+		RevisionTable:   ydbRevisionTable(),
+	}
+}
+
+// ydbRevisionTable is how YDB keeps the migrator's tables.
+//
+// YQL has no inline PRIMARY KEY, so each key is a table-level clause. Every
+// integer column is Int64, because the YDB connection widens a Go int to 64
+// bits and YDB refuses an Int64 value for an Int32 column. Every text column
+// is Utf8; partial_hashes too, since a Utf8 value cannot be written to a Json
+// or JsonDocument column (measured on 26.2.1.14: `Failed to convert 'j': Utf8
+// to Optional<JsonDocument>`), so the column holds the JSON document as text.
+// Timestamp rather than Timestamp64, because every line Ptah supports has it
+// and a revision is never older than 1970. No column has a default: the
+// migrator writes every column of every row it inserts. A schema is a
+// directory, and CREATE TABLE creates the directories its path names.
+//
+// YDB runs no schema statement inside a transaction (`Scheme operations
+// cannot be executed inside transaction`, measured on 26.2.1.14), DDL and DML
+// cannot share one query, and a query of several DDL statements is not
+// atomic, so every query commits on its own, body and revision write alike;
+// TestYDBMigrator_ResumesWhereAFailedMigrationStopped measures it. YQL has
+// UPSERT and no ON CONFLICT, no FOR UPDATE -- a serializable read aborts the
+// second of two conflicting transactions instead -- and UNION ALL pairs
+// columns by name. It binds every value with a type and refuses an untyped
+// NULL (`Failed to convert 'txt': Void to Optional<Utf8>`). ydb-go-sdk counts
+// the rows a DELETE's plan deleted, so a DELETE by key reports its key whether
+// a row held it or not.
+func ydbRevisionTable() descriptor.RevisionTable {
+	return descriptor.RevisionTable{
+		Create: `CREATE TABLE IF NOT EXISTS {table} (
+    version Int64 NOT NULL,
+    description Utf8 NOT NULL,
+    applied_at Timestamp NOT NULL,
+    state Utf8 NOT NULL,
+    applied Int64 NOT NULL,
+    total Int64 NOT NULL,
+    error Utf8,
+    error_stmt Utf8,
+    execution_time_ms Int64 NOT NULL,
+    checksum Utf8 NOT NULL,
+    PRIMARY KEY (version)
+)`,
+		CreateAtlas: `CREATE TABLE IF NOT EXISTS {table} (
+    version Utf8 NOT NULL,
+    description Utf8 NOT NULL,
+    type Int64 NOT NULL,
+    applied Int64 NOT NULL,
+    total Int64 NOT NULL,
+    executed_at Timestamp NOT NULL,
+    execution_time Int64 NOT NULL,
+    error Utf8,
+    error_stmt Utf8,
+    hash Utf8 NOT NULL,
+    partial_hashes Utf8,
+    operator_version Utf8 NOT NULL,
+    PRIMARY KEY (version)
+)`,
+		CreateTags: `CREATE TABLE IF NOT EXISTS {table} (
+    tag Utf8 NOT NULL,
+    version Int64 NOT NULL,
+    recorded_at Timestamp NOT NULL,
+    PRIMARY KEY (tag)
+)`,
+		CreateLog: `CREATE TABLE IF NOT EXISTS {table} (
+    run_id Utf8 NOT NULL,
+    seq Int64 NOT NULL,
+    operation Utf8 NOT NULL,
+    version Int64 NOT NULL,
+    state Utf8 NOT NULL,
+    actor Utf8,
+    actor_source Utf8 NOT NULL,
+    checksum Utf8,
+    logged_at Timestamp NOT NULL,
+    error Utf8,
+    PRIMARY KEY (run_id, seq)
+)`,
+		FirstRow:  "limit",
+		Update:    updateRevision,
+		Respell:   respellRevision(),
+		Upserts:   true,
+		UpsertTag: "UPSERT INTO {table} (tag, version, recorded_at) VALUES (?, ?, ?)",
+		// YQL's own name for the type. A cast of a column is safe, unlike a
+		// cast of a parameter: every token that is not a number is already
+		// NULL, and NULL is what YQL's cast answers for text it cannot read.
+		VersionCast:      "Int64",
+		VersionLiteral:   "yql",
+		DerivedTableAs:   " AS",
+		UnionByName:      true,
+		JSONAsText:       true,
+		TypedNulls:       true,
+		DeleteCountsKeys: true,
 	}
 }

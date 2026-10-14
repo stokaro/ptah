@@ -60,5 +60,64 @@ func clickHouse() descriptor.Dialect {
 				"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table",
 		},
 		Scripts: descriptor.Scripts{ClientDelimiters: true},
+
+		// Migrations: what the migrator reads.
+		DDLTransactions: "no_transaction",
+		RevisionTable:   clickHouseRevisionTable(),
+	}
+}
+
+// clickHouseRevisionTable is how ClickHouse keeps the migrator's tables.
+//
+// The engine is named because ClickHouse gives a table none unless asked, and
+// whether an unnamed one is legal at all is the server's
+// default_table_engine setting, whose own default is None
+// (stokaro/ptah#2234). Which engines a revision table can be is the server's
+// judgment, so a configured one is passed through.
+//
+// partial_hashes is TEXT, never JSON NULL: ClickHouse reads a trailing NULL as
+// Nullable(T), 24.x refuses Nullable(JSON) outright, and later servers coerce
+// the string null into {} (#950). ClickHouse offers the migrator no
+// transaction -- its writer's Commit and Rollback do nothing, which
+// TestRevisionCompletionFailure_ClickHouseNoTransactionLive measures -- and a
+// row changes only through a mutation, which the migrator waits for.
+func clickHouseRevisionTable() descriptor.RevisionTable {
+	return descriptor.RevisionTable{
+		Create: createRevisions,
+		CreateAtlas: `CREATE TABLE IF NOT EXISTS {table} (
+    version VARCHAR(255) PRIMARY KEY,
+    description TEXT NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    hash VARCHAR(255) NOT NULL,
+    partial_hashes TEXT NULL,
+    operator_version VARCHAR(255) NOT NULL
+){engine}`,
+		CreateTags:   createTags,
+		CreateLog:    createLog,
+		CreateSchema: createSchema,
+		EngineClause: " ENGINE = MergeTree",
+		FirstRow:     "limit",
+		Update: `ALTER TABLE {table}
+UPDATE {assignments}
+WHERE version = ?
+SETTINGS mutations_sync = 1`,
+		// A key column cannot be updated, so a respelled row is a copy under
+		// the new version, and the old one is deleted once it is written.
+		Respell: []string{
+			"INSERT INTO {table} SELECT '{file}', * EXCEPT (version) FROM {table} WHERE version = '{recorded}'",
+			"ALTER TABLE {table} DELETE WHERE version = '{recorded}' SETTINGS mutations_sync = 1",
+		},
+		Mutations:      true,
+		UpsertTag:      upsertTagOnDuplicateKey,
+		VersionCast:    "BIGINT",
+		VersionLiteral: "backslash",
+		DerivedTableAs: " AS",
+		JSONAsText:     true,
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 )
 
@@ -23,7 +22,7 @@ import (
 // Only a placed schema is checked. A schema the caller named is the answer to
 // this question already.
 func (m *Migrator) refuseStrandedAtlasHistory(ctx context.Context) error {
-	if !m.atlasPlacedSchema || !platform.IsPostgresFamily(m.connectionDialect()) {
+	if !m.atlasPlacedSchema || revisionTableFor(m.connectionDialect()).AtlasSchema != "search-path" {
 		return nil
 	}
 	connected := m.connectionSchemaName()

@@ -63,5 +63,115 @@ func oracle() descriptor.Dialect {
 			OffsetFetch: true,
 		},
 		Scripts: descriptor.Scripts{ClientDelimiters: true},
+
+		// Migrations: what the migrator reads.
+		DDLTransactions: "no_transaction",
+		RevisionTable:   oracleRevisionTable(),
+	}
+}
+
+// oracleRevisionTable is how Oracle keeps the migrator's tables.
+//
+// Oracle has neither BIGINT nor TEXT and takes DEFAULT only before NOT NULL.
+// Measured on Oracle Free 23.26.3.0.0, one column at a time:
+//
+//	version BIGINT                                ORA-00902: invalid datatype
+//	description TEXT                              ORA-00902: invalid datatype
+//	state VARCHAR(32) NOT NULL DEFAULT 'applied'  ORA-03076: unexpected item DEFAULT
+//
+// Every text column Ptah can write as an empty string is nullable, because
+// Oracle stores ” as NULL: a NOT NULL description would refuse a migration
+// that has none, and the migrator reads the NULL back as ”. The revision text
+// is a CLOB, which refuses COALESCE with ” (ORA-00932), and partial_hashes is
+// a CLOB that takes the JSON document as bytes (stokaro/ptah#3298).
+//
+// Oracle 21 has no IF NOT EXISTS, so each CREATE TABLE runs inside a PL/SQL
+// block that ignores ORA-00955, "name is already used by an existing object";
+// running it twice is accepted and changes nothing, measured on Oracle Free
+// 23.26.3.0.0. The statement travels as a string literal, so its quotes are
+// doubled. A schema is a user, and a migrator does not create accounts.
+//
+// Oracle commits the transaction in progress before every schema statement --
+// measured on 23.26.2.0.0 and 21.3.0.0.0, a CREATE TABLE inside an explicit
+// transaction survives the ROLLBACK (stokaro/ptah#1875) -- so its writer opens
+// no transaction at all and every statement commits on its own;
+// TestOracleMigratorKeepsEveryStatementItRanLive measures it. Its driver
+// refuses a serializable isolation level by name and takes SET TRANSACTION
+// instead. It has no LIMIT (`LIMIT 1` answers ORA-03049), no AS before a
+// derived table's alias (ORA-03048), and Oracle 21 takes no SELECT without
+// FROM.
+func oracleRevisionTable() descriptor.RevisionTable {
+	return descriptor.RevisionTable{
+		Create: `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
+    version NUMBER(19) PRIMARY KEY,
+    description CLOB NULL,
+    applied_at TIMESTAMP NOT NULL,
+    state VARCHAR2(32) DEFAULT ''applied'' NOT NULL,
+    applied NUMBER(10) DEFAULT 1 NOT NULL,
+    total NUMBER(10) DEFAULT 1 NOT NULL,
+    error CLOB NULL,
+    error_stmt CLOB NULL,
+    execution_time_ms NUMBER(19) DEFAULT 0 NOT NULL,
+    checksum VARCHAR2(64) NULL
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`,
+		CreateAtlas: `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
+    version VARCHAR2(255) PRIMARY KEY,
+    description CLOB NULL,
+    type NUMBER(19) DEFAULT 2 NOT NULL,
+    applied NUMBER(19) DEFAULT 0 NOT NULL,
+    total NUMBER(19) DEFAULT 0 NOT NULL,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time NUMBER(19) NOT NULL,
+    error CLOB NULL,
+    error_stmt CLOB NULL,
+    hash VARCHAR2(255) NULL,
+    partial_hashes CLOB NULL,
+    operator_version VARCHAR2(255) NULL
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`,
+		CreateTags: createTags,
+		CreateLog: `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
+    run_id VARCHAR2(64) NOT NULL,
+    seq NUMBER(19) NOT NULL,
+    operation VARCHAR2(32) NOT NULL,
+    version NUMBER(19) NOT NULL,
+    state VARCHAR2(32) NOT NULL,
+    actor VARCHAR2(256) NULL,
+    actor_source VARCHAR2(32) NOT NULL,
+    checksum VARCHAR2(64) NULL,
+    logged_at TIMESTAMP NOT NULL,
+    error CLOB NULL,
+    PRIMARY KEY (run_id, seq)
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`,
+		FirstRow:          "fetch",
+		EmptyStringIsNull: true,
+		Update:            updateRevision,
+		Respell:           respellRevision(),
+		UpsertTag:         upsertTagOnDuplicateKey,
+		// Oracle has no BIGINT: `CAST('12' AS BIGINT)` answers ORA-00902.
+		VersionCast:       "NUMBER(19)",
+		VersionLiteral:    "standard",
+		LiteralRowSource:  " FROM dual",
+		SerializableInSQL: true,
 	}
 }

@@ -70,5 +70,78 @@ func mysql() descriptor.Dialect {
 
 		// The grammars the planner asks for non-blocking DDL in.
 		OnlineAlter: descriptor.OnlineAlterAlgorithmLock,
+
+		// Migrations: what the migrator reads.
+		DDLTransactions: "implicit_commit",
+		RevisionTable:   mysqlFamilyRevisionTable(),
+	}
+}
+
+// mysqlFamilyRevisionTable is how MySQL and MariaDB keep the migrator's
+// tables. Both commit the open transaction before DDL runs, which
+// TestRevisionCompletionFailure_MySQLImplicitCommitLive and its MariaDB twin
+// measure, and the migrator's progress witness depends on the revision table
+// being InnoDB: it records that a migration was applied even when the
+// statement around it fails. The Atlas version column is binary-collated, so
+// two tokens that differ only in case stay two revisions.
+func mysqlFamilyRevisionTable() descriptor.RevisionTable {
+	return descriptor.RevisionTable{
+		Create: createRevisions,
+		CreateAtlas: `CREATE TABLE IF NOT EXISTS {table} (
+    version VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY,
+    description TEXT NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    hash VARCHAR(255) NOT NULL,
+    partial_hashes JSON NULL,
+    operator_version VARCHAR(255) NOT NULL
+){engine}`,
+		CreateTags:     createTags + " ENGINE=InnoDB",
+		CreateLog:      createLog,
+		CreateSchema:   createSchema,
+		EngineClause:   " ENGINE=InnoDB",
+		RequiredEngine: "InnoDB",
+		FirstRow:       "limit",
+		RowLock:        "for-update",
+		Update:         updateRevision,
+		Respell:        respellRevision(),
+		Conflict: `ON DUPLICATE KEY UPDATE
+description = VALUES(description),
+applied_at = VALUES(applied_at),
+state = VALUES(state),
+applied = VALUES(applied),
+total = VALUES(total),
+error = NULL,
+error_stmt = NULL,
+execution_time_ms = VALUES(execution_time_ms),
+checksum = VALUES(checksum)`,
+		ConflictAtlas: `ON DUPLICATE KEY UPDATE
+description = VALUES(description),
+type = VALUES(type),
+applied = VALUES(applied),
+total = VALUES(total),
+executed_at = VALUES(executed_at),
+execution_time = VALUES(execution_time),
+error = '',
+error_stmt = '',
+hash = VALUES(hash),
+partial_hashes = VALUES(partial_hashes),
+operator_version = VALUES(operator_version)`,
+		UpsertTag:   upsertTagOnDuplicateKey,
+		VersionCast: "SIGNED",
+		// A hexadecimal binary literal is independent of sql_mode. Escaping a
+		// backslash as `\\` works under MySQL's default mode but changes the
+		// value when NO_BACKSLASH_ESCAPES is enabled.
+		VersionLiteral: "hex",
+		DerivedTableAs: " AS",
+		// A URL that names no database is the whole server, where the pinned
+		// community binary keeps its revision table in a database of its own,
+		// measured on MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#3789).
+		AtlasSchema: "database",
 	}
 }

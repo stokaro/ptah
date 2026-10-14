@@ -819,13 +819,14 @@ func revisionEngineRefusal(dialect, engine string) error {
 	if engine == "" {
 		return nil
 	}
+	required := revisionTableFor(dialect).RequiredEngine
 	switch {
-	case implicitCommitDialect(dialect) && !strings.EqualFold(engine, "InnoDB"):
+	case required != "" && !strings.EqualFold(engine, required):
 		return fmt.Errorf(
-			"migrations engine %q is not usable for the revision table on %s: it must be InnoDB, "+
+			"migrations engine %q is not usable for the revision table on %s: it must be %s, "+
 				"which records that a migration was applied even when the statement around it fails "+
 				"(unset --migrations-engine or PTAH_MIGRATIONS_ENGINE for this target)",
-			engine, dialect)
+			engine, dialect, required)
 	case revisionTableHasNoEngineClause(dialect):
 		return fmt.Errorf(
 			"migrations engine %q cannot be named on %s: the revision table there has no engine clause "+
@@ -845,28 +846,18 @@ func revisionEngineRefusal(dialect, engine string) error {
 // here would drop a named engine in silence.
 // TestRevisionTableHasNoEngineClause_AgreesWithBothBuilders holds the pair.
 func revisionTableHasNoEngineClause(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer, platform.Oracle, platform.YDB:
-		return true
-	default:
-		return false
-	}
+	table := revisionTableFor(dialect)
+	return !strings.Contains(table.Create, "{engine}") && !strings.Contains(table.CreateAtlas, "{engine}")
 }
 
-// revisionEngineClauseFor is the same decision without a Migrator, for the
-// Atlas-format DDL, which is built from a bare dialect.
+// revisionEngineClauseFor is what a table statement's {engine} expands to on
+// dialect: the engine the caller named, or the clause the engine's revision
+// table states when the caller named none.
 func revisionEngineClauseFor(dialect, engine string) string {
-	engine = strings.TrimSpace(engine)
-	switch {
-	case engine != "":
+	if engine = strings.TrimSpace(engine); engine != "" {
 		return " ENGINE = " + engine
-	case implicitCommitDialect(dialect):
-		return " ENGINE=InnoDB"
-	case platform.NormalizeDialect(dialect) == platform.ClickHouse:
-		return " ENGINE = MergeTree"
-	default:
-		return ""
 	}
+	return revisionTableFor(dialect).EngineClause
 }
 
 // WithMigrationsTable returns a copy of the migrator that records applied
@@ -960,59 +951,31 @@ func (m *Migrator) MigrationsTableIdentifier() string {
 	return m.qualifiedMigrationsTable()
 }
 
+// migrationsSchemaStatement creates the schema the migrator's tables are
+// configured to live in, in the spelling the engine's revision table states,
+// or is empty when there is no schema to create.
 func (m *Migrator) migrationsSchemaStatement() string {
+	table := m.revisionTable()
 	schema := m.migrationsSchema
-	if m.isSQLServer() {
+	if table.QualifiedByDefault {
 		schema = m.metadataTableSchemaName()
-		if strings.EqualFold(schema, "dbo") {
+		if strings.EqualFold(schema, defaultSchemaFor(m.connectionDialect())) {
 			return ""
 		}
 	}
-	if schema == "" {
+	if schema == "" || table.CreateSchema == "" {
 		return ""
 	}
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.SQLite {
-		return ""
-	}
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
-		// A YDB schema is a directory, and CREATE TABLE creates the
-		// directories its path names; YQL has no statement that creates one.
-		return ""
-	}
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
-		// An Oracle schema is a user, and a migrator does not create accounts.
-		// The generic statement below is not Oracle's CREATE SCHEMA: measured
-		// on Oracle Free 23.26.3.0.0 it answers ORA-02420, missing schema
-		// authorization clause. A configured schema that does not exist fails
-		// on the CREATE TABLE that names it, with the server's own message.
-		return ""
-	}
-	if m.isSQLServer() {
-		return fmt.Sprintf(
-			"IF SCHEMA_ID(%s) IS NULL EXEC(%s)",
-			sqlStringLiteral(schema),
-			sqlStringLiteral("CREATE SCHEMA "+m.quoteIdentifier(schema)),
-		)
-	}
-	return "CREATE SCHEMA IF NOT EXISTS " + m.quoteIdentifier(schema)
+	quoted := m.quoteIdentifier(schema)
+	return strings.NewReplacer(
+		"{schema_escaped}", strings.ReplaceAll(quoted, "'", "''"),
+		"{schema_object}", sqlStringLiteral(schema),
+		"{schema}", quoted,
+	).Replace(table.CreateSchema)
 }
 
 func (m *Migrator) quoteIdentifier(identifier string) string {
-	if m.conn == nil {
-		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
-	}
-	switch m.conn.Info().Dialect {
-	case "mysql", "mariadb", "clickhouse":
-		return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
-	case platform.SQLServer:
-		return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
-	case platform.YDB:
-		// Backticks, where a backslash and not a doubled backtick escapes;
-		// see sqlident.
-		return sqlident.Quote(platform.YDB, identifier)
-	default:
-		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
-	}
+	return sqlident.Quote(m.connectionDialect(), identifier)
 }
 
 func (m *Migrator) isSQLServer() bool {
@@ -1048,115 +1011,18 @@ func (m *Migrator) createMigrationsTableSQL() string {
 	return ptahRevisionsTableDDL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		sqlStringLiteral(m.sqlServerObjectName()),
+		sqlStringLiteral(m.metadataObjectName()),
 		m.migrationsEngine,
 	)
 }
 
-func ptahRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral, engine string) string {
-	if platform.NormalizeDialect(dialect) == platform.SQLServer {
-		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
-BEGIN
-    CREATE TABLE %s (
-        version BIGINT PRIMARY KEY,
-        description NVARCHAR(MAX) NOT NULL,
-        applied_at DATETIME2 NOT NULL,
-        state NVARCHAR(32) NOT NULL DEFAULT 'applied',
-        applied INT NOT NULL DEFAULT 1,
-        total INT NOT NULL DEFAULT 1,
-        error NVARCHAR(MAX) NULL,
-        error_stmt NVARCHAR(MAX) NULL,
-        execution_time_ms BIGINT NOT NULL DEFAULT 0,
-        checksum NVARCHAR(64) NOT NULL DEFAULT ''
-    )
-END`, sqlServerObjectLiteral, qualifiedTable)
-	}
-	if platform.NormalizeDialect(dialect) == platform.Oracle {
-		// Oracle has neither BIGINT nor TEXT and takes DEFAULT only before NOT
-		// NULL. Measured on Oracle Free 23.26.3.0.0, one column at a time:
-		//
-		//	version BIGINT                                ORA-00902: invalid datatype
-		//	description TEXT                              ORA-00902: invalid datatype
-		//	state VARCHAR(32) NOT NULL DEFAULT 'applied'  ORA-03076: unexpected item DEFAULT
-		//
-		// Every text column Ptah can write as an empty string is nullable here,
-		// because Oracle stores '' as NULL: a NOT NULL description would refuse
-		// a migration that has none. revisionText reads the NULL back as ''.
-		// There is no engine clause, which revisionTableHasNoEngineClause
-		// states (stokaro/ptah#3298).
-		return oracleCreateTableIfAbsent(fmt.Sprintf(`CREATE TABLE %s (
-    version NUMBER(19) PRIMARY KEY,
-    description CLOB NULL,
-    applied_at TIMESTAMP NOT NULL,
-    state VARCHAR2(32) DEFAULT 'applied' NOT NULL,
-    applied NUMBER(10) DEFAULT 1 NOT NULL,
-    total NUMBER(10) DEFAULT 1 NOT NULL,
-    error CLOB NULL,
-    error_stmt CLOB NULL,
-    execution_time_ms NUMBER(19) DEFAULT 0 NOT NULL,
-    checksum VARCHAR2(64) NULL
-)`, qualifiedTable))
-	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return ydbRevisionsTableDDL(qualifiedTable)
-	}
-	engineClause := revisionEngineClauseFor(dialect, engine)
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version BIGINT PRIMARY KEY,
-    description TEXT NOT NULL,
-    applied_at %s NOT NULL,
-    state VARCHAR(32) NOT NULL DEFAULT 'applied',
-    applied INTEGER NOT NULL DEFAULT 1,
-    total INTEGER NOT NULL DEFAULT 1,
-    error TEXT NULL,
-    error_stmt TEXT NULL,
-    execution_time_ms BIGINT NOT NULL DEFAULT 0,
-    checksum VARCHAR(64) NOT NULL DEFAULT ''
-)%s`, qualifiedTable, revisionTimestampType(dialect), engineClause)
-}
-
-// oracleCreateTableIfAbsent wraps a CREATE TABLE so that a table which already
-// exists is left alone, which is what IF NOT EXISTS does on the other targets.
-//
-// Oracle 21 has no IF NOT EXISTS -- capability.Oracle21 turns
-// object_existence_guards off -- so the guard is a PL/SQL block that runs the
-// statement and ignores ORA-00955, "name is already used by an existing
-// object". One spelling then serves both release lines. Measured on Oracle
-// Free 23.26.3.0.0: the block creates the table, and running it a second time
-// is accepted and changes nothing. The statement travels as a string literal,
-// so its quotes are doubled.
-func oracleCreateTableIfAbsent(createTable string) string {
-	return `DECLARE
-    already_exists EXCEPTION;
-    PRAGMA EXCEPTION_INIT(already_exists, -955);
-BEGIN
-    EXECUTE IMMEDIATE '` + strings.ReplaceAll(createTable, "'", "''") + `';
-EXCEPTION
-    WHEN already_exists THEN NULL;
-END;`
-}
-
-// revisionTimestampType is the type the revision table gives its timestamp
-// column.
-//
-// TIMESTAMP everywhere it is understood, which is every engine Ptah supports
-// except one. Spanner's PostgreSQL interface does not have the type at all:
-//
-//	applied_at TIMESTAMP    ERROR: Type <timestamp> is not supported. (SQLSTATE P0001)
-//	applied_at TIMESTAMPTZ  accepted
-//
-// Measured against the Cloud Spanner emulator behind PGAdapter 0.55.2. The
-// column is a point in time either way -- Spanner stores timestamps in UTC and
-// has no local-time type to lose -- so this is a spelling the target has,
-// not a different column.
-//
-// It is a function rather than a branch in each DDL because both revision table
-// formats have the column and both were refused (stokaro/ptah#2233).
-func revisionTimestampType(dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.Spanner {
-		return "TIMESTAMPTZ"
-	}
-	return "TIMESTAMP"
+func ptahRevisionsTableDDL(dialect, qualifiedTable, objectLiteral, engine string) string {
+	return expandTableStatement(
+		revisionTableFor(dialect).Create,
+		qualifiedTable,
+		objectLiteral,
+		revisionEngineClauseFor(dialect, engine),
+	)
 }
 
 func (m *Migrator) getVersionSQL() string {
@@ -1389,19 +1255,10 @@ func (m *Migrator) ensureMigrationsRevisionColumn(ctx context.Context, name, def
 }
 
 func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) string {
-	if !m.isSQLServer() {
-		return fallback
+	if definition, ok := m.revisionTable().AddedColumns[name]; ok {
+		return definition
 	}
-	switch name {
-	case "state":
-		return "NVARCHAR(32) NOT NULL DEFAULT 'applied'"
-	case "error", "error_stmt":
-		return "NVARCHAR(MAX) NULL"
-	case "checksum":
-		return "NVARCHAR(64) NOT NULL DEFAULT ''"
-	default:
-		return fallback
-	}
+	return fallback
 }
 
 func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
@@ -1651,13 +1508,13 @@ func metadataTableSchemaName(dialect, connectionSchema, configuredSchema string)
 	if schema := strings.TrimSpace(configuredSchema); schema != "" {
 		return schema
 	}
-	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+	if !revisionTableFor(dialect).QualifiedByDefault {
 		return ""
 	}
 	if schema := strings.TrimSpace(connectionSchema); schema != "" {
 		return schema
 	}
-	return "dbo"
+	return defaultSchemaFor(dialect)
 }
 
 func (m *Migrator) migrationsTableName() string {
@@ -1667,7 +1524,7 @@ func (m *Migrator) migrationsTableName() string {
 	return m.migrationsTable
 }
 
-func (m *Migrator) sqlServerObjectName() string {
+func (m *Migrator) metadataObjectName() string {
 	if schema := m.metadataTableSchemaName(); schema != "" {
 		return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(m.migrationsTableName())
 	}

@@ -449,9 +449,10 @@ func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 	if txMode != MigrationTxModeFile {
 		return false
 	}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite, platform.SQLServer,
-		platform.MySQL, platform.MariaDB:
+	// A file's transaction holds the body wherever DDL takes part in one,
+	// whether or not the server commits before each schema statement.
+	switch ddltx.ClassOf(dialect) {
+	case ddltx.Transactional, ddltx.ImplicitCommit:
 		return true
 	default:
 		return false
@@ -459,8 +460,9 @@ func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 }
 
 func (m *Migrator) getDirtyRevisionSQL() string {
+	topRow := m.revisionTable().FirstRow == "top"
 	if m.revisionTableFormat.isAtlas() {
-		if m.isSQLServer() {
+		if topRow {
 			return fmt.Sprintf(`SELECT TOP (1) %s
 FROM %s
 				WHERE %s AND %s
@@ -479,7 +481,7 @@ ORDER BY %s
 			revisionFirstRowClause(m.connectionDialect()),
 		)
 	}
-	if m.isSQLServer() {
+	if topRow {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
 FROM %s
 WHERE state <> ? OR applied <> total OR %s
@@ -498,31 +500,28 @@ ORDER BY version
 	)
 }
 
-// revisionFirstRowClause limits a revision read to its first row.
-//
-// Oracle has no LIMIT. Measured on Oracle Free 23.26.3.0.0, `ORDER BY version
-// LIMIT 1` answers ORA-03049, while `FETCH FIRST 1 ROWS ONLY` is accepted. SQL
-// Server takes neither and selects TOP (1) in a branch of its own.
+// revisionFirstRowClause limits a revision read to its first row, as the
+// engine's revision table states it. An engine that selects TOP (1) takes
+// neither clause and reads its first row in a branch of its own.
 func revisionFirstRowClause(dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.Oracle {
+	if revisionTableFor(dialect).FirstRow == "fetch" {
 		return "FETCH FIRST 1 ROWS ONLY"
 	}
 	return "LIMIT 1"
 }
 
 // emptyStringIsNull reports whether the target stores a zero-length string as
-// NULL, and keeps revision text in a CLOB.
+// NULL, and keeps revision text in a type that refuses the usual fold.
 //
-// Oracle is that target, and both halves change how a revision row is read. A
-// column Ptah wrote as an empty string comes back NULL, which cannot be scanned
-// into a string, and comparing a column with an empty string is never true.
-// The CLOB refuses the usual fold as well. Measured on Oracle Free 23.26.3.0.0
-// (stokaro/ptah#3298):
+// Both halves change how a revision row is read. A column Ptah wrote as an
+// empty string comes back NULL, which cannot be scanned into a string, and
+// comparing a column with an empty string is never true. Measured on Oracle
+// Free 23.26.3.0.0 (stokaro/ptah#3298):
 //
 //	COALESCE(error, '')  ORA-00932: expression ('') is of data type CHAR,
 //	                     which is incompatible with expected data type CLOB
 func emptyStringIsNull(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.Oracle
+	return revisionTableFor(dialect).EmptyStringIsNull
 }
 
 // revisionTextColumn projects a nullable text column of the revision table.
@@ -623,16 +622,10 @@ func (m *Migrator) ptahRevisionProjection() string {
 }
 
 func (m *Migrator) getRevisionsForUpdateSQL() string {
-	switch platform.NormalizeDialect(m.conn.Info().Dialect) {
-	case platform.YDB:
-		// YQL has no FOR UPDATE. The read runs in a serializable
-		// transaction, and YDB aborts the one of two conflicting
-		// transactions that commits second with `Transaction locks
-		// invalidated`, which the caller retries.
-		return m.getRevisionsSQL()
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.MySQL, platform.MariaDB:
+	switch m.revisionTable().RowLock {
+	case "for-update":
 		return m.getRevisionsSQL() + " FOR UPDATE"
-	case platform.SQLServer:
+	case "table-hint":
 		if m.revisionTableFormat.isAtlas() {
 			return fmt.Sprintf(
 				`SELECT %s
@@ -652,6 +645,10 @@ ORDER BY version`,
 			m.qualifiedMigrationsTable(),
 		)
 	default:
+		// An engine with no row lock reads under the transaction's own
+		// isolation. On YDB that is serializable, and of two conflicting
+		// transactions the one that commits second is aborted with
+		// `Transaction locks invalidated`, which the caller retries.
 		return m.getRevisionsSQL()
 	}
 }
@@ -751,15 +748,8 @@ func (m *Migrator) failMigrationSQL() string {
 }
 
 func revisionUpdateSQL(dialect, table, assignments string) string {
-	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
-		return fmt.Sprintf(`ALTER TABLE %s
-UPDATE %s
-WHERE version = ?
-SETTINGS mutations_sync = 1`, table, assignments)
-	}
-	return fmt.Sprintf(`UPDATE %s
-SET %s
-WHERE version = ?`, table, assignments)
+	return strings.NewReplacer("{table}", table, "{assignments}", assignments).
+		Replace(revisionTableFor(dialect).Update)
 }
 
 func (m *Migrator) forceAppliedMigrationSQL() string {
@@ -778,11 +768,10 @@ VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
 }
 
 // forceAppliedUpserts reports whether the target writes a forced revision
-// with YQL's UPSERT, which replaces the row a version already has. YQL has
-// no ON CONFLICT and no ON DUPLICATE KEY, and UPSERT is the statement it
-// has for this instead.
+// with UPSERT, which replaces the row a version already has, where the engine
+// has that statement in place of a conflict clause.
 func (m *Migrator) forceAppliedUpserts() bool {
-	return platform.NormalizeDialect(m.connectionDialect()) == platform.YDB
+	return m.revisionTable().Upserts
 }
 
 // forceAppliedReplacesRow reports whether the forced-revision write itself
@@ -1091,18 +1080,13 @@ func (m *Migrator) atlasDistinctRevisionIdentityCount(ctx context.Context, ident
 		"SELECT COUNT(DISTINCT version) FROM (SELECT version FROM %s WHERE 1 = 0",
 		m.qualifiedMigrationsTable(),
 	)
-	// Oracle refuses AS before a derived table's alias: measured on Oracle Free
-	// 23.26.3.0.0 it answers ORA-03048, and the same query without AS is
-	// accepted. Oracle 21 also takes no SELECT without FROM, so every literal
-	// row selects from dual.
-	rowSource, aliasKeyword, column := "", " AS", ""
-	switch platform.NormalizeDialect(m.connectionDialect()) {
-	case platform.Oracle:
-		rowSource, aliasKeyword = " FROM dual", ""
-	case platform.YDB:
-		// YQL's UNION ALL pairs columns by name rather than by position, so
-		// an unnamed literal lands in a column of its own and COUNT(DISTINCT
-		// version) counts none of them.
+	// An engine that refuses AS before a derived table's alias, or takes no
+	// SELECT without FROM, says so in its revision table.
+	table := m.revisionTable()
+	rowSource, aliasKeyword, column := table.LiteralRowSource, table.DerivedTableAs, ""
+	if table.UnionByName {
+		// A UNION ALL that pairs columns by name puts an unnamed literal in a
+		// column of its own, and COUNT(DISTINCT version) counts none of them.
 		column = " AS version"
 	}
 	for _, version := range identities {
@@ -1184,32 +1168,12 @@ func compareAtlasRevisionVersionMappings(a, b atlasRevisionVersionMapping) int {
 	return cmp.Compare(a.revision, b.revision)
 }
 
-// atlasVersionNumberExpressionFor matches the raw dialect string rather than
-// routing through platform.NormalizeDialect. That is safe because
-// dbschema.ConnectToDatabase normalizes the dialect before the connection
-// exists and rejects anything NormalizeDialect does not recognize, so
-// conn.Info().Dialect is always one of the platform constants — and
-// platform.MySQL and platform.MariaDB are exactly the two strings matched here.
-// A non-canonical spelling therefore cannot reach this switch and silently take
-// the BIGINT branch. A zero-value Migrator (dialect "") takes the default
-// branch by design, which is what the generated-SQL guard tests rely on.
+// atlasVersionNumberExpressionFor casts the guarded version column to the
+// numeric type the engine's revision table states. A Migrator with no
+// connection (dialect "") takes the generic BIGINT, which is what the
+// generated-SQL guard tests rely on.
 func atlasVersionNumberExpressionFor(dialect string) string {
-	switch dialect {
-	case "mysql", "mariadb":
-		return "CAST(" + atlasMetadataVersionNullGuard + " AS SIGNED)"
-	case platform.Oracle:
-		// Oracle has no BIGINT: measured on Oracle Free 23.26.3.0.0,
-		// `CAST('12' AS BIGINT)` answers ORA-00902, invalid datatype.
-		return "CAST(" + atlasMetadataVersionNullGuard + " AS NUMBER(19))"
-	case platform.YDB:
-		// YQL's own name for the type. A cast of a column is safe here, unlike
-		// a cast of a parameter: the guard has already turned every token that
-		// is not a number into NULL, and NULL is what YQL's cast answers for
-		// text it cannot read as one.
-		return "CAST(" + atlasMetadataVersionNullGuard + " AS Int64)"
-	default:
-		return "CAST(" + atlasMetadataVersionNullGuard + " AS BIGINT)"
-	}
+	return "CAST(" + atlasMetadataVersionNullGuard + " AS " + revisionTableFor(dialect).VersionCast + ")"
 }
 
 func (m *Migrator) createAtlasRevisionsTableSQL() string {
@@ -1220,204 +1184,39 @@ func (m *Migrator) createAtlasRevisionsTableSQL() string {
 	return atlasRevisionsTableDDL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		sqlStringLiteral(m.sqlServerObjectName()),
+		sqlStringLiteral(m.metadataObjectName()),
 		m.migrationsEngine,
 	)
 }
 
-// atlasRevisionsTableDDL renders the Atlas revision table for one dialect.
+// atlasRevisionsTableDDL renders the Atlas revision table for one dialect, as
+// its revision table states it.
 //
-// partial_hashes is the column that forces a per-dialect decision. Atlas stores
-// a JSON document there, and Ptah writes the JSON null; the dialects that have a
-// real JSON type get one, and the dialects that do not store the same value as
-// text. SQL Server has always taken the text side (NVARCHAR(MAX)), and
-// atlasNullJSONValue binds a plain string rather than a []byte JSON document for
-// both SQL Server and ClickHouse, so the value side of ClickHouse was already
-// text before this function had a ClickHouse branch.
-//
-// ClickHouse must not reach the trailing default. It reads a trailing NULL on a
-// column definition as Nullable(T), so `partial_hashes JSON NULL` is asked for as
-// Nullable(JSON). ClickHouse 24.x rejects that outright during type analysis --
-// code 43, "Nested type JSON cannot be inside Nullable type" -- before the
-// IF NOT EXISTS existence check, so no already-provisioned database escapes it.
-// Later servers accept Nullable(JSON) and the failure changes shape instead of
-// disappearing: the 4-character string `null` is coerced into the JSON type and
-// reads back as `{}`, and the column can no longer be scanned into a string by
-// any Atlas-compatible consumer. TEXT NULL renders as Nullable(String) on both,
-// which stores exactly the value every other dialect stores (#950).
-//
-// The dialect is normalized here rather than matched raw. dbschema.ConnectToDatabase
-// normalizes before the connection exists, so conn.Info().Dialect is already one
-// of the platform constants; normalizing is a no-op in production and lets the
-// guard tests drive this function with a bare dialect string. A zero-value
-// Migrator (dialect "") takes the default branch by design.
-func atlasRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral, engine string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer:
-		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
-BEGIN
-    CREATE TABLE %s (
-        version NVARCHAR(255) COLLATE Latin1_General_100_BIN2 PRIMARY KEY,
-        description NVARCHAR(MAX) NOT NULL,
-        type BIGINT NOT NULL DEFAULT 2,
-        applied BIGINT NOT NULL DEFAULT 0,
-        total BIGINT NOT NULL DEFAULT 0,
-        executed_at DATETIME2 NOT NULL,
-        execution_time BIGINT NOT NULL,
-        error NVARCHAR(MAX) NULL,
-        error_stmt NVARCHAR(MAX) NULL,
-        hash NVARCHAR(255) NOT NULL,
-        partial_hashes NVARCHAR(MAX) NULL,
-        operator_version NVARCHAR(255) NOT NULL
-    )
-END`, sqlServerObjectLiteral, qualifiedTable)
-	// Spanner shares this branch rather than the trailing default. Its
-	// PostgreSQL interface has neither of the two types the default names --
-	// `Type <timestamp> is not supported` and `Type <json> is not supported;
-	// use jsonb instead` -- and this branch already spells both the way that
-	// interface has them. Measured against the Cloud Spanner emulator behind
-	// PGAdapter 0.55.2: the statement below is accepted verbatim
-	// (stokaro/ptah#2233).
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version VARCHAR PRIMARY KEY,
-    description VARCHAR NOT NULL,
-    type BIGINT NOT NULL DEFAULT 2,
-    applied BIGINT NOT NULL DEFAULT 0,
-    total BIGINT NOT NULL DEFAULT 0,
-    executed_at TIMESTAMPTZ NOT NULL,
-    execution_time BIGINT NOT NULL,
-    error TEXT NULL,
-    error_stmt TEXT NULL,
-    hash VARCHAR NOT NULL,
-    partial_hashes JSONB NULL,
-    operator_version VARCHAR NOT NULL
-)`, qualifiedTable)
-	case platform.Oracle:
-		// The Oracle spelling of the same columns, for the reasons the native
-		// table has one: see ptahRevisionsTableDDL. Measured on Oracle Free
-		// 23.26.3.0.0, the generic statement below answers ORA-03062, missing
-		// comma or right parenthesis. partial_hashes is a CLOB, which takes the
-		// []byte JSON document atlasJSONValue binds (stokaro/ptah#3298).
-		return oracleCreateTableIfAbsent(fmt.Sprintf(`CREATE TABLE %s (
-    version VARCHAR2(255) PRIMARY KEY,
-    description CLOB NULL,
-    type NUMBER(19) DEFAULT 2 NOT NULL,
-    applied NUMBER(19) DEFAULT 0 NOT NULL,
-    total NUMBER(19) DEFAULT 0 NOT NULL,
-    executed_at TIMESTAMP NOT NULL,
-    execution_time NUMBER(19) NOT NULL,
-    error CLOB NULL,
-    error_stmt CLOB NULL,
-    hash VARCHAR2(255) NULL,
-    partial_hashes CLOB NULL,
-    operator_version VARCHAR2(255) NULL
-)`, qualifiedTable))
-	case platform.YDB:
-		return ydbAtlasRevisionsTableDDL(qualifiedTable)
-	case platform.ClickHouse:
-		// The engine is named here for the same reason the native DDL names
-		// one: ClickHouse gives a table no engine unless asked, and whether an
-		// unnamed one is legal at all is the server's `default_table_engine`
-		// setting -- whose own default is `None` (stokaro/ptah#2234).
-		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version VARCHAR(255) PRIMARY KEY,
-    description TEXT NOT NULL,
-    type BIGINT NOT NULL DEFAULT 2,
-    applied BIGINT NOT NULL DEFAULT 0,
-    total BIGINT NOT NULL DEFAULT 0,
-    executed_at TIMESTAMP NOT NULL,
-    execution_time BIGINT NOT NULL,
-    error TEXT NULL,
-    error_stmt TEXT NULL,
-    hash VARCHAR(255) NOT NULL,
-    partial_hashes TEXT NULL,
-    operator_version VARCHAR(255) NOT NULL
-)%s`, qualifiedTable, revisionEngineClauseFor(dialect, engine))
-	}
-	engineClause := revisionEngineClauseFor(dialect, engine)
-	versionDefinition := "VARCHAR(255)"
-	if implicitCommitDialect(dialect) {
-		versionDefinition = "VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin"
-	}
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version %s PRIMARY KEY,
-    description TEXT NOT NULL,
-    type BIGINT NOT NULL DEFAULT 2,
-    applied BIGINT NOT NULL DEFAULT 0,
-    total BIGINT NOT NULL DEFAULT 0,
-    executed_at TIMESTAMP NOT NULL,
-    execution_time BIGINT NOT NULL,
-    error TEXT NULL,
-    error_stmt TEXT NULL,
-    hash VARCHAR(255) NOT NULL,
-    partial_hashes JSON NULL,
-    operator_version VARCHAR(255) NOT NULL
-)%s`, qualifiedTable, versionDefinition, engineClause)
+// partial_hashes is the column that forces a per-engine decision. Atlas stores
+// a JSON document there, and Ptah writes the JSON null; an engine with a real
+// JSON type gets one, and one without stores the same value as text, which
+// atlasJSONValue then binds as a string (#950).
+func atlasRevisionsTableDDL(dialect, qualifiedTable, objectLiteral, engine string) string {
+	return expandTableStatement(
+		revisionTableFor(dialect).CreateAtlas,
+		qualifiedTable,
+		objectLiteral,
+		revisionEngineClauseFor(dialect, engine),
+	)
 }
 
-func (m *Migrator) isClickHouse() bool {
-	return m.conn != nil && m.conn.Info().Dialect == "clickhouse"
+// revisionsMutate reports whether the engine changes a revision row only
+// through a mutation, with no transaction around revision writes, so no
+// rewrite of the history is atomic.
+func (m *Migrator) revisionsMutate() bool {
+	return m.revisionTable().Mutations
 }
 
 func (m *Migrator) forceAppliedConflictClause() string {
-	if m.conn == nil {
-		return ""
+	if m.revisionTableFormat.isAtlas() {
+		return m.revisionTable().ConflictAtlas
 	}
-	switch m.conn.Info().Dialect {
-	case "postgres", "cockroachdb", "yugabytedb":
-		if m.revisionTableFormat.isAtlas() {
-			return `ON CONFLICT (version) DO UPDATE SET
-description = EXCLUDED.description,
-type = EXCLUDED.type,
-applied = EXCLUDED.applied,
-total = EXCLUDED.total,
-executed_at = EXCLUDED.executed_at,
-execution_time = EXCLUDED.execution_time,
-error = '',
-error_stmt = '',
-hash = EXCLUDED.hash,
-partial_hashes = EXCLUDED.partial_hashes,
-operator_version = EXCLUDED.operator_version`
-		}
-		return `ON CONFLICT (version) DO UPDATE SET
-description = EXCLUDED.description,
-applied_at = EXCLUDED.applied_at,
-state = EXCLUDED.state,
-applied = EXCLUDED.applied,
-total = EXCLUDED.total,
-error = NULL,
-error_stmt = NULL,
-execution_time_ms = EXCLUDED.execution_time_ms,
-checksum = EXCLUDED.checksum`
-	case "mysql", "mariadb":
-		if m.revisionTableFormat.isAtlas() {
-			return `ON DUPLICATE KEY UPDATE
-description = VALUES(description),
-type = VALUES(type),
-applied = VALUES(applied),
-total = VALUES(total),
-executed_at = VALUES(executed_at),
-execution_time = VALUES(execution_time),
-error = '',
-error_stmt = '',
-hash = VALUES(hash),
-partial_hashes = VALUES(partial_hashes),
-operator_version = VALUES(operator_version)`
-		}
-		return `ON DUPLICATE KEY UPDATE
-description = VALUES(description),
-applied_at = VALUES(applied_at),
-state = VALUES(state),
-applied = VALUES(applied),
-total = VALUES(total),
-error = NULL,
-error_stmt = NULL,
-execution_time_ms = VALUES(execution_time_ms),
-checksum = VALUES(checksum)`
-	default:
-		return ""
-	}
+	return m.revisionTable().Conflict
 }
 
 // dirtyRevision reads the lowest revision row that is not cleanly applied.
@@ -2689,7 +2488,7 @@ func (m *Migrator) revisionCount(ctx context.Context) (int, error) {
 }
 
 func (m *Migrator) baselineMigrations(ctx context.Context, migrations []*Migration) error {
-	if m.isClickHouse() {
+	if m.revisionsMutate() {
 		return m.baselineMigrationsNoTransaction(ctx, migrations)
 	}
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
@@ -2839,7 +2638,7 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 	if version > 0 && m.migrationByVersion(version) == nil {
 		return AtlasRevisionSetResult{}, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
 	}
-	if m.isClickHouse() {
+	if m.revisionsMutate() {
 		if m.revisionTableFormat.isAtlas() {
 			return AtlasRevisionSetResult{}, fmt.Errorf(
 				"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
@@ -2954,7 +2753,7 @@ func (m *Migrator) beginSerializableRevisionSetTx(
 	ctx context.Context,
 	session *sql.Conn,
 ) (*sql.Tx, error) {
-	if m.connectionDialect() != platform.Oracle {
+	if !m.revisionTable().SerializableInSQL {
 		return session.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	}
 	tx, err := session.BeginTx(ctx, nil)
@@ -3761,7 +3560,7 @@ func (m *Migration) atlasOperatorVersion() string {
 }
 
 func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migration) error {
-	if m.isClickHouse() {
+	if m.revisionsMutate() {
 		revision, err := m.getMigrationRevision(ctx, migration)
 		if err != nil {
 			return err
@@ -3842,7 +3641,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 
 func (m *Migrator) atlasRevisionTimestamp(at time.Time) any {
 	now := at.UTC().Round(0)
-	if m.conn != nil && platform.NormalizeDialect(m.conn.Info().Dialect) == platform.SQLite {
+	if m.revisionTable().TimeAsText {
 		return now.Format(time.RFC3339Nano)
 	}
 	return now
@@ -3853,10 +3652,10 @@ func (m *Migrator) atlasNullJSONValue() any {
 }
 
 // atlasJSONValue binds one JSON document the way the column that holds it was
-// declared: a plain string where the column is text (SQL Server, ClickHouse,
-// YDB), and a []byte JSON document everywhere the dialect has a real JSON type.
+// declared: a plain string where the column is text, and a []byte JSON
+// document everywhere the engine has a real JSON type.
 func (m *Migrator) atlasJSONValue(document string) any {
-	if m.isSQLServer() || m.isClickHouse() || platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
+	if m.revisionTable().JSONAsText {
 		return document
 	}
 	return []byte(document)

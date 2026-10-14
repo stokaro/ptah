@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlashash"
 )
@@ -485,7 +484,7 @@ func (m *Migrator) reconcileAppliedMigrationChecksums(
 		return nil
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.updateRevisionChecksumSQL())
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.ClickHouse {
+	if m.revisionsMutate() {
 		if len(updates) > 1 {
 			return fmt.Errorf(
 				"cannot atomically reconcile %d Atlas checksums on ClickHouse: multi-row transactions are unavailable",
