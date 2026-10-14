@@ -7,6 +7,7 @@ package oracle
 // constraint name each time.
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"strings"
@@ -208,3 +209,70 @@ func domainShapeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult
 	}
 	return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 }
+
+// TestFormatDomainType_SpellsWhatTheCatalogMeans pins the facts of
+// ALL_DOMAIN_COLS that mean something other than the same facts of
+// ALL_TAB_COLS, with the rows 23.26.3.0.0 answered on an AL32UTF8 database.
+func TestFormatDomainType_SpellsWhatTheCatalogMeans(t *testing.T) {
+	tests := []struct {
+		name                                 string
+		dataType                             string
+		length, charLength, precision, scale sql.NullInt64
+		want                                 string
+	}{
+		{name: "a length in bytes", dataType: "VARCHAR2", length: valid(10), charLength: valid(10), want: "VARCHAR2(10)"},
+		{name: "a length in characters", dataType: "VARCHAR2", length: valid(40), charLength: valid(10), want: "VARCHAR2(10 CHAR)"},
+		{name: "a length whose unit cannot be told", dataType: "VARCHAR2", length: valid(4000), charLength: valid(4000),
+			want: "VARCHAR2(4000)"},
+		{name: "a fixed length in characters", dataType: "CHAR", length: valid(12), charLength: valid(3), want: "CHAR(3 CHAR)"},
+		{name: "a national length", dataType: "NVARCHAR2", length: valid(20), charLength: valid(10), want: "NVARCHAR2(10)"},
+		{name: "an integer", dataType: "NUMBER", length: valid(22), scale: valid(0), want: "NUMBER(*,0)"},
+		{name: "a boolean", dataType: "UNDEFINED", length: valid(1), charLength: valid(0), want: "BOOLEAN"},
+		{name: "another undecoded type", dataType: "UNDEFINED", length: valid(8), charLength: valid(0), want: "UNDEFINED"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(formatDomainType(test.dataType, test.length, test.charLength, test.precision, test.scale), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestReadDomains_RecordsAnUndecodedBaseType pins that a domain whose base
+// type the catalog reports as UNDEFINED is recorded as one the read cannot
+// describe, rather than described over a type no declaration can name.
+func TestReadDomains_RecordsAnUndecodedBaseType(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, undecodedDomainCatalog)
+	read := &catalog.Database{}
+
+	err := NewOracleReader(db.SQL, "APP").readDomains(t.Context(), read)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(read.FeatureObjects.Refs(), qt.HasLen, 0)
+	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{
+		undescribedDomainClaim("D_ODD", "the catalog reports the domain's base type as UNDEFINED"),
+	})
+}
+
+// undecodedDomainCatalog answers the domain read with one domain whose base
+// type the DATA_TYPE decode does not name.
+func undecodedDomainCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+	folded := strings.ToLower(query)
+	switch {
+	case strings.Contains(folded, "from all_domain_constraints"):
+		return dbtest.QueryResult{Columns: []string{"domain_name", "name", "search_condition"}}, nil
+	case strings.Contains(folded, "from all_domain_cols"):
+		return dbtest.QueryResult{
+			Columns: []string{"domain_name", "column_name", "data_type", "data_length", "data_precision",
+				"data_scale", "char_length", "nullable", "data_default"},
+			Rows: [][]driver.Value{{"D_ODD", "D_ODD", "UNDEFINED", int64(8), nil, nil, int64(0), "Y", nil}},
+		}, nil
+	case strings.Contains(folded, "from all_domains"):
+		return dbtest.QueryResult{Columns: []string{"name", "cols", "type"}, Rows: [][]driver.Value{{"D_ODD", int64(1), "REGULAR"}}}, nil
+	}
+	return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+}
+
+// valid is a catalog number that is not NULL.
+func valid(value int64) sql.NullInt64 { return sql.NullInt64{Int64: value, Valid: true} }

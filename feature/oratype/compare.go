@@ -11,7 +11,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/internal/pgtypealias"
 )
 
 // checkTarget refuses a request without a context, a canceled one, and one
@@ -35,8 +34,9 @@ func checkTarget(ctx context.Context, target, stage string) error {
 // A type is identified by its kind, schema and name under the target's
 // identifier rules, the connection's schema included, so a declaration that
 // names the connection's schema and an observation that names none agree.
-// A domain is compared by its base type, with both spellings canonicalized,
-// and by its NOT NULL. Its CHECK and default are written when it is created
+// A domain is compared by its base type, with both spellings reduced to the
+// one ALL_DOMAIN_COLS reports, so INTEGER and NUMBER(*,0) or TIMESTAMP and
+// TIMESTAMP(6) agree, and by its NOT NULL. Its CHECK and default are written when it is created
 // and never compared: the catalog stores its own spelling of both, and no
 // probe here asks the server how it would spell a declaration. An object
 // type is compared by its attribute list, in order, names without regard to
@@ -167,7 +167,7 @@ func (p pair) removal() schemaext.ChangeValue {
 func (p pair) difference() schemaext.ChangeValue {
 	if declared, held := p.desiredDomain, p.observedDomain; declared != nil {
 		var differs []string
-		if pgtypealias.Canonical(declared.BaseType) != pgtypealias.Canonical(held.BaseType) {
+		if !sameBaseType(declared.BaseType, held.BaseType) {
 			differs = append(differs, DiffBaseType)
 		}
 		if declared.NotNull != held.NotNull {

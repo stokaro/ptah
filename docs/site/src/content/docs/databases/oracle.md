@@ -82,15 +82,28 @@ another one names first, before the tables, and drops them after the tables.
 A declared comment is written as a SQL comment line before the creation:
 Oracle stores no comment on a domain or an object type.
 
-A domain is compared by its base type and its `NOT NULL`. Its `CHECK` and
-default are written when the domain is created and never compared, since the
-catalog stores its own spelling of both. A domain whose base type or `NOT NULL`
-changed is kept as it is: Oracle's `ALTER DOMAIN` changes neither, so the plan
-writes no statement for it.
+A domain is compared by its base type and its `NOT NULL`. The base type is
+compared in the spelling the catalog keeps, so `INTEGER` and `NUMBER(*,0)`,
+`TIMESTAMP` and `TIMESTAMP(6)`, `FLOAT` and `FLOAT(126)`, or `VARCHAR(10)` and
+`VARCHAR2(10)` are one type each. Its `CHECK` and default are written when the
+domain is created and never compared, since the catalog stores its own
+spelling of both. A plan that changes a domain's base
+type or `NOT NULL` is refused, naming the domain. Oracle has no statement for
+either change: `ALTER DOMAIN` changes a domain's `DISPLAY`, `ORDER` and
+annotations only, `DROP DOMAIN` answers `ORA-11502` while a column uses the
+domain, and `DROP DOMAIN ... FORCE` takes the domain off its columns. Declare a
+domain under a new name and type the columns by it, or drop and create the
+domain by hand.
 
 Domain reads preserve numeric precision and scale, including `NUMBER(*,0)`.
 National character types use their character count, so `NVARCHAR2(10)` remains
-ten characters when the catalog reports twenty bytes.
+ten characters when the catalog reports twenty bytes. `ALL_DOMAIN_COLS` has no
+`CHAR_USED`, so a `VARCHAR2` or `CHAR` length whose bytes exceed its characters
+reads as a length in characters, `VARCHAR2(10 CHAR)`; where the two are equal
+the unit cannot be told and the length reads bare. The view reports a
+`BOOLEAN` domain as `UNDEFINED`, and Ptah reads it as `BOOLEAN`; a domain over
+another type the view reports as `UNDEFINED` is recorded as one the read
+cannot describe.
 
 Two of Oracle's catalog behaviors decide whether a domain converges. A domain declared `NOT NULL` grows a `CHECK` of its
 own, named by the server and numbered per database, and Ptah reads the

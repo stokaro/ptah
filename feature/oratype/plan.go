@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
@@ -30,9 +31,14 @@ import (
 // it drops, then the object types.
 //
 // An object type whose attributes changed is replaced in place by CREATE OR
-// REPLACE TYPE, which Oracle refuses while a column uses the type. A domain
-// whose base type or NOT NULL changed is kept as it is, and its receipt says
-// so: Oracle's ALTER DOMAIN changes neither.
+// REPLACE TYPE, which Oracle refuses while a column uses the type.
+//
+// A domain whose base type or NOT NULL changed is refused by name. Measured on
+// 23.26.3.0.0, ALTER DOMAIN changes a domain's DISPLAY, ORDER and annotations
+// and nothing else, DROP DOMAIN answers ORA-11502 while a column uses the
+// domain, and DROP DOMAIN ... FORCE takes the domain off those columns. No
+// statement the owner can plan makes the change, and planning none would
+// report the declaration applied while the domain kept its old definition.
 //
 // A type the target cannot create is refused, naming the scope that keeps the
 // declaration to the targets that host it: Oracle 21 has no CREATE DOMAIN.
@@ -137,8 +143,11 @@ type planned struct {
 	changeKind schemaext.Kind
 	// before and after report the two operands.
 	before, after bool
+	// differs is what the comparison found different in a type both sides
+	// hold.
+	differs []string
 	// statement is the change's creation or replacement, nil for a drop and
-	// for a change Oracle has no statement for.
+	// for a domain change, which the plan refuses.
 	statement ast.ExtensionPayload
 	// declared names the type spellings the declaration names.
 	declared []string
@@ -160,6 +169,7 @@ func plannedChange(index int, record schemaext.ChangeRecord) (*planned, error) {
 			return nil, err
 		}
 		matching, change.before, change.after = DomainKind, value.Before != nil, value.After != nil
+		change.differs = value.Differs
 		if value.After != nil && value.Before == nil {
 			change.statement, change.declared = CreateDomainOf(record.Subject, value.After), []string{value.After.BaseType}
 		}
@@ -193,10 +203,8 @@ func (c *planned) strategy() string {
 		return "create the type before the routines and tables that may name it"
 	case !c.after:
 		return "drop the type after the tables whose columns were typed by it; the drop fails while a column still uses it"
-	case c.statement != nil:
-		return "replace the object type with CREATE OR REPLACE TYPE, which Oracle refuses while a column uses it"
 	default:
-		return "keep the domain as it is: Oracle's ALTER DOMAIN changes neither its base type nor its NOT NULL"
+		return "replace the object type with CREATE OR REPLACE TYPE, which Oracle refuses while a column uses it"
 	}
 }
 
@@ -222,11 +230,58 @@ func (c *planned) step(action plangraph.Action) plangraph.Step[featureplan.Opera
 	}
 }
 
-// refuse returns the first creation of a kind the target cannot create,
-// beside the refusal, or nil. Of several, it names the lexicographically first,
-// domains before object types, as the common refusal does: two gates
-// answering the same schema must name the same object.
+// refuse returns the first change the target cannot make, beside the
+// refusal, or nil: a creation of a kind the target cannot create, and then a
+// change of a domain's base type or NOT NULL. Of several creations, it names
+// the lexicographically first, domains before object types, as the common
+// refusal does: two gates answering the same schema must name the same object.
 func refuse(target string, caps capability.Capabilities, changes []*planned) (*planned, schemavalidation.Diagnostic) {
+	if refused, problem := refuseCreation(target, caps, changes); refused != nil {
+		return refused, problem
+	}
+	return refuseDomainChange(changes)
+}
+
+// refuseDomainChange returns the lexicographically first domain whose base
+// type or NOT NULL changed, beside its refusal, or nil.
+func refuseDomainChange(changes []*planned) (*planned, schemavalidation.Diagnostic) {
+	var first *planned
+	for _, change := range changes {
+		if change.model == DomainKind && change.before && change.after &&
+			(first == nil || TargetOf(change.subject).QualifiedName() < TargetOf(first.subject).QualifiedName()) {
+			first = change
+		}
+	}
+	if first == nil {
+		return nil, schemavalidation.Diagnostic{}
+	}
+	name := TargetOf(first.subject).QualifiedName()
+	return first, schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Object: name, Feature: "ALTER DOMAIN",
+		Message: fmt.Sprintf("oracle: domain %s: Oracle cannot change %s in place, since ALTER DOMAIN changes only "+
+			"a domain's DISPLAY, ORDER and annotations; declare a domain under a new name and type the columns by it, "+
+			"or drop and create the domain by hand", name, domainDifferences(first.differs))}
+}
+
+// domainDifferences names what changed in a domain the way a refusal says it.
+func domainDifferences(differs []string) string {
+	named := make([]string, 0, len(differs))
+	for _, difference := range differs {
+		switch difference {
+		case DiffBaseType:
+			named = append(named, "its base type")
+		case DiffNotNull:
+			named = append(named, "its NOT NULL")
+		}
+	}
+	if len(named) == 0 {
+		return "its definition"
+	}
+	return strings.Join(named, " and ")
+}
+
+// refuseCreation returns the first creation of a kind the target cannot
+// create, beside the refusal, or nil.
+func refuseCreation(target string, caps capability.Capabilities, changes []*planned) (*planned, schemavalidation.Diagnostic) {
 	for _, kind := range []struct {
 		model schemaext.Kind
 		key   capability.Capability

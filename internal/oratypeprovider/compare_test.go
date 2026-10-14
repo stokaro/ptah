@@ -51,6 +51,85 @@ func TestCompareTypes_LeavesWhatAgrees(t *testing.T) {
 	}
 }
 
+// TestCompareTypes_ReducesABaseTypeToTheCatalogSpelling pins each declared
+// spelling against the one ALL_DOMAIN_COLS reported for it on 23.26.3.0.0. A
+// spelling compared as written plans a base type change on every run, and the
+// plan refuses that change.
+func TestCompareTypes_ReducesABaseTypeToTheCatalogSpelling(t *testing.T) {
+	tests := []struct {
+		declared, held string
+	}{
+		{declared: "INTEGER", held: "NUMBER(*,0)"},
+		{declared: "int", held: "NUMBER(*,0)"},
+		{declared: "SMALLINT", held: "NUMBER(*,0)"},
+		{declared: "NUMERIC", held: "NUMBER(*,0)"},
+		{declared: "DECIMAL", held: "NUMBER(*,0)"},
+		{declared: "DECIMAL(10,2)", held: "NUMBER(10,2)"},
+		{declared: "DECIMAL(5)", held: "NUMBER(5)"},
+		{declared: "NUMERIC(5, 2)", held: "NUMBER(5,2)"},
+		{declared: "NUMBER(10,0)", held: "NUMBER(10)"},
+		{declared: "NUMBER(*,2)", held: "NUMBER(*,2)"},
+		{declared: "FLOAT", held: "FLOAT(126)"},
+		{declared: "DOUBLE PRECISION", held: "FLOAT(126)"},
+		{declared: "REAL", held: "FLOAT(63)"},
+		{declared: "TIMESTAMP", held: "TIMESTAMP(6)"},
+		{declared: "timestamp with time zone", held: "TIMESTAMP(6) WITH TIME ZONE"},
+		{declared: "TIMESTAMP WITH LOCAL TIME ZONE", held: "TIMESTAMP(6) WITH LOCAL TIME ZONE"},
+		{declared: "INTERVAL DAY TO SECOND", held: "INTERVAL DAY(2) TO SECOND(6)"},
+		{declared: "INTERVAL YEAR TO MONTH", held: "INTERVAL YEAR(2) TO MONTH"},
+		{declared: "VARCHAR(10)", held: "VARCHAR2(10)"},
+		{declared: "VARCHAR2(10 BYTE)", held: "VARCHAR2(10)"},
+		{declared: "VARCHAR2(10 CHAR)", held: "VARCHAR2(10 CHAR)"},
+		{declared: "VARCHAR2(4000 CHAR)", held: "VARCHAR2(4000)"},
+		{declared: "CHAR", held: "CHAR(1)"},
+		{declared: "CHAR(3 CHAR)", held: "CHAR(3 CHAR)"},
+		{declared: "BOOLEAN", held: "BOOLEAN"},
+	}
+	for _, test := range tests {
+		t.Run(test.declared, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := newRuntime(c).CompareObjects(t.Context(), comparison(
+				objects(declared("d", &oratype.DesiredDomain{BaseType: test.declared})),
+				objects(held("D", &oratype.ObservedDomain{BaseType: test.held}))))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCompareTypes_FindsABaseTypeChange is the control: a spelling that names
+// another type still differs. A length in characters the catalog shows is not
+// one in bytes.
+func TestCompareTypes_FindsABaseTypeChange(t *testing.T) {
+	tests := []struct {
+		declared, held string
+	}{
+		{declared: "INTEGER", held: "NUMBER(10)"},
+		{declared: "NUMBER(10,2)", held: "NUMBER(10)"},
+		{declared: "TIMESTAMP", held: "TIMESTAMP(3)"},
+		{declared: "FLOAT", held: "FLOAT(63)"},
+		{declared: "VARCHAR2(10)", held: "VARCHAR2(10 CHAR)"},
+		{declared: "VARCHAR2(20 CHAR)", held: "VARCHAR2(10 CHAR)"},
+		{declared: "CHAR", held: "CHAR(2)"},
+		{declared: "BOOLEAN", held: "NUMBER(1)"},
+	}
+	for _, test := range tests {
+		t.Run(test.declared+" against "+test.held, func(t *testing.T) {
+			c := qt.New(t)
+			domain := &oratype.DesiredDomain{BaseType: test.declared}
+			observed := &oratype.ObservedDomain{BaseType: test.held}
+
+			result, err := newRuntime(c).CompareObjects(t.Context(), comparison(objects(declared("d", domain)), objects(held("D", observed))))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.DeepEquals, []schemaext.ChangeRecord{change(oratype.DomainKind, "d",
+				&oratype.DomainChange{Before: observed, After: domain, Differs: []string{oratype.DiffBaseType}})})
+		})
+	}
+}
+
 // TestCompareTypes_FindsChanges pins each difference, a creation and a drop.
 // A surviving type's change names the declaration's identity, which is how a
 // statement spells the type; a drop names the catalog's.
