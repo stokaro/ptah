@@ -67,7 +67,6 @@ func planObjectsAfterTables(
 		return nil, nil, err
 	}
 	result = planGrants(result, diff)
-	result = reportDefaultPrivileges(result, diff)
 	result = reportTriggers(result, diff)
 	return result, replacementDrops, nil
 }

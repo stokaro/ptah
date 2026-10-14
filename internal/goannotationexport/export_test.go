@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/manageddata"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -1273,12 +1274,9 @@ func TestExport_HappyPath_CleansAGoTreeDeclaringOnlyDefaultPrivileges(t *testing
 			c.Assert(err, qt.IsNil)
 			parsed, err := atlashcl.ParseWithOptions(outputData, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
-			c.Assert(parsed.DefaultPrivileges, qt.HasLen, 1)
-			c.Assert(parsed.DefaultPrivileges[0].ObjectType, qt.Equals, "TABLES")
-			c.Assert(parsed.DefaultPrivileges[0].Privileges, qt.DeepEquals, []schemamodel.PrivilegeGrant{
-				{Privilege: "SELECT"},
-				{Privilege: "INSERT", WithOption: true},
-			})
+			c.Assert(defaultPrivilegeObjects(parsed), qt.HasLen, 1)
+			value := defaultPrivilegeValue(c, parsed, pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"})
+			c.Assert(value.Privileges, qt.DeepEquals, []pgdefaultprivilege.Grant{{Privilege: "INSERT", WithOption: true}, {Privilege: "SELECT"}})
 		})
 	}
 }

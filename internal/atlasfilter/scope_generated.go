@@ -26,7 +26,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.bindings.Select(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
-	}, s.vocabulary.namedKinds()...)
+	}, s.vocabulary.independentKinds()...)
 	if err != nil {
 		return nil, err
 	}
@@ -35,11 +35,13 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 		_, ok := keptByStruct[field.StructName]
 		return ok
 	})
-	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage,
-		generatedFieldTypeSet(out.Fields))
+	features, err := s.selectOwnerFeatures(
+		out.FeatureObjects, out.FeatureCoverage, generatedFieldTypeSet(out.Fields),
+	)
 	if err != nil {
 		return nil, err
 	}
+	out.FeatureObjects, out.FeatureCoverage = features.objects, features.coverage
 	out.EmbeddedFields = keep(db.EmbeddedFields, func(field schemamodel.EmbeddedField) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok
@@ -68,13 +70,13 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 		return generatedTableNameKept(out.Tables, data.Table)
 	})
 
-	s.projectGeneratedTopLevel(db, out)
+	s.projectGeneratedTopLevel(db, out, features.roles)
 	s.projectGeneratedSupport(db, out)
 	extensionSchemas, err := s.projectExtensions(&out.FeatureObjects, &out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
-	out.Schemas = s.keepGeneratedSchemas(db, out, extensionSchemas)
+	out.Schemas = s.keepGeneratedSchemas(db, out, slices.Concat(extensionSchemas, features.schemas))
 
 	out.Dependencies = nil
 	out.FunctionDependencies = nil
@@ -89,7 +91,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 // "schema." name prefix. Roles are database-scoped and skip the schema
 // universe. Extensions are projected after support objects, when the selection
 // knows whether a non-extension resource matched.
-func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database) {
+func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database, featureRoles []string) {
 	out.Views = keep(db.Views, func(view schemamodel.View) bool {
 		return s.selectedQualifiedName(typeList("view"), view.Name)
 	})
@@ -112,18 +114,11 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
 		return s.generatedGrantSelected(out, columnSequences, grant)
 	})
-	// Same order and the same reason as the database side: the roles below keep
-	// a role a surviving statement names, and a default privilege names two.
-	out.DefaultPrivileges = keep(db.DefaultPrivileges,
-		func(privilege schemamodel.DefaultPrivilege) bool {
-			return s.defaultPrivilegeSelected(privilege.Schema)
-		})
 	out.Roles = keep(db.Roles, func(role schemamodel.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true
 		}
-		return generatedGrantRoleReferenced(out.Grants, role.Name) ||
-			generatedDefaultPrivilegeRoleReferenced(out.DefaultPrivileges, role.Name)
+		return slices.Contains(featureRoles, role.Name) || generatedGrantRoleReferenced(out.Grants, role.Name)
 	})
 }
 
@@ -230,7 +225,7 @@ func (s *scopeSelection) generatedGrantSelected(
 // keepGeneratedSchemas keeps schema declarations that own selected objects,
 // so CREATE SCHEMA statements survive for everything the projection kept.
 // Without include selectors every universe schema stays.
-func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, extensionSchemas []string) []schemamodel.Schema {
+func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, supportSchemas []string) []schemamodel.Schema {
 	owning := make(map[string]struct{})
 	for _, table := range out.Tables {
 		owning[s.effectiveSchema(table.Schema)] = struct{}{}
@@ -263,7 +258,7 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, ext
 		schema, _ := enumIdentity(enum.Schema, enum.Name)
 		owning[s.effectiveSchema(schema)] = struct{}{}
 	}
-	for _, schema := range extensionSchemas {
+	for _, schema := range supportSchemas {
 		owning[schema] = struct{}{}
 	}
 	return keep(db.Schemas, func(schema schemamodel.Schema) bool {
@@ -319,22 +314,6 @@ func generatedSequenceNameKept(sequences []schemamodel.Sequence, name string) bo
 func generatedGrantRoleReferenced(grants []schemamodel.Grant, role string) bool {
 	for _, grant := range grants {
 		if strings.EqualFold(grant.Role, role) {
-			return true
-		}
-	}
-	return false
-}
-
-// generatedDefaultPrivilegeRoleReferenced is
-// databaseDefaultPrivilegeRoleReferenced for the desired side, reading both
-// ends for the same reason: the renderer writes the grantor into FOR ROLE.
-func generatedDefaultPrivilegeRoleReferenced(
-	privileges []schemamodel.DefaultPrivilege,
-	role string,
-) bool {
-	for _, privilege := range privileges {
-		if strings.EqualFold(privilege.Grantor, role) ||
-			strings.EqualFold(privilege.Grantee, role) {
 			return true
 		}
 	}

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/schemascope"
 )
 
@@ -28,8 +29,10 @@ func TestFilterScopesSequenceGrantsOnBothSidesTheSameWay(t *testing.T) {
 		{Role: "app", Privilege: "USAGE", ObjectType: "SEQUENCE", Schema: "other", ObjectName: "counter"},
 	}}
 
-	generated := schemascope.FilterGeneratedWithDefaultSchema(desired, []string{"public"}, "public")
-	read := schemascope.FilterDatabaseWithDefaultSchema(database, []string{"public"}, "public")
+	generated, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), desired, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
+	read, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), selectext.None(), database, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(generated.Grants, qt.DeepEquals, desired.Grants[:1])
 	c.Assert(read.Grants, qt.DeepEquals, database.Grants[:1])

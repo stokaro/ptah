@@ -94,8 +94,6 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			Views:  []schemamodel.View{{Name: "shop.active", Body: "SELECT 1 AS a"}},
 			Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "shop.active"}}},
 			wantErr: `grant to "app" on view "shop.active": Ptah does not read a YDB view's permissions yet, .*`},
-		{name: "a default privilege", database: &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "reader"}}},
-			wantErr: `default privilege for "owner" in "app": YDB has no default privileges; .*`},
 	}
 
 	for _, test := range tests {

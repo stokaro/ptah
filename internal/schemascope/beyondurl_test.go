@@ -26,10 +26,10 @@ func TestUnion(t *testing.T) {
 			want: []string{"audit", "extra", "public"},
 		},
 		{
-			name: "blank names are dropped rather than read",
+			name: "empty names are dropped and decoded spaces remain",
 			base: []string{" ", "public"},
 			more: []string{""},
-			want: []string{"public"},
+			want: []string{" ", "public"},
 		},
 		{
 			name: "nothing left is nil, so the reader keeps its default",

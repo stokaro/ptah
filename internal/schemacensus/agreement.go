@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/capabilityprobe"
@@ -102,30 +103,13 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 	current := &catalog.Database{}
 	if platform.IsPostgresFamily(cell.Dialect) {
-		// A PostgreSQL-family read records TimescaleDB knowledge whether or not
-		// the extension is installed; an empty database holds neither model.
-		// It describes the installed extensions too, and an empty database
-		// has none.
-		known, err := tsschema.CompleteCoverage(schemaext.Observed)
+		var err error
+		current.FeatureCoverage, err = emptyPostgresFeatureCoverage()
 		if err != nil {
-			return nil, err
-		}
-		extensions, err := pgextension.CompleteCoverage(schemaext.Observed)
-		if err != nil {
-			return nil, err
-		}
-		// It describes the user types too, and an empty database has none.
-		types, err := pgtype.CompleteCoverage(schemaext.Observed)
-		if err != nil {
-			return nil, err
-		}
-		if current.FeatureCoverage, err = known.Combine(extensions); err != nil {
-			return nil, err
-		}
-		if current.FeatureCoverage, err = current.FeatureCoverage.Combine(types); err != nil {
 			return nil, err
 		}
 	}
+
 	if cell.Dialect == platform.SQLServer {
 		// A SQL Server read describes security policies; an empty database
 		// holds none.
@@ -203,6 +187,10 @@ type SurfaceDifference struct {
 func SurfaceDifferences() []SurfaceDifference {
 	return []SurfaceDifference{
 		{
+			Field:  "schemamodel.Database.FeatureCoverage",
+			Reason: "creation renders explicit feature values; comparison requires source knowledge before it can grant, revoke, or restore default privileges, so removing that knowledge produces an incomplete-comparison refusal",
+		},
+		{
 			Field: "schemamodel.Schema.Charset", RenderOnly: true,
 			Reason: "only the MySQL-family renderer writes DEFAULT CHARACTER SET, " +
 				"and a plan creates a schema on those dialects only for a whole server: a schema " +
@@ -220,7 +208,7 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "the same leading `--` line, above GRANT",
 		},
 		{
-			Field: "schemamodel.DefaultPrivilege.Comment", RenderOnly: true,
+			Field: "pgdefaultprivilege.Desired.Comment", RenderOnly: true,
 			Reason: "the same leading `--` line, above ALTER DEFAULT PRIVILEGES",
 		},
 		{
@@ -235,4 +223,40 @@ func SurfaceDifferences() []SurfaceDifference {
 				"hands the planner the refs that survive (stokaro/ptah#3042)",
 		},
 	}
+}
+
+func emptyPostgresFeatureCoverage() (schemaext.Coverage, error) {
+	var coverage schemaext.Coverage
+	// A PostgreSQL-family read records TimescaleDB knowledge whether or not
+	// the extension is installed; an empty database holds neither model.
+	// It describes the installed extensions too, and an empty database
+	// has none.
+	known, err := tsschema.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	extensions, err := pgextension.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	// It describes the user types too, and an empty database has none.
+	types, err := pgtype.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if coverage, err = known.Combine(extensions); err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if coverage, err = coverage.Combine(types); err != nil {
+		return schemaext.Coverage{}, err
+	}
+	defaults, err := pgdefaultprivilege.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if coverage, err = coverage.Combine(defaults); err != nil {
+		return schemaext.Coverage{}, err
+	}
+
+	return coverage, nil
 }

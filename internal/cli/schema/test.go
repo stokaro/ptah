@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
@@ -339,7 +340,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 			return nil, fmt.Errorf("load desired schema from %s: %w",
 				strings.Join(opts.schemaFiles, ", "), err)
 		}
-		return scopeTestDesiredSchema(database, selection, "")
+		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
 	}
 	if source := strings.TrimSpace(opts.sourceDBURL); source != "" {
 		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{})
@@ -368,7 +369,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.rootDir, parseErr)
 		}
-		return scopeTestDesiredSchema(parsed, selection, "")
+		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), parsed, selection, "")
 	}
 	if err := noteRootDirShape(diag, testSchemaFileFlag, opts.rootDir); err != nil {
 		return nil, err
@@ -377,7 +378,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
-	return scopeTestDesiredSchema(database, selection, "")
+	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
 }
 
 // noteRootDirShape reports that --root-dir named something that is not a
@@ -415,6 +416,7 @@ func noteRootDirShape(diag io.Writer, flag, source string) error {
 // missing relation, which reports the symptom and hides the cause -- the
 // zero-match false green that stokaro/ptah#979 exists to prevent.
 func scopeTestDesiredSchema(
+	ctx context.Context, selections selectext.Set,
 	database *schemamodel.Database,
 	selection []string,
 	defaultSchema string,
@@ -422,7 +424,10 @@ func scopeTestDesiredSchema(
 	if len(selection) == 0 || database == nil {
 		return database, nil
 	}
-	scoped := schemascope.FilterGeneratedWithDefaultSchema(database, selection, defaultSchema)
+	scoped, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, database, selection, defaultSchema)
+	if err != nil {
+		return nil, err
+	}
 	if len(database.Tables) > 0 && len(scoped.Tables) == 0 {
 		return nil, fmt.Errorf(
 			"--%s %s selects no tables out of the desired schema",
@@ -461,7 +466,7 @@ func resolveTestDesiredDatabase(
 	if err := dropClusterScopedTestState(diag, state.Schema); err != nil {
 		return nil, err
 	}
-	return scopeTestDesiredSchema(state.Schema, selection, identifier.ForDialect(devDialect).DefaultSchema)
+	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), state.Schema, selection, identifier.ForDialect(devDialect).DefaultSchema)
 }
 
 // ensureTestDevDialect refuses a database desired-state source whose dialect

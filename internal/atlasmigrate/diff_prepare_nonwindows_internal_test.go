@@ -32,7 +32,7 @@ func TestGenerateDiff_PreparePublicationRejectsSymlinkReplacement(t *testing.T) 
 	}
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
-		readDevSchema:        readScopedDevSchema,
+		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 

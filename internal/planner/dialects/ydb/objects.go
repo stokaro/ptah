@@ -43,8 +43,6 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.RolesAdded, rest.RolesRemoved, rest.RolesModified = nil, nil, nil
 	rest.RoleMembershipsAdded, rest.RoleMembershipsRemoved = nil, nil
 	rest.GrantsAdded, rest.GrantsRemoved, rest.GrantOptionsAdded, rest.GrantOptionsRevoked = nil, nil, nil, nil
-	rest.DefaultPrivilegesAdded, rest.DefaultPrivilegesRemoved = nil, nil
-	rest.DefaultPrivilegeOptionsAdded, rest.DefaultPrivilegeOptionsRevoked = nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")
 	}

@@ -5026,8 +5026,6 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	switch target {
 	case "TABLE":
 		return p.parseAlterTable()
-	case "DEFAULT":
-		return p.parseAlterDefaultPrivileges()
 	case "INDEX":
 		switch p.dialect {
 		case platform.Postgres:

@@ -123,10 +123,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return grantrefusal.Membership(r.dialect, r.caps, "ADD "+n.Member+" TO "+n.Role)
 	case *ast.RevokeRoleMembershipNode:
 		return grantrefusal.Membership(r.dialect, r.caps, "DROP "+n.Member+" FROM "+n.Role)
-	case *ast.DefaultPrivilegeNode:
-		return r.renderDefaultPrivilege(n)
-	case *ast.RevokeDefaultPrivilegeNode:
-		return r.renderRevokeDefaultPrivilege(n)
 
 	// Row-level security.
 	case *ast.CreatePolicyNode:

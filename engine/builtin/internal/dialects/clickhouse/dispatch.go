@@ -122,10 +122,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
 	case *ast.RevokeRoleMembershipNode:
 		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
-	case *ast.DefaultPrivilegeNode:
-		return r.renderDefaultPrivilege(n)
-	case *ast.RevokeDefaultPrivilegeNode:
-		return r.renderRevokeDefaultPrivilege(n)
 
 	// Shared row-level security. A ClickHouse row policy is the ClickHouse
 	// owner's object, rendered by its own operation, and ClickHouse has no

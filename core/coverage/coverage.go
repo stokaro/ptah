@@ -75,14 +75,6 @@ type Kind string
 const (
 	// Composite is a PostgreSQL composite type (CREATE TYPE ... AS (...)).
 	Composite Kind = "composite"
-	// DefaultPrivilege is a PostgreSQL default privilege (ALTER DEFAULT
-	// PRIVILEGES ... IN SCHEMA). A read records it when the server refuses the
-	// catalog that holds them: CockroachDB v26.2.7 refuses every read of
-	// pg_default_acl while a default privilege names a role whose name needs
-	// quoting (stokaro/ptah#3816). The description then carries none, and a
-	// comparison neither plans them from nothing nor revokes what it could not
-	// see.
-	DefaultPrivilege Kind = "default_privilege"
 	// Domain is a PostgreSQL domain type (CREATE DOMAIN).
 	Domain Kind = "domain"
 	// Extension is a PostgreSQL extension (CREATE EXTENSION).
@@ -126,7 +118,7 @@ const (
 // kinds is every common [Kind] the serialized directive grammar accepts, in
 // sorted order. An owner's kinds join it through a [Vocabulary].
 var kinds = []Kind{
-	Composite, DefaultPrivilege, Domain,
+	Composite, Domain,
 	Extension, Grant, Policy, Range,
 	Role, Schema, Sequence,
 	View,

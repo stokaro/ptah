@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlasreport"
@@ -656,7 +657,7 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
-		{name: "default privileges", present: len(database.DefaultPrivileges) > 0},
+		{name: "default privileges", present: hasDefaultPrivileges(database)},
 		{name: "managed data", present: len(database.ManagedData) > 0},
 		// These attributes are Ptah HCL extensions. The default compatibility
 		// profile keeps them so an Atlas Pro migration path does not discard a
@@ -672,6 +673,12 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		// Strict mode refuses the comment rather than dropping it too.
 		{name: "enum comments", present: hasEnumComments(database)},
 	}
+}
+
+func hasDefaultPrivileges(database *schemamodel.Database) bool {
+	return slices.ContainsFunc(database.FeatureObjects.Refs(), func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgdefaultprivilege.DefaultPrivilegeKind)
+	})
 }
 
 // hasExtensions reports an extension of the PostgreSQL extension owner.
@@ -723,7 +730,7 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 		// lists, so without this entry strict `schema clean` would destroy an
 		// object the desired-schema list above claims strict mode does not
 		// model.
-		{name: "default privileges", present: len(database.DefaultPrivileges) > 0},
+		{name: "default privileges", present: hasDefaultPrivileges(database)},
 		{name: "managed data", present: len(database.ManagedData) > 0},
 		{name: "table partitioning", present: hasTablePartitioning(database)},
 	}

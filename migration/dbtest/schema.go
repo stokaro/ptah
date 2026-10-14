@@ -9,9 +9,11 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
@@ -208,7 +210,9 @@ func applyDesiredSchema(
 	if err != nil {
 		return false, fmt.Errorf("compare desired schema with test database: %w", err)
 	}
-	preserveUnmanagedObjects(diff, info.Dialect)
+	if err := preserveUnmanagedObjects(ctx, diff, info.Dialect, runtime.Selections()); err != nil {
+		return false, err
+	}
 	if !diff.HasChanges() {
 		return false, nil
 	}
@@ -249,7 +253,11 @@ func applyDesiredSchema(
 // schema; that live state is outside this step's ownership and must not be
 // dropped. Desired additions and modifications are still applied, including
 // replacements represented by matching remove/add pairs.
-func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
+func preserveUnmanagedObjects(ctx context.Context, diff *difftypes.SchemaDiff, dialect string, selections selectext.Set) error {
+	features, err := additiveFeatureChanges(ctx, diff, selections)
+	if err != nil {
+		return err
+	}
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	diff.TablesRemoved = nil
 	diff.EnumsRemoved = nil
@@ -276,18 +284,16 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 	diff.RolesRemoved = nil
 	diff.GrantsRemoved = nil
 	diff.GrantOptionsRevoked = nil
-	diff.DefaultPrivilegesRemoved = nil
-	diff.DefaultPrivilegeOptionsRevoked = nil
 	diff.ConstraintsRemoved = matchingConstraintRemovals(
 		diff.ConstraintsRemoved,
 		diff.ConstraintsAdded,
 		semantics,
 	)
 
-	// A feature change whose owner says it takes state away is left out,
-	// wherever it is. One whose owner says it does not is applied on its own;
-	// any other is applied only beside a structural change, as before.
-	diff.FeatureChanges = withoutRemovals(diff.FeatureChanges)
+	// Owners retain additions inside mixed feature changes. Other changes
+	// are omitted when they report a removal; unclassified table changes
+	// accompany a structural change.
+	diff.FeatureChanges = features[0]
 	tableDiffs := diff.TablesModified[:0]
 	for i := range diff.TablesModified {
 		tableDiff := diff.TablesModified[i]
@@ -297,7 +303,7 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 			tableDiff.ConstraintsAdded,
 			semantics.IndexIdentityKey,
 		)
-		tableDiff.FeatureChanges = withoutRemovals(tableDiff.FeatureChanges)
+		tableDiff.FeatureChanges = features[i+1]
 		if len(tableDiff.ColumnsAdded) > 0 ||
 			len(tableDiff.ColumnsModified) > 0 ||
 			len(tableDiff.ConstraintsAdded) > 0 ||
@@ -307,13 +313,46 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 		}
 	}
 	diff.TablesModified = tableDiffs
+	return nil
 }
 
-// withoutRemovals returns the feature changes that do not take state away.
-func withoutRemovals(changes []schemaext.ChangeRecord) []schemaext.ChangeRecord {
-	return slices.DeleteFunc(slices.Clone(changes), func(change schemaext.ChangeRecord) bool {
-		return schemaext.RemovesState(change.Value)
-	})
+// additiveFeatureChanges batches the entire diff so an executable provider
+// receives one request across all tables. Placement stays with the host.
+func additiveFeatureChanges(ctx context.Context, diff *difftypes.SchemaDiff, selections selectext.Set) ([][]schemaext.ChangeRecord, error) {
+	groups := make([][]schemaext.ChangeRecord, len(diff.TablesModified)+1)
+	groups[0] = diff.FeatureChanges
+	for i, table := range diff.TablesModified {
+		groups[i+1] = table.FeatureChanges
+	}
+	type key struct {
+		subject objectidentity.Key
+		kind    schemaext.Kind
+	}
+	placement := make(map[key]int)
+	var changes []schemaext.ChangeRecord
+	for index, group := range groups {
+		for _, change := range group {
+			if err := schemaext.ValidatePayload(change.Value); err != nil {
+				return nil, err
+			}
+			identity := key{subject: change.Subject.Key(), kind: change.Value.Kind()}
+			if earlier, found := placement[identity]; found && earlier != index {
+				return nil, fmt.Errorf("%w: an additive change occurs in multiple scopes", schemaext.ErrDuplicate)
+			}
+			placement[identity] = index
+			changes = append(changes, change)
+		}
+	}
+	selected, err := selections.SelectAdditions(ctx, selectext.AdditiveRequest{Changes: changes})
+	if err != nil {
+		return nil, err
+	}
+	result := make([][]schemaext.ChangeRecord, len(groups))
+	for _, change := range selected {
+		index := placement[key{subject: change.Subject.Key(), kind: change.Value.Kind()}]
+		result[index] = append(result[index], change)
+	}
+	return result, nil
 }
 
 // declaresRemoval reports a feature change whose owner answers whether it

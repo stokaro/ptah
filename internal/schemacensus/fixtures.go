@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/capabilityprobe"
@@ -1834,92 +1835,54 @@ func defaultPrivilegeBase() schemamodel.Database {
 	return db
 }
 
-// defaultPrivilegeTablesFixture is the TABLES arm, and the one default-privilege
-// fixture carrying a comment.
-//
-// One object type per fixture rather than four declarations in one, for the
-// reason [Fixture] gives: a target that refuses one keyword answers every
-// ablation inside that fixture with the same refusal, and the other three
-// object types would then be unmeasured while reading as unobservable.
+// defaultPrivilegeTablesFixture declares TABLES privileges and a source comment.
 func defaultPrivilegeTablesFixture() schemamodel.Database {
-	db := defaultPrivilegeBase()
-	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
-		StructName: "DPTables", Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
-		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-		Comment:  "new tables in app are readable",
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
+	return defaultPrivilegeFixture("app", "TABLES", "app_reader", pgdefaultprivilege.Desired{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}},
+		Comment:    "new tables in app are readable",
+	})
 }
 
-// defaultPrivilegeSequencesFixture is the SEQUENCES arm.
 func defaultPrivilegeSequencesFixture() schemamodel.Database {
-	db := defaultPrivilegeBase()
-	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
-		StructName: "DPSequences", Grantor: "app_owner", Schema: "app", ObjectType: "SEQUENCES",
-		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
+	return defaultPrivilegeFixture("app", "SEQUENCES", "app_reader", pgdefaultprivilege.Desired{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}},
+	})
 }
 
-// defaultPrivilegeFunctionsFixture is the FUNCTIONS arm, carrying the privilege
-// only a routine takes.
 func defaultPrivilegeFunctionsFixture() schemamodel.Database {
-	db := defaultPrivilegeBase()
-	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
-		StructName: "DPFunctions", Grantor: "app_owner", Schema: "app", ObjectType: "FUNCTIONS",
-		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "EXECUTE"}},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
+	return defaultPrivilegeFixture("app", "FUNCTIONS", "app_reader", pgdefaultprivilege.Desired{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "EXECUTE"}},
+	})
 }
 
-// defaultPrivilegeTypesFixture is the TYPES arm.
 func defaultPrivilegeTypesFixture() schemamodel.Database {
-	db := defaultPrivilegeBase()
-	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
-		StructName: "DPTypes", Grantor: "app_owner", Schema: "app", ObjectType: "TYPES",
-		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
+	return defaultPrivilegeFixture("app", "TYPES", "app_reader", pgdefaultprivilege.Desired{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}},
+	})
 }
 
-// defaultPrivilegeGrantableFixture carries a grantable privilege beside a plain
-// one on one declaration.
-//
-// Grantability is per privilege, and the pair is what makes that observable: a
-// declaration whose privileges all carry the grant option renders the same bytes
-// under a renderer that attached WITH GRANT OPTION to the whole statement, so
-// ablating PrivilegeGrant.WithOption would report the field read either way.
-// With the pair, the two spellings produce different statements.
+// Mixing plain and grantable rights makes grantability observable per privilege.
 func defaultPrivilegeGrantableFixture() schemamodel.Database {
-	db := defaultPrivilegeBase()
-	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
-		StructName: "DPGrantable", Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
-		Grantee: "app_reader",
-		Privileges: []schemamodel.PrivilegeGrant{
-			{Privilege: "SELECT"},
-			{Privilege: "INSERT", WithOption: true},
-		},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
+	return defaultPrivilegeFixture("app", "TABLES", "app_reader", pgdefaultprivilege.Desired{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}, {Privilege: "INSERT", WithOption: true}},
+	})
 }
 
-// defaultPrivilegeGlobalFixture is the global default, without a schema, taking
-// PUBLIC's built-in EXECUTE on functions away. It is the fixture where Revoked
-// renders: a new database starts from the built-in default, so the revoke is a
-// statement it needs, where a schema-scoped revoke on a new database takes back
-// nothing.
+// A global revoke emits a statement even on a fresh database: PUBLIC inherits
+// EXECUTE until the default ACL takes it away.
 func defaultPrivilegeGlobalFixture() schemamodel.Database {
+	return defaultPrivilegeFixture("", "FUNCTIONS", "PUBLIC", pgdefaultprivilege.Desired{Revoked: []string{"EXECUTE"}})
+}
+
+func defaultPrivilegeFixture(schema, class, grantee string, value pgdefaultprivilege.Desired) schemamodel.Database {
 	db := defaultPrivilegeBase()
-	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
-		StructName: "DPGlobal", Grantor: "app_owner", ObjectType: "FUNCTIONS",
-		Grantee: "PUBLIC", Revoked: []string{"EXECUTE"},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{
+		Grantor: "app_owner", Schema: schema, ObjectType: class, Grantee: grantee,
+	}, platformidentifier.ForDialect(platform.Postgres)))
+	object := must.Must(pgdefaultprivilege.DesiredObject(ref, value))
+	object.Targets = []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(object))
+	db.FeatureCoverage = must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired))
 	return db
 }
 

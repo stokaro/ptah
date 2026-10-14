@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/yamlschema"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // TestParse_DefaultPrivilegeRevoked_HappyPath pins the `revoked` key of a
@@ -22,12 +23,13 @@ func TestParse_DefaultPrivilegeRevoked_HappyPath(t *testing.T) {
     revoked: [insert, update]
 `
 
-	db, err := yamlschema.Parse(noOwners, []byte(document))
+	db, err := yamlschema.Parse(postgresOwners, []byte(document))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.DefaultPrivileges, qt.HasLen, 1)
-	c.Assert(db.DefaultPrivileges[0].Revoked, qt.DeepEquals, []string{"INSERT", "UPDATE"})
-	c.Assert(db.DefaultPrivileges[0].Privileges, qt.HasLen, 0)
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value, qt.DeepEquals, &pgdefaultprivilege.Desired{Revoked: []string{"INSERT", "UPDATE"}})
 }
 
 // TestParse_DefaultPrivilegeRevoked_FailurePath pins the entries refused.
@@ -37,11 +39,11 @@ func TestParse_DefaultPrivilegeRevoked_FailurePath(t *testing.T) {
 		extra   string
 		wantErr string
 	}{
-		{name: "nothing granted or revoked", wantErr: `default privilege "reader_tables" requires privileges or revoked`},
+		{name: "nothing granted or revoked", wantErr: `(?s).*a default privilege requires privileges or revoked.*`},
 		{
 			name:    "one privilege granted and revoked",
 			extra:   "    privileges: [SELECT]\n    revoked: [SELECT]\n",
-			wantErr: `parse YAML schema: default privilege SELECT on TABLES in schema app for role app_owner is both granted to and revoked from "app_reader"; declare one or the other`,
+			wantErr: `(?s).*default privilege SELECT is both granted and revoked.*`,
 		},
 	}
 
@@ -51,7 +53,7 @@ func TestParse_DefaultPrivilegeRevoked_FailurePath(t *testing.T) {
 			document := "default_privileges:\n  reader_tables:\n    for_role: app_owner\n    schema: app\n" +
 				"    object_type: TABLES\n    grantee: app_reader\n" + test.extra
 
-			db, err := yamlschema.Parse(noOwners, []byte(document))
+			db, err := yamlschema.Parse(postgresOwners, []byte(document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

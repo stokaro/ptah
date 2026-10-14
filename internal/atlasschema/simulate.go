@@ -517,7 +517,10 @@ func recreateCurrentSchema(
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
 	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadExtensions(current))
-	devCurrent = baseline.WithoutStartingPoint(devCurrent, current, defaultSchemaOf(devConn.Info()))
+	devCurrent, err = baseline.WithoutStartingPoint(ctx, devCurrent, current, defaultSchemaOf(devConn.Info()), runtime.Selections())
+	if err != nil {
+		return err
+	}
 	controlComments, err := extensionControlComments(ctx, devConn, current)
 	if err != nil {
 		return err

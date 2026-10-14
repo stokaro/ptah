@@ -316,6 +316,10 @@ func completedSchemaRefusal(err error) bool {
 		return refusal != nil && len(refusal.Diagnostics()) != 0
 	case *schemadiff.RefusalError:
 		return refusal != nil && refusal.Unwrap() != nil
+	case *schemadiff.IncompleteComparisonError:
+		// Removing a fixture's coverage can make its desired state unknown.
+		// A completed diagnostic is a refusal, not an operational failure.
+		return refusal != nil && !refusal.Diagnostics.Empty()
 	case *schemaext.InvalidModelError:
 		return refusal != nil && refusal.Kind.Valid() && strings.TrimSpace(refusal.Message) != "" &&
 			slices.Contains([]schemaext.Representation{schemaext.Desired, schemaext.Observed, schemaext.Change, schemaext.Operation}, refusal.Representation)

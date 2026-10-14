@@ -27,16 +27,18 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.bindings.Select(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
-	}, s.vocabulary.namedKinds()...)
+	}, s.vocabulary.independentKinds()...)
 	if err != nil {
 		return nil, err
 	}
 
-	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage,
-		databaseColumnTypeSet(out.Tables))
+	features, err := s.selectOwnerFeatures(
+		out.FeatureObjects, out.FeatureCoverage, databaseColumnTypeSet(out.Tables),
+	)
 	if err != nil {
 		return nil, err
 	}
+	out.FeatureObjects, out.FeatureCoverage = features.objects, features.coverage
 	out.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
 		return s.tableKept(keptTables, index.Schema, index.TableName)
 	})
@@ -51,13 +53,13 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return s.tableKept(keptTables, schema, table)
 	})
 
-	s.projectDatabaseTopLevel(db, out, keptTables)
+	s.projectDatabaseTopLevel(db, out, keptTables, features.roles)
 	s.projectDatabaseSupport(db, out)
 	extensionSchemas, err := s.projectExtensions(&out.FeatureObjects, &out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
-	out.Schemas = s.keepDatabaseSchemas(db, out, extensionSchemas)
+	out.Schemas = s.keepDatabaseSchemas(db, out, slices.Concat(extensionSchemas, features.schemas))
 	return out, nil
 }
 
@@ -68,6 +70,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 func (s *scopeSelection) projectDatabaseTopLevel(
 	db, out *catalog.Database,
 	keptTables map[tableIdentity]struct{},
+	featureRoles []string,
 ) {
 	out.Views = keep(db.Views, func(view catalog.View) bool {
 		return s.selected(typeList("view"), view.Schema, view.Name)
@@ -92,20 +95,11 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return s.databaseGrantSelected(out, keptTables, columnSequences, grant)
 	})
-	// Projected BEFORE the roles below, which keep a role that a surviving
-	// statement names. A default privilege names two of them, so projecting it
-	// afterwards would describe one pointing at a role the same description
-	// says is absent.
-	out.DefaultPrivileges = keep(db.DefaultPrivileges,
-		func(privilege catalog.DefaultPrivilege) bool {
-			return s.defaultPrivilegeSelected(privilege.Schema)
-		})
 	out.Roles = keep(db.Roles, func(role catalog.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true
 		}
-		return databaseGrantRoleReferenced(out.Grants, role.Name) ||
-			databaseDefaultPrivilegeRoleReferenced(out.DefaultPrivileges, role.Name)
+		return slices.Contains(featureRoles, role.Name) || databaseGrantRoleReferenced(out.Grants, role.Name)
 	})
 }
 
@@ -160,7 +154,7 @@ func (s *scopeSelection) databaseGrantSelected(
 
 // keepDatabaseSchemas keeps schema entries that own selected objects, so both
 // sides agree on which schemas stay in the comparison.
-func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, extensionSchemas []string) []catalog.Schema {
+func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, supportSchemas []string) []catalog.Schema {
 	owning := make(map[string]struct{})
 	for _, table := range out.Tables {
 		owning[s.effectiveSchema(table.Schema)] = struct{}{}
@@ -189,7 +183,7 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, extensio
 	for _, enum := range out.Enums {
 		owning[s.effectiveSchema(enum.Schema)] = struct{}{}
 	}
-	for _, schema := range extensionSchemas {
+	for _, schema := range supportSchemas {
 		owning[schema] = struct{}{}
 	}
 	return keep(db.Schemas, func(schema catalog.Schema) bool {
@@ -254,23 +248,6 @@ func databaseSequenceNameKept(sequences []catalog.Sequence, schema, name string)
 func databaseGrantRoleReferenced(grants []catalog.Grant, role string) bool {
 	for _, grant := range grants {
 		if strings.EqualFold(grant.Role, role) {
-			return true
-		}
-	}
-	return false
-}
-
-// databaseDefaultPrivilegeRoleReferenced reads BOTH ends, because Ptah renders
-// both: the grantor is FOR ROLE and the grantee is TO. A retention rule that
-// read the grantee alone would keep a description whose ALTER DEFAULT
-// PRIVILEGES names a grantor nothing defines.
-func databaseDefaultPrivilegeRoleReferenced(
-	privileges []catalog.DefaultPrivilege,
-	role string,
-) bool {
-	for _, privilege := range privileges {
-		if strings.EqualFold(privilege.Grantor, role) ||
-			strings.EqualFold(privilege.Grantee, role) {
 			return true
 		}
 	}

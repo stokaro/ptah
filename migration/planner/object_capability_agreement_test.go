@@ -13,10 +13,12 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/builtintest"
-	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -89,14 +91,11 @@ func objectKindFixture() schemamodel.Database {
 			Privileges: []string{"SELECT"},
 			OnTable:    "users",
 		}},
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-			StructName: "DefaultPrivilegeMarker",
-			Grantor:    "app_user",
-			Schema:     "public",
-			ObjectType: "TABLES",
-			Grantee:    "app_user",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgdefaultprivilege.DesiredObject(
+			must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_user", Schema: "public", ObjectType: "TABLES", Grantee: "app_user"}, identifier.ForDialect("postgres"))),
+			pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}},
+		)))),
+		FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired)),
 		Functions: []schemamodel.Function{{
 			StructName: "FunctionMarker",
 			Name:       "touch_updated",
@@ -129,17 +128,16 @@ func objectKindFixture() schemamodel.Database {
 // renderedSchema is what `ptah schema render --dialect <d>` produces: the
 // offline converter's AST for the whole desired schema, rendered.
 func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
-	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
+	statements, err := builtin.GetOrderedCreateStatements(&database, dialect)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
-	return sql
+	return strings.Join(statements, "\n")
 }
 
 // plannedSchema is what `ptah schema apply` plans for the same desired schema
 // against an empty database: the comparator's diff, through the dialect planner
 // and the same renderer.
 func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), &database, &catalog.Database{}, dialect, builtintest.Runtime()))
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), &database, &catalog.Database{FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed))}, dialect, builtintest.Runtime()))
 	sql, err := planner.GenerateSchemaDiffSQL(
 		context.Background(), builtintest.Runtime(),
 		diff, dialect,
@@ -154,13 +152,15 @@ func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) strin
 // spelling-parity test below compares engines to themselves, never to each
 // other, so a refusal is a legitimate answer as long as it is the same answer.
 func renderedOrRefusal(database schemamodel.Database, dialect string) string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
-	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
-	return fmt.Sprintf("%s | err=%v", sql, err)
+	statements, err := builtin.GetOrderedCreateStatements(&database, dialect)
+	return fmt.Sprintf("%s | err=%v", strings.Join(statements, "\n"), err)
 }
 
 func plannedOrRefusal(database schemamodel.Database, dialect string) string {
-	diff := must.Must(schemadiff.CompareWithDialect(context.Background(), &database, &catalog.Database{}, dialect, builtintest.Runtime()))
+	diff, err := schemadiff.CompareWithDialect(context.Background(), &database, &catalog.Database{FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed))}, dialect, builtintest.Runtime())
+	if err != nil {
+		return fmt.Sprintf(" | err=%v", err)
+	}
 	sql, err := planner.GenerateSchemaDiffSQL(
 		context.Background(), builtintest.Runtime(),
 		diff, dialect,
@@ -206,7 +206,7 @@ var objectKindGates = []objectKindGate{
 	// disagree about an object neither of them rendered.
 	{
 		"default privilege", capability.RoleManagement, "default privilege",
-		"on TABLES in schema public for role app_user to app_user",
+		"app_user on TABLES in schema public to app_user",
 		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_user" IN SCHEMA "public" GRANT SELECT ON TABLES TO "app_user"`,
 	},
 }

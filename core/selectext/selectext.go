@@ -41,6 +41,11 @@ const (
 	// this, since an object with no schema is unqualified there and is read
 	// under the scope's default schema.
 	SchemaOrDatabase Naming = "schema-or-database"
+	// SchemaWide names state that applies throughout an explicit schema, or
+	// throughout the database when the schema is empty. It has no object selector.
+	// Include selectors keep it only for explicitly selected schemas; a database
+	// scope stays only when no include selector narrows the source.
+	SchemaWide Naming = "schema-wide"
 )
 
 // Selection is how a scope names an owner's objects of one kind.
@@ -49,7 +54,7 @@ type Selection struct {
 	Kind schemaext.Kind
 	// Type is the selector type that names an object of Kind, such as
 	// "topic" in `*[type=topic]`. Several models may share a selector type
-	// when its naming, relation behavior, and fields agree.
+	// when its naming, relation behavior, and fields agree. SchemaWide leaves Type empty.
 	Type string
 	// Naming is how a selector reads the object's name.
 	Naming Naming
@@ -82,6 +87,18 @@ type Extension struct {
 	// is required when a selection has Fields; without it nothing is cleared
 	// and a kept object requires nothing.
 	Service Service
+	// Scopes describes the schema and named roles of SchemaWide subjects in one
+	// batch. It is required for those selections, including coverage-only subjects.
+	Scopes ScopeService
+	// Baseline subtracts members of starting-point objects. Without it, objects
+	// are selected as a whole by identity.
+	Baseline BaselineService
+	// ChangeKinds names the changes Additive projects. Each kind belongs to
+	// this provider and appears in at most one extension.
+	ChangeKinds []schemaext.Kind
+	// Additive keeps additions inside mixed changes. It is required exactly
+	// when ChangeKinds is nonempty.
+	Additive AdditiveService
 }
 
 // Service is the owner's batched part of a scope, called once for each side
@@ -138,18 +155,33 @@ func None() Set {
 }
 
 // NewSet freezes extensions into a set. It refuses an extension without an
-// owner, a selection without a kind or a type, of an unknown naming, or
-// naming a field twice, a kind two selections claim, conflicting definitions
-// of a shared selector type, and a
-// selection with fields in an extension without a service.
+// owner, an invalid model kind, unknown naming, duplicate fields or kinds,
+// conflicting definitions of a shared selector type, or fields without a Service.
+// Named selections require a type. SchemaWide requires Scopes and allows no type,
+// relation marker, or field selector. Each owner registers at most one Scopes
+// contribution, which receives all of its schema-wide models in one batch.
+// Additive projections require valid, unique change kinds and a service;
+// baseline projections require model selections.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true}
 	kinds := make(map[schemaext.Kind]string)
 	types := make(map[string]Selection)
+	scopeOwners := make(map[string]bool)
+	changeKinds := make(map[schemaext.Kind]bool)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
 			return Set{}, fmt.Errorf("scope selection extension %d names no owner", index)
 		}
+		if len(extension.schemaWideKinds()) > 0 {
+			if scopeOwners[extension.Owner] {
+				return Set{}, fmt.Errorf("%w: owner %q registers schema-wide scope services twice", schemaext.ErrDuplicate, extension.Owner)
+			}
+			scopeOwners[extension.Owner] = true
+		}
+		if err := validateProjections(extension, changeKinds); err != nil {
+			return Set{}, err
+		}
+		extension.ChangeKinds = slices.Clone(extension.ChangeKinds)
 		for _, selection := range extension.Selections {
 			if err := validateSelection(extension, selection); err != nil {
 				return Set{}, err
@@ -159,10 +191,13 @@ func NewSet(extensions ...Extension) (Set, error) {
 			}
 			selection.Fields = slices.Clone(selection.Fields)
 			slices.Sort(selection.Fields)
-			if existing, claimed := types[selection.Type]; claimed && !sameSelector(existing, selection) {
-				return Set{}, fmt.Errorf("%w: selector type %q has conflicting definitions", schemaext.ErrDuplicate, selection.Type)
+			if selection.Type != "" {
+				if existing, claimed := types[selection.Type]; claimed && !sameSelector(existing, selection) {
+					return Set{}, fmt.Errorf("%w: selector type %q has conflicting definitions", schemaext.ErrDuplicate, selection.Type)
+				}
+				types[selection.Type] = selection
 			}
-			kinds[selection.Kind], types[selection.Type] = extension.Owner, selection
+			kinds[selection.Kind] = extension.Owner
 			set.selections = append(set.selections, selection)
 		}
 		extension.Selections = cloneSelections(extension.Selections)
@@ -180,9 +215,11 @@ func NewSet(extensions ...Extension) (Set, error) {
 // validateSelection refuses a selection a scope cannot apply.
 func validateSelection(extension Extension, selection Selection) error {
 	switch {
-	case strings.TrimSpace(string(selection.Kind)) == "" || strings.TrimSpace(selection.Type) == "":
+	case !selection.Kind.Valid() || (selection.Naming != SchemaWide && strings.TrimSpace(selection.Type) == ""):
 		return fmt.Errorf("scope selection of %s names no kind or no selector type", extension.Owner)
-	case selection.Naming != InSchema && selection.Naming != DatabaseWide && selection.Naming != SchemaOrDatabase:
+	case selection.Naming == SchemaWide && (selection.Type != "" || selection.Relation || len(selection.Fields) != 0 || extension.Scopes == nil):
+		return fmt.Errorf("scope selection of %s requires a schema-wide service and no selector type, relation or fields", extension.Owner)
+	case selection.Naming != InSchema && selection.Naming != DatabaseWide && selection.Naming != SchemaOrDatabase && selection.Naming != SchemaWide:
 		return fmt.Errorf("scope selection %q of %s has unknown naming %q", selection.Type, extension.Owner, selection.Naming)
 	case len(selection.Fields) > 0 && extension.Service == nil:
 		return fmt.Errorf("scope selection %q of %s names fields without a service to clear them", selection.Type, extension.Owner)
@@ -208,7 +245,7 @@ func (s Set) Selections() []Selection { return cloneSelections(s.selections) }
 func (s Set) ForType(selectorType string) []Selection {
 	var result []Selection
 	for _, selection := range s.selections {
-		if selection.Type == selectorType {
+		if selectorType != "" && selection.Type == selectorType {
 			result = append(result, selection)
 		}
 	}
@@ -323,4 +360,21 @@ func (e Extension) checkResult(request Request, result Result) error {
 // *ptah.run/engine.Runtime implements it.
 type Runtime interface {
 	Selections() Set
+}
+
+// validateProjections keeps projection registration independent of selector naming.
+func validateProjections(extension Extension, changeKinds map[schemaext.Kind]bool) error {
+	if (extension.Additive == nil) != (len(extension.ChangeKinds) == 0) {
+		return fmt.Errorf("%w: additive selection requires change kinds and a service", schemaext.ErrInvalidValue)
+	}
+	for _, kind := range extension.ChangeKinds {
+		if !kind.Valid() || changeKinds[kind] {
+			return fmt.Errorf("%w: additive selection kind %q is invalid or repeated", schemaext.ErrInvalidValue, kind)
+		}
+		changeKinds[kind] = true
+	}
+	if extension.Baseline != nil && len(extension.Selections) == 0 {
+		return fmt.Errorf("%w: baseline selection requires model selections", schemaext.ErrInvalidValue)
+	}
+	return nil
 }

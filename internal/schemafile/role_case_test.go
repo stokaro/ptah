@@ -9,8 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
@@ -56,14 +58,18 @@ func recordedRoleNames(c *qt.C, db *schemamodel.Database) roleNames {
 	c.Helper()
 	c.Assert(db.Roles, qt.HasLen, 1)
 	c.Assert(db.Grants, qt.HasLen, 1)
-	c.Assert(db.DefaultPrivileges, qt.HasLen, 1)
+	objects := must.Must(db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgdefaultprivilege.DefaultPrivilegeKind)
+	}).All())
+	c.Assert(objects, qt.HasLen, 1)
+	identity := must.Must(pgdefaultprivilege.IdentityOf(objects[0].Ref))
 	return roleNames{
 		Role:           db.Roles[0].Name,
 		Comment:        db.Roles[0].Comment,
 		Grant:          db.Grants[0].Role,
 		Granted:        strings.Join(db.Grants[0].Privileges, ", "),
-		DefaultGrantor: db.DefaultPrivileges[0].Grantor,
-		DefaultGrantee: db.DefaultPrivileges[0].Grantee,
+		DefaultGrantor: identity.Grantor,
+		DefaultGrantee: identity.Grantee,
 		Policy:         policyRoleNames(c, db),
 	}
 }
@@ -76,7 +82,7 @@ func policyRoleNames(c *qt.C, db *schemamodel.Database) string {
 	if len(db.RLSPolicies) == 1 {
 		return db.RLSPolicies[0].ToRoles
 	}
-	objects := must.Must(db.FeatureObjects.All())
+	objects := must.Must(db.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) }).All())
 	c.Assert(objects, qt.HasLen, 1)
 	var names []string
 	for _, role := range objects[0].Value.(*pgpolicy.DesiredPolicy).Roles {

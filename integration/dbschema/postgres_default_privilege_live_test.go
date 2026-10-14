@@ -12,11 +12,14 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -39,17 +42,11 @@ func defaultPrivilegeSchema(schemaName, owner, reader string) *schemamodel.Datab
 			{StructName: "Owner", Name: owner},
 			{StructName: "Reader", Name: reader},
 		},
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-			StructName: "Access",
-			Grantor:    owner,
-			Schema:     schemaName,
-			ObjectType: "TABLES",
-			Grantee:    reader,
-			Privileges: []schemamodel.PrivilegeGrant{
-				{Privilege: "SELECT"},
-				{Privilege: "INSERT", WithOption: true},
-			},
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgdefaultprivilege.DesiredObject(
+			must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: owner, Schema: schemaName, ObjectType: "TABLES", Grantee: reader}, identifier.ForDialect("postgres"))),
+			pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}, {Privilege: "INSERT", WithOption: true}}},
+		)))),
+		FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired)),
 	}
 }
 
@@ -101,20 +98,19 @@ func TestPostgresLiveDefaultPrivilegeConverges(t *testing.T) {
 	// 2. The catalog is asked what it holds.
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.DefaultPrivileges, qt.HasLen, 2)
-	for _, row := range live.DefaultPrivileges {
-		c.Assert(row.Grantor, qt.Equals, owner)
-		c.Assert(row.Grantee, qt.Equals, reader)
-		c.Assert(row.Schema, qt.Equals, schemaName)
-		c.Assert(row.ObjectType, qt.Equals, "TABLES")
-	}
-	c.Assert(defaultPrivilegeGrantOption(c, live.DefaultPrivileges, "SELECT"), qt.IsFalse)
-	c.Assert(defaultPrivilegeGrantOption(c, live.DefaultPrivileges, "INSERT"), qt.IsTrue)
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: owner, Schema: schemaName, ObjectType: "TABLES", Grantee: reader}, identifier.ForDialect("postgres")))
+	objects, err := live.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return schemaext.Kind(ref.Kind) == pgdefaultprivilege.DefaultPrivilegeKind
+	}).All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{must.Must(pgdefaultprivilege.ObservedObject(ref, pgdefaultprivilege.Observed{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}, {Privilege: "INSERT", WithOption: true}},
+	}))})
+	c.Assert(live.FeatureCoverage.Lookup(pgdefaultprivilege.DefaultPrivilegeKind, ref).State, qt.Equals, schemaext.Complete)
 
 	// 3. The convergence assertion.
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(settled.DefaultPrivilegesAdded, qt.HasLen, 0)
-	c.Assert(settled.DefaultPrivilegesRemoved, qt.HasLen, 0)
+	c.Assert(settled.FeatureChanges, qt.HasLen, 0)
 }
 
 // TestPostgresLiveDefaultPrivilegeTakesEffectOnACreatedTable is what the object
@@ -166,18 +162,6 @@ func TestPostgresLiveDefaultPrivilegeTakesEffectOnACreatedTable(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(granted, qt.IsTrue,
 		qt.Commentf("the reader holds SELECT on a table nobody granted on"))
-}
-
-// defaultPrivilegeGrantOption answers whether the named privilege came back
-// grantable, and fails the test when the read carries no row for it.
-func defaultPrivilegeGrantOption(c *qt.C, rows []catalog.DefaultPrivilege, privilege string) bool {
-	for _, row := range rows {
-		if row.Privilege == privilege {
-			return row.WithOption
-		}
-	}
-	c.Fatalf("the read reports no %q privilege; it holds %+v", privilege, rows)
-	return false
 }
 
 // dropDefaultPrivilegeFixture removes what the test created.

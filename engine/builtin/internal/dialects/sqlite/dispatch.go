@@ -118,10 +118,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
 	case *ast.RevokeRoleMembershipNode:
 		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
-	case *ast.DefaultPrivilegeNode:
-		return r.renderDefaultPrivilege(n)
-	case *ast.RevokeDefaultPrivilegeNode:
-		return r.renderRevokeDefaultPrivilege(n)
 	case *ast.RawSQLNode:
 		return r.renderRawSQL(n)
 	case *ast.UpsertNode:

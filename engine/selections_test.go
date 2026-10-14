@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -61,4 +62,22 @@ func TestSelections_FailurePath(t *testing.T) {
 			c.Assert(runtime, qt.IsNil)
 		})
 	}
+}
+
+// missingSelectionCodec never runs: registration must establish change ownership.
+type missingSelectionCodec struct{}
+
+func (missingSelectionCodec) SelectAdditions(context.Context, selectext.AdditiveRequest) (selectext.AdditiveResult, error) {
+	return selectext.AdditiveResult{}, nil
+}
+
+func TestSelectionsRequireOwnershipOfTheChangeCodec(t *testing.T) {
+	c := qt.New(t)
+	provider := selectionProvider("example.org/converter", conversionFirst)
+	provider.Selections[0].ChangeKinds = []schemaext.Kind{conversionFirst}
+	provider.Selections[0].Additive = missingSelectionCodec{}
+	runtime, err := engine.New(provider)
+	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+	c.Assert(err, qt.ErrorMatches, `.*selects change "example.org/first" without owning its codec`)
+	c.Assert(runtime, qt.IsNil)
 }

@@ -73,39 +73,6 @@ func toRole(node *ast.CreateRoleNode, sourcePlatform string) schemamodel.Role {
 	}
 }
 
-// toDefaultPrivilege converts an ALTER DEFAULT PRIVILEGES ... GRANT statement
-// into the declaration the model holds.
-//
-// The three identity strings are unquoted here because the identity is compared
-// as text against what the catalog reports, and the catalog reports a role or a
-// schema by its name rather than by the spelling a statement used. Without the
-// unquoting, a rendered `FOR ROLE "app_owner"` reads back as a grantor whose
-// name includes the quotes, so the declaration matches no live row and every
-// comparison re-issues the statement.
-//
-// Canonicalize then upper-cases the privilege names and merges a name that
-// appears twice, which is what makes the renderer's two statements -- one per
-// grantability -- fold back into the one object they came from.
-func toDefaultPrivilege(node *ast.DefaultPrivilegeNode, sourcePlatform string) schemamodel.DefaultPrivilege {
-	privileges := make([]schemamodel.PrivilegeGrant, 0, len(node.Privileges))
-	for _, privilege := range node.Privileges {
-		privileges = append(privileges, schemamodel.PrivilegeGrant{
-			Privilege:  privilege.Privilege,
-			WithOption: privilege.WithOption,
-		})
-	}
-	defaultPrivilege := schemamodel.DefaultPrivilege{
-		Grantor:    roleName(sourcePlatform, node.Grantor),
-		Schema:     normalizeSQLIdentifier(sourcePlatform, node.Schema),
-		ObjectType: node.ObjectType,
-		Grantee:    roleTarget(sourcePlatform, node.Grantee),
-		Privileges: privileges,
-		Comment:    node.Comment,
-	}
-	defaultPrivilege.Canonicalize()
-	return defaultPrivilege
-}
-
 func appendView(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {
 	switch node := statement.(type) {
 	case *ast.CreateViewNode:

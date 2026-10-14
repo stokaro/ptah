@@ -131,10 +131,11 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.ObservedObject(pgextension.Ref("pgcrypto"), pgextension.ObservedExtension{Schema: "public"})), must.Must(pgextension.ObservedObject(pgextension.Ref("citext"), pgextension.ObservedExtension{Schema: "extensions"})), must.Must(pgextension.ObservedObject(pgextension.Ref("unrelated"), pgextension.ObservedExtension{Schema: "other"})))),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
 	}
-	desired := schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{
+	desired, scopeErr := schemascope.FilterGeneratedWithDefaultSchema(c.Context(), selectedRuntime(c).Selections(), &schemamodel.Database{
 		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "public"})), must.Must(pgextension.DesiredObject(pgextension.Ref("citext"), pgextension.DesiredExtension{Schema: "extensions"})), must.Must(pgextension.DesiredObject(pgextension.Ref("unrelated"), pgextension.DesiredExtension{Schema: "other"})))),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}, schemas, "public")
+	c.Assert(scopeErr, qt.IsNil)
 	runtime := diffRuntime{
 		readDevSchema: func(
 			context.Context,
@@ -142,7 +143,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 			[]string,
 			string,
 		) (*catalog.Database, error) {
-			return schemascope.FilterDatabaseWithDefaultSchema(current, schemas, "public"), nil
+			return current, nil
 		},
 	}
 
@@ -1170,7 +1171,7 @@ func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 	cleanupCalls := 0
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
-		readDevSchema: readScopedDevSchema,
+		readDevSchema: readReplayedSchema,
 		withReplayedSnapshot: func(
 			ctx context.Context,
 			conn *dbschema.DatabaseConnection,
@@ -1239,7 +1240,7 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 	cleanupCalls := 0
 
 	result, err := generateDiff(ctx, conn, opts, diffRuntime{
-		readDevSchema: readScopedDevSchema,
+		readDevSchema: readReplayedSchema,
 		withReplayedSnapshot: func(
 			replayCtx context.Context,
 			replayConn *dbschema.DatabaseConnection,
@@ -1287,7 +1288,7 @@ func TestGenerateDiff_PreparePublicationFailurePreservesExistingArtifacts(t *tes
 	}
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
-		readDevSchema:        readScopedDevSchema,
+		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 
@@ -1323,7 +1324,7 @@ func TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum(t *testin
 	}
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
-		readDevSchema:        readScopedDevSchema,
+		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 
@@ -1361,7 +1362,7 @@ func TestGenerateDiff_PreparePublicationRunsUnderDirectoryLock(t *testing.T) {
 	}
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
-		readDevSchema:        readScopedDevSchema,
+		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 
@@ -1419,7 +1420,7 @@ func TestGenerateDiff_SerializesSQLiteDevDatabaseAcrossDirectories(t *testing.T)
 	})
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
-		readDevSchema:        readScopedDevSchema,
+		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 

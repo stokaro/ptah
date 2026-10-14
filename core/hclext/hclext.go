@@ -81,6 +81,9 @@ const (
 type Naming string
 
 const (
+	// Unlabeled declares a block whose attributes carry its identity. It takes
+	// no labels and has no implicit schema attribute.
+	Unlabeled Naming = "unlabeled"
 	// SchemaAndName names the object by its labels: one label is the name,
 	// and two are the schema and the name. An optional `schema` attribute, a
 	// reference such as `schema.app` or a string, names the schema of a
@@ -113,6 +116,11 @@ const (
 	// otherwise the attribute's source text. It is text the frontend
 	// produced, never an expression for the owner to evaluate.
 	Text Kind = "text"
+	// TextList is an ordered list of strings or bare identifiers. A scalar
+	// string or identifier is a one-element list. Variables, locals, and
+	// functions must evaluate to a string or a list of strings. Null and
+	// unknown values are refused. The writer quotes each element.
+	TextList Kind = "text-list"
 	// Bool is a bool. Null reads as if the attribute were absent, and any
 	// other value is refused, positioned at the attribute.
 	Bool Kind = "bool"
@@ -133,6 +141,10 @@ const (
 	// be a string template or exact schema reference`. A schema is no
 	// relation of the document, so the reference is not resolved against its
 	// tables.
+	//
+	// A reference to a `role` names a global role. Strings and evaluated
+	// variables retain dots in their names; a schema-qualified role reference
+	// is refused. The writer references declared roles and quotes other names.
 	//
 	// A reference to a `column` names a local column, with no schema. The
 	// frontend reads parsed column references, including parentheses and
@@ -241,6 +253,8 @@ type Value struct {
 	Text string
 	// Bool is the value of a [Bool] attribute.
 	Bool bool
+	// Texts holds a [TextList] in document order.
+	Texts []string
 	// Reference is the value of a [Ref] attribute.
 	Reference *Reference
 	// References is the value of a [Refs] attribute, in the order the
@@ -622,9 +636,7 @@ func readsOwnSchema(naming Naming) bool {
 func validateNaming(owner string, block Block) error {
 	switch block.Site {
 	case TopLevel:
-		if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName && block.Naming != JoinedName {
-			return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
-		}
+		return validateTopLevelNaming(owner, block)
 	case IndexAttributes:
 		if block.Type != "index" || block.Naming != "" {
 			return fmt.Errorf("HCL %s block of %s must be of type \"index\" with no naming", block.Site, owner)
@@ -651,6 +663,16 @@ func validateNaming(owner string, block Block) error {
 	return nil
 }
 
+func validateTopLevelNaming(owner string, block Block) error {
+	if block.Naming == Unlabeled && block.DeclaresType {
+		return fmt.Errorf("HCL block %q of %s cannot declare a type without labels", block.Type, owner)
+	}
+	if block.Naming != SchemaAndName && block.Naming != SchemaAndQualifiedName && block.Naming != JoinedName && block.Naming != Unlabeled {
+		return fmt.Errorf("HCL block %q of %s names unknown naming %q", block.Type, owner, block.Naming)
+	}
+	return nil
+}
+
 // validateKind refuses an unknown kind, a kind only the writer takes, a
 // reference without the type it refers to, and a type to refer to on another
 // kind. block names the block in the refusal.
@@ -659,7 +681,7 @@ func validateKind(owner, block string, attribute Attribute) error {
 		return fmt.Errorf("HCL attribute %q of %s block %q is a %s, and only a reference is made optional", attribute.Name, owner, block, attribute.Kind)
 	}
 	switch attribute.Kind {
-	case String, Text, Bool, SQL, TypeName:
+	case String, Text, TextList, Bool, SQL, TypeName:
 		if attribute.Refers != "" {
 			return fmt.Errorf("HCL attribute %q of %s block %q is a %s and refers to nothing", attribute.Name, owner, block, attribute.Kind)
 		}

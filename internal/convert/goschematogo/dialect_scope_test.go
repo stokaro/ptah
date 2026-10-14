@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
@@ -44,12 +45,14 @@ func pgcryptoFor(targets ...string) schemaext.Objects {
 // match.
 func scopedDatabase() *schemamodel.Database {
 	scope := []string{"postgres"}
+	defaults := defaultPrivilegeExportObject("TABLES", []pgdefaultprivilege.Grant{{Privilege: "SELECT"}})
+	defaults.Targets = scope
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true},
 		},
-		FeatureObjects:  pgcryptoFor(scope...),
+		FeatureObjects:  must.Must(pgcryptoFor(scope...).With(defaults)),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Views:           []schemamodel.View{{StructName: "V", Name: "v", Body: "SELECT 1", Dialects: scope}},
 		MaterializedViews: []schemamodel.MaterializedView{
@@ -63,15 +66,7 @@ func scopedDatabase() *schemamodel.Database {
 		},
 		Roles:  []schemamodel.Role{{StructName: "R", Name: "r", Dialects: scope}},
 		Grants: []schemamodel.Grant{{StructName: "GR", Role: "r", Privileges: []string{"SELECT"}, OnTable: "t", Dialects: scope}},
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-			StructName: "DP",
-			Grantor:    "owner",
-			Schema:     "app",
-			ObjectType: "TABLES",
-			Grantee:    "r",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-			Dialects:   scope,
-		}},
+
 		RLSPolicies:      []schemamodel.RLSPolicy{{StructName: "T", Name: "p", Table: "t", Dialects: scope}},
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "T", Table: "t", Dialects: scope}},
 	}
@@ -170,7 +165,6 @@ var exportedWithTheirScope = map[string]bool{
 	"Trigger":          true,
 	"Role":             true,
 	"Grant":            true,
-	"DefaultPrivilege": true,
 	"RLSPolicy":        true,
 	"RLSEnabledTable":  true,
 }

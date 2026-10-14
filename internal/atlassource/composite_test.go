@@ -7,9 +7,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
+	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/feature/pgdefaultprivilege/privilegeselect"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -348,7 +354,7 @@ func TestPlaceCompositePart_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			before := len(test.part.Schemas)
 
-			placed, err := atlassource.PlaceCompositePart(test.part, test.schema, test.defaultSchema)
+			placed, err := atlassource.PlaceCompositePart(c.Context(), selectext.None(), test.part, test.schema, test.defaultSchema)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schemaNames(placed), qt.DeepEquals, test.wantSchemas)
@@ -418,7 +424,7 @@ func TestPlaceCompositePart_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			placed, err := atlassource.PlaceCompositePart(test.part, "auth", "public")
+			placed, err := atlassource.PlaceCompositePart(c.Context(), selectext.None(), test.part, "auth", "public")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(placed, qt.IsNil)
@@ -464,4 +470,17 @@ table "users" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Comment, qt.Equals, "acme")
+}
+
+func TestPlaceCompositePartRefusesDefaultPrivilegesInAnotherSchema(t *testing.T) {
+	c := qt.New(t)
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "owner", Schema: "billing", ObjectType: "TABLES", Grantee: "reader"}, identifier.ForDialect("postgres")))
+	part := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &pgdefaultprivilege.Desired{}}))}
+	selections := must.Must(selectext.NewSet(privilegeselect.Extension()))
+	placed, err := atlassource.PlaceCompositePart(c.Context(), selections, part, "auth", "auth")
+	c.Assert(err, qt.ErrorMatches, `feature object .* is outside schema "auth"`)
+	c.Assert(placed, qt.IsNil)
+	placed, err = atlassource.PlaceCompositePart(c.Context(), selections, part, "billing", "auth")
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed.FeatureObjects.Refs(), qt.DeepEquals, part.FeatureObjects.Refs())
 }

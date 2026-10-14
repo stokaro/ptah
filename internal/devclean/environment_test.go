@@ -7,8 +7,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/devclean"
 )
 
@@ -21,10 +25,8 @@ func keptState() *catalog.Database {
 		Grants: []catalog.Grant{
 			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "auth", ObjectName: "users"},
 		},
-		DefaultPrivileges: []catalog.DefaultPrivilege{
-			{Grantor: "postgres", Schema: "auth", ObjectType: "TABLES", Grantee: "reader", Privilege: "SELECT"},
-		},
-		Roles: []catalog.Role{{Name: "anon"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(keptDefaultPrivilege("auth"))),
+		Roles:          []catalog.Role{{Name: "anon"}},
 	}
 }
 
@@ -46,7 +48,8 @@ func TestWithoutKeptStateLeavesWhatTheRunAdded(t *testing.T) {
 	current.Roles = append(current.Roles, catalog.Role{Name: "app"})
 	declared := &catalog.Database{Functions: []catalog.Function{{Schema: "auth", Name: "uid"}}}
 
-	got := devclean.WithoutKeptState(current, keptState(), declared, "public")
+	got, err := devclean.WithoutKeptState(t.Context(), current, keptState(), declared, "public", must.Must(builtin.New()).Selections())
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got.Schemas, qt.HasLen, 0)
 	c.Assert(got.Tables, qt.DeepEquals, []catalog.Table{{Name: "profiles"}})
@@ -55,7 +58,7 @@ func TestWithoutKeptStateLeavesWhatTheRunAdded(t *testing.T) {
 	c.Assert(got.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "reader", Privilege: "INSERT", ObjectType: "TABLE", Schema: "auth", ObjectName: "users"},
 	})
-	c.Assert(got.DefaultPrivileges, qt.HasLen, 0)
+	c.Assert(got.FeatureObjects.Len(), qt.Equals, 0)
 	c.Assert(got.Roles, qt.DeepEquals, []catalog.Role{{Name: "app"}})
 	c.Assert(current.Tables, qt.HasLen, 3)
 }
@@ -67,7 +70,8 @@ func TestWithoutKeptStateWithoutAStartingPoint(t *testing.T) {
 	c := qt.New(t)
 	current := keptState()
 
-	got := devclean.WithoutKeptState(current, nil, nil, "public")
+	got, err := devclean.WithoutKeptState(t.Context(), current, nil, nil, "public", must.Must(builtin.New()).Selections())
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got, qt.Equals, current)
 }
@@ -79,7 +83,8 @@ func TestBaselineWithoutStartingPointOfAClaimedURL(t *testing.T) {
 	c := qt.New(t)
 	current := keptState()
 
-	got := devclean.Baseline{}.WithoutStartingPoint(current, nil, "public")
+	got, err := devclean.Baseline{}.WithoutStartingPoint(t.Context(), current, nil, "public", must.Must(builtin.New()).Selections())
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got, qt.Equals, current)
 }
@@ -112,7 +117,8 @@ func TestWithoutKeptStateMatchesFeatureObjectsInTheDefaultSchema(t *testing.T) {
 			current := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(aggregate("", "daily")))}
 			declared := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(test.declared...))}
 
-			got := devclean.WithoutKeptState(current, env, declared, "app")
+			got, err := devclean.WithoutKeptState(t.Context(), current, env, declared, "app", must.Must(builtin.New()).Selections())
+			c.Assert(err, qt.IsNil)
 
 			var names []string
 			for _, ref := range got.FeatureObjects.Refs() {
@@ -121,4 +127,87 @@ func TestWithoutKeptStateMatchesFeatureObjectsInTheDefaultSchema(t *testing.T) {
 			c.Assert(names, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+func keptDefaultPrivilege(schema string) schemaext.Object {
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{
+		Grantor: "postgres", Schema: schema, ObjectType: "TABLES", Grantee: "reader",
+	}, identifier.ForDialect("postgres")))
+	return must.Must(pgdefaultprivilege.ObservedObject(ref, pgdefaultprivilege.Observed{
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}},
+	}))
+}
+
+// A global default and one in the replay's default schema remain distinct.
+// Declaring one must neither retain nor subtract the other.
+func TestWithoutKeptStatePreservesDefaultPrivilegeScopes(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseline string
+		declared string
+		want     []string
+	}{
+		{name: "global baseline", baseline: "", declared: "public", want: []string{"public", " public "}},
+		{name: "schema baseline", baseline: "public", declared: "", want: []string{"", " public "}},
+		{name: "declared global baseline", baseline: "", declared: "", want: []string{"", "public", " public "}},
+		{name: "declared schema baseline", baseline: "public", declared: "public", want: []string{"", "public", " public "}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			current := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				keptDefaultPrivilege(""), keptDefaultPrivilege("public"), keptDefaultPrivilege(" public "),
+			))}
+			env := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(keptDefaultPrivilege(test.baseline)))}
+			declared := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(keptDefaultPrivilege(test.declared)))}
+
+			got, err := devclean.WithoutKeptState(t.Context(), current, env, declared, "public", must.Must(builtin.New()).Selections())
+			c.Assert(err, qt.IsNil)
+
+			var want []objectidentity.ID
+			for _, schema := range test.want {
+				want = append(want, keptDefaultPrivilege(schema).Ref)
+			}
+			c.Assert(got.FeatureObjects.Refs(), qt.ContentEquals, want)
+			c.Assert(current.FeatureObjects.Len(), qt.Equals, 3)
+			c.Assert(env.FeatureObjects.Len(), qt.Equals, 1)
+		})
+	}
+}
+
+// An ACL identity groups several rights. A right added during replay remains
+// visible even when the environment already holds another right in that ACL.
+func TestWithoutKeptStateKeepsAddedDefaultPrivilegeRights(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared *pgdefaultprivilege.Observed
+		want     []pgdefaultprivilege.Grant
+	}{
+		{name: "nil declaration", want: []pgdefaultprivilege.Grant{{Privilege: "INSERT", WithOption: true}}},
+		{name: "new right", declared: &pgdefaultprivilege.Observed{}, want: []pgdefaultprivilege.Grant{{Privilege: "INSERT", WithOption: true}}},
+		{name: "explicit baseline right", declared: &pgdefaultprivilege.Observed{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}, want: []pgdefaultprivilege.Grant{{Privilege: "INSERT", WithOption: true}, {Privilege: "SELECT", WithOption: true}}},
+		{name: "another declared right", declared: &pgdefaultprivilege.Observed{Privileges: []pgdefaultprivilege.Grant{{Privilege: "UPDATE"}}}, want: []pgdefaultprivilege.Grant{{Privilege: "INSERT", WithOption: true}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := keptDefaultPrivilege("app").Ref
+			currentObjects := must.Must(schemaext.NewObjects(must.Must(pgdefaultprivilege.ObservedObject(ref, pgdefaultprivilege.Observed{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT", WithOption: true}, {Privilege: "INSERT", WithOption: true}}}))))
+			env := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(keptDefaultPrivilege("app")))}
+			declared := declaredBaselineACL(ref, test.declared)
+			current := &catalog.Database{FeatureObjects: currentObjects}
+			got, err := devclean.WithoutKeptState(t.Context(), current, env, declared, "public", must.Must(builtin.New()).Selections())
+			c.Assert(err, qt.IsNil)
+			c.Assert(must.Must(got.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{must.Must(pgdefaultprivilege.ObservedObject(ref, pgdefaultprivilege.Observed{Privileges: test.want}))})
+			c.Assert(must.Must(current.FeatureObjects.All()), qt.DeepEquals, must.Must(currentObjects.All()))
+		})
+	}
+}
+
+// declaredBaselineACL keeps a nil comparison side distinct from an empty ACL.
+func declaredBaselineACL(ref objectidentity.ID, value *pgdefaultprivilege.Observed) *catalog.Database {
+	if value == nil {
+		return nil
+	}
+	return &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgdefaultprivilege.ObservedObject(ref, *value))))}
 }

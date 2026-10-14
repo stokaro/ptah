@@ -65,6 +65,8 @@ func TestPlanCensusDiscardsFailedAndCanceledMeasurements(t *testing.T) {
 			&schemaext.UnknownCodecError{},
 			&schemavalidation.RefusalError{},
 			&schemadiff.RefusalError{},
+			&schemadiff.IncompleteComparisonError{},
+			errors.Join((&schemadiff.IncompleteComparisonError{Diagnostics: schemadiff.Diagnostics{Features: []schemaext.UndecidedChange{{Kind: "example.org/acl", Reason: "catalog is not inspected"}}}}), errors.New("provider failed alongside incomplete evidence")),
 			errors.Join((schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
 				Code: schemavalidation.InvalidSchema, Kind: "schema", Message: "completed refusal",
 			}}}).Err("custom"), errors.New("provider failed alongside a refusal")),

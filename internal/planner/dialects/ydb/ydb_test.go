@@ -10,11 +10,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -327,8 +329,8 @@ func TestGenerateMigrationAST_RefusesWhatYDBCannotDo_FailurePath(t *testing.T) {
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"collation": "a -> b"}}}}),
 			wantErr: `column "n" of table "items": YDB cannot change collation of a column in place \(a -> b\)`},
 		{name: "a default privilege",
-			diff:    &difftypes.SchemaDiff{DefaultPrivilegesAdded: []difftypes.DefaultPrivilegeRef{{Grantor: "o", Schema: "s", ObjectType: "TABLES", Grantee: "r", Privilege: "SELECT"}}},
-			wantErr: `the plan changes a default privilege: YDB has no default privileges; .*`},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "o", Schema: "s", ObjectType: "TABLES", Grantee: "r"}, identifier.ForDialect("ydb"))), Value: &pgdefaultprivilege.Change{Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}}}},
+			wantErr: `(?s).*ptah.run/pgdefaultprivilege/default-privilege-change.*`},
 		{name: "a database",
 			diff:    &difftypes.SchemaDiff{SchemasRemoved: []string{"app"}},
 			wantErr: `.*the ydb planner plans none`},

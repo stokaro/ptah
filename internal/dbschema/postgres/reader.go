@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
@@ -4432,8 +4433,8 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 //
 // The gate is the caller's: pg_default_acl is a relation a server either has or
 // does not, and asking a server without it costs the whole read.
-func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPrivilege, error) {
-	var privileges []catalog.DefaultPrivilege
+func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]defaultPrivilegeRow, error) {
+	var privileges []defaultPrivilegeRow
 	for _, schemaName := range r.schemasToRead() {
 		schemaPrivileges, err := r.readDefaultPrivilegesForSchema(ctx, schemaName)
 		if err != nil {
@@ -4489,7 +4490,7 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 func (r *Reader) readDefaultPrivilegesForSchema(
 	ctx context.Context,
 	schemaName string,
-) ([]catalog.DefaultPrivilege, error) {
+) ([]defaultPrivilegeRow, error) {
 	query := `
 		SELECT
 			pg_get_userbyid(d.defaclrole) AS grantor,
@@ -4508,12 +4509,12 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 	}
 	defer rows.Close()
 
-	var privileges []catalog.DefaultPrivilege
+	var privileges []defaultPrivilegeRow
 	for rows.Next() {
 		// The schema is scanned as pg_namespace names it and never passed
 		// through outputSchema, which blanks the connected schema. See
-		// [catalog.DefaultPrivilege] for why this family is the exception.
-		var identity catalog.DefaultPrivilege
+		// [defaultPrivilegeRow] for why this family is the exception.
+		var identity defaultPrivilegeRow
 		var acl string
 		if err := rows.Scan(&identity.Grantor, &identity.Schema, &identity.ObjectType, &acl); err != nil {
 			return nil, fmt.Errorf("failed to scan default privilege for schema %s: %w", schemaName, err)
@@ -4545,8 +4546,8 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 // ordinary user roles and stay. The GRANTOR is not filtered, because the
 // bootstrap superuser is the ordinary grantor of a default privilege --
 // excluding it there would empty this read on a stock server.
-func explodeDefaultPrivileges(identity catalog.DefaultPrivilege, items []aclitem.Item) []catalog.DefaultPrivilege {
-	var privileges []catalog.DefaultPrivilege
+func explodeDefaultPrivileges(identity defaultPrivilegeRow, items []aclitem.Item) []defaultPrivilegeRow {
+	var privileges []defaultPrivilegeRow
 	for _, item := range items {
 		grantee := pgdefaultacl.GranteeName(item)
 		if reservedrole.Is(grantee) {
@@ -4567,7 +4568,7 @@ func explodeDefaultPrivileges(identity catalog.DefaultPrivilege, items []aclitem
 // object type, grantee and privilege, byte by byte. The order is Ptah's rather
 // than the server's, so two descriptions of one catalog do not differ by row
 // order, whatever collation or ACL order the server has.
-func compareDefaultPrivileges(a, b catalog.DefaultPrivilege) int {
+func compareDefaultPrivileges(a, b defaultPrivilegeRow) int {
 	return cmp.Or(
 		strings.Compare(a.Schema, b.Schema),
 		strings.Compare(a.Grantor, b.Grantor),
@@ -4649,16 +4650,21 @@ func (r *Reader) defaultACLByCapability() defaultACLAccess {
 // role that needs quoting, and failing the read over that would stop `ptah db
 // read`, `schema compare` and everything else at the role read
 // (stokaro/ptah#3816). So the relation is read once before anything asks for
-// it, and a refusal is recorded as [coverage.DefaultPrivilege] not inspected:
+// it, and a refusal is recorded as unknown owner coverage:
 // the description carries no default privilege, the role scoping leaves out
 // the reasons it would have read there, and the comparator withholds what it
 // cannot confirm instead of reading the silence as absence.
 func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Database) error {
 	if !r.caps.Has(capability.RoleManagement) {
-		return nil
+		return recordDefaultPrivilegeCoverage(schema, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the target does not expose role management"}, nil)
 	}
 
 	defaultACL := r.defaultACLByCapability()
+	if defaultACL == defaultACLUnread {
+		if err := recordDefaultPrivilegeCoverage(schema, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the target does not expose pg_default_acl"}, nil); err != nil {
+			return err
+		}
+	}
 	if defaultACL == defaultACLReadable {
 		readable, err := pgdefaultacl.Readable(ctx, r.db)
 		if err != nil {
@@ -4666,7 +4672,9 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 		}
 		if !readable {
 			defaultACL = defaultACLUnread
-			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.DefaultPrivilege))
+			if err := recordDefaultPrivilegeCoverage(schema, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the server refused to read pg_default_acl"}, nil); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -4703,19 +4711,18 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 	if err != nil {
 		return fmt.Errorf("failed to read global default privileges: %w", err)
 	}
-	schema.DefaultPrivileges = slices.Concat(global, defaultPrivileges)
+
 	undescribed, err := r.readUndescribedDefaultPrivileges(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read undescribed default privileges: %w", err)
 	}
-	schema.UndescribedDefaultPrivileges = slices.Concat(undescribed, ownerUndescribed)
-	return nil
+	return r.recordDefaultPrivilegeObjects(schema, slices.Concat(global, defaultPrivileges), slices.Concat(undescribed, ownerUndescribed))
 }
 
 // readGlobalDefaultPrivileges reads what ALTER DEFAULT PRIVILEGES established
 // without IN SCHEMA, as the difference from the built-in default: one entry per
 // privilege a global row adds, and one with Revoked set per privilege of the
-// built-in default it takes away. See [catalog.DefaultPrivilege] and
+// built-in default it takes away. See [defaultPrivilegeRow] and
 // [pgdefaultacl.GlobalDeltas].
 //
 // The rows are read whatever schemas the read covers. They apply in every
@@ -4729,7 +4736,7 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 // surfaces to report.
 func (r *Reader) readGlobalDefaultPrivileges(
 	ctx context.Context,
-) ([]catalog.DefaultPrivilege, []catalog.UndescribedDefaultPrivilege, error) {
+) ([]defaultPrivilegeRow, []defaultPrivilegeLimit, error) {
 	if r.dialect == platform.CockroachDB {
 		return r.readCockroachGlobalDefaultPrivileges(ctx)
 	}
@@ -4747,9 +4754,9 @@ func (r *Reader) readGlobalDefaultPrivileges(
 	}
 	defer rows.Close()
 
-	var privileges []catalog.DefaultPrivilege
+	var privileges []defaultPrivilegeRow
 	for rows.Next() {
-		var identity catalog.DefaultPrivilege
+		var identity defaultPrivilegeRow
 		var acl, builtin string
 		if err := rows.Scan(&identity.Grantor, &identity.ObjectType, &acl, &builtin); err != nil {
 			return nil, nil, fmt.Errorf("failed to scan global default privilege: %w", err)
@@ -4777,19 +4784,19 @@ func (r *Reader) readGlobalDefaultPrivileges(
 // on CockroachDB, read through [pgdefaultacl.ReadGlobalFromShow].
 func (r *Reader) readCockroachGlobalDefaultPrivileges(
 	ctx context.Context,
-) ([]catalog.DefaultPrivilege, []catalog.UndescribedDefaultPrivilege, error) {
+) ([]defaultPrivilegeRow, []defaultPrivilegeLimit, error) {
 	classes, err := pgdefaultacl.ReadGlobalFromShow(ctx, r.db)
 	if err != nil {
 		return nil, nil, err
 	}
-	var privileges []catalog.DefaultPrivilege
-	var undescribed []catalog.UndescribedDefaultPrivilege
+	var privileges []defaultPrivilegeRow
+	var undescribed []defaultPrivilegeLimit
 	for _, class := range classes {
-		identity := catalog.DefaultPrivilege{Grantor: class.Grantor, ObjectType: class.ObjectType}
+		identity := defaultPrivilegeRow{Grantor: class.Grantor, ObjectType: class.ObjectType}
 		privileges = append(privileges, globalDefaultPrivileges(identity, class.Deltas)...)
 		if class.OwnerUndescribed {
-			undescribed = append(undescribed, catalog.UndescribedDefaultPrivilege{
-				Grantor: class.Grantor, ObjectType: class.ObjectType,
+			undescribed = append(undescribed, defaultPrivilegeLimit{
+				Grantor: class.Grantor, ObjectType: class.ObjectType, OwnerPartial: true,
 			})
 		}
 	}
@@ -4800,8 +4807,8 @@ func (r *Reader) readCockroachGlobalDefaultPrivileges(
 // globalDefaultPrivileges turns the differences of one global row into catalog
 // entries. A reserved grantee is left out, as [explodeDefaultPrivileges] leaves
 // it out of a schema-scoped row.
-func globalDefaultPrivileges(identity catalog.DefaultPrivilege, deltas []pgdefaultacl.Delta) []catalog.DefaultPrivilege {
-	var privileges []catalog.DefaultPrivilege
+func globalDefaultPrivileges(identity defaultPrivilegeRow, deltas []pgdefaultacl.Delta) []defaultPrivilegeRow {
+	var privileges []defaultPrivilegeRow
 	for _, delta := range deltas {
 		grantee := pgdefaultacl.GranteeName(aclitem.Item{Grantee: delta.Grantee})
 		if reservedrole.Is(grantee) {
@@ -4834,7 +4841,7 @@ func globalDefaultPrivileges(identity catalog.DefaultPrivilege, deltas []pgdefau
 // Role 0 is spelled `unknown (OID=0)` by pg_get_userbyid, measured on
 // CockroachDB v25.4.16, v26.2.7 and v26.3.1, so the grantor is left empty for it
 // rather than reported under a name no role has.
-func (r *Reader) readUndescribedDefaultPrivileges(ctx context.Context) ([]catalog.UndescribedDefaultPrivilege, error) {
+func (r *Reader) readUndescribedDefaultPrivileges(ctx context.Context) ([]defaultPrivilegeLimit, error) {
 	query := `
 		SELECT
 			CASE WHEN d.defaclrole = 0 THEN '' ELSE pg_get_userbyid(d.defaclrole) END AS grantor,
@@ -4855,9 +4862,9 @@ func (r *Reader) readUndescribedDefaultPrivileges(ctx context.Context) ([]catalo
 	for _, schemaName := range r.schemasToRead() {
 		inScope[schemaName] = true
 	}
-	var privileges []catalog.UndescribedDefaultPrivilege
+	var privileges []defaultPrivilegeLimit
 	for rows.Next() {
-		var privilege catalog.UndescribedDefaultPrivilege
+		var privilege defaultPrivilegeLimit
 		if err := rows.Scan(&privilege.Grantor, &privilege.Schema, &privilege.ObjectType); err != nil {
 			return nil, fmt.Errorf("failed to scan undescribed default privilege: %w", err)
 		}

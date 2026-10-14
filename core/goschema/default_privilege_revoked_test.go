@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // TestParseSource_DefaultPrivilegeRevoked_HappyPath pins the revoked
@@ -21,13 +22,12 @@ func TestParseSource_DefaultPrivilegeRevoked_HappyPath(t *testing.T) {
 type AccessControl struct{}
 `
 
-	db := mustParseSource(c, "access.go", source)
-
-	c.Assert(db.DefaultPrivileges, qt.HasLen, 2)
-	c.Assert(db.DefaultPrivileges[0].Revoked, qt.DeepEquals, []string{"INSERT", "UPDATE"})
-	c.Assert(db.DefaultPrivileges[0].Privileges, qt.HasLen, 1)
-	c.Assert(db.DefaultPrivileges[1].Revoked, qt.DeepEquals, []string{"EXECUTE"})
-	c.Assert(db.DefaultPrivileges[1].Privileges, qt.HasLen, 0)
+	db, err := goschema.ParseSource(defaultPrivilegeOwners, "access.go", source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(defaultPrivilegeDeclarations(c, db), qt.ContentEquals, []defaultPrivilegeDeclaration{
+		{Identity: pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, Value: pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}, Revoked: []string{"INSERT", "UPDATE"}}},
+		{Identity: pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "FUNCTIONS", Grantee: "PUBLIC"}, Value: pgdefaultprivilege.Desired{Revoked: []string{"EXECUTE"}}},
+	})
 }
 
 // TestParseSource_DefaultPrivilegeRevoked_FailurePath pins the directives
@@ -39,11 +39,11 @@ func TestParseSource_DefaultPrivilegeRevoked_FailurePath(t *testing.T) {
 		`//ptah:schema:defaultprivilege for_role="o" schema="app" object_type="TABLES" grantee="r"` +
 		"\ntype AccessControl struct{}\n"
 
-	db, err := goschema.ParseSource(noOwners, "access.go", source)
+	db, err := goschema.ParseSource(defaultPrivilegeOwners, "access.go", source)
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrMissingRequiredAttribute)
-	c.Assert(err, qt.ErrorMatches, `missing required annotation attribute "privileges" on //ptah:schema:defaultprivilege at .*: a default privilege grants privileges, revokes them, or both`)
-	c.Assert(db.DefaultPrivileges, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*a default privilege requires privileges or revoked.*`)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 }
 
 // TestParseDir_RefusesADefaultPrivilegeBothGrantedAndRevoked drives the
@@ -58,8 +58,8 @@ func TestParseDir_RefusesADefaultPrivilegeBothGrantedAndRevoked(t *testing.T) {
 		`//ptah:schema:defaultprivilege for_role="o" schema="app" object_type="TABLES" grantee="r" revoked="INSERT"`+
 		"\ntype Revoked struct{}\n")
 
-	db, err := goschema.ParseDir(noOwners, dir)
+	db, err := goschema.ParseDir(defaultPrivilegeOwners, dir)
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*default privilege INSERT on TABLES in schema app for role o is both granted to and revoked from "r"; declare one or the other.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*default privilege INSERT is both granted and revoked.*`)
 	c.Assert(db, qt.IsNil)
 }

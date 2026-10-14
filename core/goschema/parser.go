@@ -730,7 +730,6 @@ type schemaParseState struct {
 	roles                 []schemamodel.Role
 	grants                []schemamodel.Grant
 	revokedGrants         []schemamodel.Grant
-	defaultPrivileges     []schemamodel.DefaultPrivilege
 	managedData           []schemamodel.ManagedData
 	schemas               []schemamodel.Schema
 	notDescribed          []coverage.Object
@@ -840,26 +839,25 @@ type sharedDirectiveParser func(*schemaParseState, *ast.Comment, string) error
 // belongs to which parser and nothing else, and a new object family adds one
 // line instead of pushing the function past the complexity gate.
 var sharedDirectiveParsers = map[string]sharedDirectiveParser{
-	"ptah:schema:constraint":       (*schemaParseState).parseConstraintComment,
-	"ptah:schema:enum":             ignoringStruct((*schemaParseState).parseEnumComment),
-	"ptah:schema:extension":        ignoringStruct((*schemaParseState).parseExtensionComment),
-	"ptah:schema:function":         (*schemaParseState).parseFunctionComment,
-	"ptah:schema:procedure":        (*schemaParseState).parseProcedureComment,
-	"ptah:schema:sequence":         (*schemaParseState).parseSequenceComment,
-	"ptah:schema:domain":           (*schemaParseState).parseDomainComment,
-	"ptah:schema:composite":        (*schemaParseState).parseCompositeComment,
-	"ptah:schema:range":            (*schemaParseState).parseRangeComment,
-	"ptah:schema:view":             (*schemaParseState).parseViewComment,
-	"ptah:schema:matview":          (*schemaParseState).parseMaterializedViewComment,
-	"ptah:schema:trigger":          (*schemaParseState).parseTriggerComment,
-	"ptah:schema:rls:policy":       (*schemaParseState).parseRLSPolicyComment,
-	"ptah:schema:rls:enable":       (*schemaParseState).parseRLSEnableComment,
-	"ptah:schema:role":             (*schemaParseState).parseRoleComment,
-	"ptah:schema:grant":            (*schemaParseState).parseGrantComment,
-	"ptah:schema:revoke":           (*schemaParseState).parseRevokeComment,
-	"ptah:schema:defaultprivilege": (*schemaParseState).parseDefaultPrivilegeComment,
-	"ptah:schema:data":             (*schemaParseState).parseManagedDataComment,
-	"ptah:schema:notdescribed":     ignoringStruct((*schemaParseState).parseNotDescribedComment),
+	"ptah:schema:constraint":   (*schemaParseState).parseConstraintComment,
+	"ptah:schema:enum":         ignoringStruct((*schemaParseState).parseEnumComment),
+	"ptah:schema:extension":    ignoringStruct((*schemaParseState).parseExtensionComment),
+	"ptah:schema:function":     (*schemaParseState).parseFunctionComment,
+	"ptah:schema:procedure":    (*schemaParseState).parseProcedureComment,
+	"ptah:schema:sequence":     (*schemaParseState).parseSequenceComment,
+	"ptah:schema:domain":       (*schemaParseState).parseDomainComment,
+	"ptah:schema:composite":    (*schemaParseState).parseCompositeComment,
+	"ptah:schema:range":        (*schemaParseState).parseRangeComment,
+	"ptah:schema:view":         (*schemaParseState).parseViewComment,
+	"ptah:schema:matview":      (*schemaParseState).parseMaterializedViewComment,
+	"ptah:schema:trigger":      (*schemaParseState).parseTriggerComment,
+	"ptah:schema:rls:policy":   (*schemaParseState).parseRLSPolicyComment,
+	"ptah:schema:rls:enable":   (*schemaParseState).parseRLSEnableComment,
+	"ptah:schema:role":         (*schemaParseState).parseRoleComment,
+	"ptah:schema:grant":        (*schemaParseState).parseGrantComment,
+	"ptah:schema:revoke":       (*schemaParseState).parseRevokeComment,
+	"ptah:schema:data":         (*schemaParseState).parseManagedDataComment,
+	"ptah:schema:notdescribed": ignoringStruct((*schemaParseState).parseNotDescribedComment),
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1084,7 +1082,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 		Roles:             state.roles,
 		Grants:            state.grants,
 		RevokedGrants:     state.revokedGrants,
-		DefaultPrivileges: state.defaultPrivileges,
 		ManagedData:       state.managedData,
 		NotDescribed:      coverage.Set{}.With(state.notDescribed...),
 		Dependencies:      make(map[string][]string),
@@ -2004,161 +2001,6 @@ func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annota
 		grant.RoutineKind = attribute.kind
 	}
 	return nil
-}
-
-// defaultPrivilegeObjectTypes is the closed set ALTER DEFAULT PRIVILEGES names,
-// and the set the catalog reader folds pg_default_acl's defaclobjtype into.
-//
-// SCHEMAS and LARGE OBJECTS are named only by the global form, without a
-// schema: PostgreSQL 18.6 refuses IN SCHEMA for both.
-var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES", "SCHEMAS", "LARGE OBJECTS"}
-
-// parseDefaultPrivilegeComment reads one //ptah:schema:defaultprivilege
-// directive into the schema model.
-//
-// The object type and the grantable subset are checked here rather than at
-// render time. Without the object-type check a misspelled keyword reaches the
-// renderer and the author learns about it from the server's syntax error;
-// without the subset check the model holds a contradiction -- a privilege
-// marked grantable that is not granted at all -- which renders nothing and
-// compares as a difference the planner can never resolve.
-func (s *schemaParseState) parseDefaultPrivilegeComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:defaultprivilege", structName)
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-	scope, err := parseDialectScope(kv, ctx)
-	if err != nil {
-		return err
-	}
-	objectType, err := defaultPrivilegeObjectType(kv["object_type"], strings.TrimSpace(kv["schema"]), ctx)
-	if err != nil {
-		return err
-	}
-	privileges, err := defaultPrivilegeGrants(kv, ctx)
-	if err != nil {
-		return err
-	}
-	revoked := splitCommaList(kv["revoked"])
-	if len(privileges) == 0 && len(revoked) == 0 {
-		return &ptaherr.ParseError{
-			File:      ctx.file,
-			Line:      ctx.line,
-			Directive: strings.TrimPrefix(ctx.directive, "//"),
-			Attribute: "privileges",
-			Err:       ptaherr.ErrMissingRequiredAttribute,
-			Message: fmt.Sprintf("missing required annotation attribute %q on %s at %s: "+
-				"a default privilege grants privileges, revokes them, or both", "privileges", ctx.directive, ctx.location),
-		}
-	}
-	privilege := schemamodel.DefaultPrivilege{
-		StructName: structName,
-		Grantor:    kv["for_role"],
-		Schema:     kv["schema"],
-		ObjectType: objectType,
-		Grantee:    kv["grantee"],
-		Privileges: privileges,
-		Revoked:    revoked,
-		Comment:    kv["comment"],
-		Dialects:   scope,
-	}
-	privilege.Canonicalize()
-	s.defaultPrivileges = append(s.defaultPrivileges, privilege)
-	return nil
-}
-
-// defaultPrivilegeObjectType reads object_type, refusing one the schema
-// cannot carry: a global-only type beside a schema.
-func defaultPrivilegeObjectType(raw, schema string, ctx annotationErrorContext) (string, error) {
-	objectType := strings.ToUpper(strings.TrimSpace(raw))
-	if schemamodel.GlobalOnlyDefaultPrivilegeObjectType(objectType) && schema != "" {
-		return "", &ptaherr.ParseError{
-			File:      ctx.file,
-			Line:      ctx.line,
-			Directive: strings.TrimPrefix(ctx.directive, "//"),
-			Attribute: "object_type",
-			Err:       ptaherr.ErrInvalidAttributeValue,
-			Message: fmt.Sprintf(
-				"invalid %q value %q on %s at %s: PostgreSQL sets it for the whole database only, "+
-					"so the declaration cannot name a schema",
-				"object_type", raw, ctx.directive, ctx.location,
-			),
-		}
-	}
-	if slices.Contains(defaultPrivilegeObjectTypes, objectType) {
-		return objectType, nil
-	}
-	slog.Error("unsupported default privilege object type",
-		"directive", ctx.directive,
-		"value", raw,
-		"location", ctx.location,
-	)
-	return "", &ptaherr.ParseError{
-		File:      ctx.file,
-		Line:      ctx.line,
-		Directive: strings.TrimPrefix(ctx.directive, "//"),
-		Attribute: "object_type",
-		Err:       ptaherr.ErrInvalidAttributeValue,
-		Message: fmt.Sprintf(
-			"invalid %q value %q on %s at %s: must be one of %s",
-			"object_type", raw, ctx.directive, ctx.location,
-			strings.Join(defaultPrivilegeObjectTypes, ", "),
-		),
-	}
-}
-
-// defaultPrivilegeGrants folds the two attribute lists into one list of pairs.
-//
-// Two parallel lists are what the author writes and what the catalog cannot
-// hold: pg_default_acl explodes to one row per privilege, each with its own
-// is_grantable. Folding at the parse boundary means nothing downstream has to
-// keep the lists in step.
-func defaultPrivilegeGrants(
-	kv map[string]string,
-	ctx annotationErrorContext,
-) ([]schemamodel.PrivilegeGrant, error) {
-	privileges := splitCommaList(kv["privileges"])
-	grantable := make(map[string]bool, len(privileges))
-	for _, name := range splitCommaList(kv["grantable"]) {
-		grantable[strings.ToUpper(name)] = true
-	}
-	granted := make(map[string]bool, len(privileges))
-	grants := make([]schemamodel.PrivilegeGrant, 0, len(privileges))
-	for _, name := range privileges {
-		normalized := strings.ToUpper(name)
-		granted[normalized] = true
-		grants = append(grants, schemamodel.PrivilegeGrant{
-			Privilege:  name,
-			WithOption: grantable[normalized],
-		})
-	}
-	for _, name := range slices.Sorted(maps.Keys(grantable)) {
-		if granted[name] {
-			continue
-		}
-		slog.Error("grantable privilege is not granted",
-			"directive", ctx.directive,
-			"privilege", name,
-			"location", ctx.location,
-		)
-		return nil, &ptaherr.ParseError{
-			File:      ctx.file,
-			Line:      ctx.line,
-			Directive: strings.TrimPrefix(ctx.directive, "//"),
-			Attribute: "grantable",
-			Err:       ptaherr.ErrInvalidAttributeValue,
-			Message: fmt.Sprintf(
-				"invalid %q value %q on %s at %s: %q is not in %q",
-				"grantable", kv["grantable"], ctx.directive, ctx.location,
-				name, kv["privileges"],
-			),
-		}
-	}
-	return grants, nil
 }
 
 func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structName string) error {

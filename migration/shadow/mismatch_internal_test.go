@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
@@ -16,80 +17,41 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// TestCollectMismatches_ReportsEveryDefaultPrivilegeDirection holds the drift
-// rows for a family whose absence reads as agreement.
-//
-// Shadow verification reports what a replay did not reproduce, and it reports
-// it from this list. A family the list does not name makes a change that never
-// landed read as a clean apply, which is the answer the verification exists to
-// refuse. The rows are named by the whole identity because a grantor and a
-// grantee are both part of what makes one object.
+// Every adjustment reaches shadow verification with its role identity and
+// privilege names. A mismatch without its rights cannot explain a failed apply.
 func TestCollectMismatches_ReportsEveryDefaultPrivilegeDirection(t *testing.T) {
 	c := qt.New(t)
-	ref := difftypes.DefaultPrivilegeRef{
-		Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
-		Grantee: "app_reader", Privilege: "SELECT",
-	}
-	diff := &difftypes.SchemaDiff{
-		DefaultPrivilegesAdded:         []difftypes.DefaultPrivilegeRef{ref},
-		DefaultPrivilegesRemoved:       []difftypes.DefaultPrivilegeRef{ref},
-		DefaultPrivilegeOptionsAdded:   []difftypes.DefaultPrivilegeRef{ref},
-		DefaultPrivilegeOptionsRevoked: []difftypes.DefaultPrivilegeRef{ref},
-	}
-	object := "SELECT on TABLES in app for app_owner to app_reader"
-
-	got := collectMismatches(diff)
-
-	c.Assert(got, qt.DeepEquals, []Mismatch{
-		{
-			Kind:    "missing_default_privilege",
-			Object:  object,
-			Message: "missing default privilege " + object,
-		},
-		{
-			Kind:    "extra_default_privilege",
-			Object:  object,
-			Message: "extra default privilege " + object,
-		},
-		{
-			Kind:    "missing_default_privilege_option",
-			Object:  object,
-			Message: "missing default privilege grant option " + object,
-		},
-		{
-			Kind:    "extra_default_privilege_option",
-			Object:  object,
-			Message: "extra default privilege grant option " + object,
-		},
-	})
+	ref := defaultPrivilegeSubject("app_owner")
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ref, Value: &pgdefaultprivilege.Change{
+		Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}, Revoked: []pgdefaultprivilege.Grant{{Privilege: "INSERT"}},
+		GrantOptionsAdded: []string{"UPDATE"}, GrantOptionsRevoked: []string{"DELETE"},
+	}}}}
+	detail := "grant SELECT; revoke INSERT; grant option UPDATE; revoke grant option DELETE"
+	c.Assert(collectMismatches(diff), qt.DeepEquals, []Mismatch{{
+		Kind: "feature_mismatch", Object: ref.String(), Changes: map[string]string{string(pgdefaultprivilege.ChangeKind): detail},
+		Message: "feature mismatch " + ref.String() + ": " + string(pgdefaultprivilege.ChangeKind) + " " + detail,
+	}})
 }
 
-// TestCollectMismatches_OrdersDefaultPrivilegesByTheirIdentity pins the order
-// the rows come out in. A verification error is read by a person and diffed by
-// a pipeline, so a list whose order follows the input is one nobody can compare
-// between two runs.
 func TestCollectMismatches_OrdersDefaultPrivilegesByTheirIdentity(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{DefaultPrivilegesAdded: []difftypes.DefaultPrivilegeRef{
-		{
-			Grantor: "beta_owner", Schema: "app", ObjectType: "TABLES",
-			Grantee: "app_reader", Privilege: "SELECT",
-		},
-		{
-			Grantor: "alpha_owner", Schema: "app", ObjectType: "TABLES",
-			Grantee: "app_reader", Privilege: "SELECT",
-		},
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+		{Subject: defaultPrivilegeSubject("beta_owner"), Value: &pgdefaultprivilege.Change{Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}},
+		{Subject: defaultPrivilegeSubject("alpha_owner"), Value: &pgdefaultprivilege.Change{Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}},
 	}}
-
 	got := collectMismatches(diff)
-
 	c.Assert(got, qt.HasLen, 2)
-	c.Assert(got[0].Object, qt.Equals, "SELECT on TABLES in app for alpha_owner to app_reader")
-	c.Assert(got[1].Object, qt.Equals, "SELECT on TABLES in app for beta_owner to app_reader")
+	c.Assert(got[0].Object, qt.Equals, defaultPrivilegeSubject("alpha_owner").String())
+	c.Assert(got[1].Object, qt.Equals, defaultPrivilegeSubject("beta_owner").String())
+}
+
+func defaultPrivilegeSubject(grantor string) objectidentity.ID {
+	return must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: grantor, Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, identifier.ForDialect("postgres")))
 }
 
 func TestCollectMismatches_ReportsQualifiedIndex(t *testing.T) {

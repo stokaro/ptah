@@ -547,10 +547,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return grantrefusal.Membership(r.dialect, r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
 	case *ast.RevokeRoleMembershipNode:
 		return grantrefusal.Membership(r.dialect, r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
-	case *ast.DefaultPrivilegeNode:
-		return r.renderDefaultPrivilege(n)
-	case *ast.RevokeDefaultPrivilegeNode:
-		return r.renderRevokeDefaultPrivilege(n)
 	case *ast.CreatePolicyNode:
 		return r.renderCreatePolicy(n)
 	case *ast.DropPolicyNode:
@@ -3459,110 +3455,6 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return nil
 }
 
-// renderDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... GRANT statement
-// for PostgreSQL.
-//
-// One statement per grantability. The catalog records WITH GRANT OPTION per
-// privilege, so a declaration mixing grantable and plain privileges for one
-// identity is two statements rather than one -- which is also how a reader
-// reports it back, so the two spellings fold to the same thing.
-//
-// IN SCHEMA is emitted when the node has a schema. A node without one is the
-// global default, which applies in every schema of the database, and the
-// statement leaves the clause out.
-func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
-	if len(node.Privileges) == 0 {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires at least one privilege")
-	}
-	if node.Grantor == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires a grantor role")
-	}
-	if node.ObjectType == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires an object type")
-	}
-	if node.Grantee == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires a grantee")
-	}
-	if r.refuses(capability.RoleManagement, "default privilege",
-		defaultPrivilegeIdentity(node.Grantor, node.Schema, node.ObjectType, node.Grantee)) {
-		return nil
-	}
-
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
-	plain, grantable := splitByGrantOption(node.Privileges)
-	prefix := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s%s GRANT",
-		r.escapeRoleTarget(node.Grantor), r.inSchemaClause(node.Schema))
-	if len(plain) > 0 {
-		r.w.WriteLinef("%s %s ON %s TO %s;",
-			prefix, strings.Join(plain, ", "), node.ObjectType, r.escapeRoleTarget(node.Grantee))
-	}
-	if len(grantable) > 0 {
-		r.w.WriteLinef("%s %s ON %s TO %s WITH GRANT OPTION;",
-			prefix, strings.Join(grantable, ", "), node.ObjectType, r.escapeRoleTarget(node.Grantee))
-	}
-	return nil
-}
-
-// renderRevokeDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... REVOKE
-// statement for PostgreSQL.
-func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
-	privileges := strings.Join(node.Privileges, ", ")
-	if privileges == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires at least one privilege")
-	}
-	if node.Grantor == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires a grantor role")
-	}
-	if node.ObjectType == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires an object type")
-	}
-	if node.Grantee == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires a grantee")
-	}
-	if r.refuses(capability.RoleManagement, "default privilege",
-		defaultPrivilegeIdentity(node.Grantor, node.Schema, node.ObjectType, node.Grantee)) {
-		return nil
-	}
-
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
-	revoke := "REVOKE"
-	if node.GrantOptionFor {
-		revoke = "REVOKE GRANT OPTION FOR"
-	}
-	r.w.WriteLinef("ALTER DEFAULT PRIVILEGES FOR ROLE %s%s %s %s ON %s FROM %s;",
-		r.escapeRoleTarget(node.Grantor), r.inSchemaClause(node.Schema),
-		revoke, privileges, node.ObjectType, r.escapeRoleTarget(node.Grantee))
-	return nil
-}
-
-// inSchemaClause is the IN SCHEMA clause of an ALTER DEFAULT PRIVILEGES, with
-// its leading space, and nothing for the global default.
-func (r *Renderer) inSchemaClause(schema string) string {
-	if schema == "" {
-		return ""
-	}
-	return " IN SCHEMA " + r.escapeIdentifier(schema)
-}
-
-// splitByGrantOption separates the privileges that carry WITH GRANT OPTION from
-// the ones that do not, keeping each list in declaration order.
-func splitByGrantOption(privileges []ast.DefaultPrivilege) (plain, grantable []string) {
-	for _, privilege := range privileges {
-		if privilege.WithOption {
-			grantable = append(grantable, privilege.Privilege)
-			continue
-		}
-		plain = append(plain, privilege.Privilege)
-	}
-	return plain, grantable
-}
-
 // renderRawSQL renders a literal SQL fragment verbatim and appends a trailing
 // semicolon if the fragment doesn't already end with one. The caller owns
 // correctness of the embedded SQL. The trailing `;` is essential — downstream
@@ -3616,23 +3508,6 @@ func policyIdentity(name, table string) string {
 
 func grantIdentity(objectPreposition, objectName, rolePreposition, role string) string {
 	return objectPreposition + " " + objectName + " " + rolePreposition + " " + role
-}
-
-// defaultPrivilegeIdentity names one default-privilege object for a skip
-// comment.
-//
-// It is built only from the four fields that are the object's identity, and
-// from none of the payload: the render path emits one node per declaration
-// while the plan path emits one per privilege, so a name carrying the privilege
-// list would make the two surfaces disagree about an object neither of them
-// rendered. internal/modelast's render-and-plan agreement test is what measures
-// that.
-func defaultPrivilegeIdentity(grantor, schema, objectType, grantee string) string {
-	where := "in schema " + schema
-	if schema == "" {
-		where = "in every schema"
-	}
-	return "on " + objectType + " " + where + " for role " + grantor + " to " + grantee
 }
 
 // renderRoleOperation renders a single role operation as an ALTER ROLE statement

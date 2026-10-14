@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/schemascope"
 )
@@ -108,7 +109,8 @@ func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 		},
 	}, map[string]string{"pgcrypto": "auth", "citext": "billing"})
 
-	got := schemascope.FilterGenerated(db, []string{"auth"})
+	got, err := schemascope.FilterGenerated(t.Context(), selectext.None(), db, []string{"auth"})
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
 	c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{"auth"})
@@ -151,7 +153,8 @@ func TestFilterGeneratedWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testin
 		},
 	}
 
-	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"public"}, "public")
+	got, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), db, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"users"})
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"id"})
@@ -169,7 +172,8 @@ func TestFilterGeneratedKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *test
 		},
 	}, map[string]string{"pgcrypto": "", "citext": "extensions", "unrelated": "other"})
 
-	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"app"}, "public")
+	got, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), db, []string{"app"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{"app"})
 	c.Assert(generatedExtensionNames(got), qt.DeepEquals,
@@ -190,7 +194,8 @@ func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
 		},
 	}
 
-	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"public"}, "public")
+	got, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), db, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{`"tenant.data"`})
 	c.Assert(generatedTriggerNames(got.Triggers), qt.DeepEquals, []string{"literal_trigger"})
@@ -252,7 +257,8 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 		},
 	}, map[string]string{"pg_trgm": "auth", "btree_gin": "billing"})
 
-	got := schemascope.FilterDatabase(db, []string{"auth"})
+	got, err := schemascope.FilterDatabase(t.Context(), selectext.None(), db, []string{"auth"})
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
 	c.Assert(databaseEnumNames(got.Enums), qt.DeepEquals, []string{"user_status"})
@@ -296,7 +302,8 @@ func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing
 		},
 	}
 
-	got := schemascope.FilterDatabaseWithDefaultSchema(db, []string{"public"}, "public")
+	got, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), selectext.None(), db, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"users"})
 	c.Assert(databaseIndexNames(got.Indexes), qt.DeepEquals, []string{"idx_users_id"})
@@ -320,7 +327,8 @@ func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testi
 		},
 	}, map[string]string{"pgcrypto": "public", "citext": "extensions", "unrelated": "other"})
 
-	got := schemascope.FilterDatabaseWithDefaultSchema(db, []string{"app"}, "public")
+	got, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), selectext.None(), db, []string{"app"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"app.users"})
 	c.Assert(databaseExtensionNames(got), qt.DeepEquals,
@@ -340,7 +348,8 @@ func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
 		},
 	}
 
-	got := schemascope.FilterDatabaseWithDefaultSchema(db, []string{"public"}, "public")
+	got, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), selectext.None(), db, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{`"tenant.data"`})
 	c.Assert(databaseRLSPolicyNames(got.RLSPolicies), qt.DeepEquals, []string{"literal_policy"})

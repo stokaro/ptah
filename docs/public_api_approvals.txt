@@ -763,3 +763,16 @@ v0.13.0 ptah.run/core/platform/capability
 v0.13.0 ptah.run/core/schemamodel
 v0.13.0 ptah.run/catalog
 v0.13.0 ptah.run/core/ast
+
+# #4140 assigns default privileges to feature/pgdefaultprivilege. Shared schema
+# and catalog models carry ACLs through FeatureObjects and FeatureCoverage;
+# diffs carry owner Change values, and ASTs carry owner operations. Concrete
+# default-privilege fields, reference types, and AST nodes are absent from the
+# common API. The owner supplies source codecs, comparison, planning, reversal,
+# reporting, scope selection, and partial ACL projections. This changes the Go
+# API under the authorized #4140/#4204 clean-break policy. Pre-v1, so compatibility
+# with older Ptah is not owed.
+v0.13.0 ptah.run/core/schemamodel
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/core/ast
+v0.13.0 ptah.run/migration/schemadiff/difftypes

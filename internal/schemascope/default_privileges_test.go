@@ -4,71 +4,49 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
+	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/feature/pgdefaultprivilege/privilegeselect"
 	"ptah.run/internal/schemascope"
 )
 
-// The two fixtures hold the same three default privileges, one per side of a
-// comparison. Each row sits in a different schema and carries a different object
-// type, so the object type identifies which schema's row survived -- a default
-// privilege has no name of its own, and its schema is exactly what a schema
-// allow-list decides about. The row without a schema is the global default,
-// which applies in every schema.
-func generatedDefaultPrivilegeFixture() *schemamodel.Database {
-	return &schemamodel.Database{
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{
-			{
-				StructName: "AuthDefaults", Grantor: "app_owner", Schema: "auth",
-				ObjectType: "TABLES", Grantee: "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-			},
-			{
-				StructName: "BillingDefaults", Grantor: "app_owner", Schema: "billing",
-				ObjectType: "SEQUENCES", Grantee: "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-			},
-			{
-				StructName: "ConnectedDefaults", Grantor: "app_owner",
-				ObjectType: "FUNCTIONS", Grantee: "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "EXECUTE"}},
-			},
-		},
+func defaultPrivilegeSelections() selectext.Set {
+	return must.Must(selectext.NewSet(privilegeselect.Extension()))
+}
+
+func defaultPrivilegeObjects(representation schemaext.Representation) schemaext.Objects {
+	var objects []schemaext.Object
+	for _, row := range []struct{ schema, class, privilege string }{
+		{"auth", "TABLES", "SELECT"}, {"billing", "SEQUENCES", "USAGE"}, {"", "FUNCTIONS", "EXECUTE"},
+	} {
+		ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: row.schema, ObjectType: row.class, Grantee: "app_reader"}, identifier.ForDialect("postgres")))
+		var value schemaext.Value = &pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: row.privilege}}}
+		if representation == schemaext.Observed {
+			value = &pgdefaultprivilege.Observed{Privileges: []pgdefaultprivilege.Grant{{Privilege: row.privilege}}}
+		}
+		objects = append(objects, schemaext.Object{Ref: ref, Value: value})
 	}
+	return must.Must(schemaext.NewObjects(objects...))
+}
+
+func generatedDefaultPrivilegeFixture() *schemamodel.Database {
+	return &schemamodel.Database{FeatureObjects: defaultPrivilegeObjects(schemaext.Desired), FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired))}
 }
 
 func databaseDefaultPrivilegeFixture() *catalog.Database {
-	return &catalog.Database{
-		DefaultPrivileges: []catalog.DefaultPrivilege{
-			{
-				Grantor: "app_owner", Schema: "auth", ObjectType: "TABLES",
-				Grantee: "app_reader", Privilege: "SELECT",
-			},
-			{
-				Grantor: "app_owner", Schema: "billing", ObjectType: "SEQUENCES",
-				Grantee: "app_reader", Privilege: "USAGE",
-			},
-			{
-				Grantor: "app_owner", ObjectType: "FUNCTIONS",
-				Grantee: "app_reader", Privilege: "EXECUTE",
-			},
-		},
-	}
+	return &catalog.Database{FeatureObjects: defaultPrivilegeObjects(schemaext.Observed), FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed))}
 }
 
-func generatedDefaultPrivilegeTypes(privileges []schemamodel.DefaultPrivilege) []string {
-	types := make([]string, 0, len(privileges))
-	for _, privilege := range privileges {
-		types = append(types, privilege.ObjectType)
-	}
-	return types
-}
-
-func databaseDefaultPrivilegeTypes(privileges []catalog.DefaultPrivilege) []string {
-	types := make([]string, 0, len(privileges))
-	for _, privilege := range privileges {
-		types = append(types, privilege.ObjectType)
+func defaultPrivilegeTypes(objects schemaext.Objects) []string {
+	var types []string
+	for _, ref := range objects.Refs() {
+		types = append(types, must.Must(pgdefaultprivilege.IdentityOf(ref)).ObjectType)
 	}
 	return types
 }
@@ -119,15 +97,17 @@ func TestFilterScopesDefaultPrivilegesOnBothSidesTheSameWay(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			gotGenerated := schemascope.FilterGeneratedWithDefaultSchema(
+			gotGenerated, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), defaultPrivilegeSelections(),
 				generatedDefaultPrivilegeFixture(), test.schemas, test.defaultSchema)
-			gotDatabase := schemascope.FilterDatabaseWithDefaultSchema(
+			c.Assert(err, qt.IsNil)
+			gotDatabase, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), defaultPrivilegeSelections(),
 				databaseDefaultPrivilegeFixture(), test.schemas, test.defaultSchema)
+			c.Assert(err, qt.IsNil)
 
-			c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges),
-				qt.DeepEquals, test.want)
-			c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges),
-				qt.DeepEquals, test.want)
+			c.Assert(defaultPrivilegeTypes(gotGenerated.FeatureObjects),
+				qt.ContentEquals, test.want)
+			c.Assert(defaultPrivilegeTypes(gotDatabase.FeatureObjects),
+				qt.ContentEquals, test.want)
 		})
 	}
 }
@@ -139,11 +119,49 @@ func TestFilterScopesDefaultPrivilegesOnBothSidesTheSameWay(t *testing.T) {
 func TestFilterWithoutSchemasLeavesDefaultPrivilegesAlone(t *testing.T) {
 	c := qt.New(t)
 
-	gotGenerated := schemascope.FilterGenerated(generatedDefaultPrivilegeFixture(), nil)
-	gotDatabase := schemascope.FilterDatabase(databaseDefaultPrivilegeFixture(), nil)
+	gotGenerated, err := schemascope.FilterGenerated(t.Context(), defaultPrivilegeSelections(), generatedDefaultPrivilegeFixture(), nil)
+	c.Assert(err, qt.IsNil)
+	gotDatabase, err := schemascope.FilterDatabase(t.Context(), defaultPrivilegeSelections(), databaseDefaultPrivilegeFixture(), nil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges),
-		qt.DeepEquals, []string{"TABLES", "SEQUENCES", "FUNCTIONS"})
-	c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges),
-		qt.DeepEquals, []string{"TABLES", "SEQUENCES", "FUNCTIONS"})
+	c.Assert(defaultPrivilegeTypes(gotGenerated.FeatureObjects),
+		qt.ContentEquals, []string{"TABLES", "SEQUENCES", "FUNCTIONS"})
+	c.Assert(defaultPrivilegeTypes(gotDatabase.FeatureObjects),
+		qt.ContentEquals, []string{"TABLES", "SEQUENCES", "FUNCTIONS"})
+}
+
+func TestFilterKeepsUnknownDefaultPrivilegeCoverage(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForDialect("postgres")
+	class := must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Schema: "billing", ObjectType: "TABLES"}, semantics))
+	held := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "billing", ObjectType: "SEQUENCES", Grantee: "app_reader"}, semantics))
+	unknown := schemaext.SubjectCoverage{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: class, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "FOR ALL ROLES cannot be declared"}}
+	known := schemaext.SubjectCoverage{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: held, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}
+	desired, current := generatedDefaultPrivilegeFixture(), databaseDefaultPrivilegeFixture()
+	desired.FeatureCoverage = must.Must(pgdefaultprivilege.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{unknown, known}))
+	current.FeatureCoverage = must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{unknown, known}))
+	generated, err := schemascope.FilterGenerated(c.Context(), defaultPrivilegeSelections(), desired, []string{"auth"})
+	c.Assert(err, qt.IsNil)
+	database, err := schemascope.FilterDatabase(c.Context(), defaultPrivilegeSelections(), current, []string{"auth"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(generated.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{unknown})
+	c.Assert(database.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{unknown})
+	c.Assert(desired.FeatureCoverage.SubjectRecords(), qt.HasLen, 2)
+	c.Assert(current.FeatureCoverage.SubjectRecords(), qt.HasLen, 2)
+}
+
+func TestFilterRefusesInvalidOwnerStateWithoutProjection(t *testing.T) {
+	c := qt.New(t)
+	desired, current := generatedDefaultPrivilegeFixture(), databaseDefaultPrivilegeFixture()
+	object := must.Must(desired.FeatureObjects.All())[0]
+	object.Ref.Name.Source = "not an ACL identity"
+	desired.FeatureObjects = must.Must(schemaext.NewObjects(object))
+	object.Value = &pgdefaultprivilege.Observed{}
+	current.FeatureObjects = must.Must(schemaext.NewObjects(object))
+	generated, err := schemascope.FilterGenerated(c.Context(), defaultPrivilegeSelections(), desired, []string{"auth"})
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(generated, qt.IsNil)
+	database, err := schemascope.FilterDatabase(c.Context(), defaultPrivilegeSelections(), current, []string{"auth"})
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(database, qt.IsNil)
 }

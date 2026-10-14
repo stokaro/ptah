@@ -465,13 +465,7 @@ func inspectOnDev(
 				// it creates IF NOT EXISTS is a no-op beside a kept one, so the
 				// dev database's own are left out of what the directory built.
 				schema = baseline.WithoutEnvironment(schema, nil)
-				schema = baseline.WithoutStartingPoint(schema, nil, defaultSchemaOf(replayConn.Info()))
-				rendered, err = renderInspectSchema(
-					ctx,
-					schema,
-					replayConn.Info(),
-					validatedOpts,
-				)
+				rendered, err = renderInspectStartingPoint(ctx, schema, nil, replayConn.Info(), baseline, validatedOpts)
 				return err
 			},
 		)
@@ -499,8 +493,7 @@ func inspectOnDev(
 				if err != nil {
 					return err
 				}
-				schema = baseline.WithoutStartingPoint(schema, declared, defaultSchemaOf(materializedConn.Info()))
-				rendered, err = renderInspectSchema(ctx, schema, materializedConn.Info(), validatedOpts)
+				rendered, err = renderInspectStartingPoint(ctx, schema, declared, materializedConn.Info(), baseline, validatedOpts)
 				return err
 			},
 		)
@@ -733,4 +726,13 @@ func connectInspectSource(
 		defer cancel()
 	}
 	return connect(ctx, url)
+}
+
+// renderInspectStartingPoint applies owner baseline selection before export.
+func renderInspectStartingPoint(ctx context.Context, current, declared *catalog.Database, info catalog.ServerInfo, baseline devclean.Baseline, opts InspectOptions) (InspectResult, error) {
+	filtered, err := baseline.WithoutStartingPoint(ctx, current, declared, defaultSchemaOf(info), opts.Runtime.Selections())
+	if err != nil {
+		return InspectResult{}, err
+	}
+	return renderInspectSchema(ctx, filtered, info, opts)
 }

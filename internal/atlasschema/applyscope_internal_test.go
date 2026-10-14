@@ -24,9 +24,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // postgresPinned is a connection whose URL pins one schema, so its scope is a
@@ -127,12 +131,10 @@ func TestApplyReadScope(t *testing.T) {
 			info: postgresPinned,
 			base: []string{"public"},
 			desired: &schemamodel.Database{
-				DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-					Grantor:    "app_owner",
-					Schema:     "app",
-					ObjectType: "TABLES",
-					Grantee:    "app_reader",
-				}},
+				FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+					Ref:   must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, identifier.ForDialect("postgres"))),
+					Value: &pgdefaultprivilege.Desired{},
+				})),
 			},
 			want: []string{"app", "public"},
 		},
@@ -178,7 +180,9 @@ func TestApplyReadScope(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(applyReadScope(tt.info, tt.requested, tt.base, tt.desired), qt.DeepEquals, tt.want)
+			names, err := applyReadScope(tt.info, tt.requested, tt.base, tt.desired)
+			c.Assert(err, qt.IsNil)
+			c.Assert(names, qt.DeepEquals, tt.want)
 		})
 	}
 }

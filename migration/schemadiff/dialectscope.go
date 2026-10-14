@@ -60,15 +60,6 @@ func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedO
 	filtered.Triggers = keepUnscoped(current.Triggers, names["trigger"], func(v catalog.Trigger) (string, string) { return v.Schema, v.Name })
 	filtered.Roles = keepUnscoped(current.Roles, names["role"], func(v catalog.Role) (string, string) { return "", v.Name })
 	filtered.Grants = keepUnscoped(current.Grants, names["grant"], func(v catalog.Grant) (string, string) { return "", v.Role })
-	// A default privilege is named by its whole identity rather than by one of
-	// its roles, because that is what the scope report collects: a grantee alone
-	// would suppress every object sharing it, and two declarations differing
-	// only in grantor or object type would be one name.
-	filtered.DefaultPrivileges = keepUnscopedIdentities(
-		current.DefaultPrivileges,
-		names["default privilege"],
-		catalog.DefaultPrivilege.QualifiedName,
-	)
 	filtered.FeatureObjects = keepUnscopedObjects(current, omitted, target, semantics)
 	return &filtered
 }
@@ -100,32 +91,6 @@ func keepUnscoped[T any](values []T, scopedAway map[string]bool, identityOf func
 	for _, value := range values {
 		schema, name := identityOf(value)
 		if !matchesScopedAway(schema, name, scopedAway) {
-			kept = append(kept, value)
-		}
-	}
-	if len(kept) == len(values) {
-		return values
-	}
-	return slices.Clip(kept)
-}
-
-// keepUnscopedIdentities returns the values whose whole identity string is not
-// among the scoped-away names, sharing the original slice when nothing is
-// dropped.
-//
-// It is separate from [keepUnscoped] because the name it matches is not an
-// object name one side may qualify and the other may not. A default privilege
-// is collected under its four-part identity, written the same way on both
-// sides, and putting that through the two-spelling match would split it on the
-// last dot in a schema name and suppress nothing for exactly the object that
-// carries one.
-func keepUnscopedIdentities[T any](values []T, scopedAway map[string]bool, identityOf func(T) string) []T {
-	if len(scopedAway) == 0 || len(values) == 0 {
-		return values
-	}
-	kept := make([]T, 0, len(values))
-	for _, value := range values {
-		if !scopedAway[identityOf(value)] {
 			kept = append(kept, value)
 		}
 	}

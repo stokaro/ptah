@@ -88,6 +88,9 @@ ptah_schema_mysql_index_block_sizes{dialect="sqlite"} 0
 # HELP ptah_schema_mysql_table_options MySQL and MariaDB table options a table states.
 # TYPE ptah_schema_mysql_table_options gauge
 ptah_schema_mysql_table_options{dialect="sqlite"} 0
+# HELP ptah_schema_default_privileges Default privileges.
+# TYPE ptah_schema_default_privileges gauge
+ptah_schema_default_privileges{dialect="sqlite"} 0
 # HELP ptah_schema_extensions Extensions.
 # TYPE ptah_schema_extensions gauge
 ptah_schema_extensions{dialect="sqlite"} 0

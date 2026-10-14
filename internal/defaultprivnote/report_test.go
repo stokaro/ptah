@@ -5,142 +5,66 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/defaultprivnote"
 )
 
-// TestReportUndescribed_HappyPath pins the note for each shape the reader
-// records, alone and together: CockroachDB's FOR ALL ROLES in a schema and
-// without IN SCHEMA, and the owner's part of a global default on CockroachDB.
-// Each gives only the reason that applies to it. The several arrive out of
-// order, so the row also pins that the note sorts what it names, and says
-// "every schema" and "all roles" where the reader leaves a name empty.
-func TestReportUndescribed_HappyPath(t *testing.T) {
+func TestReportUndescribed_NamesIncompleteScopes(t *testing.T) {
+	semantics := identifier.ForDialect("postgres")
+	class := must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Schema: "app", ObjectType: "TABLES"}, semantics))
+	owner := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "owner", ObjectType: "FUNCTIONS", Grantee: "owner"}, semantics))
 	tests := []struct {
-		name       string
-		privileges []catalog.UndescribedDefaultPrivilege
-		want       string
+		name      string
+		knowledge schemaext.Knowledge
+		subjects  []schemaext.SubjectCoverage
+		want      string
 	}{
-		{
-			name:       "for all roles",
-			privileges: []catalog.UndescribedDefaultPrivilege{{Schema: "public", ObjectType: "TABLES"}},
-			want: "note: 1 default privilege is not described, because no schema source can declare one" +
-				" set FOR ALL ROLES; a description applied to another database" +
-				" does not carry it: TABLES in public for all roles.\n",
-		},
-		{
-			name:       "an owner's part",
-			privileges: []catalog.UndescribedDefaultPrivilege{{Grantor: "app_owner", ObjectType: "TABLES"}},
-			want: "note: 1 default privilege is not described, because CockroachDB does not show which of" +
-				" its own privileges an owner took away from a default without IN SCHEMA; a description" +
-				" applied to another database does not carry it: TABLES in every schema for app_owner.\n",
-		},
-		{
-			name: "several of every shape",
-			privileges: []catalog.UndescribedDefaultPrivilege{
-				{Schema: "public", ObjectType: "TABLES"},
-				{ObjectType: "TYPES"},
-				{Grantor: "app_owner", ObjectType: "FUNCTIONS"},
-			},
-			want: "note: 3 default privileges are not described, because no schema source can declare one" +
-				" set FOR ALL ROLES, and CockroachDB does not show which of its own privileges an owner" +
-				" took away from a default without IN SCHEMA; a description applied to another database" +
-				" does not carry them: FUNCTIONS in every schema for app_owner, TABLES in public for all roles," +
-				" TYPES in every schema for all roles.\n",
-		},
+		{name: "refused catalog", knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the server refused to read pg_default_acl"},
+			want: "note: default privileges are not described: the server refused to read pg_default_acl. A comparison leaves this scope unmanaged.\n"},
+		{name: "class and named owner", knowledge: schemaext.Knowledge{State: schemaext.Complete}, subjects: []schemaext.SubjectCoverage{
+			{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: owner, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "owner rights are incomplete"}},
+			{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: class, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "FOR ALL ROLES has no named grantor"}},
+		}, want: "note: default privileges for ALL ROLES on TABLES in schema app are not fully described: FOR ALL ROLES has no named grantor.\n" +
+			"note: default privileges for owner on FUNCTIONS globally to owner are not fully described: owner rights are incomplete.\n"},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			database := &catalog.Database{FeatureCoverage: must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, test.knowledge, test.subjects))}
 			var out bytes.Buffer
-
-			defaultprivnote.ReportUndescribed(&out, &catalog.Database{UndescribedDefaultPrivileges: test.privileges})
-
+			defaultprivnote.ReportUndescribed(&out, database)
 			c.Assert(out.String(), qt.Equals, test.want)
 		})
 	}
 }
 
-// TestReportUndescribed_NamesARefusedReadHappyPath pins the note for a read
-// that could not look at default privileges at all, which the reader records
-// as not inspected when CockroachDB v26.2 refuses pg_default_acl
-// (stokaro/ptah#3816). It stands alone, and it goes before the note naming the
-// undescribed defaults when a read carries both.
-func TestReportUndescribed_NamesARefusedReadHappyPath(t *testing.T) {
-	refused := "note: default privileges are not described, because the server refused to read" +
-		" pg_default_acl, as CockroachDB v26.2 does once a default privilege names a role whose name" +
-		" needs quoting; a comparison leaves them alone, and a description applied to another" +
-		" database does not carry them.\n"
+func TestReportUndescribed_SilentForCompleteOrMissingKnowledge(t *testing.T) {
 	tests := []struct {
-		name       string
-		privileges []catalog.UndescribedDefaultPrivilege
-		want       string
+		name     string
+		database *catalog.Database
 	}{
-		{name: "alone", want: refused},
-		{
-			name:       "beside an undescribed default",
-			privileges: []catalog.UndescribedDefaultPrivilege{{ObjectType: "FUNCTIONS"}},
-			want: refused + "note: 1 default privilege is not described, because no schema source can" +
-				" declare one set FOR ALL ROLES; a description applied to another" +
-				" database does not carry it: FUNCTIONS in every schema for all roles.\n",
-		},
+		{name: "no description"},
+		{name: "unenrolled owner", database: &catalog.Database{}},
+		{name: "complete catalog", database: &catalog.Database{FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed))}},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var out bytes.Buffer
-
-			defaultprivnote.ReportUndescribed(&out, &catalog.Database{
-				NotDescribed:                 coverage.Set{}.With(coverage.Refused(coverage.DefaultPrivilege)),
-				UndescribedDefaultPrivileges: test.privileges,
-			})
-
-			c.Assert(out.String(), qt.Equals, test.want)
-		})
-	}
-}
-
-// TestReportUndescribed_StaysSilentWithNothingLeftOut keeps the note off every
-// read that met no undescribed default, which is almost every read. A note
-// printed regardless would teach an operator to skip it.
-func TestReportUndescribed_StaysSilentWithNothingLeftOut(t *testing.T) {
-	tests := []struct {
-		name   string
-		schema *catalog.Database
-	}{
-		{name: "only described defaults", schema: &catalog.Database{
-			DefaultPrivileges: []catalog.DefaultPrivilege{{
-				Grantor: "app_owner", Schema: "public", ObjectType: "TABLES",
-				Grantee: "app_reader", Privilege: "SELECT",
-			}},
-		}},
-		{name: "no description", schema: nil},
-		{name: "another kind not inspected", schema: &catalog.Database{
-			NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Role)),
-		}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			var out bytes.Buffer
-
-			defaultprivnote.ReportUndescribed(&out, test.schema)
-
+			defaultprivnote.ReportUndescribed(&out, test.database)
 			c.Assert(out.String(), qt.Equals, "")
 		})
 	}
 }
 
-// TestReportUndescribed_AcceptsNoDiagnosticsStream is the inspect surfaces'
-// spelling of "nowhere to write": a nil writer drops the note rather than
-// failing the read that produced it.
-func TestReportUndescribed_AcceptsNoDiagnosticsStream(_ *testing.T) {
-	defaultprivnote.ReportUndescribed(nil, &catalog.Database{
-		UndescribedDefaultPrivileges: []catalog.UndescribedDefaultPrivilege{{Grantor: "app_owner", ObjectType: "TABLES"}},
-	})
+func TestReportUndescribed_AcceptsNoDiagnosticsStream(t *testing.T) {
+	c := qt.New(t)
+	known, err := pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "catalog read refused"}, nil)
+	c.Assert(err, qt.IsNil)
+	defaultprivnote.ReportUndescribed(nil, &catalog.Database{FeatureCoverage: known})
 }

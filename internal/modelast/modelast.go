@@ -23,7 +23,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
-	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/systemschema"
@@ -73,18 +72,6 @@ func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string
 // cannot disagree about the same file (stokaro/ptah#929).
 func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
 	return platform.IsPostgresFamily(targetPlatform)
-}
-
-// namesSchemasForDefaultPrivileges reports whether the render creates the
-// schema a default privilege names: on PostgreSQL and YugabyteDB, whose
-// planners create it too.
-func namesSchemasForDefaultPrivileges(targetPlatform string) bool {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.Postgres, platform.YugabyteDB:
-		return true
-	default:
-		return false
-	}
 }
 
 // typeRawSQLSurvives reports whether the column type is still the one the
@@ -1610,69 +1597,6 @@ func withGrantPath(node *ast.GrantPrivilegeNode, name grantName) *ast.GrantPrivi
 	return node
 }
 
-// FromDefaultPrivilege converts a schemamodel.DefaultPrivilege to an
-// ast.DefaultPrivilegeNode.
-//
-// The declaration is canonicalized first, for the reason [FromGrant]
-// canonicalizes a grant: without it a declaration written `select` on `tables`
-// renders in that spelling while the reader reports SELECT on TABLES, and the
-// comparison reports a change on every run.
-//
-// Grantability is copied per privilege rather than folded into one flag beside
-// the list. The catalog records it that way -- one identity granted SELECT
-// plainly and INSERT WITH GRANT OPTION reads back as two rows with different
-// is_grantable -- and the PostgreSQL renderer splits the list into one statement
-// per grantability. Folding it here would decide for the whole declaration what
-// each privilege carries, and the read would disagree on the next run.
-func FromDefaultPrivilege(defaultPrivilege schemamodel.DefaultPrivilege) *ast.DefaultPrivilegeNode {
-	defaultPrivilege.Canonicalize()
-	privileges := make([]ast.DefaultPrivilege, 0, len(defaultPrivilege.Privileges))
-	for _, granted := range defaultPrivilege.Privileges {
-		privileges = append(privileges, ast.DefaultPrivilege{
-			Privilege:  granted.Privilege,
-			WithOption: granted.WithOption,
-		})
-	}
-	return ast.NewDefaultPrivilege(
-		defaultPrivilege.Grantor,
-		defaultPrivilege.Schema,
-		defaultPrivilege.ObjectType,
-		defaultPrivilege.Grantee,
-		privileges,
-	).SetComment(defaultPrivilege.Comment)
-}
-
-// FromGlobalDefaultPrivilegeRevoke converts the Revoked of a global
-// schemamodel.DefaultPrivilege to an ast.RevokeDefaultPrivilegeNode, and
-// returns nil for a schema-scoped declaration or one that revokes nothing. The
-// declaration is canonicalized first, for the reason [FromDefaultPrivilege]
-// gives.
-//
-// A revoke from the owner that names every privilege of the object class is
-// written as ALL. The SQL schema reader spells REVOKE ALL as that list, and on
-// CockroachDB the owner's ALL covers privileges the list does not name, so the
-// list would leave the owner holding them.
-func FromGlobalDefaultPrivilegeRevoke(defaultPrivilege schemamodel.DefaultPrivilege) *ast.RevokeDefaultPrivilegeNode {
-	defaultPrivilege.Canonicalize()
-	if defaultPrivilege.Schema != "" || len(defaultPrivilege.Revoked) == 0 {
-		return nil
-	}
-	revoked := slices.Clone(defaultPrivilege.Revoked)
-	if defaultPrivilege.Grantee == defaultPrivilege.Grantor &&
-		pgprivilege.NamesAll(defaultPrivilege.ObjectType, revoked) {
-		revoked = []string{"ALL"}
-	}
-	revoke := ast.NewRevokeDefaultPrivilege(
-		defaultPrivilege.Grantor,
-		"",
-		defaultPrivilege.ObjectType,
-		defaultPrivilege.Grantee,
-		revoked,
-	)
-	revoke.SetComment(defaultPrivilege.Comment)
-	return revoke
-}
-
 // WalkDatabase converts a complete schemamodel.Database to AST nodes and visits
 // them in executable order without materializing a second whole-schema
 // representation.
@@ -2362,42 +2286,8 @@ func appendPostTableObjectStatements(
 			return err
 		}
 	}
-	// Beside the grants, and unconditional. A default privilege names a schema
-	// and two roles, and both kinds are emitted earlier in this walk, so there
-	// is nothing here to wait for. The traversal is hand-written and no
-	// reflection reads it, so leaving the call out gives a schema that parses,
-	// compares and renders at exit 0 with the declaration nowhere in the output.
-	if err := visitDefaultPrivileges(visit, database.DefaultPrivileges); err != nil {
-		return err
-	}
 	for _, trigger := range database.Triggers {
 		if err := visit(FromTrigger(trigger)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// visitDefaultPrivileges visits the statements a new database needs for each
-// default privilege: its grant, and for the global default its revoke.
-//
-// Revoked privileges render only for the global default. A new database
-// starts from the built-in default, so a global revoke of PUBLIC's EXECUTE on
-// functions is a statement it needs. A schema-scoped default is only ever
-// added to the global ones, so on a database this schema creates there is
-// nothing for its REVOKE to take back; a comparison plans one where the
-// database holds the privilege.
-func visitDefaultPrivileges(visit func(ast.Node) error, defaultPrivileges []schemamodel.DefaultPrivilege) error {
-	for _, defaultPrivilege := range defaultPrivileges {
-		if revoke := FromGlobalDefaultPrivilegeRevoke(defaultPrivilege); revoke != nil {
-			if err := visit(revoke); err != nil {
-				return err
-			}
-		}
-		if len(defaultPrivilege.Privileges) == 0 {
-			continue
-		}
-		if err := visit(FromDefaultPrivilege(defaultPrivilege)); err != nil {
 			return err
 		}
 	}
@@ -2548,11 +2438,6 @@ func schemasForRender(database schemamodel.Database, targetPlatform string) ([]s
 	named, err := placedSchemas(database, targetPlatform)
 	if err != nil {
 		return nil, err
-	}
-	if namesSchemasForDefaultPrivileges(targetPlatform) {
-		for _, privilege := range database.DefaultPrivileges {
-			named = append(named, privilege.Schema)
-		}
 	}
 
 	seen := make(map[string]struct{}, len(schemas))

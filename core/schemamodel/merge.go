@@ -23,7 +23,6 @@ func NewDatabase() *Database {
 		RLSEnabledTables:  make([]RLSEnabledTable, 0),
 		Roles:             make([]Role, 0),
 		Grants:            make([]Grant, 0),
-		DefaultPrivileges: make([]DefaultPrivilege, 0),
 		RevokedGrants:     make([]Grant, 0),
 		ManagedData:       make([]ManagedData, 0),
 		EmbeddedSources: EmbeddedSources{
@@ -83,7 +82,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
-	dst.DefaultPrivileges = append(dst.DefaultPrivileges, src.DefaultPrivileges...)
 	dst.RevokedGrants = append(dst.RevokedGrants, src.RevokedGrants...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	return nil

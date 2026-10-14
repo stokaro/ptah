@@ -7,12 +7,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // routingDialects is every canonical engine `--dialect` accepts. The grid below
@@ -76,11 +79,7 @@ func routedObjectSchema() *schemamodel.Database {
 		// in the skip comment. The grantor gets a name of its own for the reason
 		// the grant names its own role -- spelled role_probe it would let the
 		// role row be satisfied by this statement's line.
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-			StructName: "DP", Grantor: "defaultpriv_owner", Schema: "defaultpriv_schema",
-			ObjectType: "TABLES", Grantee: "defaultpriv_probe",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(defaultPrivilegeDeclaration("defaultpriv_owner", "defaultpriv_schema", "TABLES", "defaultpriv_probe", []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}, nil))),
 	}
 }
 

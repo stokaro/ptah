@@ -185,7 +185,10 @@ type EncodedBlock struct {
 	// SchemaRole says what Schema is: the namespace the block's object is in
 	// by default.
 	SchemaRole SchemaRole
-	// Name is the block's label. A block [WithinTable] has none.
+	// Unlabeled writes a top-level block without a label. Name must be empty.
+	// Its registered reader must use [Unlabeled] naming.
+	Unlabeled bool
+	// Name is the block's label. A block [WithinTable] or Unlabeled has none.
 	Name string
 	// Scope is the name of the object the block's object is named inside,
 	// such as the table of a policy; the writer orders blocks by it before
@@ -561,12 +564,12 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 	case strings.TrimSpace(block.Type) == "":
 		return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
 	case block.Placement == WithinTable:
-		if block.Table == nil || block.Name != "" {
+		if block.Table == nil || block.Name != "" || block.Unlabeled {
 			return fmt.Errorf("%w: HCL encoder of %s wrote block %q in a table without the table or with a name",
 				schemaext.ErrInvalidValue, extension.Owner, block.Type)
 		}
 	case block.Placement == BeforeTypes || block.Placement == UserTypes || block.Placement == AfterTables || block.Placement == AfterTriggers:
-		if block.Name == "" {
+		if block.Name == "" && !block.Unlabeled {
 			return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
 		}
 		if block.Table != nil {
@@ -576,8 +579,28 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 		return fmt.Errorf("%w: HCL encoder of %s placed block %q at unknown placement %q",
 			schemaext.ErrInvalidValue, extension.Owner, block.Type, block.Placement)
 	}
+	if err := checkUnlabeled(extension, block); err != nil {
+		return err
+	}
 	if block.SchemaRole != SchemaNamespace && block.SchemaRole != SchemaAddress && block.SchemaRole != SchemaPlacement {
 		return fmt.Errorf("%w: HCL encoder of %s wrote block %q with schema role %q", schemaext.ErrInvalidValue, extension.Owner, block.Type, block.SchemaRole)
+	}
+	return nil
+}
+
+// checkUnlabeled requires the writer and its reader to agree on labels.
+func checkUnlabeled(extension Extension, block EncodedBlock) error {
+	if block.Table != nil {
+		return nil
+	}
+	var unlabeled bool
+	for _, shape := range extension.Blocks {
+		if shape.Site == TopLevel && shape.Type == block.Type {
+			unlabeled = shape.Naming == Unlabeled
+		}
+	}
+	if block.Unlabeled != unlabeled || (block.Unlabeled && block.Name != "") {
+		return fmt.Errorf("%w: HCL encoder of %s wrote block %q with labels that disagree with its reader", schemaext.ErrInvalidValue, extension.Owner, block.Type)
 	}
 	return nil
 }
@@ -589,12 +612,12 @@ func checkPlacement(extension Extension, block EncodedBlock) error {
 // type as SQL.
 func writable(value Value) bool {
 	switch value.Kind {
-	case String, Bool, SQL:
+	case String, TextList, Bool, SQL:
 		return true
 	case Number:
 		return value.Text != "" && strings.TrimFunc(value.Text, func(r rune) bool { return r >= '0' && r <= '9' }) == ""
 	case Ref:
-		return value.Reference != nil && value.Reference.Name != "" && (value.Reference.Kind == "table" || (value.Reference.Kind == "column" && value.Reference.Schema == ""))
+		return value.Reference != nil && value.Reference.Name != "" && (value.Reference.Kind == "table" || ((value.Reference.Kind == "column" || value.Reference.Kind == "role") && value.Reference.Schema == ""))
 	case Refs:
 		return !slices.ContainsFunc(value.References, func(element Reference) bool {
 			return element.Name == "" || (element.Kind != "" && element.Kind != "role" && element.Kind != "column") || (element.Kind == "column" && element.Schema != "")

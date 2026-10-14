@@ -147,6 +147,14 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
+- `ptah.run/feature/pgdefaultprivilege`
+- `ptah.run/feature/pgdefaultprivilege/privilegecompare`
+- `ptah.run/feature/pgdefaultprivilege/privilegeconvert`
+- `ptah.run/feature/pgdefaultprivilege/privilegeplan`
+- `ptah.run/feature/pgdefaultprivilege/privilegerender`
+- `ptah.run/feature/pgdefaultprivilege/privilegereport`
+- `ptah.run/feature/pgdefaultprivilege/privilegereverse`
+- `ptah.run/feature/pgdefaultprivilege/privilegeselect`
 - `ptah.run/feature/pgextension`
 - `ptah.run/feature/pgextension/extensioncompare`
 - `ptah.run/feature/pgextension/extensionconvert`
@@ -1223,6 +1231,27 @@ Models may share a type when its naming, relation behavior, and fields agree.
 A selector applies to every matching model; field clearing stays with each
 model's owner. Returned selections and field lists are independent copies.
 Conflicting definitions and duplicate model registrations are refused.
+
+`SchemaWide` describes state applying throughout an explicit schema, or globally
+when the schema is empty. It has no selector type, field selectors, or relation
+marker. Its `Extension.Scopes` service receives one `ScopeRequest` per owner
+and comparison side. `DescribeScopes` reports each object and coverage subject
+with its schema and decoded named roles. The model kind routes coverage even
+when its subject has a different identity kind. Complete replies name every
+requested subject exactly once; malformed replies and cancellation return no
+partial result. Requests and returned role lists are independent snapshots.
+A retained object retains its declared schema and roles. Unknown coverage without
+a value remains diagnostic and retains no declarations.
+
+`Extension.Baseline` subtracts a dev database's starting-point state in one
+contextual batch. Owners can subtract individual rights within an ACL. Other
+objects are selected as a whole by identity. `Extension.Additive` selects the
+additions inside changes of its registered `ChangeKinds`; schema tests use this
+to retain grants while leaving revocations out. The registering provider owns
+each change codec. Without that service, `StateRemoval` decides whether the
+whole change is omitted. Both services return a decision for every input in
+order. Missing decisions, changed identities, invalid payloads, and cancellation
+return errors and no partial result. Inputs and outputs are independent snapshots.
 
 `engine.SchemaRuntime` includes `selectext.Runtime`. The zero set is refused
 with `selectext.ErrUnselected`, and `selectext.None` names the common objects

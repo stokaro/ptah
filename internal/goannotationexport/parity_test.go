@@ -3,7 +3,6 @@ package goannotationexport_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,8 +12,10 @@ import (
 	"ptah.run/core/manageddata"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -106,16 +107,16 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(after.Functions[0].Returns, qt.Equals, before.Functions[0].Returns)
 	c.Assert(after.Grants, qt.HasLen, 3)
 	c.Assert(grantsByTarget(after.Grants)["||app.order_seq"].OnSequence, qt.Equals, "app.order_seq")
-	c.Assert(after.DefaultPrivileges, qt.DeepEquals, withoutDefaultPrivilegeProvenance(before.DefaultPrivileges))
+	c.Assert(defaultPrivilegeObjects(after), qt.DeepEquals, defaultPrivilegeObjects(before))
 	// Grantability is per privilege, so this is the part a single WITH GRANT
 	// OPTION flag beside the list would lose: the annotation names INSERT alone
 	// in `grantable`, and SELECT has to come back plain.
 	c.Assert(
-		defaultPrivilegesByTarget(after.DefaultPrivileges)["app_owner|app|TABLES|app_user"].Privileges,
+		defaultPrivilegeValue(c, after, pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_user"}).Privileges,
 		qt.DeepEquals,
-		[]schemamodel.PrivilegeGrant{
-			{Privilege: "SELECT"},
+		[]pgdefaultprivilege.Grant{
 			{Privilege: "INSERT", WithOption: true},
+			{Privilege: "SELECT"},
 		},
 	)
 
@@ -226,30 +227,21 @@ func withoutRangeProvenance(values []schemamodel.Range) []schemamodel.Range {
 	return result
 }
 
-func withoutDefaultPrivilegeProvenance(values []schemamodel.DefaultPrivilege) []schemamodel.DefaultPrivilege {
-	result := append([]schemamodel.DefaultPrivilege(nil), values...)
-	for i := range result {
-		result[i].StructName = ""
-	}
-	return result
+func defaultPrivilegeObjects(database *schemamodel.Database) []schemaext.Object {
+	return must.Must(database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgdefaultprivilege.DefaultPrivilegeKind)
+	}).All())
 }
 
-// defaultPrivilegesByTarget keys each declaration by its identity: grantor,
-// schema, object type, grantee. A shorter key would let two declarations that
-// differ only in object type overwrite each other, and the surviving one would
-// be asserted on behalf of both.
-func defaultPrivilegesByTarget(
-	values []schemamodel.DefaultPrivilege,
-) map[string]schemamodel.DefaultPrivilege {
-	result := make(map[string]schemamodel.DefaultPrivilege, len(values))
-	for _, value := range values {
-		key := strings.Join(
-			[]string{value.Grantor, value.Schema, value.ObjectType, value.Grantee},
-			"|",
-		)
-		result[key] = value
-	}
-	return result
+func defaultPrivilegeValue(c *qt.C, database *schemamodel.Database, identity pgdefaultprivilege.Identity) *pgdefaultprivilege.Desired {
+	c.Helper()
+	ref := must.Must(pgdefaultprivilege.Ref(identity, identifier.ForDialect("postgres")))
+	object, found, err := database.FeatureObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	value, ok := object.Value.(*pgdefaultprivilege.Desired)
+	c.Assert(ok, qt.IsTrue)
+	return value
 }
 
 func grantsByTarget(values []schemamodel.Grant) map[string]schemamodel.Grant {

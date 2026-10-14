@@ -41,8 +41,9 @@ func ReplacesOwner(value ChangeValue) bool {
 // StateRemoval is implemented by a change value that can take state away from
 // the database: drop an object, or turn off a setting a declaration had on.
 // A caller that applies a desired state additively, leaving alone what the
-// database holds beyond it, leaves out a change reporting true. The answer
-// belongs to the change itself, so it survives serialization.
+// database holds beyond it, leaves out a change reporting true unless the
+// owner's additive projection retains its additions. The answer belongs to
+// the change itself, so it survives serialization.
 type StateRemoval interface {
 	ChangeValue
 	// RemovesState reports whether applying the change takes state away.
