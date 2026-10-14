@@ -16,12 +16,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/internal/planner/dialects/clickhouse"
-	"ptah.run/internal/planner/dialects/mssql"
-	"ptah.run/internal/planner/dialects/mysql"
-	"ptah.run/internal/planner/dialects/oracle"
-	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/internal/planner/dialects/sqlite"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -32,11 +26,6 @@ import (
 // It names a defect in the planner, not in the diff it was given, which is
 // why it is not [ptaherr.ErrInvalidSchemaDiff].
 var ErrInvalidPlan = errors.New("invalid plan")
-
-var builtInPlannerRegistration struct {
-	once sync.Once
-	err  error
-}
 
 var plannerRegistry struct {
 	mu        sync.RWMutex
@@ -177,28 +166,27 @@ func (o Options) CapabilitiesFor(dialect string) capability.Capabilities {
 // Factory creates a planner for a dialect from construction options.
 type Factory func(Options) Planner
 
-// Register registers a planner factory for a dialect. Third-party dialects can
-// call this from init and then use the standard planner helpers.
+// Register registers a planner factory for a dialect. A provider that brings a
+// dialect registers its planner here, and the standard planner helpers then
+// plan it. The built-in runtime registers the planner of every bundled dialect
+// this way when it is assembled (engine/builtin.New), so this package names no
+// dialect of its own.
 //
 // The dialect name is folded through platform.NormalizeDialect; a name that
 // package does not know is lowercased and trimmed instead, so GetPlanner
 // lookups resolve under the same spelling rules. An empty dialect, a nil
-// factory, and a dialect that is already registered (the built-in planners
-// included) each return an error rather than overwrite. Registration is safe
-// for concurrent use, process-global, and permanent: there is no unregister.
+// factory, and a dialect that is already registered each return an error
+// rather than overwrite, so a bundled dialect registered before the built-in
+// runtime is assembled makes that assembly fail. Registration is safe for
+// concurrent use, process-global, and permanent: there is no unregister.
 func Register(dialect string, factory Factory) error {
-	if err := ensureBuiltInPlannersRegistered(); err != nil {
-		return err
-	}
 	return registerPlannerFactory(dialect, factory)
 }
 
-// RegisteredDialects returns the registered planner dialect names, or the
-// error that kept the built-in planners from registering.
+// RegisteredDialects returns the registered planner dialect names, sorted. The
+// error result is always nil; it is kept so a registry that can fail does not
+// change the signature.
 func RegisteredDialects() ([]string, error) {
-	if err := ensureBuiltInPlannersRegistered(); err != nil {
-		return nil, err
-	}
 	plannerRegistry.mu.RLock()
 	defer plannerRegistry.mu.RUnlock()
 
@@ -219,16 +207,14 @@ func RegisteredDialects() ([]string, error) {
 //
 // # Supported Dialects
 //
-// Every dialect this package registers a built-in planner for is accepted:
-// postgres, cockroachdb, yugabytedb, spanner, mysql, mariadb, sqlserver,
-// oracle, clickhouse, and sqlite. See the package documentation for what each
-// planner does, and RegisteredDialects for the set at runtime, which a
-// third-party Register call can extend.
-//
-// ydb is the YDB owner's planner, which this package does not link. The
-// built-in runtime registers it when it assembles the YDB owner, so ydb is
-// present only once a built-in runtime (engine/builtin.New) exists in the
-// process; before that, a lookup fails as for any unregistered dialect.
+// Every registered dialect is accepted. This package links no dialect's
+// planner: the built-in runtime registers the planner of every bundled dialect
+// (postgres, cockroachdb, yugabytedb, spanner, mysql, mariadb, sqlserver,
+// oracle, clickhouse, sqlite and ydb) when it is assembled, so a bundled
+// dialect is present only once a built-in runtime (engine/builtin.New) exists
+// in the process. Before that, a lookup fails as for any unregistered dialect.
+// See the package documentation for what each planner does, and
+// RegisteredDialects for the set at runtime, which a Register call can extend.
 //
 // # Parameters
 //
@@ -283,79 +269,7 @@ func GetPlanner(dialect string) (Planner, error) {
 // server-version preset as readers and renderers; offline callers can leave
 // it nil to fall back to the dialect's default preset.
 func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
-	if err := ensureBuiltInPlannersRegistered(); err != nil {
-		return nil, err
-	}
 	return getRegisteredPlanner(dialect, opts)
-}
-
-func ensureBuiltInPlannersRegistered() error {
-	builtInPlannerRegistration.once.Do(func() {
-		builtInPlannerRegistration.err = registerBuiltInPlanners()
-	})
-	return builtInPlannerRegistration.err
-}
-
-func registerBuiltInPlanners() error {
-	for _, dialect := range []string{
-		platform.Postgres,
-		platform.CockroachDB,
-		platform.YugabyteDB,
-		platform.Spanner,
-	} {
-		if err := registerPostgresFamilyPlanner(dialect); err != nil {
-			return err
-		}
-	}
-
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		if err := registerMySQLFamilyPlanner(dialect); err != nil {
-			return err
-		}
-	}
-
-	if err := registerPlannerFactory(platform.SQLServer, func(opts Options) Planner {
-		return mssql.NewWithCapabilities(opts.CapabilitiesFor(platform.SQLServer))
-	}); err != nil {
-		return err
-	}
-
-	if err := registerPlannerFactory(platform.Oracle, func(opts Options) Planner {
-		return oracle.NewWithCapabilities(opts.CapabilitiesFor(platform.Oracle))
-	}); err != nil {
-		return err
-	}
-
-	if err := registerPlannerFactory(platform.ClickHouse, func(opts Options) Planner {
-		return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(platform.ClickHouse))
-	}); err != nil {
-		return err
-	}
-	return registerPlannerFactory(platform.SQLite, func(opts Options) Planner {
-		return sqlite.NewWithCapabilities(opts.CapabilitiesFor(platform.SQLite))
-	})
-}
-
-func registerPostgresFamilyPlanner(dialect string) error {
-	return registerPlannerFactory(dialect, func(opts Options) Planner {
-		plan := postgres.NewForDialect(dialect, opts.CapabilitiesFor(dialect)).
-			WithConcurrentIndexRefs(opts.ConcurrentIndexRefs...).
-			WithConcurrentIndexDropRefs(opts.ConcurrentIndexDropRefs...).
-			WithSkipChangeKinds(opts.SkipChangeKinds...)
-		if opts.ConcurrentIndexes {
-			plan = plan.WithConcurrentIndexes()
-		}
-		if opts.ConcurrentIndexDrops {
-			plan = plan.WithConcurrentIndexDrops()
-		}
-		return plan
-	})
-}
-
-func registerMySQLFamilyPlanner(dialect string) error {
-	return registerPlannerFactory(dialect, func(opts Options) Planner {
-		return mysql.NewForDialect(dialect, opts.CapabilitiesFor(dialect))
-	})
 }
 
 func registerPlannerFactory(dialect string, factory Factory) error {

@@ -113,8 +113,9 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // Two gates apply, and they are the ones the generator's tests already proved
 // it needs:
 //
-//   - a target outside the PostgreSQL family, or one without
-//     [capability.CreateIndexConcurrently], keeps the plain build;
+//   - a target whose grammar has no concurrent build, as its descriptor
+//     states, or one without [capability.CreateIndexConcurrently], keeps the
+//     plain build;
 //   - a partitioned parent is EXCLUDED rather than refused, because PostgreSQL
 //     supports no concurrent form for relkind 'p' and refusing would leave a
 //     project with a partitioned table unable to plan an index change at all.
@@ -132,7 +133,7 @@ func DeclaredRefs(
 	dbSchema *catalog.Database,
 	info catalog.ServerInfo,
 ) []difftypes.IndexRef {
-	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+	if described, _ := platform.Lookup(info.Dialect); !described.ConcurrentIndexes || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
 	declared := declaredIdentities(desired, identifier.ForDialect(info.Dialect))

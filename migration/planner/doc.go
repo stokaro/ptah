@@ -55,8 +55,9 @@
 //
 // # Supported Dialects
 //
-// The package registers a built-in planner for each of these dialects. Use the
-// platform package's constants rather than spelling the names out. Several
+// The built-in runtime (engine/builtin.New) registers a planner for each of
+// these dialects; this package links none of them. Use the platform package's
+// constants rather than spelling the names out. Several
 // dialects share one implementation configured with their own capability
 // preset, which is why the count of dialects exceeds the count of planners:
 //

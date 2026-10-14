@@ -1,7 +1,7 @@
-// Package plannerorder_test pins an order dependence on purpose: the YDB
-// migration planner is in migration/planner's registry only once a built-in
-// runtime exists in the process. The package holds this one test, so nothing
-// assembles a runtime before it runs.
+// Package plannerorder_test pins an order dependence on purpose: the migration
+// planner of a bundled dialect is in migration/planner's registry only once a
+// built-in runtime exists in the process. The package holds this one test, so
+// nothing assembles a runtime before it runs.
 package plannerorder_test
 
 import (
@@ -9,30 +9,39 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtindialects"
 	"ptah.run/migration/planner"
 )
 
-// TestGetPlanner_FindsYDBOnlyOnceABuiltInRuntimeExists refuses ydb as an
-// unregistered dialect before builtin.New runs, and finds the YDB planner
-// after it. migration/planner links no owner, so the built-in runtime
-// registers the planner when it assembles the YDB owner. A runtime-provided
-// planner removes the dependence (stokaro/ptah#4204).
-func TestGetPlanner_FindsYDBOnlyOnceABuiltInRuntimeExists(t *testing.T) {
+// TestGetPlanner_FindsABundledDialectOnlyOnceABuiltInRuntimeExists refuses
+// every bundled dialect as unregistered before builtin.New runs, and finds
+// each one's planner after it. migration/planner links no dialect, so the
+// built-in runtime registers the planners when it is assembled. A
+// runtime-provided planner removes the dependence (stokaro/ptah#4204).
+func TestGetPlanner_FindsABundledDialectOnlyOnceABuiltInRuntimeExists(t *testing.T) {
 	c := qt.New(t)
+	dialects := builtindialects.Descriptors()
 
-	before, err := planner.GetPlanner(platform.YDB)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
-	c.Assert(before, qt.IsNil)
+	registered, err := planner.RegisteredDialects()
+	c.Assert(err, qt.IsNil)
+	c.Assert(registered, qt.HasLen, 0)
+	for _, dialect := range dialects {
+		before, err := planner.GetPlanner(dialect.Name)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect, qt.Commentf("%s", dialect.Name))
+		c.Assert(before, qt.IsNil)
+	}
 
 	_, err = builtin.New()
 	c.Assert(err, qt.IsNil)
 
-	after, err := planner.GetPlanner(platform.YDB)
-
+	registered, err = planner.RegisteredDialects()
 	c.Assert(err, qt.IsNil)
-	c.Assert(after, qt.IsNotNil)
+	c.Assert(registered, qt.HasLen, len(dialects))
+	for _, dialect := range dialects {
+		after, err := planner.GetPlanner(dialect.Name)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", dialect.Name))
+		c.Assert(after, qt.IsNotNil)
+	}
 }

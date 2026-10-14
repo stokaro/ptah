@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -29,6 +30,7 @@ import (
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
+	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -208,8 +210,19 @@ func (w widget) render(target string, node ast.Node) (string, error) {
 	}
 }
 
+// registerPlanner registers the shipped PostgreSQL planner for the target,
+// once per test binary. migration/planner links no dialect's planner, and the
+// built-in runtime that registers the bundled ones is what this test leaves
+// out, so the synthetic provider brings the planner for its target itself.
+var registerPlanner = sync.OnceValue(func() error {
+	return planner.Register(target, func(opts planner.Options) planner.Planner {
+		return postgres.NewForDialect(target, opts.CapabilitiesFor(target))
+	})
+})
+
 func syntheticRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
+	c.Assert(registerPlanner(), qt.IsNil)
 	extensions, err := renderer.NewExtensions(renderer.TypedHandler(&setLevel{}, ast.StatementExtension,
 		func(_ renderer.ExtensionContext, operation *setLevel) error {
 			if operation.Level == "" {

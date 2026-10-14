@@ -40,7 +40,6 @@ import (
 	mysqlrules "ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgdefaultprivilegeprovider"
-	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbcomparison"
 	"ptah.run/internal/ydbextensions"
@@ -61,12 +60,13 @@ var bundled = sync.OnceValues(New)
 // for each batch, so the runtime can render concurrently without sharing output
 // buffers.
 //
-// It installs one process-global handler, once per process: the YDB owner's
-// migration planner, in migration/planner's registry, which links no owner.
-// Until New runs, planner.GetPlanner refuses ydb as an unregistered dialect.
+// It installs process-global handlers, once per process: the migration
+// planner of every bundled dialect, in migration/planner's registry, which
+// links no dialect. Until New runs, planner.GetPlanner refuses a bundled
+// dialect as unregistered.
 func New() (*engine.Runtime, error) {
-	if err := ydbplanner.RegisterPlanner(); err != nil {
-		return nil, fmt.Errorf("register the YDB planner: %w", err)
+	if err := registerPlanners(); err != nil {
+		return nil, fmt.Errorf("register the bundled migration planners: %w", err)
 	}
 	// The built-in descriptors, not the process registry: a dialect another
 	// program registered has no bundled provider.

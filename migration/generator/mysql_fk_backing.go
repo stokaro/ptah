@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -53,9 +54,9 @@ func addMySQLFamilyForeignKeyBackingIndexRemovals(
 	dialect string,
 	forwardNodes []ast.Node,
 ) error {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-	default:
+	// The engines whose server builds and names an index for a foreign key
+	// are the ones the SQL reader and the comparison model that way.
+	if !mysqlname.NamesForeignKeys(dialect) {
 		return nil
 	}
 

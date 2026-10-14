@@ -59,5 +59,8 @@ func mariaDB() descriptor.Dialect {
 			Upsert:           descriptor.UpsertOnDuplicateKey,
 		},
 		Scripts: descriptor.Scripts{ClientDelimiters: true},
+
+		// The grammars the planner asks for non-blocking DDL in.
+		OnlineAlter: descriptor.OnlineAlterAlgorithmLock,
 	}
 }

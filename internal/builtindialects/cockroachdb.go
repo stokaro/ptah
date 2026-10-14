@@ -57,5 +57,9 @@ func cockroachDB() descriptor.Dialect {
 			Upsert: descriptor.UpsertOnConflict,
 		},
 		Scripts: descriptor.Scripts{ClientDelimiters: true},
+
+		// The grammars the planner asks for non-blocking DDL in.
+		ConcurrentIndexes: true,
+		OnlineAlter:       descriptor.OnlineAlterNotValid,
 	}
 }
