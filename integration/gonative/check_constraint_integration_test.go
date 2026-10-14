@@ -99,7 +99,8 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	// off — Postgres rewrites the stored CHECK clause (parens, type casts,
 	// `IN (...)` → `= ANY (ARRAY[...])`) and a naive text compare would
 	// regen a migration on every run.
-	diff := must.Must(schemadiff.Compare(t.Context(), target, filteredSchema, must.Must(builtin.New())))
+	diff, err := schemadiff.CompareWithDialect(t.Context(), target, filteredSchema, "postgres", must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse,
 		qt.Commentf("round-trip diff must be clean; got added=%v removed=%v",
 			diff.ConstraintsAdded, diff.ConstraintsRemoved))
@@ -153,7 +154,8 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	filteredSchema := filterCheckConstraintSchema(dbSchema, "ptah_test_check_drop")
 
-	diff := must.Must(schemadiff.Compare(t.Context(), withoutCheck, filteredSchema, must.Must(builtin.New())))
+	diff, err := schemadiff.CompareWithDialect(t.Context(), withoutCheck, filteredSchema, "postgres", must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 	c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, "ptah_test_check_drop_score_check")
 
@@ -186,7 +188,8 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 		c.Errorf("CHECK constraint should have been dropped, still found: %s", cs.Name)
 	}
 
-	idempDiff := must.Must(schemadiff.Compare(t.Context(), withoutCheck, filteredAfterSchema, must.Must(builtin.New())))
+	idempDiff, err := schemadiff.CompareWithDialect(t.Context(), withoutCheck, filteredAfterSchema, "postgres", must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 	c.Assert(idempDiff.HasChanges(), qt.IsFalse,
 		qt.Commentf("post-drop diff must be clean"))
 }
