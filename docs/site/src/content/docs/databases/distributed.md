@@ -24,6 +24,11 @@ matching preset automatically.
 - **CockroachDB**: the preset excludes concurrent index creation and drops,
   `XML` columns, and advisory locks. Live CockroachDB v26.2.5 accepts role
   management, row-level security, standalone sequences, and `SERIAL` columns.
+  A CockroachDB role has no `SUPERUSER` and no `INHERIT` option, and
+  CockroachDB refuses both words, so `CREATE ROLE` leaves them out. A role
+  declared as a superuser, or with `inherit` set to false, is refused by name
+  before any statement runs: a CockroachDB role is a superuser only as a
+  member of `admin`, and every role inherits.
   It is also the one target that ADDS to PostgreSQL's surface rather than
   subtracting from it: see [CockroachDB row-level TTL](#cockroachdb-row-level-ttl).
   A column declared `INT` or `INTEGER` without a width is compared at the

@@ -2011,7 +2011,7 @@ func validateDeclaredRoleNames(
 	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
 		return err
 	}
-	return nil
+	return postgres.ValidateDeclaredRoles(dialect, database.Roles)
 }
 
 // validateDeclaredAccess refuses the roles, memberships and grants the target
