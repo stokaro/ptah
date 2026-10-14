@@ -131,6 +131,10 @@ var engineObjects = []struct {
 		count: "SELECT count(*) FROM user_synonyms WHERE synonym_name = 'KEEP_SYN'", reason: `found synonym "KEEP_SYN" in schema "PTAH_DC_\d+"`},
 	{name: "Oracle type", server: fromDialectDatabase(oracleDevDatabase), ddl: []string{"CREATE TYPE keep_t AS OBJECT (x NUMBER)"},
 		count: "SELECT count(*) FROM user_types WHERE type_name = 'KEEP_T'", reason: `found type "KEEP_T" in schema "PTAH_DC_\d+"`},
+	// The reset drops a domain, after the tables and types that may use it,
+	// so a dev database holding one is not clean.
+	{name: "Oracle domain", server: fromDialectDatabase(oracleDevDatabase), ddl: []string{"CREATE DOMAIN keep_d AS NUMBER"},
+		count: "SELECT count(*) FROM user_domains WHERE name = 'KEEP_D'", reason: `found domain "KEEP_D" in schema "PTAH_DC_\d+"`},
 }
 
 // TestDevDatabaseClaimRefusesEachObjectTheResetDropsLive claims a dev

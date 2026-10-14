@@ -219,7 +219,7 @@ func oracleDevDatabase(c *qt.C) devDialectDatabase {
 	c.Cleanup(func() { dropOracleUser(context.Background(), c, admin, account) })
 	// The objects the reset drops besides tables and views, so a test can
 	// leave one of each.
-	execOracle(c.Context(), c, admin, "GRANT CREATE SEQUENCE, CREATE SYNONYM, CREATE TYPE TO "+account)
+	execOracle(c.Context(), c, admin, "GRANT CREATE SEQUENCE, CREATE SYNONYM, CREATE TYPE, CREATE DOMAIN TO "+account)
 	devURL := oracleURLAs(c, adminURL, account)
 	return devDialectDatabase{
 		url:      devURL,
