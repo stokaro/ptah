@@ -54,24 +54,28 @@ func TestReadComposites_CarriesTheAttributesInDeclarationOrder(t *testing.T) {
 //
 // Left out, the claim that the read describes every object type says the type
 // is absent, and a declaration of that name plans CREATE OR REPLACE TYPE over
-// the one the schema holds: an object type with methods loses them, and a
-// collection type becomes an object type. The type with no attribute row is
+// the one the schema holds: an object type with methods loses them, a NOT
+// FINAL type becomes FINAL, and a collection type becomes an object type. The type with no attribute row is
 // the guard on what the read FOUND rather than on what the type IS: describing
 // it as a type with no fields would plan a CREATE OR REPLACE that empties it.
 func TestReadComposites_RecordsWhatTheModelCannotCarry(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		return compositeCatalog(query, [][]driver.Value{
-			{"ORA_CHILD", "OBJECT", int64(0), "ORA_PARENT", "NO"},
-			{"ORA_EMPTY", "OBJECT", int64(0), nil, "NO"},
-			{"ORA_KEPT", "OBJECT", int64(0), nil, "NO"},
-			{"ORA_LIST", "COLLECTION", int64(0), nil, "NO"},
-			{"ORA_METHOD", "OBJECT", int64(1), nil, "NO"},
-			{"ORA_SHELL", "OBJECT", int64(0), nil, "YES"},
+			{"ORA_ABSTRACT", "OBJECT", int64(0), nil, "NO", "NO", "NO"},
+			{"ORA_CHILD", "OBJECT", int64(0), "ORA_PARENT", "NO", "YES", "YES"},
+			{"ORA_EMPTY", "OBJECT", int64(0), nil, "NO", "YES", "YES"},
+			{"ORA_KEPT", "OBJECT", int64(0), nil, "NO", "YES", "YES"},
+			{"ORA_LIST", "COLLECTION", int64(0), nil, "NO", "YES", "YES"},
+			{"ORA_METHOD", "OBJECT", int64(1), nil, "NO", "YES", "YES"},
+			{"ORA_OPEN", "OBJECT", int64(0), nil, "NO", "NO", "YES"},
+			{"ORA_SHELL", "OBJECT", int64(0), nil, "YES", "YES", "YES"},
 		}, [][]driver.Value{
+			{"ORA_ABSTRACT", "A", "NUMBER", nil, nil, nil, "B"},
 			{"ORA_CHILD", "B", "NUMBER", nil, nil, nil, "B"},
 			{"ORA_KEPT", "A", "NUMBER", nil, nil, nil, "B"},
 			{"ORA_METHOD", "A", "NUMBER", nil, nil, nil, "B"},
+			{"ORA_OPEN", "A", "NUMBER", nil, nil, nil, "B"},
 		})
 	})
 	reader := NewOracleReader(db.SQL, "APP")
@@ -82,10 +86,12 @@ func TestReadComposites_RecordsWhatTheModelCannotCarry(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(read.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{oratype.Ref(oratype.ObjectTypeKind, "", "ORA_KEPT")})
 	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{
+		undescribedObjectType("ORA_ABSTRACT", "the object type is NOT INSTANTIABLE, which the object type model cannot describe"),
 		undescribedObjectType("ORA_CHILD", "the object type is a subtype of ORA_PARENT, which the object type model cannot describe"),
 		undescribedObjectType("ORA_EMPTY", "the read found no attribute of the object type"),
 		undescribedObjectType("ORA_LIST", "the type is a collection type, which the object type model cannot describe"),
 		undescribedObjectType("ORA_METHOD", "the object type has methods, which the object type model cannot describe"),
+		undescribedObjectType("ORA_OPEN", "the object type is NOT FINAL, which the object type model cannot describe"),
 		undescribedObjectType("ORA_SHELL", "the object type is incomplete"),
 	})
 	c.Assert(claimedKinds(read), qt.DeepEquals, []schemaext.Kind{oratype.ObjectTypeKind})
@@ -147,7 +153,7 @@ func TestReadSchema_AsksForCompositesOnlyWhereThePresetClaimsThem(t *testing.T) 
 // asks for, so a query that stopped selecting a column fails here rather than
 // being handed the same rows.
 func answeringCompositeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return compositeCatalog(query, [][]driver.Value{{"ORA_POINT", "OBJECT", int64(0), nil, "NO"}}, compositeAttributeRows())
+	return compositeCatalog(query, [][]driver.Value{{"ORA_POINT", "OBJECT", int64(0), nil, "NO", "YES", "YES"}}, compositeAttributeRows())
 }
 
 func emptyOrCompositeCatalog(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -165,7 +171,7 @@ func compositeCatalog(query string, types, attributes [][]driver.Value) (dbtest.
 	switch {
 	case strings.Contains(folded, "from all_types"):
 		return dbtest.QueryResult{
-			Columns: []string{"type_name", "typecode", "methods", "supertype_name", "incomplete"},
+			Columns: []string{"type_name", "typecode", "methods", "supertype_name", "incomplete", "final", "instantiable"},
 			Rows:    types,
 		}, nil
 	case strings.Contains(folded, "from all_type_attrs"):

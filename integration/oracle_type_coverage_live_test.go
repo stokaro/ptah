@@ -99,6 +99,7 @@ func undescribedOracleTypes(caps capability.Capabilities) undescribedOracleTypeF
 			"object-type COV_CHILD: the object type is a subtype of COV_PARENT, which the object type model cannot describe",
 			"object-type COV_LIST: the type is a collection type, which the object type model cannot describe",
 			"object-type COV_METHOD: the object type has methods, which the object type model cannot describe",
+			"object-type COV_PARENT: the object type is NOT FINAL, which the object type model cannot describe",
 		},
 		declared: []schemaext.Object{
 			must.Must(oratype.DesiredObject(oratype.Ref(oratype.ObjectTypeKind, "", "cov_method"),

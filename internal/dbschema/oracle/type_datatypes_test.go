@@ -95,8 +95,8 @@ func nativeDatatypeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryRes
 			},
 		)
 	case strings.Contains(folded, "from all_types"):
-		return projectedTypeRows(query, []string{"type_name", "typecode", "methods", "supertype_name", "incomplete"},
-			[][]driver.Value{{"RECORD_T", "OBJECT", int64(0), nil, "NO"}})
+		return projectedTypeRows(query, []string{"type_name", "typecode", "methods", "supertype_name", "incomplete", "final", "instantiable"},
+			[][]driver.Value{{"RECORD_T", "OBJECT", int64(0), nil, "NO", "YES", "YES"}})
 	default:
 		return dbtest.QueryResult{Columns: []string{"unused"}}, nil
 	}

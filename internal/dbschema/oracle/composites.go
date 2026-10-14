@@ -29,12 +29,18 @@ import (
 //   - INCOMPLETE = 'YES' is a shell. PostgreSQL's own spelling,
 //     `CREATE TYPE t AS (a NUMBER)`, is ACCEPTED here and leaves exactly that:
 //     ATTRIBUTES 0, INCOMPLETE YES, and USER_OBJECTS reporting INVALID.
+//   - FINAL = 'NO' and INSTANTIABLE = 'NO' are the root of a type hierarchy:
+//     `AS OBJECT (a NUMBER) NOT FINAL` reports FINAL NO, and NOT INSTANTIABLE
+//     reports INSTANTIABLE NO and requires NOT FINAL (measured on
+//     23.26.3.0.0). The model has no hierarchy, since a subtype is one of the
+//     shapes above, and a replay of the attributes alone creates a FINAL,
+//     instantiable type.
 //
 // Every such type is read rather than filtered out in SQL, because the read
 // records it: a type the read leaves out is one the schema does not have, and
 // a declaration of that name would plan a CREATE OR REPLACE TYPE over it.
 const compositeQuery = `
-SELECT t.type_name, t.typecode, t.methods, t.supertype_name, t.incomplete
+SELECT t.type_name, t.typecode, t.methods, t.supertype_name, t.incomplete, t.final, t.instantiable
 FROM all_types t
 WHERE t.owner = :1
 ORDER BY t.type_name`
@@ -81,16 +87,16 @@ func (r *Reader) readComposites(ctx context.Context, db *catalog.Database) error
 	var limits []schemaext.SubjectCoverage
 	for rows.Next() {
 		var (
-			name                            string
-			typeCode, supertype, incomplete sql.NullString
-			methods                         sql.NullInt64
+			name                                                 string
+			typeCode, supertype, incomplete, final, instantiable sql.NullString
+			methods                                              sql.NullInt64
 		)
-		if err := rows.Scan(&name, &typeCode, &methods, &supertype, &incomplete); err != nil {
+		if err := rows.Scan(&name, &typeCode, &methods, &supertype, &incomplete, &final, &instantiable); err != nil {
 			return err
 		}
 		ref := oratype.Ref(oratype.ObjectTypeKind, "", name)
 		shape := typeShape{code: typeCode.String, methods: methods.Int64, supertype: supertype.String,
-			incomplete: incomplete.String, attributes: len(attributes[name])}
+			incomplete: incomplete.String, final: final.String, instantiable: instantiable.String, attributes: len(attributes[name])}
 		if reason := shape.undescribed(); reason != "" {
 			limits = append(limits, unrepresentable(oratype.ObjectTypeKind, ref, reason))
 			continue
@@ -112,11 +118,13 @@ func (r *Reader) readComposites(ctx context.Context, db *catalog.Database) error
 // typeShape is what ALL_TYPES reports about a type, and the number of
 // attributes the attribute read returned for it.
 type typeShape struct {
-	code       string
-	methods    int64
-	supertype  string
-	incomplete string
-	attributes int
+	code         string
+	methods      int64
+	supertype    string
+	incomplete   string
+	final        string
+	instantiable string
+	attributes   int
 }
 
 // undescribed says why the object type model cannot describe the type, or is
@@ -131,6 +139,10 @@ func (s typeShape) undescribed() string {
 		return fmt.Sprintf("the object type is a subtype of %s, which the object type model cannot describe", s.supertype)
 	case s.methods > 0:
 		return "the object type has methods, which the object type model cannot describe"
+	case strings.EqualFold(strings.TrimSpace(s.instantiable), "NO"):
+		return "the object type is NOT INSTANTIABLE, which the object type model cannot describe"
+	case strings.EqualFold(strings.TrimSpace(s.final), "NO"):
+		return "the object type is NOT FINAL, which the object type model cannot describe"
 	case s.attributes == 0:
 		return "the read found no attribute of the object type"
 	}
