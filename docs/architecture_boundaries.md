@@ -80,8 +80,9 @@ Two seams keep the YDB owner out of the layer:
   `internal/builtinlowering` sets the hook for YDB, which names a grant on the
   database, or on an object at its root, by its absolute path.
 
-The HCL reader under `internal/` still decodes owner syntax itself, and the SQL
-reader still converts YQL for the YDB owner. Both sit outside the layer, so
+The HCL reader under `internal/` takes owner blocks through `hclext.Set` and
+links no owner. The SQL reader converts YQL for the YDB owner, deferred to
+[#4204](https://github.com/stokaro/ptah/issues/4204). Both sit outside the layer, so
 `core/schemasource` takes them from its caller rather than importing them.
 
 ### What the SQL reader rule holds
@@ -152,6 +153,27 @@ being core rather than by being hidden from the rule -- at the cost of a new
 entry in the public API ledger, which is a commitment this refactor did not make
 on its own. The `pipeline-builds-source-description` rule is enforced at zero: the
 four dialect planners no longer construct `schemamodel.Database` values.
+
+## Fields that stay in the common model
+
+An owner holds a dialect feature when one dialect reads it. A field that more
+than one dialect reads stays in `core/schemamodel`, because moving it into one
+owner would make the other readers import that owner. Each field below has a
+reason.
+
+| Field | Why it is common |
+| --- | --- |
+| `IndexPart.Operator`, `Index.Operator` | The operator class is read by the PostgreSQL family, and YDB checks it against a vector index's distance. |
+| `Index.StorageParams` | PostgreSQL index storage parameters and YDB full-text analyzer options share the one map. |
+| `Index.Concurrently` | A plan-time request, not catalog state. `internal/concurrentindex` decides it for the PostgreSQL family, and migration lint, SQL lint and transaction routing read it for every target. |
+| `Index.NullsDistinct`, `Constraint.NullsDistinct` | PostgreSQL states it, and the YDB lowering of a UNIQUE constraint to a global unique index carries it. |
+| `Index.IncludeColumns`, `Constraint.IncludeColumns` | Covering columns on PostgreSQL, YugabyteDB and Spanner indexes and constraints, and the `COVER` list of a YDB index. |
+| `Deferrable`, `Initially` (constraints and foreign-key fields) | PostgreSQL and Oracle render them, and the YDB lowering refuses a constraint that carries either. |
+| `Constraint.Match`, `Field.ForeignKeyMatch` | The shared SQL parser reads `MATCH` for the PostgreSQL family, MySQL, MariaDB and SQLite, and refuses the values a server records as `NONE`. |
+| `Constraint.NotValid` | The PostgreSQL family plans and renders it. The YDB lowering and planner read it to refuse it. An export with no way to say it reports it. |
+
+A field joins this list only when a second dialect reads it. A field that one
+dialect reads moves to that dialect's owner.
 
 ## Information-loss boundaries
 
