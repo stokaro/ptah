@@ -257,10 +257,21 @@ func boolOrder(value bool) int {
 // ResolveServerVersion resolves a server version string onto a preset, as
 // [ResolveServerVersion] does, from this resolver's registry.
 //
-// A product the string names outranks the declared dialect, with one
-// exception: a string naming only the head of the declared dialect's family,
-// such as "PostgreSQL 16.3" for a CockroachDB connection, is a less specific
-// spelling of the declared server, and the declared dialect's ladder decides.
+// A product the string names outranks the declared dialect, and the answer is
+// read off that product's ladder. A product with no ladder has one preset, and
+// the string that named it selected that preset exactly.
+//
+// The exception is a string naming only the head of the declared dialect's
+// family, such as "PostgreSQL 16.3" for a CockroachDB connection. The head's
+// name is the family's, and a member may report a banner carrying no token of
+// its own, so the string is a less specific spelling of the declared server
+// and the declared dialect's ladder decides. Measured, claiming such a banner
+// for the head turned SpannerPostgres into Postgres14 across 19 keys, among
+// them the keys that stop Ptah emitting DDL Spanner refuses.
+//
+// A string naming no product climbs the declared dialect's ladder. A string
+// with no number in it at all receives the declared dialect's default preset,
+// and is not recognized.
 func (r *Resolver) ResolveServerVersion(dialect, version string) VersionResolution {
 	declared := r.lookup(dialect)
 	if named := r.banner(version); named != nil && (declared == nil || declared.family != named.name) {

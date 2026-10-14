@@ -51,8 +51,13 @@ type Versions struct {
 	// "major.minor". Only the "measured-lines" attribution reads them.
 	Measured []string `json:"measured,omitempty"`
 	// Newest is the newest measured release line. A version past it is
-	// reported as past the top of the ladder. Empty means no line is the
-	// newest, and no version is past it.
+	// reported as past the top of the ladder: the preset it receives is a
+	// stand-in, not a measurement. Empty means no line is the newest, and no
+	// version is past it.
+	//
+	// Raising it claims that a newer server line behaves like the preset it
+	// lands on. Do it in the change that measures that line, never as a side
+	// effect of bumping a container tag.
 	Newest string `json:"newest,omitempty"`
 	// Unreadable is the answer for a string the scheme cannot read a version
 	// out of.

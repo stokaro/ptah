@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 )
 
 // ExampleForDialect resolves the default capability preset for a dialect name
@@ -152,4 +153,55 @@ func ExampleIdentifiers() {
 	// sqlite: unlimited
 	// postgres exceeds: true
 	// mysql exceeds: false
+}
+
+// ExampleNewResolver describes an engine Ptah does not ship by data alone and
+// resolves its server versions. The descriptor names presets this package
+// ships, states the text its banner carries and the ladder its versions
+// climb, and the resolver reads every answer off it: no code names the
+// engine. A program that selects such an engine registers the descriptor with
+// platform.Register, and the package-level functions then answer the same way.
+func ExampleNewResolver() {
+	registry, err := descriptor.NewRegistry(descriptor.Dialect{
+		Name:        "acme",
+		Placeholder: descriptor.PlaceholderQuestion,
+		Capabilities: descriptor.Capabilities{
+			DefaultPreset: "MySQL84",
+			BannerTokens:  []string{"acme server"},
+			Versions: descriptor.Versions{
+				Scheme:      string(capability.VersionDotted),
+				Floor:       "MySQLLegacy",
+				Steps:       []descriptor.VersionStep{{Min: "3.1", Preset: "MySQL84"}},
+				Attribution: string(capability.AttributeMeasuredLines),
+				Measured:    []string{"3.1"},
+				Newest:      "3.1",
+			},
+		},
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 30, Unit: string(capability.IdentifierBytes)},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	resolver, err := capability.NewResolver(registry)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	res := resolver.ResolveServerVersion("mysql", "Acme Server 3.1.4")
+	fmt.Println("dialect:", res.ResolvedDialect)
+	fmt.Println("version-specific:", res.VersionSpecific)
+	fmt.Println("enforced check constraints:", res.Capabilities.Has(capability.CheckConstraintsEnforced))
+
+	res = resolver.ResolveServerVersion("acme", "2.9")
+	fmt.Println("enforced check constraints on 2.9:", res.Capabilities.Has(capability.CheckConstraintsEnforced))
+	fmt.Println("identifiers:", resolver.Identifiers("acme"))
+
+	// Output:
+	// dialect: acme
+	// version-specific: true
+	// enforced check constraints: true
+	// enforced check constraints on 2.9: false
+	// identifiers: 30 bytes
 }
