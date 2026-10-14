@@ -19,9 +19,10 @@
 //
 // # Shrink-only
 //
-// Two of the four rules are violated today. A gate demanding zero on arrival
-// would be red from the commit that added it, and a red gate teaches a reader
-// to skip it. So the recorded counts may fall and may never rise, which is the
+// A rule can land while the tree still violates it, as
+// shared-packages-name-dialects does. A gate demanding zero on arrival would be
+// red from the commit that added it, and a red gate teaches a reader to skip
+// it. So the recorded counts may fall and may never rise, which is the
 // baseline discipline #1344 asks for and ADR 0001 stage 0 schedules.
 //
 // A fall also fails, which reads odd until the alternative is written down: a
@@ -448,6 +449,9 @@ func writeBaseline(root string, reports []ruleReport) error {
 	recorded := baseline{
 		Comment: "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). " +
 			"A count may fall and may never rise, and a rule with package counts is compared package by package. " +
+			"Known false positive: shared-packages-name-dialects counts a comparison of a role name with " +
+			"PostgreSQL's bootstrap superuser \"postgres\" (internal/reservedrole, internal/sqlschema), " +
+			"since a role name and a dialect name are both strings. " +
 			"Regenerate with: go run ./internal/cmd/boundaries -update",
 		Rules: make(map[string]int),
 	}

@@ -300,4 +300,100 @@ require_refusal "a SQL reader baseline higher than the tree's"
 cp "$work_dir/baseline.orig" "$baseline"
 require_acceptance "the restored SQL reader baseline"
 
-echo "check-architecture-boundaries-selftest: OK (18 refusals, 3 false-positive controls)"
+# Shared packages must not name a dialect (stokaro/ptah#4204). core/astbuilder
+# names none today, so each defect below is a package the baseline permits
+# nothing.
+target="$tree/core/astbuilder/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package astbuilder
+
+import "ptah.run/core/platform"
+
+var _ = platform.Postgres
+GO
+require_refusal "a shared package naming a dialect constant"
+rm -f "$target"
+require_acceptance "the repaired shared package"
+
+# migration/migrator already carries debt. One more reference is a package
+# count that grew, which a check of the total alone would also see; the move
+# case below is the one only a per-package check sees.
+target="$tree/migration/migrator/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package migrator
+
+import "ptah.run/core/platform"
+
+var _ = platform.MySQL
+GO
+require_refusal "a package with recorded debt naming one more dialect"
+rm -f "$target"
+
+# A literal in a switch case is a dialect name without the constant.
+target="$tree/core/astbuilder/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package astbuilder
+
+func boundariesSelftestDefect(dialect string) bool {
+	switch dialect {
+	case "mysql":
+		return true
+	}
+	return false
+}
+GO
+require_refusal "a shared package switching on a dialect literal"
+
+# A family predicate is a dialect branch too; replacing a comparison with one
+# must not read as progress.
+cat >"$target" <<'GO'
+package astbuilder
+
+import "ptah.run/core/platform"
+
+var _ = platform.IsPostgresFamily("x")
+GO
+require_refusal "a shared package calling a dialect family predicate"
+rm -f "$target"
+
+# The spelling outside a comparison, and the constant named in a doc comment,
+# are words, not dialect branches.
+cat >"$target" <<'GO'
+package astbuilder
+
+// boundariesSelftestLabel is not platform.Postgres, and is not compared.
+var boundariesSelftestLabel = "postgres"
+GO
+require_acceptance "a dialect spelling in a comment and in an uncompared string"
+rm -f "$target"
+
+# An owner, a per-engine helper and the built-in bundle may name engines. Each
+# is excluded from the shared set by a different clause.
+for dependency in dialect/postgres/pglint:pglint internal/pgname:pgname internal/builtinlowering:builtinlowering; do
+  dir="${dependency%%:*}"
+  name="${dependency##*:}"
+  target="$tree/$dir/boundaries_selftest_owner.go"
+  cat >"$target" <<GO
+package $name
+
+import "ptah.run/core/platform"
+
+var _ = platform.YDB
+GO
+  require_acceptance "$dir naming a dialect"
+  rm -f "$target"
+done
+
+# A fall must be recorded package by package. A baseline that still permits
+# one more reference in a package is refused, and so is debt that moved
+# between two packages with the total unchanged.
+cp "$baseline" "$work_dir/baseline.orig"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); r='shared-packages-name-dialects'; d['packages'][r]['dbschema']+=1; d['rules'][r]+=1; json.dump(d,open(p,'w'),indent=2)" "$baseline"
+require_refusal "a package baseline higher than the package's count"
+cp "$work_dir/baseline.orig" "$baseline"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); r='shared-packages-name-dialects'; d['packages'][r]['dbschema']+=1; d['packages'][r]['migration/migrator']-=1; json.dump(d,open(p,'w'),indent=2)" "$baseline"
+require_refusal "dialect debt recorded in the wrong package with the total unchanged"
+cp "$work_dir/baseline.orig" "$baseline"
+require_acceptance "the restored dialect-name baseline"
+
+echo "check-architecture-boundaries-selftest: OK (24 refusals, 7 false-positive controls)"

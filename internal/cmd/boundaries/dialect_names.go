@@ -155,6 +155,9 @@ func trackedPackageDirs(root string) (map[string]bool, error) {
 	return dirs, nil
 }
 
+// bundlePrefix begins every path segment of the built-in bundle.
+const bundlePrefix = "builtin"
+
 // engineAbbreviations are the stems package names use for an engine that
 // NormalizeDialect does not accept as a spelling: internal/pgname,
 // internal/oratypesource and internal/yqlparse each serve one engine.
@@ -168,6 +171,10 @@ var engineAbbreviations = []string{"pg", "ora", "yql"}
 //
 //   - it belongs to an owner family: dialect/<name>, feature/<name> or
 //     engine/builtin and everything below it;
+//   - it is part of the built-in bundle: a segment of its path begins with
+//     "builtin", as engine/builtin, which composes the bundled owners, and
+//     internal/builtinlowering, which sets their lowering hooks, do. The
+//     bundle is the composition root #4204 allows to name every engine;
 //   - it is the declaring package itself;
 //   - a segment of its path names an engine: the segment is, or begins with,
 //     a spelling NormalizeDialect accepts, the name of a dialect owner, or an
@@ -185,7 +192,7 @@ var engineAbbreviations = []string{"pg", "ora", "yql"}
 // begin. No package a shared package links begins with it today except the
 // ClickHouse helpers; internal/chronologyguard is the nearest, and is linked
 // by none.
-func sharedPackageSet(loaded []*packages.Package, tracked map[string]bool, spellings map[string]bool) map[string]bool {
+func sharedPackageSet(loaded []*packages.Package, tracked, spellings map[string]bool) map[string]bool {
 	names := slices.Concat(slices.Collect(maps.Keys(spellings)), engineAbbreviations)
 	for _, pkg := range loaded {
 		if family, owned := ownerFamily(relative(pkg.PkgPath)); owned && strings.HasPrefix(family, "dialect/") {
@@ -207,7 +214,8 @@ func sharedPackageSet(loaded []*packages.Package, tracked map[string]bool, spell
 			return false
 		}
 		return !slices.ContainsFunc(strings.Split(rel, "/"), func(segment string) bool {
-			return slices.ContainsFunc(stems, func(stem string) bool { return strings.HasPrefix(segment, stem) })
+			return strings.HasPrefix(segment, bundlePrefix) ||
+				slices.ContainsFunc(stems, func(stem string) bool { return strings.HasPrefix(segment, stem) })
 		})
 	}
 	shared := make(map[string]bool)
@@ -249,6 +257,12 @@ func sharedPackageSet(loaded []*packages.Package, tracked map[string]bool, spell
 //
 // A spelling outside a comparison, such as a log message or a map key written
 // as a literal, is not counted, since nothing tells a name from a word there.
+//
+// One false positive is known and counted. A comparison of a role name with
+// "postgres", PostgreSQL's bootstrap superuser, is a dialect spelling in a
+// comparison, and the type checker cannot tell a role name from a dialect
+// name: both are strings. internal/reservedrole and internal/sqlschema make
+// that comparison. It is PostgreSQL knowledge in shared code all the same.
 func dialectNameFindings(pkg *packages.Package, self string, identity dialectIdentity) []finding {
 	info := pkg.TypesInfo
 	found := make([]finding, 0)
