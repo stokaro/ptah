@@ -116,6 +116,7 @@ for the message and the flag it names.
 | `view` / `materialized` | SQL body plus schema and comments. A `materialized` block accepts a ClickHouse `refresh` clause. |
 | `trigger` | Trigger timing and every event its timing block sets (`insert`, `update`, `delete`, `truncate`), target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
+| `row_policy` | ClickHouse `on`, `using`, `to`, and `as`. See [row policies](../../databases/clickhouse/#row-policies). |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |

@@ -205,6 +205,19 @@ func (p Policy) validateSchemaObjects(database *schemamodel.Database, source str
 			)
 		}
 	}
+	// A source-owned object can bind itself to an engine. Validate that
+	// binding before a dev database of another dialect can filter it out.
+	objects, err := database.FeatureObjects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		for _, target := range object.Targets {
+			if err := p.ValidateDialect(target); err != nil {
+				return fmt.Errorf("%s schema object %s: %w", source, object.Ref, err)
+			}
+		}
+	}
 	return nil
 }
 

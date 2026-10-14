@@ -210,6 +210,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(chsource.RefreshCoverage()))
 	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(chsource.RowPolicyCoverage()))
+	c.Assert(err, qt.IsNil)
 	return combined
 }
 

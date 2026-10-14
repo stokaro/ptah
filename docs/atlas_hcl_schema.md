@@ -154,6 +154,13 @@ current schema IR:
   `delete` or `truncate`, to `true`, and every event it sets is read: a `before`
   block setting `insert` and `update` is `BEFORE INSERT OR UPDATE`. An event
   attribute that is not a bool is refused rather than read as unset
+- ClickHouse `row_policy` blocks with `on`, `using`, `to`, and `as`.
+  `on` is a table reference, `using` is a string or `sql(...)`, and `to` is a
+  string naming users and roles, `ALL`, `ALL EXCEPT` names, or `NONE`.
+  `as` takes `PERMISSIVE` or `RESTRICTIVE`. Omitted attributes select the
+  server defaults: no filter, no recipients, and permissive composition.
+  HCL export preserves policies and refuses a read that cannot describe them.
+  See [ClickHouse row policies](site/src/content/docs/databases/clickhouse.mdx#row-policies).
 - PostgreSQL `policy` blocks with `on`, `as`, `for`, `to`, `using`, `check`,
   and `comment`. `as` takes `PERMISSIVE` (the default, left unwritten) or
   `RESTRICTIVE`; any other value is refused, because permissive is the weaker

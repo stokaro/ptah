@@ -173,6 +173,13 @@ fails with an explicit error; treat that as a compatibility gap and check the
 conformance reports.
 :::
 
+## Declare ClickHouse row policies
+
+Use a `row_policy` block for a ClickHouse SELECT filter. Its `on` attribute
+names the table; `using`, `to`, and `as` declare the filter, recipients, and
+composition. HCL export preserves these values. See the
+[ClickHouse example](../../databases/clickhouse/#row-policies) for a complete schema.
+
 ## Next steps
 
 - Need the supported blocks and types? [HCL schema reference](../../reference/hcl-schema/).
