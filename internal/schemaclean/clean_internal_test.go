@@ -77,6 +77,32 @@ func TestPlanExecutionDropsAServerAfterItsCrossDatabaseKeys(t *testing.T) {
 	})
 }
 
+// TestPlanExecutionKeepsTheOracleWritersOrder pins that an Oracle plan runs
+// in the order the writer listed it, with the writer's own statements, while
+// the report stays ordered by kind and name. The writer drops a trigger before
+// its table and a flexible domain before the domains it chooses from, and
+// either the other way round answers an error.
+func TestPlanExecutionKeepsTheOracleWritersOrder(t *testing.T) {
+	c := qt.New(t)
+	objects := []Object{
+		{Type: ObjectTypeTrigger, Schema: "APP", Name: "T_TRG", Command: `DROP TRIGGER "T_TRG"`},
+		{Type: ObjectTypeTable, Schema: "APP", Name: "T", Command: `DROP TABLE "T" CASCADE CONSTRAINTS PURGE`},
+		{Type: ObjectTypeType, Schema: "APP", Name: "POINT", Command: `DROP TYPE "POINT" FORCE`},
+		{Type: ObjectTypeDomain, Schema: "APP", Name: "Z_FLEX", Command: `DROP DOMAIN "Z_FLEX"`},
+		{Type: ObjectTypeDomain, Schema: "APP", Name: "M1", Command: `DROP DOMAIN "M1"`},
+	}
+	depths := make(map[executionObjectIdentity]int, len(objects))
+	for i, object := range objects {
+		depths[objectExecutionIdentity(object)] = len(objects) - i
+	}
+
+	plan := planFromObjects(objects, "oracle", depths)
+
+	c.Assert(changeNames(plan.executionChanges), qt.DeepEquals, []string{"T_TRG", "T", "POINT", "Z_FLEX", "M1"})
+	c.Assert(changeNames(plan.Changes), qt.DeepEquals, []string{"M1", "Z_FLEX", "T", "T_TRG", "POINT"})
+	c.Assert(plan.executionChanges[3].Cmd, qt.Equals, `DROP DOMAIN "Z_FLEX"`)
+}
+
 func TestPlanExecutionOrdersSameKindDependentsByCatalogDepth(t *testing.T) {
 	c := qt.New(t)
 	objects := []Object{

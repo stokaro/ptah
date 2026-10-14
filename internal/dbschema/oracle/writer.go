@@ -99,12 +99,15 @@ func (w *transactionWriter) Rollback() error {
 // the view shows only what the connected account owns, so a cleanup cannot
 // reach another schema even if the account has been granted access to one.
 //
-// Two exclusions are load-bearing. An index or a trigger Oracle created for a
-// constraint disappears with its table, and naming it separately would answer
+// Three exclusions are load-bearing. An index or a trigger Oracle created for
+// a constraint disappears with its table, and naming it separately would answer
 // ORA-02429 or drop something that is already gone. A table in the recycle bin
 // -- name starting BIN$ -- is already dropped; it is listed by USER_OBJECTS
 // until the bin is purged, and asking to drop it again is an error about a
-// table nobody has.
+// table nobody has. And a materialized view keeps its rows in a table of its
+// own name, which USER_OBJECTS lists as a TABLE with GENERATED N: measured on
+// 23.26.3.0.0, DROP MATERIALIZED VIEW takes that table with it, and the DROP
+// TABLE after it answered ORA-00942 and stopped the cleanup.
 //
 // Types and domains come after the tables whose columns they type, and
 // domains last: an object type whose attribute names a domain depends on the
@@ -116,6 +119,8 @@ FROM user_objects o
 WHERE o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'SYNONYM', 'TRIGGER', 'TYPE', 'DOMAIN')
   AND o.object_name NOT LIKE 'BIN$%'
   AND o.generated = 'N'
+  AND NOT (o.object_type = 'TABLE' AND EXISTS (
+        SELECT 1 FROM user_mviews m WHERE m.mview_name = o.object_name))
 ORDER BY CASE o.object_type
            WHEN 'TRIGGER' THEN 1
            WHEN 'MATERIALIZED VIEW' THEN 2
@@ -249,8 +254,9 @@ func dependentsFirst(domains []cleanupObject, references map[string][]string) []
 
 // ResetObjects lists what DropAllTables drops, through the query it runs:
 // the tables, views, materialized views, sequences, synonyms, triggers, types
-// and domains the connected account owns, in the order it drops them. The
-// schema of each is the account. A routine or a package is not listed, since
+// and domains the connected account owns, in the order it drops them, each
+// with the statement it drops the object with. The schema of each is the
+// account. A routine or a package is not listed, since
 // the reset leaves it in place. The scope is PostgreSQL's and is not read.
 func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.Object, error) {
 	if w.db == nil {
@@ -266,7 +272,8 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 	}
 	objects := make([]dbreset.Object, 0, len(found))
 	for _, object := range found {
-		objects = append(objects, dbreset.Object{Kind: strings.ToLower(object.kind), Schema: account, Name: object.name})
+		objects = append(objects, dbreset.Object{Kind: strings.ToLower(object.kind), Schema: account, Name: object.name,
+			Statement: dropStatement(object.kind, object.name)})
 	}
 	return objects, nil
 }
