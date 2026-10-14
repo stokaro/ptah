@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/ddltx"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 )
@@ -3275,15 +3275,16 @@ func (m *Migrator) validateRepairMigrationSQL(
 // statement by statement and is not exempt here: zero there means the
 // transaction took the body back with it.
 //
-// YDB is of the durable class and still carries a witness: every body runs the
-// way `none` runs it there, a scheme query marked in flight before it runs and
-// a data query committed together with its checkpoint, so zero with no marker
-// is the witness speaking. See runsQueriesOnTheirOwn.
+// An engine with query units is of the durable class and still carries a
+// witness: every body runs the way `none` runs it there, a scheme query marked
+// in flight before it runs and a data query committed together with its
+// checkpoint, so zero with no marker is the witness speaking. See
+// runsQueriesOnTheirOwn.
 func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return false
 	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	if builtin.Lookup(dialect).Units != nil {
 		return true
 	}
 	return !ddltx.AllStatementsDurable(ddltx.ClassOf(dialect))
@@ -3466,8 +3467,8 @@ func (m *Migrator) resumeStatementsOnSession(
 		if err := migrationLockLost(ctx); err != nil {
 			return err
 		}
-		if m.runsQueriesOnTheirOwn() && !m.conn.Writer().IsDryRun() && isYDBDataQuery(stmt) {
-			if err := m.commitYDBDataQuery(ctx, migration, startedAt, event, direction); err != nil {
+		if units := m.services().Units; units != nil && !m.conn.Writer().IsDryRun() && units.IsData(stmt) {
+			if err := m.commitDataQuery(ctx, migration, startedAt, event, direction); err != nil {
 				return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 			}
 			continue

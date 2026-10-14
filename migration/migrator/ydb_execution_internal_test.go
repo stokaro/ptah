@@ -18,6 +18,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/migratorext/builtin"
 )
 
 const ydbBody = "CREATE TABLE `t` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
@@ -166,7 +167,7 @@ func TestIsYDBDataQuery(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(isYDBDataQuery(test.query), qt.Equals, test.want)
+			c.Assert(builtin.Lookup(platform.YDB).Units.IsData(test.query), qt.Equals, test.want)
 		})
 	}
 }
@@ -175,7 +176,7 @@ func TestIsYDBDataQuery(t *testing.T) {
 // statement it was handed and answers it with err.
 func committerThatAnswers(ran *[]string, err error) statementCommitter {
 	return statementCommitter{
-		claims: isYDBDataQuery,
+		claims: builtin.Lookup(platform.YDB).Units.IsData,
 		run: func(_ context.Context, event StatementEvent) error {
 			*ran = append(*ran, event.Statement)
 			return err

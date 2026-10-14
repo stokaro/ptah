@@ -52,8 +52,8 @@ func (m *Migrator) describeMetadataTable(ctx context.Context, table string) ([]s
 }
 
 // metadataTableExists reports whether the metadata table named table exists,
-// asking the catalog through migrationTablePresenceQuery or, on YDB, by
-// describing it.
+// asking the engine's catalog or, where the connection's reader can describe
+// the table, describing it.
 func (m *Migrator) metadataTableExists(ctx context.Context, table string) (bool, error) {
 	if m.usesDescribedMetadata() {
 		_, exists, err := m.describeMetadataTable(ctx, table)

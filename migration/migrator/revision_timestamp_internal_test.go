@@ -7,6 +7,8 @@ package migrator
 // made.
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -156,7 +158,9 @@ func TestIsPostgresFamily_SpannerIsExcludedOnPurpose(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(usesPostgresMetadataQueries(test.dialect), qt.Equals, test.migrator)
+			query, _, err := migrationTablePresenceQuery(test.dialect, "", "public", "schema_migrations", strconv.Quote)
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Contains(query, "current_schema()"), qt.Equals, test.migrator)
 			c.Assert(platform.IsPostgresFamily(test.dialect), qt.Equals, test.exported)
 		})
 	}

@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/migratorext"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqliterebuild"
@@ -978,10 +978,6 @@ func (m *Migrator) quoteIdentifier(identifier string) string {
 	return sqlident.Quote(m.connectionDialect(), identifier)
 }
 
-func (m *Migrator) isSQLServer() bool {
-	return m.conn != nil && m.conn.Info().Dialect == platform.SQLServer
-}
-
 func (m *Migrator) connectionDialect() string {
 	if m.conn == nil {
 		return ""
@@ -1262,242 +1258,29 @@ func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) str
 }
 
 func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	switch m.conn.Info().Dialect {
-	case platform.YDB:
+	if m.usesDescribedMetadata() {
 		columns, _, err := m.describeMetadataTable(ctx, m.migrationsTableName())
 		if err != nil {
 			return false, err
 		}
 		return slices.Contains(columns, name), nil
-	case platform.ClickHouse:
-		return m.clickHouseMigrationsColumnExists(ctx, name)
-	case platform.SQLite:
-		return m.sqliteMigrationsColumnExists(ctx, name)
-	case platform.Oracle:
-		return m.oracleMigrationsColumnExists(ctx, name)
 	}
-	query := `
-SELECT COUNT(*)
-FROM information_schema.columns
-WHERE table_schema = ? AND table_name = ? AND column_name = ?`
-	schema := m.metadataSchemaName()
-	if m.isPostgresFamily() {
-		query = `
-SELECT COUNT(*)
-FROM information_schema.columns
-WHERE table_schema = COALESCE(NULLIF(?, ''), current_schema())
-  AND table_name = ? AND column_name = ?`
-		schema = m.metadataTableSchemaName()
-	} else if m.isSQLServer() {
-		// Preserve the catalog's canonical identifier casing. Under Turkish
-		// collations, lowercase information_schema does not resolve to
-		// INFORMATION_SCHEMA even when the catalog is case-insensitive.
-		query = `
-SELECT COUNT(*)
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`
+	table := m.metadataTable(m.migrationsTableName())
+	if catalog := m.services().Catalog; catalog != nil {
+		return catalog.ColumnExists(ctx, m.conn, table, name)
 	}
-	query = sqlutil.Rebind(m.conn.Info().Dialect, query)
-	var count int
-	if err := m.conn.QueryRowContext(ctx, query, schema, m.migrationsTableName(), name).Scan(&count); err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
-	}
-	return count > 0, nil
+	query := sqlutil.Rebind(m.connectionDialect(), migratorext.InformationSchemaColumnsQuery)
+	return migratorext.InformationSchemaColumnExists(ctx, m.conn, query, table.ConfiguredSchema, table, name)
 }
 
-func (m *Migrator) sqliteMigrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	conn, err := m.conn.Conn(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
-	}
-	defer conn.Close()
-
-	rows, err := conn.QueryContext(ctx, "PRAGMA table_info("+m.quoteIdentifier(m.migrationsTableName())+")")
-	if err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			cid          int
-			columnName   string
-			dataType     string
-			notNull      int
-			defaultValue sql.NullString
-			primaryKey   int
-		)
-		if err := rows.Scan(&cid, &columnName, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return false, fmt.Errorf("failed to scan migrations metadata column %s: %w", name, err)
-		}
-		if columnName == name {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
-	}
-	return false, nil
-}
-
-// oracleMigrationsColumnExists asks ALL_TAB_COLUMNS, because Oracle has no
-// information_schema. The revision table's columns are created unquoted, so
-// the catalog holds their upper-case fold; the table name is quoted and kept as
-// given.
-func (m *Migrator) oracleMigrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	query := sqlutil.Rebind(platform.Oracle, `SELECT COUNT(*)
-FROM all_tab_columns
-WHERE owner = ? AND table_name = ? AND column_name = ?`)
-	var count int
-	if err := m.conn.QueryRowContext(
-		ctx,
-		query,
-		configuredOrConnectionSchema(m.metadataTableSchemaName(), m.connectionSchemaName()),
-		m.migrationsTableName(),
-		strings.ToUpper(name),
-	).Scan(&count); err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
-	}
-	return count > 0, nil
-}
-
-func (m *Migrator) clickHouseMigrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	var count int
-	if err := m.conn.QueryRowContext(
-		ctx,
-		`SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = ? AND name = ?`,
-		m.migrationsTableName(),
-		name,
-	).Scan(&count); err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
-	}
-	return count > 0, nil
-}
-
+// ensureMigrationsVersionColumn widens the version column of a revision table
+// an older layout created, where the engine has a service that does.
 func (m *Migrator) ensureMigrationsVersionColumn(ctx context.Context) error {
-	switch m.conn.Info().Dialect {
-	case "postgres", "cockroachdb", "yugabytedb":
-		return m.ensurePostgresMigrationsVersionColumn(ctx)
-	case "mysql", "mariadb":
-		return m.ensureMySQLMigrationsVersionColumn(ctx)
-	default:
+	widen := m.services().VersionColumn
+	if widen == nil {
 		return nil
 	}
-}
-
-func (m *Migrator) ensurePostgresMigrationsVersionColumn(ctx context.Context) error {
-	dataType, err := m.migrationsVersionColumnType(
-		ctx,
-		sqlutil.Rebind(m.conn.Info().Dialect, `
-SELECT data_type
-FROM information_schema.columns
-WHERE table_schema = COALESCE(NULLIF(?, ''), current_schema())
-  AND table_name = ? AND column_name = 'version'`),
-		m.metadataTableSchemaName(),
-		m.migrationsTableName(),
-	)
-	if err != nil {
-		return err
-	}
-	if dataType == "bigint" {
-		return nil
-	}
-	_, err = m.conn.ExecContext(ctx, fmt.Sprintf(
-		"ALTER TABLE %s ALTER COLUMN %s TYPE BIGINT",
-		m.qualifiedMigrationsTable(),
-		m.quoteIdentifier("version"),
-	))
-	if err != nil {
-		return fmt.Errorf("failed to widen version column from %s to BIGINT: %w", dataType, err)
-	}
-	return nil
-}
-
-func (m *Migrator) ensureMySQLMigrationsVersionColumn(ctx context.Context) error {
-	dataType, err := m.migrationsVersionColumnType(
-		ctx,
-		`SELECT data_type
-FROM information_schema.columns
-WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`,
-		m.metadataSchemaName(),
-		m.migrationsTableName(),
-	)
-	if err != nil {
-		return err
-	}
-	if dataType == "bigint" {
-		return nil
-	}
-	_, err = m.conn.ExecContext(ctx, fmt.Sprintf(
-		"ALTER TABLE %s MODIFY COLUMN %s BIGINT NOT NULL",
-		m.qualifiedMigrationsTable(),
-		m.quoteIdentifier("version"),
-	))
-	if err != nil {
-		return fmt.Errorf("failed to widen version column from %s to BIGINT: %w", dataType, err)
-	}
-	return nil
-}
-
-func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string, args ...any) (string, error) {
-	var dataType string
-	err := m.conn.QueryRowContext(ctx, query, args...).Scan(&dataType)
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect migrations version column: %w", err)
-	}
-	return strings.ToLower(dataType), nil
-}
-
-// isPostgresFamily reports whether this connection takes the PostgreSQL
-// spelling of the metadata queries below.
-//
-// It deliberately answers a narrower question than
-// [platform.IsPostgresFamily], which counts Spanner in. The difference is not
-// an oversight and must not be closed by delegating to the exported one: the
-// only thing this predicate selects is a query written around
-// `current_schema()`, and Spanner's PostgreSQL interface does not have that
-// function anywhere a query can call it. Measured against the Cloud Spanner
-// emulator behind PGAdapter 0.55.2:
-//
-//	SELECT current_schema()                          public
-//	SELECT ... WHERE table_schema = current_schema()  ERROR: Postgres function
-//	                                                 current_schema() is not supported
-//
-// So Spanner belongs in the generic branch, which asks for a schema by name and
-// answers correctly there -- and does so because a Spanner connection carries
-// its schema, which metadataInformationSchemaName returns. Widening this
-// predicate would replace a working read with one the server refuses
-// (stokaro/ptah#2233).
-func (m *Migrator) isPostgresFamily() bool {
-	return usesPostgresMetadataQueries(m.connectionDialect())
-}
-
-// usesPostgresMetadataQueries is the decision itself, taking the dialect so it
-// can be measured without a live connection of each engine.
-func usesPostgresMetadataQueries(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return true
-	default:
-		return false
-	}
-}
-
-func (m *Migrator) metadataSchemaName() string {
-	return metadataInformationSchemaName(m.connectionDialect(), m.connectionSchemaName(), m.migrationsSchema)
-}
-
-func metadataInformationSchemaName(dialect, connectionSchema, configuredSchema string) string {
-	if schema := metadataTableSchemaName(dialect, connectionSchema, configuredSchema); schema != "" {
-		return schema
-	}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
-		return "public"
-	case platform.Spanner, platform.MySQL, platform.MariaDB:
-		return strings.TrimSpace(connectionSchema)
-	}
-	return ""
+	return widen.WidenVersion(ctx, m.conn, m.metadataTable(m.migrationsTableName()))
 }
 
 func (m *Migrator) metadataTableSchemaName() string {

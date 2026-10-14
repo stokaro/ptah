@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
-	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/ptahdirective"
 	"ptah.run/internal/sqlreach"
 	"ptah.run/migration/migrationfile"
@@ -294,38 +294,28 @@ func runCheckGroups(
 type readProof func(ctx context.Context, assertion string) error
 
 // checkReadProof returns what proves, before an assertion runs, that every
-// object it reads keeps its rows in the database the check is sent to.
-//
-// The text cannot say it on YDB. An external table is named exactly as a
-// table is, and measured on 25.1.4.7 and 26.2.1.14, a SELECT over one, or
-// over a view that reads one, fetches the table's files from the object
-// storage its data source names, inside the read-only transaction a check
-// runs in. So on YDB each name the assertion reads is described before it
-// runs, and one that is an external table, or that cannot be followed, is
-// refused (see [ydbschema.ProveLocalReads]). Every other dialect reaches
-// another server only through constructs the text names, which
-// [sqlreach.Scan] refuses, and gets nil.
+// object it reads keeps its rows in the database the check is sent to, where
+// the engine has a service that proves it (see
+// internal/migratorext.ReadProver). Every other engine reaches another server
+// only through constructs the text names, which [sqlreach.Scan] refuses, and
+// gets nil.
 func checkReadProof(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) (readProof, error) {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
+	prover := builtin.Lookup(dialect).ReadProof
+	if prover == nil {
 		return nil, nil
 	}
 	session, err := conn.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open a session to describe what checks read: %w", err)
 	}
-	catalog, root, err := ydbschema.SessionReadCatalog(session)
+	proof, err := prover.ReadProof(ctx, session)
 	if closeErr := session.Close(); err == nil && closeErr != nil {
 		err = closeErr
 	}
 	if err != nil {
 		return nil, fmt.Errorf("describe what checks read: %w", err)
 	}
-	return func(ctx context.Context, assertion string) error {
-		if err := ydbschema.ProveLocalReads(ctx, catalog, root, assertion); err != nil {
-			return fmt.Errorf("check assertion cannot be proved read-only: %w", err)
-		}
-		return nil
-	}, nil
+	return proof, nil
 }
 
 func runCheckGroup(
@@ -387,20 +377,15 @@ func atlasCheckFileMode(source, dialect string) checkGroupMode {
 	}
 }
 
-// checkTransactionOptions names the dialects whose server enforces a read-only
-// session, so a statement that gets past the static rules is still refused by
-// something other than Ptah. Oracle and YDB are in the group through a
-// translation their drivers need: dbschema.WithIsolatedQuerySession turns the
-// request into SET TRANSACTION READ ONLY on Oracle, which binds DML there, and
-// into a snapshot read-only transaction on YDB, which refuses a write.
+// checkTransactionOptions asks for a read-only session where the engine's
+// server enforces one, so a statement that gets past the static rules is
+// still refused by something other than Ptah (see
+// internal/migratorext.Services.ReadOnlyChecks).
 func checkTransactionOptions(dialect string) *sql.TxOptions {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		platform.MySQL, platform.MariaDB, platform.Oracle, platform.YDB:
+	if builtin.Lookup(dialect).ReadOnlyChecks {
 		return &sql.TxOptions{ReadOnly: true}
-	default:
-		return new(sql.TxOptions)
 	}
+	return new(sql.TxOptions)
 }
 
 // runCheckAssertion runs one assertion once its text is proved read-only and,
@@ -522,23 +507,9 @@ func validateEffectiveCheckAssertion(effective, dialect string) error {
 			finding.Construct, finding.Reach,
 		)
 	}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.YDB:
-		// Starting with SELECT proves less in YQL: an action, a lambda or a
-		// subquery carries a statement no semicolon precedes, and no
-		// read-only session backs the text up yet.
-		if err := sqlreach.YQLReadOnly(effective); err != nil {
-			return fmt.Errorf("check assertion must be one read-only SELECT statement: %w", err)
-		}
-	case platform.SQLServer:
-		if containsIdentifierSequence(effective, dialect, "NEXT", "VALUE", "FOR") {
-			return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
-		}
-	case platform.Oracle:
-		// A NEXTVAL is not rolled back by any transaction anywhere, so the
-		// text is the only place this can be refused.
-		if containsIdentifierSequence(effective, dialect, "NEXTVAL") {
-			return fmt.Errorf("check assertion must not advance an Oracle sequence with NEXTVAL")
+	if checks := builtin.Lookup(dialect).Checks; checks != nil {
+		if err := checks.Validate(effective); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -732,35 +703,7 @@ func firstCheckToken(source, dialect string) (lexer.Token, bool) {
 }
 
 func containsIdentifierSequence(source, dialect string, sequence ...string) bool {
-	if len(sequence) == 0 {
-		return false
-	}
-	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
-	matched := 0
-	for {
-		tok := lexr.NextToken()
-		switch tok.Type {
-		case lexer.TokenEOF:
-			return false
-		case lexer.TokenWhitespace, lexer.TokenComment:
-			continue
-		case lexer.TokenIdentifier:
-			if matched < len(sequence) && strings.EqualFold(tok.Value, sequence[matched]) {
-				matched++
-				if matched == len(sequence) {
-					return true
-				}
-				continue
-			}
-			if strings.EqualFold(tok.Value, sequence[0]) {
-				matched = 1
-			} else {
-				matched = 0
-			}
-		default:
-			matched = 0
-		}
-	}
+	return migratorext.ContainsIdentifierSequence(source, checkLexerOptions(dialect), sequence...)
 }
 
 // assertionPassed interprets a check's scalar result as a truthy pass. Booleans

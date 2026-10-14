@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqlident"
 )
 
@@ -206,7 +207,8 @@ func (m *Migrator) refuseTruncatedIdentifier(name, subject, remedy string) error
 
 // metadataTableOwnerQuery builds the catalog query that answers who owns one
 // metadata table, as (owner, current role, whether they are the same role or
-// the current one is a member of the owner).
+// the current one is a member of the owner), through the engine's owner
+// service.
 //
 // The membership arm is what keeps a normal deployment working: a table an
 // administrator created and handed to an application role belongs to a role
@@ -216,85 +218,14 @@ func (m *Migrator) refuseTruncatedIdentifier(name, subject, remedy string) error
 // ok reports whether this dialect answers the question at all. Those that do
 // not are listed at [Migrator.refuseForeignMetadataTable].
 func metadataTableOwnerQuery(dialect, configuredSchema, connectionSchema, table string) (string, []any, bool) {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		// The configured schema alone, so an unconfigured run falls through to
-		// current_schema() inside the query. The schema recorded when the
-		// connection opened is not the one an unqualified CREATE TABLE
-		// resolves later: a `$user` schema created after that point takes
-		// precedence, and a lookup bound to the older name would inspect one
-		// schema while the DDL and the writes used another.
-		return postgresTableOwnerQuery, []any{configuredSchema, table}, true
-	case platform.Oracle:
-		// Oracle needs a name: a schema is a user there, and the connected
-		// account is the one an unqualified CREATE TABLE lands in.
-		return oracleTableOwnerQuery,
-			[]any{configuredOrConnectionSchema(configuredSchema, connectionSchema), table},
-			true
-	case platform.YDB:
-		// A YDB table has an owner, which the scheme service reports, and
-		// nothing a squatter could attach to it runs as the migrating
-		// account: YDB has no trigger, rule, policy or default expression,
-		// only literal defaults. So there is no question for this check to
-		// ask, as on the MySQL family.
-		return "", nil, false
-	default:
+	owners := builtin.Lookup(dialect).Owners
+	if owners == nil {
 		return "", nil, false
 	}
+	query, args := owners.OwnerQuery(migratorext.Table{
+		ConfiguredSchema: configuredSchema,
+		ConnectionSchema: connectionSchema,
+		Name:             table,
+	})
+	return query, args, true
 }
-
-// postgresTableOwnerQuery reads the owner from pg_class and asks the server
-// itself whether the current session can exercise the owner's privileges,
-// because a name comparison would not follow a grant at all.
-//
-// The connected role itself, not a role it can act as. Membership of any kind
-// says this session reaches the owner; it says nothing about who else does,
-// and a table owned by a shared group role is modifiable by every other member
-// -- which is the arrangement the refusal exists to catch, wearing a grant.
-// A deployment that really wants a group-owned metadata table says so with the
-// override.
-//
-// Every name is pg_catalog-qualified. search_path is attacker-influenced input
-// wherever the role that squats a table can also create a schema: a function
-// named pg_get_userbyid in an earlier schema would answer this guard, and the
-// guard would report the squatter's table as this connection's own.
-//
-// No relkind filter: CREATE TABLE IF NOT EXISTS collides with any relation
-// holding the name, so a partitioned table, a view or a foreign table under it
-// is adopted the same way an ordinary one is. Narrowing to `r` would report a
-// partitioned squat as an absent table and hand it the adoption this refusal
-// exists to stop.
-//
-// An empty schema is the connection's own, which is where an unqualified
-// CREATE TABLE lands.
-const postgresTableOwnerQuery = `SELECT
-  pg_catalog.pg_get_userbyid(c.relowner),
-  current_user,
-  pg_catalog.pg_get_userbyid(c.relowner) = current_user
-FROM pg_catalog.pg_class AS c
-JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
-WHERE n.nspname = COALESCE(NULLIF(?, ''), pg_catalog.current_schema())
-  AND c.relname = ?`
-
-// oracleTableOwnerQuery reads ALL_OBJECTS, where a schema is a user, so the
-// owner column is the answer. There is no membership to follow: an object in
-// another account's schema is that account's, and reaching it at all is a
-// deliberate cross-schema arrangement.
-//
-// ALL_OBJECTS rather than ALL_TABLES, for the reason the PostgreSQL arm takes
-// no relkind: a view holding the name collides with CREATE TABLE the same way
-// a table does, and the PL/SQL block that creates Oracle's revision table
-// suppresses ORA-00955 for the collision, so a lookup that saw only tables would report the name free and
-// hand a crafted view with an INSTEAD OF trigger the adoption this refuses.
-//
-// No object-type filter either. An object type in its own namespace -- an
-// index, a trigger -- cannot collide, but one standing in this account's own
-// schema answers that the account owns it, so filtering would remove nothing
-// but the sentence explaining the filter.
-const oracleTableOwnerQuery = `SELECT
-  o.owner,
-  SYS_CONTEXT('USERENV', 'CURRENT_USER'),
-  CASE WHEN o.owner = SYS_CONTEXT('USERENV', 'CURRENT_USER') THEN 1 ELSE 0 END
-FROM all_objects o
-WHERE o.owner = ? AND o.object_name = ?
-FETCH FIRST 1 ROWS ONLY`

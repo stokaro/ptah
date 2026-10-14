@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/platform"
 )
 
 func TestNoTransactionResumeAction(t *testing.T) {
@@ -155,7 +157,7 @@ func TestPostgresSearchPathReplayState(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			changed, known := postgresSearchPathReplayState(test.statement)
+			changed, known := searchPathReplayState(test.statement, platform.Postgres)
 			c.Assert(changed, qt.Equals, test.wantChanged)
 			c.Assert(known, qt.Equals, test.wantKnown)
 		})

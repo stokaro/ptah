@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/migratorext/builtin"
 )
 
 type noTransactionPrefixAction uint8
@@ -55,11 +55,12 @@ func (m *Migrator) withNoTransactionSession(
 		scoped := *m
 		scoped.noTransactionSession = conn
 		scoped.postgresIndexObservation = nil
-		if platform.NormalizeDialect(scoped.connectionDialect()) == platform.SQLite {
-			// In-memory SQLite has one physical connection, so using the pool for
-			// checkpoints while that connection is pinned would deadlock. Keep
-			// metadata on the session and qualify it against main so temporary
-			// objects cannot shadow the revision table.
+		if scoped.services().PinnedMetadata {
+			// A database with one physical connection, such as in-memory
+			// SQLite, would deadlock if checkpoints used the pool while that
+			// connection is pinned. Keep metadata on the session and qualify it
+			// against the connection's schema so temporary objects cannot
+			// shadow the revision table.
 			scoped.conn = conn
 			if scoped.migrationsSchema == "" {
 				scoped.migrationsSchema = scoped.connectionSchemaName()
@@ -115,7 +116,7 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 					err,
 				)
 			}
-			if changed, known := postgresSearchPathReplayState(statement); changed {
+			if changed, known := searchPathReplayState(statement, m.connectionDialect()); changed {
 				searchPathKnowledge = postgresSearchPathUnknown
 				if known {
 					searchPathKnowledge = postgresSearchPathKnown
@@ -135,8 +136,11 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 	return nil
 }
 
-func postgresSearchPathReplayState(statement string) (changed, known bool) {
-	tokens := significantSQLTokens(statement, platform.Postgres)
+// searchPathReplayState reports whether a replayed statement changes
+// search_path, and whether the value it leaves is known. Only the PostgreSQL
+// index observation reads the answer.
+func searchPathReplayState(statement, dialect string) (changed, known bool) {
+	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) < 2 {
 		return false, false
 	}
@@ -169,18 +173,18 @@ func postgresSearchPathReplayState(statement string) (changed, known bool) {
 }
 
 func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		// A YDB query carries every definition and setting it needs (see
-		// internal/yqlquery), and YDB keeps no session state between
-		// queries, so a committed one leaves nothing a resumed session has
-		// to replay.
+	services := builtin.Lookup(dialect)
+	if services.Units != nil {
+		// A query unit carries every definition and setting it needs, and
+		// the engine keeps no session state between queries, so a committed
+		// one leaves nothing a resumed session has to replay.
 		return noTransactionPrefixDurable
 	}
 	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) == 0 {
 		return noTransactionPrefixDurable
 	}
-	if createsTemporaryObject(tokens, dialect) {
+	if createsTemporaryObject(tokens, services.HashTemporaryNames) {
 		return noTransactionPrefixReject
 	}
 	if matchesAnyKeyword(tokens[0],
@@ -224,16 +228,20 @@ func isTransactionControlStatement(statement, dialect string) bool {
 	if len(tokens) == 0 {
 		return false
 	}
-	normalized := platform.NormalizeDialect(dialect)
-	return isPrimaryTransactionControl(tokens, normalized) || isSetTransactionControl(statement, dialect, tokens, normalized)
+	services := builtin.Lookup(dialect)
+	return isPrimaryTransactionControl(tokens, services.BlockBegin) ||
+		isSetTransactionControl(statement, dialect, tokens, services.AutocommitControl)
 }
 
-func isPrimaryTransactionControl(tokens []lexer.Token, dialect string) bool {
+// isPrimaryTransactionControl reports whether a statement opens, ends or marks
+// a transaction. Where blockBegin holds, BEGIN and END delimit a block instead,
+// and only BEGIN TRAN, BEGIN TRANSACTION and BEGIN DISTRIBUTED open one.
+func isPrimaryTransactionControl(tokens []lexer.Token, blockBegin bool) bool {
 	first := tokens[0]
 	if matchesAnyKeyword(first, "COMMIT", "ROLLBACK", "SAVEPOINT", "ABORT") {
 		return true
 	}
-	if first.MatchIdentifierValue("END") && dialect != platform.SQLServer {
+	if first.MatchIdentifierValue("END") && !blockBegin {
 		return true
 	}
 	if first.MatchIdentifierValue("XA") {
@@ -252,7 +260,7 @@ func isPrimaryTransactionControl(tokens []lexer.Token, dialect string) bool {
 		return len(tokens) > 1 && tokens[1].MatchIdentifierValue("TRANSACTION")
 	}
 	if first.MatchIdentifierValue("BEGIN") {
-		if dialect != platform.SQLServer {
+		if !blockBegin {
 			return true
 		}
 		return len(tokens) > 1 && matchesAnyKeyword(tokens[1], "TRAN", "TRANSACTION", "DISTRIBUTED")
@@ -260,7 +268,7 @@ func isPrimaryTransactionControl(tokens []lexer.Token, dialect string) bool {
 	return false
 }
 
-func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, normalizedDialect string) bool {
+func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, autocommitControl bool) bool {
 	first := tokens[0]
 	if !first.MatchIdentifierValue("SET") {
 		return false
@@ -269,12 +277,11 @@ func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, no
 		containsIdentifierSequence(statement, dialect, "IMPLICIT_TRANSACTIONS") {
 		return true
 	}
-	return (normalizedDialect == platform.MySQL || normalizedDialect == platform.MariaDB) &&
-		containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
+	return autocommitControl && containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
 }
 
-func createsTemporaryObject(tokens []lexer.Token, dialect string) bool {
-	if platform.NormalizeDialect(dialect) == platform.SQLServer && slices.ContainsFunc(tokens, isSQLServerTemporaryIdentifier) {
+func createsTemporaryObject(tokens []lexer.Token, hashTemporaryNames bool) bool {
+	if hashTemporaryNames && slices.ContainsFunc(tokens, isHashTemporaryIdentifier) {
 		return true
 	}
 	if !tokens[0].MatchIdentifierValue("CREATE") {
@@ -288,7 +295,9 @@ func createsTemporaryObject(tokens []lexer.Token, dialect string) bool {
 	return false
 }
 
-func isSQLServerTemporaryIdentifier(token lexer.Token) bool {
+// isHashTemporaryIdentifier reports whether a token names a temporary object
+// by a leading #, bracket-quoted or not.
+func isHashTemporaryIdentifier(token lexer.Token) bool {
 	if token.Type != lexer.TokenIdentifier {
 		return false
 	}

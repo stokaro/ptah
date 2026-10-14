@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/yqlquery"
 	"ptah.run/migration/migrationfile"
 )
@@ -53,7 +53,7 @@ var buildWait = ydbschema.BuildWait{Appear: 2 * time.Second, Settle: 30 * time.S
 // deadline the executor puts on each query, rather than a setting the
 // migrator sends to the session.
 func boundsEachQuery(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.YDB
+	return builtin.Lookup(dialect).QueryDeadlines
 }
 
 // queryTimeoutContextKey carries the statement timeout the queries of a

@@ -3,6 +3,9 @@ package migrator
 import (
 	"strings"
 
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
+
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/builtindialects"
@@ -44,4 +47,21 @@ func expandTableStatement(statement, table, object, engine string) string {
 		"{object}", object,
 		"{engine}", engine,
 	).Replace(statement)
+}
+
+// services returns what the connected engine gives the migrator beyond its
+// descriptor; see internal/migratorext.
+func (m *Migrator) services() migratorext.Services {
+	return builtin.Lookup(m.connectionDialect())
+}
+
+// metadataTable names one of the migrator's tables for a service.
+func (m *Migrator) metadataTable(name string) migratorext.Table {
+	return migratorext.Table{
+		ConfiguredSchema: m.metadataTableSchemaName(),
+		ConnectionSchema: m.connectionSchemaName(),
+		Name:             name,
+		Qualified:        m.qualifiedMetadataTable(name),
+		Quote:            m.quoteIdentifier,
+	}
 }

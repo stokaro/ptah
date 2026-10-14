@@ -8,8 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
@@ -378,7 +379,7 @@ func (m *Migrator) collectMySQLSchemaCatalog(
 			catalog.routines[strings.ToLower(name)] = struct{}{}
 		}
 	}
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.MySQL {
+	if m.services().TriggerGrant {
 		if err := m.requireMySQLTriggerCatalogVisibility(ctx, schema); err != nil {
 			return err
 		}
@@ -896,33 +897,10 @@ func missingMetadataColumns(present map[string]struct{}, required []string) []st
 	return missing
 }
 
-// sqlServerTablePresenceQuery asks sys.tables whether one table exists.
-//
-// Beside clickHouseTablePresenceQuery, and for the same reason: see its comment.
-const sqlServerTablePresenceQuery = `SELECT COUNT(*)
-FROM sys.tables AS t
-JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-WHERE s.name = ? AND t.name = ?`
-
-// clickHouseTablePresenceQuery asks system.tables whether one table exists.
-//
-// It is a constant rather than a literal inside the return, because a raw
-// string spanning lines inside an argument list is where gofmt's column model
-// and the formatter golangci-lint runs disagree: the `[]any{` block that
-// followed it was indented one level deeper than the statement, gofmt left it
-// alone, and CI reported the file as unformatted.
-const clickHouseTablePresenceQuery = `SELECT count()
-FROM system.tables
-WHERE database = ? AND name = ? AND is_temporary = 0`
-
-// oracleTablePresenceQuery asks ALL_TABLES, because Oracle has no
-// information_schema. A schema is a user there, so the owner is the configured
-// schema or the connected account. The name is compared exactly: Ptah quotes
-// the revision table's name, so the catalog keeps the case it was given.
-const oracleTablePresenceQuery = `SELECT COUNT(*)
-FROM all_tables
-WHERE owner = ? AND table_name = ?`
-
+// migrationTablePresenceQuery returns the statement that counts the metadata
+// tables named table, as the engine's catalog service spells it, and what it
+// binds. An engine with no catalog service is refused: the migrator cannot
+// ask it whether its tables exist.
 func migrationTablePresenceQuery(
 	dialect,
 	configuredSchema,
@@ -930,59 +908,16 @@ func migrationTablePresenceQuery(
 	table string,
 	quoteIdentifier func(string) string,
 ) (string, []any, error) {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		if configuredSchema == "" {
-			// Unqualified CREATE TABLE targets current_schema(), even when an older
-			// table with the same name exists later in search_path. Inspect exactly
-			// that schema so dry-run and real initialization resolve the same table.
-			return `SELECT COUNT(*)
-FROM information_schema.tables
-WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE TABLE'`, []any{table}, nil
-		}
-		return informationSchemaTablePresenceQuery(configuredSchema, table)
-	case platform.Spanner, platform.MySQL, platform.MariaDB:
-		return informationSchemaTablePresenceQuery(
-			configuredOrConnectionSchema(configuredSchema, connectionSchema),
-			table,
-		)
-	case platform.ClickHouse:
-		return clickHouseTablePresenceQuery, []any{
-			configuredOrConnectionSchema(configuredSchema, connectionSchema),
-			table,
-		}, nil
-	case platform.SQLite:
-		schema := configuredOrConnectionSchema(configuredSchema, connectionSchema)
-		if schema == "" {
-			schema = "main"
-		}
-		return fmt.Sprintf(
-			"SELECT COUNT(*) FROM %s.sqlite_schema WHERE type = 'table' AND name = ? COLLATE NOCASE",
-			quoteIdentifier(schema),
-		), []any{table}, nil
-	case platform.SQLServer:
-		return sqlServerTablePresenceQuery, []any{
-			configuredOrConnectionSchema(configuredSchema, connectionSchema),
-			table,
-		}, nil
-	case platform.Oracle:
-		return oracleTablePresenceQuery, []any{
-			configuredOrConnectionSchema(configuredSchema, connectionSchema),
-			table,
-		}, nil
-	case platform.YDB:
-		// YDB has no catalog SQL could ask; metadataTableExists describes
-		// the table instead and never asks for a query.
-		return "", nil, errors.New("YDB migration metadata is described through the scheme service, not queried")
-	default:
+	catalog := builtin.Lookup(dialect).Catalog
+	if catalog == nil {
 		return "", nil, fmt.Errorf("unsupported migration metadata dialect %q", dialect)
 	}
-}
-
-func informationSchemaTablePresenceQuery(schema, table string) (string, []any, error) {
-	return `SELECT COUNT(*)
-FROM information_schema.tables
-WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'`, []any{schema, table}, nil
+	return catalog.PresenceQuery(migratorext.Table{
+		ConfiguredSchema: configuredSchema,
+		ConnectionSchema: connectionSchema,
+		Name:             table,
+		Quote:            quoteIdentifier,
+	})
 }
 
 func configuredOrConnectionSchema(configured, connection string) string {
