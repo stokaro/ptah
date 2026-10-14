@@ -335,11 +335,15 @@ func setupUnknownRowStatistics(c *qt.C, targetURL string) {
 	}
 }
 
+// writePartitionedIndexEntities declares events, its index and its partition
+// events_2026. The parent names its partition key: a Go table that omits
+// partition_by declares an ordinary table, and comparing it with the
+// partitioned parent is a key change the server cannot make in place.
 func writePartitionedIndexEntities(c *qt.C, dir string) string {
 	c.Helper()
 	return writeGeneratorEntities(c, dir, `package entities
 
-//ptah:schema:table name="events"
+//ptah:schema:table name="events" platform.postgres.partition_by="RANGE (created_at)"
 type Event struct {
 	//ptah:schema:field name="id" type="BIGINT" not_null="true"
 	ID int64

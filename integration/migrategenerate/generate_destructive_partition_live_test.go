@@ -161,13 +161,16 @@ func migrateGenerateUpSQL(c *qt.C, dir string) string {
 	return string(content)
 }
 
+// writeMigrateGenerateParentOnlyEntities declares the partitioned parent and
+// none of its partitions. The parent names its partition key: a Go table that
+// omits partition_by declares an ordinary table.
 func writeMigrateGenerateParentOnlyEntities(c *qt.C, dir string) string {
 	c.Helper()
 	entitiesDir := filepath.Join(dir, "entities")
 	c.Assert(os.MkdirAll(entitiesDir, 0o755), qt.IsNil)
 	content := `package entities
 
-//ptah:schema:table name="events"
+//ptah:schema:table name="events" platform.postgres.partition_by="RANGE (created_at)"
 type Event struct {
 	//ptah:schema:field name="id" type="BIGINT" not_null="true"
 	ID int64

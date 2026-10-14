@@ -99,6 +99,7 @@ func TestPersistencePlanning_RefusesUnloggedPartitionedTable(t *testing.T) {
 	result, err := (pgtable.PersistenceService{}).PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(result.Err(request), qt.ErrorMatches, `.*: PostgreSQL partitioned table app\.cache cannot be UNLOGGED`)
 	c.Assert(result.Contributions, qt.HasLen, 0)
 	c.Assert(result.Parents, qt.HasLen, 0)
 }
