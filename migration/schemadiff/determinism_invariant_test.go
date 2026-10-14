@@ -42,18 +42,22 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 	current := func() *catalog.Database {
 		return &catalog.Database{
 			Sequences:       []catalog.Sequence{{Name: "s_b"}, {Name: "s_a"}},
-			Domains:         []catalog.Domain{{Name: "d_b"}, {Name: "d_a"}},
-			Composites:      []catalog.CompositeType{{Name: "c_b"}, {Name: "c_a"}},
 			FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
-			FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r_b"), Value: &pgtype.ObservedRange{Subtype: "int4"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r_a"), Value: &pgtype.ObservedRange{Subtype: "int4"}})),
+			FeatureObjects: must.Must(schemaext.NewObjects(
+				schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d_b"), Value: &pgtype.ObservedDomain{BaseType: "int4"}},
+				schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d_a"), Value: &pgtype.ObservedDomain{BaseType: "int4"}},
+				schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "c_b"),
+					Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "int4"}}}},
+				schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "c_a"),
+					Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "int4"}}}},
+				schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r_b"), Value: &pgtype.ObservedRange{Subtype: "int4"}},
+				schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r_a"), Value: &pgtype.ObservedRange{Subtype: "int4"}})),
 		}
 	}
 	reversed := func() *catalog.Database {
 		db := current()
 		for _, swap := range []func(){
 			func() { db.Sequences[0], db.Sequences[1] = db.Sequences[1], db.Sequences[0] },
-			func() { db.Domains[0], db.Domains[1] = db.Domains[1], db.Domains[0] },
-			func() { db.Composites[0], db.Composites[1] = db.Composites[1], db.Composites[0] },
 			func() {
 				objects := must.Must(db.FeatureObjects.All())
 				slices.Reverse(objects)

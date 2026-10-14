@@ -107,72 +107,6 @@ func TestEnumTypeDef_EmptyValues(t *testing.T) {
 	c.Assert(enumDef.Values, qt.HasLen, 0)
 }
 
-// TestCompositeTypeDef_Constructor tests the NewCompositeTypeDef constructor
-func TestCompositeTypeDef_Constructor(t *testing.T) {
-	c := qt.New(t)
-
-	fields := []*ast.CompositeField{
-		{Name: "street", Type: "TEXT"},
-		{Name: "city", Type: "TEXT"},
-		{Name: "zipcode", Type: "VARCHAR(10)"},
-	}
-
-	compositeDef := ast.NewCompositeTypeDef(fields...)
-
-	c.Assert(compositeDef.Fields, qt.HasLen, 3)
-	c.Assert(compositeDef.Fields[0].Name, qt.Equals, "street")
-	c.Assert(compositeDef.Fields[0].Type, qt.Equals, "TEXT")
-	c.Assert(compositeDef.Fields[1].Name, qt.Equals, "city")
-	c.Assert(compositeDef.Fields[2].Name, qt.Equals, "zipcode")
-}
-
-// TestCompositeTypeDef_EmptyFields tests composite with no fields
-func TestCompositeTypeDef_EmptyFields(t *testing.T) {
-	c := qt.New(t)
-
-	compositeDef := ast.NewCompositeTypeDef()
-
-	c.Assert(compositeDef.Fields, qt.HasLen, 0)
-}
-
-// TestDomainTypeDef_Constructor tests the NewDomainTypeDef constructor
-func TestDomainTypeDef_Constructor(t *testing.T) {
-	c := qt.New(t)
-
-	domainDef := ast.NewDomainTypeDef("VARCHAR(255)")
-
-	c.Assert(domainDef.BaseType, qt.Equals, "VARCHAR(255)")
-	c.Assert(domainDef.Nullable, qt.IsTrue) // Default to nullable
-	c.Assert(domainDef.Default, qt.IsNil)
-	c.Assert(domainDef.Check, qt.Equals, "")
-}
-
-// TestDomainTypeDef_FluentAPI tests the fluent API methods
-func TestDomainTypeDef_FluentAPI(t *testing.T) {
-	c := qt.New(t)
-
-	domainDef := ast.NewDomainTypeDef("VARCHAR(255)").
-		SetNotNull().
-		SetDefault("'default_value'").
-		SetCheck("LENGTH(VALUE) > 0")
-
-	c.Assert(domainDef.BaseType, qt.Equals, "VARCHAR(255)")
-	c.Assert(domainDef.Nullable, qt.IsFalse)
-	c.Assert(domainDef.Default.Value, qt.Equals, "'default_value'")
-	c.Assert(domainDef.Check, qt.Equals, "LENGTH(VALUE) > 0")
-}
-
-// TestDomainTypeDef_DefaultExpression tests setting default expression
-func TestDomainTypeDef_DefaultExpression(t *testing.T) {
-	c := qt.New(t)
-
-	domainDef := ast.NewDomainTypeDef("TIMESTAMP").
-		SetDefaultExpression("NOW()")
-
-	c.Assert(domainDef.Default.Expression, qt.Equals, "NOW()")
-	c.Assert(domainDef.Default.Value, qt.Equals, "")
-}
-
 // TestAddEnumValueOperation_Constructor tests the NewAddEnumValueOperation constructor
 func TestAddEnumValueOperation_Constructor(t *testing.T) {
 	c := qt.New(t)
@@ -232,13 +166,9 @@ func TestTypeDefinition_Interface(t *testing.T) {
 	c := qt.New(t)
 
 	var _ ast.TypeDefinition = (*ast.EnumTypeDef)(nil)
-	var _ ast.TypeDefinition = (*ast.CompositeTypeDef)(nil)
-	var _ ast.TypeDefinition = (*ast.DomainTypeDef)(nil)
 
 	// Test that they also implement Node
 	var _ ast.Node = (*ast.EnumTypeDef)(nil)
-	var _ ast.Node = (*ast.CompositeTypeDef)(nil)
-	var _ ast.Node = (*ast.DomainTypeDef)(nil)
 
 	c.Assert(true, qt.IsTrue) // Just to have an assertion
 }

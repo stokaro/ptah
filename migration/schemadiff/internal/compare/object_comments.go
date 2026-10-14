@@ -47,11 +47,7 @@ func ObjectComments(
 	if caps.Has(capability.SequenceComments) {
 		changes = append(changes, sequenceComments(desired, database, semantics)...)
 	}
-	if caps.Has(capability.DomainComments) {
-		changes = append(changes, domainComments(desired, database, semantics)...)
-	}
 	if caps.Has(capability.TypeComments) {
-		changes = append(changes, compositeComments(desired, database, semantics)...)
 		changes = append(changes, enumComments(desired, database, semantics)...)
 	}
 	if caps.Has(capability.MaterializedViewComments) {
@@ -190,52 +186,6 @@ func sequenceComments(
 		}
 		if change, changed := commentTransition(
 			difftypes.CommentedSequence, sequence.QualifiedName(), sequence.Comment, current.Comment,
-		); changed {
-			changes = append(changes, change)
-		}
-	}
-	return changes
-}
-
-func domainComments(
-	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
-) []difftypes.ObjectCommentChange {
-	reported := make(map[objectIdentity]catalog.Domain, len(database.Domains))
-	for _, domain := range database.Domains {
-		reported[newObjectIdentity(objectidentity.KindDomain, domain.Schema, domain.Name, semantics)] = domain
-	}
-	var changes []difftypes.ObjectCommentChange
-	for _, domain := range desired.Domains {
-		current, exists := reported[newObjectIdentity(objectidentity.KindDomain, domain.Schema, domain.Name, semantics)]
-		if !exists {
-			continue
-		}
-		if change, changed := commentTransition(
-			difftypes.CommentedDomain, domain.QualifiedName(), domain.Comment, current.Comment,
-		); changed {
-			changes = append(changes, change)
-		}
-	}
-	return changes
-}
-
-func compositeComments(
-	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
-) []difftypes.ObjectCommentChange {
-	reported := make(map[objectIdentity]catalog.CompositeType, len(database.Composites))
-	for _, composite := range database.Composites {
-		identity := newObjectIdentity(objectidentity.KindComposite, composite.Schema, composite.Name, semantics)
-		reported[identity] = composite
-	}
-	var changes []difftypes.ObjectCommentChange
-	for _, composite := range desired.CompositeTypes {
-		identity := newObjectIdentity(objectidentity.KindComposite, composite.Schema, composite.Name, semantics)
-		current, exists := reported[identity]
-		if !exists {
-			continue
-		}
-		if change, changed := commentTransition(
-			difftypes.CommentedCompositeType, composite.QualifiedName(), composite.Comment, current.Comment,
 		); changed {
 			changes = append(changes, change)
 		}

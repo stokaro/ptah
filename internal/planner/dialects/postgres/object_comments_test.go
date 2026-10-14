@@ -32,24 +32,6 @@ func TestPlanner_ObjectCommentChangeIsSetInPlace(t *testing.T) {
 			exclude: "SEQUENCE \"app\".\"s\";",
 		},
 		{
-			name:    "a domain",
-			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedDomain, Name: "app.d", Current: "old", Desired: "new"},
-			want:    `COMMENT ON DOMAIN "app"."d" IS 'new';`,
-			exclude: "DOMAIN \"app\".\"d\" AS",
-		},
-		{
-			name:    "a composite type",
-			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedCompositeType, Name: "app.c", Current: "old", Desired: "new"},
-			want:    `COMMENT ON TYPE "app"."c" IS 'new';`,
-			exclude: "TYPE \"app\".\"c\" AS",
-		},
-		{
-			name:    "a range type",
-			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedRangeType, Name: "app.r", Current: "old", Desired: "new"},
-			want:    `COMMENT ON TYPE "app"."r" IS 'new';`,
-			exclude: "TYPE \"app\".\"r\" AS",
-		},
-		{
 			name:    "an enum type",
 			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedEnumType, Name: "app.e", Current: "old", Desired: "new"},
 			want:    `COMMENT ON TYPE "app"."e" IS 'new';`,
@@ -182,40 +164,6 @@ func TestPlanner_ObjectCommentOnAReplacedOrRecreatedView(t *testing.T) {
 
 			sql := renderedPlan(c, diff, &schemamodel.Database{Views: []schemamodel.View{view}})
 
-			c.Assert(commentStatements(sql), qt.DeepEquals, test.want, qt.Commentf("%s", sql))
-		})
-	}
-}
-
-// A domain whose base type changed is dropped and created again, which takes
-// its comment with it. The recreation writes the declared comment, and the
-// comment transition adds nothing beside it.
-func TestPlanner_ObjectCommentOnARecreatedDomain(t *testing.T) {
-	tests := []struct {
-		name    string
-		current string
-		desired string
-		want    []string
-	}{
-		{name: "the comment changed", current: "old", desired: "new", want: []string{`COMMENT ON DOMAIN "app"."d" IS 'new';`}},
-		{name: "the comment kept", current: "same", desired: "same", want: []string{`COMMENT ON DOMAIN "app"."d" IS 'same';`}},
-		{name: "the comment removed", current: "old", desired: "", want: nil},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			domain := schemamodel.Domain{Name: "d", Schema: "app", BaseType: "bigint", Comment: test.desired}
-			diff := &difftypes.SchemaDiff{
-				DomainsModified: []difftypes.DomainDiff{{
-					DomainName: "app.d", Changes: map[string]string{"type": "integer -> bigint"},
-					CurrentBaseType: "integer", Desired: domain,
-				}},
-				ObjectCommentsChanged: objectCommentChanges(difftypes.CommentedDomain, "app.d", test.current, test.desired),
-			}
-
-			sql := renderedPlan(c, diff, &schemamodel.Database{Domains: []schemamodel.Domain{domain}})
-
-			c.Assert(sql, qt.Contains, `CREATE DOMAIN "app"."d" AS bigint`)
 			c.Assert(commentStatements(sql), qt.DeepEquals, test.want, qt.Commentf("%s", sql))
 		})
 	}

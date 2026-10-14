@@ -23,7 +23,7 @@ func TestPlanBidirectionalSchemaDiff_ObjectCommentRollsBack(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{
 		{Kind: difftypes.CommentedView, Name: "app.v", Current: "old", Desired: "new"},
-		{Kind: difftypes.CommentedDomain, Name: "app.d", Current: "", Desired: "added"},
+		{Kind: difftypes.CommentedSequence, Name: "app.s", Current: "", Desired: "added"},
 		{Kind: difftypes.CommentedTrigger, Name: "tg", Table: "app.t", Current: "old", Desired: "new"},
 		{Kind: difftypes.CommentedFunction, Name: "app.f", Arguments: new("a integer"), Current: "old", Desired: "new"},
 	}}
@@ -39,7 +39,7 @@ func TestPlanBidirectionalSchemaDiff_ObjectCommentRollsBack(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Reverse.Diff.ObjectCommentsChanged, qt.DeepEquals, []difftypes.ObjectCommentChange{
 		{Kind: difftypes.CommentedView, Name: "app.v", Current: "new", Desired: "old"},
-		{Kind: difftypes.CommentedDomain, Name: "app.d", Current: "added", Desired: ""},
+		{Kind: difftypes.CommentedSequence, Name: "app.s", Current: "added", Desired: ""},
 		// A trigger keeps its table and a routine its arguments: without
 		// them the rollback addresses no object.
 		{Kind: difftypes.CommentedTrigger, Name: "tg", Table: "app.t", Current: "new", Desired: "old"},

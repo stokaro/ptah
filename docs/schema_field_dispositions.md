@@ -79,16 +79,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-643 fields are reachable from the desired schema, and each one carries
+621 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 532 | reaches rendered SQL on at least one target |
+| `ddl` | 512 | reaches rendered SQL on at least one target |
 | `comparison` | 34 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 33 | identifies the source text the declaration was read from |
+| `source` | 31 | identifies the source text the declaration was read from |
 | `export` | 13 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-70 known gaps: a conversion or the comparison drops each one on the dialects named.
+68 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -126,11 +126,9 @@ migration nobody asked for.
 | `mysqlschema.DesiredTable.AutoIncrement` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `mysqlschema.DesiredTable.Charset` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `mysqlschema.DesiredTable.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.CompositeType.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Constraint.UsingMethod` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Domain.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.AutoInc` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -188,7 +186,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-55 exemptions, each with the reason it is right.
+52 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -223,9 +221,6 @@ migration nobody asked for.
 | `oratype.DesiredDomain.DefaultExpr` | `oracle` | both | Oracle stores its own spelling of a domain's CHECK and DEFAULT and no probe asks the server how it spells a declaration's, so a comparison leaves both create-only |
 | `schemamodel.Database.FeatureCoverage` | any | both | it is what a feature comparison may conclude from: without it the comparison refuses the objects as not inspected, which is the comparison reading it |
 | `schemamodel.Database.NotDescribed` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
-| `schemamodel.Domain.Check` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
-| `schemamodel.Domain.Default` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
-| `schemamodel.Domain.DefaultExpr` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
 | `schemamodel.Field.Primary` | `clickhouse` | both | every fixture's only key column is its primary one, and a ClickHouse MergeTree table without a sorting key is refused |
 | `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
 | `schemamodel.Grant.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver` | both | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
@@ -445,15 +440,6 @@ migration nobody asked for.
 | `pgtype.DesiredRange.SubtypeOpClass` | `ddl` | — |
 | `pgtype.NormalizedDomain.Check` | `comparison` | the server's spelling of a declared domain CHECK, compared with the catalog's and never rendered |
 | `pgtype.NormalizedDomain.Default` | `comparison` | the server's spelling of a declared domain default, compared with the catalog's and never rendered |
-| `schemamodel.CompositeField.Name` | `ddl` | — |
-| `schemamodel.CompositeField.Type` | `ddl` | — |
-| `schemamodel.CompositeType.Comment` | `ddl` | — |
-| `schemamodel.CompositeType.Dialects` | `ddl` | — |
-| `schemamodel.CompositeType.Facets` | `ddl` | — |
-| `schemamodel.CompositeType.Fields` | `ddl` | — |
-| `schemamodel.CompositeType.Name` | `ddl` | — |
-| `schemamodel.CompositeType.Schema` | `ddl` | — |
-| `schemamodel.CompositeType.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Constraint.CheckExpression` | `ddl` | — |
 | `schemamodel.Constraint.Columns` | `ddl` | — |
 | `schemamodel.Constraint.Comment` | `ddl` | — |
@@ -476,10 +462,8 @@ migration nobody asked for.
 | `schemamodel.Constraint.Table` | `ddl` | — |
 | `schemamodel.Constraint.Type` | `ddl` | — |
 | `schemamodel.Constraint.UsingMethod` | `ddl` | — |
-| `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
-| `schemamodel.Database.Domains` | `ddl` | — |
 | `schemamodel.Database.EmbeddedFields` | `ddl` | — |
 | `schemamodel.Database.EmbeddedSources` | `ddl` | — |
 | `schemamodel.Database.Enums` | `ddl` | — |
@@ -504,17 +488,6 @@ migration nobody asked for.
 | `schemamodel.Database.Tables` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
-| `schemamodel.Domain.BaseType` | `ddl` | — |
-| `schemamodel.Domain.Check` | `ddl` | — |
-| `schemamodel.Domain.Comment` | `ddl` | — |
-| `schemamodel.Domain.Default` | `ddl` | — |
-| `schemamodel.Domain.DefaultExpr` | `ddl` | — |
-| `schemamodel.Domain.Dialects` | `ddl` | — |
-| `schemamodel.Domain.Facets` | `ddl` | — |
-| `schemamodel.Domain.Name` | `ddl` | — |
-| `schemamodel.Domain.NotNull` | `ddl` | — |
-| `schemamodel.Domain.Schema` | `ddl` | — |
-| `schemamodel.Domain.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.EmbeddedField.Comment` | `ddl` | — |
 | `schemamodel.EmbeddedField.EmbeddedTypeName` | `ddl` | — |
 | `schemamodel.EmbeddedField.Field` | `ddl` | — |

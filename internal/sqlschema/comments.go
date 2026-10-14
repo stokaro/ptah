@@ -99,7 +99,9 @@ func commentTarget(
 	case "SEQUENCE":
 		return sequenceCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
 	case "DOMAIN":
-		return domainCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
+		// A domain is a type owner's object, and its owner claims the comment
+		// on one it declared. A domain reaching here is one no owner declared.
+		return new(string), false
 	case "TYPE":
 		return typeCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
 	case "MATERIALIZED VIEW":
@@ -152,28 +154,12 @@ func sequenceCommentTarget(databases []*schemamodel.Database, qualified, sourceP
 	return resolvedCommentTarget(sourcePlatform, qualified, targets, names)
 }
 
-func domainCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatform string) (*string, bool) {
-	var targets []*string
-	var names []string
-	for _, database := range databases {
-		for i := range database.Domains {
-			targets = append(targets, &database.Domains[i].Comment)
-			names = append(names, database.Domains[i].QualifiedName())
-		}
-	}
-	return resolvedCommentTarget(sourcePlatform, qualified, targets, names)
-}
-
-// typeCommentTarget finds the composite, range or enum type COMMENT ON TYPE
-// names. The three kinds share one namespace, so they are resolved together.
+// typeCommentTarget finds the enum type COMMENT ON TYPE names. The owner of a
+// composite or a range type claims the comment on one it declared.
 func typeCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatform string) (*string, bool) {
 	var targets []*string
 	var names []string
 	for _, database := range databases {
-		for i := range database.CompositeTypes {
-			targets = append(targets, &database.CompositeTypes[i].Comment)
-			names = append(names, database.CompositeTypes[i].QualifiedName())
-		}
 		for i := range database.Enums {
 			targets = append(targets, &database.Enums[i].Comment)
 			names = append(names, database.Enums[i].QualifiedName())

@@ -17,17 +17,15 @@ import (
 )
 
 // A column typed by a domain is compared by the domain's identity, and a
-// domain a feature owner's object defines resolves an unqualified reference
-// as a common domain does. The database column holds public.status, and the
-// declaration names status. When the owner's object puts its status in
-// schema other, the bare reference means that one, which is a change. The
-// controls show the same comparison without a declaration, and with a common
-// domain in schema other: the first leaves the bare reference to the name,
-// and the second is the rule the owner's domain follows.
+// domain a feature owner's object defines resolves an unqualified reference.
+// The database column holds public.status, and the declaration names status.
+// When the owner's object puts its status in schema other, the bare
+// reference means that one, which is a change. The control shows the same
+// comparison without a declaration, which leaves the bare reference to the
+// name.
 func TestTableColumnsWithSemantics_ResolvesADomainAnOwnerDefines(t *testing.T) {
 	tests := []struct {
 		name       string
-		domains    []schemamodel.Domain
 		objects    []schemaext.Object
 		wantChange []string
 	}{
@@ -35,9 +33,6 @@ func TestTableColumnsWithSemantics_ResolvesADomainAnOwnerDefines(t *testing.T) {
 			objects:    []schemaext.Object{definedtypetest.Object(objectidentity.KindDomain, "other", "status", "text")},
 			wantChange: []string{"status -> status"}},
 		{name: "control: no declaration"},
-		{name: "control: a common domain in another schema",
-			domains:    []schemamodel.Domain{{Name: "status", Schema: "other", BaseType: "TEXT"}},
-			wantChange: []string{"status -> status"}},
 		{name: "an owner's composite type of the same name is no domain",
 			objects: []schemaext.Object{definedtypetest.Object(objectidentity.KindComposite, "other", "status", "text")}},
 	}
@@ -48,7 +43,6 @@ func TestTableColumnsWithSemantics_ResolvesADomainAnOwnerDefines(t *testing.T) {
 			desired := &schemamodel.Database{
 				Tables:         []schemamodel.Table{table},
 				Fields:         []schemamodel.Field{{StructName: "T", Name: "s", Type: "status"}},
-				Domains:        test.domains,
 				FeatureObjects: must.Must(schemaext.NewObjects(test.objects...)),
 			}
 			current := catalog.Table{Name: "t", Type: "TABLE", Columns: []catalog.Column{{

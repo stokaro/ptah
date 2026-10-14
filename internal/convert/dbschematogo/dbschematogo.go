@@ -75,7 +75,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
 	convertSequences(database, dbSchema.Sequences)
-	convertUserTypes(database, dbSchema)
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
@@ -142,8 +141,6 @@ func newDatabase() *schemamodel.Database {
 		Enums:             make([]schemamodel.Enum, 0),
 		Functions:         make([]schemamodel.Function, 0),
 		Sequences:         make([]schemamodel.Sequence, 0),
-		Domains:           make([]schemamodel.Domain, 0),
-		CompositeTypes:    make([]schemamodel.CompositeType, 0),
 		Views:             make([]schemamodel.View, 0),
 		MaterializedViews: make([]schemamodel.MaterializedView, 0),
 		Triggers:          make([]schemamodel.Trigger, 0),
@@ -418,35 +415,6 @@ func convertFunctions(database *schemamodel.Database, dbFunctions []catalog.Func
 			Comment:    dbFunction.Comment,
 		}
 		database.Functions = append(database.Functions, function)
-	}
-}
-
-func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database) {
-	for _, domain := range dbSchema.Domains {
-		converted := schemamodel.Domain{
-			Facets:   domain.Facets,
-			Name:     domain.Name,
-			Schema:   domain.Schema,
-			BaseType: domain.BaseType,
-			NotNull:  domain.NotNull,
-			Check:    domain.Check,
-			Comment:  domain.Comment,
-		}
-		setDomainDefaultFromDB(&converted, domain.Default)
-		database.Domains = append(database.Domains, converted)
-	}
-	for _, composite := range dbSchema.Composites {
-		fields := make([]schemamodel.CompositeField, 0, len(composite.Fields))
-		for _, field := range composite.Fields {
-			fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
-		}
-		database.CompositeTypes = append(database.CompositeTypes, schemamodel.CompositeType{
-			Facets:  composite.Facets,
-			Name:    composite.Name,
-			Schema:  composite.Schema,
-			Fields:  fields,
-			Comment: composite.Comment,
-		})
 	}
 }
 
@@ -973,33 +941,6 @@ func firstString(values []string) string {
 		return ""
 	}
 	return values[0]
-}
-
-// setDomainDefaultFromDB routes a domain's catalog default the way a column's
-// is routed, which is the whole of the fix for stokaro/ptah#2037.
-//
-// [schemamodel.Domain] keeps a literal and an expression apart because the
-// renderer does: an expression becomes `sql(...)` and a literal becomes a
-// quoted string. Assigning the catalog's answer to the literal field wrote a
-// quoted default, which reads back as a 26-character string, so `apply` planned
-// a SET DEFAULT of that quoted text and the domain's default became the TEXT of
-// the old expression. Measured on PostgreSQL 17.11, a column of that type then
-// defaulted to that text, and each further inspect-and-apply cycle wrapped it
-// again: 26, 49, 76, 111 characters.
-//
-// PostgreSQL reports every domain default as an expression -- a declared
-// DEFAULT 'x' comes back with a cast -- so in practice this routes all of them
-// to the expression side. The literal branch is kept because the field exists
-// and a caller building a description by hand may use it.
-func setDomainDefaultFromDB(domain *schemamodel.Domain, defaultSQL string) {
-	if strings.TrimSpace(defaultSQL) == "" {
-		return
-	}
-	if sqlutil.DefaultLooksLikeExpression(defaultSQL) {
-		domain.DefaultExpr = defaultSQL
-		return
-	}
-	domain.Default = defaultSQL
 }
 
 // convertGrants describes live grant rows as declarations.

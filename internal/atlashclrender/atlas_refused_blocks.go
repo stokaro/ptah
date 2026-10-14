@@ -22,8 +22,6 @@ import (
 // conformance runs that re-measure both against the binary, and string
 // literals drift where one constant cannot.
 const (
-	blockComposite    = "composite"
-	blockDomain       = "domain"
 	blockExtension    = "extension"
 	blockFunction     = "function"
 	blockPolicy       = "policy"
@@ -636,16 +634,6 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 	}
 	for _, trigger := range db.Triggers {
 		add(trigger.Body)
-	}
-	for _, domain := range db.Domains {
-		add(domain.BaseType)
-		add(domain.DefaultExpr)
-		add(domain.Check)
-	}
-	for _, composite := range db.CompositeTypes {
-		for _, field := range composite.Fields {
-			add(field.Type)
-		}
 	}
 	// A grant's target is an HCL traversal in the rendered `permission` block,
 	// so an omitted target leaves a reference to a block that is not there.

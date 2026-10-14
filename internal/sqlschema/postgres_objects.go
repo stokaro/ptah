@@ -8,8 +8,6 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/dialectlexer"
-	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/routineargs"
 )
@@ -144,85 +142,16 @@ func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.T
 }
 
 // appendCreateType routes a CREATE TYPE node to the bucket its type definition
-// belongs in. CREATE DOMAIN also arrives here, as a DomainTypeDef.
+// belongs in. An enum is the one definition the node carries; a type owner
+// reads a domain or a composite type.
 func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode, sourcePlatform string) {
 	schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
-	switch definition := node.TypeDef.(type) {
-	case *ast.EnumTypeDef:
+	if definition, ok := node.TypeDef.(*ast.EnumTypeDef); ok {
 		database.Enums = append(database.Enums, schemamodel.Enum{
 			Name:   schemamodel.QualifyTableName(schema, name),
 			Values: definition.Values,
 		})
-	case *ast.CompositeTypeDef:
-		database.CompositeTypes = append(database.CompositeTypes, toCompositeType(schema, name, node, definition, sourcePlatform))
-	case *ast.DomainTypeDef:
-		database.Domains = append(database.Domains, toDomain(schema, name, node, definition, sourcePlatform))
 	}
-}
-
-func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *ast.CompositeTypeDef, sourcePlatform string) schemamodel.CompositeType {
-	fields := make([]schemamodel.CompositeField, 0, len(definition.Fields))
-	for _, field := range definition.Fields {
-		fields = append(fields, schemamodel.CompositeField{
-			Name: normalizeSQLIdentifier(sourcePlatform, field.Name),
-			Type: field.Type,
-		})
-	}
-	composite := schemamodel.CompositeType{
-		Name:    name,
-		Schema:  schema,
-		Fields:  fields,
-		Comment: node.Comment,
-	}
-	composite.Canonicalize()
-	return composite
-}
-
-func toDomain(
-	schema, name string, node *ast.CreateTypeNode, definition *ast.DomainTypeDef, sourcePlatform string,
-) schemamodel.Domain {
-	domain := schemamodel.Domain{
-		Name:     name,
-		Schema:   schema,
-		BaseType: definition.BaseType,
-		NotNull:  !definition.Nullable,
-		Check:    definition.Check,
-		Comment:  node.Comment,
-	}
-	if definition.Default != nil {
-		domain.Default, domain.DefaultExpr = domainDefault(definition.Default, sourcePlatform)
-	}
-	domain.Canonicalize()
-	return domain
-}
-
-// domainDefault splits a domain's DEFAULT the way [schemamodel.Domain] keeps
-// it: Default holds a value, which the planner quotes, and DefaultExpr holds
-// SQL, which it writes as it is.
-//
-// The parser hands over SQL either way, so only a string constant becomes a
-// value, read as the server reads it. Copied into Default with its quotes,
-// DEFAULT 'ab' is quoted a second time, and the plan sets the default to the
-// four characters 'ab', quotes included (stokaro/ptah#3740). Anything else --
-// a number, a keyword, a cast, a call -- is SQL and stays SQL, and DEFAULT
-// NULL is no default at all, which is what the server stores for it.
-func domainDefault(value *ast.DefaultValue, sourcePlatform string) (literal, expression string) {
-	if strings.EqualFold(strings.TrimSpace(value.Expression), "NULL") {
-		return "", ""
-	}
-	if value.Expression != "" {
-		return "", value.Expression
-	}
-	written := strings.TrimSpace(value.Value)
-	if !strings.HasPrefix(written, `"`) {
-		if text, ok := lexer.StringValue(written, dialectlexer.Options(sourcePlatform)); ok {
-			return text, ""
-		}
-	}
-	if strings.EqualFold(written, "NULL") {
-		return "", ""
-	}
-	return "", written
 }
 
 func unquoteSQLStringLiteral(value string) string {

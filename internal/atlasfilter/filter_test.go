@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgtype"
@@ -221,17 +222,21 @@ func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
 	schema := filterFixtureSchema()
 	schema.Schemas = []catalog.Schema{{Name: "auth"}}
 	schema.Sequences = []catalog.Sequence{{Schema: "auth", Name: "users_seq"}}
-	schema.Domains = []catalog.Domain{{Schema: "auth", Name: "email"}}
-	schema.Composites = []catalog.CompositeType{{Schema: "auth", Name: "address"}}
-	schema.FeatureObjects = must.Must(schema.FeatureObjects.With(must.Must(pgtype.ObservedObject(pgtype.Ref(pgtype.RangeKind, "auth", "floatrange"), &pgtype.ObservedRange{Subtype: "float8"}))))
+	for _, object := range []schemaext.Object{
+		must.Must(pgtype.ObservedObject(pgtype.Ref(pgtype.DomainKind, "auth", "email"), &pgtype.ObservedDomain{BaseType: "text"})),
+		must.Must(pgtype.ObservedObject(pgtype.Ref(pgtype.CompositeKind, "auth", "address"), &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}})),
+		must.Must(pgtype.ObservedObject(pgtype.Ref(pgtype.RangeKind, "auth", "floatrange"), &pgtype.ObservedRange{Subtype: "float8"})),
+	} {
+		schema.FeatureObjects = must.Must(schema.FeatureObjects.With(object))
+	}
 
 	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Sequences, qt.HasLen, 1)
-	c.Assert(got.Domains, qt.HasLen, 1)
-	c.Assert(got.Composites, qt.HasLen, 1)
+	c.Assert(kindNames(got.FeatureObjects, pgtype.DomainKind), qt.DeepEquals, []string{"auth.email"})
+	c.Assert(kindNames(got.FeatureObjects, pgtype.CompositeKind), qt.DeepEquals, []string{"auth.address"})
 	c.Assert(rangeNames(got.FeatureObjects), qt.DeepEquals, []string{"auth.floatrange"})
 }
 

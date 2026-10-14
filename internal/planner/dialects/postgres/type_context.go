@@ -2,10 +2,7 @@ package postgres
 
 import (
 	"ptah.run/core/featureplan"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
-	"ptah.run/internal/schemaprep"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -25,40 +22,6 @@ func (p *Planner) typeContext(diff *difftypes.SchemaDiff) featureplan.TypeContex
 				context.Current = appendType(context.Current, typ)
 			}
 		}
-	}
-	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(p.targetDialect()))
-	context.Desired = append(context.Desired, schemaprep.TypeDefinitions(builder, diff.DomainsAdded, diff.CompositeTypesAdded)...)
-	for _, change := range diff.DomainsModified {
-		if change.Desired.Name != "" {
-			definitions := schemaprep.TypeDefinitions(builder, []schemamodel.Domain{change.Desired}, nil)
-			context.Desired = append(context.Desired, definitions...)
-			current := definitions[0].Clone()
-			current.References = currentDomainReferences(change)
-			context.Current = append(context.Current, current)
-		}
-	}
-	for _, change := range diff.CompositeTypesModified {
-		if change.Desired.Name != "" {
-			definitions := schemaprep.TypeDefinitions(builder, nil, []schemamodel.CompositeType{change.Desired})
-			context.Desired = append(context.Desired, definitions...)
-			current := definitions[0].Clone()
-			current.References = change.CurrentFieldTypes
-			context.Current = append(context.Current, current)
-		}
-	}
-	for _, domain := range diff.DomainsRemoved {
-		id := builder.TablePartsVerbatim(domain.Schema, domain.Name)
-		id.Kind = objectidentity.KindDomain
-		context.Current = append(context.Current, schemaext.DefinedType{ID: id, References: []string{domain.BaseType}})
-	}
-	for _, composite := range diff.CompositeTypesRemoved {
-		id := builder.TablePartsVerbatim(composite.Schema, composite.Name)
-		id.Kind = objectidentity.KindComposite
-		var refs []string
-		for _, field := range composite.Fields {
-			refs = append(refs, field.Type)
-		}
-		context.Current = append(context.Current, schemaext.DefinedType{ID: id, References: refs})
 	}
 	return context
 }

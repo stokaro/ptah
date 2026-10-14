@@ -98,12 +98,6 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		SequencesAdded:            difftypes.SequenceChanges{{Name: "missing_sequence"}},
 		SequencesRemoved:          difftypes.SequenceChanges{{Name: "extra_sequence"}},
 		SequencesModified:         []difftypes.SequenceDiff{{SequenceName: "changed_sequence", Changes: changes}},
-		DomainsAdded:              difftypes.DomainChanges{{Name: "missing_domain"}},
-		DomainsRemoved:            difftypes.DomainChanges{{Name: "extra_domain"}},
-		DomainsModified:           []difftypes.DomainDiff{{DomainName: "changed_domain", Changes: changes}},
-		CompositeTypesAdded:       difftypes.CompositeTypeChanges{{Name: "missing_composite"}},
-		CompositeTypesRemoved:     difftypes.CompositeTypeChanges{{Name: "extra_composite"}},
-		CompositeTypesModified:    []difftypes.CompositeTypeDiff{{TypeName: "changed_composite", Changes: changes}},
 		ViewsAdded:                difftypes.ViewChanges{{Name: "missing_view"}},
 		ViewsRemoved:              difftypes.ViewChanges{{Name: "extra_view"}},
 		ViewsModified:             []difftypes.ViewDiff{{ViewName: "changed_view", Changes: changes}},
@@ -162,12 +156,6 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		"missing_sequence",
 		"extra_sequence",
 		"sequence_mismatch",
-		"missing_domain",
-		"extra_domain",
-		"domain_mismatch",
-		"missing_composite_type",
-		"extra_composite_type",
-		"composite_type_mismatch",
 		"missing_view",
 		"extra_view",
 		"view_mismatch",
@@ -200,7 +188,7 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c.Assert(mismatches[len(mismatches)-2].Table, qt.Equals, "accounts")
 	c.Assert(mismatches[len(mismatches)-1].Object, qt.Equals, "accounts.extra_global_constraint")
 	c.Assert(mismatches[len(mismatches)-1].Table, qt.Equals, "accounts")
-	c.Assert(mismatches[44], qt.DeepEquals, Mismatch{
+	c.Assert(mismatches[38], qt.DeepEquals, Mismatch{
 		Kind: "missing_role_membership", Object: "app in readers", Message: "missing membership app in readers",
 	})
 }

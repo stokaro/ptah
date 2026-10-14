@@ -96,20 +96,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "Domains", present: "positive_int", absent: "nosuch_domain",
-			seed: func(s *catalog.Database) {
-				s.Domains = append(s.Domains, catalog.Domain{
-					Name: "positive_int", BaseType: "integer",
-				})
-			},
-		},
-		{
-			field: "Composites", present: "addr", absent: "nosuch_composite",
-			seed: func(s *catalog.Database) {
-				s.Composites = append(s.Composites, catalog.CompositeType{Name: "addr"})
-			},
-		},
-		{
 			field: "Views", present: "v_users", absent: "nosuch_view",
 			seed: func(s *catalog.Database) {
 				s.Views = append(s.Views, catalog.View{Name: "v_users"})

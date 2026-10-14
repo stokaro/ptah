@@ -471,8 +471,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"schema":       (*parser).parseSchema,
 	"enum":         (*parser).parseEnum,
 	"sequence":     (*parser).parseSequence,
-	"domain":       (*parser).parseDomain,
-	"composite":    (*parser).parseComposite,
 	"table":        (*parser).parseTable,
 	"function":     (*parser).parseFunction,
 	"procedure":    (*parser).parseProcedure,
@@ -528,10 +526,9 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 }
 
 // parseSharedBlock reads a block of a type an owner scopes by dialect and this
-// package also reads, such as a domain. The owner reads it in a document of
-// one of its dialects, or the block's own `dialect` names one; this package
-// reads it for every other target into the common model, which holds an
-// Oracle domain.
+// package also reads. The owner reads it in a document of one of its dialects,
+// or where the block's own `dialect` names one; this package reads it for
+// every other target.
 func (p *parser) parseSharedBlock(block *hclsyntax.Block, parse func(*parser, *hclsyntax.Block) error) error {
 	dialect, err := p.ownerDialect(block)
 	if err != nil {
@@ -2421,8 +2418,6 @@ func (p *parser) evaluatedText(expr hclsyntax.Expression) (string, bool) {
 // which names nothing the operator wrote (stokaro/ptah#2150).
 var ownTypeBlocks = []hclext.Block{
 	{Site: hclext.TopLevel, Type: "enum", Naming: hclext.SchemaAndName, DeclaresType: true},
-	{Site: hclext.TopLevel, Type: "domain", Naming: hclext.SchemaAndName, DeclaresType: true},
-	{Site: hclext.TopLevel, Type: "composite", Naming: hclext.SchemaAndName, DeclaresType: true},
 }
 
 // declaresType reports whether the labels of a top-level block of type block

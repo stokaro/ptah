@@ -32,7 +32,6 @@ type routedKind struct {
 
 var routedKinds = []routedKind{
 	{name: "sequence", want: 1, count: countNodes[*ast.CreateSequenceNode]},
-	{name: "user type", want: 2, count: countNodes[*ast.CreateTypeNode]},
 	{name: "role", want: 1, count: countNodes[*ast.CreateRoleNode]},
 	{name: "table", want: 1, count: countNodes[*ast.CreateTableNode]},
 	{name: "function", want: 1, count: countNodes[*ast.CreateFunctionNode]},
@@ -56,8 +55,8 @@ func countNodes[T ast.Node](statements []ast.Node) int {
 }
 
 // routingFixture declares one object of every common kind in routedKinds.
-// Domains and composite types share the CREATE TYPE node. Owner types use the
-// feature lowering contract, whose fixtures select a runtime.
+// Owner types, such as a domain, use the feature lowering contract, whose
+// fixtures select a runtime.
 //
 // Enums are deliberately absent. Four engines model an enum on the column
 // instead of as a standalone type, so the enum node count legitimately differs
@@ -66,11 +65,9 @@ func countNodes[T ast.Node](statements []ast.Node) int {
 func routingFixture() schemamodel.Database {
 	start := int64(1000)
 	return schemamodel.Database{
-		Sequences:      []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
-		Domains:        []schemamodel.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
-		CompositeTypes: []schemamodel.CompositeType{{Name: "composite_probe", Fields: []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}}}},
-		Roles:          []schemamodel.Role{{Name: "role_probe", Login: true, Inherit: true}},
-		Tables:         []schemamodel.Table{{StructName: "T", Name: "table_probe"}},
+		Sequences: []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
+		Roles:     []schemamodel.Role{{Name: "role_probe", Login: true, Inherit: true}},
+		Tables:    []schemamodel.Table{{StructName: "T", Name: "table_probe"}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "touched", Type: "TIMESTAMP", Nullable: true},
@@ -201,7 +198,6 @@ func TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testi
 	c.Assert(len(all) > len(notObjectCollections), qt.IsTrue,
 		qt.Commentf("reflection found %d fields on schemamodel.Database", len(all)))
 	c.Assert(declared, qt.Contains, "Sequences")
-	c.Assert(declared, qt.Contains, "Domains")
 	c.Assert(declared, qt.Contains, "Grants")
 	c.Assert(declared, qt.Contains, "FeatureObjects")
 	c.Assert(declared, qt.Contains, "FeatureCoverage")

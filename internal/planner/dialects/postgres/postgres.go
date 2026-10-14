@@ -30,7 +30,6 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/typeorder"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -508,8 +507,6 @@ func (p *Planner) addSchemaPreconditions(
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded.Names()...)
 	names = append(names, diff.EnumsAdded.Names()...)
-	names = append(names, diff.DomainsAdded.Names()...)
-	names = append(names, diff.CompositeTypesAdded.Names()...)
 	names = append(names, diff.SequencesAdded.Names()...)
 	names = append(names, diff.FunctionsAdded.Names()...)
 	names = append(names, diff.ViewsAdded.Names()...)
@@ -1428,239 +1425,6 @@ func (p *Planner) removeEnums(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
-// plannedUserType pairs a user-defined type's dependency identity with the node
-// that creates it, so one ordering covers domains, ranges and composites
-// together.
-type plannedUserType struct {
-	dep  deporder.UserType
-	node ast.Node
-}
-
-// addNewUserTypes emits CREATE DOMAIN / CREATE TYPE for newly added domains,
-// ranges, and composite types. It runs before tables so columns can reference
-// them, and orders the three kinds against each other so a type is created
-// before whatever names it.
-//
-// Emitting kind by kind is not enough, because the three kinds name each other
-// in both directions. `CREATE DOMAIN d_comp AS addr` needs the composite `addr`
-// first and `CREATE TYPE addr AS (f d_int)` needs the domain `d_int` first, so
-// no fixed order of kinds can serve both. Emitting domains first sent
-// `CREATE DOMAIN "d_comp" AS addr;` out ahead of `CREATE TYPE "addr" AS (...)`
-// and the script stopped at `ERROR: type "addr" does not exist` -- measured on
-// PostgreSQL 17.10 with psql -v ON_ERROR_STOP=1, exit 3.
-//
-// Enums are not in the set: they carry no reference to another user-defined
-// type and are already emitted before this runs.
-func (p *Planner) addNewUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	planned := p.plannedUserTypes(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
-	byName := make(map[string]ast.Node, len(planned))
-	deps := make([]deporder.UserType, 0, len(planned))
-	for _, userType := range planned {
-		byName[userType.dep.Name] = userType.node
-		deps = append(deps, userType.dep)
-	}
-
-	for _, name := range deporder.UserTypesForCreate(typeorder.Vocabulary(deps, p.typeContext(diff).Desired)) {
-		if node, ok := byName[name]; ok {
-			result = append(result, node)
-		}
-	}
-	return result
-}
-
-// plannedUserTypes collects every domain, range and composite this plan
-// creates, newly added ones first and then the ones recreated in place of a
-// modification, each with the type spellings its definition names.
-func (p *Planner) plannedUserTypes(
-	diff *difftypes.SchemaDiff,
-	semantics identifier.Semantics,
-) []plannedUserType {
-	rebuiltForAdd := p.rebuiltUserTypes(diff)
-	var planned []plannedUserType
-	// No lookup: the change carries the domain (stokaro/ptah#2315).
-	for _, domain := range diff.DomainsAdded {
-		planned = append(planned, plannedUserType{
-			dep:  deporder.UserType{Name: tableref.CanonicalExact(domain.Schema, domain.Name), References: []string{domain.BaseType}},
-			node: modelast.FromDomain(domain),
-		})
-	}
-	// No lookup: the change carries the composite type, so a name the desired
-	// schema cannot resolve still plans its statement (stokaro/ptah#2315).
-	for _, composite := range diff.CompositeTypesAdded {
-		planned = append(planned, plannedUserType{
-			dep:  deporder.UserType{Name: tableref.CanonicalExact(composite.Schema, composite.Name), References: compositeFieldTypes(composite)},
-			node: modelast.FromCompositeType(composite),
-		})
-	}
-	// A modification with no in-place ALTER is handled as drop + recreate. The
-	// recreations join the same ordering: a new domain over a recreated
-	// composite has to wait for the recreation, which dropModifiedUserTypes has
-	// already removed by this point.
-	//
-	// A recreation carries the type's own comment, which its create node
-	// writes after the CREATE, because the drop took the old one with it. The
-	// DROP before it already says why the type is being recreated.
-	for _, domainDiff := range diff.DomainsModified {
-		if domainIsAlteredInPlace(domainDiff, rebuiltForAdd) {
-			// Paired with the same guard in dropModifiedUserTypes: no drop was
-			// emitted, so there is nothing to put back.
-			continue
-		}
-		// The domain travels WITH the change (stokaro/ptah#2315). An empty one
-		// is a change whose object could not be resolved, and dropModifiedUserTypes
-		// withheld the drop for it, so there is nothing to put back.
-		if domain := domainDiff.Desired; domain.Name != "" {
-			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: domainTypeName(domainDiff), References: []string{domain.BaseType}},
-				node: modelast.FromDomain(domain),
-			})
-		}
-	}
-	for _, compositeDiff := range diff.CompositeTypesModified {
-		if compositeIsAlterableInPlace(compositeDiff, rebuiltForAdd) {
-			// Paired with the same guard in dropModifiedUserTypes: no drop was
-			// emitted, so there is nothing to put back.
-			continue
-		}
-		if composite := compositeDiff.Desired; composite.Name != "" {
-			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: compositeTypeName(compositeDiff), References: compositeFieldTypes(composite)},
-				node: modelast.FromCompositeType(composite),
-			})
-		}
-	}
-	return planned
-}
-
-func compositeFieldTypes(composite schemamodel.CompositeType) []string {
-	references := make([]string, 0, len(composite.Fields))
-	for _, field := range composite.Fields {
-		references = append(references, field.Type)
-	}
-	return references
-}
-
-// removeUserTypes emits DROP DOMAIN / DROP TYPE for removed and modified
-// domains, ranges, and composite types. Modified objects are dropped here and
-// recreated by addNewUserTypes (there is no in-place ALTER for these forms).
-func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	byName := make(map[string]ast.Node)
-	for _, domain := range diff.DomainsRemoved {
-		byName[tableref.CanonicalExact(domain.Schema, domain.Name)] = ast.NewDropType(domain.QualifiedName()).SetDomain().SetIfExists().SetCascade().
-			SetComment("WARNING: Make sure no columns use this domain!")
-	}
-	for _, composite := range diff.CompositeTypesRemoved {
-		byName[tableref.CanonicalExact(composite.Schema, composite.Name)] = ast.NewDropType(composite.QualifiedName()).SetIfExists().SetCascade().
-			SetComment("WARNING: Make sure no columns use this composite type!")
-	}
-	for _, name := range deporder.UserTypesForDrop(typeorder.Vocabulary(nil, p.typeContext(diff).Current)) {
-		if node, ok := byName[name]; ok {
-			result = append(result, node)
-		}
-	}
-	return result
-}
-
-// dropModifiedUserTypes drops domains/composites that changed, so
-// addNewUserTypes can recreate them in their new shape.
-//
-// The drop is deliberately NOT CASCADE: a domain/composite that is still in use
-// by a column cannot be dropped, so the migration fails loudly rather than
-// silently dropping dependent columns. Reconciling a modification while the type
-// is in use requires a manual migration (PostgreSQL offers ALTER DOMAIN /
-// ALTER TYPE for the in-place cases).
-//
-// The order comes from the CURRENT definitions the diff carries, not from the
-// desired ones addNewUserTypes creates in. A DROP executes against the database
-// as it stands, so the only references that can block it are the ones that
-// database holds now: `DROP TYPE cc` fails while `CREATE DOMAIN dd AS cc` is
-// still on disk, whatever the desired schema says either type should become.
-//
-// The two graphs disagree exactly when the modification is what moved the
-// reference, and no single order serves both. That is not a conflict to
-// resolve, because they answer different questions: the create graph is the
-// shape being built, the drop graph is the shape being taken apart.
-//
-// # The drop is emitted only where the recreate is
-//
-// This step and addNewUserTypes are two halves of one statement pair, and they
-// must not disagree about what they cover. A drop emitted for every modified
-// entry unconditionally, beside a recreate emitted only where the target
-// definition resolves out of the schema, leaves a modification whose definition
-// does not resolve with a DROP and nothing to put the type back -- not a failed
-// migration but a successful one that leaves the database short of a type.
-//
-// Resolving both halves through the same lookup is what removes the disagreement
-// in the cases it can. Where the definition still does not resolve, the pair is
-// withheld and a comment says so: a type Ptah cannot rebuild is a type Ptah must
-// not drop.
-func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	rebuilt := p.rebuiltUserTypes(diff)
-	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
-	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
-	var unresolved []ast.Node
-	for _, domainDiff := range diff.DomainsModified {
-		if domainIsAlteredInPlace(domainDiff, rebuilt) {
-			// alterModifiedDomains reconciles this one with ALTER DOMAIN.
-			// Dropping it here as well would take the domain apart to apply a
-			// change that needed no such thing -- and would fail outright on
-			// any domain a column uses.
-			continue
-		}
-		if domainDiff.Desired.Name == "" {
-			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
-			continue
-		}
-		byName[domainTypeName(domainDiff)] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
-			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use")
-		deps = append(deps, deporder.UserType{Name: domainTypeName(domainDiff), References: currentDomainReferences(domainDiff)})
-	}
-	for _, compositeDiff := range diff.CompositeTypesModified {
-		if compositeIsAlterableInPlace(compositeDiff, rebuilt) {
-			// alterModifiedCompositeTypes reconciles this one with ALTER TYPE.
-			// Dropping it here as well would fail outright on any composite a
-			// table column uses, which is the case the ALTER exists for.
-			continue
-		}
-		if compositeDiff.Desired.Name == "" {
-			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
-			continue
-		}
-		byName[compositeTypeName(compositeDiff)] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
-			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
-		deps = append(deps, deporder.UserType{Name: compositeTypeName(compositeDiff), References: compositeDiff.CurrentFieldTypes})
-	}
-	result = append(result, unresolved...)
-	for _, name := range deporder.UserTypesForDrop(typeorder.Vocabulary(deps, p.typeContext(diff).Current)) {
-		if node, ok := byName[name]; ok {
-			result = append(result, node)
-		}
-	}
-	return result
-}
-
-// unrecreatableUserTypeComment reports a modification whose target definition the
-// schema does not hold, in place of the DROP that would have had no recreate.
-func unrecreatableUserTypeComment(kind, name string) ast.Node {
-	return ast.NewComment(fmt.Sprintf(
-		"WARNING: %s %s changed, but the change carries no definition to recreate it from; "+
-			"neither DROP nor CREATE emitted, manual migration required",
-		kind,
-		name,
-	))
-}
-
-// currentDomainReferences reports the from-side base type of a modified domain,
-// or nothing when the diff does not carry one. It never reads Changes: that map
-// is a human-readable "old -> new" rendering, and recovering a type name by
-// splitting prose is not a basis for statement ordering.
-func currentDomainReferences(domainDiff difftypes.DomainDiff) []string {
-	if domainDiff.CurrentBaseType == "" {
-		return nil
-	}
-	return []string{domainDiff.CurrentBaseType}
-}
-
 // refuseYDBChanges refuses the changes only the YDB planner plans: a table's
 // column families and partitioning settings, and role memberships. A diff
 // reaches this planner with one only when it was built by hand or for YDB, and
@@ -1879,25 +1643,12 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff)
 
-	// 3c. Recreate changed user-defined types (drop then create), then create
-	// new domains/ranges/composites before tables can reference them.
-	types := &featurehost.TypeWindows{Creation: featurehost.Span{Start: len(result)}}
-	result = p.dropModifiedUserTypes(result, diff)
-	result = p.addNewUserTypes(result, diff)
-
-	// 3d. Change in place the domains that need no rebuild. It follows the
-	// creations so that a domain added in this same plan is not also altered,
-	// and it stays ahead of the tables, whose columns take their default and
-	// their constraint from the domain as it is when the column is created.
-	result = p.alterModifiedDomains(result, diff)
-	result = p.alterModifiedCompositeTypes(result, diff)
-
-	// Feature operations of the type phase that create a type, change one in
-	// place or rebuild one join the plan here: after the enums and the
+	// 3c. Feature operations of the type phase that create a type, change one
+	// in place or rebuild one join the plan here: after the enums and the
 	// routines that name no type the plan creates, which a type may name, and
 	// before the routines whose signatures name a type and the tables whose
 	// columns may. Their pure drops join it at step 15.
-	types.Creation.End = len(result)
+	types := &featurehost.TypeWindows{Creation: featurehost.Span{Start: len(result), End: len(result)}}
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff)
@@ -2052,9 +1803,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 15. Remove enums (dangerous!). The type phase's drops go first: after
 	// the tables, routines and roles that may use a type are gone, and before
 	// the enums a type may name.
-	types.Removal.Start = len(result)
-	result = p.removeUserTypes(result, diff)
-	types.Removal.End = len(result)
+	types.Removal = featurehost.Span{Start: len(result), End: len(result)}
 	result = p.removeEnums(result, diff)
 
 	prerequisites.Removal = len(result)

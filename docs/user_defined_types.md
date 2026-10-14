@@ -4,7 +4,7 @@ Ptah supports three PostgreSQL user-defined type objects as first-class, annotat
 
 These are PostgreSQL features Atlas keeps out of its open-source core (they exist only in the proprietary "Pro" build). Ptah provides them as open (MIT), local, no-account, embeddable capabilities — see epic [#654](https://github.com/stokaro/ptah/issues/654).
 
-These are PostgreSQL types. A declaration without `dialects`, an SQL file or an HCL document read for a PostgreSQL-family target or for no target, and a PostgreSQL catalog read produce them, and a plan for another target refuses them. Oracle has domains, from Oracle 23 on, and object types too, which a declaration scoped with `dialects="oracle"` and an Oracle document declare and a separate Oracle owner plans; see the Oracle database page.
+These are PostgreSQL types. A declaration without `dialects`, an SQL file or an HCL document read for a PostgreSQL-family target or for no target, and a PostgreSQL catalog read produce them, and a plan for another target refuses them. Oracle has domains, from Oracle 23 on, and object types too, which a declaration scoped with `dialects="oracle"` and an Oracle document declare and a separate Oracle owner plans; see the Oracle database page. A domain or composite type declared for a target that has neither, such as MySQL, is refused when it is read.
 
 ## Domains
 

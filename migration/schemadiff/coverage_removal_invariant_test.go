@@ -46,18 +46,6 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 			current: func(db *catalog.Database) { db.Sequences = []catalog.Sequence{{Name: "s"}} },
 			removed: func(d *difftypes.SchemaDiff) int { return len(d.SequencesRemoved) },
 		},
-		{
-			name:    "domain",
-			kind:    coverage.Domain,
-			current: func(db *catalog.Database) { db.Domains = []catalog.Domain{{Name: "d"}} },
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.DomainsRemoved) },
-		},
-		{
-			name:    "composite type",
-			kind:    coverage.Composite,
-			current: func(db *catalog.Database) { db.Composites = []catalog.CompositeType{{Name: "c"}} },
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.CompositeTypesRemoved) },
-		},
 		// No role row, deliberately. compare/roles.go documents RolesRemoved as
 		// "always empty (roles are not automatically removed for safety)", so a
 		// row for it would assert that nothing is withheld from a family that

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/config"
 	"ptah.run/core/schemaext"
 )
 
@@ -28,61 +27,51 @@ type DomainExpressionProbe struct {
 	Default string
 }
 
-// ResolveDomainExpressions asks the connected server to normalize each declared
-// domain's CHECK and DEFAULT, so a comparison holds the same spelling on both
-// sides.
+// DomainExpression is one domain's CHECK and DEFAULT in the target server's
+// own spelling.
+//
+// The zero value is not "no constraint": it is what a probe returns for a
+// declaration it could not put through the server, and a comparison must skip
+// the attribute rather than read it as removed. Resolved reports which it is.
+type DomainExpression struct {
+	// Check is the normalized CHECK, empty when the domain declares none.
+	Check string
+	// Default is the normalized DEFAULT, empty when the domain declares none.
+	Default string
+	// Resolved reports that a server answered for this domain. A false value
+	// on a present key is a domain whose declaration the server refused, and
+	// nothing about it may be compared.
+	Resolved bool
+}
+
+// ProbeDomainExpressions asks a PostgreSQL-family session's server to
+// normalize each declared domain's CHECK and DEFAULT, so a comparison holds the
+// same spelling on both sides.
 //
 // PostgreSQL stores a parsed CHECK, not its text, and prints it back from the
 // parse tree. Every read-back therefore differs from the declaration that
 // produced it: parentheses appear, literals gain casts, `IN` becomes
-// `= ANY (ARRAY[...])` and `BETWEEN` becomes a pair of comparisons. Ptah
-// declined to compare CHECK and DEFAULT for exactly that reason, which made a
-// changed constraint a silent no-op: `schema apply` reported a synced schema
-// over a database still enforcing the old rule (stokaro/ptah#1717).
+// `= ANY (ARRAY[...])` and `BETWEEN` becomes a pair of comparisons, so a
+// comparison of the declaration with the catalog never agrees
+// (stokaro/ptah#1717).
 //
 // The declaration is put through the same rewrite the catalog form already
-// went through: a domain over the declared base type is created in the session's
-// temporary schema, its stored expressions are read back, and the transaction
-// is rolled back. Nothing is created, nothing is dropped, and the physical
-// session is discarded afterwards, so no temporary object outlives the call.
+// went through: a domain over the declared base type is created in the
+// session's temporary schema, its stored expressions are read back, and the
+// transaction is rolled back. Nothing is created, nothing is dropped, and the
+// physical session is discarded afterwards, so no temporary object outlives
+// the call.
 //
 // A probe the server refuses -- an expression that does not parse, a base type
 // this connection cannot see -- is returned with Resolved false rather than
 // omitted, because an absent key and an unresolvable one are different facts
-// and only one of them is a domain the caller may compare.
-//
-// Dialects other than the PostgreSQL family return nil: no other engine Ptah
-// targets has CREATE DOMAIN. A connection pinned to a session with a
-// transaction open also returns nil, for the reason the package documentation
-// gives: the rollback the probe needs would discard the session owner's work,
-// so nothing is asked and the domain stays uncompared.
-func ResolveDomainExpressions(
-	ctx context.Context,
-	conn Session,
-	probes []DomainExpressionProbe,
-) (map[string]config.DomainExpression, error) {
-	if conn == nil {
-		return nil, fmt.Errorf("resolve domain expressions: database connection is nil")
-	}
-	if len(probes) == 0 {
-		return nil, nil
-	}
-	if !isPostgresFamily(conn.Info().Dialect) {
-		return nil, nil
-	}
-	return ProbeDomainExpressions(ctx, conn, probes)
-}
-
-// ProbeDomainExpressions is [ResolveDomainExpressions] on a session the
-// caller already knows belongs to the PostgreSQL family, which is all a
-// feature owner's normalization request carries. It asks the session's server
-// whatever the session is, and returns nil where the session could not open
-// its rolled-back transaction.
+// and only one of them is a domain the caller may compare. It returns nil
+// where the session could not open its rolled-back transaction.
 func ProbeDomainExpressions(
 	ctx context.Context,
 	session schemaext.ProbeSession,
 	probes []DomainExpressionProbe,
-) (map[string]config.DomainExpression, error) {
+) (map[string]DomainExpression, error) {
 	if session == nil {
 		return nil, fmt.Errorf("resolve domain expressions: probe session is nil")
 	}
@@ -106,12 +95,12 @@ func resolveOneDomainExpression(
 	tx *sql.Tx,
 	index int,
 	probe DomainExpressionProbe,
-) (config.DomainExpression, error) {
+) (DomainExpression, error) {
 	if probe.BaseType == "" {
-		return config.DomainExpression{}, nil
+		return DomainExpression{}, nil
 	}
 	if probe.Check == "" && probe.Default == "" {
-		return config.DomainExpression{Resolved: true}, nil
+		return DomainExpression{Resolved: true}, nil
 	}
 
 	name := fmt.Sprintf("pg_temp.ptah_domain_probe_%d", index)
@@ -125,11 +114,11 @@ func resolveOneDomainExpression(
 
 	const savepoint = "ptah_domain_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
-		return config.DomainExpression{}, fmt.Errorf("resolve domain expressions: savepoint: %w", err)
+		return DomainExpression{}, fmt.Errorf("resolve domain expressions: savepoint: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, statement); err != nil {
 		if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
-			return config.DomainExpression{}, fmt.Errorf(
+			return DomainExpression{}, fmt.Errorf(
 				"resolve domain expressions: roll back to savepoint after %q: %w",
 				strings.TrimSpace(probe.Key),
 				rollbackErr,
@@ -138,7 +127,7 @@ func resolveOneDomainExpression(
 		// The declaration is the caller's, and refusing it here would fail a
 		// comparison over a domain the server will refuse later anyway, with a
 		// worse message. Unresolved is the honest answer.
-		return config.DomainExpression{}, nil
+		return DomainExpression{}, nil
 	}
 
 	const query = `
@@ -152,9 +141,9 @@ func resolveOneDomainExpression(
 		FROM pg_type t
 		WHERE t.oid = $1::regtype`
 
-	var expression config.DomainExpression
+	var expression DomainExpression
 	if err := tx.QueryRowContext(ctx, query, name).Scan(&expression.Default, &expression.Check); err != nil {
-		return config.DomainExpression{}, fmt.Errorf(
+		return DomainExpression{}, fmt.Errorf(
 			"resolve domain expressions: read back %q: %w",
 			strings.TrimSpace(probe.Key),
 			err,
@@ -163,7 +152,7 @@ func resolveOneDomainExpression(
 	expression.Resolved = true
 
 	if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); err != nil {
-		return config.DomainExpression{}, fmt.Errorf("resolve domain expressions: release probe: %w", err)
+		return DomainExpression{}, fmt.Errorf("resolve domain expressions: release probe: %w", err)
 	}
 	return expression, nil
 }

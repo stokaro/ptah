@@ -20,8 +20,7 @@ CREATE TYPE address AS (street VARCHAR(80));
 
 // TestReadWith_UserTypesReachTheTypeOwnerWithoutAnotherTarget pins that a
 // document of a PostgreSQL-family target, or of no target, hands its domains
-// and composite types to the PostgreSQL type owner, and keeps none on the
-// common model.
+// and composite types to the PostgreSQL type owner.
 func TestReadWith_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 	for _, dialect := range []string{"", "postgres", "yugabytedb"} {
 		t.Run("dialect "+dialect, func(t *testing.T) {
@@ -30,8 +29,6 @@ func TestReadWith_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 			db, _, err := sqlschema.ReadWith(c.Context(), []byte(userTypeStatements), dialect, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Domains, qt.HasLen, 0)
-			c.Assert(db.CompositeTypes, qt.HasLen, 0)
 			objects := must.Must(db.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 2)
 			c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.CompositeKind, "", "address"))
@@ -42,8 +39,8 @@ func TestReadWith_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 
 // TestReadWith_AnOracleDocumentHandsItsUserTypesToTheOracleOwner is the other
 // half: an Oracle document's domains and composite types are Oracle's, which
-// the Oracle type owner reads, and the common model holds none. The object
-// type reads the same in the shared spelling and in the one Oracle requires.
+// the Oracle type owner reads. The object type reads the same in the shared
+// spelling and in the one Oracle requires.
 func TestReadWith_AnOracleDocumentHandsItsUserTypesToTheOracleOwner(t *testing.T) {
 	for _, test := range []struct{ name, statements string }{
 		{name: "shared spelling", statements: userTypeStatements},
@@ -57,8 +54,6 @@ CREATE OR REPLACE TYPE address AS OBJECT (street VARCHAR(80));
 			db, _, err := sqlschema.ReadWith(c.Context(), []byte(test.statements), "oracle", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Domains, qt.HasLen, 0)
-			c.Assert(db.CompositeTypes, qt.HasLen, 0)
 			objects := must.Must(db.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 2)
 			c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))

@@ -99,8 +99,6 @@ var convertedFamilies = map[string]string{
 	"Constraints": "Constraints",
 	"Functions":   "Functions",
 	"Sequences":   "Sequences",
-	"Domains":     "Domains",
-	"Composites":  "CompositeTypes",
 	"Views":       "Views",
 	"MatViews":    "MaterializedViews",
 	"Triggers":    "Triggers",

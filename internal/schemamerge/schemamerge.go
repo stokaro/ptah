@@ -65,8 +65,6 @@ func Append(dst, src *schemamodel.Database) error {
 	dst.Enums = append(dst.Enums, src.Enums...)
 	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedFields...)
 	dst.Sequences = append(dst.Sequences, src.Sequences...)
-	dst.Domains = append(dst.Domains, src.Domains...)
-	dst.CompositeTypes = append(dst.CompositeTypes, src.CompositeTypes...)
 	dst.Functions = append(dst.Functions, src.Functions...)
 	dst.Views = append(dst.Views, src.Views...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)

@@ -12,10 +12,11 @@ import (
 )
 
 // typeMetrics are the common metrics that count types, with the common kind
-// of the types each counts. A metric counts its objects whoever owns them, so
-// an owner's metric of the same name and help, such as the PostgreSQL type
-// owner's "domains", adds its count to the common one. No other common metric
-// takes an owner's count: nothing says the two would count the same thing.
+// of the types each counts. The types are owners' objects, so each starts at
+// zero and keeps its place in the report for every target; an owner's metric
+// of the same name and help, such as the PostgreSQL type owner's "domains",
+// adds its count to the common one. No other common metric takes an owner's
+// count: nothing says the two would count the same thing.
 var typeMetrics = map[string]objectidentity.Kind{
 	"domains":         objectidentity.KindDomain,
 	"composite_types": objectidentity.KindComposite,
@@ -74,34 +75,4 @@ func appendFeatureMetrics(ctx context.Context, db *schemamodel.Database, target 
 func reservedName(reserved map[string]int, name string) bool {
 	_, found := reserved[name]
 	return found
-}
-
-// typeKey is a type as a count sees it: its common kind, the schema its
-// source wrote, empty where the source left it to the default, and its name.
-type typeKey struct {
-	kind   objectidentity.Kind
-	schema string
-	name   string
-}
-
-// refuseTypesCountedTwice refuses a type the common model holds and an owner's
-// object defines too, under the same kind, schema and name. Owners never
-// share an object with the common model, so a type metric that joins both
-// would count that type twice, and a larger number is no way to say so.
-func refuseTypesCountedTwice(db *schemamodel.Database) error {
-	common := make(map[typeKey]bool, len(db.Domains)+len(db.CompositeTypes))
-	for _, domain := range db.Domains {
-		common[typeKey{kind: objectidentity.KindDomain, schema: domain.Schema, name: domain.Name}] = true
-	}
-	for _, composite := range db.CompositeTypes {
-		common[typeKey{kind: objectidentity.KindComposite, schema: composite.Schema, name: composite.Name}] = true
-	}
-	for _, defined := range schemaext.DefinedTypes(db.FeatureObjects) {
-		key := typeKey{kind: defined.ID.Kind, schema: defined.ID.Schema.Authored(), name: defined.ID.Name.Source}
-		if common[key] {
-			return fmt.Errorf("%w: %s %q is counted both in the common model and as an owner's object", schemaext.ErrDuplicate,
-				key.kind, schemamodel.QualifyTableName(key.schema, key.name))
-		}
-	}
-	return nil
 }

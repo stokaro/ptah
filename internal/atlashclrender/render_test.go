@@ -369,8 +369,6 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	})
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Sequences[0].Name, qt.Equals, "fixture_order_seq")
-	c.Assert(parsed.Domains, qt.HasLen, 0)
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
 	for kind, name := range map[schemaext.Kind]string{pgtype.DomainKind: "fixture_email", pgtype.CompositeKind: "fixture_address", pgtype.RangeKind: "fixture_floatrange"} {
 		types := must.Must(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(kind) }).All())
 		c.Assert(types, qt.HasLen, 1)

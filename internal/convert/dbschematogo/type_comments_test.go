@@ -20,14 +20,23 @@ func TestConvert_CarriesUserTypeComments(t *testing.T) {
 	c := qt.New(t)
 
 	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
-		Domains:        []catalog.Domain{{Name: "d", BaseType: "integer", Comment: "domain note"}},
-		Composites:     []catalog.CompositeType{{Name: "c", Fields: []catalog.CompositeField{{Name: "n", Type: "integer"}}, Comment: "composite note"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.ObservedRange{Subtype: "integer", Comment: "range note"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d"), Value: &pgtype.ObservedDomain{BaseType: "integer", Comment: "domain note"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "c"),
+				Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "n", Type: "integer"}}, Comment: "composite note"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.ObservedRange{Subtype: "integer", Comment: "range note"}})),
 	}, "postgres", must.Must(builtin.New())))
 
-	c.Assert(database.Domains, qt.HasLen, 1)
-	c.Assert(database.Domains[0].Comment, qt.Equals, "domain note")
-	c.Assert(database.CompositeTypes, qt.HasLen, 1)
-	c.Assert(database.CompositeTypes[0].Comment, qt.Equals, "composite note")
-	c.Assert(onlyRange(c, database).Comment, qt.Equals, "range note")
+	domain, found, err := database.FeatureObjects.Get(pgtype.Ref(pgtype.DomainKind, "", "d"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(domain.Value.(*pgtype.DesiredDomain).Comment, qt.Equals, "domain note")
+	composite, found, err := database.FeatureObjects.Get(pgtype.Ref(pgtype.CompositeKind, "", "c"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(composite.Value.(*pgtype.DesiredComposite).Comment, qt.Equals, "composite note")
+	rangeType, found, err := database.FeatureObjects.Get(pgtype.Ref(pgtype.RangeKind, "", "r"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(rangeType.Value.(*pgtype.DesiredRange).Comment, qt.Equals, "range note")
 }

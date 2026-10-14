@@ -68,24 +68,6 @@ func scopedKinds() []scopedKind {
 			count: func(db *schemamodel.Database) int { return len(db.Sequences) },
 		},
 		{
-			name: "Domains",
-			declare: func(db *schemamodel.Database, scope []string) {
-				db.Domains = []schemamodel.Domain{{StructName: "Dom", Name: "email_t", BaseType: "TEXT", Dialects: scope}}
-			},
-			count: func(db *schemamodel.Database) int { return len(db.Domains) },
-		},
-		{
-			name: "CompositeTypes",
-			declare: func(db *schemamodel.Database, scope []string) {
-				db.CompositeTypes = []schemamodel.CompositeType{{
-					StructName: "Comp", Name: "address",
-					Fields:   []schemamodel.CompositeField{{Name: "city", Type: "TEXT"}},
-					Dialects: scope,
-				}}
-			},
-			count: func(db *schemamodel.Database) int { return len(db.CompositeTypes) },
-		},
-		{
 			name: "Views",
 			declare: func(db *schemamodel.Database, scope []string) {
 				db.Views = []schemamodel.View{{StructName: "V", Name: "active", Body: "SELECT 1", Dialects: scope}}

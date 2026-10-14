@@ -735,27 +735,11 @@ func enumObjects(schema *catalog.Database) []Object {
 }
 
 func domainObjects(schema *catalog.Database) []Object {
-	objects := make([]Object, 0, len(schema.Domains))
-	for _, domain := range schema.Domains {
-		objects = append(objects, Object{
-			Type:   ObjectTypeDomain,
-			Schema: domain.Schema,
-			Name:   domain.Name,
-		})
-	}
-	return append(objects, ownerTypeObjects(schema, objectidentity.KindDomain, ObjectTypeDomain)...)
+	return ownerTypeObjects(schema, objectidentity.KindDomain, ObjectTypeDomain)
 }
 
 func compositeObjects(schema *catalog.Database) []Object {
-	objects := make([]Object, 0, len(schema.Composites))
-	for _, composite := range schema.Composites {
-		objects = append(objects, Object{
-			Type:   ObjectTypeComposite,
-			Schema: composite.Schema,
-			Name:   composite.Name,
-		})
-	}
-	return append(objects, ownerTypeObjects(schema, objectidentity.KindComposite, ObjectTypeComposite)...)
+	return ownerTypeObjects(schema, objectidentity.KindComposite, ObjectTypeComposite)
 }
 
 func rangeObjects(schema *catalog.Database) []Object {

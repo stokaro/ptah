@@ -63,12 +63,10 @@ type Database struct {
 	Enums       []Enum             `json:"enums"`
 	Indexes     []Index            `json:"indexes"`
 	Constraints []Constraint       `json:"constraints"`
-	Functions   []Function         `json:"functions"`  // PostgreSQL custom functions
-	Sequences   []Sequence         `json:"sequences"`  // PostgreSQL standalone sequences
-	Domains     []Domain           `json:"domains"`    // PostgreSQL domain types
-	Composites  []CompositeType    `json:"composites"` // PostgreSQL composite types
-	Views       []View             `json:"views"`      // Database views
-	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
+	Functions   []Function         `json:"functions"` // PostgreSQL custom functions
+	Sequences   []Sequence         `json:"sequences"` // PostgreSQL standalone sequences
+	Views       []View             `json:"views"`     // Database views
+	MatViews    []MaterializedView `json:"matviews"`  // Database materialized views
 
 	Triggers    []Trigger   `json:"triggers"`     // Database triggers
 	RLSPolicies []RLSPolicy `json:"rls_policies"` // PostgreSQL RLS policies
@@ -549,65 +547,6 @@ type Enum struct {
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (e Enum) QualifiedName() string { return QualifyTableName(e.Schema, e.Name) }
-
-// Domain represents a PostgreSQL domain type read from the database.
-type Domain struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets   schemaext.Facets `json:"facets,omitzero"`
-	Name     string           `json:"name"`
-	Schema   string           `json:"schema,omitempty"`
-	BaseType string           `json:"base_type"`
-	NotNull  bool             `json:"not_null"`
-	Default  string           `json:"default,omitempty"`
-	Check    string           `json:"check,omitempty"`
-	// CheckConstraints names each CHECK the catalog holds for this domain,
-	// alongside the expression the server stores for it. Check above is the
-	// same expressions joined with AND, which is what a renderer needs and
-	// what a comparison of the whole domain reads; a constraint cannot be
-	// altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
-	// takes a name.
-	//
-	// It is a reader-only execution fact, like Function.IdentityArguments:
-	// a serialized schema description declares what a domain must enforce,
-	// not what the server happened to name the constraint enforcing it.
-	CheckConstraints []DomainCheck `json:"-"`
-	// Comment is the domain's own comment, as obj_description reports it. It
-	// is empty where the domain has none and where the target cannot report
-	// one.
-	Comment string `json:"comment,omitempty"`
-}
-
-// DomainCheck is one named CHECK constraint of a domain, as the catalog
-// holds it. Expression is the server's own rewritten form -- PostgreSQL
-// reparses and prints a CHECK rather than storing the text it was given -- so
-// it compares equal only to another expression that made the same round trip.
-type DomainCheck struct {
-	Name       string `json:"name"`
-	Expression string `json:"expression"`
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (d Domain) QualifiedName() string { return QualifyTableName(d.Schema, d.Name) }
-
-// CompositeField is a single field of a composite type read from the database.
-type CompositeField struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
-// CompositeType represents a PostgreSQL composite type read from the database.
-type CompositeType struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets schemaext.Facets `json:"facets,omitzero"`
-	Name   string           `json:"name"`
-	Schema string           `json:"schema,omitempty"`
-	Fields []CompositeField `json:"fields"`
-	// Comment is the type's own comment, as obj_description reports it.
-	Comment string `json:"comment,omitempty"`
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (c CompositeType) QualifiedName() string { return QualifyTableName(c.Schema, c.Name) }
 
 // IndexPart represents one ordered key column in an introspected index.
 type IndexPart struct {

@@ -204,8 +204,6 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 			must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "extensions"}))))}},
 		{name: "functions", database: &schemamodel.Database{Functions: []schemamodel.Function{{}}}},
 		{name: "standalone sequences", database: &schemamodel.Database{Sequences: []schemamodel.Sequence{{}}}},
-		{name: "domains", database: &schemamodel.Database{Domains: []schemamodel.Domain{{}}}},
-		{name: "composite types", database: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{}}}},
 		{name: "domains", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 			must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.DomainKind, "", "email"), &pgtype.DesiredDomain{BaseType: "text"}))))}},
 		{name: "composite types", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(

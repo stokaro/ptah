@@ -10,6 +10,8 @@ import (
 	"ptah.run/internal/mssqlpolicysource"
 	"ptah.run/internal/pgextensionsource"
 	"ptah.run/internal/pgpolicysource"
+	"ptah.run/internal/pgtypeprovider"
+	"ptah.run/internal/pgtypesource"
 )
 
 // noOwners selects no feature owner: these tests read the frontend's own
@@ -18,14 +20,16 @@ var noOwners = annotation.None()
 
 // rowSecurityOwners selects the owners that read row-level security by its
 // target scope, PostgreSQL's and SQL Server's, so a test reads it the way a
-// runtime that registers them does.
-var rowSecurityOwners = must.Must(annotation.NewSet(pgpolicysource.Annotations(), mssqlpolicysource.Annotations()))
+// runtime that registers them does. It selects the PostgreSQL type owner too,
+// which reads the domains and composite types the shared fixtures declare.
+var rowSecurityOwners = must.Must(annotation.NewSet(pgpolicysource.Annotations(), mssqlpolicysource.Annotations(),
+	pgtypesource.Annotations(pgtypeprovider.Targets())))
 
 // extensionOwners adds the PostgreSQL extension owner to [rowSecurityOwners],
 // so a test that declares extensions reads them as the owner's objects, the
 // way a runtime that registers it does.
 var extensionOwners = must.Must(annotation.NewSet(pgpolicysource.Annotations(), mssqlpolicysource.Annotations(),
-	pgextensionsource.Annotations()))
+	pgtypesource.Annotations(pgtypeprovider.Targets()), pgextensionsource.Annotations()))
 
 // declaredExtension is the declaration of the named extension the parse
 // handed its owner.

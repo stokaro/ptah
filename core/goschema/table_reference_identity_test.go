@@ -117,10 +117,6 @@ func TestFinalize_ExplicitTableReferencesOverrideStructAssociation(t *testing.T)
 func TestQualifiedSchemaObjectNamesPreserveReferenceIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(schemamodel.Domain{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(schemamodel.Domain{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
-	c.Assert(schemamodel.CompositeType{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(schemamodel.CompositeType{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
 	c.Assert(schemamodel.Sequence{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
 	c.Assert(schemamodel.Sequence{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
 }

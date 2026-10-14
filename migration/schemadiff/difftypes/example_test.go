@@ -108,21 +108,21 @@ func ExampleSupplementLists() {
 	// foreign_keys_removed_with_tables qualifies constraints_removed
 }
 
-// ExampleDomainChanges_MarshalJSON shows the wire-shape guarantee every Changes
-// family in this package keeps: in memory the list carries whole definitions
-// for a planner, and the JSON is the list of names. Nil and empty stay
-// distinct on the wire — null is a comparison that did not run, and [] is one
-// that found nothing.
-func ExampleDomainChanges_MarshalJSON() {
-	added := difftypes.DomainChanges{
-		{Name: "positive", Schema: "app", BaseType: "integer"},
+// ExampleSequenceChanges_MarshalJSON shows the wire-shape guarantee every
+// Changes family in this package keeps: in memory the list carries whole
+// definitions for a planner, and the JSON is the list of names. Nil and empty
+// stay distinct on the wire — null is a comparison that did not run, and [] is
+// one that found nothing.
+func ExampleSequenceChanges_MarshalJSON() {
+	added := difftypes.SequenceChanges{
+		{Name: "order_seq", Schema: "app"},
 	}
 	fmt.Println(string(must.Must(json.Marshal(added))))
-	fmt.Println(string(must.Must(json.Marshal(difftypes.DomainChanges(nil)))))
-	fmt.Println(string(must.Must(json.Marshal(difftypes.DomainChanges{}))))
+	fmt.Println(string(must.Must(json.Marshal(difftypes.SequenceChanges(nil)))))
+	fmt.Println(string(must.Must(json.Marshal(difftypes.SequenceChanges{}))))
 
 	// Output:
-	// ["app.positive"]
+	// ["app.order_seq"]
 	// null
 	// []
 }

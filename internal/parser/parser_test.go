@@ -3532,44 +3532,46 @@ func TestParser_ParsePostgreSQLEnum(t *testing.T) {
 	c.Assert(enum.Values, qt.DeepEquals, []string{"pending", "active", "archived"})
 }
 
-func TestParser_ParsePostgreSQLDomain(t *testing.T) {
-	c := qt.New(t)
+// TestParser_RefusesAUserTypeNoOwnerClaimed pins the refusal of a domain or a
+// composite type that reached the parser: a type owner reads each, so one
+// that reaches here was claimed by none, because the read selected no owner
+// or because the target has no such type.
+func TestParser_RefusesAUserTypeNoOwnerClaimed(t *testing.T) {
+	tests := []struct {
+		name    string
+		sql     string
+		dialect string
+		wantErr string
+	}{
+		{
+			name:    "a domain with no owner selected",
+			sql:     "CREATE DOMAIN app.email AS TEXT CHECK (VALUE <> '');",
+			wantErr: `CREATE DOMAIN app.email needs the type owner of its target, which this read did not select`,
+		},
+		{
+			name:    "a composite type with no owner selected",
+			sql:     "CREATE TYPE addr AS (street TEXT);",
+			dialect: "postgres",
+			wantErr: `CREATE TYPE addr needs the type owner of its target, which this read did not select`,
+		},
+		{
+			name:    "a domain on a target without domains",
+			sql:     "CREATE DOMAIN email AS TEXT;",
+			dialect: "mysql",
+			wantErr: `CREATE DOMAIN email: mysql has no domains, and refuses the statement`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	sql := `CREATE DOMAIN email_domain AS TEXT
-		CHECK (VALUE ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');`
-	p := parser.NewParser(sql)
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
 
-	statements, err := p.Parse()
-	c.Assert(err, qt.IsNil)
-	c.Assert(statements.Statements, qt.HasLen, 1)
-
-	domain, ok := statements.Statements[0].(*ast.CreateTypeNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(domain.Name, qt.Equals, "email_domain")
-	domainDef, ok := domain.TypeDef.(*ast.DomainTypeDef)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(domainDef.BaseType, qt.Equals, "TEXT")
-	c.Assert(domainDef.Nullable, qt.IsTrue)
-	c.Assert(domainDef.Check, qt.Contains, "VALUE ~*")
-}
-
-func TestParser_ParsePostgreSQLQualifiedDomain(t *testing.T) {
-	c := qt.New(t)
-
-	sql := `CREATE DOMAIN script_column_domain.positive_int AS bigint CHECK (VALUE > 0);`
-	p := parser.NewParser(sql)
-
-	statements, err := p.Parse()
-	c.Assert(err, qt.IsNil)
-	c.Assert(statements.Statements, qt.HasLen, 1)
-
-	domain, ok := statements.Statements[0].(*ast.CreateTypeNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(domain.Name, qt.Equals, "script_column_domain.positive_int")
-	domainDef, ok := domain.TypeDef.(*ast.DomainTypeDef)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(domainDef.BaseType, qt.Equals, "bigint")
-	c.Assert(domainDef.Check, qt.Equals, "VALUE > 0")
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
 }
 
 func TestParser_ParsePostgreSQLSerialTypes(t *testing.T) {
@@ -3830,13 +3832,10 @@ func TestParser_ParsePostgreSQLMultipleStatements(t *testing.T) {
 	sql := `
 		CREATE TYPE status_enum AS ENUM ('pending', 'active', 'archived');
 
-		CREATE DOMAIN email_domain AS TEXT
-			CHECK (VALUE ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
-
 		CREATE TABLE test (
 			id SERIAL PRIMARY KEY,
 			status status_enum DEFAULT 'pending',
-			email email_domain
+			email TEXT
 		);
 
 		COMMENT ON TABLE test IS 'Test table with custom types';
@@ -3845,30 +3844,21 @@ func TestParser_ParsePostgreSQLMultipleStatements(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements.Statements, qt.HasLen, 4)
+	c.Assert(statements.Statements, qt.HasLen, 3)
 
 	// Check enum
 	enum, ok := statements.Statements[0].(*ast.EnumNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(enum.Name, qt.Equals, "status_enum")
 
-	// Check domain
-	domain, ok := statements.Statements[1].(*ast.CreateTypeNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(domain.Name, qt.Equals, "email_domain")
-	domainDef, ok := domain.TypeDef.(*ast.DomainTypeDef)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(domainDef.BaseType, qt.Equals, "TEXT")
-	c.Assert(domainDef.Check, qt.Contains, "VALUE ~*")
-
 	// Check table
-	table, ok := statements.Statements[2].(*ast.CreateTableNode)
+	table, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(table.Name, qt.Equals, "test")
 	c.Assert(table.Columns, qt.HasLen, 3)
 
 	// Check comment
-	comment, ok := statements.Statements[3].(*ast.CommentNode)
+	comment, ok := statements.Statements[2].(*ast.CommentNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(comment.Text, qt.Contains, "COMMENT ON TABLE test IS")
 }

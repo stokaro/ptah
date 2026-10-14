@@ -46,15 +46,13 @@ func grammarFixture() *catalog.Database {
 			{Name: "seq_pub"},
 			{Schema: "app", Name: "seq_app"},
 		},
-		Domains: []catalog.Domain{
-			{Name: "dom_pub", BaseType: "text"},
-			{Schema: "app", Name: "dom_app", BaseType: "text"},
-		},
-		Composites: []catalog.CompositeType{
-			{Name: "comp_pub"},
-			{Schema: "app", Name: "comp_app"},
-		},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "rng_pub"), Value: &pgtype.ObservedRange{Subtype: "int4"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "rng_app"), Value: &pgtype.ObservedRange{Subtype: "int4"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "dom_pub"), Value: &pgtype.ObservedDomain{BaseType: "text"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "app", "dom_app"), Value: &pgtype.ObservedDomain{BaseType: "text"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "comp_pub"), Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "app", "comp_app"), Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "rng_pub"), Value: &pgtype.ObservedRange{Subtype: "int4"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "rng_app"), Value: &pgtype.ObservedRange{Subtype: "int4"}})),
 		Indexes: []catalog.Index{
 			{TableName: "users", Name: "users_name_idx", Columns: []string{"name"}},
 			{Schema: "app", TableName: "orders", Name: "orders_id_idx", Columns: []string{"id"}},
@@ -106,11 +104,11 @@ func grammarCensus(schema *catalog.Database) []string {
 	for _, value := range schema.Sequences {
 		add("sequence", value.QualifiedName())
 	}
-	for _, value := range schema.Domains {
-		add("domain", value.QualifiedName())
+	for _, name := range kindNames(schema.FeatureObjects, pgtype.DomainKind) {
+		add("domain", name)
 	}
-	for _, value := range schema.Composites {
-		add("composite", value.QualifiedName())
+	for _, name := range kindNames(schema.FeatureObjects, pgtype.CompositeKind) {
+		add("composite", name)
 	}
 	for _, name := range rangeNames(schema.FeatureObjects) {
 		add("range", name)

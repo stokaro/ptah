@@ -28,7 +28,6 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/typeorder"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -1153,50 +1152,6 @@ func FromEnum(enum schemamodel.Enum) *ast.EnumNode {
 	return node
 }
 
-// qualifyTypeName returns schema.name when schema is set, or name otherwise. The
-// renderer splits on "." to escape each part, so the qualified form is safe to
-// pass as a CreateTypeNode name.
-func qualifyTypeName(schema, name string) string {
-	return schemamodel.QualifyTableName(schema, name)
-}
-
-// FromDomain converts a schemamodel.Domain into a CreateTypeNode wrapping a domain
-// type definition.
-func FromDomain(domain schemamodel.Domain) *ast.CreateTypeNode {
-	domainDef := ast.NewDomainTypeDef(domain.BaseType)
-	if domain.NotNull {
-		domainDef.SetNotNull()
-	}
-	if domain.Default != "" {
-		domainDef.SetDefault(domain.Default)
-	}
-	if domain.DefaultExpr != "" {
-		domainDef.SetDefaultExpression(domain.DefaultExpr)
-	}
-	if domain.Check != "" {
-		domainDef.SetCheck(domain.Check)
-	}
-	node := ast.NewCreateType(qualifyTypeName(domain.Schema, domain.Name), domainDef)
-	if domain.Comment != "" {
-		node.SetComment(domain.Comment)
-	}
-	return node
-}
-
-// FromCompositeType converts a schemamodel.CompositeType into a CreateTypeNode
-// wrapping a composite type definition.
-func FromCompositeType(composite schemamodel.CompositeType) *ast.CreateTypeNode {
-	fields := make([]*ast.CompositeField, 0, len(composite.Fields))
-	for _, field := range composite.Fields {
-		fields = append(fields, &ast.CompositeField{Name: field.Name, Type: field.Type})
-	}
-	node := ast.NewCreateType(qualifyTypeName(composite.Schema, composite.Name), ast.NewCompositeTypeDef(fields...))
-	if composite.Comment != "" {
-		node.SetComment(composite.Comment)
-	}
-	return node
-}
-
 // FromFunction converts a schemamodel.Function to an ast.CreateFunctionNode.
 //
 // This function creates a PostgreSQL function definition from the parsed function metadata.
@@ -1854,17 +1809,11 @@ func appendPreTableStatements(
 		}
 	}
 
-	// User-defined types precede tables and are ordered by their references,
-	// rather than by kind. Enums are already out and reference nothing.
+	// The types an owner defines, such as a domain, are created here, after
+	// the enums and before the tables, and the routines that name a type
+	// follow them all. The window holds no common statement.
 	if typeWindow != nil {
 		typeWindow(true)
-	}
-	if err := visitDatabaseNodes(visit, orderedUserTypeStatements(database)...); err != nil {
-		return err
-	}
-	// The types an owner defines are created here, where the common ones
-	// are, and the routines that name a type follow them all.
-	if typeWindow != nil {
 		typeWindow(false)
 	}
 	return appendRoutineStatements(visit, database, placements, deporder.RoutineAfterTypes)
@@ -1895,45 +1844,6 @@ func visitDatabaseNodes(visit func(ast.Node) error, nodes ...ast.Node) error {
 		}
 	}
 	return nil
-}
-
-// orderedUserTypeStatements returns CREATE DOMAIN / CREATE TYPE for every
-// domain, range and composite the schema declares, ordered so a type is created
-// before whatever names it.
-//
-// The three kinds share one namespace and reference each other in both
-// directions -- `CREATE DOMAIN d AS addr` needs the composite `addr` first,
-// `CREATE TYPE addr AS (f d_int)` needs the domain `d_int` first -- so emitting
-// kind by kind gets one direction wrong whichever kind goes first, and
-// PostgreSQL has no forward declaration for a type. This is the same ordering
-// the migration planner applies to the types a diff adds; a schema rendered
-// whole has to hold it too, or `ptah generate` writes a script that stops at
-// `ERROR: type "addr" does not exist`.
-func orderedUserTypeStatements(database schemamodel.Database) []ast.Node {
-	total := len(database.Domains) + len(database.CompositeTypes)
-	byName := make(map[string]ast.Node, total)
-	userTypes := make([]deporder.UserType, 0, total)
-
-	for _, domain := range database.Domains {
-		byName[domain.QualifiedName()] = FromDomain(domain)
-		userTypes = append(userTypes, deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}})
-	}
-	for _, composite := range database.CompositeTypes {
-		references := make([]string, 0, len(composite.Fields))
-		for _, field := range composite.Fields {
-			references = append(references, field.Type)
-		}
-		byName[composite.QualifiedName()] = FromCompositeType(composite)
-		userTypes = append(userTypes, deporder.UserType{Name: composite.QualifiedName(), References: references})
-	}
-
-	nodes := make([]ast.Node, 0, len(userTypes))
-	for _, name := range deporder.UserTypesForCreate(typeorder.Vocabulary(userTypes, schemaext.DefinedTypes(database.FeatureObjects))) {
-		if node, ok := byName[name]; ok {
-			nodes = append(nodes, node)
-		}
-	}
-	return nodes
 }
 
 // appendTableStatements appends every declared table, and between them the
@@ -2348,12 +2258,6 @@ func declaredRoutinePlacements(
 	}
 	for _, enum := range database.Enums {
 		created.Types = append(created.Types, enum.QualifiedName())
-	}
-	for _, domain := range database.Domains {
-		created.Types = append(created.Types, domain.QualifiedName())
-	}
-	for _, composite := range database.CompositeTypes {
-		created.Types = append(created.Types, composite.QualifiedName())
 	}
 	for _, table := range database.Tables {
 		created.Relations = append(created.Relations, table.QualifiedName())

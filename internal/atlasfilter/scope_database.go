@@ -103,15 +103,11 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 }
 
-// projectDatabaseSupport retains type objects referenced by kept columns:
-// enums via user-defined column types, and domains, composite types, and
-// ranges via column type names.
+// projectDatabaseSupport retains the enums kept columns reference through a
+// user-defined column type. An owner's selections keep the domains,
+// composite types and ranges kept columns name.
 func (s *scopeSelection) projectDatabaseSupport(db, out *catalog.Database) {
 	referenced := databaseColumnTypeSet(out.Tables)
-	out.Domains = keepTypeObjects(s, db.Domains, "domain", referenced,
-		func(d catalog.Domain) (string, string) { return d.Schema, d.Name })
-	out.Composites = keepTypeObjects(s, db.Composites, "composite_type", referenced,
-		func(c catalog.CompositeType) (string, string) { return c.Schema, c.Name })
 	out.Enums = keepEnumObjects(s, db.Enums, referenced,
 		func(e catalog.Enum) (string, string) { return e.Schema, e.Name })
 }
@@ -159,12 +155,6 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, supportS
 	}
 	for _, sequence := range out.Sequences {
 		owning[s.effectiveSchema(sequence.Schema)] = struct{}{}
-	}
-	for _, domain := range out.Domains {
-		owning[s.effectiveSchema(domain.Schema)] = struct{}{}
-	}
-	for _, composite := range out.Composites {
-		owning[s.effectiveSchema(composite.Schema)] = struct{}{}
 	}
 	for _, view := range out.Views {
 		owning[s.effectiveSchema(view.Schema)] = struct{}{}

@@ -1302,18 +1302,10 @@ func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	return nil
 }
 
-// renderDropType is a no-op (see renderCreateType), and names which kind of type
-// it declined.
-//
-// The node carries enums, domains, composite types and range types, and a
-// message reading DROP TYPE for a domain sends the reader looking for a type
-// that was never declared under that word (stokaro/ptah#1708).
+// renderDropType is a no-op (see renderCreateType), and names the type it
+// declined (stokaro/ptah#1708).
 func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
-	kind := "DROP TYPE"
-	if node.Domain {
-		kind = "DROP DOMAIN"
-	}
-	r.notSupported(kind, node.Name)
+	r.notSupported("DROP TYPE", node.Name)
 	return nil
 }
 

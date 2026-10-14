@@ -25,12 +25,6 @@ func (db *Database) FacetSlots() []*schemaext.Facets {
 	for i := range db.Enums {
 		result = append(result, &db.Enums[i].Facets)
 	}
-	for i := range db.Domains {
-		result = append(result, &db.Domains[i].Facets)
-	}
-	for i := range db.CompositeTypes {
-		result = append(result, &db.CompositeTypes[i].Facets)
-	}
 	for i := range db.Functions {
 		result = append(result, &db.Functions[i].Facets)
 	}

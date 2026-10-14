@@ -122,17 +122,13 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database,
 	})
 }
 
-// projectGeneratedSupport retains type objects used by selected tables even
-// when no selector names them: enums, domains, composite types, and ranges
-// referenced by kept column types.
+// projectGeneratedSupport retains the enums used by selected tables even when
+// no selector names them. An owner's selections keep the domains, composite
+// types and ranges kept columns name.
 func (s *scopeSelection) projectGeneratedSupport(db, out *schemamodel.Database) {
 	referenced := generatedFieldTypeSet(out.Fields)
 	out.Enums = keepEnumObjects(s, db.Enums, referenced,
 		func(e schemamodel.Enum) (string, string) { return e.Schema, e.Name })
-	out.Domains = keepTypeObjects(s, db.Domains, "domain", referenced,
-		func(d schemamodel.Domain) (string, string) { return d.Schema, d.Name })
-	out.CompositeTypes = keepTypeObjects(s, db.CompositeTypes, "composite_type", referenced,
-		func(c schemamodel.CompositeType) (string, string) { return c.Schema, c.Name })
 }
 
 // keepEnumObjects keeps enums that are either selected by the scope or
@@ -159,24 +155,6 @@ func enumIdentity(schema, name string) (resolvedSchema, resolvedName string) {
 		return schema, name
 	}
 	return splitQualified(name)
-}
-
-// keepTypeObjects keeps type objects that are either selected by the scope or
-// referenced by kept column types.
-func keepTypeObjects[T any](
-	s *scopeSelection,
-	items []T,
-	resourceType string,
-	referenced map[string]struct{},
-	key func(T) (schema, name string),
-) []T {
-	return keep(items, func(item T) bool {
-		schema, name := key(item)
-		if s.selected(typeList(resourceType), schema, name) {
-			return true
-		}
-		return typeNameReferenced(referenced, schema, name)
-	})
 }
 
 // generatedGrantSelected keeps grants whose target survives the selection.
@@ -230,12 +208,6 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, sup
 	}
 	for _, sequence := range out.Sequences {
 		owning[s.effectiveSchema(sequence.Schema)] = struct{}{}
-	}
-	for _, domain := range out.Domains {
-		owning[s.effectiveSchema(domain.Schema)] = struct{}{}
-	}
-	for _, composite := range out.CompositeTypes {
-		owning[s.effectiveSchema(composite.Schema)] = struct{}{}
 	}
 	for _, view := range out.Views {
 		schema, _ := splitQualified(view.Name)

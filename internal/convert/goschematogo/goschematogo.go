@@ -15,7 +15,6 @@ import (
 	"unicode"
 
 	annotationext "ptah.run/core/annotation"
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -48,9 +47,8 @@ type Options struct {
 	// type of a field where a type name means one thing on that server and
 	// another elsewhere: YDB's Int8 is one byte and PostgreSQL's int8 is
 	// eight, and YDB's String is bytes. Empty reads every type name the way
-	// the SQL engines spell it. A dialect outside the PostgreSQL family also
-	// scopes each common domain and composite type that names no target to
-	// itself, since an unscoped declaration reads back as PostgreSQL's.
+	// the SQL engines spell it. Each owner's encoder is handed it as its
+	// target.
 	Dialect string
 }
 
@@ -358,8 +356,6 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Roles) > 0 ||
 		len(ctx.db.Grants) > 0 ||
 		len(ctx.db.RevokedGrants) > 0 ||
-		len(ctx.db.CompositeTypes) > 0 ||
-		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
 		ctx.hasOwnerGlobals() ||
 		len(ctx.featureLimitAnnotations) > 0
@@ -408,17 +404,6 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		))
 	}
 	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterSchemas})
-	// The user types come before everything that can name one. A column
-	// declared over a domain keeps the domain's name as its type, so the
-	// declaration has to be in the file that carries the column.
-	for _, domain := range sortedDomains(ctx.db.Domains) {
-		domain.Dialects = ctx.commonTypeScope(domain.Dialects)
-		w.writeComment(domainAnnotation(domain))
-	}
-	for _, composite := range sortedCompositeTypes(ctx.db.CompositeTypes) {
-		composite.Dialects = ctx.commonTypeScope(composite.Dialects)
-		w.writeComment(compositeAnnotation(composite))
-	}
 	for _, sequence := range sortedSequences(ctx.db.Sequences) {
 		w.writeComment(sequenceAnnotation(sequence))
 	}
@@ -764,57 +749,6 @@ func functionAnnotation(function schemamodel.Function, owned ...attr) string {
 	}, owned...)...)
 }
 
-// commonTypeScope is the scope a common domain or composite type is written
-// with. A declaration that names no target is read back as the PostgreSQL
-// type owner's, so one the export's dialect, such as Oracle, holds on the
-// common model is scoped to that dialect. Any other scope is written as it is.
-func (ctx *renderContext) commonTypeScope(scope []string) []string {
-	dialect := platform.NormalizeDialect(ctx.opts.Dialect)
-	if len(scope) > 0 || dialect == "" || platform.IsPostgresFamily(dialect) {
-		return scope
-	}
-	return []string{dialect}
-}
-
-// domainAnnotation writes a domain.
-//
-// The base type is what makes this family load-bearing for `ptah introspect`:
-// a column declared over a domain keeps type="<domain>", so an export without
-// the domain describes a table whose column type nothing creates.
-func domainAnnotation(domain schemamodel.Domain) string {
-	return annotation("ptah:schema:domain",
-		attr{name: "name", value: domain.Name, set: true},
-		attr{name: "schema", value: domain.Schema, set: domain.Schema != ""},
-		attr{name: "type", value: domain.BaseType, set: true},
-		attr{name: "not_null", value: strconv.FormatBool(domain.NotNull), set: domain.NotNull},
-		attr{name: "default", value: domain.Default, set: domain.Default != ""},
-		attr{name: "default_expr", value: domain.DefaultExpr, set: domain.DefaultExpr != ""},
-		attr{name: "check", value: domain.Check, set: domain.Check != ""},
-		attr{name: "comment", value: domain.Comment, set: domain.Comment != ""},
-		dialectsAttr(domain.Dialects),
-	)
-}
-
-// compositeAnnotation writes a composite type.
-//
-// The field list is one attribute holding `name:type` pairs separated by
-// commas, and its order is significant: the comparator joins the two sides
-// positionally, so emitting the model's own order is what keeps a round trip
-// quiet.
-func compositeAnnotation(composite schemamodel.CompositeType) string {
-	pairs := make([]string, 0, len(composite.Fields))
-	for _, field := range composite.Fields {
-		pairs = append(pairs, field.Name+":"+field.Type)
-	}
-	return annotation("ptah:schema:composite",
-		attr{name: "name", value: composite.Name, set: true},
-		attr{name: "schema", value: composite.Schema, set: composite.Schema != ""},
-		attr{name: "fields", value: strings.Join(pairs, ","), set: len(pairs) > 0},
-		attr{name: "comment", value: composite.Comment, set: composite.Comment != ""},
-		dialectsAttr(composite.Dialects),
-	)
-}
-
 // sequenceAnnotation writes a standalone sequence.
 //
 // The numeric options are pointers on the model because "not stated" and
@@ -1157,26 +1091,6 @@ func sortedEnums(values []schemamodel.Enum) []schemamodel.Enum {
 func sortedSchemas(values []schemamodel.Schema) []schemamodel.Schema {
 	result := append([]schemamodel.Schema(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-	return result
-}
-
-// The user-type sorters key on the schema-qualified name rather than the bare
-// one. Two objects may share a name in different schemas, and a sort that
-// cannot tell them apart leaves their order to the input, which `ptah
-// introspect` promises not to do.
-func sortedDomains(values []schemamodel.Domain) []schemamodel.Domain {
-	result := append([]schemamodel.Domain(nil), values...)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
-	})
-	return result
-}
-
-func sortedCompositeTypes(values []schemamodel.CompositeType) []schemamodel.CompositeType {
-	result := append([]schemamodel.CompositeType(nil), values...)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
-	})
 	return result
 }
 

@@ -10,11 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestDownMigrationRestoresDroppedColumnLive executes both directions.
@@ -86,85 +84,4 @@ func usersColumns(c *qt.C, dbURL string) []string {
 		`SELECT column_name FROM information_schema.columns
 		  WHERE table_schema = 'public' AND table_name = 'users'
 		  ORDER BY column_name`)
-}
-
-// TestModifiedUserTypeDropWithoutRecreateLive executes the user-type pair.
-//
-// The claim is about what pg_type holds after the plan runs, which no assertion
-// on the SQL text can settle: a DROP with no CREATE renders as one perfectly
-// valid statement and applies cleanly. These rows apply the plan and read the
-// catalog.
-func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
-	adminURL := livePostgresURLForRLSEnable(t)
-
-	tests := []struct {
-		name      string
-		desired   *schemamodel.Database
-		wantTypes []string
-	}{
-		{
-			// Control: the definition resolves, so the pair runs and the domain
-			// is present afterwards with its new base type.
-			name: "a resolvable modification leaves the domain in place",
-			desired: &schemamodel.Database{
-				Domains: []schemamodel.Domain{{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"}},
-			},
-			wantTypes: []string{"app.zip"},
-		},
-		{
-			// The definition does not resolve. Nothing is dropped, because
-			// nothing could be put back.
-			name: "an unresolvable modification leaves the domain in place",
-			desired: &schemamodel.Database{
-				Domains: []schemamodel.Domain{{Name: "other", Schema: "app", BaseType: "TEXT"}},
-			},
-			wantTypes: []string{"app.zip"},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dbURL := createRLSEnableDatabase(c, adminURL)
-			executeSQL(c, dbURL, []string{
-				`CREATE SCHEMA app`,
-				`CREATE DOMAIN app.zip AS varchar(5)`,
-			})
-			c.Assert(domainNames(c, dbURL), qt.DeepEquals, []string{"app.zip"})
-
-			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				context.Background(), must.Must(builtin.New()),
-				modifiedZipDomainDiff(),
-
-				"postgres",
-			)
-
-			c.Assert(err, qt.IsNil)
-			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
-			executeSQL(c, dbURL, statements)
-			c.Assert(domainNames(c, dbURL), qt.DeepEquals, test.wantTypes)
-		})
-	}
-}
-
-// domainNames reports every user-schema domain in pg_type as `schema.name`.
-func domainNames(c *qt.C, dbURL string) []string {
-	c.Helper()
-	return queryStrings(c, dbURL,
-		`SELECT n.nspname || '.' || t.typname
-		   FROM pg_type t
-		   JOIN pg_namespace n ON n.oid = t.typnamespace
-		  WHERE t.typtype = 'd'
-		    AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-		  ORDER BY 1`)
-}
-
-// modifiedZipDomainDiff is the comparator's verdict on a widened app.zip: the
-// shape a drop-and-recreate is planned from.
-func modifiedZipDomainDiff() *difftypes.SchemaDiff {
-	return &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
-		DomainName:      "app.zip",
-		Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
-		CurrentBaseType: "character varying(5)",
-	}}}
 }

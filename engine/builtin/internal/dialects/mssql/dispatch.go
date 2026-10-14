@@ -162,14 +162,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		*ast.SetCommentOperation,
 		*ast.SetConstraintCommentOperation,
 		*ast.AddEnumValueOperation,
-		*ast.CompositeAttributeOperation,
-		*ast.DomainConstraintOperation,
-		*ast.DomainDefaultOperation,
-		*ast.DomainNotNullOperation,
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTypeOperation,
-		*ast.CompositeTypeDef,
-		*ast.DomainTypeDef,
 		*ast.EnumTypeDef:
 		return r.nodeNeedsParent(node)
 

@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
@@ -67,12 +68,9 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 				FormattedType: "doms.positive",
 			}},
 		}},
-		Domains: []catalog.Domain{{
-			Name:     "positive",
-			Schema:   "doms",
-			BaseType: "integer",
-			Check:    "VALUE > 0",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtype.Ref(pgtype.DomainKind, "doms", "positive"), Value: &pgtype.ObservedDomain{BaseType: "integer", Check: "VALUE > 0"},
+		})),
 	}
 	state := diffDatabaseState(database)
 
@@ -85,12 +83,10 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.schema.Fields, qt.HasLen, 1)
 	c.Assert(got.schema.Fields[0].Type, qt.Equals, "doms.positive")
-	c.Assert(got.schema.Domains, qt.DeepEquals, []schemamodel.Domain{{
-		Name:     "positive",
-		Schema:   "doms",
-		BaseType: "integer",
-		Check:    "VALUE > 0",
-	}})
+	domain, found, err := got.schema.FeatureObjects.Get(pgtype.Ref(pgtype.DomainKind, "doms", "positive"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(domain.Value, qt.DeepEquals, &pgtype.DesiredDomain{BaseType: "integer", Check: "VALUE > 0"})
 }
 
 func TestScopeDiffStatePreservesQualifiedDatabaseFunctionIdentity(t *testing.T) {
@@ -181,12 +177,9 @@ func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 				UDTName:  "int4",
 			}},
 		}},
-		Domains: []catalog.Domain{{
-			Name:     "int4",
-			Schema:   "app",
-			BaseType: "integer",
-			Check:    "VALUE > 0",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtype.Ref(pgtype.DomainKind, "app", "int4"), Value: &pgtype.ObservedDomain{BaseType: "integer", Check: "VALUE > 0"},
+		})),
 	}
 	state := diffDatabaseState(database)
 
@@ -199,7 +192,7 @@ func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
 	c.Assert(got.schema.Tables, qt.HasLen, 1)
-	c.Assert(got.schema.Domains, qt.HasLen, 0)
+	c.Assert(got.schema.FeatureObjects.Refs(), qt.HasLen, 0)
 }
 
 func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {

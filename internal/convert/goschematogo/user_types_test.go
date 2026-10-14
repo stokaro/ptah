@@ -68,8 +68,6 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 	c.Assert(err, qt.IsNil, qt.Commentf("the exported source does not parse:\n%s", source.String()))
 
-	c.Assert(parsed.Domains, qt.HasLen, 0)
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
 	objects := must.Must(parsed.FeatureObjects.All())
 	values := make(map[string]schemaext.Value, len(objects))
 	for _, object := range objects {
@@ -91,48 +89,30 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 // export writes on its domains and object types. An unscoped declaration reads
 // back as the PostgreSQL type owner's, which no Oracle plan can create, so the
 // export names Oracle, and reading the source back hands both types to the
-// Oracle type owner. The types an Oracle read reports are the owner's; a
-// common domain or composite type is written the same way.
+// Oracle type owner.
 func TestRender_AnOracleExportScopesItsTypesToOracle(t *testing.T) {
-	owned := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+	c := qt.New(t)
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		must.Must(oratype.DesiredObject(oratype.Ref(oratype.DomainKind, "", "email"), &oratype.DesiredDomain{BaseType: "VARCHAR2(320)", NotNull: true})),
 		must.Must(oratype.DesiredObject(oratype.Ref(oratype.ObjectTypeKind, "", "address"),
 			&oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}}})),
 	))}
-	common := &schemamodel.Database{
-		Domains: []schemamodel.Domain{{Name: "email", BaseType: "VARCHAR2(320)", NotNull: true}},
-		CompositeTypes: []schemamodel.CompositeType{{Name: "address",
-			Fields: []schemamodel.CompositeField{{Name: "street", Type: "VARCHAR2(80)"}}}},
-	}
-	for _, test := range []struct {
-		name string
-		db   *schemamodel.Database
-	}{
-		{name: "owned types", db: owned},
-		{name: "common types", db: common},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
 
-			files, err := goschematogo.Render(c.Context(), test.db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "oracle"})
-			c.Assert(err, qt.IsNil)
-			c.Assert(files, qt.HasLen, 1)
-			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "oracle"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(parsed.Domains, qt.HasLen, 0)
-			c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
-			objects := must.Must(parsed.FeatureObjects.All())
-			c.Assert(objects, qt.HasLen, 2)
-			c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))
-			c.Assert(objects[0].Value.(*oratype.DesiredDomain).BaseType, qt.Equals, "VARCHAR2(320)")
-			c.Assert(objects[0].Value.(*oratype.DesiredDomain).NotNull, qt.IsTrue)
-			c.Assert(objects[0].Targets, qt.DeepEquals, []string{"oracle"})
-			c.Assert(objects[1].Ref, qt.DeepEquals, oratype.Ref(oratype.ObjectTypeKind, "", "address"))
-			c.Assert(objects[1].Value.(*oratype.DesiredObjectType).Attributes, qt.DeepEquals, []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}})
-			c.Assert(objects[1].Targets, qt.DeepEquals, []string{"oracle"})
-		})
-	}
+	c.Assert(err, qt.IsNil)
+	objects := must.Must(parsed.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 2)
+	c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))
+	c.Assert(objects[0].Value.(*oratype.DesiredDomain).BaseType, qt.Equals, "VARCHAR2(320)")
+	c.Assert(objects[0].Value.(*oratype.DesiredDomain).NotNull, qt.IsTrue)
+	c.Assert(objects[0].Targets, qt.DeepEquals, []string{"oracle"})
+	c.Assert(objects[1].Ref, qt.DeepEquals, oratype.Ref(oratype.ObjectTypeKind, "", "address"))
+	c.Assert(objects[1].Value.(*oratype.DesiredObjectType).Attributes, qt.DeepEquals, []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}})
+	c.Assert(objects[1].Targets, qt.DeepEquals, []string{"oracle"})
 }
 
 // TestRender_AnOracleExportWritesTheCatalogsSpelling pins that an Oracle type
@@ -219,12 +199,11 @@ func TestRender_AUserTypeAloneStillGetsTheStructItHangsOff(t *testing.T) {
 		build func() *schemamodel.Database
 	}{
 		{name: "a domain alone", build: func() *schemamodel.Database {
-			return &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "integer"}}}
+			return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d"), Value: &pgtype.DesiredDomain{BaseType: "integer"}}))}
 		}},
 		{name: "a composite alone", build: func() *schemamodel.Database {
-			return &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{
-				Name: "c", Fields: []schemamodel.CompositeField{{Name: "f", Type: "text"}},
-			}}}
+			return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "c"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "f", Type: "text"}}}}))}
 		}},
 		{name: "a range alone", build: func() *schemamodel.Database {
 			return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.DesiredRange{Subtype: "integer"}}))}
@@ -247,7 +226,7 @@ func TestRender_AUserTypeAloneStillGetsTheStructItHangsOff(t *testing.T) {
 			parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 			c.Assert(err, qt.IsNil)
 
-			total := len(parsed.Domains) + len(parsed.CompositeTypes) + parsed.FeatureObjects.Len() + len(parsed.Sequences)
+			total := parsed.FeatureObjects.Len() + len(parsed.Sequences)
 			c.Assert(total, qt.Equals, 1,
 				qt.Commentf("the annotation hangs off no struct, so nothing read it back:\n%s", source.String()))
 		})

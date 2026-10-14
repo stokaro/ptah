@@ -1257,8 +1257,8 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Schemas: Deduplicated by schema name
 //   - RLS policies: Deduplicated by resolved table + policy name combination
 //
-// Composite finalization additionally deduplicates sequences, domains,
-// composite types, ranges, and exact managed-data declarations. Grants retain
+// Composite finalization additionally deduplicates sequences and exact
+// managed-data declarations. Grants retain
 // their full role/privilege/target identity, while distinct managed-data files
 // targeting the same table remain separate. This prevents duplicate emits when
 // objects are declared across files or composite sources.
@@ -1274,12 +1274,6 @@ func deduplicateComposite(r *Database) {
 	deduplicateDatabase(r, compositeDeduplicationScope)
 	r.Sequences = deduplicateNamedDefinitions(r.Sequences, func(sequence Sequence) string {
 		return sequence.QualifiedName()
-	})
-	r.Domains = deduplicateNamedDefinitions(r.Domains, func(domain Domain) string {
-		return domain.QualifiedName()
-	})
-	r.CompositeTypes = deduplicateNamedDefinitions(r.CompositeTypes, func(composite CompositeType) string {
-		return composite.QualifiedName()
 	})
 	r.ManagedData = deduplicateNamedDefinitions(r.ManagedData, managedDataDefinitionIdentity)
 }

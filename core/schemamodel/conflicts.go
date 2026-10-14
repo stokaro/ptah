@@ -294,8 +294,6 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.embeddedFields,
 		validator.functions,
 		validator.sequences,
-		validator.domains,
-		validator.compositeTypes,
 		validator.views,
 		validator.materializedViews,
 		validator.triggers,
@@ -474,28 +472,6 @@ func (v compositeDefinitionValidator) sequences() error {
 		canonicalSequenceDefinition,
 		func(_ Sequence, key string) error {
 			return fmt.Errorf("conflicting sequence %q definitions", key)
-		},
-	)
-}
-
-func (v compositeDefinitionValidator) domains() error {
-	return validateNamedDefinitions(
-		v.database.Domains,
-		func(domain Domain) string { return domain.QualifiedName() },
-		canonicalDomainDefinition,
-		func(_ Domain, key string) error {
-			return fmt.Errorf("conflicting domain %q definitions", key)
-		},
-	)
-}
-
-func (v compositeDefinitionValidator) compositeTypes() error {
-	return validateNamedDefinitions(
-		v.database.CompositeTypes,
-		func(composite CompositeType) string { return composite.QualifiedName() },
-		canonicalCompositeTypeDefinition,
-		func(_ CompositeType, key string) error {
-			return fmt.Errorf("conflicting composite type %q definitions", key)
 		},
 	)
 }
@@ -729,18 +705,6 @@ func canonicalSequenceDefinition(sequence Sequence) Sequence {
 	sequence.StructName = ""
 	sequence.Canonicalize()
 	return sequence
-}
-
-func canonicalDomainDefinition(domain Domain) Domain {
-	domain.StructName = ""
-	domain.Canonicalize()
-	return domain
-}
-
-func canonicalCompositeTypeDefinition(composite CompositeType) CompositeType {
-	composite.StructName = ""
-	composite.Canonicalize()
-	return composite
 }
 
 func canonicalViewDefinition(view View) View {

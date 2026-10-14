@@ -661,19 +661,13 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 //
 // A message reading "MariaDB does not support DROP TYPE - enums are handled
 // inline in column definitions" is wrong twice over: it blames the engine for a
-// decision of Ptah's, and it describes enums when the node also carries
-// domains, composite types and range types. This one says which object it is
-// talking about, the way the rest of this renderer's diagnostics do
-// (stokaro/ptah#1708).
+// decision of Ptah's. This one names the object it is talking about, the way
+// the rest of this renderer's diagnostics do (stokaro/ptah#1708).
 func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	kind := "DROP TYPE"
-	if node.Domain {
-		kind = "DROP DOMAIN"
-	}
-	r.notGenerated(kind, node.Name)
+	r.notGenerated("DROP TYPE", node.Name)
 	return nil
 }
 

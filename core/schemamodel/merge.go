@@ -13,8 +13,6 @@ func NewDatabase() *Database {
 		EmbeddedFields:    make([]EmbeddedField, 0),
 		Functions:         make([]Function, 0),
 		Sequences:         make([]Sequence, 0),
-		Domains:           make([]Domain, 0),
-		CompositeTypes:    make([]CompositeType, 0),
 		Views:             make([]View, 0),
 		MaterializedViews: make([]MaterializedView, 0),
 		Triggers:          make([]Trigger, 0),
@@ -71,8 +69,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedSources.Definitions...)
 	dst.Functions = append(dst.Functions, src.Functions...)
 	dst.Sequences = append(dst.Sequences, src.Sequences...)
-	dst.Domains = append(dst.Domains, src.Domains...)
-	dst.CompositeTypes = append(dst.CompositeTypes, src.CompositeTypes...)
 	dst.Views = append(dst.Views, src.Views...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)

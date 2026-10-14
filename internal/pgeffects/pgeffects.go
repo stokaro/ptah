@@ -56,11 +56,6 @@ func Statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 
 func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect {
 	switch typed := node.(type) {
-	case *ast.CreateTypeNode:
-		if typ, ok := DefinedType(builder, typed); ok {
-			return []plangraph.Effect{{Subject: typ.ID, Action: plangraph.Create}}
-		}
-		return nil
 	case *ast.CreateTableNode:
 		return []plangraph.Effect{{Subject: builder.Table(typed.Name), Action: plangraph.Create}}
 	case *ast.DropTableNode:

@@ -160,16 +160,11 @@ func sequenceRepresented(removal removedLine, _, exportedDB *schemamodel.Databas
 }
 
 func domainRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
-	return slices.ContainsFunc(exportedDB.Domains, func(domain schemamodel.Domain) bool {
-		return sameSchemaObject(domain.Schema, domain.Name, removal.values["schema"], removal.values["name"]) &&
-			domain.BaseType == removal.values["type"]
-	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindDomain, removal.values["type"])
+	return ownerTypeRepresented(removal, exportedDB, objectidentity.KindDomain, removal.values["type"])
 }
 
 func compositeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
-	return slices.ContainsFunc(exportedDB.CompositeTypes, func(composite schemamodel.CompositeType) bool {
-		return sameSchemaObject(composite.Schema, composite.Name, removal.values["schema"], removal.values["name"])
-	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindComposite, "")
+	return ownerTypeRepresented(removal, exportedDB, objectidentity.KindComposite, "")
 }
 
 // ownerTypeRepresented reports whether the export holds, as an owner's

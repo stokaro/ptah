@@ -218,10 +218,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		SequencesRemoved:      difftypes.SequenceChanges{{Name: "order_number_seq"}},
-		DomainsRemoved:        difftypes.DomainChanges{{Name: "email"}},
-		CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "addr"}},
-
+		SequencesRemoved:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		RolesRemoved:             difftypes.RoleChanges{{Name: "app_role"}},
 		FunctionsRemoved:         difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
 		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
@@ -244,8 +241,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		// silence (stokaro/ptah#1708). The domain is named as a DOMAIN, because
 		// one node carries four kinds and DROP TYPE sends the reader looking
 		// for something never declared under that word.
-		{name: "domain", want: `-- CLICKHOUSE: DROP DOMAIN "email" is not supported`},
-		{name: "composite type", want: `-- CLICKHOUSE: DROP TYPE "addr" is not supported`},
 		// Ptah does not drop ClickHouse roles: the comparator computes no role
 		// removals at all, and the issue's non-goals forbid dropping a role
 		// that may be shared outside the managed schema. The planner names the
@@ -388,39 +383,6 @@ func sequenceDiagnosticIn(statements, want string) bool {
 		return !strings.Contains(statements, "CREATE SEQUENCE order_number_seq not supported")
 	}
 	return strings.Contains(statements, want)
-}
-
-// TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares covers the three
-// collections nobody walked.
-//
-// Creating one of these is refused before any SQL by
-// usertypescope.ValidateDeclared, because a named skip would leave the
-// declaring table naming a type the server has no definition of
-// (stokaro/ptah#1717). Removing one has no declaration to refuse, so it
-// produces neither a statement nor a word unless something says so here --
-// which is how #1628 closed with grants and row-level security fixed and these
-// three silent (stokaro/ptah#1708).
-//
-// The domain is asserted separately from the other two because one node
-// carries four kinds: DROP TYPE for a domain sends the reader looking for
-// something never declared under that word.
-func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
-	diff := &difftypes.SchemaDiff{
-		DomainsRemoved:        difftypes.DomainChanges{{Name: "email"}},
-		CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "addr"}},
-	}
-
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			planned := strings.Join(planStatements(c, diff, &schemamodel.Database{}, dialect), "\n")
-
-			upper := strings.ToUpper(dialect)
-			c.Assert(planned, qt.Contains, "-- "+upper+": DROP DOMAIN email is not generated")
-			c.Assert(planned, qt.Contains, "-- "+upper+": DROP TYPE addr is not generated")
-		})
-	}
 }
 
 // TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension pins the two
@@ -669,13 +631,13 @@ func TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath(t *testin
 		{
 			name:    "cockroachdb domain",
 			dialect: platform.CockroachDB,
-			diff:    &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "email", BaseType: "TEXT"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.DomainKind, "", "email"), Value: &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "TEXT"}}}}},
 			wantErr: `cockroachdb: CREATE DOMAIN email: this target does not create it.*`,
 		},
 		{
 			name:    "spanner domain",
 			dialect: platform.Spanner,
-			diff:    &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "email", BaseType: "TEXT"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.DomainKind, "", "email"), Value: &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "TEXT"}}}}},
 			wantErr: `spanner: CREATE DOMAIN email: this target does not create it.*`,
 		},
 		{
@@ -687,7 +649,7 @@ func TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath(t *testin
 		{
 			name:    "spanner composite",
 			dialect: platform.Spanner,
-			diff:    &difftypes.SchemaDiff{CompositeTypesAdded: difftypes.CompositeTypeChanges{{Name: "addr"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.CompositeKind, "", "addr"), Value: &pgtype.CompositeChange{After: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "TEXT"}}}}}}},
 			wantErr: `spanner: CREATE TYPE \.\.\. AS \(\.\.\.\) addr: this target does not create it.*`,
 		},
 	}
@@ -723,12 +685,12 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 		{
 			name:    "cockroachdb composite",
 			dialect: platform.CockroachDB,
-			diff:    &difftypes.SchemaDiff{CompositeTypesAdded: difftypes.CompositeTypeChanges{{Name: "addr"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.CompositeKind, "", "addr"), Value: &pgtype.CompositeChange{After: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "TEXT"}}}}}}},
 		},
 		{
 			name:    "postgres domain",
 			dialect: platform.Postgres,
-			diff:    &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "email", BaseType: "TEXT"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.DomainKind, "", "email"), Value: &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "TEXT"}}}}},
 		},
 		{
 			name:    "postgres range",
@@ -750,15 +712,33 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 	}
 }
 
-func TestPlanRefusesRangeRemovalWithoutAnOwner(t *testing.T) {
+// TestPlanRefusesTypeRemovalWithoutAnOwner pins that a target no type owner
+// serves refuses the removal of a domain, a composite type or a range type by
+// the change it cannot plan, rather than leaving it unplanned in silence.
+func TestPlanRefusesTypeRemovalWithoutAnOwner(t *testing.T) {
+	changes := []struct {
+		name   string
+		change schemaext.ChangeRecord
+		kind   schemaext.Kind
+	}{
+		{name: "domain", change: schemaext.ChangeRecord{Subject: pgtype.Ref(pgtype.DomainKind, "", "email"),
+			Value: &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "text"}}}, kind: pgtype.DomainChangeKind},
+		{name: "composite type", change: schemaext.ChangeRecord{Subject: pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+			Value: &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}}},
+			kind: pgtype.CompositeChangeKind},
+		{name: "range type", change: schemaext.ChangeRecord{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"),
+			Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"}}}, kind: pgtype.RangeChangeKind},
+	}
 	for _, target := range []string{platform.ClickHouse, platform.MySQL, platform.MariaDB} {
-		t.Run(target, func(t *testing.T) {
-			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"}}}}}
-			nodes, err := planner.GenerateSchemaDiffAST(c.Context(), must.Must(builtin.New()), diff, target)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err.Error(), qt.Contains, string(pgtype.RangeChangeKind))
-			c.Assert(nodes, qt.IsNil)
-		})
+		for _, change := range changes {
+			t.Run(target+" "+change.name, func(t *testing.T) {
+				c := qt.New(t)
+				diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{change.change}}
+				nodes, err := planner.GenerateSchemaDiffAST(c.Context(), must.Must(builtin.New()), diff, target)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(err.Error(), qt.Contains, string(change.kind))
+				c.Assert(nodes, qt.IsNil)
+			})
+		}
 	}
 }

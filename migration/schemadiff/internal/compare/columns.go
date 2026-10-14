@@ -907,7 +907,7 @@ func desiredDomainIdentities(
 	if desired == nil {
 		return nil
 	}
-	identities := make(map[string]domainIdentity, len(desired.Domains))
+	identities := make(map[string]domainIdentity)
 	ambiguous := make(map[string]struct{})
 	declare := func(declaredSchema, declaredName string) {
 		name := foldDomainPart(declaredName)
@@ -923,11 +923,8 @@ func desiredDomainIdentities(
 		}
 		identities[name] = domainIdentity{schema: schema, name: name}
 	}
-	for _, domain := range desired.Domains {
-		declare(domain.Schema, domain.Name)
-	}
-	// A domain a feature owner's object defines is a domain to a column all
-	// the same: the column is compared by the domain it names.
+	// A domain is a feature owner's object, and a column typed by one is
+	// compared by the domain it names.
 	for _, defined := range schemaext.DefinedTypes(desired.FeatureObjects) {
 		if defined.ID.Kind == objectidentity.KindDomain {
 			declare(defined.ID.Schema.Authored(), defined.ID.Name.Source)

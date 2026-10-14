@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -504,9 +505,6 @@ func reverseCoverageContext() (*schemamodel.Database, *catalog.Database) {
 	schemamodel.Finalize(schema)
 
 	dbSchema := &catalog.Database{
-		Domains: []catalog.Domain{{
-			Schema: revCoverageDomainOwner, Name: revCoverageDomainName, BaseType: "integer",
-		}},
 		Tables: []catalog.Table{{
 			Name: revCoverageTable,
 			Type: "TABLE",
@@ -654,6 +652,11 @@ func TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary(t *testin
 	c := qt.New(t)
 
 	schema, dbSchema := reverseCoverageContext()
+	// The database the rollback returns to holds the domain the table's
+	// column names, as the PostgreSQL type owner reports it.
+	dbSchema.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+		Ref: pgtype.Ref(pgtype.DomainKind, revCoverageDomainOwner, revCoverageDomainName), Value: &pgtype.ObservedDomain{BaseType: "integer"},
+	}))
 	forward := &difftypes.SchemaDiff{
 		TablesRemoved: difftypes.TableRemovals{{Name: revCoverageTypedTable}},
 		// The desired schema's vocabulary, which is empty here: the rollback
@@ -666,9 +669,9 @@ func TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary(t *testin
 	)
 
 	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
-	c.Assert(reversed.DeclaredUserTypes.Domains, qt.HasLen, 1,
+	c.Assert(reversed.DeclaredUserTypes.Defined, qt.HasLen, 1,
 		qt.Commentf("the vocabulary comes from the database that held the table"))
-	c.Assert(reversed.DeclaredUserTypes.Domains[0].Name, qt.Equals, revCoverageDomainName)
+	c.Assert(reversed.DeclaredUserTypes.Defined[0].ID.Name.Source, qt.Equals, revCoverageDomainName)
 
 	qualified := reversed.TablesAdded.Qualified(reversed.DeclaredUserTypes, "postgres")
 	c.Assert(qualified, qt.HasLen, 1)
@@ -691,6 +694,11 @@ func TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables(t 
 	c := qt.New(t)
 
 	schema, dbSchema := reverseCoverageContext()
+	// The database the rollback returns to holds the domain the table's
+	// column names, as the PostgreSQL type owner reports it.
+	dbSchema.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+		Ref: pgtype.Ref(pgtype.DomainKind, revCoverageDomainOwner, revCoverageDomainName), Value: &pgtype.ObservedDomain{BaseType: "integer"},
+	}))
 	forward := &difftypes.SchemaDiff{
 		TablesRemoved: difftypes.TableRemovals{{Name: revCoverageTypedTable}},
 		// The desired schema's tables, which do not include the one the

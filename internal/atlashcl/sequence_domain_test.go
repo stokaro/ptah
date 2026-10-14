@@ -6,7 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/hclext"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 func TestParseSequenceFullOptions(t *testing.T) {
@@ -155,7 +158,7 @@ sequence "s" {
 func TestParseDomainFullOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 domain "email" {
   type  = text
   null  = false
@@ -163,11 +166,10 @@ domain "email" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Domains, qt.HasLen, 1)
-	c.Assert(db.Domains[0].Name, qt.Equals, "email")
-	c.Assert(db.Domains[0].BaseType, qt.Equals, "text")
-	c.Assert(db.Domains[0].NotNull, qt.IsTrue)
-	c.Assert(db.Domains[0].Check, qt.Equals, "VALUE ~ '@'")
+	objects := typeObjects(db, pgtype.DomainKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.DomainKind, "", "email"))
+	c.Assert(objects[0].Value, qt.DeepEquals, &pgtype.DesiredDomain{BaseType: "text", NotNull: true, Check: "VALUE ~ '@'"})
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE DOMAIN email AS text NOT NULL CHECK (VALUE ~ '@');`)
@@ -176,20 +178,23 @@ domain "email" {
 func TestParseDomainNullableByDefault(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 domain "nickname" {
   type = varchar(64)
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Domains, qt.HasLen, 1)
-	c.Assert(db.Domains[0].NotNull, qt.IsFalse)
+	objects := typeObjects(db, pgtype.DomainKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value, qt.DeepEquals, &pgtype.DesiredDomain{BaseType: "varchar(64)"})
 }
 
 func TestParseDomainSchemaAndDefault(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
+schema "app" {}
+
 domain "positive" {
   schema  = schema.app
   type    = integer
@@ -197,35 +202,34 @@ domain "positive" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Domains, qt.HasLen, 1)
-	c.Assert(db.Domains[0].Schema, qt.Equals, "app")
-	c.Assert(db.Domains[0].Default, qt.Equals, "0")
-	c.Assert(db.Domains[0].DefaultExpr, qt.Equals, "")
+	objects := typeObjects(db, pgtype.DomainKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.DomainKind, "app", "positive"))
+	c.Assert(objects[0].Value, qt.DeepEquals, &pgtype.DesiredDomain{BaseType: "integer", Default: "0"})
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
-	c.Assert(sql, qt.Contains, `CREATE DOMAIN app.positive AS integer`)
-	c.Assert(sql, qt.Contains, `DEFAULT`)
+	c.Assert(sql, qt.Contains, `CREATE DOMAIN app.positive AS integer DEFAULT 0;`)
 }
 
 func TestParseDomainDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 domain "created" {
   type    = timestamptz
   default = sql("now()")
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Domains, qt.HasLen, 1)
-	c.Assert(db.Domains[0].DefaultExpr, qt.Equals, "now()")
-	c.Assert(db.Domains[0].Default, qt.Equals, "")
+	objects := typeObjects(db, pgtype.DomainKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value, qt.DeepEquals, &pgtype.DesiredDomain{BaseType: "timestamptz", DefaultExpr: "now()"})
 }
 
 func TestParseDomainRequiresType(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 domain "x" {}
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*domain "x" requires type.*`)
@@ -234,11 +238,52 @@ domain "x" {}
 func TestParseDomainRejectsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 domain "x" {
   type     = text
   nonsense = true
 }
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*unsupported domain attribute "nonsense".*`)
+}
+
+// TestParseDomain_NoOwnerReadsIt_FailurePath pins that a domain or composite
+// block no selected owner reads is refused rather than dropped: a read with
+// no owners, and a document of a target no type owner serves.
+func TestParseDomain_NoOwnerReadsIt_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		options  atlashcl.Options
+		wantErr  string
+	}{
+		{
+			name:     "a domain with no owner selected",
+			document: "domain \"x\" {\n  type = text\n}\n",
+			options:  atlashcl.Options{HCL: hclext.None()},
+			wantErr:  `parse HCL schema at schema.hcl:1,1-7: unsupported top-level block "domain"`,
+		},
+		{
+			name:     "a composite type with no owner selected",
+			document: "composite \"x\" {\n  field \"a\" {\n    type = text\n  }\n}\n",
+			options:  atlashcl.Options{HCL: hclext.None()},
+			wantErr:  `parse HCL schema at schema.hcl:1,1-10: unsupported top-level block "composite"`,
+		},
+		{
+			name:     "a domain in a MySQL document",
+			document: "domain \"x\" {\n  type = text\n}\n",
+			options:  atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: "mysql"},
+			wantErr:  `.*domain has no owner for dialect "mysql".*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := atlashcl.ParseWithOptions([]byte(test.document), "schema.hcl", test.options)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+		})
+	}
 }

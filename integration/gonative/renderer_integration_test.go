@@ -582,41 +582,6 @@ func TestCreateType_Integration(t *testing.T) {
 			cleanupSQL: "DROP TYPE IF EXISTS user_status",
 		},
 		{
-			name:     "PostgreSQL CREATE DOMAIN TYPE",
-			dialect:  "postgresql",
-			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "pgx",
-			createType: func() *ast.CreateTypeNode {
-				domainDef := ast.NewDomainTypeDef("VARCHAR(255)").
-					SetNotNull().
-					SetCheck("LENGTH(VALUE) > 0")
-				return ast.NewCreateType("email_domain", domainDef).
-					SetComment("Email domain type")
-			},
-			contains:   []string{"CREATE DOMAIN email_domain AS VARCHAR(255)", "NOT NULL", "CHECK"},
-			shouldExec: true,
-			cleanupSQL: "DROP DOMAIN IF EXISTS email_domain",
-		},
-		{
-			name:     "PostgreSQL CREATE COMPOSITE TYPE",
-			dialect:  "postgresql",
-			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "pgx",
-			createType: func() *ast.CreateTypeNode {
-				fields := []*ast.CompositeField{
-					{Name: "street", Type: "TEXT"},
-					{Name: "city", Type: "VARCHAR(100)"},
-					{Name: "zipcode", Type: "VARCHAR(10)"},
-				}
-				compositeDef := ast.NewCompositeTypeDef(fields...)
-				return ast.NewCreateType("address", compositeDef).
-					SetComment("Address composite type")
-			},
-			contains:   []string{"CREATE TYPE address AS", "street TEXT", "city VARCHAR(100)", "zipcode VARCHAR(10)"},
-			shouldExec: true,
-			cleanupSQL: "DROP TYPE IF EXISTS address",
-		},
-		{
 			name:     "MySQL CREATE TYPE (should generate comment)",
 			dialect:  "mysql",
 			skipFunc: skipIfNoMySQL,

@@ -718,8 +718,6 @@ type schemaParseState struct {
 	tableDirectives       []schemamodel.Table
 	functions             []schemamodel.Function
 	sequences             []schemamodel.Sequence
-	domains               []schemamodel.Domain
-	compositeTypes        []schemamodel.CompositeType
 	views                 []schemamodel.View
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
@@ -1069,8 +1067,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 		EmbeddedFields:    state.embeddedFields,
 		Functions:         state.functions,
 		Sequences:         state.sequences,
-		Domains:           state.domains,
-		CompositeTypes:    state.compositeTypes,
 		Views:             state.views,
 		MaterializedViews: state.materializedViews,
 		Triggers:          state.triggers,
@@ -1461,63 +1457,47 @@ const (
 	compositeDirective = "ptah:schema:composite"
 )
 
+// typeOwnerLabels name the kind of a frontend user type directive in a
+// refusal.
+var typeOwnerLabels = map[string]string{domainDirective: "domain", compositeDirective: "composite type"}
+
 // handTypeToOwner hands a domain or composite type declaration to the owner
-// that reads its target scope, and reports whether it did. A declaration no
-// owner reads stays on the common model: one scoped to a target outside every
-// owner's scope, such as an Oracle domain, or any declaration of a parse that
-// selected no owner of the directive. A scope that mixes an owner's targets
-// with others is refused, since it declares two objects.
+// that reads its target scope: the PostgreSQL type owner for a declaration
+// that names no target or only PostgreSQL-family targets, and the Oracle type
+// owner for one scoped to Oracle. A declaration no selected owner reads is
+// refused, since no model holds it, and so is a scope that mixes an owner's
+// targets with others, since it declares two objects.
 func (s *schemaParseState) handTypeToOwner(directive string, kv map[string]string, structName string, scope []string,
 	ctx annotationErrorContext,
-) (bool, error) {
+) error {
 	_, owned, err := s.annotations.TargetOwner(directive, scope)
 	if err != nil {
-		return false, s.targetScopeError(ctx, dialectscope.Attribute, err)
+		return s.targetScopeError(ctx, dialectscope.Attribute, err)
 	}
 	if !owned {
-		return false, nil
+		scoped := "no target"
+		if len(scope) > 0 {
+			scoped = strings.Join(scope, ",")
+		}
+		return s.targetScopeError(ctx, dialectscope.Attribute, fmt.Errorf("%w: no selected owner reads a %s scoped to %s",
+			ptaherr.ErrUnsupportedFeature, typeOwnerLabels[directive], scoped))
 	}
-	return true, s.handToOwner(directive, kv, structName, scope, ctx)
+	return s.handToOwner(directive, kv, structName, scope, ctx)
 }
 
 func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//"+domainDirective, kv["name"])
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-
-	scope, err := parseDialectScope(kv, ctx)
-	if err != nil {
-		return err
-	}
-	if owned, err := s.handTypeToOwner(domainDirective, kv, structName, scope, ctx); owned || err != nil {
-		return err
-	}
-
-	domain := schemamodel.Domain{
-		StructName:  structName,
-		Name:        kv["name"],
-		Schema:      kv["schema"],
-		BaseType:    kv["type"],
-		NotNull:     kv["not_null"] == "true",
-		Default:     kv["default"],
-		DefaultExpr: kv["default_expr"],
-		Check:       kv["check"],
-		Comment:     kv["comment"],
-		Dialects:    scope,
-	}
-	domain.Canonicalize()
-	s.domains = append(s.domains, domain)
-	return nil
+	return s.parseUserTypeComment(comment, structName, domainDirective)
 }
 
 func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structName string) error {
+	return s.parseUserTypeComment(comment, structName, compositeDirective)
+}
+
+// parseUserTypeComment validates a domain or composite type declaration and
+// hands it to the owner that reads its scope, which reads every attribute.
+func (s *schemaParseState) parseUserTypeComment(comment *ast.Comment, structName, directive string) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//"+compositeDirective, kv["name"])
+	ctx := s.annotationContext(comment, "//"+directive, kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
@@ -1528,83 +1508,7 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	// The owner reads its own field list, which may quote a name.
-	if owned, err := s.handTypeToOwner(compositeDirective, kv, structName, scope, ctx); owned || err != nil {
-		return err
-	}
-
-	fields, err := parseCompositeFields(kv["fields"])
-	if err != nil {
-		return &ptaherr.ParseError{
-			File:      ctx.file,
-			Line:      ctx.line,
-			Directive: strings.TrimPrefix(ctx.directive, "//"),
-			Attribute: "fields",
-			Err:       ptaherr.ErrInvalidAttributeValue,
-			Message:   fmt.Sprintf("%v for \"fields\" on %s at %s; expected \"name:type,name:type\"", err, ctx.directive, ctx.location),
-		}
-	}
-
-	composite := schemamodel.CompositeType{
-		StructName: structName,
-		Name:       kv["name"],
-		Schema:     kv["schema"],
-		Fields:     fields,
-		Comment:    kv["comment"],
-		Dialects:   scope,
-	}
-	composite.Canonicalize()
-	s.compositeTypes = append(s.compositeTypes, composite)
-	return nil
-}
-
-// parseCompositeFields parses a "name:type,name:type" list into ordered fields.
-// Splitting is paren-aware so a parameterized type (e.g. NUMERIC(10,2)) whose
-// own comma would otherwise be read as a field separator survives intact.
-func parseCompositeFields(value string) ([]schemamodel.CompositeField, error) {
-	var fields []schemamodel.CompositeField
-	for _, part := range splitTopLevelCommaList(value) {
-		name, typ, ok := strings.Cut(part, ":")
-		name = strings.TrimSpace(name)
-		typ = strings.TrimSpace(typ)
-		if !ok || name == "" || typ == "" {
-			return nil, fmt.Errorf("invalid composite field %q", part)
-		}
-		fields = append(fields, schemamodel.CompositeField{Name: name, Type: typ})
-	}
-	if len(fields) == 0 {
-		return nil, fmt.Errorf("at least one field is required")
-	}
-	return fields, nil
-}
-
-// splitTopLevelCommaList splits on commas that are not nested inside parentheses,
-// trimming each entry and dropping empties.
-func splitTopLevelCommaList(value string) []string {
-	var parts []string
-	depth := 0
-	start := 0
-	for i, r := range value {
-		switch r {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		case ',':
-			if depth == 0 {
-				if trimmed := strings.TrimSpace(value[start:i]); trimmed != "" {
-					parts = append(parts, trimmed)
-				}
-				start = i + 1
-			}
-		}
-	}
-	if trimmed := strings.TrimSpace(value[start:]); trimmed != "" {
-		parts = append(parts, trimmed)
-	}
-	return parts
+	return s.handTypeToOwner(directive, kv, structName, scope, ctx)
 }
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {

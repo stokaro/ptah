@@ -61,7 +61,7 @@
 //   - Views and materialized views, including refresh strategy
 //   - Functions, procedures, and sequences
 //   - Triggers
-//   - Domains, composite types, and range types
+//   - Domains, composite types, and range types, through their type owners
 //   - Synonyms
 //   - Extensions and their installation schema
 //   - Roles, granted privileges, and row-level security policies

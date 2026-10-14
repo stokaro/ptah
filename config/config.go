@@ -103,30 +103,11 @@ type CompareOptions struct {
 	// again is not one of those.
 	SkipIndexDrops bool
 
-	// DomainExpressions carries each declared domain's CHECK and DEFAULT as the
-	// target server itself spells them, keyed by the domain's qualified name.
-	//
-	// PostgreSQL does not store the text of a CHECK. It parses the expression
-	// and prints it back from the parse tree, so `VALUE IN ('x','y')` is read
-	// back as `VALUE = ANY (ARRAY['x'::text, 'y'::text])` and `VALUE > 0` as
-	// `(VALUE > 0)`. Comparing a declaration against that is comparing two
-	// different languages, which is why a raw comparison has to decline: a
-	// string difference does not mean a changed constraint, and acting on one
-	// drops and recreates a domain that has not changed.
-	//
-	// A resolved entry is the declaration after the same round trip -- the
-	// server was asked to normalize it -- so the two sides compare as like with
-	// like and a real change is neither invented nor lost (stokaro/ptah#1717).
-	//
-	// A nil map means nobody could ask a server, which is every comparison that
-	// has no connection. CHECK and DEFAULT stay uncompared there.
-	DomainExpressions map[string]DomainExpression
-
 	// GeneratedExpressions carries each declared generated column's expression
 	// as the target server itself spells it, keyed by the column's qualified
 	// name.
 	//
-	// It is [CompareOptions.DomainExpressions] for a different attribute and the
+	// It is [CompareOptions.CheckExpressions] for a different attribute and the
 	// same reason: Oracle does not store the text of a generated column's
 	// expression. It stores a rewrite -- every column reference quoted and
 	// upper-cased, the spaces around operators gone, and parentheses added that
@@ -181,10 +162,9 @@ type CompareOptions struct {
 	// CheckExpressions carries each declared table CHECK as the target server
 	// itself spells it, keyed by the constraint's qualified name.
 	//
-	// It is [CompareOptions.DomainExpressions] for the same attribute on a
-	// different object, and the rewrite is the same one. PostgreSQL does not
-	// store the text of a CHECK: it parses the expression and prints it back
-	// from the parse tree, so a declaration and its own read-back differ.
+	// PostgreSQL does not store the text of a CHECK: it parses the expression
+	// and prints it back from the parse tree, so a declaration and its own
+	// read-back differ.
 	// Measured on 17.11:
 	//
 	//	declared                     stored
@@ -408,23 +388,6 @@ type GeneratedExpression struct {
 	// Resolved reports that a server answered for this column. A false value on
 	// a present key is a declaration the server refused, and the expression may
 	// not be compared.
-	Resolved bool
-}
-
-// DomainExpression is one domain's CHECK and DEFAULT in the target server's own
-// spelling. See [CompareOptions.DomainExpressions].
-//
-// The zero value is not "no constraint": it is what a resolver returns for a
-// declaration it could not put through the server, and a comparison must skip
-// the attribute rather than read it as removed. Resolved reports which it is.
-type DomainExpression struct {
-	// Check is the normalized CHECK, empty when the domain declares none.
-	Check string
-	// Default is the normalized DEFAULT, empty when the domain declares none.
-	Default string
-	// Resolved reports that a server answered for this domain. A false value
-	// on a present key is a domain whose declaration the server refused, and
-	// nothing about it may be compared.
 	Resolved bool
 }
 

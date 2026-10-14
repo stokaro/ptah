@@ -67,7 +67,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.EnumNode:
 		return r.keyed(capability.EnumCustomType, "enum type", "enum "+n.Name)
 	case *ast.CreateTypeNode:
-		return refuseKey(typeKey(n), typeSubject(n.Name))
+		return refuseKey(capability.EnumCustomType, typeSubject(n.Name))
 	case *ast.AlterTypeNode:
 		return refuseKey(capability.EnumCustomType, strings.TrimSpace("ALTER TYPE "+n.Name))
 	case *ast.DropTypeNode:
@@ -191,31 +191,13 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddEnumValueOperation,
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTypeOperation,
-		*ast.CompositeAttributeOperation,
-		*ast.DomainConstraintOperation,
-		*ast.DomainDefaultOperation,
-		*ast.DomainNotNullOperation,
-		*ast.EnumTypeDef,
-		*ast.DomainTypeDef,
-		*ast.CompositeTypeDef:
+		*ast.EnumTypeDef:
 		return fmt.Errorf("%w: %s: %T renders as part of the statement that carries it, not on its own",
 			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
 
 	default:
 		return fmt.Errorf("%w: %s: %T has no handler in this renderer",
 			ptaherr.ErrUnsupportedFeature, DialectName, node)
-	}
-}
-
-// typeKey is the capability a CREATE TYPE asks for, by the kind it declares.
-func typeKey(node *ast.CreateTypeNode) capability.Capability {
-	switch node.TypeDef.(type) {
-	case *ast.DomainTypeDef:
-		return capability.DomainTypes
-	case *ast.CompositeTypeDef:
-		return capability.CompositeTypes
-	default:
-		return capability.EnumCustomType
 	}
 }
 

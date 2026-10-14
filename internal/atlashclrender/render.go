@@ -1582,11 +1582,9 @@ func (r *renderer) enumTypeRef(typeName string) (string, bool) {
 	if !found {
 		return "", false
 	}
-	if slices.ContainsFunc(r.db.Domains, func(d schemamodel.Domain) bool { return d.Name == enum.Name }) ||
-		slices.ContainsFunc(r.db.CompositeTypes, func(ct schemamodel.CompositeType) bool { return ct.Name == enum.Name }) ||
-		slices.ContainsFunc(schemaext.DefinedTypes(r.db.FeatureObjects), func(defined schemaext.DefinedType) bool {
-			return defined.ID.Name.Source == enum.Name
-		}) {
+	if slices.ContainsFunc(schemaext.DefinedTypes(r.db.FeatureObjects), func(defined schemaext.DefinedType) bool {
+		return defined.ID.Name.Source == enum.Name
+	}) {
 		return "", false
 	}
 	if schema := r.schemaFor(enum.Schema); schema != "" && r.enumNameIsAmbiguous(enum.Name) {
@@ -1629,41 +1627,6 @@ func typeExpr(value string) string {
 		return quote(value)
 	}
 	return value
-}
-
-// userTypeExpr renders the type a user-defined type is built on: a domain's
-// base type, a composite field's type, a range's subtype.
-//
-// These are not column type positions and do not follow the column rules. The
-// pinned Atlas community binary v1.3.0 reads only a sql() call in the first two,
-// measured with everything else held fixed:
-//
-//	domain    type = text          refused, There is no variable named "text"
-//	domain    type = "text"        refused, schemahcl: failed reading spec
-//	domain    type = sql("text")   accepted
-//	composite type = text          refused
-//	composite type = "text"        refused
-//	composite type = sql("text")   accepted
-//
-// A range is the odd one, and it is why this was measured rather than inferred
-// from the other two:
-//
-//	range     subtype = int4          refused
-//	range     subtype = "int4"        ACCEPTED
-//	range     subtype = sql("int4")   accepted
-//
-// It takes the quoted string the other two refuse. sql() is used for all three
-// because it is the one spelling every position accepts, and one rule beats
-// three. Ptah's own parser reads it back to the bare name in each -- text, text,
-// int4 -- so the round trip is unaffected (stokaro/ptah#1260).
-//
-// An empty value keeps typeExpr's behavior rather than becoming sql(""), which
-// would round trip as a type named nothing.
-func userTypeExpr(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return typeExpr(value)
-	}
-	return sqlCall(value)
 }
 
 func sqlCall(value string) string {

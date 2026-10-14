@@ -356,7 +356,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	case "TYPE":
 		return p.parseCreateType()
 	case "DOMAIN":
-		return p.parseCreateDomain()
+		return p.refuseCreateDomain()
 	default:
 		return p.parseCreateModifier(target, statementStart)
 	}
@@ -6470,7 +6470,7 @@ func (p *Parser) parseCreateType() (ast.Node, error) {
 
 	// Get type name. A schema-qualified spelling is what Ptah's own renderer
 	// emits whenever a schema is declared, so it has to parse here exactly as
-	// it already does for CREATE DOMAIN and CREATE TABLE (issue #932).
+	// it does for CREATE TABLE (issue #932).
 	typeName, err := p.parseQualifiedIdentifier("type name")
 	if err != nil {
 		return nil, err
@@ -6484,15 +6484,15 @@ func (p *Parser) parseCreateType() (ast.Node, error) {
 
 	p.skipWhitespace()
 
-	// Dispatch on the shared forms after AS: ENUM (...) or a bare (...)
-	// composite. Domains take the separate CREATE DOMAIN path.
+	// Dispatch on the forms after AS: ENUM (...), or a bare (...) composite,
+	// which only a type owner reads.
 	if p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "ENUM") {
 		p.advance()
 		p.skipWhitespace()
 		return p.parseEnumTypeBody(typeName)
 	}
 	if p.current.MatchOperatorValue("(") {
-		return p.parseCompositeTypeBody(typeName)
+		return nil, p.refuseUserType("CREATE TYPE", typeName, "composite types")
 	}
 	return nil, fmt.Errorf("expected ENUM or '(' after AS at position %d", p.current.Start)
 }
@@ -6538,154 +6538,31 @@ func (p *Parser) parseEnumTypeBody(typeName string) (*ast.EnumNode, error) {
 	return ast.NewEnum(typeName, values...), nil
 }
 
-// parseCompositeTypeBody parses the `(field type, ...)` body of
-// CREATE TYPE ... AS (...).
-func (p *Parser) parseCompositeTypeBody(typeName string) (*ast.CreateTypeNode, error) {
-	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return nil, fmt.Errorf("expected '(' for composite fields: %w", err)
-	}
-
-	var fields []*ast.CompositeField
-	for {
-		p.skipWhitespace()
-		if p.current.MatchOperatorValue(")") {
-			break
-		}
-
-		fieldName, err := p.expectIdentifier()
-		if err != nil {
-			return nil, fmt.Errorf("expected composite field name: %w", err)
-		}
-		p.skipWhitespace()
-
-		// The field type is the remaining tokens up to a top-level comma or the
-		// closing paren; collect them verbatim so multi-token and parameterized
-		// types (VARCHAR(10), NUMERIC(10,2), TIMESTAMP WITH TIME ZONE) survive.
-		// Track paren depth so a comma or ')' inside the type's own parameter
-		// list is not mistaken for a field separator.
-		var typeParts []string
-		depth := 0
-		for p.current.Type != lexer.TokenEOF {
-			if depth == 0 && (p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")")) {
-				break
-			}
-			if p.current.MatchOperatorValue("(") {
-				depth++
-			} else if p.current.MatchOperatorValue(")") {
-				depth--
-			}
-			typeParts = append(typeParts, p.current.Value)
-			p.advance()
-		}
-		if len(typeParts) == 0 {
-			return nil, fmt.Errorf("expected type for composite field %q at position %d", fieldName, p.current.Start)
-		}
-		fields = append(fields, &ast.CompositeField{Name: fieldName, Type: joinTypeTokens(typeParts)})
-
-		if p.current.MatchOperatorValue(",") {
-			p.advance()
-			continue
-		}
-		if p.current.MatchOperatorValue(")") {
-			break
-		}
-		return nil, fmt.Errorf("expected ',' or ')' in composite fields at position %d", p.current.Start)
-	}
-
-	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
-		return nil, err
-	}
-
-	return ast.NewCreateType(typeName, ast.NewCompositeTypeDef(fields...)), nil
-}
-
-// joinTypeTokens reconstructs a SQL type from its lexed tokens, omitting spaces
-// around parentheses so parameterized types (VARCHAR(10), NUMERIC(10,2)) render
-// without stray whitespace while multi-word types (TIMESTAMP WITH TIME ZONE)
-// keep their separators.
-func joinTypeTokens(parts []string) string {
-	var b strings.Builder
-	for i, part := range parts {
-		if i > 0 && part != "(" && part != ")" && part != "," && parts[i-1] != "(" {
-			b.WriteByte(' ')
-		}
-		b.WriteString(part)
-	}
-	return b.String()
-}
-
-// parseCreateDomain parses CREATE DOMAIN statements (PostgreSQL).
-func (p *Parser) parseCreateDomain() (*ast.CreateTypeNode, error) {
+// refuseCreateDomain refuses a CREATE DOMAIN no owner claimed. A type
+// owner reads the statement: the PostgreSQL owner for the PostgreSQL family
+// and for a document of no target, and the Oracle owner for Oracle.
+func (p *Parser) refuseCreateDomain() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "DOMAIN"); err != nil {
 		return nil, err
 	}
-
 	p.skipWhitespace()
-
-	// Get domain name
-	domainName, err := p.parseQualifiedIdentifier("domain name")
+	name, err := p.parseQualifiedIdentifier("domain name")
 	if err != nil {
 		return nil, err
 	}
+	return nil, p.refuseUserType("CREATE DOMAIN", name, "domains")
+}
 
-	p.skipWhitespace()
-
-	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
-		return nil, fmt.Errorf("expected AS after domain name: %w", err)
+// refuseUserType says why a statement creating a domain or a composite type
+// was refused: its target hosts none, or the read did not select the type
+// owner that reads it.
+func (p *Parser) refuseUserType(statement, name, feature string) error {
+	target := platform.NormalizeDialect(p.dialect)
+	message := fmt.Sprintf("%s %s needs the type owner of its target, which this read did not select", statement, name)
+	if target != "" && !platform.IsPostgresFamily(target) && target != platform.Oracle {
+		message = fmt.Sprintf("%s %s: %s has no %s, and refuses the statement", statement, name, target, feature)
 	}
-
-	p.skipWhitespace()
-
-	// Get base type
-	baseType, err := p.parseColumnType()
-	if err != nil {
-		return nil, fmt.Errorf("expected base type: %w", err)
-	}
-
-	domainDef := ast.NewDomainTypeDef(baseType)
-
-	// Parse optional domain constraints.
-	for {
-		p.skipWhitespace()
-
-		if p.current.Type != lexer.TokenIdentifier {
-			break
-		}
-
-		keyword := strings.ToUpper(p.current.Value)
-		handled := true
-		switch keyword {
-		case "CHECK":
-			p.advance()
-			p.skipWhitespace()
-			checkExpr, err := p.parseCheckExpression()
-			if err != nil {
-				return nil, fmt.Errorf("expected check expression: %w", err)
-			}
-			domainDef.SetCheck(checkExpr)
-		case "NOT":
-			p.advance()
-			p.skipWhitespace()
-			if err := p.expect(lexer.TokenIdentifier, "NULL"); err != nil {
-				return nil, fmt.Errorf("expected NULL after NOT in domain definition: %w", err)
-			}
-			domainDef.SetNotNull()
-		case "DEFAULT":
-			p.advance()
-			defaultValue, err := p.parseDefaultValue()
-			if err != nil {
-				return nil, fmt.Errorf("expected domain default value: %w", err)
-			}
-			domainDef.Default = defaultValue
-		default:
-			handled = false
-		}
-		if !handled {
-			break
-		}
-	}
-
-	return ast.NewCreateType(domainName, domainDef), nil
+	return &ptaherr.CapabilityError{Dialect: target, Feature: feature, Err: ptaherr.ErrUnsupportedFeature, Message: message}
 }
 
 // parseCommentStatement parses COMMENT ON statements (PostgreSQL).

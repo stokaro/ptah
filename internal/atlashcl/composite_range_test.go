@@ -27,7 +27,6 @@ composite "address" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CompositeTypes, qt.HasLen, 0)
 	objects := typeObjects(db, pgtype.CompositeKind)
 	c.Assert(objects, qt.HasLen, 1)
 	c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.CompositeKind, "", "address"))
@@ -83,7 +82,7 @@ composite "measurement" {
 // TestParseUserTypes_AnOracleDocumentReachesTheOracleTypeOwner pins the
 // routing of the blocks Oracle shares with PostgreSQL: a document read for
 // Oracle, or a block whose dialect names Oracle, hands its domains and
-// composite types to the Oracle type owner, and the common model holds none.
+// composite types to the Oracle type owner.
 func TestParseUserTypes_AnOracleDocumentReachesTheOracleTypeOwner(t *testing.T) {
 	for _, test := range []struct{ name, dialect, selector string }{
 		{name: "an Oracle document", dialect: "oracle"},
@@ -107,8 +106,6 @@ composite "address" {
 `
 			db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Domains, qt.HasLen, 0)
-			c.Assert(db.CompositeTypes, qt.HasLen, 0)
 			objects := must.Must(db.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 2)
 			c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))

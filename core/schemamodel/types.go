@@ -48,8 +48,6 @@ type Database struct {
 	EmbeddedFields             []EmbeddedField
 	Functions                  []Function                     // PostgreSQL custom functions
 	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
-	Domains                    []Domain                       // PostgreSQL domain types (CREATE DOMAIN)
-	CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
 	Views                      []View                         // Database views
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -785,84 +783,6 @@ func (e Enum) QualifiedName() string {
 		return e.Name
 	}
 	return QualifyTableName(e.Schema, e.Name)
-}
-
-// Domain represents a PostgreSQL domain type parsed from Go annotations.
-//
-// A domain is a base type constrained with optional NOT NULL, DEFAULT, and CHECK
-// clauses. Domains are defined using //ptah:schema:domain annotations:
-//
-//	//ptah:schema:domain name="email" type="TEXT" check="VALUE ~ '^[^@]+@[^@]+$'"
-//	type EmailDomain struct{}
-type Domain struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets      schemaext.Facets `json:"facets,omitzero"`
-	StructName  string           // Name of the Go struct this domain is associated with
-	Name        string           // Domain name (e.g., "email")
-	Schema      string           // Optional schema/namespace (PostgreSQL-style)
-	BaseType    string           // Underlying base data type (e.g., "TEXT", "VARCHAR(255)")
-	NotNull     bool             // Whether the domain is NOT NULL
-	Default     string           // Optional literal DEFAULT value
-	DefaultExpr string           // Optional DEFAULT expression (function call)
-	Check       string           // Optional CHECK constraint expression (uses VALUE)
-	Comment     string           // Optional comment for documentation
-
-	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToTarget].
-	Dialects []string `json:",omitempty"`
-}
-
-// Canonicalize normalizes domain attributes for downstream consumers.
-func (d *Domain) Canonicalize() {
-	d.Name = strings.TrimSpace(d.Name)
-	d.Schema = strings.TrimSpace(d.Schema)
-	d.BaseType = strings.TrimSpace(d.BaseType)
-	d.Check = strings.TrimSpace(d.Check)
-	d.Comment = strings.TrimSpace(d.Comment)
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (d Domain) QualifiedName() string {
-	return QualifyTableName(d.Schema, d.Name)
-}
-
-// CompositeField is a single named field of a composite type.
-type CompositeField struct {
-	Name string // Field name
-	Type string // Field data type
-}
-
-// CompositeType represents a PostgreSQL composite type parsed from Go annotations.
-//
-// Composite types are defined using //ptah:schema:composite annotations with
-// a comma-separated fields list of "name:type" pairs:
-//
-//	//ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
-//	type AddressType struct{}
-type CompositeType struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets     schemaext.Facets `json:"facets,omitzero"`
-	StructName string           // Name of the Go struct this type is associated with
-	Name       string           // Composite type name (e.g., "address")
-	Schema     string           // Optional schema/namespace (PostgreSQL-style)
-	Fields     []CompositeField // Ordered fields of the composite type
-	Comment    string           // Optional comment for documentation
-
-	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToTarget].
-	Dialects []string `json:",omitempty"`
-}
-
-// Canonicalize normalizes composite-type attributes for downstream consumers.
-func (c *CompositeType) Canonicalize() {
-	c.Name = strings.TrimSpace(c.Name)
-	c.Schema = strings.TrimSpace(c.Schema)
-	c.Comment = strings.TrimSpace(c.Comment)
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (c CompositeType) QualifiedName() string {
-	return QualifyTableName(c.Schema, c.Name)
 }
 
 // Function represents a PostgreSQL custom function definition parsed from Go struct annotations.

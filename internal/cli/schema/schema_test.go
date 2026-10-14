@@ -192,8 +192,6 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 	})
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	// The user types read back as the PostgreSQL type owner's.
-	c.Assert(parsed.Domains, qt.HasLen, 0)
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
 	for _, kind := range pgtype.Kinds() {
 		c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
 			return ref.Kind == objectidentity.Kind(kind)

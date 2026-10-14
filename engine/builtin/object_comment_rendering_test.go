@@ -28,11 +28,12 @@ func objectCommentSchema() *schemamodel.Database {
 		Sequences: []schemamodel.Sequence{{
 			Name: "ticket", Comment: "sequence note",
 		}},
-		Domains: []schemamodel.Domain{{Name: "positive", BaseType: "integer", Comment: "domain note"}},
-		CompositeTypes: []schemamodel.CompositeType{{
-			Name: "point2", Fields: []schemamodel.CompositeField{{Name: "x", Type: "integer"}}, Comment: "composite note",
-		}},
-		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.DesiredRange{Subtype: "integer", Comment: "range note"}, Targets: []string{"postgres"}}, must.Must(pgextension.DesiredObject(pgextension.Ref("hstore"), pgextension.DesiredExtension{Comment: "extension note"})))),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "positive"), Value: &pgtype.DesiredDomain{BaseType: "integer", Comment: "domain note"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "point2"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "x", Type: "integer"}}, Comment: "composite note"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.DesiredRange{Subtype: "integer", Comment: "range note"}, Targets: []string{"postgres"}},
+			must.Must(pgextension.DesiredObject(pgextension.Ref("hstore"), pgextension.DesiredExtension{Comment: "extension note"})))),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 }

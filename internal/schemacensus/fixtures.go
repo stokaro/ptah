@@ -194,8 +194,6 @@ func corpus() []Fixture {
 		{Name: "table-uniform-partitions", Schema: tableUniformPartitionsFixture()},
 		{Name: "table-partition-at-keys", Schema: tablePartitionAtKeysFixture()},
 		{Name: "enum", Schema: enumFixture()},
-		{Name: "domain", Schema: domainFixture()},
-		{Name: "composite", Schema: compositeFixture()},
 		{Name: "sequence", Schema: sequenceFixture()},
 		{Name: "view", Schema: viewFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
@@ -269,8 +267,6 @@ func corpus() []Fixture {
 		{Name: "constraint-delete-column-list", Schema: constraintDeleteColumnListFixture()},
 		{Name: "constraint-host-table-only", Schema: constraintHostTableOnlyFixture()},
 		{Name: "index-host-table-only", Schema: indexHostTableOnlyFixture()},
-		{Name: "domain-default-only", Schema: domainDefaultOnlyFixture()},
-		{Name: "domain-default-expr-only", Schema: domainDefaultExprOnlyFixture()},
 		{Name: "trigger-body-only", Schema: triggerBodyOnlyFixture()},
 		{Name: "trigger-foreach-statement", Schema: triggerForEachStatementFixture()},
 		{Name: "trigger-transition-tables", Schema: triggerTransitionTablesFixture()},
@@ -539,24 +535,6 @@ func indexHostTableOnlyFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
 		Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-	}}
-	return db
-}
-
-func domainDefaultOnlyFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Domains = []schemamodel.Domain{{
-		StructName: "D", Name: "positive", BaseType: "INTEGER", Default: "1",
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
-}
-
-func domainDefaultExprOnlyFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Domains = []schemamodel.Domain{{
-		StructName: "D", Name: "positive", BaseType: "INTEGER", DefaultExpr: "1 + 1",
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db
 }
@@ -1359,26 +1337,6 @@ func indexInvisibleFixture() schemamodel.Database {
 func enumFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Enums = []schemamodel.Enum{{Name: "mood", Schema: "public", Values: []string{"ok", "bad"}, Comment: "feelings"}}
-	return db
-}
-
-func domainFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Domains = []schemamodel.Domain{{
-		StructName: "D", Name: "positive", Schema: "public", BaseType: "INTEGER",
-		NotNull: true, Default: "1", DefaultExpr: "1", Check: "VALUE > 0",
-		Comment: "positive int", Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
-}
-
-func compositeFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.CompositeTypes = []schemamodel.CompositeType{{
-		StructName: "C", Name: "address", Schema: "public", Comment: "postal",
-		Fields:   []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
 	return db
 }
 

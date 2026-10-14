@@ -146,12 +146,6 @@ func reverseSchemaDiffWithPrior(
 
 		// Reverse sequence operations
 		// Reverse user-defined type operations
-		DomainsAdded:           diff.DomainsRemoved,
-		DomainsRemoved:         diff.DomainsAdded,
-		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema, prior, semantics),
-		CompositeTypesAdded:    diff.CompositeTypesRemoved,
-		CompositeTypesRemoved:  diff.CompositeTypesAdded,
-		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior, semantics),
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove

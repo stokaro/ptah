@@ -93,9 +93,10 @@ func TestFingerprintPreservesAllSourceFacets(t *testing.T) {
 	populateFacetEnvelopes(reflect.ValueOf(desired).Elem())
 	populateFacetEnvelopes(reflect.ValueOf(observed).Elem())
 	desiredSlots, observedSlots := desired.FacetSlots(), observed.FacetSlots()
-	c.Assert(len(desiredSlots) > 15, qt.IsTrue)
-	// Range types carry owner objects, so they add no common facet slot.
-	c.Assert(len(observedSlots) >= 15, qt.IsTrue)
+	c.Assert(len(desiredSlots) >= 14, qt.IsTrue, qt.Commentf("%d desired slots", len(desiredSlots)))
+	// Domains, composite types and range types are owner objects, so they add
+	// no common facet slot.
+	c.Assert(len(observedSlots) >= 13, qt.IsTrue, qt.Commentf("%d observed slots", len(observedSlots)))
 	for _, slots := range [][]*schemaext.Facets{desiredSlots, observedSlots} {
 		for i, slot := range slots {
 			*slot = must.Must(schemaext.NewFacets(&facet{Number: i + 1}))

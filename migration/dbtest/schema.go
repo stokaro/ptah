@@ -273,8 +273,6 @@ func preserveUnmanagedObjects(ctx context.Context, diff *difftypes.SchemaDiff, d
 	diff.IndexesRemoved = matchingIndexRefs(diff.IndexesRemoved, diff.IndexAdditions(), semantics)
 	diff.FunctionsRemoved = nil
 	diff.SequencesRemoved = nil
-	diff.DomainsRemoved = nil
-	diff.CompositeTypesRemoved = nil
 	diff.ViewsRemoved = nil
 	diff.MaterializedViewsRemoved = nil
 	diff.TriggersRemoved = nil

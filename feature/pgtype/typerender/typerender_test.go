@@ -1,7 +1,6 @@
 package typerender_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -11,105 +10,73 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/pgtype/typerender"
-	"ptah.run/internal/modelast"
 )
 
 func render(target string, payload ast.ExtensionPayload) ([]string, error) {
 	return must.Must(typerender.Registry()).Render(renderer.ExtensionContext{Target: target}, ast.StatementExtension, payload)
 }
 
-// commonLines renders node with the PostgreSQL-family renderer and returns its
-// lines, without blank ones.
-func commonLines(c *qt.C, target string, node ast.Node) []string {
-	c.Helper()
-	sql, err := builtin.RenderSQL(target, node)
-	c.Assert(err, qt.IsNil)
-	var lines []string
-	for line := range strings.SplitSeq(sql, "\n") {
-		if trimmed := strings.TrimSpace(line); trimmed != "" {
-			lines = append(lines, trimmed)
-		}
-	}
-	return lines
-}
-
 func on(kind schemaext.Kind, schema, name string) pgtype.Target {
 	return pgtype.Target{Kind: kind, Schema: schema, Name: name}
 }
 
-// alterType builds the common ALTER TYPE node of name with operations.
-func alterType(name string, operations ...ast.TypeOperation) *ast.AlterTypeNode {
-	node := ast.NewAlterType(name)
-	for _, operation := range operations {
-		node.AddOperation(operation)
-	}
-	return node
-}
-
-// TestRender_MatchesTheCommonRenderer pins that each payload renders the
-// statement the PostgreSQL-family renderer writes for the common node that
-// expresses the same change, byte for byte: the owner takes over these
-// statements without changing one.
-func TestRender_MatchesTheCommonRenderer(t *testing.T) {
+// TestRender_HappyPath pins the statements each payload renders, byte for
+// byte, on PostgreSQL.
+func TestRender_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		payload ast.ExtensionPayload
-		common  ast.Node
+		want    []string
 	}{
 		{name: "a bare domain",
 			payload: &pgtype.CreateDomain{Target: on(pgtype.DomainKind, "", "email"), BaseType: "TEXT"},
-			common:  modelast.FromDomain(schemamodel.Domain{Name: "email", BaseType: "TEXT"})},
+			want:    []string{"CREATE DOMAIN \"email\" AS TEXT;"}},
 		{name: "a domain with every clause",
 			payload: &pgtype.CreateDomain{Target: on(pgtype.DomainKind, "app", "qty"), BaseType: "integer", NotNull: true, Default: "7",
 				Check: "VALUE > 0"},
-			common: modelast.FromDomain(schemamodel.Domain{Name: "qty", Schema: "app", BaseType: "integer", NotNull: true, Default: "7",
-				Check: "VALUE > 0"})},
+			want: []string{"CREATE DOMAIN \"app\".\"qty\" AS integer NOT NULL DEFAULT 7 CHECK (VALUE > 0);"}},
 		{name: "a quoted literal default",
 			payload: &pgtype.CreateDomain{Target: on(pgtype.DomainKind, "", "label"), BaseType: "text", Default: "it's"},
-			common:  modelast.FromDomain(schemamodel.Domain{Name: "label", BaseType: "text", Default: "it's"})},
+			want:    []string{"CREATE DOMAIN \"label\" AS text DEFAULT 'it''s';"}},
 		{name: "a boolean default",
 			payload: &pgtype.CreateDomain{Target: on(pgtype.DomainKind, "", "flag"), BaseType: "boolean", Default: "TRUE"},
-			common:  modelast.FromDomain(schemamodel.Domain{Name: "flag", BaseType: "boolean", Default: "TRUE"})},
+			want:    []string{"CREATE DOMAIN \"flag\" AS boolean DEFAULT true;"}},
 		{name: "a default expression over a literal",
 			payload: &pgtype.CreateDomain{Target: on(pgtype.DomainKind, "", "stamp"), BaseType: "timestamptz", Default: "x",
 				DefaultExpr: "now()"},
-			common: modelast.FromDomain(schemamodel.Domain{Name: "stamp", BaseType: "timestamptz", Default: "x", DefaultExpr: "now()"})},
+			want: []string{"CREATE DOMAIN \"stamp\" AS timestamptz DEFAULT now();"}},
 		{name: "a dotted name",
 			payload: &pgtype.CreateDomain{Target: on(pgtype.DomainKind, "app", "a.b"), BaseType: "text"},
-			common:  modelast.FromDomain(schemamodel.Domain{Name: "a.b", Schema: "app", BaseType: "text"})},
+			want:    []string{"CREATE DOMAIN \"app\".\"a.b\" AS text;"}},
 		{name: "a composite type",
 			payload: &pgtype.CreateComposite{Target: on(pgtype.CompositeKind, "geo", "addr"),
 				Attributes: []pgtype.Attribute{{Name: "City", Type: "text"}, {Name: "amount", Type: "numeric(10,2)"}}},
-			common: modelast.FromCompositeType(schemamodel.CompositeType{Name: "addr", Schema: "geo",
-				Fields: []schemamodel.CompositeField{{Name: "City", Type: "text"}, {Name: "amount", Type: "numeric(10,2)"}}})},
+			want: []string{"CREATE TYPE \"geo\".\"addr\" AS (\"City\" text, \"amount\" numeric(10,2));"}},
 		{name: "a removed domain",
 			payload: &pgtype.Drop{Target: on(pgtype.DomainKind, "app", "qty"), Cascade: true},
-			common:  ast.NewDropType("app.qty").SetDomain().SetIfExists().SetCascade()},
+			want:    []string{"DROP DOMAIN IF EXISTS \"app\".\"qty\" CASCADE;"}},
 		{name: "a rebuilt composite type",
 			payload: &pgtype.Drop{Target: on(pgtype.CompositeKind, "", "addr")},
-			common:  ast.NewDropType("addr").SetIfExists()},
+			want:    []string{"DROP TYPE IF EXISTS \"addr\";"}},
 		{name: "a domain altered in place",
 			payload: &pgtype.AlterDomain{Target: on(pgtype.DomainKind, "app", "qty"), DropChecks: []string{"qty_check", "Other"},
 				AddCheck: "VALUE > 1", SetDefault: "'8'", NotNull: new(true)},
-			common: alterType("app.qty", ast.NewDropDomainConstraintOperation("qty_check"), ast.NewDropDomainConstraintOperation("Other"),
-				ast.NewAddDomainConstraintOperation("VALUE > 1"), ast.NewSetDomainDefaultOperation("'8'"), ast.NewDomainNotNullOperation(true))},
+			want: []string{"ALTER DOMAIN \"app\".\"qty\" DROP CONSTRAINT \"qty_check\";", "ALTER DOMAIN \"app\".\"qty\" DROP CONSTRAINT \"Other\";", "ALTER DOMAIN \"app\".\"qty\" ADD CHECK (VALUE > 1);", "ALTER DOMAIN \"app\".\"qty\" SET DEFAULT '8';", "ALTER DOMAIN \"app\".\"qty\" SET NOT NULL;"}},
 		{name: "a domain losing NOT NULL",
 			payload: &pgtype.AlterDomain{Target: on(pgtype.DomainKind, "", "qty"), NotNull: new(false)},
-			common:  alterType("qty", ast.NewDomainNotNullOperation(false))},
+			want:    []string{"ALTER DOMAIN \"qty\" DROP NOT NULL;"}},
 		{name: "a composite type altered in place",
 			payload: &pgtype.AlterComposite{Target: on(pgtype.CompositeKind, "", "addr"), Drop: []string{"zip"},
 				Add: []pgtype.Attribute{{Name: "Zip", Type: "varchar(10)"}}},
-			common: alterType("addr", ast.NewDropCompositeAttributeOperation("zip"), ast.NewAddCompositeAttributeOperation("Zip", "varchar(10)"))},
+			want: []string{"ALTER TYPE \"addr\" DROP ATTRIBUTE \"zip\";", "ALTER TYPE \"addr\" ADD ATTRIBUTE \"Zip\" varchar(10);"}},
 		{name: "a domain's comment",
 			payload: &pgtype.Comment{Target: on(pgtype.DomainKind, "app", "qty"), Comment: "it's a quantity"},
-			common:  ast.NewObjectComment(ast.CommentedDomain, "app.qty", "it's a quantity")},
+			want:    []string{"COMMENT ON DOMAIN \"app\".\"qty\" IS 'it''s a quantity';"}},
 		{name: "a type's removed comment",
 			payload: &pgtype.Comment{Target: on(pgtype.RangeKind, "", "fr")},
-			common:  ast.NewObjectComment(ast.CommentedType, "fr", "")},
+			want:    []string{"COMMENT ON TYPE \"fr\" IS NULL;"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -118,7 +85,7 @@ func TestRender_MatchesTheCommonRenderer(t *testing.T) {
 			statements, err := render("postgres", test.payload)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, commonLines(c, "postgres", test.common))
+			c.Assert(statements, qt.DeepEquals, test.want)
 		})
 	}
 }

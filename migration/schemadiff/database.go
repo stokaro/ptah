@@ -18,7 +18,6 @@ import (
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
-	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
@@ -88,16 +87,12 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	}
 	info.IdentifierSemantics = semantics
 
-	// Resolved here rather than inside the comparison for the same reason the
-	// identifier semantics are: a live fact belongs to the side that holds a
-	// connection, and the comparison itself must stay a pure function of the
-	// two states it is given.
-	expressions, err := resolveDomainExpressions(ctx, conn, desired, database)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	// Feature owners attach the same kind of live fact to the objects they
-	// own, through their own probes in rolled-back transactions.
+	// Feature owners attach live facts to the objects they own, through their
+	// own probes in rolled-back transactions. They are resolved here rather
+	// than inside the comparison for the same reason the identifier semantics
+	// are: a live fact belongs to the side that holds a connection, and the
+	// comparison itself must stay a pure function of the two states it is
+	// given.
 	desired, err = normalizeFeatureObjects(ctx, conn, desired, database, info, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -135,7 +130,6 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// what keeps the caller's options untouched, which matters because a
 	// caller may compare twice with one value.
 	opts = withResolvedExpressions(opts, resolvedExpressions{
-		domains:   expressions,
 		checks:    checks,
 		indexes:   indexes,
 		columns:   columns,
@@ -152,7 +146,6 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 // resolvedExpressions collects what the resolvers above answered, so the
 // options are copied once rather than once per family.
 type resolvedExpressions struct {
-	domains   map[string]config.DomainExpression
 	checks    map[string]config.CheckExpression
 	indexes   map[string]config.IndexExpression
 	columns   map[string]config.ColumnSpelling
@@ -164,7 +157,7 @@ type resolvedExpressions struct {
 // empty reports that no server answered for anything, which is every offline
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
-	return len(r.domains) == 0 && len(r.checks) == 0 &&
+	return len(r.checks) == 0 &&
 		len(r.indexes) == 0 && len(r.columns) == 0 &&
 		len(r.triggers) == 0 && len(r.arguments) == 0 && len(r.views) == 0
 }
@@ -184,9 +177,6 @@ func withResolvedExpressions(
 	merged := config.DefaultCompareOptions()
 	if opts != nil {
 		*merged = *opts
-	}
-	if len(resolved.domains) > 0 {
-		merged.DomainExpressions = resolved.domains
 	}
 	if len(resolved.checks) > 0 {
 		merged.CheckExpressions = resolved.checks
@@ -259,7 +249,7 @@ func resolveTriggerConditions(
 // resolveRoutineArguments asks the server to spell the argument list and the
 // result of every declared routine whose name the database also holds.
 //
-// Only those, for the reason [resolveDomainExpressions] gives: a routine being
+// Only those, for the reason [resolveCheckExpressions] gives: a routine being
 // created carries its declaration into the CREATE unchanged. The name is
 // matched loosely, on the routine's own name in any schema and case, because a
 // probe too many costs one CREATE in a rolled-back transaction and a probe too
@@ -330,7 +320,7 @@ func resolveRoutineArguments(
 // resolveViewBodies asks the server to spell the body of every declared view
 // and materialized view whose name the database also holds.
 //
-// Only those, for the reason [resolveDomainExpressions] gives: a view being
+// Only those, for the reason [resolveCheckExpressions] gives: a view being
 // created carries its declaration into the CREATE unchanged. The name is
 // matched loosely, on the view's own name in any schema and case, as
 // [resolveRoutineArguments] matches a routine, because a probe too many costs
@@ -476,7 +466,7 @@ func rewritesStoredBodies(dialect string) bool {
 // resolveColumnSpellings asks the server to spell the type and default of
 // every declared column the database also holds.
 //
-// Only those, for the reason [resolveDomainExpressions] gives: a column being
+// Only those, for the reason [resolveCheckExpressions] gives: a column being
 // added carries its declaration into the ALTER statement unchanged.
 //
 // Each probe is the CREATE TABLE the renderer writes for the declared columns,
@@ -598,62 +588,14 @@ func typeAndDefaultOnly(field schemamodel.Field) schemamodel.Field {
 	return field
 }
 
-// resolveDomainExpressions normalizes the declared CHECK and DEFAULT of every
-// domain the database also holds.
-//
-// Only those: a domain being created carries its declaration into the CREATE
-// statement unchanged, so nothing about it needs the server's spelling, and a
-// domain being dropped has no declaration left to normalize. The ones in the
-// middle are the ones a string comparison cannot decide (stokaro/ptah#1717).
-func resolveDomainExpressions(
-	ctx context.Context,
-	conn Connection,
-	desired *schemamodel.Database,
-	database *catalog.Database,
-) (map[string]config.DomainExpression, error) {
-	if desired == nil || database == nil {
-		return nil, nil
-	}
-	held := make(map[string]struct{}, len(database.Domains))
-	for _, domain := range database.Domains {
-		held[strings.ToLower(domain.QualifiedName())] = struct{}{}
-	}
-
-	probes := make([]dbexprprobe.DomainExpressionProbe, 0, len(desired.Domains))
-	for _, domain := range desired.Domains {
-		if _, exists := held[strings.ToLower(domain.QualifiedName())]; !exists {
-			continue
-		}
-		defaultExpression := domain.DefaultExpr
-		if defaultExpression == "" && domain.Default != "" {
-			defaultExpression = sqlident.StringLiteral(domain.Default)
-		}
-		probes = append(probes, dbexprprobe.DomainExpressionProbe{
-			Key:      domain.QualifiedName(),
-			BaseType: domain.BaseType,
-			Check:    domain.Check,
-			Default:  defaultExpression,
-		})
-	}
-	if len(probes) == 0 {
-		return nil, nil
-	}
-
-	expressions, err := dbexprprobe.ResolveDomainExpressions(ctx, conn, probes)
-	if err != nil {
-		return nil, fmt.Errorf("compare schemas: %w", err)
-	}
-	return expressions, nil
-}
-
 // resolveCheckExpressions normalizes the expression of every CHECK the
 // comparison compares -- declared on the table, or synthesized from a column's
 // check or a table's checks list -- that the database also holds.
 //
-// Only those, for the reason [resolveDomainExpressions] gives: a constraint
-// being created carries its declaration into the ADD statement unchanged, and
-// one being dropped has no declaration left to normalize. The ones in the
-// middle are the ones a string comparison cannot decide.
+// Only those: a constraint being created carries its declaration into the ADD
+// statement unchanged, and one being dropped has no declaration left to
+// normalize. The ones in the middle are the ones a string comparison cannot
+// decide (stokaro/ptah#1717).
 //
 // The probe table is built from the LIVE table's columns rather than the
 // declared ones, because the rewrite depends on the types the expression is

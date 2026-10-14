@@ -168,7 +168,8 @@ var sqlServerSavepoints = savepointSyntax{
 	rollback: func(name string) string { return "ROLLBACK TRANSACTION " + name },
 }
 
-// isPostgresFamily reports whether the dialect renders CREATE DOMAIN at all.
+// isPostgresFamily reports whether the dialect is one of the PostgreSQL family,
+// whose server rewrites the expressions these probes ask about.
 func isPostgresFamily(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:

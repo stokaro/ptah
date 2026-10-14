@@ -77,15 +77,17 @@ func TestRangePlanOrdersDependenciesAcrossTypeOwners(t *testing.T) {
 				return strings.TrimPrefix(schema+"."+name, ".")
 			}
 			desired := &schemamodel.Database{
-				Domains:        []schemamodel.Domain{{Schema: schema, Name: "wrapper", BaseType: qualify("z_inner")}, {Schema: schema, Name: "base", BaseType: "numeric"}},
-				CompositeTypes: []schemamodel.CompositeType{{Schema: schema, Name: "box", Fields: []schemamodel.CompositeField{{Name: "value", Type: qualify("a_outer")}}}},
 				FeatureObjects: must.Must(schemaext.NewObjects(
+					must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.DomainKind, schema, "wrapper"), &pgtype.DesiredDomain{BaseType: qualify("z_inner")})),
+					must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.DomainKind, schema, "base"), &pgtype.DesiredDomain{BaseType: "numeric"})),
+					must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.CompositeKind, schema, "box"),
+						&pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "value", Type: qualify("a_outer")}}})),
 					must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, schema, "a_outer"), &pgtype.DesiredRange{Subtype: qualify("wrapper")})),
 					must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, schema, "z_inner"), &pgtype.DesiredRange{Subtype: qualify("base")})),
 				)),
-				FeatureCoverage: must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+				FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired)),
 			}
-			current := &catalog.Database{FeatureCoverage: must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+			current := &catalog.Database{FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed))}
 			diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current, catalog.ServerInfo{Dialect: "postgres", Capabilities: caps}, nil, runtime)
 			c.Assert(err, qt.IsNil)
 			plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: "postgres", Capabilities: caps})

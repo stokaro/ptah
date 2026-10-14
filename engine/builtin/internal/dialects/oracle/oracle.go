@@ -525,22 +525,12 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
+// renderCreateType refuses. Oracle's domains and object types belong to the
+// Oracle type owner, whose operations render their own statements, and Oracle
+// has no enum type. Refusing rather than writing a comment keeps `schema
+// render` from exiting 0 on a model the planner refuses at apply time; the
+// SQLite renderer refuses its materialized views for the same reason.
 func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
-	// A domain is rendered where the preset says so -- 23 has CREATE DOMAIN
-	// and 21 answers ORA-00901 (stokaro/ptah#1920).
-	if domain, isDomain := node.TypeDef.(*ast.DomainTypeDef); isDomain && r.domainsRendered() {
-		return r.visitCreateDomain(node, domain)
-	}
-	// A composite is Oracle's object type, and the spelling is the difference:
-	// PostgreSQL's `AS (...)` is accepted here and creates an INVALID,
-	// incomplete type (stokaro/ptah#1920).
-	if composite, isComposite := node.TypeDef.(*ast.CompositeTypeDef); isComposite && r.compositesRendered() {
-		return r.visitCreateComposite(node, composite)
-	}
-	// Anything else refuses rather than writing a comment: a comment makes
-	// `schema render` exit 0 on a model the planner refuses at apply time,
-	// which is the reason the SQLite renderer stopped commenting its
-	// materialized views.
 	return unsupportedFeaturef("%s: user types are not rendered for Oracle", strings.TrimSpace("CREATE TYPE "+node.Name))
 }
 
@@ -549,12 +539,6 @@ func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 }
 
 func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
-	if node.Domain && r.domainsRendered() {
-		return r.visitDropDomain(node)
-	}
-	if !node.Domain && r.compositesRendered() {
-		return r.visitDropComposite(node)
-	}
 	return unsupportedFeaturef("DROP TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 

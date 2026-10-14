@@ -125,15 +125,14 @@ func TestParseWithOptions_ReadsATypeNameAsAColumnTypeIsRead(t *testing.T) {
 		want     string
 	}{
 		{name: "the reader's own enum", spelling: "enum.mood", want: "mood"},
-		{name: "the reader's own domain", spelling: "domain.pos2", want: "pos2"},
-		{name: "a type no block declares", spelling: "domain.missing", want: "missing"},
-		{name: "a type in a schema", spelling: "domain.app.pos2", want: "app.pos2"},
+		{name: "a type no block declares", spelling: "enum.missing", want: "missing"},
+		{name: "a type in a schema", spelling: "enum.app.mood", want: "app.mood"},
 		{name: "an owner's block that declares types", spelling: "shape.s", want: "s"},
 		{name: "an owner's block that declares no type", spelling: "widget.w", want: "widget.w"},
-		{name: "a string that spells a reference", spelling: `"domain.pos2"`, want: "domain.pos2"},
+		{name: "a string that spells a reference", spelling: `"enum.mood"`, want: "enum.mood"},
 		{name: "an sql() call", spelling: `sql("int4")`, want: "int4"},
 		{name: "a schema-qualified type", spelling: "pg_catalog.int4", want: "pg_catalog.int4"},
-		{name: "a bare block keyword", spelling: "domain", want: "domain"},
+		{name: "a bare block keyword", spelling: "enum", want: "enum"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

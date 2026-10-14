@@ -34,10 +34,16 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 	c.Assert(diff.FunctionsRemoved.Names(), qt.DeepEquals, []string{"reporting.f_ctl"})
 	c.Assert(diff.SequencesAdded.Names(), qt.DeepEquals, []string{"public.s_ctl"})
 	c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, []string{"reporting.s_ctl"})
-	c.Assert(diff.DomainsAdded.Names(), qt.DeepEquals, []string{"public.d_ctl"})
-	c.Assert(diff.DomainsRemoved.Names(), qt.DeepEquals, []string{"reporting.d_ctl"})
-	c.Assert(diff.CompositeTypesAdded.Names(), qt.DeepEquals, []string{"public.c_ctl"})
-	c.Assert(diff.CompositeTypesRemoved.Names(), qt.DeepEquals, []string{"reporting.c_ctl"})
+	c.Assert(typeChangesOf(diff, pgtype.DomainChangeKind), qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: pgtype.Ref(pgtype.DomainKind, "public", "d_ctl"), Value: &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "text"}}},
+		{Subject: pgtype.Ref(pgtype.DomainKind, "reporting", "d_ctl"), Value: &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "text"}}},
+	})
+	c.Assert(typeChangesOf(diff, pgtype.CompositeChangeKind), qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: pgtype.Ref(pgtype.CompositeKind, "public", "c_ctl"),
+			Value: &pgtype.CompositeChange{After: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "value", Type: "text"}}}}},
+		{Subject: pgtype.Ref(pgtype.CompositeKind, "reporting", "c_ctl"),
+			Value: &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "value", Type: "text"}}}}},
+	})
 	c.Assert(rangeChangesOf(diff), qt.DeepEquals, []schemaext.ChangeRecord{
 		{Subject: pgtype.Ref(pgtype.RangeKind, "public", "r_ctl"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "integer"}}},
 		{Subject: pgtype.Ref(pgtype.RangeKind, "reporting", "r_ctl"), Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "integer"}}},
@@ -80,18 +86,12 @@ func schemaObjectIdentityFixtures(
 			Schema: desiredSchema,
 			AsType: "bigint",
 		}},
-		Domains: []schemamodel.Domain{{
-			Name:     "d_ctl",
-			Schema:   desiredSchema,
-			BaseType: "text",
-		}},
-		CompositeTypes: []schemamodel.CompositeType{{
-			Name:   "c_ctl",
-			Schema: desiredSchema,
-			Fields: []schemamodel.CompositeField{{Name: "value", Type: "text"}},
-		}},
 		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired)),
-		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, desiredSchema, "r_ctl"), Value: &pgtype.DesiredRange{Subtype: "integer"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, desiredSchema, "d_ctl"), Value: &pgtype.DesiredDomain{BaseType: "text"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, desiredSchema, "c_ctl"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "value", Type: "text"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, desiredSchema, "r_ctl"), Value: &pgtype.DesiredRange{Subtype: "integer"}})),
 		Views: []schemamodel.View{{
 			Name: desiredSchema + ".v_ctl",
 			Body: "SELECT 1",
@@ -124,18 +124,12 @@ func schemaObjectIdentityFixtures(
 			Schema:   currentSchema,
 			DataType: "bigint",
 		}},
-		Domains: []catalog.Domain{{
-			Name:     "d_ctl",
-			Schema:   currentSchema,
-			BaseType: "text",
-		}},
-		Composites: []catalog.CompositeType{{
-			Name:   "c_ctl",
-			Schema: currentSchema,
-			Fields: []catalog.CompositeField{{Name: "value", Type: "text"}},
-		}},
 		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
-		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, currentSchema, "r_ctl"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, currentSchema, "d_ctl"), Value: &pgtype.ObservedDomain{BaseType: "text"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, currentSchema, "c_ctl"),
+				Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "value", Type: "text"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, currentSchema, "r_ctl"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
 		Views: []catalog.View{{
 			Name:        "v_ctl",
 			Schema:      currentSchema,
