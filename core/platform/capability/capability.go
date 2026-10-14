@@ -45,8 +45,8 @@
 // by the dialect's descriptor (core/platform/descriptor), not by this package,
 // which names no engine. A [Resolver] reads them, and the package-level
 // functions answer from the resolver over the process registry. An engine Ptah
-// does not ship is described the same way, by a descriptor naming presets this
-// package ships.
+// does not ship is described the same way: its descriptor names presets this
+// package ships, or declares capability sets of its own as data.
 package capability
 
 import (

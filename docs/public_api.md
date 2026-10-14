@@ -3971,7 +3971,9 @@ speak the PostgreSQL wire protocol and may report exactly that banner.
 
 None of these functions names an engine. Each reads the dialect descriptors of
 the process registry: a descriptor names its default preset, the banner tokens
-its version string carries and the ladder its versions climb, all as data.
+its version string carries and the ladder its versions climb, all as data. A
+descriptor may also declare capability sets of its own, for an engine whose
+capabilities match no shipped preset.
 `Resolver` answers the same questions from a registry the caller builds with
 `descriptor.NewRegistry`, which is how an engine Ptah does not ship is
 described and tested. `NewResolver` refuses a descriptor it cannot read with
