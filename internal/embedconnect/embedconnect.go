@@ -23,6 +23,11 @@ import (
 // RefuseAnotherEngine says what an inference migration speaks to, before a
 // driver says it cannot parse a URL.
 //
+// Handed another engine's URL, the PostgreSQL driver fails with `cannot parse
+// ...: invalid keyword/value`, which reads as a malformed connection string and
+// sends an operator to check one that is correct (stokaro/ptah#2386). Both
+// surfaces ask this before they dial, so they give one answer.
+//
 // It refuses only a scheme Ptah RECOGNIZES as another dialect. An
 // unrecognized scheme, and a keyword/value DSN with no scheme at all, still
 // reach the PostgreSQL driver: `host=localhost user=ptah` is a form pgx
