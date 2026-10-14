@@ -27,8 +27,8 @@ func TestRender_WritesYDBLimitsWhereYDBReadsThem(t *testing.T) {
 	}{
 		{"ydb", []int{1, 1}},
 		{"", []int{1, 1}},
-		{"postgres", []int{0, 0}},
-		{"clickhouse", []int{0, 0}},
+		{"postgres", []int{0}},
+		{"clickhouse", []int{0}},
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)

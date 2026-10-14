@@ -267,7 +267,7 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(chsource.RowPolicyCoverage()))
 	c.Assert(err, qt.IsNil)
-	combined, err = combined.Combine(must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves these range types unmanaged"}, nil)))
+	combined, err = combined.Combine(must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

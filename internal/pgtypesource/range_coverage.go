@@ -28,9 +28,14 @@ func rangeCoverage(limits []coverage.Object) (schemaext.Coverage, error) {
 	return pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, knowledge, subjects)
 }
 
+// rangeLimits is the not-described record a document carries for range types.
+// Only a record saying the namespace was not described becomes a limit. A
+// coverage holding no range record makes no claim: a read of a target without
+// range types, such as SQLite or MySQL, records none, and writing a limit for
+// it would declare a gap in a family that target does not have.
 func rangeLimits(known schemaext.Coverage) ([]annotation.EncodedLimit, error) {
 	var limits []annotation.EncodedLimit
-	wholeUnknown := true
+	wholeUnknown := false
 	for _, record := range known.KindRecords() {
 		if record.Model.Kind != pgtype.RangeKind {
 			return nil, fmt.Errorf("%w: unrelated range coverage model", schemaext.ErrInvalidValue)
