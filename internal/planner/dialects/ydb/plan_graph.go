@@ -128,6 +128,7 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 		}
 	}
 	common.Dependencies = append(common.Dependencies, ancestorEdges(common, features.Contributions)...)
+	common.Dependencies = append(common.Dependencies, permissionEdges(common, features.Contributions)...)
 	if err := refuseDroppedSecretReads(append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)); err != nil {
 		return nil, err
 	}

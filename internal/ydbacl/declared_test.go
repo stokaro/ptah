@@ -31,6 +31,8 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 				{Role: "readers", Privileges: []string{"LIST"}, OnSchema: "shop"},
 				{Role: "app", Privileges: []string{"CONNECT"}, OnDatabase: true},
 				{Role: "nobody", Privileges: []string{"ALL"}, OnTable: "events"},
+				{Role: "readers", Privileges: []string{"SELECT ROW"}, OnObject: "shop.events", ObjectKind: schemamodel.GrantObjectTopic},
+				{Role: "readers", Privileges: []string{"SELECT ROW"}, OnObject: "ext.pw", ObjectKind: "secret"},
 			},
 			Views:         []schemamodel.View{{Name: "shop.active", Body: "SELECT 1 AS a"}},
 			RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ERASE ROW"}, OnTable: "events"}},
@@ -90,6 +92,18 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			wantErr: `grant to "app" names no privilege`},
 		{name: "a privilege YDB does not have, in a revoke", database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"TRUNCATE"}, OnTable: "t"}}},
 			wantErr: `revoke to "app" names privilege "TRUNCATE", which is not a YDB permission: .*`},
+		{name: "a scheme object and a table", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app",
+			Privileges: []string{"SELECT ROW"}, OnTable: "t", OnObject: "events", ObjectKind: schemamodel.GrantObjectTopic}}},
+			wantErr: `grant to "app" names 2 targets: a YDB grant is on the database \(on_database\), a directory \(on_schema\), ` +
+				`a table \(on_table\) or a scheme object \(on_topic, on_coordination_node, on_secret, on_external_data_source, ` +
+				`on_external_table\)`},
+		{name: "a scheme object of a kind YDB has not", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app",
+			Privileges: []string{"SELECT ROW"}, OnObject: "shop.q", ObjectKind: "QUEUE"}}},
+			wantErr: `grant to "app" on queue "shop.q": a YDB grant is on the database, a directory, a table or a scheme ` +
+				`object such as a topic, not a QUEUE`},
+		{name: "a scheme object named by no reference", database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "app",
+			Privileges: []string{"SELECT ROW"}, OnObject: "a.b.c", ObjectKind: schemamodel.GrantObjectSecret}}},
+			wantErr: `revoke to "app" on secret "a.b.c": a grant on a secret names "a.b.c", which is not a secret`},
 		{name: "a view", database: &schemamodel.Database{
 			Views:  []schemamodel.View{{Name: "shop.active", Body: "SELECT 1 AS a"}},
 			Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "shop.active"}}},

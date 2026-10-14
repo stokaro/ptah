@@ -27,3 +27,26 @@ func TestDatabaseGrantsHaveNoOwningSchema(t *testing.T) {
 	c.Assert(got.RevokedGrants, qt.DeepEquals, grants)
 	c.Assert(read.Grants, qt.DeepEquals, readGrants)
 }
+
+// A directory selection keeps a grant on a scheme object, such as a YDB
+// topic, by the directory the object is in, on both sides, as it keeps the
+// object.
+func TestObjectGrantsRideTheirDirectory(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{Grants: []schemamodel.Grant{
+		{Role: "app", OnObject: "shop.events", ObjectKind: "TOPIC", Privileges: []string{"SELECT ROW"}},
+		{Role: "app", OnObject: "other.events", ObjectKind: "SECRET", Privileges: []string{"SELECT ROW"}},
+	}}
+	live := &catalog.Database{Grants: []catalog.Grant{
+		{Role: "app", ObjectType: "TOPIC", Schema: "shop", ObjectName: "events", Privilege: "ydb.granular.select_row"},
+		{Role: "app", ObjectType: "SECRET", Schema: "other", ObjectName: "events", Privilege: "ydb.granular.select_row"},
+	}}
+
+	got, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), desired, []string{"shop"}, "")
+	c.Assert(err, qt.IsNil)
+	read, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), selectext.None(), live, []string{"shop"}, "")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(got.Grants, qt.DeepEquals, desired.Grants[:1])
+	c.Assert(read.Grants, qt.DeepEquals, live.Grants[:1])
+}

@@ -139,11 +139,11 @@ func (r *Reader) directoryAccess(schema string, self *Ydb_Scheme.Entry, db *cata
 		return
 	}
 	if schema == "" {
-		r.recordAccess(self, ydbacl.ObjectDatabase, "", "", db)
+		r.recordAccess(self, ydbacl.ObjectDatabase, "", "", nil, db)
 		return
 	}
 	if r.inScope(schema) {
-		r.recordAccess(self, ydbacl.ObjectDirectory, "", schema, db)
+		r.recordAccess(self, ydbacl.ObjectDirectory, "", schema, nil, db)
 	}
 }
 
@@ -151,23 +151,72 @@ func (r *Reader) directoryAccess(schema string, self *Ydb_Scheme.Entry, db *cata
 // in the directory schema.
 func (r *Reader) tableAccess(schema, name string, self *Ydb_Scheme.Entry, db *catalog.Database) {
 	if self != nil {
-		r.recordAccess(self, ydbacl.ObjectTable, schema, name, db)
+		r.recordAccess(self, ydbacl.ObjectTable, schema, name, nil, db)
 	}
+}
+
+// objectAccess records the owner and the permission entries of name in the
+// directory schema, a scheme object of a kind its owner manages, such as
+// [ydbacl.ObjectTopic], from the entry its description carries.
+func (r *Reader) objectAccess(objectType, schema, name string, self *Ydb_Scheme.Entry, db *catalog.Database) {
+	if self != nil {
+		r.recordAccess(self, objectType, schema, name, nil, db)
+	}
+}
+
+// secretAccess records the owner and the permission entries of the secret
+// name in the directory schema, whose directory's own entry is parent. A
+// directory lists a secret without its entries, and a secret has no
+// description of its own, so the entry is asked for by path.
+//
+// The entries YDB gives a secret it creates are recorded as implicit: one
+// [ydbacl.DescribeSchemaPermission] per subject that may describe the
+// directory. No GRANT made them, so a description leaves them out, and a
+// comparison takes one away only from a declaration that revokes it.
+func (r *Reader) secretAccess(ctx context.Context, source Source, schema, name string, parent *Ydb_Scheme.Entry, db *catalog.Database) error {
+	self, err := source.DescribePath(ctx, r.absolute(schema, name))
+	if err != nil {
+		return err
+	}
+	describers := make(map[string]bool)
+	for _, permission := range parent.GetEffectivePermissions() {
+		if slices.ContainsFunc(permission.GetPermissionNames(), ydbacl.DescribesSchema) {
+			describers[permission.GetSubject()] = true
+		}
+	}
+	implicit := func(subject, permission string) bool {
+		return permission == ydbacl.DescribeSchemaPermission && describers[subject]
+	}
+	if self != nil {
+		r.recordAccess(self, ydbacl.ObjectSecret, schema, name, implicit, db)
+	}
+	return nil
 }
 
 // ownerKinds names an object type as [catalog.ObjectOwner] spells it.
 var ownerKinds = map[string]string{
-	ydbacl.ObjectDatabase:  "database",
-	ydbacl.ObjectDirectory: "schema",
-	ydbacl.ObjectTable:     "table",
+	ydbacl.ObjectDatabase:           "database",
+	ydbacl.ObjectDirectory:          "schema",
+	ydbacl.ObjectTable:              "table",
+	ydbacl.ObjectTopic:              "topic",
+	ydbacl.ObjectCoordinationNode:   "coordination node",
+	ydbacl.ObjectSecret:             "secret",
+	ydbacl.ObjectExternalDataSource: "external data source",
+	ydbacl.ObjectExternalTable:      "external table",
 }
 
 // recordAccess records one object's owner and one grant per permission each
 // of its entries names. An entry can name several permissions -- one YDB
 // created with a mask no single name covers is reported as the names it is
 // made of -- and each is a grant of its own, as the GRANT that made it would
-// be.
-func (r *Reader) recordAccess(entry *Ydb_Scheme.Entry, objectType, schema, name string, db *catalog.Database) {
+// be. implicit, when not nil, marks the grants the object holds because it
+// exists rather than because a GRANT made them.
+func (r *Reader) recordAccess(
+	entry *Ydb_Scheme.Entry,
+	objectType, schema, name string,
+	implicit func(subject, permission string) bool,
+	db *catalog.Database,
+) {
 	if owner := entry.GetOwner(); owner != "" {
 		db.ObjectOwners = append(db.ObjectOwners, catalog.ObjectOwner{
 			Kind: ownerKinds[objectType], Schema: schema, Name: name, Owner: owner,
@@ -187,6 +236,7 @@ func (r *Reader) recordAccess(entry *Ydb_Scheme.Entry, objectType, schema, name 
 				ObjectType: objectType,
 				Schema:     schema,
 				ObjectName: name,
+				Implicit:   implicit != nil && implicit(permission.GetSubject(), permissionName),
 			})
 		}
 	}

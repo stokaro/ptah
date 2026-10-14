@@ -495,7 +495,9 @@ var registry = []Entry{
 			"role that IS the current user, so rendering the observed grantor would fail on " +
 			"every apply by another role",
 	},
+	{Field: "schemamodel.Grant.ObjectKind", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnDatabase", Disposition: DDL},
+	{Field: "schemamodel.Grant.OnObject", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnRoutine", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnSchema", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnSequence", Disposition: DDL},

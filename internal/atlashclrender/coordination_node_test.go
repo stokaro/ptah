@@ -129,3 +129,29 @@ func TestRenderRefusesACoordinationNodeYDBWouldNotKeep(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*self_check_period PT0\.1S: YDB runs a node's self-check every PT0\.5S to PT10S.*`)
 	c.Assert(result.Data, qt.IsNil)
 }
+
+// TestRenderedObjectGrantsRoundTrip writes a grant on a coordination node as
+// a `permission` whose `for` names the node's block, which reads back as the
+// same grant. A grant on a topic, which no HCL block declares, is left out
+// with a warning rather than written as a grant on something else.
+func TestRenderedObjectGrantsRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := inspectedTable("")
+	db.Schemas = []schemamodel.Schema{{Name: "app"}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject("app", "locks", "", ydbcoordination.Spec{})))
+	db.Roles = []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}}
+	db.Grants = []schemamodel.Grant{
+		{Role: "reader", Privileges: []string{"YDB.GENERIC.USE"}, OnObject: "app.locks", ObjectKind: "COORDINATION NODE"},
+		{Role: "reader", Privileges: []string{"YDB.GENERIC.READ"}, OnObject: "app.events", ObjectKind: "TOPIC"},
+	}
+
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "  for = coordination_node.app.locks\n")
+	c.Assert(parsed.Grants, qt.DeepEquals, db.Grants[:1])
+	c.Assert(strings.Join(diagnosticMessages(result.Diagnostics), "\n"), qt.Contains,
+		"grant requires role, table, schema, sequence or routine target, or an object an owner's block declares")
+}

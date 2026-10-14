@@ -711,6 +711,8 @@ func grantTarget(databasePath string, grant schemamodel.Grant) (name, kind strin
 		return strings.TrimSpace(grant.OnSchema), "schema"
 	case strings.TrimSpace(grant.OnSequence) != "":
 		return strings.TrimSpace(grant.OnSequence), "sequence"
+	case strings.TrimSpace(grant.OnObject) != "":
+		return strings.TrimSpace(grant.OnObject), strings.ToLower(strings.Join(strings.Fields(grant.ObjectKind), " "))
 	default:
 		return "", ""
 	}

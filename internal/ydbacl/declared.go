@@ -127,7 +127,14 @@ func grantProblems(verb string, grant schemamodel.Grant, views map[string]bool) 
 	}
 	if targets := grantTargets(grant); targets != 1 {
 		problems = append(problems, fmt.Errorf("%s names %d targets: a YDB grant is on the database "+
-			"(on_database), a directory (on_schema) or a table (on_table)", subject, targets))
+			"(on_database), a directory (on_schema), a table (on_table) or a scheme object (%s)", subject, targets,
+			objectAttributes()))
+	}
+	if grant.OnObject != "" {
+		if _, err := RelativePath(grant.ObjectKind, grant.OnObject); err != nil {
+			problems = append(problems, fmt.Errorf("%s on %s %q: %w", subject, strings.ToLower(grant.ObjectKind),
+				grant.OnObject, err))
+		}
 	}
 	switch {
 	case strings.TrimSpace(grant.OnSequence) != "":
@@ -175,10 +182,22 @@ func grantTargets(grant schemamodel.Grant) int {
 		strings.TrimSpace(grant.OnTable) != "",
 		strings.TrimSpace(grant.OnSequence) != "",
 		strings.TrimSpace(grant.OnRoutine) != "",
+		strings.TrimSpace(grant.OnObject) != "",
 	} {
 		if named {
 			count++
 		}
 	}
 	return count
+}
+
+// objectAttributes lists the attributes a grant names an owned scheme object
+// by, for a refusal that has to say what a grant may be on.
+func objectAttributes() string {
+	kinds := schemamodel.GrantObjectKinds()
+	attributes := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		attributes = append(attributes, kind.Attribute)
+	}
+	return strings.Join(attributes, ", ")
 }

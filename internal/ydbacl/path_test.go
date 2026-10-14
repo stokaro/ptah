@@ -40,6 +40,16 @@ func TestStatementPath_HappyPath(t *testing.T) {
 			want: "/local"},
 		{name: "an absolute path a plan already wrote", objectType: "TABLE", objectName: "/local/events",
 			want: "/local/events"},
+		{name: "a topic in a directory, on every line", objectType: "TOPIC", objectName: "shop.events",
+			want: "shop/events"},
+		{name: "a coordination node in a nested directory", objectType: "coordination node", objectName: "app/eu.locks",
+			want: "app/eu/locks"},
+		{name: "a root secret where a single name does not resolve", objectType: "SECRET", objectName: "pw",
+			databasePath: "/local", want: "/local/pw"},
+		{name: "a root external data source where a single name resolves", objectType: "EXTERNAL DATA SOURCE",
+			objectName: "bucket", caps: capability.YDB262(), want: "bucket"},
+		{name: "an external table whose name holds a dot", objectType: "EXTERNAL TABLE", objectName: `ext."a.b"`,
+			want: "ext/a.b"},
 	}
 
 	for _, test := range tests {
@@ -71,9 +81,13 @@ func TestStatementPath_FailurePath(t *testing.T) {
 		{name: "a directory with no name", objectType: "SCHEMA", objectName: "/",
 			wantErr: `a grant on a directory names no directory; the database root is the database itself`},
 		{name: "a sequence", objectType: "SEQUENCE", objectName: "s",
-			wantErr: `a YDB grant is on the database, a directory or a table, not a SEQUENCE`},
+			wantErr: `a YDB grant is on the database, a directory, a table or a scheme object such as a topic, not a SEQUENCE`},
 		{name: "a table with no name", objectType: "TABLE", objectName: "",
 			wantErr: `a grant on a table names "", which is not a table`},
+		{name: "a topic with no name", objectType: "TOPIC", objectName: "",
+			wantErr: `a grant on a topic names "", which is not a topic`},
+		{name: "a root topic where a single name does not resolve", objectType: "TOPIC", objectName: "events",
+			wantErr: `YDB takes this object only by its absolute path, .*`},
 	}
 
 	for _, test := range tests {

@@ -231,6 +231,7 @@ func corpus() []Fixture {
 		{Name: "role-cockroachdb", Schema: cockroachRoleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
 		{Name: "ydb-grant-database", Schema: ydbGrantDatabaseFixture()},
+		{Name: "ydb-grant-topic", Schema: ydbGrantTopicFixture()},
 		{Name: "grant-table", Schema: grantTableFixture()},
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
@@ -1696,6 +1697,18 @@ func ydbGrantDatabaseFixture() schemamodel.Database {
 	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true, Dialects: []string{"ydb"}}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app", Privileges: []string{"CONNECT"}, OnDatabase: true, Dialects: []string{"ydb"},
+	}}
+	return db
+}
+
+// ydbGrantTopicFixture grants a permission on a topic it declares, a scheme
+// object whose kind no other field of a grant names.
+func ydbGrantTopicFixture() schemamodel.Database {
+	db := topicFixture()
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true, Dialects: []string{"ydb"}}}
+	db.Grants = []schemamodel.Grant{{
+		StructName: "G", Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "app.events",
+		ObjectKind: schemamodel.GrantObjectTopic, Dialects: []string{"ydb"},
 	}}
 	return db
 }

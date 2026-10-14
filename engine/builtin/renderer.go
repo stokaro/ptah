@@ -88,6 +88,7 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbacl"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 )
@@ -478,15 +479,28 @@ func fragmentCarrier(fragment ast.Node) (ast.Node, bool) {
 }
 
 // refuseAccessNode refuses a group, or a grant or revoke on the database
-// itself, on a target without the key that holds it, and returns nil for every
-// other role or grant node. The declaration gate refuses the same in a schema;
-// this is the half that sees a node built by hand.
+// itself or on a scheme object such as a YDB topic, on a target without the
+// key that holds it, and returns nil for every other role or grant node. The
+// declaration gate refuses the same in a schema; this is the half that sees a
+// node built by hand.
 func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Node) error {
 	var (
 		key     capability.Capability
 		subject string
 	)
 	switch typed := node.(type) {
+	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+		target := privilegeTargetOf(typed)
+		objectKey, owned := ydbacl.ObjectCapability(target.objectType)
+		switch {
+		case owned:
+			key, subject = objectKey, target.verb+" on "+strings.ToLower(strings.TrimSpace(target.objectType))+" "+
+				target.objectName+target.grantee
+		case strings.EqualFold(strings.TrimSpace(target.objectType), "DATABASE"):
+			key, subject = capability.DatabaseGrants, target.verb+" on the database"+target.grantee
+		default:
+			return nil
+		}
 	case *ast.CreateRoleNode:
 		if !typed.Group {
 			return nil
@@ -497,16 +511,6 @@ func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Nod
 			return nil
 		}
 		key, subject = capability.GroupPrincipals, "DROP GROUP "+typed.Name
-	case *ast.GrantPrivilegeNode:
-		if !strings.EqualFold(strings.TrimSpace(typed.ObjectType), "DATABASE") {
-			return nil
-		}
-		key, subject = capability.DatabaseGrants, "GRANT on the database to "+typed.Role
-	case *ast.RevokePrivilegeNode:
-		if !strings.EqualFold(strings.TrimSpace(typed.ObjectType), "DATABASE") {
-			return nil
-		}
-		key, subject = capability.DatabaseGrants, "REVOKE on the database from "+typed.Role
 	default:
 		return nil
 	}
@@ -521,6 +525,21 @@ func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Nod
 		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
 			subject, key, normalized),
 	}
+}
+
+// privilegeTarget is the object a GRANT or REVOKE node names, with the verb
+// and the grantee a refusal names it with.
+type privilegeTarget struct {
+	objectType, objectName, verb, grantee string
+}
+
+// privilegeTargetOf is the target of node, a GRANT or a REVOKE.
+func privilegeTargetOf(node ast.Node) privilegeTarget {
+	if revoke, ok := node.(*ast.RevokePrivilegeNode); ok {
+		return privilegeTarget{revoke.ObjectType, revoke.ObjectName, "REVOKE", " from " + revoke.Role}
+	}
+	grant, _ := node.(*ast.GrantPrivilegeNode)
+	return privilegeTarget{grant.ObjectType, grant.ObjectName, "GRANT", " to " + grant.Role}
 }
 
 func prepareCreateMaterializedViewNode(

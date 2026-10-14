@@ -46,3 +46,53 @@ revokes:
 		{Role: "app", Privileges: []string{"DROP"}, OnDatabase: true},
 	})
 }
+
+// TestParse_ObjectGrants_HappyPath reads a grant and a revoke on each kind of
+// scheme object the model lists, by the key the Go annotations name it with,
+// spelled as on_table spells a table.
+func TestParse_ObjectGrants_HappyPath(t *testing.T) {
+	for _, kind := range schemamodel.GrantObjectKinds() {
+		t.Run(kind.Attribute, func(t *testing.T) {
+			c := qt.New(t)
+			document := `grants:
+  readers_read:
+    role: readers
+    privileges: [SELECT ROW]
+    ` + kind.Attribute + `: app.events
+revokes:
+  writers_write:
+    role: writers
+    privileges: [ydb.generic.write]
+    ` + kind.Attribute + `: app.events
+`
+
+			db, err := yamlschema.Parse(noOwners, []byte(document))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Grants, qt.DeepEquals, []schemamodel.Grant{
+				{Role: "readers", Privileges: []string{"SELECT ROW"}, OnObject: "app.events", ObjectKind: kind.Kind},
+			})
+			c.Assert(db.RevokedGrants, qt.DeepEquals, []schemamodel.Grant{
+				{Role: "writers", Privileges: []string{"YDB.GENERIC.WRITE"}, OnObject: "app.events", ObjectKind: kind.Kind},
+			})
+		})
+	}
+}
+
+// TestParse_ObjectGrants_FailurePath refuses a grant that names two scheme
+// objects, which one target cannot hold, rather than keeping one of them.
+func TestParse_ObjectGrants_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	document := `grants:
+  readers_read:
+    role: readers
+    privileges: [SELECT ROW]
+    on_topic: app.events
+    on_external_table: app.events
+`
+
+	db, err := yamlschema.Parse(noOwners, []byte(document))
+
+	c.Assert(err, qt.ErrorMatches, `.*grant "readers_read" names a target with both on_topic and on_external_table; a grant names one object`)
+	c.Assert(db, qt.IsNil)
+}

@@ -74,6 +74,21 @@ func TestRender_AccessStatements_HappyPath(t *testing.T) {
 		{name: "a revoke on a table at the root by its absolute path", caps: capability.YDB251(),
 			node: ast.NewRevokePrivilege("app", "TABLE", "/local/events", []string{"UPDATE ROW"}),
 			want: "REVOKE 'ydb.granular.update_row' ON `/local/events` FROM `app`;\n"},
+		{name: "a grant on a topic in a directory", caps: capability.YDB251(),
+			node: ast.NewGrantPrivilege("app", "TOPIC", "shop.events", []string{"SELECT ROW"}),
+			want: "GRANT 'ydb.granular.select_row' ON `shop/events` TO `app`;\n"},
+		{name: "a grant on a coordination node in a nested directory", caps: capability.YDB251(),
+			node: ast.NewGrantPrivilege("app", "COORDINATION NODE", "app/eu.locks", []string{"ydb.generic.use"}),
+			want: "GRANT 'ydb.generic.use' ON `app/eu/locks` TO `app`;\n"},
+		{name: "a revoke on a secret at the root where the line resolves a single name", caps: capability.YDB262(),
+			node: ast.NewRevokePrivilege("app", "SECRET", "pw", []string{"SELECT ROW"}),
+			want: "REVOKE 'ydb.granular.select_row' ON `pw` FROM `app`;\n"},
+		{name: "a grant on an external data source", caps: capability.YDB262().With(capability.ExternalDataSources, true),
+			node: ast.NewGrantPrivilege("app", "EXTERNAL DATA SOURCE", "ext.bucket", []string{"SELECT ROW"}),
+			want: "GRANT 'ydb.granular.select_row' ON `ext/bucket` TO `app`;\n"},
+		{name: "a grant on an external table", caps: capability.YDB262().With(capability.ExternalDataSources, true),
+			node: ast.NewGrantPrivilege("app", "EXTERNAL TABLE", "ext.events", []string{"SELECT ROW"}),
+			want: "GRANT 'ydb.granular.select_row' ON `ext/events` TO `app`;\n"},
 	}
 
 	for _, test := range tests {
@@ -123,13 +138,20 @@ func TestRender_AccessStatements_FailurePath(t *testing.T) {
 			wantErr: `GRANT on table t to app: a YDB permission is on a whole object, not on columns`},
 		{name: "a sequence", caps: capability.YDB262(),
 			node:    ast.NewGrantPrivilege("app", "SEQUENCE", "s", []string{"SELECT"}),
-			wantErr: `GRANT on sequence s to app: a YDB grant is on the database, a directory or a table, not a SEQUENCE`},
+			wantErr: `GRANT on sequence s to app: a YDB grant is on the database, a directory, a table or a scheme object such as a topic, not a SEQUENCE`},
 		{name: "the database with no path to name it by", caps: capability.YDB262(),
 			node:    ast.NewGrantPrivilege("app", "DATABASE", "", []string{"CONNECT"}),
 			wantErr: `GRANT on the database to app: YDB takes this object only by its absolute path, .*; plan it against the database, .*`},
 		{name: "a root table on a line that does not resolve a single name", caps: capability.YDB251(),
 			node:    ast.NewGrantPrivilege("app", "TABLE", "events", []string{"SELECT"}),
 			wantErr: `GRANT on table events to app: YDB takes this object only by its absolute path, .*`},
+		{name: "a grant on an external table with external data sources off", caps: capability.YDB262(),
+			node: ast.NewGrantPrivilege("app", "EXTERNAL TABLE", "ext.events", []string{"SELECT ROW"}),
+			wantErr: `GRANT on external table ext.events to app, which requires target capability external_data_sources, ` +
+				`unavailable on this ydb target`},
+		{name: "a revoke on a secret on a line without secrets", caps: capability.YDB251(),
+			node:    ast.NewRevokePrivilege("app", "SECRET", "ext.pw", []string{"SELECT ROW"}),
+			wantErr: `REVOKE on secret ext.pw from app, which requires target capability secrets, unavailable on this ydb target`},
 	}
 
 	for _, test := range tests {

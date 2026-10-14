@@ -18,13 +18,15 @@ import (
 type Service struct{}
 
 // LowerDesired lowers request.Desired for YDB, as the reader reports a plan's
-// result: UNIQUE constraints as indexes, privileges as permission names, and
-// the consumers transfers read through. It modifies neither side.
+// result: UNIQUE constraints as indexes, privileges as permission names, the
+// permissions on scheme objects it does not declare, and the consumers
+// transfers read through. It modifies neither side.
 func (Service) LowerDesired(ctx context.Context, request schemapreparation.LoweringRequest) (*schemamodel.Database, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	desired := UniqueConstraintsAsIndexesFor(request.Desired, request.Target, request.Capabilities)
 	desired = YDBPermissionNamesFor(desired, request.Target)
+	desired = AdoptObjectGrants(desired, request.Current)
 	return AdoptTransferConsumers(desired, request.Current, request.Semantics)
 }

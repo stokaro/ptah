@@ -892,6 +892,9 @@ func grantObjectIdentity(g Grant) string {
 		OnSequence:       g.OnSequence,
 		OnRoutine:        g.OnRoutine,
 		RoutineArguments: g.RoutineArguments,
+		OnDatabase:       g.OnDatabase,
+		OnObject:         g.OnObject,
+		ObjectKind:       g.ObjectKind,
 	}
 	return whole.TargetKey()
 }

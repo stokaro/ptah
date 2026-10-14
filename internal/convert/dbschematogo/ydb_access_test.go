@@ -55,3 +55,28 @@ func TestConvertDBSchemaToGoSchema_RoleGraphStaysAnalysisOnly(t *testing.T) {
 
 	c.Assert(described.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "app", Login: true, Inherit: true}})
 }
+
+// TestConvertDBSchemaToGoSchema_YDBObjectGrants describes a grant a YDB read
+// reports on a scheme object, such as a topic, by the object's kind and
+// qualified name, as a declaration writes it. An entry YDB gave a secret when
+// it made it is left out: no GRANT made it, and a replay of the description
+// gets it from YDB again.
+func TestConvertDBSchemaToGoSchema_YDBObjectGrants(t *testing.T) {
+	c := qt.New(t)
+	read := &catalog.Database{
+		Grants: []catalog.Grant{
+			{Role: "app", Privilege: "ydb.granular.select_row", ObjectType: "TOPIC", Schema: "shop", ObjectName: "events"},
+			{Role: "app", Privilege: "ydb.generic.use", ObjectType: "COORDINATION NODE", ObjectName: "locks"},
+			{Role: "METADATA-READERS", Privilege: "ydb.granular.describe_schema", ObjectType: "SECRET", Schema: "ext",
+				ObjectName: "pw", Implicit: true},
+		},
+		DatabasePath: "/local",
+	}
+
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, platform.YDB, must.Must(builtin.New())))
+
+	c.Assert(described.Grants, qt.DeepEquals, []schemamodel.Grant{
+		{Role: "app", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}, OnObject: "shop.events", ObjectKind: "TOPIC"},
+		{Role: "app", Privileges: []string{"YDB.GENERIC.USE"}, OnObject: "locks", ObjectKind: "COORDINATION NODE"},
+	})
+}

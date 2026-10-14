@@ -10,10 +10,12 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbacl"
 )
 
 // ExcludeDatabase returns a shallow copy of schema with resources matching
@@ -141,7 +143,7 @@ func excludeDatabase(
 	filtered.Roles = state.filterRoles(filtered.Roles)
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
-	filtered.Grants = state.filterGrants(filtered.Grants)
+	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
@@ -260,8 +262,9 @@ func excludeGenerated(
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
 	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
-	filtered.Grants = state.filterGeneratedGrants(filtered.Grants)
-	filtered.RevokedGrants = state.filterGeneratedGrants(filtered.RevokedGrants)
+	excluded := excludedObjects(schema.FeatureObjects, filtered.FeatureObjects)
+	filtered.Grants = state.filterGeneratedGrants(filtered.Grants, excluded)
+	filtered.RevokedGrants = state.filterGeneratedGrants(filtered.RevokedGrants, excluded)
 	filtered.Dependencies = nil
 	filtered.FunctionDependencies = nil
 	filtered.SelfReferencingForeignKeys = nil
@@ -1146,10 +1149,33 @@ func (s *exclusionState) filterRoleMemberships(
 	})
 }
 
-func (s *exclusionState) filterGrants(grants []catalog.Grant) []catalog.Grant {
+// excludedObjects reports, by identity, the feature objects of before that an
+// exclusion took out of after.
+func excludedObjects(before, after schemaext.Objects) func(objectidentity.ID) bool {
+	return func(ref objectidentity.ID) bool {
+		_, held, err := before.Get(ref)
+		if err != nil || !held {
+			return false
+		}
+		_, kept, err := after.Get(ref)
+		return err == nil && !kept
+	}
+}
+
+// objectGrantExcluded reports whether the scheme object a grant names, such as
+// a YDB topic, left with an exclusion: the grant rides its object.
+func objectGrantExcluded(excluded func(objectidentity.ID) bool, objectType, objectName string) bool {
+	ref, ok := ydbacl.ObjectRef(objectType, objectName, "")
+	return ok && excluded(ref)
+}
+
+func (s *exclusionState) filterGrants(grants []catalog.Grant, excluded func(objectidentity.ID) bool) []catalog.Grant {
 	return keep(grants, func(grant catalog.Grant) bool {
 		named := s.matches("grant", grant.QualifiedTarget(), grant.Role+"."+grant.QualifiedTarget())
 		if strings.EqualFold(grant.ObjectType, "TABLE") && s.tableExcluded(grant.Schema, grant.ObjectName) {
+			return false
+		}
+		if objectGrantExcluded(excluded, grant.ObjectType, grant.QualifiedTarget()) {
 			return false
 		}
 		if strings.EqualFold(grant.ObjectType, "SEQUENCE") && s.sequenceExcluded(grant.Schema, grant.ObjectName) {
@@ -1432,10 +1458,14 @@ func (s *exclusionState) filterGeneratedRoles(roles []schemamodel.Role) []schema
 	})
 }
 
-func (s *exclusionState) filterGeneratedGrants(grants []schemamodel.Grant) []schemamodel.Grant {
+func (s *exclusionState) filterGeneratedGrants(grants []schemamodel.Grant, excluded func(objectidentity.ID) bool) []schemamodel.Grant {
 	return keep(grants, func(grant schemamodel.Grant) bool {
 		named := s.matches("grant", generatedGrantTargets(grant)...)
 		if grant.OnTable != "" && generatedTableKeyExcluded(s, grant.OnTable) {
+			return false
+		}
+		if grant.OnObject != "" && (objectGrantExcluded(excluded, grant.ObjectKind, grant.OnObject) ||
+			s.qualifiedSchemaExcluded(grant.OnObject)) {
 			return false
 		}
 		// Mirrors filterGrants: a grant leaves with the schema of the object it
@@ -1867,6 +1897,8 @@ func generatedGrantTargets(grant schemamodel.Grant) []string {
 		return []string{grant.OnSequence, grant.Role + "." + grant.OnSequence}
 	case grant.OnRoutine != "":
 		return []string{grant.OnRoutine, grant.Role + "." + grant.OnRoutine}
+	case grant.OnObject != "":
+		return []string{grant.OnObject, grant.Role + "." + grant.OnObject}
 	default:
 		return nil
 	}

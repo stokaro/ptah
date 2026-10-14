@@ -5,6 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 )
 
@@ -37,4 +39,45 @@ type Access struct{}
 	c.Assert(database.RevokedGrants[0], qt.DeepEquals, schemamodel.Grant{
 		StructName: "Access", Role: "app", Privileges: []string{"DROP"}, OnDatabase: true,
 	})
+}
+
+// TestParseSource_ObjectGrants_HappyPath reads a grant and a revoke on each
+// kind of scheme object the model lists, by the attribute the kind is declared
+// with, spelled as on_table spells a table.
+func TestParseSource_ObjectGrants_HappyPath(t *testing.T) {
+	for _, kind := range schemamodel.GrantObjectKinds() {
+		t.Run(kind.Attribute, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, err := goschema.ParseSource(noOwners, "models.go", `package test
+
+//ptah:schema:grant role="readers" privilege="SELECT ROW" `+kind.Attribute+`="app.events"
+//ptah:schema:revoke role="writers" privilege="ydb.generic.write" `+kind.Attribute+`="app.events"
+type Access struct{}
+`)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Grants, qt.DeepEquals, []schemamodel.Grant{{StructName: "Access", Role: "readers",
+				Privileges: []string{"SELECT ROW"}, OnObject: "app.events", ObjectKind: kind.Kind}})
+			c.Assert(database.RevokedGrants, qt.DeepEquals, []schemamodel.Grant{{StructName: "Access", Role: "writers",
+				Privileges: []string{"YDB.GENERIC.WRITE"}, OnObject: "app.events", ObjectKind: kind.Kind}})
+		})
+	}
+}
+
+// TestParseSource_ObjectGrants_FailurePath refuses a grant that names two
+// scheme objects, which one target cannot hold, rather than keeping one of
+// them.
+func TestParseSource_ObjectGrants_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	database, err := goschema.ParseSource(noOwners, "models.go", `package test
+
+//ptah:schema:grant role="readers" privilege="SELECT ROW" on_topic="app.events" on_secret="app.pw"
+type Access struct{}
+`)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `.*on_topic and on_secret on //ptah:schema:grant at .* each name a target; a grant names one object.*`)
+	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }

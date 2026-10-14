@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/internal/ydbacl"
 )
 
 // topic adds one described topic.
@@ -29,7 +30,11 @@ func (r *Reader) topic(ctx context.Context, source Source, schema, name string, 
 		return fmt.Errorf("YDB topic %s: %w", path, err)
 	}
 	db.FeatureObjects, err = db.FeatureObjects.With(ydbtopic.ObservedObject(schema, name, spec))
-	return err
+	if err != nil {
+		return err
+	}
+	r.objectAccess(ydbacl.ObjectTopic, schema, name, described.GetSelf(), db)
+	return nil
 }
 
 // decodeTopic reads a topic's description as the settings and consumers it

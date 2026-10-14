@@ -1,6 +1,10 @@
 package ydb
 
 import (
+	"context"
+
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
+
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -10,13 +14,19 @@ import (
 
 // secret observes the secret name in the directory schema by its path alone:
 // the listing names it, and no request the reader sends returns its value.
-func (r *Reader) secret(schema, name string, db *catalog.Database) error {
+// On a server with [capability.Secrets] it reads the secret's owner and
+// permission entries too, parent being the entry of the directory the
+// secret is in; see [Reader.secretAccess].
+func (r *Reader) secret(ctx context.Context, source Source, schema, name string, parent *Ydb_Scheme.Entry, db *catalog.Database) error {
 	if !r.inScope(schema) {
 		return nil
 	}
 	var err error
 	db.FeatureObjects, err = db.FeatureObjects.With(ydbsecret.ObservedObject(schema, name))
-	return err
+	if err != nil || !r.caps.Has(capability.Secrets) {
+		return err
+	}
+	return r.secretAccess(ctx, source, schema, name, parent, db)
 }
 
 // unmanagedSecrets turns, on a server without [capability.Secrets], every

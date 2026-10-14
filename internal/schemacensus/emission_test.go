@@ -161,6 +161,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"END DO",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
+		// YDB writes a permission by its name, as the server reports it.
+		"GRANT 'YDB.GRANULAR.SELECT_ROW' ON",
 		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
 		"GRANT UPDATE (\"LABEL\")",

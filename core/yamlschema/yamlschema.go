@@ -42,8 +42,10 @@
 // type and exposure metadata.
 //
 // A grant or revoke names its target with on_table, on_schema, on_sequence,
-// on_database, or on_function and on_procedure, whose value carries the
-// argument types: purge(uuid). A revokes entry says the role must not hold the privileges,
+// on_database, on_function and on_procedure, whose value carries the
+// argument types: purge(uuid), or, on YDB, on_topic, on_coordination_node,
+// on_secret, on_external_data_source or on_external_table, each spelled as
+// on_table is. A revokes entry says the role must not hold the privileges,
 // and a privilege both granted and revoked to one role on one object is
 // refused.
 //
@@ -405,28 +407,51 @@ type grantSpec struct {
 	// OnFunction and OnProcedure name a routine with its argument types,
 	// `purge(uuid)`, as the Go annotations do: PostgreSQL overloads a name by
 	// them.
-	OnFunction  stringScalar `yaml:"on_function"`
-	OnProcedure stringScalar `yaml:"on_procedure"`
-	OnDatabase  bool         `yaml:"on_database"`
-	WithOption  bool         `yaml:"with_option"`
-	Comment     stringScalar `yaml:"comment"`
+	OnFunction    stringScalar `yaml:"on_function"`
+	OnProcedure   stringScalar `yaml:"on_procedure"`
+	OnDatabase    bool         `yaml:"on_database"`
+	objectTargets `yaml:",inline"`
+	WithOption    bool         `yaml:"with_option"`
+	Comment       stringScalar `yaml:"comment"`
+}
+
+// objectTargets are the keys a grant and a revoke name a YDB scheme object
+// by, one per kind [schemamodel.GrantObjectKinds] lists.
+type objectTargets struct {
+	OnTopic              stringScalar `yaml:"on_topic"`
+	OnCoordinationNode   stringScalar `yaml:"on_coordination_node"`
+	OnSecret             stringScalar `yaml:"on_secret"`
+	OnExternalDataSource stringScalar `yaml:"on_external_data_source"`
+	OnExternalTable      stringScalar `yaml:"on_external_table"`
+}
+
+// byAttribute is each target named, by the attribute that names it.
+func (t objectTargets) byAttribute() map[string]string {
+	return map[string]string{
+		"on_topic":                string(t.OnTopic),
+		"on_coordination_node":    string(t.OnCoordinationNode),
+		"on_secret":               string(t.OnSecret),
+		"on_external_data_source": string(t.OnExternalDataSource),
+		"on_external_table":       string(t.OnExternalTable),
+	}
 }
 
 // revokeSpec is one entry under `revokes`: privileges a role is declared not
 // to hold on an object, the YAML spelling of a schema file's REVOKE. It names
 // its target as a grant does and has no grant option.
 type revokeSpec struct {
-	StructName  stringScalar `yaml:"struct_name"`
-	Role        stringScalar `yaml:"role"`
-	Privilege   stringList   `yaml:"privilege"`
-	Privileges  stringList   `yaml:"privileges"`
-	OnTable     stringScalar `yaml:"on_table"`
-	OnSchema    stringScalar `yaml:"on_schema"`
-	OnSequence  stringScalar `yaml:"on_sequence"`
-	OnFunction  stringScalar `yaml:"on_function"`
-	OnProcedure stringScalar `yaml:"on_procedure"`
-	OnDatabase  bool         `yaml:"on_database"`
-	Comment     stringScalar `yaml:"comment"`
+	StructName    stringScalar `yaml:"struct_name"`
+	Role          stringScalar `yaml:"role"`
+	Privilege     stringList   `yaml:"privilege"`
+	Privileges    stringList   `yaml:"privileges"`
+	OnTable       stringScalar `yaml:"on_table"`
+	OnSchema      stringScalar `yaml:"on_schema"`
+	OnSequence    stringScalar `yaml:"on_sequence"`
+	OnFunction    stringScalar `yaml:"on_function"`
+	OnProcedure   stringScalar `yaml:"on_procedure"`
+	OnDatabase    bool         `yaml:"on_database"`
+	objectTargets `yaml:",inline"`
+	Comment       stringScalar `yaml:"comment"`
 }
 
 type platformSpec map[string]map[string]stringScalar
@@ -1160,7 +1185,7 @@ func (d document) addGrants(db *schemamodel.Database) error {
 			StructName: spec.StructName, Role: spec.Role, Privilege: spec.Privilege, Privileges: spec.Privileges,
 			OnTable: spec.OnTable, OnSchema: spec.OnSchema, OnSequence: spec.OnSequence,
 			OnFunction: spec.OnFunction, OnProcedure: spec.OnProcedure, OnDatabase: spec.OnDatabase,
-			Comment: spec.Comment,
+			objectTargets: spec.objectTargets, Comment: spec.Comment,
 		})
 		if err != nil {
 			return err
@@ -1219,6 +1244,20 @@ func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
 					"PostgreSQL tells overloaded routines apart by them", kind, key, routine.attribute, routine.value)
 		}
 		grant.OnRoutine, grant.RoutineArguments, grant.RoutineKind = name, arguments, routine.kind
+	}
+	targets := spec.byAttribute()
+	var named string
+	for _, object := range schemamodel.GrantObjectKinds() {
+		value := strings.TrimSpace(targets[object.Attribute])
+		if value == "" {
+			continue
+		}
+		if named != "" {
+			return schemamodel.Grant{}, fmt.Errorf("%s %q names a target with both %s and %s; a %s names one object",
+				kind, key, named, object.Attribute, kind)
+		}
+		named = object.Attribute
+		grant.OnObject, grant.ObjectKind = value, object.Kind
 	}
 	grant.Canonicalize()
 	return grant, nil

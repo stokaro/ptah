@@ -1501,6 +1501,8 @@ func grantObject(grant schemamodel.Grant) (objectType, objectName, arguments str
 	switch {
 	case grant.OnDatabase:
 		return "DATABASE", "", ""
+	case grant.OnObject != "":
+		return grant.ObjectKind, grant.OnObject, ""
 	case grant.OnSchema != "":
 		return "SCHEMA", grant.OnSchema, ""
 	case grant.OnSequence != "":

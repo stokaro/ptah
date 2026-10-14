@@ -1354,12 +1354,24 @@
               "type": "string",
               "x-ptah-alias-for": "with_option"
             },
+            "on_coordination_node": {
+              "description": "Target coordination node, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_database": {
               "description": "Targets the database itself. YDB only.",
               "enum": [
                 "true",
                 "false"
               ],
+              "type": "string"
+            },
+            "on_external_data_source": {
+              "description": "Target external data source, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
+            "on_external_table": {
+              "description": "Target external table, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
             },
             "on_function": {
@@ -1374,12 +1386,20 @@
               "description": "Target schema.",
               "type": "string"
             },
+            "on_secret": {
+              "description": "Target secret, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_sequence": {
               "description": "Target sequence.",
               "type": "string"
             },
             "on_table": {
               "description": "Target table.",
+              "type": "string"
+            },
+            "on_topic": {
+              "description": "Target topic, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
             },
             "privilege": {
@@ -1989,12 +2009,24 @@
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
+            "on_coordination_node": {
+              "description": "Target coordination node, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_database": {
               "description": "Targets the database itself. YDB only.",
               "enum": [
                 "true",
                 "false"
               ],
+              "type": "string"
+            },
+            "on_external_data_source": {
+              "description": "Target external data source, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
+            "on_external_table": {
+              "description": "Target external table, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
             },
             "on_function": {
@@ -2009,12 +2041,20 @@
               "description": "Target schema.",
               "type": "string"
             },
+            "on_secret": {
+              "description": "Target secret, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_sequence": {
               "description": "Target sequence.",
               "type": "string"
             },
             "on_table": {
               "description": "Target table.",
+              "type": "string"
+            },
+            "on_topic": {
+              "description": "Target topic, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
             },
             "privilege": {

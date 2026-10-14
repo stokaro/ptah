@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/internal/ydbacl"
 )
 
 // DescribeExternalDataSource describes the external data source at path.
@@ -66,13 +67,21 @@ func (r *Reader) externalObject(
 		if err != nil {
 			return err
 		}
-		return r.externalDataSource(schema, name, described, db)
+		if err := r.externalDataSource(schema, name, described, db); err != nil {
+			return err
+		}
+		r.objectAccess(ydbacl.ObjectExternalDataSource, schema, name, described.GetSelf(), db)
+		return nil
 	}
 	described, err := source.DescribeExternalTable(ctx, r.absolute(schema, name))
 	if err != nil {
 		return err
 	}
-	return r.externalTable(schema, name, described, db)
+	if err := r.externalTable(schema, name, described, db); err != nil {
+		return err
+	}
+	r.objectAccess(ydbacl.ObjectExternalTable, schema, name, described.GetSelf(), db)
+	return nil
 }
 
 // externalDataSource adds one described data source as a feature object. A

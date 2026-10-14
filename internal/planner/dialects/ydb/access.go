@@ -25,14 +25,20 @@ import (
 //
 //  1. REVOKE for every permission entry the plan removes, while its object
 //     still exists; an entry on a table the plan drops goes with the table
-//     and is not revoked, and a table the plan creates holds none;
+//     and is not revoked, and a table the plan creates holds none. The same
+//     holds for a scheme object an owner manages, such as a topic: an entry
+//     on one the plan drops, or drops and creates again, goes with it;
 //  2. ALTER GROUP ... DROP USER for every membership the plan removes;
 //  3. CREATE USER and CREATE GROUP for every principal the plan adds, a group
 //     empty, and ALTER USER for every user whose login or password changes;
 //  4. the table phases;
 //  5. ALTER GROUP ... ADD USER for every membership the plan adds;
 //  6. GRANT for every permission entry the plan adds, and for every entry a
-//     rebuilt table held, which the rebuild dropped with the old table;
+//     rebuilt table held, which the rebuild dropped with the old table, and
+//     every entry a scheme object the plan drops and creates again held. A
+//     GRANT or REVOKE on a scheme object an owner manages is ordered against
+//     the owner's statements too, after the object's creation or change and
+//     before its drop (see [permissionEdges]);
 //  7. DROP USER and DROP GROUP for every principal the plan removes, last:
 //     both leave the principal's permission entries behind, so its revokes
 //     run first.
@@ -61,10 +67,19 @@ func (p *Planner) planAccess(
 	if err := p.refuseAccessChanges(diff); err != nil {
 		return accessPlan{}, err
 	}
+	objects := ownedObjectLifecycle(diff, p.caps)
+	if grant, dropped := objects.grantedOnDroppedObject(diff.GrantsAdded, diff.CurrentDatabasePath); dropped {
+		return accessPlan{}, refuseFact(fmt.Sprintf("granting %s on %s to %s", grant.Privilege,
+			ydbacl.Describe(grant.ObjectType, grant.ObjectName), grant.Role),
+			"the plan drops the object; declare it, or leave the grant out")
+	}
 	var plan accessPlan
 	for _, grant := range diff.GrantsRemoved {
 		key, onTable := grantTableKey(grant, semantics)
 		if onTable && (removedTables[key] || addedTables[key]) {
+			continue
+		}
+		if objects.revokedWithObject(grant, diff.CurrentDatabasePath) {
 			continue
 		}
 		node, err := p.revokeNode(grant, diff.CurrentDatabasePath)
@@ -91,7 +106,8 @@ func (p *Planner) planAccess(
 	for _, membership := range diff.RoleMembershipsAdded {
 		plan.after = append(plan.after, ast.NewGrantRoleMembership(membership.Role, membership.Member))
 	}
-	for _, grant := range slices.Concat(diff.GrantsAdded, regrants(diff, rebuilt, semantics)) {
+	for _, grant := range slices.Concat(diff.GrantsAdded, regrants(diff, rebuilt, semantics),
+		objects.regrants(diff, diff.CurrentDatabasePath)) {
 		node, err := p.grantNode(grant, diff.CurrentDatabasePath)
 		if err != nil {
 			return accessPlan{}, err
@@ -128,6 +144,9 @@ func (p *Planner) refuseAccessChanges(diff *difftypes.SchemaDiff) error {
 	for _, grant := range slices.Concat(diff.GrantsAdded, diff.GrantsRemoved) {
 		if strings.EqualFold(grant.ObjectType, ydbacl.ObjectDatabase) && !p.caps.Has(capability.DatabaseGrants) {
 			return refuseKey(capability.DatabaseGrants, "the plan changes a permission on the database")
+		}
+		if key, owned := ydbacl.ObjectCapability(grant.ObjectType); owned && !p.caps.Has(key) {
+			return refuseKey(key, "the plan changes a permission on "+ydbacl.Describe(grant.ObjectType, grant.ObjectName))
 		}
 	}
 	return nil

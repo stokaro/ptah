@@ -744,8 +744,9 @@ func (p *parser) setGrantTarget(block *hclsyntax.Block, label string, grant *sch
 		return p.blockError(block, "%s on %s %s needs args, its argument types: a routine's identity includes them",
 			label, strings.ToLower(kind), name)
 	case argsAttr == nil:
-		if !setGrantTargetFromRef(grant, target) {
-			return p.blockError(block, "%s requires table, view, schema, sequence, function or procedure target", label)
+		if !setGrantTargetFromRef(grant, target) && !p.setObjectGrantTarget(grant, target) {
+			return p.blockError(block, "%s requires table, view, schema, sequence, function or procedure target, "+
+				"or an object an owner's block declares", label)
 		}
 		return nil
 	case !isRoutine:
@@ -788,6 +789,38 @@ func setGrantTargetFromRef(grant *schemamodel.Grant, target string) bool {
 		return false
 	}
 	return true
+}
+
+// setObjectGrantTarget sets the object a `permission` or `revoke` block is
+// about when `for` names a block of an owner whose objects a grant names,
+// such as `coordination_node.app.locks` on YDB, and reports false for any
+// other reference; see [hclext.Block.GrantKind].
+func (p *parser) setObjectGrantTarget(grant *schemamodel.Grant, target string) bool {
+	root := traversalRootName(target)
+	shape, found := p.owners.Lookup(hclext.TopLevel, root)
+	if !found || shape.Block.GrantKind == "" {
+		return false
+	}
+	name, ok := traversalObjectRefName(target, root)
+	if !ok {
+		return false
+	}
+	grant.OnObject, grant.ObjectKind = name, shape.Block.GrantKind
+	return true
+}
+
+// traversalRootName is the root of a reference such as `table.app.orders`,
+// and "" for anything else.
+func traversalRootName(raw string) string {
+	expr, diags := hclsyntax.ParseExpression([]byte(strings.TrimSpace(raw)), "object-reference.hcl", hcl.InitialPos)
+	if diags.HasErrors() {
+		return ""
+	}
+	traversal, diags := hcl.AbsTraversalForExpr(expr)
+	if diags.HasErrors() || len(traversal) == 0 {
+		return ""
+	}
+	return traversal.RootName()
 }
 
 func (p *parser) parseManagedData(block *hclsyntax.Block) error {

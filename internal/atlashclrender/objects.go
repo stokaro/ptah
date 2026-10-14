@@ -502,9 +502,9 @@ func (r *renderer) renderableGrants(grants []schemamodel.Grant, path, noun strin
 	renderable := make([]schemamodel.Grant, 0, len(grants))
 	for _, grant := range grants {
 		grant.Canonicalize()
-		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
+		if grant.Role == "" || r.grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
 			r.warn(path+"."+grant.Role, noun+" requires role, table, schema, sequence or routine target, "+
-				"and at least one privilege")
+				"or an object an owner's block declares, and at least one privilege")
 			continue
 		}
 		renderable = append(renderable, grant)
@@ -738,8 +738,13 @@ func (r *renderer) roleTarget(value string) string {
 
 // grantTargetName is the raw name a grant targets, with no reference rendered
 // and nothing recorded. It answers "is this grant complete" without asking
-// [renderer.grantTarget], which has the side effect of declaring a schema.
-func grantTargetName(grant schemamodel.Grant) string {
+// [renderer.grantTarget], which has the side effect of declaring a schema. A
+// scheme object no selected owner's block declares, such as a YDB topic, has
+// no name a document can write.
+func (r *renderer) grantTargetName(grant schemamodel.Grant) string {
+	if _, declared := r.owners.GrantBlock(grant.ObjectKind); declared {
+		return grant.OnObject
+	}
 	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence, grant.OnRoutine)
 }
 
@@ -794,6 +799,9 @@ func (r *renderer) routineRef(grant schemamodel.Grant) string {
 // field only decides what to write when the document declares no single block
 // to name.
 func (r *renderer) grantTarget(grant schemamodel.Grant) string {
+	if block, declared := r.owners.GrantBlock(grant.ObjectKind); declared && grant.OnObject != "" {
+		return objectRef(block, grant.OnObject)
+	}
 	if grant.OnSchema != "" {
 		return r.schemaRef(grant.OnSchema)
 	}

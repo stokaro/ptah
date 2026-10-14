@@ -1002,9 +1002,12 @@ func convertGrants(dbGrants []catalog.Grant, replayed map[string]string) []schem
 			WithOption: dbGrant.WithOption,
 			GrantedBy:  dbGrant.GrantedBy,
 		}
+		_, objectKind := schemamodel.GrantObjectAttribute(dbGrant.ObjectType)
 		switch {
 		case strings.EqualFold(dbGrant.ObjectType, "DATABASE"):
 			grant.OnDatabase = true
+		case objectKind:
+			grant.OnObject, grant.ObjectKind = dbGrant.QualifiedTarget(), dbGrant.ObjectType
 		case strings.EqualFold(dbGrant.ObjectType, "SCHEMA"):
 			grant.OnSchema = dbGrant.ObjectName
 		case routineGrantObjectTypes[strings.ToUpper(dbGrant.ObjectType)]:

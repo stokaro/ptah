@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
@@ -59,4 +60,60 @@ func TestParseCoordinationNode_FailurePath(t *testing.T) {
 			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+// TestParsePermissionOnACoordinationNode reads a `permission` and a `revoke`
+// whose `for` names a coordination node block, by its directory and name or
+// by its name at the database root, as grants on the node.
+func TestParsePermissionOnACoordinationNode(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := parseWithOwners([]byte(`
+schema "app" {
+}
+
+coordination_node "app" "limits" {
+}
+
+coordination_node "locks" {
+}
+
+permission {
+  to         = "reader"
+  for        = coordination_node.app.limits
+  privileges = ["ydb.generic.use"]
+}
+
+revoke {
+  from       = "reader"
+  for        = coordination_node.locks
+  privileges = ["ydb.generic.full"]
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Grants, qt.DeepEquals, []schemamodel.Grant{
+		{Role: "reader", Privileges: []string{"YDB.GENERIC.USE"}, OnObject: "app.limits", ObjectKind: "COORDINATION NODE"},
+	})
+	c.Assert(db.RevokedGrants, qt.DeepEquals, []schemamodel.Grant{
+		{Role: "reader", Privileges: []string{"YDB.GENERIC.FULL"}, OnObject: "locks", ObjectKind: "COORDINATION NODE"},
+	})
+}
+
+// TestParsePermissionOnAnUnownedBlock refuses a `for` that names a block no
+// owner's grant kind covers, rather than reading it as a grant on nothing.
+func TestParsePermissionOnAnUnownedBlock(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := parseWithOwners([]byte(`
+permission {
+  to         = "reader"
+  for        = topic.app.events
+  privileges = ["ydb.generic.read"]
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*permission requires table, view, schema, sequence, function or procedure target, `+
+		`or an object an owner's block declares.*`)
+	c.Assert(db, qt.IsNil)
 }
