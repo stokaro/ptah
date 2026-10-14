@@ -61,7 +61,7 @@ func TestTimeouts_Statements(t *testing.T) {
 	tests := []struct {
 		name        string
 		dialect     string
-		session     bool
+		scope       migratorext.Scope
 		wantSetup   []string
 		wantRestore []string
 	}{
@@ -70,7 +70,7 @@ func TestTimeouts_Statements(t *testing.T) {
 			wantSetup: []string{"SET LOCAL lock_timeout = '1500ms'", "SET LOCAL statement_timeout = '2500ms'"},
 		},
 		{
-			name: "cockroachdb on a session", dialect: platform.CockroachDB, session: true,
+			name: "cockroachdb on a session", dialect: platform.CockroachDB, scope: migratorext.ScopeSession,
 			wantSetup:   []string{"SET lock_timeout = '1500ms'", "SET statement_timeout = '2500ms'"},
 			wantRestore: []string{"RESET statement_timeout", "RESET lock_timeout"},
 		},
@@ -111,7 +111,7 @@ func TestTimeouts_Statements(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			setup, restore, err := builtin.Lookup(test.dialect).Timeouts.Statements(timeouts, test.session)
+			setup, restore, err := builtin.Lookup(test.dialect).Timeouts.Statements(timeouts, test.scope)
 			c.Assert(err, qt.IsNil)
 			c.Assert(setup, qt.DeepEquals, test.wantSetup)
 			c.Assert(restore, qt.DeepEquals, test.wantRestore)

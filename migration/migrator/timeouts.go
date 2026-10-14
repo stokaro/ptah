@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/migration/migrationfile"
 )
@@ -191,7 +192,11 @@ func timeoutStatements(
 				"registered for it",
 			dialect)
 	}
-	return spelling.Statements(timeouts, scope == timeoutScopeSession)
+	spellingScope := migratorext.ScopeTransaction
+	if scope == timeoutScopeSession {
+		spellingScope = migratorext.ScopeSession
+	}
+	return spelling.Statements(timeouts, spellingScope)
 }
 
 // refuseTimeoutsWithoutCapability refuses a timeout the target has no

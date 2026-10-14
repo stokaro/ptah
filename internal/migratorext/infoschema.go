@@ -19,8 +19,7 @@ WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'`, []any{
 func InformationSchemaColumnExists(
 	ctx context.Context,
 	q Queryer,
-	query string,
-	schema string,
+	query, schema string,
 	table Table,
 	column string,
 ) (bool, error) {

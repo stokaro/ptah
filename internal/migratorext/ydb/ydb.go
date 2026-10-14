@@ -68,7 +68,7 @@ func (units) IsData(query string) bool {
 // and the executor bounds each query with it.
 type timeouts struct{}
 
-func (timeouts) Statements(migrationfile.Timeouts, bool) (setup, restore []string, err error) {
+func (timeouts) Statements(migrationfile.Timeouts, migratorext.Scope) (setup, restore []string, err error) {
 	return nil, nil, nil
 }
 

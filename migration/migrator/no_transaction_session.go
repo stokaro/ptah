@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
 )
 
@@ -184,7 +185,7 @@ func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAct
 	if len(tokens) == 0 {
 		return noTransactionPrefixDurable
 	}
-	if createsTemporaryObject(tokens, services.HashTemporaryNames) {
+	if createsTemporaryObject(tokens, services) {
 		return noTransactionPrefixReject
 	}
 	if matchesAnyKeyword(tokens[0],
@@ -229,19 +230,19 @@ func isTransactionControlStatement(statement, dialect string) bool {
 		return false
 	}
 	services := builtin.Lookup(dialect)
-	return isPrimaryTransactionControl(tokens, services.BlockBegin) ||
-		isSetTransactionControl(statement, dialect, tokens, services.AutocommitControl)
+	return isPrimaryTransactionControl(tokens, services) ||
+		isSetTransactionControl(statement, dialect, tokens, services)
 }
 
 // isPrimaryTransactionControl reports whether a statement opens, ends or marks
-// a transaction. Where blockBegin holds, BEGIN and END delimit a block instead,
-// and only BEGIN TRAN, BEGIN TRANSACTION and BEGIN DISTRIBUTED open one.
-func isPrimaryTransactionControl(tokens []lexer.Token, blockBegin bool) bool {
+// a transaction. Where the engine's BEGIN and END delimit a block, only BEGIN
+// TRAN, BEGIN TRANSACTION and BEGIN DISTRIBUTED open one.
+func isPrimaryTransactionControl(tokens []lexer.Token, services migratorext.Services) bool {
 	first := tokens[0]
 	if matchesAnyKeyword(first, "COMMIT", "ROLLBACK", "SAVEPOINT", "ABORT") {
 		return true
 	}
-	if first.MatchIdentifierValue("END") && !blockBegin {
+	if first.MatchIdentifierValue("END") && !services.BlockBegin {
 		return true
 	}
 	if first.MatchIdentifierValue("XA") {
@@ -260,7 +261,7 @@ func isPrimaryTransactionControl(tokens []lexer.Token, blockBegin bool) bool {
 		return len(tokens) > 1 && tokens[1].MatchIdentifierValue("TRANSACTION")
 	}
 	if first.MatchIdentifierValue("BEGIN") {
-		if !blockBegin {
+		if !services.BlockBegin {
 			return true
 		}
 		return len(tokens) > 1 && matchesAnyKeyword(tokens[1], "TRAN", "TRANSACTION", "DISTRIBUTED")
@@ -268,7 +269,7 @@ func isPrimaryTransactionControl(tokens []lexer.Token, blockBegin bool) bool {
 	return false
 }
 
-func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, autocommitControl bool) bool {
+func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, services migratorext.Services) bool {
 	first := tokens[0]
 	if !first.MatchIdentifierValue("SET") {
 		return false
@@ -277,11 +278,11 @@ func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, au
 		containsIdentifierSequence(statement, dialect, "IMPLICIT_TRANSACTIONS") {
 		return true
 	}
-	return autocommitControl && containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
+	return services.AutocommitControl && containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
 }
 
-func createsTemporaryObject(tokens []lexer.Token, hashTemporaryNames bool) bool {
-	if hashTemporaryNames && slices.ContainsFunc(tokens, isHashTemporaryIdentifier) {
+func createsTemporaryObject(tokens []lexer.Token, services migratorext.Services) bool {
+	if services.HashTemporaryNames && slices.ContainsFunc(tokens, isHashTemporaryIdentifier) {
 		return true
 	}
 	if !tokens[0].MatchIdentifierValue("CREATE") {

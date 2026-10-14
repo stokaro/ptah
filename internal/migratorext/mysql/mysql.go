@@ -102,7 +102,7 @@ func seconds(duration time.Duration) string {
 	return strconv.FormatFloat(duration.Seconds(), 'f', -1, 64)
 }
 
-func (t timeouts) Statements(timeouts migrationfile.Timeouts, _ bool) (setup, restore []string, err error) {
+func (t timeouts) Statements(timeouts migrationfile.Timeouts, _ migratorext.Scope) (setup, restore []string, err error) {
 	setup = make([]string, 0, 6)
 	restore = make([]string, 0, 3)
 	if timeouts.HasLockTimeout {

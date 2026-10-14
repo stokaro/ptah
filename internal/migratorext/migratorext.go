@@ -76,13 +76,22 @@ type Owners interface {
 	OwnerQuery(table Table) (query string, args []any)
 }
 
+// Scope is what a migration's timeouts are attached to.
+type Scope uint8
+
+const (
+	// ScopeTransaction bounds the statements of one transaction.
+	ScopeTransaction Scope = iota
+	// ScopeSession bounds every statement on one pinned session, for a
+	// migration that runs outside a transaction.
+	ScopeSession
+)
+
 // Timeouts spells the statements that bound a migration's lock waits and
 // statements, and the ones that put the session back afterwards.
 type Timeouts interface {
-	// Statements returns them for timeouts. session reports that the
-	// migration runs outside a transaction, on a pinned session, rather than
-	// inside one transaction.
-	Statements(timeouts migrationfile.Timeouts, session bool) (setup, restore []string, err error)
+	// Statements returns them for timeouts in scope.
+	Statements(timeouts migrationfile.Timeouts, scope Scope) (setup, restore []string, err error)
 }
 
 // Unit is one query a migration body runs as.

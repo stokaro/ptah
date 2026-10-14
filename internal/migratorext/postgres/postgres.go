@@ -119,8 +119,8 @@ type timeouts struct{}
 // PostgreSQL 18.6 and CockroachDB v26.3.1 -- so a migration that runs outside
 // a transaction takes the session spelling, and RESET returns the session to
 // the value it started with.
-func (timeouts) Statements(timeouts migrationfile.Timeouts, session bool) (setup, restore []string, err error) {
-	if session {
+func (timeouts) Statements(timeouts migrationfile.Timeouts, scope migratorext.Scope) (setup, restore []string, err error) {
+	if scope == migratorext.ScopeSession {
 		setup = make([]string, 0, 2)
 		restore = make([]string, 0, 2)
 		if timeouts.HasLockTimeout {

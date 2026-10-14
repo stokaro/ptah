@@ -3,12 +3,11 @@ package migrator
 import (
 	"strings"
 
-	"ptah.run/internal/migratorext"
-	"ptah.run/internal/migratorext/builtin"
-
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/builtindialects"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 )
 
 // revisionTableFor returns how dialect keeps the migrator's tables: the
