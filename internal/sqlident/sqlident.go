@@ -2,7 +2,9 @@
 // a given SQL dialect. It centralizes the per-dialect quote style and the
 // standard "double the quote character" escaping so that identifiers taken from
 // catalog metadata, annotations, or any other untrusted-shaped string cannot
-// terminate the quoted identifier and inject SQL.
+// terminate the quoted identifier and inject SQL. It also reads back the names
+// of a dialect that writes them its own way, as YDB writes one path in YQL
+// backticks, so a SQL reader asks it rather than naming the dialect itself.
 package sqlident
 
 import (
