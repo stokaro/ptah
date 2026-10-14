@@ -633,7 +633,7 @@ func verifySchemaRendering(runtime *engine.Runtime, decoded schemaext.Facets) er
 type scopedService struct{}
 
 func (scopedService) ValidateSchema(_ context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
-	if request.Target != "custom" || len(request.Schema.CompositeTypes) != 1 || request.Schema.CompositeTypes[0].Name != "local" {
+	if request.Target != "custom" || len(request.Schema.Sequences) != 1 || request.Schema.Sequences[0].Name != "local" {
 		return schemavalidation.Result{}, fmt.Errorf("custom scope was not applied before dispatch")
 	}
 	return schemavalidation.Result{Complete: true}, nil
@@ -644,7 +644,7 @@ func (s scopedService) RenderSchema(ctx context.Context, request renderer.Schema
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
-	return renderer.SchemaResult{Complete: true, Statements: []string{"CREATE TYPE local;"}}, nil
+	return renderer.SchemaResult{Complete: true, Statements: []string{"CREATE SEQUENCE local;"}}, nil
 }
 
 func verifyTargetScope(foreign schemaext.Facets) error {
@@ -656,7 +656,7 @@ func verifyTargetScope(foreign schemaext.Facets) error {
 	if err != nil {
 		return err
 	}
-	schema := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
+	schema := &schemamodel.Database{Sequences: []schemamodel.Sequence{
 		{Name: "foreign", Dialects: []string{"postgres"}, Facets: foreign},
 		{Name: "local", Dialects: []string{" CUSTOM+WIRE "}},
 	}}
@@ -670,10 +670,10 @@ func verifyTargetScope(foreign schemaext.Facets) error {
 	if err != nil {
 		return err
 	}
-	if !slices.Equal(result.Statements, []string{"CREATE TYPE local;"}) || len(schema.CompositeTypes) != 2 {
+	if !slices.Equal(result.Statements, []string{"CREATE SEQUENCE local;"}) || len(schema.Sequences) != 2 {
 		return fmt.Errorf("custom target scope changed source data or lost selected output")
 	}
-	schema.CompositeTypes[0].Dialects = nil
+	schema.Sequences[0].Dialects = nil
 	_, validationErr := runtime.ValidateSchema(ctx, validation)
 	_, renderingErr := runtime.RenderSchema(ctx, rendering)
 	if !errors.Is(validationErr, schemaext.ErrUnknownCodec) || !errors.Is(renderingErr, schemaext.ErrUnknownCodec) {
@@ -707,7 +707,7 @@ func verifyFacetTargetScope(runtime *engine.Runtime, foreign schemaext.Facets) e
 	if decoded.Len() != 0 || decoded.IsZero() || !slices.Equal(decoded.TargetScope((&widget{}).Kind()), []string{"postgres"}) {
 		return fmt.Errorf("facet source binding was lost in an excluded capture")
 	}
-	schema := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{Name: "local", Facets: decoded}}}
+	schema := &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "local", Facets: decoded}}}
 	_, err = runtime.RenderSchema(ctx, renderer.SchemaRequest{Target: "custom+wire", Schema: schema})
 	return err
 }
