@@ -70,7 +70,8 @@ The SQLite renderer and planner support:
   copy the retained columns, swap it in, and recreate the desired indexes and
   triggers when their metadata round-trips safely. One rebuild covers column
   drops, column type, nullability, default and generated-expression changes,
-  added and removed table constraints (including enum-backed `CHECK`
+  a key column that gains or loses `AUTOINCREMENT`, added and removed table
+  constraints (including enum-backed `CHECK`
   constraints), a changed `STRICT` or `WITHOUT ROWID` option, and a column
   drop combined with a column addition. SQLite stores no comment, so a
   column whose comment alone changed is left as it is. A column the

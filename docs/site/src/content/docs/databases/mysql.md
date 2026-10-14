@@ -133,6 +133,10 @@ SQL:
   v1.3.0 writes the drop and the add as two statements. Primary-key replacements
   also use one `ALTER TABLE` so `AUTO_INCREMENT` and incoming foreign keys
   keep their supporting index.
+- A column's `AUTO_INCREMENT` is compared, and a change is written as
+  `MODIFY COLUMN`. A key column is restated `NOT NULL` without `PRIMARY KEY`,
+  because both engines refuse a `MODIFY COLUMN ... PRIMARY KEY` on a table that
+  has a key (`ERROR 1068`); the same holds for a key column whose type changes.
 - A primary key declared on its column and again as a `PRIMARY KEY`
   constraint over the same columns is one key, and the table is created with
   it once. Both engines refuse a `CREATE TABLE` that holds two primary keys

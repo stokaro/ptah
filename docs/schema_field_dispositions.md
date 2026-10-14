@@ -131,13 +131,13 @@ migration nobody asked for.
 | `schemamodel.Database.Schemas` | `clickhouse`, `mariadb`, `mysql`, `spanner`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Field.AutoInc` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Field.AutoInc` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.GeneratedExpression` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Field.IdentityGeneration` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Field.IdentityGeneration` | `cockroachdb`, `oracle`, `postgres`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.IdentityIncrement` | `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.IdentityOptions` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Field.IdentityStart` | `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |

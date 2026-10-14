@@ -263,7 +263,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"cockroachdb", "sqlite"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.AutoInc",
-		Dialects:   []string{"mariadb", "mysql", "oracle", "sqlite", "sqlserver"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -284,7 +284,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityGeneration",
-		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "oracle", "postgres", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
