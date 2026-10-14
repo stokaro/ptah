@@ -117,6 +117,12 @@ const (
 	exemptYugabyteIndexStorage = "YugabyteDB 2026.1.2 refuses every index storage parameter Ptah writes: fillfactor " +
 		"and deduplicate_items are unrecognized, ybgin does not support fastupdate, and BRIN, which pages_per_range " +
 		"belongs to, is not supported"
+	exemptSpannerIndexMethod = "Spanner refuses an access method in CREATE INDEX (\"Setting access method is not " +
+		"supported\", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare"
+	exemptSpannerOperatorClass = "Spanner refuses an operator class in CREATE INDEX (\"Setting operator class is not " +
+		"supported\", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare"
+	exemptSpannerIndexStorage = "Spanner refuses storage parameters in CREATE INDEX (\"Index options are not " +
+		"supported\", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare"
 	exemptForeignDefiner = "a routine that states no security mode is a definer routine here, a definer routine is " +
 		"replaced only beside a recorded definer and connected account, and a description converted from a catalog " +
 		"records neither, so the comparison refuses the replacement and names the routine"
@@ -315,45 +321,40 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Fields",
-		Dialects:   []string{"clickhouse", "oracle", "spanner"},
+		Dialects:   []string{"clickhouse", "oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Index.Operator", Dialects: []string{"spanner"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Parts",
-		Dialects:   []string{"clickhouse", "oracle", "spanner"},
+		Dialects:   []string{"clickhouse", "oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"spanner"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.Index.Type", Dialects: []string{"spanner"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Unique",
-		Dialects:   []string{"oracle", "spanner"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Desc",
-		Dialects:   []string{"oracle", "spanner"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Expr",
-		Dialects:   []string{"clickhouse", "oracle", "spanner", "sqlserver"},
+		Dialects:   []string{"clickhouse", "oracle", "sqlserver"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Name",
-		Dialects:   []string{"clickhouse", "oracle", "spanner"},
+		Dialects:   []string{"clickhouse", "oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"spanner"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"spanner"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.MaterializedView.Dialects",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "ydb"},
@@ -475,6 +476,10 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachNullsOrder},
 	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
 	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"yugabytedb"}, Directions: nil, Reason: exemptYugabyteIndexStorage},
+	{Field: "schemamodel.Index.Operator", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerOperatorClass},
+	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerIndexStorage},
+	{Field: "schemamodel.Index.Type", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerIndexMethod},
+	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerOperatorClass},
 	{Field: "schemamodel.RLSEnabledTable.Forced", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{Field: "schemamodel.RLSPolicy.Comment", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{
