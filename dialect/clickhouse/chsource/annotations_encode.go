@@ -42,7 +42,7 @@ func (annotationEncoder) EncodeAnnotations(ctx context.Context, request annotati
 		}
 		result.Attributes = append(result.Attributes, attributes)
 	}
-	if err := requireCapturedSchedules(request.Coverage); err != nil {
+	if err := requireCapturedSchedules(request.Coverage, "a Go annotation"); err != nil {
 		return annotation.EncodeResult{}, err
 	}
 	if err := chpolicysource.RequireDescribed(request.Coverage); err != nil {
@@ -83,16 +83,21 @@ func refreshAttributes(slot annotation.SlotFacets) (annotation.SlotAttributes, e
 }
 
 // requireCapturedSchedules refuses a schedule the read could not capture,
-// such as a stored clause a reader could not parse: a Go source states every
+// such as a stored clause a reader could not parse: each source states every
 // view's schedule, so the view would be written as a plain one, and applying
 // it would remove the schedule (stokaro/ptah#4278).
-func requireCapturedSchedules(coverage schemaext.Coverage) error {
+func requireCapturedSchedules(coverage schemaext.Coverage, format string) error {
+	for _, record := range coverage.KindRecords() {
+		if record.Model.Kind == chschema.RefreshKind && (record.Knowledge.State == schemaext.Unrepresentable || record.Knowledge.State == schemaext.Uninspected) {
+			return fmt.Errorf("%w: ClickHouse refresh schedules were not captured (%s), and %s states every schedule", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason, format)
+		}
+	}
 	for _, record := range coverage.SubjectRecords() {
 		if record.Kind != chschema.RefreshKind || (record.Knowledge.State != schemaext.Unrepresentable && record.Knowledge.State != schemaext.Uninspected) {
 			continue
 		}
-		return fmt.Errorf("%w: materialized view %s: its refresh schedule was not captured (%s), and a Go annotation states every schedule, "+
-			"so the view would be written as a plain one", ptaherr.ErrUnsupportedFeature, qualifiedSubject(record.Subject), record.Knowledge.Reason)
+		return fmt.Errorf("%w: materialized view %s: its refresh schedule was not captured (%s), and %s states every schedule, "+
+			"so the view would be written as a plain one", ptaherr.ErrUnsupportedFeature, qualifiedSubject(record.Subject), record.Knowledge.Reason, format)
 	}
 	return nil
 }

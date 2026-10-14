@@ -55,8 +55,9 @@ var slotPositions = map[hclext.SlotKind][]string{
 var slotOwnNames = map[hclext.SlotKind][]string{
 	hclext.SlotTable: {"schema", "qualifier", "depends_on", "api_name", "openapi_name", "graphql_name", "proto_name", "collate", "comment",
 		"checks", "custom", "platform", "row_security", "column", "primary_key", "index", "foreign_key", "check", "partition"},
-	hclext.SlotFunction:  {"schema", "params", "lang", "return", "return_set", "return_table", "security", "volatility", "set", "as", "comment", "arg"},
-	hclext.SlotProcedure: {"schema", "params", "lang", "security", "volatility", "set", "as", "comment", "arg"},
+	hclext.SlotMaterializedView: {"schema", "as", "refresh_strategy", "comment", "depends_on", "column"},
+	hclext.SlotFunction:         {"schema", "params", "lang", "return", "return_set", "return_table", "security", "volatility", "set", "as", "comment", "arg"},
+	hclext.SlotProcedure:        {"schema", "params", "lang", "security", "volatility", "set", "as", "comment", "arg"},
 	hclext.SlotIndex: {"unique", "type", "where", "comment", "ops", "nulls_distinct", "include", "page_per_range", "storage_params",
 		"platform", "on", "columns"},
 }
@@ -97,6 +98,11 @@ func (r *renderer) slotRequest() (hclext.EncodeRequest, error) {
 	}
 	for _, routine := range r.db.Functions {
 		if err := slots.add(&request.Routines, routineSlot(routine), routine.Facets); err != nil {
+			return hclext.EncodeRequest{}, err
+		}
+	}
+	for _, view := range r.db.MaterializedViews {
+		if err := slots.add(&request.MaterializedViews, materializedViewSlot(view), view.Facets); err != nil {
 			return hclext.EncodeRequest{}, err
 		}
 	}
@@ -257,4 +263,8 @@ func primaryKeyPath(table schemamodel.Table) string {
 // constraintPath names a constraint in a diagnostic.
 func constraintPath(constraint schemamodel.Constraint) string {
 	return "constraints[" + strconv.Quote(constraint.Name) + "]"
+}
+
+func materializedViewSlot(view schemamodel.MaterializedView) hclext.Slot {
+	return hclext.Slot{Kind: hclext.SlotMaterializedView, Name: view.Name}
 }

@@ -141,8 +141,8 @@ The supported declarations differ by format:
 | Format | Engine overrides and index granularity | Views, roles, and grants | Refresh schedules | Row policies |
 | --- | --- | --- | --- | --- |
 | SQL | Yes | Yes | Yes | Yes |
-| YAML | Yes | Yes | No | Yes |
-| HCL | Yes | Yes | No | No |
+| YAML | Yes | Yes | Yes | Yes |
+| HCL | Yes | Yes | Yes | No |
 | DBML | No | No | No | No |
 | Go annotations | Yes | Yes | Yes | Yes |
 
@@ -543,7 +543,7 @@ before adopting them:
   carries the schedule as ClickHouse spells it, and Ptah renders it, reads it
   back, and reconciles it:
 
-  SQL and Go annotations can declare a refresh schedule. For example:
+  SQL, Go annotations, YAML, and HCL can declare a refresh schedule. For example:
 
   ```sql
   CREATE MATERIALIZED VIEW event_stats REFRESH EVERY 1 HOUR
@@ -555,6 +555,24 @@ before adopting them:
   ```go
   //ptah:schema:matview name="event_stats" body="SELECT count() AS c FROM events" refresh="every 1 hour"
   type EventStats struct{}
+  ```
+
+  YAML uses the same clause in a `matviews` entry:
+
+  ```yaml
+  matviews:
+    event_stats:
+      body: SELECT count() AS c FROM events
+      refresh: EVERY 1 HOUR
+  ```
+
+  HCL uses a string on a `materialized` block:
+
+  ```hcl
+  materialized "event_stats" {
+    as      = "SELECT count() AS c FROM events"
+    refresh = "EVERY 1 HOUR"
+  }
   ```
 
   The server rewrites what it stores — `EVERY 60 MINUTE` becomes `EVERY 1 HOUR`,
@@ -587,18 +605,16 @@ before adopting them:
   The storage clause may be left out. When it is written, it has to be
   `ENGINE = MergeTree ORDER BY tuple()`, the storage Ptah creates every view
   with. Another storage is refused, because Ptah does not model it and would
-  create the view without it. Both sources state every view's schedule, so a
-  view declared without one is a plain view, and a schedule the server holds
-  for it is removed. A YAML or HCL source cannot state one, so a schedule the
-  server holds is kept as it is: Ptah plans no change to it, and a view
-  replaced for a changed query is created again with it.
+  create the view without it. All four sources state every view's schedule.
+  Omitting `refresh`, or writing an empty string in Go, YAML, or HCL, declares
+  a plain view. Removing an existing schedule replaces the view and discards
+  its stored rows. HCL export preserves a supported schedule.
 
-  A schedule Ptah could not read is never read as no schedule. A Go or SQL
-  source that declares one, or that declares the view plain, leaves the view
+  A schedule Ptah could not read is never read as no schedule. A source that declares one, or that declares the view plain, leaves the view
   undecided; a change to the view's query from any source is refused, because
   the replacement would recreate the view without the schedule; `ptah db read`
   and other renders of the database write the view with a comment saying its
-  schedule was not captured; and exporting the database to Go annotations is
+  schedule was not captured; and exporting the database to Go annotations or HCL is
   refused, because the export would declare the view plain. An account that
   may not read `system.view_refreshes` reads the database all the same, with
   every view's schedule uninspected: a source that declares a schedule is then

@@ -30,12 +30,13 @@ import (
 // references are the [hclext.Ref] attributes the block writes, as written,
 // which are resolved once every table of the document is read.
 type ownerClaim struct {
-	routine    *int
-	block      *hclsyntax.Block
-	match      hclext.Match
-	index      int
-	table      int
-	references []writtenReference
+	materialized *int
+	routine      *int
+	block        *hclsyntax.Block
+	match        hclext.Match
+	index        int
+	table        int
+	references   []writtenReference
 }
 
 // writtenReference is a [hclext.Ref] attribute as the block writes it: the
@@ -623,6 +624,13 @@ func (p *parser) addOwnerFacets(claim ownerClaim, facets schemaext.Facets) error
 	switch {
 	case facets.Len() == 0:
 		return nil
+	case claim.materialized != nil:
+		view := &p.db.MaterializedViews[*claim.materialized]
+		merged, err := view.Facets.Merge(facets)
+		if err != nil {
+			return p.blockError(claim.block, "materialized view %q: %v", view.Name, err)
+		}
+		view.Facets = merged
 	case claim.routine != nil:
 		routine := &p.db.Functions[*claim.routine]
 		merged, err := routine.Facets.Merge(facets)
@@ -727,5 +735,22 @@ func (p *parser) claimOwnerTable(block *hclsyntax.Block, position int) error {
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: table.Schema, Name: table.Name,
 			Attributes: values, At: blockAt(block), Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
+	return nil
+}
+
+// claimOwnerMaterializedView hands evaluated attributes to the selected owner.
+// The declaration position keeps equal names in separate schemas distinct.
+func (p *parser) claimOwnerMaterializedView(block *hclsyntax.Block, position int) error {
+	shape, owned := p.owners.Lookup(hclext.MaterializedViewAttributes, block.Type)
+	if !owned {
+		return nil
+	}
+	view := p.db.MaterializedViews[position]
+	values, references, err := p.ownerValues(block, shape, view.Name)
+	if err != nil {
+		return err
+	}
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, materialized: new(position), index: -1, table: -1, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: view.Name, Attributes: values, At: blockAt(block)}}})
 	return nil
 }

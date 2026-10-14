@@ -35,6 +35,8 @@ type EncodeRequest struct {
 	Keys    []SlotFacets
 	// Routines are function and procedure blocks carrying owner facets.
 	Routines []SlotFacets
+	// MaterializedViews are materialized blocks carrying owner facets.
+	MaterializedViews []SlotFacets
 	// Coverage is what the document knows of the extension's Kinds, such
 	// as a limit the format may have no spelling for.
 	Coverage schemaext.Coverage
@@ -56,17 +58,19 @@ const (
 	SlotFunction SlotKind = "function"
 	// SlotProcedure is a procedure block.
 	SlotProcedure SlotKind = "procedure"
+	// SlotMaterializedView is a materialized view block.
+	SlotMaterializedView SlotKind = "materialized"
 )
 
 // Slot names one of the writer's own blocks: a table, or a column, an index,
-// the primary key or a constraint of one, or a routine. It is comparable, and two blocks of
+// the primary key or a constraint of one, a routine, or a materialized view. It is comparable, and two blocks of
 // one document do not share one.
 type Slot struct {
 	// Kind is the kind of block.
 	Kind SlotKind
 	// Table is the table the block is, or is in, as the writer names it.
 	Table Table
-	// Name is the name of a column, an index or a constraint, and empty for a
+	// Name is the name of a column, index, constraint, routine, or materialized view, and empty for a
 	// table, a primary key and a constraint without a name.
 	Name string
 	// Parameters distinguishes overloaded routine blocks. Other kinds leave it empty.
@@ -361,6 +365,8 @@ func (s Slot) String() string {
 		return fmt.Sprintf("table %q", table)
 	case s.Kind == SlotFunction || s.Kind == SlotProcedure:
 		return fmt.Sprintf("%s %s(%s)", s.Kind, s.Name, s.Parameters)
+	case s.Kind == SlotMaterializedView:
+		return fmt.Sprintf("materialized view %q", s.Name)
 	case s.Primary:
 		return fmt.Sprintf("the primary key of table %q", table)
 	default:
@@ -386,6 +392,7 @@ func (e Extension) selectRequest(document EncodeRequest) EncodeRequest {
 	request.Indexes = e.selectSlots(document.Indexes)
 	request.Keys = e.selectSlots(document.Keys)
 	request.Routines = e.selectSlots(document.Routines)
+	request.MaterializedViews = e.selectSlots(document.MaterializedViews)
 	return request
 }
 
@@ -460,6 +467,8 @@ func (r EncodeRequest) hands(slot Slot) bool {
 		return handed(r.Keys)
 	case SlotFunction, SlotProcedure:
 		return handed(r.Routines)
+	case SlotMaterializedView:
+		return handed(r.MaterializedViews)
 	default:
 		return false
 	}

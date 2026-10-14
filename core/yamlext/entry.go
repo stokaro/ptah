@@ -18,6 +18,8 @@ const (
 	EntryIndex = "indexes"
 	// EntryFunction is an entry of the functions key.
 	EntryFunction = "functions"
+	// EntryMaterializedView is an entry of the matviews key.
+	EntryMaterializedView = "matviews"
 )
 
 // EntryAttributes are scalar keys an owner adds to one of the frontend's
@@ -25,7 +27,8 @@ const (
 // annotation.DirectiveAttributes, so an owner that spells a setting alike in
 // both formats reads it with one decoder.
 type EntryAttributes struct {
-	// Entry names the frontend's entry: [EntryTable] or [EntryIndex].
+	// Entry names the frontend's entry, such as [EntryTable], [EntryIndex],
+	// [EntryFunction], or [EntryMaterializedView].
 	Entry string
 	// Attributes are the owner's keys. A key belongs to one owner, and never
 	// to the entry itself.
@@ -59,7 +62,7 @@ type EntrySection struct {
 
 func (s *Set) claimEntryKeys(index int, extension Extension) error {
 	for _, group := range extension.EntryAttributes {
-		if (group.Entry != EntryTable && group.Entry != EntryIndex && group.Entry != EntryFunction) || (group.Decode == nil && group.Parameters == nil) {
+		if !slices.Contains([]string{EntryTable, EntryIndex, EntryFunction, EntryMaterializedView}, group.Entry) || (group.Decode == nil && group.Parameters == nil) {
 			return fmt.Errorf("YAML extension of %s declares entry attributes without an entry or a decoder", extension.Owner)
 		}
 		for _, key := range group.Attributes {

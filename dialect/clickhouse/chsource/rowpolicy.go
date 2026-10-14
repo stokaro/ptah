@@ -27,13 +27,19 @@ const RowPoliciesKey = "row_policies"
 // YAML is the owner's contribution to the YAML frontend: the row_policies
 // key, which declares row policies as the //ptah:schema:rowpolicy directive
 // does, and the claim that a document describes every row policy it holds,
-// so one the document leaves out is absent.
+// so one the document leaves out is absent. Materialized views accept the
+// refresh attribute through the same grammar as Go annotations; an omitted
+// or empty refresh declares a view maintained by source inserts.
 func YAML() yamlext.Extension {
 	return yamlext.Extension{
 		Owner:    chschema.Owner,
-		Kinds:    []schemaext.Kind{chschema.RowPolicyKind},
+		Kinds:    []schemaext.Kind{chschema.RowPolicyKind, chschema.RefreshKind},
 		Sections: []yamlext.Section{{Key: RowPoliciesKey, Decode: decodeYAMLRowPolicies}},
-		Coverage: RowPolicyCoverage,
+		Coverage: ownedCoverage,
+		EntryAttributes: []yamlext.EntryAttributes{{Entry: yamlext.EntryMaterializedView, Attributes: []string{"refresh"},
+			Decode: func(attributes map[string]string) (schemaext.Facets, error) {
+				return RefreshFacets(attributes["refresh"])
+			}}},
 	}
 }
 

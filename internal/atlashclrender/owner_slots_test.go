@@ -32,7 +32,7 @@ func (e slotWriter) EncodeHCL(_ context.Context, request hclext.EncodeRequest) (
 	for _, table := range request.Tables {
 		write(hclext.Slot{Kind: hclext.SlotTable, Table: table.Table}, table.Facets)
 	}
-	for _, slot := range slices.Concat(request.Columns, request.Indexes, request.Keys) {
+	for _, slot := range slices.Concat(request.Columns, request.Indexes, request.Keys, request.MaterializedViews) {
 		write(slot.Slot, slot.Facets)
 	}
 	return result, nil
@@ -330,5 +330,29 @@ func TestRender_RefusesAnOwnerReplacingCommonTableAttributes(t *testing.T) {
 		result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
 		c.Assert(err, qt.ErrorMatches, `an HCL encoder wrote attribute "`+name+`" of table "t", which the writer writes itself`)
 		c.Assert(result.Data, qt.IsNil)
+	}
+}
+
+func TestRender_WritesMaterializedViewOwnerAttributesAndLosses(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 1", Facets: gadgetFacets("view")}}}
+	owner := slotWriter{attributes: map[string][]hclext.EncodedAttribute{"view": {{Name: "hint", Value: hclext.Value{Kind: hclext.String, Text: "teal"}}}},
+		losses: map[string][]string{"view": {"detail lost"}}}
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "  hint = \"teal\"\n")
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning, Path: "materialized_views.mv", Message: "detail lost"}})
+}
+
+func TestRender_RefusesAnOwnerReplacingCommonMaterializedAttributes(t *testing.T) {
+	for _, name := range []string{"schema", "as", "refresh_strategy", "comment", "depends_on", "column"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			db := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 1", Facets: gadgetFacets("view")}}}
+			owner := slotWriter{attributes: map[string][]hclext.EncodedAttribute{"view": {{Name: name, Value: hclext.Value{Kind: hclext.String, Text: "replace"}}}}}
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: gadgetOwners(owner)})
+			c.Assert(err, qt.ErrorMatches, `an HCL encoder wrote attribute "`+name+`" of materialized view "mv", which the writer writes itself`)
+			c.Assert(result.Data, qt.IsNil)
+		})
 	}
 }

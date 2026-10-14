@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/postgres/pgroutine"
@@ -206,6 +207,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(must.Must(pgtable.ExclusionCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(pgtable.DeleteColumnsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(chsource.RefreshCoverage()))
 	c.Assert(err, qt.IsNil)
 	return combined
 }
