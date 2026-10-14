@@ -5,16 +5,20 @@ package dbschema_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -70,10 +74,8 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	// below would be measuring anything.
 	declared := func(check string) *schemamodel.Database {
 		return &schemamodel.Database{
-			Domains: []schemamodel.Domain{
-				{Name: "grade", Schema: schemaName, BaseType: "text", Check: check},
-			},
-			Tables: []schemamodel.Table{{StructName: "S", Name: "s", Schema: schemaName}},
+			FeatureObjects: userTypeObjects(c, pgtype.DomainKind, schemaName, "grade", &pgtype.DesiredDomain{BaseType: "text", Check: check}),
+			Tables:         []schemamodel.Table{{StructName: "S", Name: "s", Schema: schemaName}},
 			Fields: []schemamodel.Field{
 				{StructName: "S", Name: "id", Type: "INT", Primary: true},
 				{StructName: "S", Name: "mark", Type: schemaName + ".grade"},
@@ -93,14 +95,17 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 
 	// 1. The declaration the server rewrote still compares as unchanged.
 	unchanged := compareLiveDomains(c, ctx, conn, declared(originalCheck), schemaName)
-	c.Assert(unchanged.DomainsModified, qt.HasLen, 0)
+	c.Assert(userTypeChanges(unchanged.FeatureChanges, pgtype.DomainKind), qt.HasLen, 0)
 
 	// 2. A changed CHECK is a difference. Neither reporting nor planning it is
 	//    the whole of the issue.
 	changed := compareLiveDomains(c, ctx, conn, declared(replacedCheck), schemaName)
-	c.Assert(changed.DomainsModified, qt.HasLen, 1)
-	c.Assert(changed.DomainsModified[0].Changes["check"], qt.Not(qt.Equals), "")
-	c.Assert(changed.DomainsModified[0].CurrentCheckConstraints, qt.HasLen, 1)
+	changes := userTypeChanges(changed.FeatureChanges, pgtype.DomainKind)
+	c.Assert(changes, qt.HasLen, 1)
+	change, ok := changes[0].Value.(*pgtype.DomainChange)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("change is %T", changes[0].Value))
+	c.Assert(change.Differs, qt.DeepEquals, []string{pgtype.DiffCheck})
+	c.Assert(change.Before.Checks, qt.HasLen, 1)
 
 	// 3. The plan runs against a database whose column has this domain's type.
 	//    A DROP DOMAIN would be refused here; these statements are not that.
@@ -124,9 +129,27 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 
 	// 5. And the comparison is empty again.
 	converged := compareLiveDomains(c, ctx, conn, declared(replacedCheck), schemaName)
-	c.Assert(converged.DomainsModified, qt.HasLen, 0)
-	c.Assert(converged.DomainsAdded.Names(), qt.HasLen, 0)
-	c.Assert(converged.DomainsRemoved.Names(), qt.HasLen, 0)
+	c.Assert(userTypeChanges(converged.FeatureChanges, pgtype.DomainKind), qt.HasLen, 0)
+}
+
+// userTypeObjects declares one PostgreSQL user type the way every source does:
+// as an object of the pgtype owner.
+func userTypeObjects(c *qt.C, kind schemaext.Kind, schema, name string, value schemaext.Value) schemaext.Objects {
+	c.Helper()
+	object, err := pgtype.DesiredObject(pgtype.Ref(kind, schema, name), value)
+	c.Assert(err, qt.IsNil)
+	objects, err := schemaext.NewObjects(object)
+	c.Assert(err, qt.IsNil)
+	return objects
+}
+
+// userTypeChanges keeps the changes a comparison planned for user types of
+// kind. An addition, a removal and a modification are each one record, so an
+// empty answer means the two sides hold the same types.
+func userTypeChanges(changes []schemaext.ChangeRecord, kind schemaext.Kind) []schemaext.ChangeRecord {
+	return slices.DeleteFunc(slices.Clone(changes), func(change schemaext.ChangeRecord) bool {
+		return change.Subject.Kind != objectidentity.Kind(kind)
+	})
 }
 
 // compareLiveDomains reads the schema and compares it through the connection,

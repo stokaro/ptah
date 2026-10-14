@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
@@ -63,18 +64,23 @@ type FloatRange struct{}
 
 	live, err := postgres.NewPostgreSQLReader(db, "public").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.Domains, qt.HasLen, 2)
-	c.Assert(live.Composites, qt.HasLen, 1)
-	c.Assert(live.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgtype.RangeKind) }).Len(), qt.Equals, 1)
+	c.Assert(live.FeatureObjects.Select(userTypeNamed(pgtype.DomainKind, "")).Len(), qt.Equals, 2)
+	c.Assert(live.FeatureObjects.Select(userTypeNamed(pgtype.CompositeKind, "")).Len(), qt.Equals, 1)
+	c.Assert(live.FeatureObjects.Select(userTypeNamed(pgtype.RangeKind, "")).Len(), qt.Equals, 1)
 
 	roundTrip := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "postgres", must.Must(builtin.New())))
 	c.Assert(roundTrip.HasChanges(), qt.IsFalse, qt.Commentf(
-		"user types must survive apply->introspect->compare; domains+=%v ~=%v composites+=%v ~=%v ranges+=%v",
-		roundTrip.DomainsAdded, roundTrip.DomainsModified,
-		roundTrip.CompositeTypesAdded, roundTrip.CompositeTypesModified, roundTrip.FeatureChanges))
+		"user types must survive apply->introspect->compare; feature changes %v", roundTrip.FeatureChanges))
 
 	// A SERIAL column's row type must not be surfaced as a composite type.
-	for _, composite := range live.Composites {
-		c.Assert(composite.Name, qt.Not(qt.Equals), "money_amount_rowtype")
+	c.Assert(live.FeatureObjects.Select(userTypeNamed(pgtype.CompositeKind, "money_amount_rowtype")).Len(), qt.Equals, 0)
+}
+
+// userTypeNamed selects the read's types of kind, and only the one called name
+// when name is not empty. The pgtype owner reports user types as feature
+// objects.
+func userTypeNamed(kind schemaext.Kind, name string) func(objectidentity.ID) bool {
+	return func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(kind) && (name == "" || ref.Name.Source == name)
 	}
 }

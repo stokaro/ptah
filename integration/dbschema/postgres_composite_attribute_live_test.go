@@ -12,9 +12,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -53,21 +55,19 @@ func TestPostgresLiveCompositeAttributeConverges(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	declared := func(fields ...schemamodel.CompositeField) *schemamodel.Database {
+	declared := func(attributes ...pgtype.Attribute) *schemamodel.Database {
 		return &schemamodel.Database{
-			CompositeTypes: []schemamodel.CompositeType{
-				{Name: "addr", Schema: schemaName, Fields: fields},
-			},
-			Tables: []schemamodel.Table{{StructName: "S", Name: "s", Schema: schemaName}},
+			FeatureObjects: userTypeObjects(c, pgtype.CompositeKind, schemaName, "addr", &pgtype.DesiredComposite{Attributes: attributes}),
+			Tables:         []schemamodel.Table{{StructName: "S", Name: "s", Schema: schemaName}},
 			Fields: []schemamodel.Field{
 				{StructName: "S", Name: "id", Type: "INT", Primary: true},
 				{StructName: "S", Name: "home", Type: schemaName + ".addr"},
 			},
 		}
 	}
-	street := schemamodel.CompositeField{Name: "street", Type: "text"}
-	city := schemamodel.CompositeField{Name: "city", Type: "text"}
-	zip := schemamodel.CompositeField{Name: "zip", Type: "text"}
+	street := pgtype.Attribute{Name: "street", Type: "text"}
+	city := pgtype.Attribute{Name: "city", Type: "text"}
+	zip := pgtype.Attribute{Name: "zip", Type: "text"}
 
 	statements, err := builtin.GetOrderedCreateStatements(declared(street, city), platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -77,24 +77,22 @@ func TestPostgresLiveCompositeAttributeConverges(t *testing.T) {
 	}
 
 	// 1. Unchanged is unchanged.
-	c.Assert(compareLiveComposites(c, ctx, conn, declared(street, city), schemaName).CompositeTypesModified, qt.HasLen, 0)
+	c.Assert(compositeChanges(compareLiveComposites(c, ctx, conn, declared(street, city), schemaName)), qt.HasLen, 0)
 
 	// 2. An appended field is one modification carrying a field-level delta.
 	appended := compareLiveComposites(c, ctx, conn, declared(street, city, zip), schemaName)
-	c.Assert(appended.CompositeTypesModified, qt.HasLen, 1)
-	c.Assert(appended.CompositeTypesModified[0].AttributesAdded, qt.HasLen, 1)
+	c.Assert(compositeChange(c, appended).Added, qt.DeepEquals, []pgtype.Attribute{zip})
 
 	// 3. And the plan runs against a database whose column has this type. A
 	//    DROP TYPE would be refused here; these statements are not that.
 	applyLiveComposite(c, ctx, conn, appended, declared(street, city, zip))
-	c.Assert(compareLiveComposites(c, ctx, conn, declared(street, city, zip), schemaName).CompositeTypesModified, qt.HasLen, 0)
+	c.Assert(compositeChanges(compareLiveComposites(c, ctx, conn, declared(street, city, zip), schemaName)), qt.HasLen, 0)
 
 	// 4. A removed field takes the same route, in the same conditions.
 	removed := compareLiveComposites(c, ctx, conn, declared(street, zip), schemaName)
-	c.Assert(removed.CompositeTypesModified, qt.HasLen, 1)
-	c.Assert(removed.CompositeTypesModified[0].AttributesRemoved, qt.DeepEquals, []string{"city"})
+	c.Assert(compositeChange(c, removed).Removed, qt.DeepEquals, []string{"city"})
 	applyLiveComposite(c, ctx, conn, removed, declared(street, zip))
-	c.Assert(compareLiveComposites(c, ctx, conn, declared(street, zip), schemaName).CompositeTypesModified, qt.HasLen, 0)
+	c.Assert(compositeChanges(compareLiveComposites(c, ctx, conn, declared(street, zip), schemaName)), qt.HasLen, 0)
 
 	// 5. The type is a working one: a row can be written through it with the
 	//    shape the declaration now says it has.
@@ -102,6 +100,24 @@ func TestPostgresLiveCompositeAttributeConverges(t *testing.T) {
 		`INSERT INTO %q."s" (id, home) VALUES (1, ROW('main', '11111')::%q."addr")`, schemaName, schemaName,
 	))
 	c.Assert(err, qt.IsNil)
+}
+
+// compositeChanges keeps the composite type changes of a comparison.
+func compositeChanges(diff *difftypes.SchemaDiff) []schemaext.ChangeRecord {
+	return userTypeChanges(diff.FeatureChanges, pgtype.CompositeKind)
+}
+
+// compositeChange is the one composite type change of a comparison, which
+// has to be a modification.
+func compositeChange(c *qt.C, diff *difftypes.SchemaDiff) *pgtype.CompositeChange {
+	c.Helper()
+	changes := compositeChanges(diff)
+	c.Assert(changes, qt.HasLen, 1)
+	change, ok := changes[0].Value.(*pgtype.CompositeChange)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("change is %T", changes[0].Value))
+	c.Assert(change.Before, qt.IsNotNil)
+	c.Assert(change.After, qt.IsNotNil)
+	return change
 }
 
 // compareLiveComposites reads the schema and compares it through the connection.
