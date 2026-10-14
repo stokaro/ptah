@@ -226,7 +226,8 @@ type Block struct {
 	// overlap. A scoped block reserves the dialect attribute for selection.
 	Dialects []string
 	// Unscoped also selects this shape when neither the caller nor the
-	// block names a dialect. At most one shape of a block type sets it.
+	// block names a dialect. At most one shape of a block type sets it, and
+	// its exported blocks carry no dialect attribute.
 	Unscoped bool
 }
 
@@ -494,8 +495,8 @@ func None() Set {
 // sites, a child without a type, declared twice or under an attribute's name,
 // a child's non-column reference, and an encoder without a model to encode.
 // Shapes at one site may share a block type only with disjoint Dialects and
-// at most one Unscoped reader. Unscoped requires a concrete dialect so
-// exported blocks can select their reader explicitly.
+// at most one Unscoped reader. Unscoped requires a concrete dialect, which
+// names the targets whose documents the shape also reads.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, blocks: make(map[blockKey]*blockRoutes)}
 	kinds := make(map[schemaext.Kind]string)

@@ -1,6 +1,9 @@
 // Package pgtypesource connects PostgreSQL user type models to schema sources.
-// It reads and writes range declarations and writes domain and composite
-// declarations through source contracts, without owning a source frontend.
+// It reads and writes domain, composite and range declarations in Go
+// annotations, HCL and SQL through source contracts, without owning a source
+// frontend. Domains and composite types share their syntax with Oracle's,
+// which stay on the common model, so a declaration reaches this owner only
+// where its document or scope names a PostgreSQL-family target or no target.
 package pgtypesource
 
 import (
@@ -15,12 +18,16 @@ import (
 	"ptah.run/feature/pgtype"
 )
 
-// HCL reads range blocks and writes domain, composite and range objects.
-// Type references resolve through the frontend's declared type registry.
-func HCL() hclext.Extension {
+// HCL reads and writes domain, composite and range blocks. It reads a domain
+// or composite block of a document of targets or of no target; one of another
+// target, such as Oracle, stays with the frontend's own grammar. Type
+// references resolve through the frontend's declared type registry.
+func HCL(targets []string) hclext.Extension {
 	return hclext.Extension{Owner: pgtype.Owner, Kinds: pgtype.Kinds(), Encoder: hclEncoder{}, Decoder: hclEncoder{},
-		Blocks: []hclext.Block{rangeBlock()}, Header: []coverage.Kind{coverage.Range},
-		Coverage: func(request hclext.CoverageRequest) (schemaext.Coverage, error) { return rangeCoverage(request.Limits) },
+		Blocks: []hclext.Block{domainBlock(targets), compositeBlockShape(targets), rangeBlock()}, Header: []coverage.Kind{coverage.Range},
+		Coverage: func(request hclext.CoverageRequest) (schemaext.Coverage, error) {
+			return sourceCoverage(request.Limits)
+		},
 	}
 }
 

@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -21,6 +22,11 @@ type typeScenario struct {
 	name   string
 	common *difftypes.SchemaDiff
 	owner  []schemaext.ChangeRecord
+	// named is a statement fragment of the common script and the owner's
+	// spelling of it. The owner names the CHECK an in-place change adds, so
+	// the rollback can drop that constraint; the common path lets the server
+	// name it.
+	named [2]string
 }
 
 // typeRecord is an owner change of the type of kind named schema.name.
@@ -42,9 +48,10 @@ func renderedTypePlan(c *qt.C, diff *difftypes.SchemaDiff) string {
 // TestPlanner_PlansOwnerTypesAsTheCommonPathDoes is the differential the flip
 // of PostgreSQL user types to their owner is measured by: each scenario is
 // planned once through the common user-type diff and once through the type
-// owner's changes, and the two scripts must agree byte for byte. The owner
-// plans in the type windows the common steps leave empty, so a difference is
-// a statement, an order or a note the owner writes differently.
+// owner's changes, and the two scripts must agree byte for byte, apart from
+// the CHECK name a scenario's named states. The owner plans in the type
+// windows the common steps leave empty, so a difference is a statement, an
+// order or a note the owner writes differently.
 func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 	email := schemamodel.Domain{Name: "email", Schema: "app", BaseType: "text", NotNull: true, Default: "it's", Check: "VALUE <> ''",
 		Comment: "mail"}
@@ -93,6 +100,7 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 					{Name: "email_check", Expression: "a"}, {Name: "email_check1", Expression: "b"}}},
 				After:   &pgtype.DesiredDomain{BaseType: "text", NotNull: true, Default: "it's", Check: "VALUE <> ''", Comment: "mail"},
 				Differs: []string{pgtype.DiffCheck, pgtype.DiffDefault, pgtype.DiffNotNull}})},
+			named: [2]string{`ADD CHECK`, `ADD CONSTRAINT "ptah_check" CHECK`},
 		},
 		{
 			name: "a composite type changed in place",
@@ -161,7 +169,7 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 			common := renderedTypePlan(c, scenario.common)
 			owned := renderedTypePlan(c, &difftypes.SchemaDiff{FeatureChanges: scenario.owner})
 
-			c.Assert(owned, qt.Equals, common)
+			c.Assert(owned, qt.Equals, strings.Replace(common, scenario.named[0], scenario.named[1], 1))
 			c.Assert(owned, qt.Not(qt.Equals), "")
 		})
 	}

@@ -132,7 +132,8 @@ func nodeKinds(database schemamodel.Database, dialect string) []string {
 
 // TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds checks that the
 // host preserves common declarations across PostgreSQL-family targets. Owner
-// declarations honor their explicit target scope; the range targets PostgreSQL.
+// declarations honor their explicit target scope; the domain, composite and
+// range types target PostgreSQL.
 func TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds(t *testing.T) {
 	c := qt.New(t)
 
@@ -144,20 +145,20 @@ func TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds(t *testing.T) {
 	// what the predicate did.
 	c.Assert(len(want) > 1, qt.IsTrue, qt.Commentf("fixture emits %d nodes for postgres", len(want)))
 
-	// The range declaration targets PostgreSQL. Spanner also represents the
-	// enum on its column, as text with a CHECK.
-	withoutRanges := slices.DeleteFunc(slices.Clone(want), func(kind string) bool {
-		return kind == "*ast.ExtensionStatement/*pgtype.CreateRange"
-	})
-	c.Assert(withoutRanges, qt.HasLen, len(want)-1, qt.Commentf("the fixture declares one owner range"))
-	withoutEnumTypes := slices.DeleteFunc(slices.Clone(withoutRanges), func(kind string) bool { return kind == "*ast.EnumNode" })
-	c.Assert(withoutEnumTypes, qt.HasLen, len(withoutRanges)-1, qt.Commentf("the fixture declares one enum type"))
+	// The owner's type declarations target PostgreSQL. Spanner also
+	// represents the enum on its column, as text with a CHECK.
+	ownerTypes := []string{"*ast.ExtensionStatement/*pgtype.CreateDomain", "*ast.ExtensionStatement/*pgtype.CreateComposite",
+		"*ast.ExtensionStatement/*pgtype.CreateRange"}
+	withoutOwnerTypes := slices.DeleteFunc(slices.Clone(want), func(kind string) bool { return slices.Contains(ownerTypes, kind) })
+	c.Assert(withoutOwnerTypes, qt.HasLen, len(want)-len(ownerTypes), qt.Commentf("the fixture declares one type of each owner kind"))
+	withoutEnumTypes := slices.DeleteFunc(slices.Clone(withoutOwnerTypes), func(kind string) bool { return kind == "*ast.EnumNode" })
+	c.Assert(withoutEnumTypes, qt.HasLen, len(withoutOwnerTypes)-1, qt.Commentf("the fixture declares one enum type"))
 	tests := []struct {
 		dialect string
 		want    []string
 	}{
-		{dialect: platform.CockroachDB, want: withoutRanges},
-		{dialect: platform.YugabyteDB, want: withoutRanges},
+		{dialect: platform.CockroachDB, want: withoutOwnerTypes},
+		{dialect: platform.YugabyteDB, want: withoutOwnerTypes},
 		{dialect: platform.Spanner, want: withoutEnumTypes},
 	}
 	for _, test := range tests {

@@ -2965,15 +2965,22 @@ DOMAIN, ALTER DOMAIN, CREATE TYPE ... AS, ALTER TYPE ... ATTRIBUTE, CREATE TYPE
 TYPE. Each creation, alteration and comment names the capability key it needs.
 
 `feature/pgtype/typerender` renders them for the PostgreSQL family, byte for
-byte as the common path renders the same statements. A change that creates a
+byte as the common path renders the same statements, except that an in-place
+CHECK change names the constraint it adds. A change that creates a
 type places it in the schema its identity names (`schemaext.SchemaPlacement`),
 and a declaration that a server spelled predicts its observation in that
 spelling. The bundled runtime selects the owner on every PostgreSQL-family
-target, with its reports. Go annotations, HCL range blocks, PostgreSQL SQL,
-and the catalog reader produce owned range objects. The common schema and AST
-models carry no range payload. Schema statistics count `range_types` through
-the owner. Domain and composite metrics also accept common models and refuse
-a type both representations hold.
+target, with its reports.
+
+Go annotations, HCL, PostgreSQL SQL and the catalog reader produce owned
+domain, composite and range objects. A source that names no target is read as
+PostgreSQL's. A domain or composite type declared for another target, such as
+Oracle, stays on the common model. The common not-described kinds `domain` and
+`composite` stay common too, and the runtime folds them into the owner's
+coverage before it compares. The common schema and AST models carry no range
+payload. Schema statistics count `range_types` through the owner. Domain and
+composite metrics also accept common models and refuse a type both
+representations hold.
 
 The HCL writer places declared `domain`, `composite` and `range` blocks among
 the types (`hclext.UserTypes`). Go and HCL exports retain unknown range
@@ -2991,7 +2998,7 @@ names.
 
 `feature/pgtype/typecompare` compares types by kind, schema and name. Type
 spellings are compared in the form format_type reports, a composite type's
-attributes in order and by name without regard to case, and a range type's
+attributes in order and by name as the catalog spells it, and a range type's
 optional attributes only where the declaration states or clears them. A
 domain's CHECK and default are compared only in the server's spelling, which
 `feature/pgtype/typeprobe` attaches by creating the declaration in pg_temp
@@ -3015,9 +3022,9 @@ that survives joins `featureplan.PhaseDependent`. A type the target cannot
 create is refused with the scope advice the common refusal gives.
 
 `feature/pgtype/typereverse` drops what the forward plan created, creates
-again what it dropped, and returns a surviving type to its observation; a
-restored domain CHECK carries a limitation, because the server named the one
-the migration added. `feature/pgtype/typereport` counts the three kinds under
+again what it dropped, and returns a surviving type to its observation. A
+domain CHECK the forward plan adds in place carries a name the plan chose, the
+sole constraint's own or `ptah_check`, so the reversal drops it by that name. `feature/pgtype/typereport` counts the three kinds under
 `domains`, `composite_types` and `range_types`.
 
 `feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
@@ -3476,13 +3483,18 @@ dialect. `Set.ForDialect` returns a view with a default dialect and leaves the
 original set unchanged. Built-in aliases are normalized; custom dialect names
 remain distinct. An explicit block `dialect` attribute overrides the default,
 and `Claim.Dialect` carries the selected dialect. A missing reader is refused,
-even when unknown names are tolerated. The selector identifies the model; it
-does not narrow an object's target scope.
+even when unknown names are tolerated, unless the frontend reads that block
+type itself: a domain or composite block of a dialect no owner scopes, such as
+Oracle, keeps the common model. The selector identifies the model; it does not
+narrow an object's target scope.
 
 `EncodedBlock.Dialect` selects the reader of an exported scoped block.
 `Set.Encode` fills an omitted selector from the shape's first dialect and
 refuses a selector that routes to another owner. The writer emits the selector
-so the block keeps its model under another caller's default dialect.
+so the block keeps its model under another caller's default dialect. A block
+of the `Unscoped` shape is written without a selector, so the document stays
+plain HCL; a caller that names no dialect, or one of the shape's, reads it
+with the same shape.
 
 - The reader checks a block against its shape with the refusals it gives its
   own blocks, including the tolerance for unknown names.

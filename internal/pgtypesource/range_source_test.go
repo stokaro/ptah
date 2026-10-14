@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
+	"ptah.run/internal/pgtypeprovider"
 	"ptah.run/internal/pgtypesource"
 	"ptah.run/internal/sqlschema"
 )
@@ -31,7 +32,7 @@ func oneRange(c *qt.C, database *schemamodel.Database) (schemaext.Object, *pgtyp
 
 func TestRangeAnnotationsPreserveIntentAndScope(t *testing.T) {
 	c := qt.New(t)
-	owners := must.Must(annotation.NewSet(pgtypesource.Annotations()))
+	owners := must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets())))
 	database, err := goschema.ParseSource(owners, "range.go", `package entities
 //ptah:schema:range name="span" schema="app" subtype="numeric" subtype_diff="" canonical="app.canon" comment="quoted \"range\"" dialects="postgres,yugabytedb"
 type Types struct{}

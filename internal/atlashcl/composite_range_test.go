@@ -5,6 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
+
+	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgtype"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 func TestParseCompositeType(t *testing.T) {
@@ -21,12 +27,13 @@ composite "address" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CompositeTypes, qt.HasLen, 1)
-	c.Assert(db.CompositeTypes[0].Name, qt.Equals, "address")
-	c.Assert(db.CompositeTypes[0].Fields, qt.HasLen, 2)
-	c.Assert(db.CompositeTypes[0].Fields[0].Name, qt.Equals, "street")
-	c.Assert(db.CompositeTypes[0].Fields[0].Type, qt.Equals, "text")
-	c.Assert(db.CompositeTypes[0].Fields[1].Name, qt.Equals, "zip")
+	c.Assert(db.CompositeTypes, qt.HasLen, 0)
+	objects := typeObjects(db, pgtype.CompositeKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.CompositeKind, "", "address"))
+	c.Assert(objects[0].Value, qt.DeepEquals, &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{
+		{Name: "street", Type: "text"}, {Name: "zip", Type: "integer"},
+	}})
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TYPE address AS (street text, zip integer);`)
@@ -46,9 +53,9 @@ composite "app" "point" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CompositeTypes, qt.HasLen, 1)
-	c.Assert(db.CompositeTypes[0].Name, qt.Equals, "point")
-	c.Assert(db.CompositeTypes[0].Schema, qt.Equals, "app")
+	objects := typeObjects(db, pgtype.CompositeKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.CompositeKind, "app", "point"))
 }
 
 func TestParseCompositeQuotedMultiWordFieldType(t *testing.T) {
@@ -65,11 +72,53 @@ composite "measurement" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CompositeTypes, qt.HasLen, 1)
-	c.Assert(db.CompositeTypes[0].Fields[0].Type, qt.Equals, "double precision")
+	objects := typeObjects(db, pgtype.CompositeKind)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value.(*pgtype.DesiredComposite).Attributes, qt.DeepEquals, []pgtype.Attribute{{Name: "value", Type: "double precision"}})
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TYPE measurement AS (value double precision);`)
+}
+
+// TestParseUserTypes_AnOracleDocumentKeepsTheCommonModel pins the routing of
+// the blocks Oracle shares with PostgreSQL: a document read for Oracle, or a
+// block whose dialect names Oracle, keeps its domains and composite types on
+// the common model, which the Oracle renderer reads. The PostgreSQL type owner
+// takes neither.
+func TestParseUserTypes_AnOracleDocumentKeepsTheCommonModel(t *testing.T) {
+	for _, test := range []struct{ name, dialect, selector string }{
+		{name: "an Oracle document", dialect: "oracle"},
+		{name: "a block selecting Oracle", dialect: "postgres", selector: `dialect = "oracle"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			document := `
+domain "email" {
+  ` + test.selector + `
+  type = varchar2(320)
+  null = false
+}
+composite "address" {
+  ` + test.selector + `
+  field "street" {
+    type = "VARCHAR2(80)"
+  }
+}
+`
+			db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
+			c.Assert(err, qt.IsNil)
+			c.Assert(must.Must(db.FeatureObjects.All()), qt.HasLen, 0)
+			c.Assert(db.Domains, qt.DeepEquals, []schemamodel.Domain{{Name: "email", BaseType: "varchar2(320)", NotNull: true}})
+			c.Assert(db.CompositeTypes, qt.DeepEquals, []schemamodel.CompositeType{{Name: "address",
+				Fields: []schemamodel.CompositeField{{Name: "street", Type: "VARCHAR2(80)"}}}})
+
+			c.Assert(renderStatements(c, db, "oracle"), qt.DeepEquals, []string{
+				"CREATE DOMAIN IF NOT EXISTS email AS varchar2(320) NOT NULL;\n",
+				"CREATE OR REPLACE TYPE address AS OBJECT (street VARCHAR2(80));\n",
+			})
+		})
+	}
 }
 
 func TestParseCompositeRequiresField(t *testing.T) {

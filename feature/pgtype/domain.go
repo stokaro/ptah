@@ -235,3 +235,26 @@ func ValidateObservedDomain(v *ObservedDomain) error {
 	}
 	return nil
 }
+
+// ComposeDeclaration combines identical declarations from independent sources.
+// Source struct names and normalization probes do not change the declaration.
+// Neither operand is mutated.
+func (v *DesiredDomain) ComposeDeclaration(other schemaext.Value) (schemaext.Value, error) {
+	if err := ValidateDesiredDomain(v); err != nil {
+		return nil, err
+	}
+	right, ok := other.(*DesiredDomain)
+	if !ok {
+		return nil, fmt.Errorf("%w: incompatible domain declaration", schemaext.ErrInvalidValue)
+	}
+	if err := ValidateDesiredDomain(right); err != nil {
+		return nil, err
+	}
+	compared := right.Copy()
+	compared.StructName = v.StructName
+	compared.Normalized = v.Normalized
+	if !v.Equal(compared) {
+		return nil, fmt.Errorf("%w: conflicting domain definitions", schemaext.ErrDuplicate)
+	}
+	return v.Copy(), nil
+}

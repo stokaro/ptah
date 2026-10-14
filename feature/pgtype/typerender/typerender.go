@@ -67,7 +67,7 @@ func name(target pgtype.Target) string {
 
 // identifier is one attribute's or constraint's name, quoted for target.
 func identifier(target, value string) string {
-	return sqlident.Quote(target, sqlident.UnquoteDoubleQuoted(value))
+	return sqlident.Quote(target, value)
 }
 
 // renderCreateDomain writes CREATE DOMAIN with NOT NULL, the default and the
@@ -101,7 +101,14 @@ func renderAlterDomain(ctx renderer.ExtensionContext, value *pgtype.AlterDomain)
 		statements = append(statements, "ALTER DOMAIN "+domain+" DROP CONSTRAINT "+identifier(ctx.Target, constraint)+";")
 	}
 	if value.AddCheck != "" {
-		statements = append(statements, "ALTER DOMAIN "+domain+" ADD CHECK ("+value.AddCheck+");")
+		constraint := ""
+		if value.CheckName != "" {
+			constraint = "CONSTRAINT " + identifier(ctx.Target, value.CheckName) + " "
+		}
+		statements = append(statements, "ALTER DOMAIN "+domain+" ADD "+constraint+"CHECK ("+value.AddCheck+");")
+	}
+	if value.DropDefault {
+		statements = append(statements, "ALTER DOMAIN "+domain+" DROP DEFAULT;")
 	}
 	if value.SetDefault != "" {
 		statements = append(statements, "ALTER DOMAIN "+domain+" SET DEFAULT "+value.SetDefault+";")

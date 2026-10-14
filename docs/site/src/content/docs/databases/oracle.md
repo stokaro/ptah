@@ -66,6 +66,12 @@ and on 21 it is refused before any SQL — a column declared with a type the
 target cannot create would be left naming something the server has no
 definition of.
 
+A Go annotation declares an Oracle domain or object type with
+`dialects="oracle"`: a `domain` or `composite` declaration without a scope is
+a PostgreSQL type, and an Oracle plan refuses it. An SQL file or an HCL
+document read for an Oracle target keeps its `CREATE DOMAIN` statements and its
+`domain` and `composite` blocks as Oracle's.
+
 Domain reads preserve numeric precision and scale, including `NUMBER(*,0)`.
 National character types use their character count, so `NVARCHAR2(10)` remains
 ten characters when the catalog reports twenty bytes.

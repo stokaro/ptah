@@ -47,8 +47,8 @@ func TestCompareTypes_LeavesWhatAgrees(t *testing.T) {
 			observation: &pgtype.ObservedDomain{BaseType: "text", Check: check, Default: "'x'::text"}},
 		{name: "a domain comment in other whitespace", declaration: &pgtype.DesiredDomain{BaseType: "text", Comment: " mail "},
 			observation: &pgtype.ObservedDomain{BaseType: "text", Comment: "mail"}},
-		{name: "attribute names in another case and type aliases",
-			declaration: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "Street", Type: "varchar(40)"}, {Name: "n", Type: "int"}}},
+		{name: "attribute type aliases",
+			declaration: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "varchar(40)"}, {Name: "n", Type: "int"}}},
 			observation: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "character varying(40)"},
 				{Name: "n", Type: "integer"}}}},
 		{name: "a composite type comment in other whitespace",
@@ -105,6 +105,7 @@ func TestCompareTypes_FindsChanges(t *testing.T) {
 	inserted := &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{a, cc, b}}
 	retyped := &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "bigint"}, b}}
 	insertedRetyped := &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "bigint"}, b, cc}}
+	quoted := &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "A", Type: "integer"}, b}}
 	commentedComposite := &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{a, b}, Comment: "pair"}
 
 	numeric := &pgtype.ObservedRange{Subtype: "numeric", Collation: "POSIX", Canonical: "span_canonical"}
@@ -143,6 +144,8 @@ func TestCompareTypes_FindsChanges(t *testing.T) {
 		{name: "an attribute replaced", declarations: values(replaced), observations: values(ab),
 			want: &pgtype.CompositeChange{Before: ab, After: replaced, Differs: []string{pgtype.DiffAttributes}, Added: []pgtype.Attribute{cc},
 				Removed: []string{"b"}}},
+		{name: "quoted attribute case", declarations: values(quoted), observations: values(ab),
+			want: &pgtype.CompositeChange{Before: ab, After: quoted, Differs: []string{pgtype.DiffAttributes}}},
 		{name: "attributes in another order", declarations: values(moved), observations: values(ab),
 			want: &pgtype.CompositeChange{Before: ab, After: moved, Differs: []string{pgtype.DiffAttributes}}},
 		{name: "an attribute inserted before the last", declarations: values(inserted), observations: values(ab),

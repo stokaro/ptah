@@ -267,7 +267,10 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(chsource.RowPolicyCoverage()))
 	c.Assert(err, qt.IsNil)
-	combined, err = combined.Combine(must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
-	c.Assert(err, qt.IsNil)
+	// Every user type block is read whole.
+	for _, kind := range pgtype.Kinds() {
+		combined, err = combined.Combine(must.Must(pgtype.Coverage(kind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
+		c.Assert(err, qt.IsNil)
+	}
 	return combined
 }

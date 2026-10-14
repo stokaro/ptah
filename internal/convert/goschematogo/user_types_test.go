@@ -30,17 +30,13 @@ func readableFamiliesDatabase() *schemamodel.Database {
 			{StructName: "T", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", FieldName: "Qty", Name: "qty", Type: "positive_int"},
 		},
-		Domains: []schemamodel.Domain{{
-			Name: "positive_int", BaseType: "integer", Check: "VALUE > 0", NotNull: true,
-		}},
-		CompositeTypes: []schemamodel.CompositeType{{
-			Name: "addr",
-			Fields: []schemamodel.CompositeField{
-				{Name: "street", Type: "text"},
-				{Name: "city", Type: "text"},
-			},
-		}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "tsrange_local"), Value: &pgtype.DesiredRange{Subtype: "timestamp"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "positive_int"),
+				Value: &pgtype.DesiredDomain{BaseType: "integer", Check: "VALUE > 0", NotNull: true}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "tsrange_local"), Value: &pgtype.DesiredRange{Subtype: "timestamp"}},
+		)),
 		Sequences: []schemamodel.Sequence{{
 			Name: "order_seq", Start: &start,
 		}},
@@ -71,27 +67,51 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 	c.Assert(err, qt.IsNil, qt.Commentf("the exported source does not parse:\n%s", source.String()))
 
-	c.Assert(parsed.Domains, qt.HasLen, 1)
-	c.Assert(parsed.Domains[0].Name, qt.Equals, "positive_int")
-	c.Assert(parsed.Domains[0].BaseType, qt.Equals, "integer")
-	c.Assert(parsed.Domains[0].Check, qt.Equals, "VALUE > 0")
-	c.Assert(parsed.Domains[0].NotNull, qt.IsTrue)
-
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
-	c.Assert(parsed.CompositeTypes[0].Name, qt.Equals, "addr")
-	c.Assert(parsed.CompositeTypes[0].Fields, qt.DeepEquals, []schemamodel.CompositeField{
-		{Name: "street", Type: "text"},
-		{Name: "city", Type: "text"},
-	})
-
+	c.Assert(parsed.Domains, qt.HasLen, 0)
+	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
 	objects := must.Must(parsed.FeatureObjects.All())
-	c.Assert(objects, qt.HasLen, 1)
-	c.Assert(objects[0].Value.(*pgtype.DesiredRange).Subtype, qt.Equals, "timestamp")
+	values := make(map[string]schemaext.Value, len(objects))
+	for _, object := range objects {
+		values[object.Ref.Name.Source] = object.Value
+	}
+	c.Assert(values, qt.DeepEquals, map[string]schemaext.Value{
+		"positive_int":  &pgtype.DesiredDomain{BaseType: "integer", Check: "VALUE > 0", NotNull: true, StructName: "PtahSchemaObjects"},
+		"addr":          &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}, StructName: "PtahSchemaObjects"},
+		"tsrange_local": &pgtype.DesiredRange{Subtype: "timestamp", StructName: "PtahSchemaObjects"},
+	})
 
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Sequences[0].Name, qt.Equals, "order_seq")
 	c.Assert(parsed.Sequences[0].Start, qt.IsNotNil)
 	c.Assert(*parsed.Sequences[0].Start, qt.Equals, int64(100))
+}
+
+// TestRender_AnOracleExportKeepsItsTypesOnTheCommonModel pins the scope an
+// Oracle export writes on its domains and composite types. An unscoped
+// declaration reads back as the PostgreSQL type owner's, which no Oracle plan
+// can create, so the export names Oracle, and reading the source back keeps
+// both types on the common model.
+func TestRender_AnOracleExportKeepsItsTypesOnTheCommonModel(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{
+		Domains: []schemamodel.Domain{{Name: "email", BaseType: "VARCHAR2(320)", NotNull: true}},
+		CompositeTypes: []schemamodel.CompositeType{{Name: "address",
+			Fields: []schemamodel.CompositeField{{Name: "street", Type: "VARCHAR2(80)"}}}},
+	}
+
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "oracle"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(must.Must(parsed.FeatureObjects.All()), qt.HasLen, 0)
+	c.Assert(parsed.Domains, qt.HasLen, 1)
+	c.Assert(parsed.Domains[0].Name, qt.Equals, "email")
+	c.Assert(parsed.Domains[0].Dialects, qt.DeepEquals, []string{"oracle"})
+	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
+	c.Assert(parsed.CompositeTypes[0].Name, qt.Equals, "address")
+	c.Assert(parsed.CompositeTypes[0].Dialects, qt.DeepEquals, []string{"oracle"})
 }
 
 // TestRender_AProcedureDoesNotComeBackAFunction covers the family that was

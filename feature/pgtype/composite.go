@@ -182,8 +182,8 @@ func validAttributes(attributes []Attribute) error {
 
 // AttributeDelta returns the attributes to add and the names to drop that
 // take a composite type holding held to declared with ALTER TYPE, or nothing
-// when ALTER TYPE cannot reach the declared list. Names are compared without
-// regard to case and types in the spelling format_type reports.
+// when ALTER TYPE cannot reach the declared list. Names preserve catalog
+// case, and types use the spelling format_type reports.
 //
 // PostgreSQL appends: a new attribute always lands last, whatever position the
 // declaration gives it. So the delta is returned only when dropping the
@@ -198,19 +198,19 @@ func AttributeDelta(declared, held []Attribute) (added []Attribute, removed []st
 	declaredTypes := make(map[string]string, len(declared))
 	declaredOrder := make([]string, 0, len(declared))
 	for _, attribute := range declared {
-		declaredTypes[strings.ToLower(attribute.Name)] = pgtypealias.Canonical(attribute.Type)
-		declaredOrder = append(declaredOrder, strings.ToLower(attribute.Name))
+		declaredTypes[attribute.Name] = pgtypealias.Canonical(attribute.Type)
+		declaredOrder = append(declaredOrder, attribute.Name)
 	}
 	heldTypes := make(map[string]string, len(held))
 	for _, attribute := range held {
-		heldTypes[strings.ToLower(attribute.Name)] = pgtypealias.Canonical(attribute.Type)
+		heldTypes[attribute.Name] = pgtypealias.Canonical(attribute.Type)
 	}
 
 	// The list ALTER TYPE would leave behind: the attributes kept, in
 	// catalog order, then the ones added, in declaration order.
 	reached := make([]string, 0, len(declared))
 	for _, attribute := range held {
-		name := strings.ToLower(attribute.Name)
+		name := attribute.Name
 		declaredType, kept := declaredTypes[name]
 		if !kept {
 			removed = append(removed, attribute.Name)
@@ -222,13 +222,34 @@ func AttributeDelta(declared, held []Attribute) (added []Attribute, removed []st
 		reached = append(reached, name)
 	}
 	for _, attribute := range declared {
-		if _, kept := heldTypes[strings.ToLower(attribute.Name)]; !kept {
+		if _, kept := heldTypes[attribute.Name]; !kept {
 			added = append(added, attribute)
-			reached = append(reached, strings.ToLower(attribute.Name))
+			reached = append(reached, attribute.Name)
 		}
 	}
 	if !slices.Equal(reached, declaredOrder) {
 		return nil, nil
 	}
 	return added, removed
+}
+
+// ComposeDeclaration combines identical declarations from independent sources.
+// Source struct names do not change the type. Neither operand is mutated.
+func (v *DesiredComposite) ComposeDeclaration(other schemaext.Value) (schemaext.Value, error) {
+	if err := ValidateDesiredComposite(v); err != nil {
+		return nil, err
+	}
+	right, ok := other.(*DesiredComposite)
+	if !ok {
+		return nil, fmt.Errorf("%w: incompatible composite declaration", schemaext.ErrInvalidValue)
+	}
+	if err := ValidateDesiredComposite(right); err != nil {
+		return nil, err
+	}
+	compared := right.Copy()
+	compared.StructName = v.StructName
+	if !v.Equal(compared) {
+		return nil, fmt.Errorf("%w: conflicting composite definitions", schemaext.ErrDuplicate)
+	}
+	return v.Copy(), nil
 }

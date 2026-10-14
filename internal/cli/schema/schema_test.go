@@ -191,11 +191,14 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 		"pg_trgm": {IfNotExists: true, Comment: "Fixture extension"},
 	})
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
-	c.Assert(parsed.Domains, qt.HasLen, 1)
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
-	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
-		return ref.Kind == objectidentity.Kind(pgtype.RangeKind)
-	}).Len(), qt.Equals, 1)
+	// The user types read back as the PostgreSQL type owner's.
+	c.Assert(parsed.Domains, qt.HasLen, 0)
+	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
+	for _, kind := range pgtype.Kinds() {
+		c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+			return ref.Kind == objectidentity.Kind(kind)
+		}).Len(), qt.Equals, 1)
+	}
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Views, qt.HasLen, 1)
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)

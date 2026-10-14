@@ -31,7 +31,7 @@ func (hclEncoder) DecodeHCL(ctx context.Context, request hclext.Request) (hclext
 		if err := ctx.Err(); err != nil {
 			return hclext.Result{}, err
 		}
-		object, err := rangeHCLObject(claim)
+		object, err := typeHCLObject(claim)
 		if err != nil {
 			return hclext.Result{}, &hclext.ClaimError{Claim: i, Err: err}
 		}

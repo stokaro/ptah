@@ -1327,6 +1327,8 @@ func (p *parser) rejectUnsupportedDomainAttrs(block *hclsyntax.Block) error {
 		"default": true,
 		"check":   true,
 		"comment": true,
+		// The selector a scoped owner block reserves; parseSharedBlock read it.
+		"dialect": p.owners.Scoped(hclext.TopLevel, "domain"),
 	}, "domain")
 }
 
@@ -1410,6 +1412,8 @@ func (p *parser) rejectUnsupportedCompositeAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":  true,
 		"comment": true,
+		// The selector a scoped owner block reserves; parseSharedBlock read it.
+		"dialect": p.owners.Scoped(hclext.TopLevel, "composite"),
 	}, "composite")
 }
 

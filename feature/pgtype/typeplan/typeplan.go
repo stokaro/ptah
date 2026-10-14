@@ -260,19 +260,21 @@ func readDomain(planned *change, value *pgtype.DomainChange) {
 // many, and the next comparison would ask for the same replacement again.
 func alterDomain(subject objectidentity.ID, value *pgtype.DomainChange) ast.ExtensionPayload {
 	alter := &pgtype.AlterDomain{Target: pgtype.TargetOf(subject)}
-	if value.Differ(pgtype.DiffCheck) && value.After.Check != "" {
+	if value.Differ(pgtype.DiffCheck) {
 		for _, check := range value.Before.Checks {
 			alter.DropChecks = append(alter.DropChecks, check.Name)
 		}
-		alter.AddCheck = value.After.Check
+		replacement := value.ReplacementCheck()
+		alter.AddCheck, alter.CheckName = replacement.Expression, replacement.Name
 	}
 	if value.Differ(pgtype.DiffDefault) {
 		alter.SetDefault = defaultSQL(value.After)
+		alter.DropDefault = alter.SetDefault == ""
 	}
 	if value.Differ(pgtype.DiffNotNull) {
 		alter.NotNull = new(value.After.NotNull)
 	}
-	if alter.AddCheck == "" && alter.SetDefault == "" && alter.NotNull == nil {
+	if len(alter.DropChecks) == 0 && alter.AddCheck == "" && alter.SetDefault == "" && !alter.DropDefault && alter.NotNull == nil {
 		return nil
 	}
 	return alter

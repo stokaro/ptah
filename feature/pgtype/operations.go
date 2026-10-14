@@ -92,17 +92,21 @@ func CreateDomainOf(ref objectidentity.ID, domain *DesiredDomain) *CreateDomain 
 
 // AlterDomain writes ALTER DOMAIN for the changes a surviving domain takes in
 // place, in the order they have to run: each CHECK constraint DropChecks
-// names is dropped, AddCheck is added as an unnamed CHECK, SetDefault becomes
+// names is dropped, AddCheck is added with its optional name, SetDefault becomes
 // the default, and NotNull sets or drops NOT NULL. An empty field changes
 // nothing.
 type AlterDomain struct {
 	Target     Target   `json:"target"`
 	DropChecks []string `json:"drop_checks"`
 	AddCheck   string   `json:"add_check"`
+	// CheckName names AddCheck so a reverse plan can remove that constraint.
+	CheckName string `json:"check_name"`
 	// SetDefault is the default as SQL: an expression, or a literal already
 	// quoted.
 	SetDefault string `json:"set_default"`
-	NotNull    *bool  `json:"not_null"`
+	// DropDefault removes the default and is mutually exclusive with SetDefault.
+	DropDefault bool  `json:"drop_default"`
+	NotNull     *bool `json:"not_null"`
 }
 
 // CreateComposite writes CREATE TYPE ... AS with the attributes in order.
@@ -310,13 +314,19 @@ func (v *AlterDomain) Validate() error {
 	if err := validTarget(v.Target, DomainKind); err != nil {
 		return err
 	}
-	if len(v.DropChecks) == 0 && v.AddCheck == "" && v.SetDefault == "" && v.NotNull == nil {
+	if len(v.DropChecks) == 0 && v.AddCheck == "" && v.SetDefault == "" && !v.DropDefault && v.NotNull == nil {
 		return fmt.Errorf("%w: a domain alteration changes something", schemaext.ErrInvalidValue)
 	}
 	if err := validNames("domain check", v.DropChecks); err != nil {
 		return err
 	}
-	return validTexts("domain", "check", v.AddCheck, "default", v.SetDefault)
+	if v.DropDefault && v.SetDefault != "" {
+		return fmt.Errorf("%w: a domain alteration cannot set and drop its default", schemaext.ErrInvalidValue)
+	}
+	if v.CheckName != "" && v.AddCheck == "" {
+		return fmt.Errorf("%w: a constraint name requires a CHECK", schemaext.ErrInvalidValue)
+	}
+	return validTexts("domain", "check", v.AddCheck, "check name", v.CheckName, "default", v.SetDefault)
 }
 
 // Validate refuses a target that is not a composite type and attributes a
@@ -540,8 +550,8 @@ var (
 		Allowed:  []string{"target", "base_type", "not_null", "default", "default_expr", "check"},
 		Required: []string{"target", "base_type", "not_null", "default", "default_expr", "check"}}
 	alterDomainShape = schemaext.ObjectShape{Name: "domain alteration",
-		Allowed:  []string{"target", "drop_checks", "add_check", "set_default", "not_null"},
-		Required: []string{"target", "drop_checks", "add_check", "set_default", "not_null"}, Nullable: []string{"drop_checks", "not_null"}}
+		Allowed:  []string{"target", "drop_checks", "add_check", "check_name", "set_default", "drop_default", "not_null"},
+		Required: []string{"target", "drop_checks", "add_check", "check_name", "set_default", "drop_default", "not_null"}, Nullable: []string{"drop_checks", "not_null"}}
 	createCompositeShape = schemaext.ObjectShape{Name: "composite type creation",
 		Allowed: []string{"target", "attributes"}, Required: []string{"target", "attributes"}}
 	alterCompositeShape = schemaext.ObjectShape{Name: "composite type alteration",
@@ -571,7 +581,7 @@ func OperationCodecs() []schemaext.Codec {
 			`"base_type":`+textDefinition+`,"not_null":{"type":"boolean"},"default":{"type":"string"},`+
 				`"default_expr":{"type":"string"},"check":{"type":"string"}`, nil),
 		operationCodec(&AlterDomain{}, alterDomainShape, (*AlterDomain).Validate, (*AlterDomain).Copy, canonicalAlterDomain,
-			`"drop_checks":`+nullableNames+`,"add_check":{"type":"string"},"set_default":{"type":"string"},`+
+			`"drop_checks":`+nullableNames+`,"add_check":{"type":"string"},"check_name":{"type":"string"},"set_default":{"type":"string"},"drop_default":{"type":"boolean"},`+
 				`"not_null":{"anyOf":[{"type":"null"},{"type":"boolean"}]}`, nil),
 		operationCodec(&CreateComposite{}, createCompositeShape, (*CreateComposite).Validate, (*CreateComposite).Copy, nil,
 			`"attributes":`+attributesDefinition, func(fields map[string]json.RawMessage) error {

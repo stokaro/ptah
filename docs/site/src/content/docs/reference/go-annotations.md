@@ -191,6 +191,20 @@ exist. An extension declared without `dialects` reaches every target, and a
 target that cannot host it leaves it out with a note, as a shared schema
 needs; YDB refuses it instead.
 
+A `domain` or `composite` declaration is PostgreSQL's unless its scope names
+another target. One without `dialects`, or scoped only to `postgres`,
+`cockroachdb`, `yugabytedb` and `spanner`, is a PostgreSQL type, and a plan for
+any other target refuses it. One scoped to `oracle` is an Oracle domain or
+object type:
+
+```go
+//ptah:schema:domain name="email" type="VARCHAR2(320)" not_null="true" dialects="oracle"
+type OracleEmail struct{}
+```
+
+A scope that names a PostgreSQL-family target beside another target is a parse
+error, because it declares two different types. Declare each on its own struct.
+
 ## Tables and columns
 
 ### `//ptah:schema:table`

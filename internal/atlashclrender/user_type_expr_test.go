@@ -86,6 +86,8 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 //
 // Without this the change would be measured only against the other binary, and
 // a rendering Ptah itself could no longer read would still look like progress.
+// The domain and composite type are common ones, which an Oracle document
+// holds, so the document is read back for Oracle.
 func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
@@ -99,7 +101,7 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: "oracle"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Domains, qt.HasLen, 1)

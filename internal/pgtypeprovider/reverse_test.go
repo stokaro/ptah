@@ -28,6 +28,7 @@ func TestReverseTypes(t *testing.T) {
 	checked := &pgtype.ObservedDomain{BaseType: "text", Check: "(VALUE <> ''::text)",
 		Checks: []pgtype.DomainCheck{{Name: "t_check", Expression: "(VALUE <> ''::text)"}}}
 	otherCheck := &pgtype.DesiredDomain{BaseType: "text", Check: "VALUE <> 'a'"}
+	changedCheck := &pgtype.ObservedDomain{BaseType: "text", Check: "VALUE <> 'a'", Checks: []pgtype.DomainCheck{{Name: "t_check", Expression: "VALUE <> 'a'"}}}
 	a := pgtype.Attribute{Name: "a", Type: "int"}
 	b := pgtype.Attribute{Name: "b", Type: "text"}
 	cc := pgtype.Attribute{Name: "c", Type: "text"}
@@ -55,10 +56,8 @@ func TestReverseTypes(t *testing.T) {
 				pgtype.DiffNotNull}}, forward: integer.Observed(), strategy: "change the domain back to what it was"},
 		{name: "a domain's CHECK", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{Before: checked, After: otherCheck,
 			Differs: []string{pgtype.DiffCheck}}),
-			want:    &pgtype.DomainChange{Before: otherCheck.Observed(), After: checked.Desired(), Differs: []string{pgtype.DiffCheck}},
-			forward: otherCheck.Observed(), strategy: "change the domain back to what it was",
-			limitations: []string{"the rollback adds the CHECK domain t had, but cannot drop the one the migration added: " +
-				"the server named it, and the name is not recorded"}},
+			want:    &pgtype.DomainChange{Before: changedCheck, After: checked.Desired(), Differs: []string{pgtype.DiffCheck}},
+			forward: changedCheck, strategy: "change the domain back to what it was"},
 		{name: "a composite type's middle attribute dropped", change: typeChange(pgtype.CompositeKind, "t", &pgtype.CompositeChange{
 			Before: abc, After: ac, Differs: []string{pgtype.DiffAttributes}, Removed: []string{"b"}}),
 			want:    &pgtype.CompositeChange{Before: ac.Observed(), After: abc.Desired(), Differs: []string{pgtype.DiffAttributes}},

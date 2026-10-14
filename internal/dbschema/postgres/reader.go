@@ -867,7 +867,12 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			-- being read, and blanking it there is exactly the erasure this
 			-- projection exists to prevent (stokaro/ptah#1138).
 			COALESCE(col.domain_schema, '') AS domain_schema,
-			is_nullable,
+			-- A domain's NOT NULL belongs to the type, not to each column.
+			-- information_schema reports effective nullability; using it here
+			-- would add a column constraint on export and replan it forever.
+			CASE WHEN col.domain_name IS NOT NULL
+			     THEN CASE a.attnotnull WHEN true THEN 'NO' WHEN false THEN 'YES' ELSE col.is_nullable END
+			     ELSE col.is_nullable END AS is_nullable,
 			column_default,
 			character_maximum_length,
 			numeric_precision,
@@ -1156,36 +1161,50 @@ func (r *Reader) readUserTypesInto(ctx context.Context, schema *catalog.Database
 	// joins pg_depend, and a missing relation is not something a constant can
 	// stand in for the way a missing function is. A target without the type
 	// system has nothing here to find either way (stokaro/ptah#942).
+	//
+	// A domain or composite type the target holds but this read cannot reach
+	// is recorded as a common not-described kind, as an extension is: the
+	// common record is the one every document writes, and the owner folds it
+	// into its coverage before it compares. A range limit is the owner's own.
 	if !r.caps.Has(capability.CatalogDependencies) {
+		for _, entry := range []struct {
+			kind  coverage.Kind
+			holds capability.Capability
+		}{
+			{coverage.Domain, capability.DomainTypes}, {coverage.Composite, capability.CompositeTypes},
+		} {
+			if r.caps.Has(entry.holds) {
+				schema.NotDescribed = schema.NotDescribed.With(coverage.Object{Kind: entry.kind, Reason: coverage.Unsupported,
+					Provenance: coverage.DerivedFromTarget})
+			}
+		}
 		knowledge := schemaext.Knowledge{State: schemaext.Complete}
 		if r.caps.Has(capability.RangeTypes) {
 			knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "range type dependencies are unavailable"}
 		}
-		return recordRangeCoverage(schema, knowledge)
+		return recordTypeCoverage(schema, knowledge)
 	}
 	domains, err := r.readDomains(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read domains: %w", err)
 	}
-	schema.Domains = domains
 
 	composites, err := r.readComposites(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read composite types: %w", err)
 	}
-	schema.Composites = composites
 
 	ranges, err := r.readRanges(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read range types: %w", err)
 	}
-	for _, object := range ranges {
+	for _, object := range slices.Concat(domains, composites, ranges) {
 		schema.FeatureObjects, err = schema.FeatureObjects.With(object)
 		if err != nil {
 			return err
 		}
 	}
-	return recordRangeCoverage(schema, schemaext.Knowledge{State: schemaext.Complete})
+	return recordTypeCoverage(schema, schemaext.Knowledge{State: schemaext.Complete})
 }
 
 // extensionOwnedTypeExclusion is the correlated NOT EXISTS that keeps a type an
@@ -1244,8 +1263,8 @@ func (r *Reader) typeCommentExpr() string {
 }
 
 // readDomains reads PostgreSQL domain types (typtype='d').
-func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
-	var domains []catalog.Domain
+func (r *Reader) readDomains(ctx context.Context) ([]schemaext.Object, error) {
+	var domains []schemaext.Object
 	for _, schemaName := range r.schemasToRead() {
 		schemaDomains, err := r.readDomainsForSchema(ctx, schemaName)
 		if err != nil {
@@ -1256,7 +1275,12 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 	return domains, nil
 }
 
-func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([]catalog.Domain, error) {
+type domainRow struct {
+	ref   objectidentity.ID
+	value pgtype.ObservedDomain
+}
+
+func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([]schemaext.Object, error) {
 	query := `
 		SELECT
 			n.nspname AS schema_name,
@@ -1278,17 +1302,16 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 	}
 	defer rows.Close()
 
-	var domains []catalog.Domain
+	var domains []domainRow
 	for rows.Next() {
-		var domain catalog.Domain
-		var rawSchema string
+		var domain pgtype.ObservedDomain
+		var rawSchema, name string
 		if err := rows.Scan(
-			&rawSchema, &domain.Name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Comment,
+			&rawSchema, &name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Comment,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan domain for schema %s: %w", schemaName, err)
 		}
-		domain.Schema = r.outputSchema(rawSchema)
-		domains = append(domains, domain)
+		domains = append(domains, domainRow{ref: pgtype.RefWith(identifier.ForDialect(r.dialect), pgtype.DomainKind, r.outputSchema(rawSchema), name), value: domain})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read domains for schema %s: %w", schemaName, err)
@@ -1296,7 +1319,15 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 	if err := r.attachDomainCheckConstraints(ctx, schemaName, domains); err != nil {
 		return nil, err
 	}
-	return domains, nil
+	var objects []schemaext.Object
+	for _, domain := range domains {
+		object, err := pgtype.ObservedObject(domain.ref, &domain.value)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, object)
+	}
+	return objects, nil
 }
 
 // attachDomainCheckConstraints fills in the per-constraint names the joined
@@ -1308,7 +1339,7 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 // CHECK has only one route -- drop the domain and create it again -- and that
 // route fails on any domain a column actually uses, which is every domain worth
 // having (stokaro/ptah#1717).
-func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName string, domains []catalog.Domain) error {
+func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName string, domains []domainRow) error {
 	if len(domains) == 0 || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return nil
 	}
@@ -1329,10 +1360,10 @@ func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName st
 	}
 	defer rows.Close()
 
-	byDomain := make(map[string][]catalog.DomainCheck, len(domains))
+	byDomain := make(map[string][]pgtype.DomainCheck, len(domains))
 	for rows.Next() {
 		var domainName string
-		var check catalog.DomainCheck
+		var check pgtype.DomainCheck
 		if err := rows.Scan(&domainName, &check.Name, &check.Expression); err != nil {
 			return fmt.Errorf("failed to scan domain check constraint for schema %s: %w", schemaName, err)
 		}
@@ -1342,15 +1373,15 @@ func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName st
 		return fmt.Errorf("failed to read domain check constraints for schema %s: %w", schemaName, err)
 	}
 	for i := range domains {
-		domains[i].CheckConstraints = byDomain[domains[i].Name]
+		domains[i].value.Checks = byDomain[domains[i].ref.Name.Source]
 	}
 	return nil
 }
 
 // readComposites reads PostgreSQL composite types (typtype='c'), excluding the
 // implicit row types of tables (relkind other than 'c').
-func (r *Reader) readComposites(ctx context.Context) ([]catalog.CompositeType, error) {
-	var composites []catalog.CompositeType
+func (r *Reader) readComposites(ctx context.Context) ([]schemaext.Object, error) {
+	var composites []schemaext.Object
 	for _, schemaName := range r.schemasToRead() {
 		schemaComposites, err := r.readCompositesForSchema(ctx, schemaName)
 		if err != nil {
@@ -1361,7 +1392,7 @@ func (r *Reader) readComposites(ctx context.Context) ([]catalog.CompositeType, e
 	return composites, nil
 }
 
-func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string) ([]catalog.CompositeType, error) {
+func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string) ([]schemaext.Object, error) {
 	query := `
 		SELECT
 			n.nspname AS schema_name,
@@ -1386,7 +1417,7 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 
 	type key struct{ schema, name string }
 	order := make([]key, 0)
-	byName := make(map[key]*catalog.CompositeType)
+	byName := make(map[key]*pgtype.ObservedComposite)
 	for rows.Next() {
 		var rawSchema, typeName, fieldName, fieldType, comment string
 		var attNum int
@@ -1396,19 +1427,23 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 		k := key{r.outputSchema(rawSchema), typeName}
 		composite, ok := byName[k]
 		if !ok {
-			composite = &catalog.CompositeType{Name: typeName, Schema: k.schema, Comment: comment}
+			composite = &pgtype.ObservedComposite{Comment: comment}
 			byName[k] = composite
 			order = append(order, k)
 		}
-		composite.Fields = append(composite.Fields, catalog.CompositeField{Name: fieldName, Type: fieldType})
+		composite.Attributes = append(composite.Attributes, pgtype.Attribute{Name: fieldName, Type: fieldType})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read composite types for schema %s: %w", schemaName, err)
 	}
 
-	composites := make([]catalog.CompositeType, 0, len(order))
+	composites := make([]schemaext.Object, 0, len(order))
 	for _, k := range order {
-		composites = append(composites, *byName[k])
+		object, err := pgtype.ObservedObject(pgtype.RefWith(identifier.ForDialect(r.dialect), pgtype.CompositeKind, k.schema, k.name), byName[k])
+		if err != nil {
+			return nil, err
+		}
+		composites = append(composites, object)
 	}
 	return composites, nil
 }
