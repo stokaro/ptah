@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/sqlsyntax"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -116,10 +117,7 @@ type ParseSQLOptions struct {
 // refusal is the contract, and the message is diagnostic text rather than
 // something to branch on.
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
-	parserOpts := make([]parser.Option, 0, 4)
-	if strings.TrimSpace(opts.Dialect) != "" {
-		parserOpts = append(parserOpts, parser.WithDialect(opts.Dialect))
-	}
+	parserOpts := make([]parser.Option, 0, 3)
 	if opts.Capabilities.Len() > 0 {
 		parserOpts = append(parserOpts, parser.WithCapabilities(opts.Capabilities))
 	}
@@ -127,7 +125,7 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 		parserOpts = append(parserOpts, parser.WithTimeout(opts.Timeout))
 	}
 	parserOpts = append(parserOpts, parser.WithSQL(opts.SQL))
-	return parser.NewParser(sql, parserOpts...).Parse()
+	return sqlsyntax.Parse(sql, opts.Dialect, parserOpts...)
 }
 
 // SchemaToAST converts Ptah's Go schema IR into SQL AST statements for the

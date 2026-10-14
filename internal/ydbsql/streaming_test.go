@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"strings"
@@ -11,7 +11,6 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 const streamBody = "INSERT INTO sink SELECT * FROM source;"
@@ -21,7 +20,7 @@ func TestReadYQLStreamingQuery(t *testing.T) {
 		t.Run(pool, func(t *testing.T) {
 			c := qt.New(t)
 			body := "$f = ($x) -> { RETURN $x + 1; }; /* keep ; */ INSERT INTO sink SELECT $f(id) FROM source;"
-			database, _, err := sqlschema.Read([]byte("CREATE STREAMING QUERY `jobs/copy.v1` WITH (RUN=FALSE, RESOURCE_POOL="+pool+") AS DO BEGIN\n"+body+"\nEND DO; CREATE TOPIC source;"), "ydb")
+			database, err := readYQL(c, "CREATE STREAMING QUERY `jobs/copy.v1` WITH (RUN=FALSE, RESOURCE_POOL="+pool+") AS DO BEGIN\n"+body+"\nEND DO; CREATE TOPIC source;")
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 2)
 			query := streamingValue(c, database.FeatureObjects, "jobs", "copy.v1")
@@ -43,11 +42,11 @@ func TestReadYQLStreamingQueryGuardsAcrossFiles(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database, _, err := sqlschema.Read([]byte("CREATE STREAMING QUERY `jobs.copy` AS DO BEGIN "+streamBody+" END DO; CREATE STREAMING QUERY `jobs/copy` AS DO BEGIN SELECT 1; END DO;"), "ydb")
+			load, err := readYQLLoad(c, "", "CREATE STREAMING QUERY `jobs.copy` AS DO BEGIN "+streamBody+" END DO; CREATE STREAMING QUERY `jobs/copy` AS DO BEGIN SELECT 1; END DO;",
+				test.prefix+" `jobs.copy` AS DO BEGIN SELECT 2; END DO;")
 			c.Assert(err, qt.IsNil)
-			added, _, err := sqlschema.ReadOnto([]byte(test.prefix+" `jobs.copy` AS DO BEGIN SELECT 2; END DO;"), "ydb", sqlschema.NewDocument(&database))
-			c.Assert(err, qt.IsNil)
-			c.Assert(added.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(load.Files[1].Objects, qt.HasLen, 0)
+			database := load.Database
 			c.Assert(streamingValue(c, database.FeatureObjects, "", "jobs.copy").Spec.Text, qt.Equals, test.wantBody)
 			c.Assert(streamingValue(c, database.FeatureObjects, "", "jobs.copy").AllowStateReset, qt.Equals, test.reset)
 			c.Assert(streamingValue(c, database.FeatureObjects, "jobs", "copy").Spec.Text, qt.Equals, "SELECT 1;")
@@ -60,12 +59,12 @@ func TestReadYQLStreamingQueryRoundTrip(t *testing.T) {
 		t.Run(prefix, func(t *testing.T) {
 			c := qt.New(t)
 			source := prefix + " STREAMING QUERY `jobs/copy` WITH (RUN=FALSE) AS DO BEGIN DEFINE ACTION $copy() AS INSERT INTO sink SELECT * FROM source; END DEFINE; DO $copy(); END DO;"
-			database, _, err := sqlschema.Read([]byte(source), "ydb")
+			database, err := readYQL(c, source)
 			c.Assert(err, qt.IsNil)
 			caps := capability.YDB262().With(capability.StreamingQueries, true)
 			rendered, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps)
 			c.Assert(err, qt.IsNil)
-			again, _, err := sqlschema.Read([]byte(strings.Join(rendered, "\n")), "ydb")
+			again, err := readYQL(c, strings.Join(rendered, "\n"))
 			c.Assert(err, qt.IsNil)
 			c.Assert(ydbstreaming.Equal(streamingValue(c, database.FeatureObjects, "jobs", "copy").Spec, streamingValue(c, again.FeatureObjects, "jobs", "copy").Spec), qt.IsTrue)
 			c.Assert(streamingValue(c, again.FeatureObjects, "jobs", "copy").AllowStateReset, qt.Equals, streamingValue(c, database.FeatureObjects, "jobs", "copy").AllowStateReset)
@@ -90,9 +89,8 @@ func TestReadYQLStreamingQueryRefusals(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(source), "ydb")
+			database, err := readYQL(c, source)
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
@@ -100,7 +98,7 @@ func TestReadYQLStreamingQueryRefusals(t *testing.T) {
 
 func TestReadYQLStreamingQueryGuardDoesNotAuthorizeReset(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE OR REPLACE STREAMING QUERY IF NOT EXISTS copy AS DO BEGIN SELECT 1; END DO;"), "ydb")
+	database, err := readYQL(c, "CREATE OR REPLACE STREAMING QUERY IF NOT EXISTS copy AS DO BEGIN SELECT 1; END DO;")
 	c.Assert(err, qt.IsNil)
 	c.Assert(streamingValue(c, database.FeatureObjects, "", "copy").AllowStateReset, qt.IsFalse)
 }

@@ -1,4 +1,4 @@
-package sqlschema
+package ydbsql
 
 import (
 	"ptah.run/core/ast"

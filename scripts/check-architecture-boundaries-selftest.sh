@@ -259,9 +259,8 @@ GO
   require_acceptance "the repaired Go annotation cleanup"
 done
 
-# The shared SQL reader links no owner beyond the recorded YQL conversion
-# (stokaro/ptah#4204). internal/sqlschema is outside the neutral layer and every
-# provider contract, so this rule alone can refuse it.
+# The shared SQL reader links no owner. internal/sqlschema is outside the
+# neutral layer and every provider contract, so this rule alone can refuse it.
 target="$tree/internal/sqlschema/boundaries_selftest_defect.go"
 cat >"$target" <<'GO'
 package sqlschema

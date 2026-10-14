@@ -112,25 +112,37 @@ func describeLoad(database *schemamodel.Database, files []sqlext.SourceFile, dia
 	return nil
 }
 
-// ReadScript converts the documents of a load in the shared grammar, as one
-// script run in file order, and says what each declares. It is the YDB
-// owner's reading of YQL for now and has no other caller: the YQL conversion
-// still lives in this package, and moving it into the owner is the owner's
-// remaining work under stokaro/ptah#4140. Until then the owner reaches this
-// package, which a plugin could not.
+// ConvertScript converts the documents of a load as one script run in file
+// order, and says what each declares. The owner whose grammar reads the
+// target's documents, as the YDB owner reads YQL, parses each document and
+// converts the statements of its own that the shared conversion does not
+// model; the shared conversion converts the rest, such as tables, columns,
+// indexes and views. request.Target is the dialect the documents are written
+// for.
+//
+// It is the owner's in-process use of this package's conversion, and plugin
+// debt: a provider served over the protocol returns its reading of a load as
+// [sqlext.GrammarResult] data and cannot reach this package
+// (stokaro/ptah#4204).
 //
 // A document read alone is converted on its own, and the documents of a larger
-// load are merged in order, so a later REVOKE takes back an earlier GRANT. The
-// result describes no coverage; [ReadLoad] adds it.
-func ReadScript(ctx context.Context, request sqlext.GrammarRequest) (sqlext.GrammarResult, error) {
+// load are merged in order, so a later REVOKE takes back an earlier GRANT. A
+// refusal of one document, its parse included, is a [*sqlext.FileError] naming
+// it, and the documents after it are not read. The result describes no
+// coverage; [ReadLoad] adds it.
+func ConvertScript(ctx context.Context, request sqlext.GrammarRequest, script Converter) (sqlext.GrammarResult, error) {
 	merged := &schemamodel.Database{}
 	document := NewDocument(merged)
-	document.YDBDatabasePath = request.DatabasePath
+	document.script, document.databasePath = script, request.DatabasePath
 	result := sqlext.GrammarResult{Files: make([]sqlext.FileDeclarations, 0, len(request.Files))}
 	for _, file := range request.Files {
-		// A grammar target consults no owner's patterns, so the shared
-		// grammar alone reads what the owners' sets would.
-		database, statements, err := convert(ctx, []byte(file.Text), request.Target, document, sqlext.None(), nil)
+		statements, err := script.Parse(ctx, file)
+		if err != nil {
+			return sqlext.GrammarResult{}, &sqlext.FileError{Path: file.Path, Err: err}
+		}
+		// A grammar target consults no owner's patterns, so no other owner's
+		// conversion takes part.
+		database, err := convertStatements(ctx, statements, nil, request.Target, document, sqlext.None(), nil)
 		if err != nil {
 			return sqlext.GrammarResult{}, &sqlext.FileError{Path: file.Path, Err: err}
 		}

@@ -1,60 +1,72 @@
-package sqlschema
+package ydbsql
 
 import (
 	"fmt"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/yqlparse"
 )
 
-func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
-	if handled, err := appendYDBPrincipal(database, document, statement, sourcePlatform); handled {
+// convertStatement converts a YDB statement the shared conversion does not
+// model, and reports whether it did. Any other statement is the shared
+// conversion's, which refuses one it does not model either.
+func convertStatement(scope sqlschema.Scope, statement ast.Node) (bool, error) {
+	if handled, err := appendPrivilege(scope, statement); handled {
 		return true, err
 	}
-	switch node := statement.(type) {
-	case *ast.AlterSequenceNode:
-		if platform.NormalizeDialect(sourcePlatform) != platform.YDB {
-			return false, nil
-		}
-		return true, alterYDBSequence(database, document, node)
-	case *ast.ExtensionStatement:
-		if handled, err := appendPoolDeclaration(database, node.Payload); handled {
-			return true, err
-		}
-		if handled, err := appendTopicDeclaration(database, document.base, node.Payload); handled {
-			return true, err
-		}
-		if handled, err := appendExternalDeclaration(database, node.Payload); handled {
-			return true, err
-		}
-		if handled, err := appendReplicationDeclaration(database, node.Payload); handled {
-			return true, err
-		}
-		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {
-			return true, appendStreamingQuery(database, document.base, value)
-		}
-		if value, ok := node.Payload.(*ydbast.Secret); ok {
-			return true, appendSecret(database, value)
-		}
-		value, ok := node.Payload.(*ydbast.CoordinationNode)
-		if !ok || value == nil || value.Change.Before != nil || value.Change.After == nil {
-			return false, nil
-		}
-		var err error
-		database.FeatureObjects, err = database.FeatureObjects.With(ydbcoordination.DesiredObject(value.Schema, value.Name, value.Change.After.StructName, value.Change.After.Spec))
+	if handled, err := appendPrincipal(scope, statement); handled {
 		return true, err
+	}
+	database := scope.Database()
+	switch node := statement.(type) {
+	case *ast.CommentNode:
+		return true, applyComment(scope, node.Text)
+	case *ast.AlterSequenceNode:
+		return true, alterSequence(scope, node)
+	case *ast.ExtensionStatement:
+		return appendExtension(scope, node.Payload)
 	case *yqlparse.ReplicationSettings:
-		return true, applyReplicationSettings(database, document.base, node)
+		return true, applyReplicationSettings(database, scope.Base(), node)
 	default:
 		return false, nil
 	}
+}
+
+// appendExtension declares the YDB object an extension statement names.
+func appendExtension(scope sqlschema.Scope, payload ast.ExtensionPayload) (bool, error) {
+	database, base := scope.Database(), scope.Base()
+	if handled, err := appendPoolDeclaration(database, payload); handled {
+		return true, err
+	}
+	if handled, err := appendTopicDeclaration(database, base, payload); handled {
+		return true, err
+	}
+	if handled, err := appendExternalDeclaration(database, payload); handled {
+		return true, err
+	}
+	if handled, err := appendReplicationDeclaration(database, payload); handled {
+		return true, err
+	}
+	if value, ok := payload.(*ydbast.StreamingQuery); ok {
+		return true, appendStreamingQuery(database, base, value)
+	}
+	if value, ok := payload.(*ydbast.Secret); ok {
+		return true, appendSecret(database, value)
+	}
+	value, ok := payload.(*ydbast.CoordinationNode)
+	if !ok || value == nil || value.Change.Before != nil || value.Change.After == nil {
+		return false, nil
+	}
+	var err error
+	database.FeatureObjects, err = database.FeatureObjects.With(ydbcoordination.DesiredObject(value.Schema, value.Name, value.Change.After.StructName, value.Change.After.Spec))
+	return true, err
 }
 
 // appendTopicDeclaration declares a topic a CREATE TOPIC names, and adds a
@@ -109,7 +121,7 @@ func appendSecret(database *schemamodel.Database, node *ydbast.Secret) error {
 		return err
 	}
 	if node.Operation != ydbast.SecretCreate {
-		return fmt.Errorf("%w: only CREATE declares a secret", ErrUnmodeledStatement)
+		return fmt.Errorf("%w: only CREATE declares a secret", sqlschema.ErrUnmodeledStatement)
 	}
 	var err error
 	database.FeatureObjects, err = ydbsecret.Declare(database.FeatureObjects, node.Schema, node.Name, "", node.ValueEnv)

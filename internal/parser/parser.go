@@ -26,7 +26,6 @@ import (
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/sqlcompound"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/yqlparse"
 )
 
 // Parser converts SQL tokens into AST nodes.
@@ -127,7 +126,7 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string, opts ...Option) *Parser {
-	normalized := input
+	normalized := sqlutil.NormalizeClientDelimiters(input)
 	p := &Parser{
 		input:     normalized,
 		startTime: time.Now(),
@@ -135,10 +134,6 @@ func NewParser(input string, opts ...Option) *Parser {
 	}
 	for _, opt := range opts {
 		opt(p)
-	}
-	if platform.NormalizeDialect(p.dialect) != platform.YDB {
-		normalized = sqlutil.NormalizeClientDelimiters(input)
-		p.input = normalized
 	}
 	p.lexer = lexer.NewLexerWithOptions(normalized, lexerOptions(p.dialect))
 	p.advance() // Load the first token
@@ -183,9 +178,14 @@ func (p *Parser) Parse() (*ast.StatementList, error) {
 
 // parseStatements reads the document's statements, recording the spans the
 // owners' patterns claim.
+//
+// A dialect whose documents are not written in the shared grammar, as YQL is
+// for YDB, is refused: its owner reads them with a grammar of its own, and a
+// syntax consumer reads them through internal/sqlsyntax.
 func (p *Parser) parseStatements() (*ast.StatementList, error) {
-	if p.dialect == platform.YDB {
-		return yqlparse.Parse(p.input)
+	if lexerOptions(p.dialect).YQL {
+		return nil, fmt.Errorf("%w: the shared SQL grammar does not read %s documents; the owner of the target reads them",
+			ptaherr.ErrUnsupportedFeature, p.dialect)
 	}
 
 	statements := &ast.StatementList{

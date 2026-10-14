@@ -37,7 +37,7 @@ features, database implementations, or external modules.
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 | `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
-| `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 2 |
+| `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 0 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build. A rule above zero refuses any new
@@ -81,19 +81,40 @@ Two seams keep the YDB owner out of the layer:
   database, or on an object at its root, by its absolute path.
 
 The HCL reader under `internal/` takes owner blocks through `hclext.Set` and
-links no owner. The SQL reader converts YQL for the YDB owner, deferred to
-[#4204](https://github.com/stokaro/ptah/issues/4204). Both sit outside the layer, so
-`core/schemasource` takes them from its caller rather than importing them.
+links no owner, and neither does the SQL reader; see
+[What the SQL reader rule holds](#what-the-sql-reader-rule-holds). Both sit
+outside the layer, so `core/schemasource` takes them from its caller rather than
+importing them.
 
 ### What the SQL reader rule holds
 
 `sql-reader-links-owners` applies the owner rule to `internal/parser` and
 `internal/sqlschema`, the shared SQL reader. An owner's SQL syntax reaches the
-owner through `core/sqlext` claims, so the reader does not need to link it. A finding is one of the two packages and one
-owner family it links through any chain of imports. The recorded 2 is the YQL
-conversion, deferred to [#4204](https://github.com/stokaro/ptah/issues/4204):
-the parser hands a YDB document to `internal/yqlparse`, and `internal/sqlschema`
-converts it through `dialect/ydb` packages, so each package links `dialect/ydb`.
+owner through `core/sqlext` claims, so the reader does not need to link it. A
+finding is one of the two packages and one owner family it links through any
+chain of imports. The count is zero.
+
+YQL is not written in the shared grammar, and the parser refuses a YDB
+document. Two seams carry it, and both are plugin debt under
+[#4204](https://github.com/stokaro/ptah/issues/4204):
+
+- The YDB owner, `internal/ydbsql`, reads YQL with the `Grammar` slot of
+  `core/sqlext`. It parses each document with `internal/yqlparse`, converts the
+  YDB statements into its own models, and hands the rest to
+  `sqlschema.ConvertScript`, which converts tables, columns, indexes and views
+  as for any other dialect. The grammar's answer is data, a
+  `schemamodel.Database` and what each file declares, but the conversion it
+  borrows is in-process: an extracted YDB provider needs a public conversion
+  library or one of its own.
+- A consumer of SQL syntax rather than of the declared schema, such as
+  `atlascompat.ParseSQL` or the structural-change count of migration lint,
+  reaches a YQL syntax tree through `internal/sqlsyntax`. Whether a grammar
+  owner also serves syntax trees, and in what form, is not decided yet.
+
+The reader still reads the names of the tables it converts for the YDB owner by
+YDB's rules, and gives a YDB index no key parts. Neither links an owner;
+[#4204](https://github.com/stokaro/ptah/issues/4204) moves the name rules to
+`internal/sqlident`.
 
 The reader also imports dialect helpers under `internal/`. They are allowed,
 because each interprets an object of the common model that every reader of the
@@ -214,7 +235,7 @@ test and the control that make it evidence.
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 | Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
-| SQL reader isolation: the shared SQL reader links no owner beyond the recorded YQL conversion | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
+| SQL reader isolation: the shared SQL reader links no owner | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
 
 ## How target facts are held
 

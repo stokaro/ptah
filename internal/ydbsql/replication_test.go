@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/internal/sqlschema"
 )
 
 // declared lists the objects of kind database declares.
@@ -65,7 +64,7 @@ func TestReadYQLTransfer(t *testing.T) {
 func TestReadYQLReplicationChanges(t *testing.T) {
 	c := qt.New(t)
 	source := yqlReplication + "ALTER ASYNC REPLICATION `archive/mirror` SET (ENDPOINT='grpcs://moved:2135'); ALTER ASYNC REPLICATION `archive/mirror` SET (DATABASE='/elsewhere', USER='reader', PASSWORD_SECRET_NAME='credential');"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	c.Assert(declared(c, database, ydbreplication.ReplicationKind), qt.DeepEquals, []schemaext.Object{
 		ydbreplication.DesiredReplicationObject("archive", "mirror", "", ydbreplication.ReplicationSpec{
@@ -78,7 +77,7 @@ func TestReadYQLTransferChanges(t *testing.T) {
 	c := qt.New(t)
 	const changed = "($msg) -> { RETURN [<|id:$msg._offset+1|>]; }"
 	source := yqlTransfer + "ALTER TRANSFER `archive/ingest` SET USING " + changed + ", SET (BATCH_SIZE_BYTES=8192,FLUSH_INTERVAL=Interval('PT3S'));"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	c.Assert(declared(c, database, ydbreplication.TransferKind), qt.DeepEquals, []schemaext.Object{
 		ydbreplication.DesiredTransferObject("archive", "ingest", "", ydbreplication.TransferSpec{Source: "archive/events", Target: "archive/rows", Lambda: changed, BatchSizeBytes: 8192, FlushInterval: "PT3S"})})
@@ -117,10 +116,9 @@ func TestYQLReplicationRefusalsHideValues(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(source), "ydb")
+			database, err := readYQL(c, source)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "SENTINEL")
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
@@ -142,7 +140,7 @@ func TestReadYQLCredentialChanges(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			source := yqlReplication + "ALTER ASYNC REPLICATION `archive/mirror` SET (" + tc.changes + ");"
-			database, _, err := sqlschema.Read([]byte(source), "ydb")
+			database, err := readYQL(c, source)
 			c.Assert(err, qt.IsNil)
 			tc.want.ConnectionString = "grpc://source:2136/?database=/remote"
 			c.Assert(declaredConnection(c, database), qt.DeepEquals, tc.want)

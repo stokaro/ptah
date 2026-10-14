@@ -1,4 +1,4 @@
-package sqlschema
+package ydbsql
 
 import (
 	"errors"
@@ -11,22 +11,25 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/internal/sqlschema"
 )
 
-func appendChangefeed(target alterTarget, spec ydbschema.ChangefeedSpec) error {
-	object := ydbschema.DesiredObject(target.table.Schema, target.table.Name, spec)
-	for _, database := range target.databases {
+// appendChangefeed adds the changefeed an `ALTER TABLE ... ADD CHANGEFEED`
+// declares to its table.
+func appendChangefeed(target sqlschema.Table, spec ydbschema.ChangefeedSpec) error {
+	object := ydbschema.DesiredObject(target.Declared.Schema, target.Declared.Name, spec)
+	for _, database := range target.Databases {
 		_, found, err := database.FeatureObjects.Get(object.Ref)
 		if err != nil {
 			return err
 		}
 		if found {
-			return fmt.Errorf("changefeed %q is declared twice on table %s", spec.Name, target.qualified)
+			return fmt.Errorf("changefeed %q is declared twice on table %s", spec.Name, target.Qualified)
 		}
 	}
 	// A later file adds the object to its own result, even when its parent was
 	// declared by an earlier file. The document merge retains one named object.
-	database := target.databases[0]
+	database := target.Databases[0]
 	objects, err := database.FeatureObjects.With(object)
 	if err != nil {
 		return err
@@ -54,7 +57,7 @@ func appendTopicConsumer(database, base *schemamodel.Database, node *ydbast.Topi
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: ALTER TOPIC %s ADD CONSUMER names no topic or changefeed this schema declares", ErrUnmodeledStatement, node.Path())
+	return fmt.Errorf("%w: ALTER TOPIC %s ADD CONSUMER names no topic or changefeed this schema declares", sqlschema.ErrUnmodeledStatement, node.Path())
 }
 
 func appendDeclaredTopicConsumer(database *schemamodel.Database, node *ydbast.TopicConsumer) (bool, error) {

@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"strings"
@@ -7,7 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLComments(t *testing.T) {
@@ -20,7 +19,7 @@ func TestReadYQLComments(t *testing.T) {
 		"COMMENT ON COLUMN `a/b`.`body` IS \"line\\nnext\"u;" +
 		"COMMENT ON INDEX same ON `a/b` IS 'nested index';" +
 		"COMMENT ON VIEW `a/v` IS 'nested view';"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables[0].Comment, qt.Equals, "root; table")
 	c.Assert(database.Tables[1].Comment, qt.Equals, "")
@@ -32,7 +31,7 @@ func TestReadYQLComments(t *testing.T) {
 	c.Assert(database.Views[1].Comment, qt.Equals, "nested view")
 	statements, err := builtin.GetOrderedCreateStatements(&database, "ydb")
 	c.Assert(err, qt.IsNil)
-	again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
+	again, err := readYQL(c, strings.Join(statements, "\n"))
 	c.Assert(err, qt.IsNil)
 	rendered, err := builtin.GetOrderedCreateStatements(&again, "ydb")
 	c.Assert(err, qt.IsNil)
@@ -41,7 +40,7 @@ func TestReadYQLComments(t *testing.T) {
 
 func TestReadYQLCommentRemoval(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id)); COMMENT ON TABLE t IS 'old'; COMMENT ON TABLE t IS NULL;"), "ydb")
+	database, err := readYQL(c, "CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id)); COMMENT ON TABLE t IS 'old'; COMMENT ON TABLE t IS NULL;")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables[0].Comment, qt.Equals, "")
 }
@@ -60,7 +59,7 @@ func TestReadYQLCommentRefusals(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			_, _, err := sqlschema.Read([]byte(text), "ydb")
+			_, err := readYQL(c, text)
 			c.Assert(err, qt.IsNotNil)
 		})
 	}

@@ -1,4 +1,4 @@
-package sqlschema
+package ydbsql
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/internal/sqlschema"
 )
 
 func appendStreamingQuery(database, base *schemamodel.Database, node *ydbast.StreamingQuery) error {
@@ -13,7 +14,7 @@ func appendStreamingQuery(database, base *schemamodel.Database, node *ydbast.Str
 		return err
 	}
 	if node.Operation != ydbast.StreamingCreate {
-		return fmt.Errorf("%w: only CREATE declares a streaming query", ErrUnmodeledStatement)
+		return fmt.Errorf("%w: only CREATE declares a streaming query", sqlschema.ErrUnmodeledStatement)
 	}
 	object := ydbstreaming.DesiredObject(node.Schema, node.Name, "", node.Spec, node.Creation.OrReplace && !node.Creation.IfNotExists)
 	if err := ydbstreaming.ValidateIdentity(object.Ref); err != nil {

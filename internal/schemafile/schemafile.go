@@ -852,16 +852,6 @@ func loadSQLFileWithStatements(
 func readSQLFile(
 	path string, data []byte, opts Options, earlier *sqlschema.Document,
 ) (*schemamodel.Database, *ast.StatementList, error) {
-	root, err := sourceDatabasePath(opts)
-	if err != nil {
-		return nil, nil, err
-	}
-	if root != "" {
-		if earlier == nil {
-			earlier = sqlschema.NewDocument(nil)
-		}
-		earlier.YDBDatabasePath = root
-	}
 	// The loaders take no context yet. The owners read their syntax in
 	// process, so the parse bounds the read.
 	db, statements, err := sqlschema.ReadWith(context.Background(), data, opts.Dialect, earlier,

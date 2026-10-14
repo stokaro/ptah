@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"strings"
@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLSecrets(t *testing.T) {
@@ -27,7 +26,7 @@ func TestReadYQLSecrets(t *testing.T) {
 	c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "other")).State, qt.Equals, schemaext.Complete)
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", capability.YDB262())
 	c.Assert(err, qt.IsNil)
-	again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
+	again, err := readYQL(c, strings.Join(statements, "\n"))
 	c.Assert(err, qt.IsNil)
 	reread, err := again.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)
@@ -58,10 +57,9 @@ func TestReadYQLSecretRefusalsRedactDeclaration(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(source), "ydb")
+			database, err := readYQL(c, source)
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position [0-9]+: invalid CREATE SECRET declaration;.*")
 			c.Assert(err.Error(), qt.Not(qt.Contains), "SENTINEL")
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
@@ -69,7 +67,7 @@ func TestReadYQLSecretRefusalsRedactDeclaration(t *testing.T) {
 
 func TestReadYQLSecretRefusedOnOlderLine(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE SECRET s WITH (value = $PTAH_SECRET_TEST);"), "ydb")
+	database, err := readYQL(c, "CREATE SECRET s WITH (value = $PTAH_SECRET_TEST);")
 	c.Assert(err, qt.IsNil)
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", capability.YDB251())
 	c.Assert(err, qt.ErrorMatches, "secret s, which requires target capability secrets, unavailable on this ydb target")
@@ -80,7 +78,7 @@ func TestReadYQLSecretRefusedOnOlderLine(t *testing.T) {
 // twice: a YQL document declares a secret once.
 func TestReadYQLSecretDeclaredTwice(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE SECRET `a/b` WITH (value = $PTAH_SECRET_X); CREATE SECRET `a/b` WITH (value = $PTAH_SECRET_X);"), "ydb")
+	database, err := readYQL(c, "CREATE SECRET `a/b` WITH (value = $PTAH_SECRET_X); CREATE SECRET `a/b` WITH (value = $PTAH_SECRET_X);")
 	c.Assert(err, qt.ErrorMatches, `.*secret a/b is declared twice`)
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 }

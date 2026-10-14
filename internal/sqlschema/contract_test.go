@@ -27,14 +27,16 @@ import (
 // directory, which is the same read against what earlier files declared. The
 // Document a directory's reads share, and NewDocument that starts one, belong
 // to that read: they carry what the earlier files declared beyond the model.
-// ReadLoad is the read of a
-// dialect whose documents an owner's grammar reads, every file of a load in
-// one call to the owner, and ReadsAsLoad says which dialects take it.
+// ReadLoad, with the Load it returns, is the read of a dialect whose documents
+// an owner's grammar reads, every file of a load in one call to the owner, and
+// ReadsAsLoad says which dialects take it.
 //
-// ReadScript is the exception, and it is plugin debt: the YDB owner's grammar
-// reaches the YQL conversion through it, because that conversion still lives
-// here. A plugin could not reach it. It goes when the conversion moves into
-// the owner (stokaro/ptah#4140).
+// ConvertScript is the exception, and it is plugin debt: the YDB owner parses
+// YQL itself and converts its tables, columns, indexes and views through it,
+// handing over its own statements with a Converter and reading names and
+// tables through the Scope and Table it is given. A plugin could not reach
+// it; an extracted YDB provider needs a public conversion library or a
+// conversion of its own (stokaro/ptah#4204).
 //
 // The file list is discovered from git rather than written down, so a package
 // added later is covered by existing.
@@ -45,7 +47,7 @@ func TestPackageContract_OutsideCallersUseReadOnly(t *testing.T) {
 	// ErrUnmodeledStatement is part of Read's failure contract.
 	used := referencedSymbolsOutsidePackage(c, root)
 
-	c.Assert(used, qt.DeepEquals, []string{"Document", "ErrUnmodeledStatement", "NewDocument", "Options", "Read", "ReadLoad", "ReadOnto", "ReadScript", "ReadWith", "ReadsAsLoad"},
+	c.Assert(used, qt.DeepEquals, []string{"ConvertScript", "Document", "ErrUnmodeledStatement", "Load", "NewDocument", "Options", "Read", "ReadLoad", "ReadOnto", "ReadWith", "ReadsAsLoad", "Scope", "Table"},
 		qt.Commentf("another package reached past Read into the conversion internals; "+
 			"either it wants SQL read into the model, which Read does, or it wants a "+
 			"conversion service, which this package deliberately is not"))
