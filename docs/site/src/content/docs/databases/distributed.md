@@ -50,6 +50,15 @@ matching preset automatically.
   remains excluded because that server line rejects it. A generated concurrent
   create therefore rolls back with ordinary `DROP INDEX`; only the forward
   migration requires no-transaction execution.
+  An index is compared by its uniqueness, its keys (column or expression,
+  direction, NULLS ordering and operator class), its `INCLUDE` columns and its
+  access method, and a change rebuilds it. YugabyteDB builds `btree` and
+  `hash` as `lsm`, and `gin` as `ybgin`, so the comparison reads them as one.
+  Its storage parameters are not compared, because YugabyteDB refuses every
+  one Ptah writes for an index.
+  An ascending key with a NULLS ordering is written with `ASC`: without a
+  direction, YugabyteDB builds a leading key as a hash key and ignores the
+  ordering.
 - **Spanner**: foreign keys are included, including composite and circular
   relationships rendered in two phases. Spanner manages the referenced-key
   backing index, so Ptah does not require an input unique/index declaration.
