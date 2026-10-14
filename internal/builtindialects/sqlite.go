@@ -35,5 +35,8 @@ func sqlite() descriptor.Dialect {
 				Attribution: "through-newest",
 			},
 		},
+
+		// How a connection reaches the server.
+		Driver: "sqlite",
 	}
 }

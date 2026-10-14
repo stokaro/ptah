@@ -52,5 +52,8 @@ func mysql() descriptor.Dialect {
 		},
 		IdentifierLimit:      descriptor.IdentifierLimit{Max: 64, Unit: "characters"},
 		GrantOptionPerObject: true,
+
+		// How a connection reaches the server.
+		Driver: "mysql",
 	}
 }

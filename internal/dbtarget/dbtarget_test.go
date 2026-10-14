@@ -402,7 +402,8 @@ func TestLookup_AcceptsTheMySQLSpellingOfAMariaDBAddress(t *testing.T) {
 // cockroachdb://root@host:26257/db leaves root@host:26257/db, which is neither,
 // so a probe that dbtarget.URL connects with fine failed on the driver path.
 // The alias is rewritten rather than removed, which is what
-// dbschema.convertPostgresWireURL already does for the same reason.
+// convertPostgresWireURL in internal/connector/pgconnect already does for the
+// same reason.
 func TestLookupDriverDSN_RewritesAPostgresFamilyAlias(t *testing.T) {
 	tests := []struct {
 		name   string

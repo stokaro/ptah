@@ -1,4 +1,4 @@
-package dbschema
+package sqliteconnect
 
 // White-box testing required: the driver and DSN a URL resolves to are chosen
 // by an unexported function, and no exported call reports which transport a
@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/connector"
 )
 
 // libSQLURLRow is one authored URL and the transport the pinned community
@@ -77,10 +78,10 @@ func TestLibSQLResolvesToTheSQLiteDialect(t *testing.T) {
 	c.Assert(platform.NormalizeDialect("libsql+http"), qt.Equals, "")
 }
 
-// closeRow is one connection shape and whether Close must report its error.
+// closeRow is one error closing a libsql pool returns, and whether Close must
+// report it.
 type closeRow struct {
 	name    string
-	remote  bool
 	err     error
 	wantErr bool
 }
@@ -92,28 +93,38 @@ func TestCloseSwallowsOnlyTheLibSQLTeardown(t *testing.T) {
 		// closes cleanly. Reporting it would put a warning after every
 		// successful command, which the binary does not.
 		name:    "the measured teardown is not an error",
-		remote:  true,
 		err:     fmt.Errorf("failed to close WebSocket: failed to read frame header: %w", io.EOF),
 		wantErr: false,
 	}, {
 		// The inverse control: a real failure on the same transport must still
 		// reach the caller, or this would be a blanket silencer.
 		name:    "a genuine failure on the same transport still reports",
-		remote:  true,
 		err:     errors.New("connection reset by peer"),
-		wantErr: true,
-	}, {
-		// And an EOF from any other driver is not covered by this at all.
-		name:    "an EOF from another driver still reports",
-		remote:  false,
-		err:     fmt.Errorf("closing pool: %w", io.EOF),
 		wantErr: true,
 	}}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(libSQLTeardownIsBenign(row.remote, row.err), qt.Equals, !row.wantErr)
+			c.Assert(libSQLTeardownIsBenign(row.err), qt.Equals, !row.wantErr)
 		})
 	}
+}
+
+// An EOF from any other driver is not covered at all: a pool the local SQLite
+// driver opened carries no benign close error.
+func TestLocalSQLitePoolHasNoBenignCloseError(t *testing.T) {
+	c := qt.New(t)
+	described, known := platform.Lookup(platform.SQLite)
+	c.Assert(known, qt.IsTrue)
+	const dbURL = "sqlite://:memory:"
+	parsed, err := connector.ParseURL(dbURL)
+	c.Assert(err, qt.IsNil)
+
+	pool, err := Service{}.Open(c.Context(), connector.Request{Dialect: described, URL: dbURL, Parsed: parsed})
+
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(pool.DB.Close(), qt.IsNil) })
+	c.Assert(pool.BenignClose, qt.IsNil)
+	c.Assert(pool.SingleSession, qt.IsTrue)
 }

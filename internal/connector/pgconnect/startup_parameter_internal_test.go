@@ -1,4 +1,4 @@
-package dbschema
+package pgconnect
 
 // White-box testing required: the explanation is chosen from a driver error
 // inside the connect path, and the exported failure carries the same wrapped

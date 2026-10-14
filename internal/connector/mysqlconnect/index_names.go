@@ -1,4 +1,4 @@
-package dbschema
+package mysqlconnect
 
 import (
 	"context"
@@ -6,9 +6,16 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/connector"
 )
+
+// indexNameProbe asks a MySQL-family server which index names collide, on the
+// connection the caller resolves through.
+type indexNameProbe struct {
+	executor connector.Executor
+}
 
 // mysqlProbeKeyLimit is how many keys one table may carry, so it is how many
 // names one probe statement can ask about.
@@ -19,7 +26,7 @@ import (
 // than columns, so it is the keys that bound a chunk.
 const mysqlProbeKeyLimit = 64
 
-// resolveMySQLFamilyIndexNames answers which of the given names the connected
+// resolveIndexNames answers which of the given names the connected
 // MySQL-family server treats as one index name.
 //
 // The two engines fold index names differently and neither fold is reachable
@@ -34,14 +41,15 @@ const mysqlProbeKeyLimit = 64
 // answered and a schema carrying no other kind reaches no server at all --
 // which is every ordinary schema, and the reason this costs nothing in the
 // common case (stokaro/ptah#2768).
-func (dc *DatabaseConnection) resolveMySQLFamilyIndexNames(
+func resolveIndexNames(
 	ctx context.Context,
+	executor connector.Executor,
+	info catalog.ServerInfo,
 	names []string,
 ) (identifier.Semantics, error) {
-	info := dc.Info()
 	offline := info.IdentifierSemantics.Normalize(info.Dialect)
 
-	candidates := normalizedIdentifierNames(names)
+	candidates := connector.NormalizedNames(names)
 	beyondASCII := beyondASCIINames(candidates)
 	if len(beyondASCII) == 0 {
 		return offline, nil
@@ -54,13 +62,13 @@ func (dc *DatabaseConnection) resolveMySQLFamilyIndexNames(
 	}
 
 	classes := newNameClasses(candidates)
-	if err := dc.probeMySQLIndexNameChunks(ctx, candidates, beyondASCII, classes); err != nil {
+	if err := (indexNameProbe{executor: executor}).chunks(ctx, candidates, beyondASCII, classes); err != nil {
 		return identifier.Semantics{}, err
 	}
 	return identifier.ForMySQLFamilyResolvedIndexNames(info.Dialect, classes.resolved()), nil
 }
 
-// probeMySQLIndexNameChunks asks the server about every pairing the offline
+// chunks asks the server about every pairing the offline
 // rules cannot answer.
 //
 // Each chunk carries every non-ASCII name together with a slice of the rest, so
@@ -69,7 +77,7 @@ func (dc *DatabaseConnection) resolveMySQLFamilyIndexNames(
 // ASCII names need no server because both engines fold ASCII the way Ptah does.
 // Sixty-four keys is the per-table ceiling, which is what makes the chunking
 // necessary rather than a preference.
-func (dc *DatabaseConnection) probeMySQLIndexNameChunks(
+func (p indexNameProbe) chunks(
 	ctx context.Context,
 	candidates, beyondASCII []string,
 	classes *nameClasses,
@@ -82,12 +90,12 @@ func (dc *DatabaseConnection) probeMySQLIndexNameChunks(
 		// Every slot is spent on the names that have to be in every chunk, so
 		// the non-ASCII names are asked about among themselves and nothing else
 		// fits. The refusal above keeps this from meaning silently less.
-		return dc.probeMySQLIndexNameSet(ctx, beyondASCII, classes)
+		return p.set(ctx, beyondASCII, classes)
 	}
 	for start := 0; start < len(rest) || start == 0; start += room {
 		end := min(start+room, len(rest))
 		chunk := append(slices.Clone(beyondASCII), rest[start:end]...)
-		if err := dc.probeMySQLIndexNameSet(ctx, chunk, classes); err != nil {
+		if err := p.set(ctx, chunk, classes); err != nil {
 			return err
 		}
 		if end >= len(rest) {
@@ -97,7 +105,7 @@ func (dc *DatabaseConnection) probeMySQLIndexNameChunks(
 	return nil
 }
 
-// probeMySQLIndexNameSet asks whether one set of names can coexist as keys, and
+// set asks whether one set of names can coexist as keys, and
 // narrows to the colliding pair when it cannot.
 //
 // The whole set goes in one statement first, because that is the answer for
@@ -105,12 +113,12 @@ func (dc *DatabaseConnection) probeMySQLIndexNameChunks(
 // is its own class, or it names a duplicate and the pairing has to be found.
 // Pairwise narrowing is only reached by a schema that already carries a
 // collision, which is a schema the comparison is about to report on anyway.
-func (dc *DatabaseConnection) probeMySQLIndexNameSet(
+func (p indexNameProbe) set(
 	ctx context.Context,
 	chunk []string,
 	classes *nameClasses,
 ) error {
-	created, err := dc.probeMySQLKeysCoexist(ctx, chunk)
+	created, err := p.keysCoexist(ctx, chunk)
 	if err != nil {
 		return err
 	}
@@ -120,7 +128,7 @@ func (dc *DatabaseConnection) probeMySQLIndexNameSet(
 	for left := range chunk {
 		for right := left + 1; right < len(chunk); right++ {
 			pair := []string{chunk[left], chunk[right]}
-			coexist, err := dc.probeMySQLKeysCoexist(ctx, pair)
+			coexist, err := p.keysCoexist(ctx, pair)
 			if err != nil {
 				return err
 			}
@@ -132,7 +140,7 @@ func (dc *DatabaseConnection) probeMySQLIndexNameSet(
 	return nil
 }
 
-// probeMySQLKeysCoexist reports whether the server accepts every name as a key
+// keysCoexist reports whether the server accepts every name as a key
 // on one table.
 //
 // The table is TEMPORARY, so it is this session's alone and gone when the
@@ -142,7 +150,7 @@ func (dc *DatabaseConnection) probeMySQLIndexNameSet(
 // A refusal that is not the duplicate-name answer is returned rather than read
 // as "they collide". Losing the connection, or lacking the privilege to create
 // a temporary table, must not look like an equivalence the server reported.
-func (dc *DatabaseConnection) probeMySQLKeysCoexist(
+func (p indexNameProbe) keysCoexist(
 	ctx context.Context,
 	chunk []string,
 ) (bool, error) {
@@ -156,17 +164,17 @@ func (dc *DatabaseConnection) probeMySQLKeysCoexist(
 		fmt.Fprintf(&keys, "KEY %s (c%d)", quoteMySQLIdentifier(name), position)
 	}
 	table := "ptah_index_name_probe"
-	if _, err := dc.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS `"+table+"`"); err != nil {
+	if _, err := p.executor.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS `"+table+"`"); err != nil {
 		return false, fmt.Errorf("resolve MySQL-family index names: clear the probe table: %w", err)
 	}
 	statement := fmt.Sprintf("CREATE TEMPORARY TABLE `%s` (%s, %s)", table, columns.String(), keys.String())
-	if _, err := dc.ExecContext(ctx, statement); err != nil {
+	if _, err := p.executor.ExecContext(ctx, statement); err != nil {
 		if isMySQLDuplicateKeyName(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("resolve MySQL-family index names: ask the server: %w", err)
 	}
-	if _, err := dc.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS `"+table+"`"); err != nil {
+	if _, err := p.executor.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS `"+table+"`"); err != nil {
 		return false, fmt.Errorf("resolve MySQL-family index names: clear the probe table: %w", err)
 	}
 	return true, nil
@@ -256,16 +264,4 @@ func (n *nameClasses) resolved() []identifier.ResolvedName {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return resolved
-}
-
-// isMySQLFamilyDialect reports whether the dialect is MySQL or MariaDB: one
-// whose index-name equivalence has to be asked of the server, and whose URL
-// has to name a database.
-func isMySQLFamilyDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
 }

@@ -1,4 +1,4 @@
-package dbschema
+package pgconnect
 
 // White-box testing required: recordUnmodeledObjectKinds is unexported, and
 // reaching it through ReadSchemaWithSchemas needs a live server of the one

@@ -1,4 +1,4 @@
-package dbschema
+package pgconnect
 
 // White-box testing required: removePostgresPoolParams is unexported and sits
 // between ConnectToDatabase and the driver, so the only exported path to it

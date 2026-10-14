@@ -41,5 +41,8 @@ func sqlServer() descriptor.Dialect {
 			},
 		},
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "characters"},
+
+		// How a connection reaches the server.
+		Driver: "sqlserver",
 	}
 }

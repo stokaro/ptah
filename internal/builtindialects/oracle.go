@@ -52,5 +52,8 @@ func oracle() descriptor.Dialect {
 				Newest:      capabilityline.Oracle23,
 			},
 		},
+
+		// How a connection reaches the server.
+		Driver: "oracle",
 	}
 }

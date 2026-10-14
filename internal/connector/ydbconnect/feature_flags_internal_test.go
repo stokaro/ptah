@@ -1,16 +1,15 @@
-package dbschema
+package ydbconnect
 
 // White-box testing required: a YDB cluster's feature flags reach the
-// capability set inside getDatabaseInfoWithCapabilities, and the public path to
-// it, ConnectToDatabase, dials the cluster through ydb-go-sdk before it reads a
-// flag. Driving that function with an in-memory database that answers the
-// version query reaches every step after the dial -- the URL parse, the flag
-// read from the monitoring endpoint and the refinement -- with the endpoint
-// serving a page recorded from a live cluster.
+// capability set in Service.Refine, and the public path to it,
+// dbschema.ConnectToDatabase, dials the cluster through ydb-go-sdk before it
+// reads a flag. Driving Refine with a pool whose credential source the test
+// supplies reaches every step after the dial -- the URL parse, the flag read
+// from the monitoring endpoint and the refinement -- with the endpoint serving
+// a page recorded from a live cluster.
 
 import (
 	"context"
-	"database/sql/driver"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -22,16 +21,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/connector"
 )
-
-// ydbVersionDB answers the one query getDatabaseInfo sends a YDB connection.
-func ydbVersionDB(c *qt.C, version string) *dbtest.DB {
-	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		c.Assert(query, qt.Equals, "SELECT Version()")
-		return dbtest.QueryResult{Columns: []string{"column0"}, Rows: [][]driver.Value{{version}}}, nil
-	})
-}
 
 // monitoring is a stand-in for a cluster's monitoring endpoint.
 type monitoring struct {
@@ -63,14 +54,20 @@ func presents(ticket string) ticketSource {
 	return func(context.Context) (string, error) { return ticket, nil }
 }
 
-// infoFor runs the capability assembly over a 26.2.1.14 server at dbURL, for a
-// connection whose credential ticket hands over.
-func infoFor(c *qt.C, dbURL string, ticket ticketSource) (catalog.ServerInfo, capability.VersionResolution, error) {
-	parsed, err := parseDatabaseURL(dbURL)
-	c.Assert(err, qt.IsNil)
-	return getDatabaseInfoWithCapabilities(
-		c.Context(), ydbVersionDB(c, "26.2.1.14").SQL, platform.YDB, parsed, dbURL, resolveSchemaFromSession, ticket,
+// infoFor refines the preset of a 26.2.1.14 server at dbURL, for a connection
+// whose credential ticket hands over, and returns the refined set beside the
+// preset's resolution.
+func infoFor(c *qt.C, dbURL string, ticket ticketSource) (capability.Capabilities, capability.VersionResolution, error) {
+	const version = "26.2.1.14"
+	resolution := capability.ResolveServerVersion(platform.YDB, version)
+	caps, err := Service{}.Refine(
+		c.Context(),
+		&connector.Pool{Native: pool{ticket: ticket}},
+		connector.Request{URL: dbURL},
+		catalog.ServerInfo{Dialect: platform.YDB, Version: version},
+		resolution.Capabilities,
 	)
+	return caps, resolution, err
 }
 
 // On 26.2.1.14 the preset says a unique index cannot be added to a table that
@@ -85,22 +82,22 @@ func TestGetDatabaseInfoWithCapabilities_FeatureFlags_HappyPath(t *testing.T) {
 		want bool
 	}{{
 		name: "a cluster started with enable_add_unique_index",
-		page: "../internal/ydbflags/testdata/local-ydb-26.2.1.14-add-unique-index.json",
+		page: "../../ydbflags/testdata/local-ydb-26.2.1.14-add-unique-index.json",
 		want: true,
 	}, {
 		name: "a cluster at the line's default flags",
-		page: "../internal/ydbflags/testdata/local-ydb-26.2.1.14.json",
+		page: "../../ydbflags/testdata/local-ydb-26.2.1.14.json",
 		want: false,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			server := monitoringServing(c, tc.page, http.StatusOK)
 
-			info, resolution, err := infoFor(c, "ydb://localhost:2136/local?monitoring="+server.URL, nil)
+			caps, resolution, err := infoFor(c, "ydb://localhost:2136/local?monitoring="+server.URL, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(resolution.Capabilities.Has(capability.UniqueIndexOnExistingTable), qt.IsFalse)
-			c.Assert(info.Capabilities.Has(capability.UniqueIndexOnExistingTable), qt.Equals, tc.want)
+			c.Assert(caps.Has(capability.UniqueIndexOnExistingTable), qt.Equals, tc.want)
 		})
 	}
 }
@@ -121,7 +118,7 @@ func TestGetDatabaseInfoWithCapabilities_FeatureFlagsCredential_HappyPath(t *tes
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			server := monitoringServing(c, "../internal/ydbflags/testdata/local-ydb-26.2.1.14.json", http.StatusOK)
+			server := monitoringServing(c, "../../ydbflags/testdata/local-ydb-26.2.1.14.json", http.StatusOK)
 
 			_, _, err := infoFor(c, tc.scheme+"://localhost:2136/local?monitoring="+server.URL, tc.ticket)
 
@@ -156,12 +153,12 @@ func TestGetDatabaseInfoWithCapabilities_FeatureFlagsCredential_FailurePath(t *t
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			server := monitoringServing(c, "../internal/ydbflags/testdata/local-ydb-26.2.1.14.json", http.StatusOK)
+			server := monitoringServing(c, "../../ydbflags/testdata/local-ydb-26.2.1.14.json", http.StatusOK)
 
-			info, _, err := infoFor(c, "ydbs://localhost:2135/local?monitoring="+server.URL, tc.ticket)
+			caps, _, err := infoFor(c, "ydbs://localhost:2135/local?monitoring="+server.URL, tc.ticket)
 
 			c.Assert(err, qt.ErrorMatches, tc.wantErr)
-			c.Assert(info, qt.DeepEquals, catalog.ServerInfo{})
+			c.Assert(caps, qt.DeepEquals, capability.Capabilities{})
 			c.Assert(server.authorization, qt.HasLen, 0)
 		})
 	}
@@ -173,21 +170,21 @@ func TestGetDatabaseInfoWithCapabilities_NoMonitoringEndpoint_HappyPath(t *testi
 	c := qt.New(t)
 	unasked := func(context.Context) (string, error) { return "", errors.New("the credential was asked for") }
 
-	info, resolution, err := infoFor(c, "ydb://localhost:2136/local", unasked)
+	caps, resolution, err := infoFor(c, "ydb://localhost:2136/local", unasked)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Capabilities, qt.DeepEquals, resolution.Capabilities)
+	c.Assert(caps, qt.DeepEquals, resolution.Capabilities)
 }
 
 // The operator asked for the cluster's answer, so a page that cannot be read
 // fails the connection rather than planning with the preset.
 func TestGetDatabaseInfoWithCapabilities_FeatureFlags_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	server := monitoringServing(c, "../internal/ydbflags/testdata/local-ydb-26.2.1.14.json",
+	server := monitoringServing(c, "../../ydbflags/testdata/local-ydb-26.2.1.14.json",
 		http.StatusServiceUnavailable)
 
-	info, _, err := infoFor(c, "ydb://localhost:2136/local?monitoring="+server.URL, nil)
+	caps, _, err := infoFor(c, "ydb://localhost:2136/local?monitoring="+server.URL, nil)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*503 Service Unavailable.*`)
-	c.Assert(info, qt.DeepEquals, catalog.ServerInfo{})
+	c.Assert(caps, qt.DeepEquals, capability.Capabilities{})
 }

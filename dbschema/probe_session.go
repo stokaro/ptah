@@ -5,11 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5/stdlib"
-
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 )
 
 // WithRolledBackTransaction runs body inside one transaction, and rolls that
@@ -89,7 +84,9 @@ func (dc *DatabaseConnection) rollBackOn(
 			resultErr = errors.Join(resultErr, fmt.Errorf("%s: roll back: %w", label, rollbackErr))
 		}
 	}()
-	if err := keepDDLInsideTheTransaction(ctx, tx, dc.info.Version); err != nil {
+	// CockroachDB commits an explicit transaction ahead of a DDL statement
+	// unless the transaction asks it not to; its connector does.
+	if err := dc.engine().KeepDDLInTransaction(ctx, tx, dc.info); err != nil {
 		return false, fmt.Errorf("%s: %w", label, err)
 	}
 
@@ -116,66 +113,5 @@ func (dc *DatabaseConnection) pinnedSessionOutsideTransaction(ctx context.Contex
 	if dc.session == nil {
 		return false
 	}
-	if platform.NormalizeDialect(dc.info.Dialect) == platform.SQLServer {
-		var open int
-		if err := dc.session.QueryRowContext(ctx, "SELECT @@TRANCOUNT").Scan(&open); err != nil {
-			return false
-		}
-		return open == 0
-	}
-	idle := false
-	err := dc.session.Raw(func(driverConn any) error {
-		conn, ok := driverConn.(*stdlib.Conn)
-		if !ok {
-			return nil
-		}
-		idle = conn.Conn().PgConn().TxStatus() == pgxTxStatusIdle
-		return nil
-	})
-	return err == nil && idle
-}
-
-// pgxTxStatusIdle is the ReadyForQuery status byte of a session outside any
-// transaction block; 'T' is inside one and 'E' inside a failed one.
-const pgxTxStatusIdle = 'I'
-
-// keepDDLInsideTheTransaction asks a server that would not to keep the caller's
-// DDL where the caller put it.
-//
-// CockroachDB defaults autocommit_before_ddl to on: a DDL statement issued
-// inside an explicit transaction makes the server COMMIT that transaction
-// first and run the DDL in one of its own. Everything this file guarantees
-// rests on the transaction still being there, and it is not.
-//
-// The symptom is not the commit, which is silent. It is what happens next --
-// measured on cockroachdb/cockroach:v25.4.0, `ptah schema apply --dry-run`
-// against any schema holding a CHECK constraint:
-//
-//	error: compare database schema: compare schemas: resolve check expressions:
-//	roll back to savepoint after "customers.customers_amount_ck":
-//	ERROR: savepoint "ptah_check_probe" does not exist (SQLSTATE 3B001)
-//
-// The probe's CREATE TEMPORARY TABLE is refused there anyway -- temp tables are
-// experimental and off -- and the probe treats a refusal as "unresolved",
-// which is the honest answer. It never gets to: the auto-commit ahead of the
-// refused DDL has already taken the savepoint with it, so the recovery fails
-// and the whole comparison fails with it. The reported error names the
-// rollback, which is the one thing that was not wrong.
-//
-// With the setting off the same sequence recovers and the comparison continues.
-// SET LOCAL rather than SET, so it lasts exactly as long as the transaction and
-// cannot reach the next borrower of a pooled connection (stokaro/ptah#2140).
-//
-// Asked of CockroachDB alone. PostgreSQL has no such variable and answers
-// `unrecognized configuration parameter`, and a failed statement inside a
-// PostgreSQL transaction poisons every later one -- so a version this does not
-// recognize is left alone rather than probed.
-func keepDDLInsideTheTransaction(ctx context.Context, tx *sql.Tx, version string) error {
-	if capability.BannerPlatform(version) != platform.CockroachDB {
-		return nil
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL autocommit_before_ddl = off"); err != nil {
-		return fmt.Errorf("keep DDL inside the transaction: %w", err)
-	}
-	return nil
+	return dc.engine().OutsideTransaction(ctx, dc.session)
 }
