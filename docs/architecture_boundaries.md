@@ -38,6 +38,7 @@ features, database implementations, or external modules.
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 | `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
 | `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 0 |
+| `shared-packages-name-dialects` | Shared packages must not name a dialect, so that a new engine needs no edit to shared code. | per package, in the JSON |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build. A rule above zero refuses any new
@@ -130,9 +131,71 @@ dialect needs, whatever owners a load selects:
 | `internal/pgname` | The names PostgreSQL gives an unnamed constraint. |
 | `internal/pgprivilege` | The privileges `ALL` names in a GRANT or REVOKE. |
 
-The rule does not check this list, since these helpers are not owner families
-and the command does not classify packages by name. A helper that interprets
-syntax an owner models moves to the owner instead.
+The owner rule does not check this list, since these helpers are not owner
+families. The dialect-name rule reads them as per-engine helpers by their names
+and leaves them out of the shared set; see
+[What the dialect-name rule holds](#what-the-dialect-name-rule-holds). A helper
+that interprets syntax an owner models moves to the owner instead.
+
+### What the dialect-name rule holds
+
+`shared-packages-name-dialects` measures the distance to the goal of
+[#4204](https://github.com/stokaro/ptah/issues/4204): a new database engine
+can be added without editing shared code. Shared code that branches on a
+dialect name has to be edited for every new engine, so the rule counts those
+names in each shared package.
+
+A finding is one of these places in a production file, resolved by the type
+checker:
+
+- a use of a `core/platform` dialect constant, such as `platform.Postgres`, in
+  any position;
+- a call to a `core/platform` family predicate, such as
+  `platform.IsPostgresFamily`, so that replacing a comparison with the predicate
+  does not count as progress;
+- an operand of `==` or `!=`, or a case of an expression switch, whose constant
+  value is a spelling `NormalizeDialect` accepts, such as `"postgres"` or
+  `"libsql"`.
+
+The constants, the spellings and the predicates are read out of
+`core/platform`, not written into the rule. A spelling outside a comparison,
+such as a log message, is not a finding: nothing tells a name from a word
+there. One false positive is known and counted. PostgreSQL's bootstrap
+superuser is named `postgres`, and the type checker cannot tell a role name
+from a dialect name, so the comparisons in `internal/reservedrole` and
+`internal/sqlschema` are findings. They are PostgreSQL knowledge in shared
+code all the same.
+
+The shared set starts at the neutral layer, the shared SQL reader, and `core`,
+`migration`, `dbschema` and `catalog`. It adds every package those link through
+shared packages only, so a helper that a shared package starts to link is
+measured without an edit to the rule. Packages come from `go list`, kept to
+directories that hold a git-tracked Go file. The set leaves out:
+
+- the owner families: `dialect/<name>`, `feature/<name>` and `engine/builtin`;
+- the built-in bundle: a package with a path segment that begins with
+  `builtin`, such as `internal/builtinlowering`;
+- `core/platform` itself, which declares dialect identity;
+- a package with a path segment that names an engine. The segment begins with a
+  spelling `NormalizeDialect` accepts, the name of a `dialect/` owner, or one of
+  the abbreviations `pg`, `ora` and `yql`. That covers the per-engine readers
+  in `internal/dbschema/<engine>`, the planners in
+  `internal/planner/dialects/<engine>`, and helpers such as `internal/pgname`
+  and `internal/mysqlname`.
+
+The last two exclusions read package names. They choose the set; they do not
+count anything, and every finding is still the type checker's.
+
+The rule refuses to run when the set falls below its floor of shared packages,
+or when a package it names as required is missing from the set. Without that, a
+root that stopped matching would report zero and pass.
+
+Counts are recorded per package in `architecture_boundaries.json`, and the
+JSON is the table. The check is two-way: a package whose count grows fails,
+and a package whose count falls fails until
+`go run ./internal/cmd/boundaries -update` records the fall. Debt that moves
+from one package to another with the total unchanged fails too. Run
+`go run ./internal/cmd/boundaries -json` for every finding with its position.
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
@@ -236,6 +299,7 @@ test and the control that make it evidence.
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 | Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
 | SQL reader isolation: the shared SQL reader links no owner | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
+| Dialect names: shared packages name no more dialects than recorded | `shared-packages-name-dialects` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a dialect constant, a dialect literal in a switch and a family predicate call in a shared package are refused; the same constant in an owner, a per-engine helper and the bundle is accepted; a doc comment and an uncompared string are accepted; a package baseline above the tree and debt recorded in the wrong package are refused |
 
 ## How target facts are held
 
