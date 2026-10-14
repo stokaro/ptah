@@ -274,7 +274,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, viewComments(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)
-	return p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, columnTTL.reads, beforeChangefeeds, result)
+	scheduled, err := p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, columnTTL.reads, beforeChangefeeds, result)
+	if err != nil {
+		return nil, err
+	}
+	return append(scheduled, access.tail...), nil
 }
 
 // refuseUnsupportedChanges refuses the changes no YDB plan can carry, before

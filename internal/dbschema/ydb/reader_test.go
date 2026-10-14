@@ -54,8 +54,10 @@ type fakeSource struct {
 	// selves are the directories' own entries, which carry their owner and
 	// permission entries; a directory without one has neither.
 	selves map[string]*Ydb_Scheme.Entry
-	// paths are the entries DescribePath answers with, such as a secret's.
-	paths map[string]*Ydb_Scheme.Entry
+	// paths are the entries DescribePath answers with, such as a secret's,
+	// and pathErrors how it fails for a path.
+	paths      map[string]*Ydb_Scheme.Entry
+	pathErrors map[string]error
 	// principals is what .sys/auth_* reports, and principalsErr how reading
 	// it fails.
 	principals    ydbreader.Principals
@@ -93,6 +95,9 @@ func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.E
 }
 
 func (f fakeSource) DescribePath(_ context.Context, path string) (*Ydb_Scheme.Entry, error) {
+	if err := f.pathErrors[path]; err != nil {
+		return nil, err
+	}
 	described, ok := f.paths[path]
 	if !ok {
 		return nil, fmt.Errorf("described path %s, which the fixture does not hold", path)

@@ -14,34 +14,47 @@ import (
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbacl"
 )
 
 // TestSchemeObjects_HappyPath pins each kind of scheme object a grant names
 // beyond the database, a directory and a table: the object type a grant
 // carries, the owner's model kind, the capability key a target holds the kind
-// under, and the owner's identity of an object a grant names, by a reference
-// and by its absolute path under the database. Every kind the schema model
-// lists is one of them, so a declaration of any of them reaches a reader that
-// reads it.
+// under, the owner's identity of an object a grant names, by a reference and
+// by its absolute path under the database, and the path a statement names it
+// by. A resource pool belongs to the database and is named by its name alone.
+// Every kind the schema model lists is one of them, so a declaration of any of
+// them reaches a reader that reads it.
 func TestSchemeObjects_HappyPath(t *testing.T) {
 	tests := []struct {
 		objectType string
 		kind       schemaext.Kind
 		key        capability.Capability
 		ref        objectidentity.ID
+		reference  string
+		path       string
 	}{
 		{objectType: schemamodel.GrantObjectTopic, kind: ydbtopic.Kind, key: capability.Topics,
-			ref: ydbtopic.Ref("app/eu", "events")},
+			ref: ydbtopic.Ref("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
 		{objectType: schemamodel.GrantObjectCoordinationNode, kind: ydbcoordination.Kind, key: capability.CoordinationNodes,
-			ref: ydbcoordination.Ref("app/eu", "events")},
+			ref: ydbcoordination.Ref("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
 		{objectType: schemamodel.GrantObjectSecret, kind: ydbsecret.Kind, key: capability.Secrets,
-			ref: ydbsecret.Ref("app/eu", "events")},
+			ref: ydbsecret.Ref("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
 		{objectType: schemamodel.GrantObjectExternalDataSource, kind: ydbexternal.SourceKind, key: capability.ExternalDataSources,
-			ref: ydbexternal.SourceRef("app/eu", "events")},
+			ref: ydbexternal.SourceRef("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
 		{objectType: schemamodel.GrantObjectExternalTable, kind: ydbexternal.TableKind, key: capability.ExternalDataSources,
-			ref: ydbexternal.TableRef("app/eu", "events")},
+			ref: ydbexternal.TableRef("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
+		{objectType: schemamodel.GrantObjectAsyncReplication, kind: ydbreplication.ReplicationKind, key: capability.AsyncReplication,
+			ref: ydbreplication.ReplicationRef("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
+		{objectType: schemamodel.GrantObjectTransfer, kind: ydbreplication.TransferKind, key: capability.Transfers,
+			ref: ydbreplication.TransferRef("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
+		{objectType: schemamodel.GrantObjectStreamingQuery, kind: ydbstreaming.Kind, key: capability.StreamingQueries,
+			ref: ydbstreaming.Ref("app/eu", "events"), reference: "app/eu.events", path: "app/eu/events"},
+		{objectType: schemamodel.GrantObjectResourcePool, kind: ydbworkload.PoolKind, key: capability.ResourcePools,
+			ref: ydbworkload.PoolRef("batch.v2"), reference: "batch.v2", path: ".metadata/workload_manager/pools/batch.v2"},
 	}
 	listed := make([]string, 0, len(tests))
 	for _, kind := range schemamodel.GrantObjectKinds() {
@@ -54,16 +67,19 @@ func TestSchemeObjects_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			objectType, typed := ydbacl.ObjectType(test.kind)
 			key, keyed := ydbacl.ObjectCapability(test.objectType)
-			byReference, referenced := ydbacl.ObjectRef(test.objectType, "app/eu.events", "")
-			byPath, pathed := ydbacl.ObjectRef(test.objectType, "/local/app/eu/events", "/local/")
+			byReference, referenced := ydbacl.ObjectRef(test.objectType, test.reference, "")
+			byPath, pathed := ydbacl.ObjectRef(test.objectType, "/local/"+test.path, "/local/")
 			named, name, ok := ydbacl.ObjectName(test.ref)
+			relative, err := ydbacl.RelativePath(test.objectType, test.reference)
 
 			c.Assert(ydbacl.IsSchemeObject(test.objectType), qt.IsTrue)
 			c.Assert([]any{objectType, typed}, qt.DeepEquals, []any{test.objectType, true})
 			c.Assert([]any{key, keyed}, qt.DeepEquals, []any{test.key, true})
 			c.Assert([]any{byReference, referenced}, qt.DeepEquals, []any{test.ref, true})
 			c.Assert([]any{byPath, pathed}, qt.DeepEquals, []any{test.ref, true})
-			c.Assert([]any{named, name, ok}, qt.DeepEquals, []any{test.objectType, "app/eu.events", true})
+			c.Assert([]any{named, name, ok}, qt.DeepEquals, []any{test.objectType, test.reference, true})
+			c.Assert(err, qt.IsNil)
+			c.Assert(relative, qt.Equals, test.path)
 		})
 	}
 	c := qt.New(t)
@@ -88,6 +104,12 @@ func TestSchemeObjects_FailurePath(t *testing.T) {
 		{name: "a path with no database", objectType: "TOPIC", objectName: "/local/app/events"},
 		{name: "the database itself", objectType: "TOPIC", objectName: "/local/", root: "/local"},
 		{name: "no name", objectType: "TOPIC", objectName: ""},
+		{name: "a resource pool in a directory", objectType: "RESOURCE POOL", objectName: "ops/batch"},
+		{name: "a resource pool path outside the pools", objectType: "RESOURCE POOL", objectName: "/local/ops/batch", root: "/local"},
+		{name: "the pools directory", objectType: "RESOURCE POOL", objectName: "/local/.metadata/workload_manager/pools/", root: "/local"},
+		{name: "a resource pool path with no database", objectType: "RESOURCE POOL",
+			objectName: "/local/.metadata/workload_manager/pools/batch"},
+		{name: "no resource pool name", objectType: "RESOURCE POOL", objectName: ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -99,7 +121,7 @@ func TestSchemeObjects_FailurePath(t *testing.T) {
 	}
 	t.Run("an identity of a kind no grant names", func(t *testing.T) {
 		c := qt.New(t)
-		objectType, name, ok := ydbacl.ObjectName(ydbreplication.ReplicationRef("", "x"))
+		objectType, name, ok := ydbacl.ObjectName(ydbworkload.ClassifierRef("x"))
 		c.Assert([]any{objectType, name, ok}, qt.DeepEquals, []any{"", "", false})
 	})
 	t.Run("the table kind", func(t *testing.T) {

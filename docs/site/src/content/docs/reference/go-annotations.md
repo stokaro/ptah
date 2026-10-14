@@ -1100,17 +1100,21 @@ Declares database grants.
 | `comment` | No | Grant comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `grant_option` | No | Alias for `with_option`. `true`/`false`. |
+| `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_coordination_node` | No | Target coordination node, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_database` | No | Targets the database itself. YDB only. `true`/`false`. |
 | `on_external_data_source` | No | Target external data source, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_external_table` | No | Target external table, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
 | `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
+| `on_resource_pool` | No | Target resource pool, named by its name alone, such as `batch`: a pool belongs to the database, not to a directory. YDB only. |
 | `on_schema` | No | Target schema. |
 | `on_secret` | No | Target secret, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_sequence` | No | Target sequence. |
+| `on_streaming_query` | No | Target streaming query, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_table` | No | Target table. |
 | `on_topic` | No | Target topic, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
+| `on_transfer` | No | Target transfer, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `privilege` | No | Privilege or comma-separated privileges. |
 | `privileges` | No | Alias for `privilege`. |
 | `role` | No | Target role. |
@@ -1133,11 +1137,14 @@ read back as written. See
 [ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
 
 On YDB a grant is on the database (`on_database="true"`), a directory
-(`on_schema`), a table (`on_table`), or a topic, a coordination node, a secret,
-an external data source or an external table (`on_topic`,
-`on_coordination_node`, `on_secret`, `on_external_data_source`,
-`on_external_table`), each named as `on_table` names a table, such as
-`app.events`. A privilege is a YDB permission, by its
+(`on_schema`), a table or a view (`on_table`), or a topic, a coordination node,
+a secret, an external data source, an external table, an async replication, a
+transfer or a streaming query (`on_topic`, `on_coordination_node`,
+`on_secret`, `on_external_data_source`, `on_external_table`,
+`on_async_replication`, `on_transfer`, `on_streaming_query`), each named as
+`on_table` names a table, such as `app.events`. A resource pool
+(`on_resource_pool`) belongs to the database and is named by its name alone,
+such as `batch`. A privilege is a YDB permission, by its
 name, such as `ydb.granular.select_row`, or as `GRANT` spells it, such as
 `SELECT ROW`. `with_option` is refused: YDB records the grant option as a
 permission of its own, so grant `ydb.access.grant` instead.
@@ -1153,17 +1160,21 @@ PRIVILEGES` gives a role on a new table.
 | `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
 | `comment` | No | Comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_coordination_node` | No | Target coordination node, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_database` | No | Targets the database itself. YDB only. `true`/`false`. |
 | `on_external_data_source` | No | Target external data source, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_external_table` | No | Target external table, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
 | `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
+| `on_resource_pool` | No | Target resource pool, named by its name alone, such as `batch`: a pool belongs to the database, not to a directory. YDB only. |
 | `on_schema` | No | Target schema. |
 | `on_secret` | No | Target secret, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_sequence` | No | Target sequence. |
+| `on_streaming_query` | No | Target streaming query, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_table` | No | Target table. |
 | `on_topic` | No | Target topic, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
+| `on_transfer` | No | Target transfer, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `privilege` | No | Privilege or comma-separated privileges. |
 | `privileges` | No | Alias for `privilege`. |
 | `role` | Yes | Role the privileges are taken from; `PUBLIC` names every role. |

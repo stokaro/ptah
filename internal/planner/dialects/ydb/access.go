@@ -26,8 +26,9 @@ import (
 //  1. REVOKE for every permission entry the plan removes, while its object
 //     still exists; an entry on a table the plan drops goes with the table
 //     and is not revoked, and a table the plan creates holds none. The same
-//     holds for a scheme object an owner manages, such as a topic: an entry
-//     on one the plan drops, or drops and creates again, goes with it;
+//     holds for a view and for a scheme object an owner manages, such as a
+//     topic: an entry on one the plan drops, or drops and creates again,
+//     goes with it;
 //  2. ALTER GROUP ... DROP USER for every membership the plan removes;
 //  3. CREATE USER and CREATE GROUP for every principal the plan adds, a group
 //     empty, and ALTER USER for every user whose login or password changes;
@@ -35,7 +36,8 @@ import (
 //  5. ALTER GROUP ... ADD USER for every membership the plan adds;
 //  6. GRANT for every permission entry the plan adds, and for every entry a
 //     rebuilt table held, which the rebuild dropped with the old table, and
-//     every entry a scheme object the plan drops and creates again held. A
+//     every entry a view or a scheme object the plan drops and creates again
+//     held. A
 //     GRANT or REVOKE on a scheme object an owner manages is ordered against
 //     the owner's statements too, after the object's creation or change and
 //     before its drop (see [permissionEdges]);
@@ -43,16 +45,23 @@ import (
 //     both leave the principal's permission entries behind, so its revokes
 //     run first.
 //
+// A GRANT on a streaming query the plan creates or changes goes after all of
+// them, at the end of the plan: the streaming query owner places those
+// statements after every other one, so the query reads the schema the plan
+// leaves, and a GRANT in the phases above would be ordered before the query
+// it names.
+//
 // YDB keeps no statement that turns a user into a group, and a user carries
 // no attribute but its password and whether it logs in, so any other change
 // is refused before anything is emitted.
 
 // accessPlan is the access model's part of a plan, split around the table
-// phases.
+// phases, with the GRANTs that go after every statement the plan schedules.
 type accessPlan struct {
 	before []ast.Node
 	after  []ast.Node
 	last   []ast.Node
+	tail   []ast.Node
 }
 
 // planAccess plans the access model's changes. removedTables and addedTables
@@ -68,15 +77,14 @@ func (p *Planner) planAccess(
 		return accessPlan{}, err
 	}
 	objects := ownedObjectLifecycle(diff, p.caps)
-	if grant, dropped := objects.grantedOnDroppedObject(diff.GrantsAdded, diff.CurrentDatabasePath); dropped {
-		return accessPlan{}, refuseFact(fmt.Sprintf("granting %s on %s to %s", grant.Privilege,
-			ydbacl.Describe(grant.ObjectType, grant.ObjectName), grant.Role),
-			"the plan drops the object; declare it, or leave the grant out")
+	views := viewsOf(diff, p.caps, semantics)
+	if err := refuseGrantsOnDroppedObjects(diff, objects, views, semantics); err != nil {
+		return accessPlan{}, err
 	}
 	var plan accessPlan
 	for _, grant := range diff.GrantsRemoved {
 		key, onTable := grantTableKey(grant, semantics)
-		if onTable && (removedTables[key] || addedTables[key]) {
+		if onTable && (removedTables[key] || addedTables[key] || views.dropped[key] || views.recreated[key]) {
 			continue
 		}
 		if objects.revokedWithObject(grant, diff.CurrentDatabasePath) {
@@ -106,18 +114,52 @@ func (p *Planner) planAccess(
 	for _, membership := range diff.RoleMembershipsAdded {
 		plan.after = append(plan.after, ast.NewGrantRoleMembership(membership.Role, membership.Member))
 	}
-	for _, grant := range slices.Concat(diff.GrantsAdded, regrants(diff, rebuilt, semantics),
-		objects.regrants(diff, diff.CurrentDatabasePath)) {
-		node, err := p.grantNode(grant, diff.CurrentDatabasePath)
-		if err != nil {
-			return accessPlan{}, err
-		}
-		plan.after = append(plan.after, node)
+	if err := p.planGrants(&plan, diff, slices.Concat(rebuilt, views.recreatedKeys()), objects, semantics); err != nil {
+		return accessPlan{}, err
 	}
 	for _, role := range diff.RolesRemoved {
 		plan.last = append(plan.last, ast.NewDropRole(role.Name).SetIfExists().SetGroup(role.Group))
 	}
 	return plan, nil
+}
+
+// planGrants adds to plan a GRANT for every permission entry the plan adds,
+// for every entry a table or a view the plan drops to create again held, and
+// for every entry a scheme object it drops to create again held. rebuilt are
+// the identity keys of those tables and views. A GRANT whose object an owner
+// places after every other statement goes to the plan's tail.
+func (p *Planner) planGrants(
+	plan *accessPlan, diff *difftypes.SchemaDiff, rebuilt []string, objects objectLifecycle, semantics identifier.Semantics,
+) error {
+	for _, grant := range slices.Concat(diff.GrantsAdded, regrants(diff, rebuilt, semantics), objects.regrants(diff, diff.CurrentDatabasePath)) {
+		node, err := p.grantNode(grant, diff.CurrentDatabasePath)
+		if err != nil {
+			return err
+		}
+		if objects.grantsLast(grant, diff.CurrentDatabasePath) {
+			plan.tail = append(plan.tail, node)
+			continue
+		}
+		plan.after = append(plan.after, node)
+	}
+	return nil
+}
+
+// refuseGrantsOnDroppedObjects refuses a grant on a view or a scheme object
+// the plan drops, which no GRANT can reach.
+func refuseGrantsOnDroppedObjects(
+	diff *difftypes.SchemaDiff, objects objectLifecycle, views viewLifecycle, semantics identifier.Semantics,
+) error {
+	if grant, dropped := objects.grantedOnDroppedObject(diff.GrantsAdded, diff.CurrentDatabasePath); dropped {
+		return refuseFact(fmt.Sprintf("granting %s on %s to %s", grant.Privilege,
+			ydbacl.Describe(grant.ObjectType, grant.ObjectName), grant.Role),
+			"the plan drops the object; declare it, or leave the grant out")
+	}
+	if grant, dropped := views.grantedOnDroppedView(diff.GrantsAdded, semantics); dropped {
+		return refuseFact(fmt.Sprintf("granting %s on view %s to %s", grant.Privilege, grant.ObjectName, grant.Role),
+			"the plan drops the view; declare it, or leave the grant out")
+	}
+	return nil
 }
 
 // refuseAccessChanges refuses, before anything is emitted, an access change
@@ -246,10 +288,11 @@ func grantTableKey(grant difftypes.GrantRef, semantics identifier.Semantics) (st
 	return semantics.TableIdentityKey(grant.ObjectName), true
 }
 
-// regrants are the permission entries each rebuilt table held, which the plan
-// grants again on the table that replaces it: the entries live in the old
-// table's own access list, and the rebuild drops the old table. An entry the
-// plan removes or grants anyway is left out.
+// regrants are the permission entries each rebuilt table and each view the
+// plan drops and creates again held, which the plan grants again on the object
+// that replaces it: the entries live in the old object's own access list, and
+// the plan drops the old object. rebuilt are the identity keys of both. An
+// entry the plan removes or grants anyway is left out.
 func regrants(diff *difftypes.SchemaDiff, rebuilt []string, semantics identifier.Semantics) []difftypes.GrantRef {
 	if len(rebuilt) == 0 {
 		return nil
@@ -281,4 +324,46 @@ func grantIdentity(grant difftypes.GrantRef, semantics identifier.Semantics) str
 		object = key
 	}
 	return strings.Join([]string{grant.Role, strings.ToLower(grant.Privilege), strings.ToUpper(grant.ObjectType), object}, "\x00")
+}
+
+// viewLifecycle is what a plan does to each view, by identity key: the views
+// it drops, and the ones it drops to create again, which on a target without
+// [capability.CreateOrReplaceView] is every view whose query changed. A
+// view's permission entries live in its own access list, so either takes them
+// with it, as a DROP TABLE takes a table's; measured on 25.1.4.7 and
+// 26.2.1.14, a view created again holds no entry of its own.
+type viewLifecycle struct {
+	dropped, recreated map[string]bool
+}
+
+// viewsOf reads the views diff drops and drops to create again, on a target
+// with caps.
+func viewsOf(diff *difftypes.SchemaDiff, caps capability.Capabilities, semantics identifier.Semantics) viewLifecycle {
+	views := viewLifecycle{dropped: make(map[string]bool), recreated: make(map[string]bool)}
+	for _, view := range diff.ViewsRemoved {
+		views.dropped[semantics.TableIdentityKey(view.Name)] = true
+	}
+	if !caps.Has(capability.CreateOrReplaceView) {
+		for _, change := range diff.ViewsModified {
+			views.recreated[semantics.TableIdentityKey(change.ViewName)] = true
+		}
+	}
+	return views
+}
+
+// recreatedKeys are the identity keys of the views the plan drops to create
+// again, sorted.
+func (v viewLifecycle) recreatedKeys() []string {
+	return slices.Sorted(maps.Keys(v.recreated))
+}
+
+// grantedOnDroppedView is the first grant of grants on a view the plan drops,
+// which no GRANT can reach.
+func (v viewLifecycle) grantedOnDroppedView(grants []difftypes.GrantRef, semantics identifier.Semantics) (difftypes.GrantRef, bool) {
+	for _, grant := range grants {
+		if key, onTable := grantTableKey(grant, semantics); onTable && v.dropped[key] {
+			return grant, true
+		}
+	}
+	return difftypes.GrantRef{}, false
 }

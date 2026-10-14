@@ -30,15 +30,11 @@ func ValidateDeclared(dialect string, database *schemamodel.Database) error {
 	for _, role := range slices.SortedFunc(slices.Values(database.Roles), byRoleName) {
 		problems = append(problems, roleProblems(role, declared)...)
 	}
-	views := make(map[string]bool, len(database.Views))
-	for _, view := range database.Views {
-		views[strings.TrimSpace(view.Name)] = true
-	}
 	for _, grant := range database.Grants {
-		problems = append(problems, grantProblems("grant", grant, views)...)
+		problems = append(problems, grantProblems("grant", grant)...)
 	}
 	for _, revoked := range database.RevokedGrants {
-		problems = append(problems, grantProblems("revoke", revoked, views)...)
+		problems = append(problems, grantProblems("revoke", revoked)...)
 	}
 	return errors.Join(problems...)
 }
@@ -111,13 +107,8 @@ func membershipProblems(role schemamodel.Role, kind, group string, declared map[
 }
 
 // grantProblems reports what a declared grant or revoke asks of YDB that its
-// access lists cannot hold. verb names which of the two it is, and views are
-// the declared views by name.
-//
-// A grant on a view is refused because the reader does not read a view's
-// permission entries: a plan would make the grant, never see it, and make it
-// again on every run.
-func grantProblems(verb string, grant schemamodel.Grant, views map[string]bool) []error {
+// access lists cannot hold. verb names which of the two it is.
+func grantProblems(verb string, grant schemamodel.Grant) []error {
 	grant.Canonicalize()
 	subject := fmt.Sprintf("%s to %q", verb, grant.Role)
 	var problems []error
@@ -127,7 +118,7 @@ func grantProblems(verb string, grant schemamodel.Grant, views map[string]bool) 
 	}
 	if targets := grantTargets(grant); targets != 1 {
 		problems = append(problems, fmt.Errorf("%s names %d targets: a YDB grant is on the database "+
-			"(on_database), a directory (on_schema), a table (on_table) or a scheme object (%s)", subject, targets,
+			"(on_database), a directory (on_schema), a table or a view (on_table) or another scheme object (%s)", subject, targets,
 			objectAttributes()))
 	}
 	if grant.OnObject != "" {
@@ -139,14 +130,9 @@ func grantProblems(verb string, grant schemamodel.Grant, views map[string]bool) 
 	switch {
 	case strings.TrimSpace(grant.OnSequence) != "":
 		problems = append(problems, fmt.Errorf("%s on sequence %q: a YDB grant is on the database, "+
-			"a directory or a table", subject, grant.OnSequence))
+			"a directory, a table, a view or another scheme object", subject, grant.OnSequence))
 	case strings.TrimSpace(grant.OnRoutine) != "":
 		problems = append(problems, fmt.Errorf("%s on routine %q: YDB has no routines", subject, grant.OnRoutine))
-	}
-	if views[strings.TrimSpace(grant.OnTable)] {
-		problems = append(problems, fmt.Errorf("%s on view %q: Ptah does not read a YDB view's permissions yet, "+
-			"so a plan could not see the grant it made; grant on the view's directory, whose permissions the "+
-			"objects in it inherit", subject, grant.OnTable))
 	}
 	if len(grant.Columns) > 0 {
 		problems = append(problems, fmt.Errorf("%s on columns %s of %q: a YDB permission is on a whole object",

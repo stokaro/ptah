@@ -11,9 +11,9 @@ import (
 
 // TestValidateDeclared_HappyPath pins the declarations YDB holds: a user, a
 // group, a membership in a declared group and in one the cluster made, and
-// grants on the database, a directory and a table spelled as keywords or as
-// permission names. Another dialect's declaration is not this package's to
-// judge.
+// grants on the database, a directory, a table, a view and other scheme
+// objects, a resource pool among them, spelled as keywords or as permission
+// names. Another dialect's declaration is not this package's to judge.
 func TestValidateDeclared_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -33,6 +33,9 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 				{Role: "nobody", Privileges: []string{"ALL"}, OnTable: "events"},
 				{Role: "readers", Privileges: []string{"SELECT ROW"}, OnObject: "shop.events", ObjectKind: schemamodel.GrantObjectTopic},
 				{Role: "readers", Privileges: []string{"SELECT ROW"}, OnObject: "ext.pw", ObjectKind: "secret"},
+				{Role: "readers", Privileges: []string{"SELECT"}, OnTable: "shop.active"},
+				{Role: "readers", Privileges: []string{"SELECT ROW"}, OnObject: "shop.mirror", ObjectKind: "async replication"},
+				{Role: "app", Privileges: []string{"USE"}, OnObject: "batch.v2", ObjectKind: schemamodel.GrantObjectResourcePool},
 			},
 			Views:         []schemamodel.View{{Name: "shop.active", Body: "SELECT 1 AS a"}},
 			RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ERASE ROW"}, OnTable: "events"}},
@@ -81,7 +84,8 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 		{name: "no target", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}}}},
 			wantErr: `grant to "app" names 0 targets: .*`},
 		{name: "a sequence", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnSequence: "s"}}},
-			wantErr: `grant to "app" on sequence "s": a YDB grant is on the database, a directory or a table`},
+			wantErr: `grant to "app" on sequence "s": a YDB grant is on the database, a directory, a table, a view or ` +
+				`another scheme object`},
 		{name: "a routine", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"EXECUTE"}, OnRoutine: "f", RoutineArguments: "int"}}},
 			wantErr: `(?s)grant to "app" on routine "f": YDB has no routines.*`},
 		{name: "columns", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"a", "b"}}}},
@@ -95,8 +99,9 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 		{name: "a scheme object and a table", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app",
 			Privileges: []string{"SELECT ROW"}, OnTable: "t", OnObject: "events", ObjectKind: schemamodel.GrantObjectTopic}}},
 			wantErr: `grant to "app" names 2 targets: a YDB grant is on the database \(on_database\), a directory \(on_schema\), ` +
-				`a table \(on_table\) or a scheme object \(on_topic, on_coordination_node, on_secret, on_external_data_source, ` +
-				`on_external_table\)`},
+				`a table or a view \(on_table\) or another scheme object \(on_topic, on_coordination_node, on_secret, ` +
+				`on_external_data_source, on_external_table, on_async_replication, on_transfer, on_streaming_query, ` +
+				`on_resource_pool\)`},
 		{name: "a scheme object of a kind YDB has not", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app",
 			Privileges: []string{"SELECT ROW"}, OnObject: "shop.q", ObjectKind: "QUEUE"}}},
 			wantErr: `grant to "app" on queue "shop.q": a YDB grant is on the database, a directory, a table or a scheme ` +
@@ -104,10 +109,10 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 		{name: "a scheme object named by no reference", database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "app",
 			Privileges: []string{"SELECT ROW"}, OnObject: "a.b.c", ObjectKind: schemamodel.GrantObjectSecret}}},
 			wantErr: `revoke to "app" on secret "a.b.c": a grant on a secret names "a.b.c", which is not a secret`},
-		{name: "a view", database: &schemamodel.Database{
-			Views:  []schemamodel.View{{Name: "shop.active", Body: "SELECT 1 AS a"}},
-			Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "shop.active"}}},
-			wantErr: `grant to "app" on view "shop.active": Ptah does not read a YDB view's permissions yet, .*`},
+		{name: "a resource pool named by a path", database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app",
+			Privileges: []string{"USE"}, OnObject: "ops/batch", ObjectKind: schemamodel.GrantObjectResourcePool}}},
+			wantErr: `grant to "app" on resource pool "ops/batch": a grant on a resource pool names "ops/batch", which is not ` +
+				`a resource pool name: a resource pool belongs to the database and is named by its name alone`},
 	}
 
 	for _, test := range tests {

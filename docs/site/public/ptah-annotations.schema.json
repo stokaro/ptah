@@ -1354,6 +1354,10 @@
               "type": "string",
               "x-ptah-alias-for": "with_option"
             },
+            "on_async_replication": {
+              "description": "Target async replication, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_coordination_node": {
               "description": "Target coordination node, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
@@ -1382,6 +1386,10 @@
               "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
               "type": "string"
             },
+            "on_resource_pool": {
+              "description": "Target resource pool, named by its name alone, such as batch: a pool belongs to the database, not to a directory. YDB only.",
+              "type": "string"
+            },
             "on_schema": {
               "description": "Target schema.",
               "type": "string"
@@ -1394,12 +1402,20 @@
               "description": "Target sequence.",
               "type": "string"
             },
+            "on_streaming_query": {
+              "description": "Target streaming query, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_table": {
               "description": "Target table.",
               "type": "string"
             },
             "on_topic": {
               "description": "Target topic, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
+            "on_transfer": {
+              "description": "Target transfer, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
             },
             "privilege": {
@@ -2009,6 +2025,10 @@
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
+            "on_async_replication": {
+              "description": "Target async replication, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_coordination_node": {
               "description": "Target coordination node, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
@@ -2037,6 +2057,10 @@
               "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
               "type": "string"
             },
+            "on_resource_pool": {
+              "description": "Target resource pool, named by its name alone, such as batch: a pool belongs to the database, not to a directory. YDB only.",
+              "type": "string"
+            },
             "on_schema": {
               "description": "Target schema.",
               "type": "string"
@@ -2049,12 +2073,20 @@
               "description": "Target sequence.",
               "type": "string"
             },
+            "on_streaming_query": {
+              "description": "Target streaming query, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
             "on_table": {
               "description": "Target table.",
               "type": "string"
             },
             "on_topic": {
               "description": "Target topic, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
+              "type": "string"
+            },
+            "on_transfer": {
+              "description": "Target transfer, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
               "type": "string"
             },
             "privilege": {

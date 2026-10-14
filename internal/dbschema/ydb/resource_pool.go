@@ -168,6 +168,11 @@ func (r *Reader) resourcePools(ctx context.Context, source Source, db *catalog.D
 			if err != nil {
 				return err
 			}
+			if object.Value.Kind() == ydbworkload.PoolKind {
+				if err := r.poolAccess(ctx, source, read.Database, object.Ref.Name.Source, db); err != nil {
+					return err
+				}
+			}
 		}
 		subjects = append(subjects, schemaext.SubjectCoverage{Kind: object.Value.Kind(), Subject: object.Ref, Knowledge: knowledge})
 	}

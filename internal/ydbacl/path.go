@@ -37,9 +37,10 @@ var ErrNeedsDatabasePath = errors.New("YDB takes this object only by its absolut
 //
 // objectName is what the grant carries: a table or another scheme object
 // named by a reference in Ptah's schema-qualified spelling, such as
-// `shop.orders` (the object orders in the directory shop), a directory, such
-// as `shop/eu`, or nothing for the database. A name that begins with a slash
-// is already an absolute path and is returned as it is.
+// `shop.orders` (the object orders in the directory shop), a resource pool
+// named by its name alone, whose path is under [ResourcePoolDirectory], a
+// directory, such as `shop/eu`, or nothing for the database. A name that
+// begins with a slash is already an absolute path and is returned as it is.
 func RelativePath(objectType, objectName string) (string, error) {
 	if strings.HasPrefix(objectName, "/") && strings.Trim(objectName, "/") != "" {
 		return objectName, nil
@@ -66,12 +67,29 @@ func RelativePath(objectType, objectName string) (string, error) {
 	case ObjectTable:
 		return objectPath("table", objectName)
 	default:
-		if object, ok := schemeObjectOf(objectType); ok {
+		object, ok := schemeObjectOf(objectType)
+		if ok && object.directory != "" {
+			return databaseObjectPath(object, objectName)
+		}
+		if ok {
 			return objectPath(strings.ToLower(object.objectType), objectName)
 		}
 		return "", fmt.Errorf("a YDB grant is on the database, a directory, a table or a scheme object such as "+
 			"a topic, not a %s", objectType)
 	}
+}
+
+// databaseObjectPath is the path, relative to the database root, of the
+// object of a database-wide kind, such as a resource pool, that objectName
+// names by its name alone.
+func databaseObjectPath(object schemeObject, objectName string) (string, error) {
+	name, ok := object.databaseObjectName(objectName, "")
+	if !ok {
+		family := strings.ToLower(object.objectType)
+		return "", fmt.Errorf("a grant on a %s names %q, which is not a %s name: a %s belongs to the database "+
+			"and is named by its name alone", family, objectName, family, family)
+	}
+	return object.directory + "/" + name, nil
 }
 
 // objectPath is the path, relative to the database root, of the object a

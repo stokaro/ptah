@@ -24,6 +24,10 @@ func TestGrantObjectKinds_HappyPath(t *testing.T) {
 		{Kind: "SECRET", Attribute: "on_secret"},
 		{Kind: "EXTERNAL DATA SOURCE", Attribute: "on_external_data_source"},
 		{Kind: "EXTERNAL TABLE", Attribute: "on_external_table"},
+		{Kind: "ASYNC REPLICATION", Attribute: "on_async_replication"},
+		{Kind: "TRANSFER", Attribute: "on_transfer"},
+		{Kind: "STREAMING QUERY", Attribute: "on_streaming_query"},
+		{Kind: "RESOURCE POOL", Attribute: "on_resource_pool"},
 	})
 	for _, kind := range schemamodel.GrantObjectKinds() {
 		byAttribute, attributed := schemamodel.GrantObjectKindOf(kind.Attribute)

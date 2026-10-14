@@ -18,17 +18,27 @@ import (
 // it drops and creates again. Either takes the object's permission entries
 // with it. An object the plan creates holds no entry of its own, and one it
 // changes in place keeps its entries: measured on 26.2.1.14, ALTER TOPIC,
-// ALTER SECRET, a change of a coordination node and CREATE OR REPLACE of an
-// external object each keep them.
+// ALTER SECRET, a change of a coordination node, CREATE OR REPLACE of an
+// external object, ALTER ASYNC REPLICATION, ALTER TRANSFER, ALTER STREAMING
+// QUERY and ALTER RESOURCE POOL each keep them. No owner of an async
+// replication, a transfer, a streaming query or a resource pool drops one to
+// create it again.
+//
+// changedLast are the objects whose owner places its statements on them after
+// every statement of the host, which a GRANT on one has to follow: a streaming
+// query the plan creates or changes runs against the schema the rest of the
+// plan leaves.
 type objectLifecycle struct {
-	dropped   map[objectidentity.Key]bool
-	recreated map[objectidentity.Key]bool
+	dropped     map[objectidentity.Key]bool
+	recreated   map[objectidentity.Key]bool
+	changedLast map[objectidentity.Key]bool
 }
 
 // ownedObjectLifecycle reads the owners' changes of diff, on a target with
 // caps, for the objects they drop or drop and create again.
 func ownedObjectLifecycle(diff *difftypes.SchemaDiff, caps capability.Capabilities) objectLifecycle {
-	lifecycle := objectLifecycle{dropped: make(map[objectidentity.Key]bool), recreated: make(map[objectidentity.Key]bool)}
+	lifecycle := objectLifecycle{dropped: make(map[objectidentity.Key]bool), recreated: make(map[objectidentity.Key]bool),
+		changedLast: make(map[objectidentity.Key]bool)}
 	displaced := ydbdiff.DisplacedSources(diff.FeatureChanges, caps)
 	for _, record := range diff.FeatureChanges {
 		key := record.Subject.Key()
@@ -45,6 +55,15 @@ func ownedObjectLifecycle(diff *difftypes.SchemaDiff, caps capability.Capabiliti
 		case *ydbdiff.ExternalTable:
 			lifecycle.dropped[key] = change.Before != nil && change.After == nil
 			lifecycle.recreated[key] = change.Recreates(caps, diff.CurrentDatabasePath, displaced)
+		case *ydbdiff.AsyncReplication:
+			lifecycle.dropped[key] = change.Before != nil && change.After == nil
+		case *ydbdiff.Transfer:
+			lifecycle.dropped[key] = change.Before != nil && change.After == nil
+		case *ydbdiff.StreamingQuery:
+			lifecycle.dropped[key] = change.Before != nil && change.After == nil
+			lifecycle.changedLast[key] = change.After != nil
+		case *ydbdiff.ResourcePool:
+			lifecycle.dropped[key] = change.Before != nil && change.After == nil
 		}
 	}
 	return lifecycle
@@ -63,6 +82,14 @@ func objectOf(grant difftypes.GrantRef, root string) (objectidentity.ID, bool) {
 func (l objectLifecycle) revokedWithObject(grant difftypes.GrantRef, root string) bool {
 	ref, ok := objectOf(grant, root)
 	return ok && (l.dropped[ref.Key()] || l.recreated[ref.Key()])
+}
+
+// grantsLast reports whether a GRANT of grant's entry goes after every
+// statement the plan schedules, because the owner of its object places the
+// object's creation or change there; see [objectLifecycle].
+func (l objectLifecycle) grantsLast(grant difftypes.GrantRef, root string) bool {
+	ref, ok := objectOf(grant, root)
+	return ok && l.changedLast[ref.Key()]
 }
 
 // grantedOnDroppedObject is the first grant of grants on an object the plan
