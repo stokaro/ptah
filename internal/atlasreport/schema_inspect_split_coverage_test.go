@@ -93,7 +93,6 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 				c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{
 					"// ptah:not-described extension reason=suppressed provenance=defaulted",
 					"// ptah:not-described policy reason=suppressed provenance=defaulted",
-					"// ptah:not-described range",
 					"// ptah:not-described sequence reason=suppressed provenance=defaulted",
 				}, qt.Commentf("member %s", path))
 			}
@@ -169,7 +168,7 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	for path, data := range txtarMembers(output.Text) {
-		c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{"// ptah:not-described range"}, qt.Commentf("member %s", path))
+		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
 		parsed, err := atlashcl.ParseWithOptions([]byte(data), path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 		c.Assert(err, qt.IsNil)
 		c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, schemaext.Coverage{})), qt.IsTrue)
@@ -178,9 +177,10 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 
 // withHCLBlockCoverage adds the claims every HCL document makes by its
 // format: it has a block for each TimescaleDB model, each SQL Server extended
-// property and each synonym, so a document without one describes a database
-// without one, and it describes PostgreSQL row-level security. The account a
-// document carries must survive beside them unchanged.
+// property, each synonym and each PostgreSQL range type, so a document
+// without one describes a database without one, and it describes PostgreSQL
+// row-level security. The account a document carries must survive beside them
+// unchanged.
 func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage {
 	c.Helper()
 	combined, err := known.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired)))
@@ -217,7 +217,7 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(chsource.RowPolicyCoverage()))
 	c.Assert(err, qt.IsNil)
-	combined, err = combined.Combine(must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves these range types unmanaged"}, nil)))
+	combined, err = combined.Combine(must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

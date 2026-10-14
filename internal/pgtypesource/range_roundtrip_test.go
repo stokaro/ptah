@@ -64,7 +64,6 @@ func TestRangeLimitsPreserveUnmanagedTypes(t *testing.T) {
 		state    schemaext.KnowledgeState
 		subjects int
 	}{
-		{name: "absent coverage", state: schemaext.Uninspected},
 		{name: "uninspected namespace", coverage: must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "catalog is unavailable"}, nil)), state: schemaext.Uninspected},
 		{name: "one unread type", coverage: must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{Kind: pgtype.RangeKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "catalog row is incomplete"}}})), state: schemaext.Complete, subjects: 1},
 	} {
@@ -90,6 +89,25 @@ func TestRangeLimitsPreserveUnmanagedTypes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRangeLimitsAbsentCoverageWritesNoLimit pins that a description holding
+// no range record writes no limit in either source format. A read of a target
+// without range types, such as SQLite or MySQL, records none, and a limit
+// there would declare a gap in a family the target does not have.
+func TestRangeLimitsAbsentCoverageWritesNoLimit(t *testing.T) {
+	c := qt.New(t)
+	owners := must.Must(annotation.NewSet(pgtypesource.Annotations()))
+	original := &schemamodel.Database{}
+
+	files, err := goschematogo.Render(c.Context(), original, goschematogo.Options{Annotations: owners, SingleFile: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(string(files[0].Data), qt.Not(qt.Contains), "notdescribed")
+
+	hcl, err := atlashclrender.Render(original, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(hcl.Data), qt.Not(qt.Contains), "not-described")
 }
 
 func TestRangeLimitsRefuseLossOfCompleteException(t *testing.T) {
