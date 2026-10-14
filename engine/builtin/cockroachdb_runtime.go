@@ -13,10 +13,14 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/cockroachdb/crdbsource"
 	"ptah.run/engine"
+	"ptah.run/internal/cockroachcomparison"
 )
 
 // CockroachDB row-level TTL is a table facet.
 func registerCockroachDBServices(provider *engine.Provider, target string) {
+	// The shared comparison reads a CockroachDB index's whole definition
+	// through CockroachDB's own rules.
+	provider.Targets[0].Comparison.Indexes = cockroachcomparison.Rules().Indexes
 	provider.Annotations = append(provider.Annotations, crdbsource.Annotations())
 	provider.YAML = append(provider.YAML, crdbsource.YAML())
 	registerTableFacetOwner(provider, target, tableFacetOwner{

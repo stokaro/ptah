@@ -1925,7 +1925,7 @@ func buildPostgresIndex(dialect string, row postgresIndexRow) (catalog.Index, er
 		return catalog.Index{}, fmt.Errorf("failed to parse index operator classes for %s: %w", row.indexName, err)
 	}
 
-	index.Parts, err = applyPostgresIndexOptions(index.Parts, row.keyOptions)
+	index.Parts, err = applyPostgresIndexOptions(dialect, index.Parts, row.keyOptions)
 	if err != nil {
 		return catalog.Index{}, fmt.Errorf("failed to parse index key options for %s: %w", row.indexName, err)
 	}
@@ -2082,14 +2082,24 @@ const (
 // Only an ordering that contradicts its direction's default is recorded:
 // PostgreSQL gives NULLS LAST to ASC and NULLS FIRST to DESC, so recording the
 // default would make the renderer emit a clause the pinned binary does not.
-func applyPostgresIndexOptions(parts []catalog.IndexPart, optionsJSON string) ([]catalog.IndexPart, error) {
+//
+// CockroachDB records no ordering at all. It has no NULLS clause in an index
+// key and orders NULLs the other way round, first in an ascending key and last
+// in a descending one, which pg_index.indoption reports: measured on v26.3.2,
+// `(a)` reports 2 and `(b DESC)` reports 1. Read with PostgreSQL's defaults,
+// every key carried a NULLS clause, and a description of the database wrote
+// `CREATE INDEX ... ("a" NULLS FIRST)`, which CockroachDB answers with
+// "unimplemented: this syntax".
+func applyPostgresIndexOptions(dialect string, parts []catalog.IndexPart, optionsJSON string) ([]catalog.IndexPart, error) {
 	options, err := decodePostgresKeyList[int](optionsJSON, len(parts))
 	if err != nil || options == nil {
 		return parts, err
 	}
 	for position := range parts {
 		parts[position].Desc = options[position]&postgresIndexOptionDesc != 0
-		parts[position].NullsOrder = postgresNullsOrder(options[position])
+		if dialect != platform.CockroachDB {
+			parts[position].NullsOrder = postgresNullsOrder(options[position])
+		}
 	}
 	return parts, nil
 }

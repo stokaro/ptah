@@ -108,6 +108,12 @@ const (
 	exemptNotValidPermits = "NOT VALID permits an unvalidated constraint and does not demand one: a validated " +
 		"one satisfies it, and no statement unvalidates a constraint. Without it, an unvalidated constraint plans " +
 		"VALIDATE CONSTRAINT"
+	exemptCockroachNullsOrder = "CockroachDB has no NULLS FIRST or NULLS LAST in an index key (v26.3.2 answers " +
+		"`unimplemented: this syntax`) and orders NULLs by the key's direction, which the comparison reads"
+	exemptCockroachOperatorClass = "CockroachDB reports no operator class: on v26.3.2 pg_index.indclass is 0 for every " +
+		"key and pg_opclass is empty, also for an index built with gin_trgm_ops"
+	exemptCockroachIndexStorage = "CockroachDB accepts WITH (fillfactor = 70) on CREATE INDEX and stores nothing: " +
+		"pg_class.reloptions stays empty on v26.3.2"
 	exemptForeignDefiner = "a routine that states no security mode is a definer routine here, a definer routine is " +
 		"replaced only beside a recorded definer and connected account, and a description converted from a catalog " +
 		"records neither, so the comparison refuses the replacement and names the routine"
@@ -306,45 +312,45 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Fields",
-		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.Index.Operator", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Parts",
-		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.Index.Type", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.Index.Type", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Unique",
-		Dialects:   []string{"cockroachdb", "oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Desc",
-		Dialects:   []string{"cockroachdb", "oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Expr",
-		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "oracle", "spanner", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Name",
-		Dialects:   []string{"clickhouse", "cockroachdb", "oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
-	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"cockroachdb", "spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"spanner", "yugabytedb"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.MaterializedView.Dialects",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "ydb"},
@@ -461,6 +467,10 @@ var roundTripExemptions = []Unreached{
 		Directions: []Direction{ToCatalog},
 		Reason:     exemptGrantSelection,
 	},
+	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
+	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachIndexStorage},
+	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachNullsOrder},
+	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
 	{Field: "schemamodel.RLSEnabledTable.Forced", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{Field: "schemamodel.RLSPolicy.Comment", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{

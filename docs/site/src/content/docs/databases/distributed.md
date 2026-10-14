@@ -39,6 +39,11 @@ matching preset automatically.
   `text`, `bytea` or `text[]` the catalog reports. A sized `STRING(10)` is a
   `text` column with a width rather than a `VARCHAR(10)`, and it is read and
   inspected as `STRING(10)`, so a width change is still a change.
+  An index is compared by its uniqueness, its keys (column or expression, and
+  direction), its `STORING` columns and its access method, and a change
+  rebuilds it. Its NULLS ordering, operator class and storage parameters are
+  not compared: CockroachDB has no NULLS clause in an index key, reports no
+  operator class, and stores no index storage parameter.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`

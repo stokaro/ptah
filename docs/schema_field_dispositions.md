@@ -149,17 +149,17 @@ migration nobody asked for.
 | `schemamodel.Function.Kind` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Function.Kind` | `mariadb`, `mysql`, `sqlserver` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Index.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Fields` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Parts` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.StorageParams` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Type` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Unique` | `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Desc` | `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Expr` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Name` | `clickhouse`, `cockroachdb`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.NullsOrder` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Operator` | `cockroachdb`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Fields` | `clickhouse`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Operator` | `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Parts` | `clickhouse`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.StorageParams` | `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Type` | `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Unique` | `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Desc` | `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Expr` | `clickhouse`, `oracle`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Name` | `clickhouse`, `oracle`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.NullsOrder` | `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Operator` | `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Desc` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -186,7 +186,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-52 exemptions, each with the reason it is right.
+56 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -225,6 +225,10 @@ migration nobody asked for.
 | `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
 | `schemamodel.Grant.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver` | both | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
 | `schemamodel.Grant.Dialects` | `cockroachdb`, `yugabytedb` | to-catalog | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
+| `schemamodel.Index.Operator` | `cockroachdb` | both | CockroachDB reports no operator class: on v26.3.2 pg_index.indclass is 0 for every key and pg_opclass is empty, also for an index built with gin_trgm_ops |
+| `schemamodel.Index.StorageParams` | `cockroachdb` | both | CockroachDB accepts WITH (fillfactor = 70) on CREATE INDEX and stores nothing: pg_class.reloptions stays empty on v26.3.2 |
+| `schemamodel.IndexPart.NullsOrder` | `cockroachdb` | both | CockroachDB has no NULLS FIRST or NULLS LAST in an index key (v26.3.2 answers `unimplemented: this syntax`) and orders NULLs by the key's direction, which the comparison reads |
+| `schemamodel.IndexPart.Operator` | `cockroachdb` | both | CockroachDB reports no operator class: on v26.3.2 pg_index.indclass is 0 for every key and pg_opclass is empty, also for an index built with gin_trgm_ops |
 | `schemamodel.RLSEnabledTable.Forced` | any | both | a shared row-level security declaration reaches no catalog: each target converts it to its owner's model or skips it, so only the dialect-free comparison of two declarations reads it |
 | `schemamodel.RLSPolicy.Comment` | any | both | a shared row-level security declaration reaches no catalog: each target converts it to its owner's model or skips it, so only the dialect-free comparison of two declarations reads it |
 | `schemamodel.Role.Dialects` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | both | removing the selection either changes nothing, on a target the role is selected for, or puts on the converted side a role the declaration does not name, and the comparison never removes such a role (compare.TestRolesComparison) |
