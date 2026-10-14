@@ -6,6 +6,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+	"ptah.run/internal/ydbacl"
 )
 
 // projectDatabase applies the schema universe and include selectors to the
@@ -141,9 +143,22 @@ func (s *scopeSelection) databaseGrantSelected(
 		return slices.ContainsFunc(out.Functions, func(function catalog.Function) bool {
 			return function.Schema == grant.Schema && function.Name == grant.ObjectName
 		})
+	case ydbacl.IsSchemeObject(grant.ObjectType):
+		return objectGrantKept(out.FeatureObjects, grant.ObjectType, grant.QualifiedTarget())
 	default:
 		return s.tableKept(keptTables, grant.Schema, grant.ObjectName)
 	}
+}
+
+// objectGrantKept reports whether the projection keeps the scheme object a
+// grant names, such as a YDB topic: the grant rides its object.
+func objectGrantKept(objects schemaext.Objects, objectType, objectName string) bool {
+	ref, ok := ydbacl.ObjectRef(objectType, objectName, "")
+	if !ok {
+		return false
+	}
+	_, kept, err := objects.Get(ref)
+	return err == nil && kept
 }
 
 // keepDatabaseSchemas keeps schema entries that own selected objects, so both

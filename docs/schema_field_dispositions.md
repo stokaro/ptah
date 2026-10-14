@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-621 fields are reachable from the desired schema, and each one carries
+623 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 512 | reaches rendered SQL on at least one target |
+| `ddl` | 514 | reaches rendered SQL on at least one target |
 | `comparison` | 34 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -571,7 +571,9 @@ migration nobody asked for.
 | `schemamodel.Grant.Comment` | `ddl` | — |
 | `schemamodel.Grant.Dialects` | `ddl` | — |
 | `schemamodel.Grant.GrantedBy` | `export` | the grantor a catalog read observed, carried so that a generated document can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the role that IS the current user, so rendering the observed grantor would fail on every apply by another role |
+| `schemamodel.Grant.ObjectKind` | `ddl` | — |
 | `schemamodel.Grant.OnDatabase` | `ddl` | — |
+| `schemamodel.Grant.OnObject` | `ddl` | — |
 | `schemamodel.Grant.OnRoutine` | `ddl` | — |
 | `schemamodel.Grant.OnSchema` | `ddl` | — |
 | `schemamodel.Grant.OnSequence` | `ddl` | — |

@@ -864,6 +864,9 @@ func toDBGrants(db *schemamodel.Database, dialect string) []catalog.Grant {
 			case grant.OnDatabase:
 				objectType = "DATABASE"
 				objectName = ""
+			case grant.OnObject != "":
+				objectType = grant.ObjectKind
+				objectName, objectSchema = splitTableIdentity(grant.OnObject)
 			case grant.OnSchema != "":
 				objectType = "SCHEMA"
 				objectName = grant.OnSchema

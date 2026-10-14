@@ -1,7 +1,8 @@
 // Package accessscope refuses the access-control declarations a target cannot
 // hold, before anything is rendered, compared or planned: a group declared as
-// a principal of its own kind, a membership of one role in another, and a
-// grant on the database itself. Each is gated by its capability key, and on
+// a principal of its own kind, a membership of one role in another, a grant on
+// the database itself, and a grant on a scheme object such as a YDB topic.
+// Each is gated by its capability key, and on
 // YDB the declaration is held to what YDB's users, groups and permissions can
 // carry through [ydbacl.ValidateDeclared].
 //
@@ -13,6 +14,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -59,8 +61,48 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *sc
 				"unavailable on this %s target", first, gate.key, normalized),
 		}
 	}
+	if err := objectGrants(dialect, caps, database); err != nil {
+		return err
+	}
 	if err := ydbacl.ValidateDeclared(dialect, database); err != nil {
 		return fmt.Errorf("%w: %w", ptaherr.ErrUnsupportedFeature, err)
+	}
+	return nil
+}
+
+// objectGrants refuses a grant or revoke on a scheme object of a kind the
+// target does not hold, such as a topic on a target without
+// [capability.Topics], naming the first one by kind, name and grantee. A
+// target that holds the kind is also one whose reader reads the kind's
+// permissions, so a plan sees the grant it made. A kind no target holds is
+// refused on every target.
+func objectGrants(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	grants := slices.Concat(database.Grants, database.RevokedGrants)
+	slices.SortStableFunc(grants, func(a, b schemamodel.Grant) int {
+		return cmp.Or(cmp.Compare(a.ObjectKind, b.ObjectKind), cmp.Compare(a.OnObject, b.OnObject), cmp.Compare(a.Role, b.Role))
+	})
+	normalized := platform.NormalizeDialect(dialect)
+	for _, grant := range grants {
+		if grant.OnObject == "" {
+			continue
+		}
+		subject := fmt.Sprintf("the schema grants or revokes a privilege on %s %q to %q",
+			strings.ToLower(grant.ObjectKind), grant.OnObject, grant.Role)
+		key, known := ydbacl.ObjectCapability(grant.ObjectKind)
+		if !known {
+			return fmt.Errorf("%w: %s, and no target holds an object of kind %q", ptaherr.ErrUnsupportedFeature,
+				subject, grant.ObjectKind)
+		}
+		if caps.Has(key) {
+			continue
+		}
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+				subject, key, normalized),
+		}
 	}
 	return nil
 }

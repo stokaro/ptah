@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 )
@@ -707,7 +708,7 @@ var directives = []Directive{
 		Name:        "ptah:schema:grant",
 		Description: "Declares database grants.",
 		Scopes:      []Scope{ScopeStruct},
-		Attributes: []Attribute{
+		Attributes: slices.Concat([]Attribute{
 			attr("role", "Target role.", valueString, false, false),
 			attr("privilege", "Privilege or comma-separated privileges.", valueList, false, false),
 			alias("privileges", "privilege", "Alias for privilege.", valueList, false),
@@ -719,20 +720,21 @@ var directives = []Directive{
 				valueString, false, false),
 			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
 				valueString, false, false),
+		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
 				"state,decided_at. PostgreSQL only.", valueList, false, false),
 			attr("with_option", "Adds WITH GRANT OPTION where supported.", valueBoolean, false, false),
 			alias("grant_option", "with_option", "Alias for with_option.", valueBoolean, false),
 			attr("comment", "Grant comment.", valueString, false, false),
 			dialectsAttr(),
-		},
+		}),
 	},
 	{
 		Name: "ptah:schema:revoke",
 		Description: "Declares privileges a role does not hold, including ones it holds without a grant: " +
 			"PUBLIC's EXECUTE on a new function, or what ALTER DEFAULT PRIVILEGES gave a role on a new table.",
 		Scopes: []Scope{ScopeStruct},
-		Attributes: []Attribute{
+		Attributes: slices.Concat([]Attribute{
 			attr("role", "Role the privileges are taken from; PUBLIC names every role.", valueString, true, false),
 			attr("privilege", "Privilege or comma-separated privileges.", valueList, false, false),
 			alias("privileges", "privilege", "Alias for privilege.", valueList, false),
@@ -744,11 +746,12 @@ var directives = []Directive{
 				valueString, false, false),
 			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
 				valueString, false, false),
+		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
 				"state,decided_at. PostgreSQL only.", valueList, false, false),
 			attr("comment", "Comment.", valueString, false, false),
 			dialectsAttr(),
-		},
+		}),
 	},
 	{
 		Name:        "ptah:schema:data",
@@ -786,6 +789,21 @@ func dialectsAttr() Attribute {
 		false,
 		false,
 	)
+}
+
+// objectTargetAttributes are the attributes a grant and a revoke name a
+// target by when no other attribute names its kind, one per kind
+// [schemamodel.GrantObjectKinds] lists, so the parser and this table accept
+// the same set.
+func objectTargetAttributes() []Attribute {
+	kinds := schemamodel.GrantObjectKinds()
+	attributes := make([]Attribute, 0, len(kinds))
+	for _, kind := range kinds {
+		attributes = append(attributes, attr(kind.Attribute, fmt.Sprintf("Target %s, its name qualified by its "+
+			"directory as on_table names a table, such as app.events. YDB only.", strings.ToLower(kind.Kind)),
+			valueString, false, false))
+	}
+	return attributes
 }
 
 func attr(name, description, value string, required, boolean bool) Attribute {

@@ -48,6 +48,26 @@ func TestReadYQLPrivileges(t *testing.T) {
 		{name: "topic directory", sql: "CREATE TOPIC `archive/events/source`; GRANT LIST ON archive TO readers;", grants: []schemamodel.Grant{
 			{Role: "readers", OnSchema: "archive", Privileges: []string{"YDB.GENERIC.LIST"}},
 		}},
+		{name: "topic", sql: "CREATE TOPIC events; GRANT SELECT ON events TO readers;", grants: []schemamodel.Grant{
+			{Role: "readers", OnObject: "events", ObjectKind: "TOPIC", Privileges: []string{"YDB.GENERIC.READ"}},
+		}},
+		{name: "topic by its absolute path", root: "/Root/db", sql: "CREATE TOPIC `archive/events`; REVOKE SELECT ROW ON `/Root/db/archive/events` FROM readers;",
+			revoked: []schemamodel.Grant{
+				{Role: "readers", OnObject: "archive.events", ObjectKind: "TOPIC", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
+			}},
+		{name: "coordination node", sql: "CREATE COORDINATION NODE `app/locks`; GRANT 'use' ON `app/locks` TO readers;", grants: []schemamodel.Grant{
+			{Role: "readers", OnObject: "app.locks", ObjectKind: "COORDINATION NODE", Privileges: []string{"YDB.GENERIC.USE"}},
+		}},
+		{name: "secret", sql: "CREATE SECRET `ext/pw` WITH (value = $PTAH_SECRET_PW); GRANT SELECT ROW ON `ext/pw` TO readers;", grants: []schemamodel.Grant{
+			{Role: "readers", OnObject: "ext.pw", ObjectKind: "SECRET", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
+		}},
+		{name: "external data source and table", sql: "CREATE EXTERNAL DATA SOURCE `ext/s3` WITH (SOURCE_TYPE = 'ObjectStorage', " +
+			"LOCATION = 'https://storage.invalid/b/', AUTH_METHOD = 'NONE'); CREATE EXTERNAL TABLE `ext/events` (id Int64 NOT NULL) WITH " +
+			"(DATA_SOURCE = 'ext/s3', LOCATION = 'e/', FORMAT = 'csv_with_names'); GRANT SELECT ROW ON `ext/s3`, `ext/events` TO readers;",
+			grants: []schemamodel.Grant{
+				{Role: "readers", OnObject: "ext.s3", ObjectKind: "EXTERNAL DATA SOURCE", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
+				{Role: "readers", OnObject: "ext.events", ObjectKind: "EXTERNAL TABLE", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
+			}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -93,7 +113,8 @@ func TestReadYQLPrivilegeRefusals(t *testing.T) {
 		"GRANT SELECT ON `shop/orders`, TO readers;",
 		"GRANT SELECT ON `shop/../orders` TO readers;",
 		"CREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1; GRANT SELECT ON v TO readers;",
-		"CREATE TOPIC events; GRANT SELECT ON events TO readers;",
+		"CREATE ASYNC REPLICATION r FOR `shop/orders` AS `copy/orders` WITH (CONNECTION_STRING = 'grpc://other:2135/?database=/db'," +
+			" TOKEN_SECRET_NAME = 't'); GRANT SELECT ON r TO readers;",
 	} {
 		t.Run(sql, func(t *testing.T) {
 			c := qt.New(t)

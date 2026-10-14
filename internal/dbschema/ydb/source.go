@@ -28,17 +28,22 @@ import (
 )
 
 // Source is what the reader asks a YDB database: a directory's own entry and
-// the entries under it, the description of a row table, view or coordination
-// node, the description of a topic, which is how a standalone topic and a
-// changefeed's retention and consumers are read, the description of an async
-// replication or transfer, and the database's users, groups, memberships,
-// resource pools, classifiers, external data sources and external tables. A path is absolute.
+// the entries under it, the entry of any other object at a path, the
+// description of a row table, view or coordination node, the description of a
+// topic, which is how a standalone topic and a changefeed's retention and
+// consumers are read, the description of an async replication or transfer,
+// and the database's users, groups, memberships, resource pools, classifiers,
+// external data sources and external tables. A path is absolute.
 //
-// A directory's own entry and a table's description each carry the object's
-// owner and its permission entries, which is where the reader reads them from:
-// the scheme service answers for exactly the objects the read walks.
+// A directory's own entry, and the description of a table, a topic, a
+// coordination node, an external data source and an external table, each
+// carry the object's owner and its permission entries, which is where the
+// reader reads them from: the scheme service answers for exactly the objects
+// the read walks. An entry a directory lists carries neither, so a secret,
+// which has no description of its own, is asked for its entry by path.
 type Source interface {
 	ListDirectory(ctx context.Context, path string) (self *Ydb_Scheme.Entry, children []*Ydb_Scheme.Entry, err error)
+	DescribePath(ctx context.Context, path string) (*Ydb_Scheme.Entry, error)
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
@@ -120,6 +125,20 @@ func (s *grpcSource) ListDirectory(ctx context.Context, path string) (*Ydb_Schem
 		return nil, nil, fmt.Errorf("list YDB directory %s: %w", path, err)
 	}
 	return listed.GetSelf(), listed.GetChildren(), nil
+}
+
+// DescribePath returns the entry of the object at path, with its owner and
+// its permission entries, whatever the object's kind.
+func (s *grpcSource) DescribePath(ctx context.Context, path string) (*Ydb_Scheme.Entry, error) {
+	response, err := s.scheme.DescribePath(ctx, &Ydb_Scheme.DescribePathRequest{Path: path})
+	if err != nil {
+		return nil, fmt.Errorf("describe YDB path %s: %w", path, WithoutStackFrames(err))
+	}
+	var described Ydb_Scheme.DescribePathResult
+	if err := operationResult(response.GetOperation(), &described); err != nil {
+		return nil, fmt.Errorf("describe YDB path %s: %w", path, err)
+	}
+	return described.GetSelf(), nil
 }
 
 // Principals reads the database's users, groups and memberships from

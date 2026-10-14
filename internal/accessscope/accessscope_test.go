@@ -34,6 +34,11 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 				Roles:  []schemamodel.Role{{Name: "app_user", Login: true, Superuser: true}},
 				Grants: []schemamodel.Grant{{Role: "app_user", Privileges: []string{"USAGE"}, OnSchema: "public"}},
 			}},
+		{name: "YDB takes a grant on a topic and a revoke on a secret", dialect: "ydb", caps: capability.YDB262(),
+			database: &schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "app.events", ObjectKind: "TOPIC"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "ext.pw", ObjectKind: "SECRET"}},
+			}},
 		{name: "no database", dialect: "ydb", caps: capability.YDB262()},
 	}
 
@@ -71,6 +76,22 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnDatabase: true}}},
 			wantKey:  capability.DatabaseGrants,
 			wantErr:  `the schema grants or revokes a privilege on the database to "app", which requires target capability database_grants, .*`},
+		{name: "a grant on a topic on PostgreSQL", dialect: "postgres", caps: capability.Postgres17(),
+			database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnObject: "app.events", ObjectKind: "TOPIC"}}},
+			wantKey:  capability.Topics,
+			wantErr:  `the schema grants or revokes a privilege on topic "app.events" to "app", which requires target capability topics, unavailable on this postgres target`},
+		{name: "a revoke on an external table on YDB with external data sources off", dialect: "ydb", caps: capability.YDB262(),
+			database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{
+				{Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "ext.events", ObjectKind: "EXTERNAL TABLE"},
+				{Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "ext.bucket", ObjectKind: "EXTERNAL DATA SOURCE"},
+			}},
+			wantKey: capability.ExternalDataSources,
+			wantErr: `the schema grants or revokes a privilege on external data source "ext.bucket" to "app", which requires ` +
+				`target capability external_data_sources, unavailable on this ydb target`},
+		{name: "a grant on a secret on YDB 25.1", dialect: "ydb", caps: capability.YDB251(),
+			database: &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "ext.pw", ObjectKind: "SECRET"}}},
+			wantKey:  capability.Secrets,
+			wantErr:  `the schema grants or revokes a privilege on secret "ext.pw" to "app", which requires target capability secrets, .*`},
 	}
 
 	for _, test := range tests {
@@ -94,5 +115,18 @@ func TestValidateDeclared_HoldsYDBToItsModel(t *testing.T) {
 		Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", WithOption: true}},
 	})
 	c.Assert(err, qt.ErrorMatches, `unsupported feature: grant to "app" declares with_option: .*`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+}
+
+// TestValidateDeclared_RefusesAnObjectKindNoTargetHolds pins that a grant on
+// a kind of object no target has is refused on every target, YDB included,
+// rather than rendered as a statement nothing takes.
+func TestValidateDeclared_RefusesAnObjectKindNoTargetHolds(t *testing.T) {
+	c := qt.New(t)
+	err := accessscope.ValidateDeclared("ydb", capability.YDB262(), &schemamodel.Database{
+		Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "app.q", ObjectKind: "QUEUE"}},
+	})
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: the schema grants or revokes a privilege on queue "app.q" to "app", `+
+		`and no target holds an object of kind "QUEUE"`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 }

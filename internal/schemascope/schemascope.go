@@ -366,6 +366,10 @@ func grantAllowed(
 		// [dbGrantAllowed] for the other side.
 		return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnSequence), defaultSchema))
 	}
+	if grant.OnObject != "" {
+		// So is a scheme object such as a YDB topic, by the directory it is in.
+		return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnObject), defaultSchema))
+	}
 	return false
 }
 
@@ -388,6 +392,10 @@ func dbGrantAllowed(
 	// (stokaro/ptah#4085).
 	if strings.EqualFold(grant.ObjectType, "FUNCTION") || strings.EqualFold(grant.ObjectType, "PROCEDURE") ||
 		strings.EqualFold(grant.ObjectType, "SEQUENCE") {
+		return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
+	}
+	// A scheme object such as a YDB topic is kept by its directory too.
+	if _, object := schemamodel.GrantObjectAttribute(grant.ObjectType); object {
 		return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
 	}
 	return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema)) &&

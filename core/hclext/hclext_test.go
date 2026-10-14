@@ -145,6 +145,16 @@ func TestNewSet_FailurePath(t *testing.T) {
 			extension("example.org/a", "example.org/a/x", decoder, block("gadget")),
 			extension("example.org/b", "example.org/b/x", decoder, block("gadget"))},
 			wantErr: `duplicate.*: HCL top-level block "gadget" is read by example.org/a and example.org/b`},
+		{name: "a grant kind on a block named by its joined name", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.JoinedName, GrantKind: "GADGET"})},
+			wantErr: `HCL top-level block "gadget" of example.org/a names grant kind "GADGET", which only a top-level block named by schema-and-name takes`},
+		{name: "a grant kind on an in-table block", extensions: []hclext.Extension{extension("example.org/a", "example.org/a/x", decoder,
+			hclext.Block{Site: hclext.InTable, Type: "gadget", GrantKind: "GADGET"})},
+			wantErr: `HCL in-table block "gadget" of example.org/a names grant kind "GADGET", .*`},
+		{name: "one grant kind on two blocks", extensions: []hclext.Extension{
+			extension("example.org/a", "example.org/a/x", decoder, hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName, GrantKind: "GADGET"}),
+			extension("example.org/b", "example.org/b/x", decoder, hclext.Block{Site: hclext.TopLevel, Type: "widget", Naming: hclext.SchemaAndName, GrantKind: "gadget"})},
+			wantErr: `duplicate.*: HCL blocks "gadget" and "widget" both name grant kind "gadget"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -178,6 +188,21 @@ func TestNewSet_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Selected(), qt.IsTrue)
+}
+
+// TestSet_GrantBlock finds the top-level block whose objects a grant names
+// by kind, without regard to case, and none for a kind no block declares.
+func TestSet_GrantBlock(t *testing.T) {
+	c := qt.New(t)
+	set := must.Must(hclext.NewSet(extension("example.org/a", "example.org/a/x", answeringDecoder{},
+		block("widget"), hclext.Block{Site: hclext.TopLevel, Type: "gadget", Naming: hclext.SchemaAndName, GrantKind: "GADGET"})))
+
+	gadget, found := set.GrantBlock("gadget")
+	widget, other := set.GrantBlock("WIDGET")
+	none, empty := set.GrantBlock("")
+
+	c.Assert([]any{gadget, found}, qt.DeepEquals, []any{"gadget", true})
+	c.Assert([]any{widget, other, none, empty}, qt.DeepEquals, []any{"", false, "", false})
 }
 
 // TestSet_Lookup finds the shape an extension registered for a block type at

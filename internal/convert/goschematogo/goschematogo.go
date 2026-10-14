@@ -837,6 +837,7 @@ func grantAnnotation(grant schemamodel.Grant) string {
 		attr{name: "on_sequence", value: grant.OnSequence, set: grant.OnSequence != ""},
 		attr{name: "on_database", value: strconv.FormatBool(grant.OnDatabase), set: grant.OnDatabase},
 		routineTargetAttr(grant),
+		objectTargetAttr(grant),
 		attr{name: "columns", value: strings.Join(grant.Columns, ","), set: len(grant.Columns) > 0},
 		attr{name: "with_option", value: strconv.FormatBool(grant.WithOption), set: grant.WithOption},
 		attr{name: "comment", value: grant.Comment, set: grant.Comment != ""},
@@ -854,10 +855,23 @@ func revokeAnnotation(revoked schemamodel.Grant) string {
 		attr{name: "on_sequence", value: revoked.OnSequence, set: revoked.OnSequence != ""},
 		attr{name: "on_database", value: strconv.FormatBool(revoked.OnDatabase), set: revoked.OnDatabase},
 		routineTargetAttr(revoked),
+		objectTargetAttr(revoked),
 		attr{name: "columns", value: strings.Join(revoked.Columns, ","), set: len(revoked.Columns) > 0},
 		attr{name: "comment", value: revoked.Comment, set: revoked.Comment != ""},
 		dialectsAttr(revoked.Dialects),
 	)
+}
+
+// objectTargetAttr writes a target [schemamodel.Grant.OnObject] names by the
+// attribute its kind is declared with, such as on_topic. A kind the vocabulary
+// does not list is written under an attribute derived from its name, which
+// the parser refuses by name rather than reading the grant as one on nothing.
+func objectTargetAttr(grant schemamodel.Grant) attr {
+	name, known := schemamodel.GrantObjectAttribute(grant.ObjectKind)
+	if !known {
+		name = "on_" + strings.Join(strings.Fields(strings.ToLower(grant.ObjectKind)), "_")
+	}
+	return attr{name: name, value: grant.OnObject, set: grant.OnObject != ""}
 }
 
 // routineTargetAttr writes a routine target as on_function or on_procedure,

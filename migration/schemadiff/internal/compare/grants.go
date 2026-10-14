@@ -320,6 +320,9 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 	case grant.OnDatabase:
 		objectType = grantObjectTypeDatabase
 		objectName = ""
+	case grant.OnObject != "":
+		objectType = grant.ObjectKind
+		objectName = grant.OnObject
 	case grant.OnSchema != "":
 		objectType = grantObjectTypeSchema
 		objectName = grant.OnSchema

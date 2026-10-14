@@ -21,7 +21,9 @@ import (
 //     and then fails with `Member account not found`;
 //   - a privilege is a YDB permission, written by its name as a string, which
 //     is the spelling the server reports back, and a GRANT or REVOKE names its
-//     object by a path the server resolves (see [ydbacl.StatementPath]);
+//     object by a path the server resolves (see [ydbacl.StatementPath]),
+//     whether the object is a table, a directory or a scheme object such as a
+//     topic, which needs the capability key of its kind;
 //   - there is no IF NOT EXISTS on CREATE USER or CREATE GROUP (a parse error
 //     on every line), so a create is written bare and the comparison decides
 //     whether it is needed. DROP takes IF EXISTS.
@@ -247,6 +249,9 @@ func (r *Renderer) grantParts(
 		strings.EqualFold(strings.TrimSpace(objectType), ydbacl.ObjectPath)) &&
 		!r.caps.Has(capability.DatabaseGrants) {
 		return grantStatement{}, refuseKey(capability.DatabaseGrants, subject)
+	}
+	if key, owned := ydbacl.ObjectCapability(objectType); owned && !r.caps.Has(key) {
+		return grantStatement{}, refuseKey(key, subject)
 	}
 	path, err := ydbacl.StatementPath(objectType, objectName, "", r.caps)
 	if errors.Is(err, ydbacl.ErrNeedsDatabasePath) {

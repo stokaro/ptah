@@ -196,6 +196,26 @@ func TestRenderGrantsRoundTripThroughParser(t *testing.T) {
 			name:       "database target",
 			annotation: `//ptah:schema:grant role="app" privilege="CONNECT" on_database="true"`,
 		},
+		{
+			name:       "topic target",
+			annotation: `//ptah:schema:grant role="app" privilege="SELECT ROW" on_topic="app.events"`,
+		},
+		{
+			name:       "coordination node target",
+			annotation: `//ptah:schema:grant role="app" privilege="SELECT ROW" on_coordination_node="app.locks"`,
+		},
+		{
+			name:       "secret target",
+			annotation: `//ptah:schema:grant role="app" privilege="SELECT ROW" on_secret="ext.pw"`,
+		},
+		{
+			name:       "external data source target",
+			annotation: `//ptah:schema:grant role="app" privilege="SELECT ROW" on_external_data_source="ext.bucket"`,
+		},
+		{
+			name:       "external table target",
+			annotation: `//ptah:schema:grant role="app" privilege="SELECT ROW" on_external_table="ext.events"`,
+		},
 	}
 
 	for _, test := range tests {

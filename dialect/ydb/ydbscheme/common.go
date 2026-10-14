@@ -14,11 +14,13 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/internal/ydbacl"
 )
 
 // CommonEffects describes scheme paths, principals, the index a statement
-// adds or drops, and the external data source reads of a column table's
-// tiered TTL, for a common AST node.
+// adds or drops, the external data source reads of a column table's tiered
+// TTL, and the scheme object a GRANT or REVOKE changes the permissions of, for
+// a common AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
@@ -28,6 +30,9 @@ import (
 // /local, or empty when it is not known; see [TieredTTLReads].
 func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) ([]plangraph.Effect, error) {
 	if effect, ok := indexUse(builder, node); ok {
+		return []plangraph.Effect{effect}, nil
+	}
+	if effect, ok := permissionUse(root, node); ok {
 		return []plangraph.Effect{effect}, nil
 	}
 	if name, action := principalUse(node); action != "" {
@@ -190,6 +195,31 @@ func commonSchemeUse(node ast.Node) schemeUse {
 	default:
 		return schemeUse{}
 	}
+}
+
+// permissionUse is a read of the scheme object a GRANT or REVOKE names, when
+// its owner manages the object, such as a topic. The statement changes the
+// object's access list, and the owner's statements on the object order it:
+// the object is created or changed before a statement that reads it and
+// dropped after one, so a GRANT finds the object it names and a REVOKE runs
+// before the object goes. A grant on the database, a directory or a table
+// reads nothing here; the host orders those itself. An object named by its
+// absolute path is read against root.
+func permissionUse(root string, node ast.Node) (plangraph.Effect, bool) {
+	var objectType, objectName string
+	switch n := node.(type) {
+	case *ast.GrantPrivilegeNode:
+		objectType, objectName = n.ObjectType, n.ObjectName
+	case *ast.RevokePrivilegeNode:
+		objectType, objectName = n.ObjectType, n.ObjectName
+	default:
+		return plangraph.Effect{}, false
+	}
+	ref, ok := ydbacl.ObjectRef(objectType, objectName, root)
+	if !ok {
+		return plangraph.Effect{}, false
+	}
+	return plangraph.Effect{Subject: ref, Action: plangraph.Read}, true
 }
 
 // indexUse names the index a common ADD INDEX or DROP INDEX creates or drops,

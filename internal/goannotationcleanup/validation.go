@@ -238,6 +238,11 @@ func privilegeRepresented(removal removedLine, grants []schemamodel.Grant) bool 
 			declared.RoutineArguments = arguments
 		}
 	}
+	for _, kind := range schemamodel.GrantObjectKinds() {
+		if value := removal.values[kind.Attribute]; value != "" {
+			declared.OnObject, declared.ObjectKind = value, kind.Kind
+		}
+	}
 	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {
 		return grant.Role == removal.values["role"] &&
 			slices.Equal(grant.Privileges, splitGrantPrivileges(removal.values)) &&

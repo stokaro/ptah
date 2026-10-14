@@ -54,6 +54,8 @@ type fakeSource struct {
 	// selves are the directories' own entries, which carry their owner and
 	// permission entries; a directory without one has neither.
 	selves map[string]*Ydb_Scheme.Entry
+	// paths are the entries DescribePath answers with, such as a secret's.
+	paths map[string]*Ydb_Scheme.Entry
 	// principals is what .sys/auth_* reports, and principalsErr how reading
 	// it fails.
 	principals    ydbreader.Principals
@@ -88,6 +90,14 @@ func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.E
 		return nil, nil, fmt.Errorf("listed %s, which the fixture does not hold", path)
 	}
 	return f.selves[path], entries, nil
+}
+
+func (f fakeSource) DescribePath(_ context.Context, path string) (*Ydb_Scheme.Entry, error) {
+	described, ok := f.paths[path]
+	if !ok {
+		return nil, fmt.Errorf("described path %s, which the fixture does not hold", path)
+	}
+	return described, nil
 }
 
 func (f fakeSource) Principals(context.Context) (ydbreader.Principals, error) {
@@ -487,6 +497,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 			"/local/v":         {},
 		},
 		views: map[string]*Ydb_View.DescribeViewResult{"/local/v": {QueryText: "SELECT 1 AS a"}},
+		paths: map[string]*Ydb_Scheme.Entry{"/local/key": {Name: "key", Type: Ydb_Scheme.Entry_SECRET}},
 		// A cluster that does not serve the replication API, as local-ydb
 		// does not by default: the replication and the transfer are recorded.
 		replicationErr: fmt.Errorf("describe YDB async replication: %w", ydbreader.ErrReplicationServiceUnavailable),
@@ -539,14 +550,20 @@ func observedSecrets(c *qt.C, db *catalog.Database) []string {
 }
 
 // A secret is read by its path alone: the listing names it, and the reader
-// asks nothing else of it. A scoped read reads only the secrets of the
-// directories it names.
+// asks only for its entry, which carries its owner and permissions and never
+// its value. A scoped read reads only the secrets of the directories it
+// names.
 func TestReader_ReadsASecretByItsPath(t *testing.T) {
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{
 			"/local":         {entry("pg_password", Ydb_Scheme.Entry_SECRET), entry("ext", Ydb_Scheme.Entry_DIRECTORY)},
 			"/local/ext":     {entry("s3.key", Ydb_Scheme.Entry_SECRET), entry("aws", Ydb_Scheme.Entry_DIRECTORY)},
 			"/local/ext/aws": {entry("token", Ydb_Scheme.Entry_SECRET)},
+		},
+		paths: map[string]*Ydb_Scheme.Entry{
+			"/local/pg_password":   entry("pg_password", Ydb_Scheme.Entry_SECRET),
+			"/local/ext/s3.key":    entry("s3.key", Ydb_Scheme.Entry_SECRET),
+			"/local/ext/aws/token": entry("token", Ydb_Scheme.Entry_SECRET),
 		},
 	}
 	tests := []struct {
@@ -1195,6 +1212,10 @@ type errorSource struct{}
 
 func (errorSource) ListDirectory(context.Context, string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
 	return nil, nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribePath(context.Context, string) (*Ydb_Scheme.Entry, error) {
+	return nil, errors.New("connection refused")
 }
 
 func (errorSource) Principals(context.Context) (ydbreader.Principals, error) {

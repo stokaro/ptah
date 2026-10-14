@@ -1766,6 +1766,9 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 	if err := setRoutineTarget(&grant, kv, ctx); err != nil {
 		return err
 	}
+	if err := setObjectTarget(&grant, kv, ctx); err != nil {
+		return err
+	}
 	if err := setGrantColumns(&grant, kv, ctx); err != nil {
 		return err
 	}
@@ -1816,6 +1819,9 @@ func (s *schemaParseState) parseRevokeComment(comment *ast.Comment, structName s
 		Dialects:   scope,
 	}
 	if err := setRoutineTarget(&revoked, kv, ctx); err != nil {
+		return err
+	}
+	if err := setObjectTarget(&revoked, kv, ctx); err != nil {
 		return err
 	}
 	if err := setGrantColumns(&revoked, kv, ctx); err != nil {
@@ -1873,6 +1879,33 @@ func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annota
 		grant.OnRoutine = name
 		grant.RoutineArguments = arguments
 		grant.RoutineKind = attribute.kind
+	}
+	return nil
+}
+
+// setObjectTarget reads the target a grant or revoke names by one of the
+// attributes [schemamodel.GrantObjectKinds] lists, such as on_topic. Two of
+// them on one directive are refused, since the target holds one object.
+func setObjectTarget(grant *schemamodel.Grant, kv map[string]string, ctx annotationErrorContext) error {
+	var named string
+	for _, kind := range schemamodel.GrantObjectKinds() {
+		value := strings.TrimSpace(kv[kind.Attribute])
+		if value == "" {
+			continue
+		}
+		if named != "" {
+			return &ptaherr.ParseError{
+				File:      ctx.file,
+				Line:      ctx.line,
+				Directive: strings.TrimPrefix(ctx.directive, "//"),
+				Attribute: kind.Attribute,
+				Err:       ptaherr.ErrInvalidAttributeValue,
+				Message: fmt.Sprintf("%s and %s on %s at %s each name a target; a grant names one object",
+					named, kind.Attribute, ctx.directive, ctx.location),
+			}
+		}
+		named = kind.Attribute
+		grant.OnObject, grant.ObjectKind = value, kind.Kind
 	}
 	return nil
 }

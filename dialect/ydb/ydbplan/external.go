@@ -162,7 +162,7 @@ func externalChanges(ctx context.Context, request featureplan.Request) ([]extern
 	caps := request.Capabilities
 	displaced := make(map[objectidentity.Key]bool)
 	for key, change := range sources {
-		displaced[key] = change.After == nil || change.Displaces(caps)
+		displaced[key] = change.DisplacesTables(caps)
 	}
 	changes := make([]externalChange, 0, len(request.Changes))
 	for index, record := range request.Changes {
@@ -195,7 +195,7 @@ func lowerSource(index int, ref objectidentity.ID, change *ydbdiff.ExternalDataS
 	case change.After == nil:
 		result.strategy = "drop the data source; the system it reads is untouched"
 		result.steps = []externalStep{drop}
-	case !caps.Has(capability.ExternalObjectReplace):
+	case change.Recreates(caps):
 		result.strategy = "drop the data source and create it again, with the external tables over it"
 		result.steps = []externalStep{write(ydbast.ExternalRecreate, plangraph.Alter)}
 	case change.Displaces(caps):
@@ -228,7 +228,6 @@ func lowerTable(index int, ref objectidentity.ID, change *ydbdiff.ExternalTable,
 		return externalStep{input: index, ref: ref, group: externalTableWrites, action: action, operation: operation, reads: after, sources: after,
 			payload: &ydbast.ExternalTable{Operation: operation, Schema: schema, Name: name, Spec: change.After.Spec.Clone()}}
 	}
-	readsDisplaced := slices.ContainsFunc(slices.Concat(before, after), func(source objectidentity.ID) bool { return displaced[source.Key()] })
 	switch {
 	case change.Before == nil:
 		result.strategy = "create the external table"
@@ -236,12 +235,12 @@ func lowerTable(index int, ref objectidentity.ID, change *ydbdiff.ExternalTable,
 	case change.After == nil:
 		result.strategy = "drop the external table; the files it reads stay"
 		result.steps = []externalStep{drop}
-	case caps.Has(capability.ExternalObjectReplace) && !readsDisplaced:
-		result.strategy = "replace the external table in place with CREATE OR REPLACE"
-		result.steps = []externalStep{write(ydbast.ExternalReplace, plangraph.Alter)}
-	default:
+	case change.Recreates(caps, root, displaced):
 		result.strategy = "drop the external table and create it again"
 		result.steps = []externalStep{drop, write(ydbast.ExternalCreate, plangraph.Create)}
+	default:
+		result.strategy = "replace the external table in place with CREATE OR REPLACE"
+		result.steps = []externalStep{write(ydbast.ExternalReplace, plangraph.Alter)}
 	}
 	return result
 }

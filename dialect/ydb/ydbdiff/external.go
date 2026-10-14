@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbexternal"
@@ -117,6 +118,62 @@ func (v *ExternalTable) Validate() error {
 func (v *ExternalDataSource) Displaces(caps capability.Capabilities) bool {
 	return v != nil && v.Before != nil && v.After != nil &&
 		(!caps.Has(capability.ExternalObjectReplace) || v.Before.Spec.SourceType != v.After.Spec.SourceType)
+}
+
+// DisplacesTables reports a change to a data source that the external tables
+// over it cannot stay through: a drop, which YDB refuses while a table reads
+// the source, and a change [ExternalDataSource.Displaces] names. The plan drops
+// each such table before the change and creates it again after, unless the
+// table goes too.
+func (v *ExternalDataSource) DisplacesTables(caps capability.Capabilities) bool {
+	return v != nil && v.Before != nil && (v.After == nil || v.Displaces(caps))
+}
+
+// Recreates reports a change to a data source both sides hold that the plan
+// makes by dropping the source and creating it again, on a target without
+// [capability.ExternalObjectReplace], rather than by CREATE OR REPLACE. The
+// planner lowers the change by it, and the YDB host grants the new source the
+// permissions the old one held: measured on 26.2.1.14, CREATE OR REPLACE keeps
+// a source's permission entries and DROP takes them.
+func (v *ExternalDataSource) Recreates(caps capability.Capabilities) bool {
+	return v != nil && v.Before != nil && v.After != nil && !caps.Has(capability.ExternalObjectReplace)
+}
+
+// Recreates reports a change to an external table both sides hold that the
+// plan makes by dropping the table and creating it again rather than by CREATE
+// OR REPLACE: on a target without [capability.ExternalObjectReplace], and where
+// the table reads or read a data source whose identity displaced holds, a
+// source the plan drops or changes in a way the table cannot stay through
+// ([ExternalDataSource.DisplacesTables]). root is the database the plan runs
+// in, which a source written absolute is read against. The planner lowers the
+// change by it, and the YDB host grants the new table the permissions the old
+// one held.
+func (v *ExternalTable) Recreates(caps capability.Capabilities, root string, displaced map[objectidentity.Key]bool) bool {
+	if v == nil || v.Before == nil || v.After == nil {
+		return false
+	}
+	if !caps.Has(capability.ExternalObjectReplace) {
+		return true
+	}
+	for _, written := range []string{v.Before.Spec.DataSource, v.After.Spec.DataSource} {
+		if source, ok := ydbexternal.ResolveSource(root, written); ok && displaced[source.Key()] {
+			return true
+		}
+	}
+	return false
+}
+
+// DisplacedSources returns the identity of each data source changes drops or
+// changes in a way the external tables over it cannot stay through; see
+// [ExternalDataSource.DisplacesTables]. A record of another kind is skipped.
+func DisplacedSources(changes []schemaext.ChangeRecord, caps capability.Capabilities) map[objectidentity.Key]bool {
+	displaced := make(map[objectidentity.Key]bool)
+	for _, record := range changes {
+		if change, ok := record.Value.(*ExternalDataSource); ok && change.DisplacesTables(caps) {
+			displaced[record.Subject.Key()] = true
+		}
+	}
+	return displaced
 }
 
 // Effect records what the change does. No external object holds data in YDB,

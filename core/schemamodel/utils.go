@@ -1743,6 +1743,11 @@ type grantKey struct {
 	// f(text) are two grants.
 	onRoutine        string
 	routineArguments string
+	onDatabase       bool
+	// onObject and objectKind together name a target of a kind the fields
+	// above do not: a topic and a secret of one name are two targets.
+	onObject   string
+	objectKind string
 	// columns is the column list, joined with NUL, which a column name
 	// cannot carry: two grants of one privilege on different columns are two
 	// grants.
@@ -1761,6 +1766,9 @@ func newGrantKey(g Grant) grantKey {
 		onSequence:       g.OnSequence,
 		onRoutine:        g.OnRoutine,
 		routineArguments: g.RoutineArguments,
+		onDatabase:       g.OnDatabase,
+		onObject:         g.OnObject,
+		objectKind:       g.ObjectKind,
 		columns:          strings.Join(g.Columns, "\x00"),
 		withOption:       g.WithOption,
 	}

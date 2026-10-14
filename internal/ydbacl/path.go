@@ -10,7 +10,8 @@ import (
 )
 
 // The object kinds a YDB grant names, as [ptah.run/core/ast.GrantPrivilegeNode]
-// and [ptah.run/catalog.Grant] spell them. A Ptah schema is a directory on YDB,
+// and [ptah.run/catalog.Grant] spell them, besides the scheme objects their
+// owners manage, such as [ObjectTopic]. A Ptah schema is a directory on YDB,
 // so a grant on a directory is a SCHEMA grant, and the database root is the
 // directory every schema lives under.
 const (
@@ -34,11 +35,11 @@ var ErrNeedsDatabasePath = errors.New("YDB takes this object only by its absolut
 // RelativePath is the path of the object a grant names, relative to the
 // database root, and "" for the database itself.
 //
-// objectName is what the grant carries: a table reference in Ptah's
-// schema-qualified spelling, such as `shop.orders` (the table orders in the
-// directory shop), a directory, such as `shop/eu`, or nothing for the
-// database. A name that begins with a slash is already an absolute path and is
-// returned as it is.
+// objectName is what the grant carries: a table or another scheme object
+// named by a reference in Ptah's schema-qualified spelling, such as
+// `shop.orders` (the object orders in the directory shop), a directory, such
+// as `shop/eu`, or nothing for the database. A name that begins with a slash
+// is already an absolute path and is returned as it is.
 func RelativePath(objectType, objectName string) (string, error) {
 	if strings.HasPrefix(objectName, "/") && strings.Trim(objectName, "/") != "" {
 		return objectName, nil
@@ -63,17 +64,28 @@ func RelativePath(objectType, objectName string) (string, error) {
 		}
 		return directory, nil
 	case ObjectTable:
-		ref, ok := tableref.Parse(objectName)
-		if !ok || ref.Name == "" {
-			return "", fmt.Errorf("a grant on a table names %q, which is not a table", objectName)
-		}
-		if schema := strings.Trim(ref.Schema, "/"); schema != "" {
-			return schema + "/" + ref.Name, nil
-		}
-		return ref.Name, nil
+		return objectPath("table", objectName)
 	default:
-		return "", fmt.Errorf("a YDB grant is on the database, a directory or a table, not a %s", objectType)
+		if object, ok := schemeObjectOf(objectType); ok {
+			return objectPath(strings.ToLower(object.objectType), objectName)
+		}
+		return "", fmt.Errorf("a YDB grant is on the database, a directory, a table or a scheme object such as "+
+			"a topic, not a %s", objectType)
 	}
+}
+
+// objectPath is the path, relative to the database root, of the object a
+// schema-qualified reference names; family names the object's kind in a
+// refusal.
+func objectPath(family, objectName string) (string, error) {
+	ref, ok := tableref.Parse(objectName)
+	if !ok || ref.Name == "" {
+		return "", fmt.Errorf("a grant on a %s names %q, which is not a %s", family, objectName, family)
+	}
+	if schema := strings.Trim(ref.Schema, "/"); schema != "" {
+		return schema + "/" + ref.Name, nil
+	}
+	return ref.Name, nil
 }
 
 // StatementPath is the path a GRANT or REVOKE writes for the object a grant
@@ -115,7 +127,7 @@ func StatementPath(objectType, objectName, databasePath string, caps capability.
 }
 
 // Describe names the object a grant is about, for a message a person reads:
-// the database, a directory, or a table.
+// the database, a directory, a table, or another scheme object by its kind.
 func Describe(objectType, objectName string) string {
 	switch strings.ToUpper(strings.TrimSpace(objectType)) {
 	case ObjectDatabase:

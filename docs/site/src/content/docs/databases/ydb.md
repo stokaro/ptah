@@ -596,13 +596,17 @@ comment, and `view_comments` covers a view's. Both hold on every YDB line.
 
 A role is a YDB user, and a role declared with `group="true"` is a group.
 `member_of` names the groups a user or a group joins. A grant is on the
-database (`on_database="true"`), a directory (`on_schema`) or a table
-(`on_table`), and names YDB permissions, by name or as `GRANT` spells them:
+database (`on_database="true"`), a directory (`on_schema`), a table
+(`on_table`), or a topic, a coordination node, a secret, an external data
+source or an external table (`on_topic`, `on_coordination_node`,
+`on_secret`, `on_external_data_source`, `on_external_table`, each spelled as
+`on_table` is), and names YDB permissions, by name or as `GRANT` spells them:
 
 ```go
 //ptah:schema:role name="readers" group="true"
 //ptah:schema:role name="app" login="true" password="Secret1!" member_of="readers,DATA-READERS"
 //ptah:schema:grant role="readers" privilege="SELECT ROW,ydb.generic.list" on_table="shop.orders"
+//ptah:schema:grant role="readers" privilege="SELECT ROW" on_topic="shop.order_events"
 //ptah:schema:grant role="app" privilege="CONNECT" on_database="true"
 type Access struct{}
 ```
@@ -615,8 +619,12 @@ CREATE USER `app` PASSWORD 'Secret1!';
 ALTER GROUP `readers` ADD USER `app`;
 ALTER GROUP `DATA-READERS` ADD USER `app`;
 GRANT 'ydb.granular.select_row', 'ydb.generic.list' ON `shop/orders` TO `readers`;
+GRANT 'ydb.granular.select_row' ON `shop/order_events` TO `readers`;
 GRANT 'ydb.database.connect' ON `/local` TO `app`;
 ```
+
+YAML uses the same keys under `grants` and `revokes`, such as
+`on_topic: shop.order_events`.
 
 A user that does not log in is `CREATE USER ... NOLOGIN`. A password is
 written as declared, under a warning that it sits in the file in plain text;
@@ -627,19 +635,29 @@ requires. `superuser`, `createdb`, `createrole`, `replication` and
 `with_option` are refused: YDB keeps the grant option as the permission
 `ydb.access.grant`, which a grant names instead. YDB has no `PUBLIC` and no
 default privileges; a permission on a directory is inherited by every object
-created in it. A grant on a view is refused, because Ptah does not read a
-view's permissions yet; grant on the view's directory instead.
+created in it.
+
+A grant on a topic, a coordination node, a secret or an external object needs
+the key the target holds the kind under (`topics`, `coordination_nodes`,
+`secrets`, `external_data_sources`), and is refused without it. A grant on a
+view is refused, because Ptah does not read a view's permissions yet; grant on
+the view's directory instead.
 
 A grant names its object by a path relative to the database root, so a
 migration applies to a database of another name. A grant on the database
-itself, and on 25.1 to 25.4 a grant on a table or a directory at the database
-root, takes an absolute path, which a plan reads from the database it runs
+itself, and on 25.1 to 25.4 a grant on a table, a directory or another object
+at the database root, takes an absolute path, which a plan reads from the database it runs
 against and `ptah schema render` cannot know; such a render is refused.
 
 The read reports every user and group from `.sys/auth_users`, `.sys/auth_groups`
 and `.sys/auth_group_members`, and the permissions and the owner of the
-database, each directory and each table the read covers. A description leaves
-out, while knowing they exist, the principals no migration run there could have
+database, each directory, each table, and each topic, coordination node,
+secret, external data source and external table the read covers. A view, an
+async replication, a transfer, a streaming query and a resource pool keep
+permissions of their own that the read does not report.
+
+A description leaves out, while knowing they exist, the principals no
+migration run there could have
 made: the cluster's own groups, such as `ADMINS` and `DATA-READERS`, whose names
 no declaration could create; the database's owner, such as local-ydb's `root`,
 which exists before any migration runs; and every user and group when the read
@@ -650,7 +668,13 @@ database and plans no user or group.
 
 A plan removes a membership only when the schema declares both its group and
 its member, so a user keeps the cluster's `USERS` group, which grants the right
-to connect. It grants a rebuilt table the permissions the old table held.
+to connect. It grants a rebuilt table the permissions the old table held, and
+an external data source or external table it drops and creates again the
+permissions the old object held. A permission on an object the plan drops goes
+with the object and is not revoked; a grant on such an object is refused. A
+permission on a topic or another scheme object the schema does not declare is
+left as the database holds it, so an HCL document, which cannot name a topic,
+keeps the permissions its roles hold on one when it is applied back.
 [Planning changes](#planning-changes) says where each statement goes.
 
 ## Column tables and local indexes
@@ -1529,7 +1553,9 @@ Add `name="app/locks"` to leave only that node unmanaged.
 HCL uses a leading `// ptah:not-described coordination_node` comment for the
 whole namespace, or appends `"app/locks"` to manage the namespace except that
 node. Ordinary HCL without a coverage directive leaves omitted nodes unmanaged.
-Declaring a node still requests its creation or update.
+Declaring a node still requests its creation or update. A `permission` or
+`revoke` block names a node as `for = coordination_node.app.locks`, its
+directory and its name, or `coordination_node.locks` at the database root.
 
 HCL export carries captured namespace claims in a versioned
 `// ptah:feature-coverage` header, including the exact model definition. Keep
@@ -1717,9 +1743,13 @@ secret's path; two files that each declare it are refused when they are merged,
 by the secret's identity. A directory is written relative to the database
 root, and one that starts with a slash is refused.
 
-Ptah creates a secret with YDB's default permissions: it inherits only
-`DESCRIBE SCHEMA` from its directory, and its owner holds every right on it.
-An external data source reads a secret with the `SELECT ROW` right on it.
+Ptah creates a secret with YDB's default permissions: it inherits nothing
+from its directory, its owner holds every right on it, and YDB gives it
+`DESCRIBE SCHEMA` for each subject that may describe the directory, such as
+`METADATA-READERS`. The read reports those entries as ones no `GRANT` made, so
+a plan leaves them in place, and a description leaves them out. An external
+data source reads a secret with the `SELECT ROW` right on it, which a grant
+with `on_secret` gives.
 
 Secrets need the `secrets` key: YDB 25.4 and later have them, and 25.3 has them
 behind the `EnableSchemaSecrets` flag, which is off by default (`Secrets are
@@ -1847,7 +1877,8 @@ statement needs one that has not run yet:
 2. Drop the views the plan removes or replaces, a view before the view it
    reads.
 3. Revoke the permissions and remove the memberships the plan takes away, then
-   create and change users and groups.
+   create and change users and groups. A permission on an object the plan
+   drops goes with the object.
 4. Drop the removed coordination nodes, so an object created at one's path
    finds it free.
 5. Create the added tables, with their indexes and changefeeds, each followed
@@ -1875,7 +1906,9 @@ statement needs one that has not run yet:
     view waits for every replication the plan creates.
 16. Change the changed async replications, then create and change the
     transfers, once the tables, changefeeds and topics a transfer uses exist.
-17. Add memberships and grants, once the tables they name exist.
+17. Add memberships and grants, once the tables they name exist. A grant on a
+    topic, a coordination node, a secret or an external object follows the
+    statement that creates or changes the object.
 18. Drop the classifiers and the resource pools a rollback removes, then
     create and change pools, then change classifiers in place, then create
     classifiers. A classifier names a user or a group, so this comes after
@@ -2690,11 +2723,12 @@ Errors in user declarations hide credential values. Omitted users and groups
 remain, as they do for Go and YAML sources. Memberships in declared groups are
 compared.
 
-`GRANT` and `REVOKE` declare permissions on tables, directories and the database.
-They accept multiple paths and subjects. A table or directory must already be
-represented by an earlier declaration. A directory can be the parent of a
-previously declared table, topic or other path-based object. Permissions on
-other object kinds are refused.
+`GRANT` and `REVOKE` declare permissions on tables, directories, the
+database, topics, coordination nodes, secrets, external data sources and
+external tables. They accept multiple paths and subjects. The object must
+already be represented by an earlier declaration. A directory can be the
+parent of a previously declared table, topic or other path-based object.
+Permissions on other object kinds, such as a view, are refused.
 
 ```sql
 CREATE TABLE `shop/orders` (id Uint64 NOT NULL, PRIMARY KEY (id));

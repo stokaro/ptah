@@ -23,6 +23,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbacl"
 	"ptah.run/internal/ydburl"
 )
 
@@ -44,9 +45,10 @@ import (
 // than described on a cluster that does not serve the replication API.
 //
 // The access model is read where YDB keeps it. The owner and the permission
-// entries of the database, of each directory and of each table come with the
-// scheme service's own answer for the object, so they cover exactly what the
-// read walks; the users, groups and memberships come from .sys/auth_users,
+// entries of the database, of each directory, of each table, and of each
+// topic, coordination node, secret, external data source and external table
+// come with the service's own answer for the object, so they cover exactly
+// what the read describes; the users, groups and memberships come from .sys/auth_users,
 // .sys/auth_groups and .sys/auth_group_members, the only place YDB reports
 // them. A password is never read: the query names the columns it reads, and
 // the password hash is not one of them.
@@ -237,7 +239,7 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 	r.directoryAccess(schema, self, db)
 	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
 	for _, entry := range entries {
-		if err := r.entry(ctx, source, schema, entry, db, unread); err != nil {
+		if err := r.entry(ctx, source, schema, self, entry, db, unread); err != nil {
 			return err
 		}
 	}
@@ -270,12 +272,12 @@ func unreadKeyedEntry(entryType Ydb_Scheme.Entry_Type, schema, name string, unre
 	return true
 }
 
-// entry reads one directory entry.
+// entry reads one entry of the directory schema, whose own entry is parent.
 func (r *Reader) entry(
 	ctx context.Context,
 	source Source,
 	schema string,
-	entry *Ydb_Scheme.Entry,
+	parent, entry *Ydb_Scheme.Entry,
 	db *catalog.Database,
 	unread *unreadObjects,
 ) error {
@@ -306,7 +308,7 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		return r.coordinationNode(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_SECRET:
-		return r.secret(schema, name, db)
+		return r.secret(ctx, source, schema, name, parent, db)
 	case Ydb_Scheme.Entry_RESOURCE_POOL:
 		return r.listedResourcePool(db, name)
 	}
@@ -454,6 +456,7 @@ func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, na
 	if err != nil {
 		return err
 	}
+	r.objectAccess(ydbacl.ObjectCoordinationNode, schema, name, described.GetSelf(), db)
 	node, err := decodeCoordinationNode(described)
 	if err != nil {
 		return unreadCoordinationNode(db, schema, name, fmt.Sprintf("YDB coordination node %s: %s", absolute, err))

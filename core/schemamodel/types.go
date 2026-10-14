@@ -1454,6 +1454,16 @@ type Grant struct {
 	// target without the key refuses it.
 	OnDatabase bool `json:",omitempty"`
 
+	// OnObject names a target of a kind none of the fields above names, and
+	// ObjectKind names that kind, one of [GrantObjectKinds]. Both are YDB's
+	// today: a topic, a coordination node, a secret, an external data source
+	// or an external table, each a scheme object with an access list of its
+	// own. OnObject is spelled as OnTable is, the object's name qualified by
+	// its schema, and is mutually exclusive with the other targets. A target
+	// without the capability key of the kind refuses it.
+	OnObject   string `json:",omitempty"`
+	ObjectKind string `json:",omitempty"`
+
 	// Columns limits the privileges to these columns of the OnTable target:
 	// GRANT UPDATE (a, b) ON t. Empty means the whole table. A column
 	// privilege and the table privilege of the same name are two privileges,
@@ -1490,6 +1500,8 @@ func (g *Grant) Canonicalize() {
 	g.OnRoutine = strings.TrimSpace(g.OnRoutine)
 	g.RoutineArguments = strings.TrimSpace(g.RoutineArguments)
 	g.RoutineKind = strings.ToUpper(strings.TrimSpace(g.RoutineKind))
+	g.OnObject = strings.TrimSpace(g.OnObject)
+	g.ObjectKind = strings.Join(strings.Fields(strings.ToUpper(g.ObjectKind)), " ")
 	var columns []string
 	for _, column := range g.Columns {
 		column = strings.TrimSpace(column)
@@ -1518,6 +1530,8 @@ func (g Grant) TargetKey() string {
 	switch {
 	case g.OnDatabase:
 		return "DATABASE"
+	case strings.TrimSpace(g.OnObject) != "":
+		return strings.Join(strings.Fields(strings.ToUpper(g.ObjectKind)), " ") + " " + strings.TrimSpace(g.OnObject)
 	case strings.TrimSpace(g.OnSchema) != "":
 		return "SCHEMA " + strings.TrimSpace(g.OnSchema)
 	case strings.TrimSpace(g.OnSequence) != "":

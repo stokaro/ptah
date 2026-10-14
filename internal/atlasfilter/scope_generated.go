@@ -184,6 +184,8 @@ func (s *scopeSelection) generatedGrantSelected(
 		return slices.ContainsFunc(out.Functions, func(function schemamodel.Function) bool {
 			return function.Name == grant.OnRoutine
 		})
+	case grant.OnObject != "":
+		return objectGrantKept(out.FeatureObjects, grant.ObjectKind, grant.OnObject)
 	case grant.OnSchema != "":
 		if !s.schemaAllowed(grant.OnSchema) {
 			return false

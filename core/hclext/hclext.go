@@ -229,6 +229,13 @@ type Block struct {
 	// block names a dialect. At most one shape of a block type sets it, and
 	// its exported blocks carry no dialect attribute.
 	Unscoped bool
+	// GrantKind is the kind of object a `permission` or `revoke` block names
+	// an object of this block as, through `for = <type>.<schema>.<name>`,
+	// such as COORDINATION NODE, which the grant carries as
+	// [ptah.run/core/schemamodel.Grant.ObjectKind]. Empty for a block no
+	// grant names. Only a [TopLevel] block named by [SchemaAndName] takes
+	// one, and no two selected blocks share one.
+	GrantKind string
 }
 
 // Child is the shape of a block nested in an owner's block. It takes one
@@ -493,13 +500,15 @@ func None() Set {
 // [Number] attribute, which only the writer takes, an attribute named twice or
 // named as the naming's own, children or type declarations at unsupported
 // sites, a child without a type, declared twice or under an attribute's name,
-// a child's non-column reference, and an encoder without a model to encode.
+// a child's non-column reference, an encoder without a model to encode, and a
+// grant kind on a block that cannot name an object or on two block types.
 // Shapes at one site may share a block type only with disjoint Dialects and
 // at most one Unscoped reader. Unscoped requires a concrete dialect, which
 // names the targets whose documents the shape also reads.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, blocks: make(map[blockKey]*blockRoutes)}
 	kinds := make(map[schemaext.Kind]string)
+	grantKinds := make(map[string]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
 			return Set{}, fmt.Errorf("HCL extension %d names no owner", index)
@@ -520,6 +529,12 @@ func NewSet(extensions ...Extension) (Set, error) {
 		for _, block := range extension.Blocks {
 			if err := validateBlock(extension.Owner, block); err != nil {
 				return Set{}, err
+			}
+			if kind := strings.ToUpper(block.GrantKind); kind != "" {
+				if other, taken := grantKinds[kind]; taken && other != block.Type {
+					return Set{}, fmt.Errorf("%w: HCL blocks %q and %q both name grant kind %q", schemaext.ErrDuplicate, other, block.Type, block.GrantKind)
+				}
+				grantKinds[kind] = block.Type
 			}
 			block.Attributes = slices.Clone(block.Attributes)
 			block.Children = cloneChildren(block.Children)
@@ -560,6 +575,10 @@ func validateBlock(owner string, block Block) error {
 	}
 	if err := validateNaming(owner, block); err != nil {
 		return err
+	}
+	if block.GrantKind != "" && (block.Site != TopLevel || block.Naming != SchemaAndName) {
+		return fmt.Errorf("HCL %s block %q of %s names grant kind %q, which only a top-level block named by %s takes",
+			block.Site, block.Type, owner, block.GrantKind, SchemaAndName)
 	}
 	names := map[string]bool{"schema": readsOwnSchema(block.Naming), "dialect": scopedBlock(block)}
 	for _, attribute := range block.Attributes {
@@ -708,6 +727,30 @@ func NamesSchema(attribute Attribute) bool {
 // Selected reports whether the set was built by [NewSet] or [None].
 func (s Set) Selected() bool {
 	return s.selected
+}
+
+// GrantBlock returns the type of the top-level block that declares objects of
+// kind, a kind a grant names, such as COORDINATION NODE, and false when no
+// selected owner's block declares one; see [Block.GrantKind]. A `permission`
+// or `revoke` block names such an object as `for = <type>.<schema>.<name>`.
+// The kind is matched without regard to case.
+func (s Set) GrantBlock(kind string) (string, bool) {
+	var types []string
+	for key, routes := range s.blocks {
+		if key.site != TopLevel {
+			continue
+		}
+		for _, shape := range routes.shapes {
+			if shape.GrantKind != "" && strings.EqualFold(shape.GrantKind, strings.TrimSpace(kind)) {
+				types = append(types, key.block)
+				break
+			}
+		}
+	}
+	if len(types) == 0 {
+		return "", false
+	}
+	return slices.Min(types), true
 }
 
 // Shape is the shape of a block an extension of the set reads.

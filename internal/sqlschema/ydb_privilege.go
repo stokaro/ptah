@@ -72,6 +72,9 @@ func ydbPrivilegeTarget(database *schemamodel.Database, document *Document, kind
 			grant.OnDatabase = true
 		case ydbacl.ObjectTable, ydbacl.ObjectDirectory:
 			setGrantTarget(&grant, kind, name, "", platform.YDB)
+		case ydbacl.ObjectTopic, ydbacl.ObjectCoordinationNode, ydbacl.ObjectSecret,
+			ydbacl.ObjectExternalDataSource, ydbacl.ObjectExternalTable:
+			grant.OnObject, grant.ObjectKind = normalizeSQLTableReference(platform.YDB, name), kind
 		default:
 			return grant, fmt.Errorf("%w: unsupported YDB permission object kind %q", ErrUnmodeledStatement, kind)
 		}
@@ -93,11 +96,31 @@ func ydbPrivilegeTarget(database *schemamodel.Database, document *Document, kind
 				return schemamodel.Grant{OnTable: normalizeSQLTableReference(platform.YDB, sqlident.Quote(platform.YDB, relative))}, nil
 			}
 		}
+		if grant, ok := declaredYDBSchemeObject(source, relative); ok {
+			return grant, nil
+		}
 		if declaredYDBDirectory(source, relative) {
 			return schemamodel.Grant{OnSchema: relative}, nil
 		}
 	}
-	return schemamodel.Grant{}, undeclared(fmt.Errorf("%w: YDB permission path %q must name a table or directory declared earlier in this desired schema", ErrUnmodeledStatement, name))
+	return schemamodel.Grant{}, undeclared(fmt.Errorf("%w: YDB permission path %q must name a table, a directory, a topic, "+
+		"a coordination node, a secret, an external data source or an external table declared earlier in this desired schema",
+		ErrUnmodeledStatement, name))
+}
+
+// declaredYDBSchemeObject is a grant on the scheme object a feature owner
+// declares at relative, of a kind whose permissions the reader reads, and
+// false when database declares none there.
+func declaredYDBSchemeObject(database *schemamodel.Database, relative string) (schemamodel.Grant, bool) {
+	for _, ref := range database.FeatureObjects.Refs() {
+		if path.Join(ref.Schema.Source, ref.Name.Source) != relative {
+			continue
+		}
+		if objectType, objectName, ok := ydbacl.ObjectName(ref); ok {
+			return schemamodel.Grant{OnObject: objectName, ObjectKind: objectType}, true
+		}
+	}
+	return schemamodel.Grant{}, false
 }
 
 // An absolute source path is meaningful only with an explicit database root.

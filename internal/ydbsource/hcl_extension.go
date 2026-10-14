@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -57,7 +58,8 @@ func HCL() hclext.Extension {
 		Kinds: []schemaext.Kind{ydbcoordination.Kind, ydbschema.VectorIndexKind, ydbschema.IndexPartitioningKind,
 			ydbschema.ColumnFamiliesKind, ydbschema.ColumnStoreKind, ydbschema.TablePartitioningKind},
 		Blocks: []hclext.Block{
-			{Site: hclext.TopLevel, Type: coordinationBlock, Naming: hclext.SchemaAndName, Attributes: nodeAttributes},
+			{Site: hclext.TopLevel, Type: coordinationBlock, Naming: hclext.SchemaAndName, Attributes: nodeAttributes,
+				GrantKind: schemamodel.GrantObjectCoordinationNode},
 			{Site: hclext.IndexAttributes, Type: indexBlock, Attributes: indexAttributes},
 		},
 		Decoder:          hclDecoder{},
