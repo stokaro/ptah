@@ -27,6 +27,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/schemamodel`
 - `ptah.run/core/platform`
 - `ptah.run/core/platform/capability`
+- `ptah.run/core/platform/descriptor`
 - `ptah.run/core/platform/identifier`
 - `ptah.run/core/ptaherr`
 - `ptah.run/core/query`
@@ -934,8 +935,9 @@ errors. The snapshot owns its names and contains no services or capabilities.
 `schemamodel.ScopeToTarget` and `OmissionsForTarget` require this resolved value
 and reject its zero value. An empty declaration scope includes every resolved
 target; a nonempty scope matches only registered names, ignoring ASCII case
-and surrounding whitespace. Built-in registration derives all accepted names,
-including transport aliases, from `platform.DialectSpellings`.
+and surrounding whitespace. Built-in registration takes every accepted name,
+including transport aliases, from the built-in dialect descriptors: the ones
+the process dialect registry starts with.
 
 Typed declarations can scope objects to custom registered targets. Go annotation
 and YAML scope parsing still accept only built-in names. Those source frontends
@@ -4750,7 +4752,22 @@ rolled-back password change sets nothing, the database holding no password to
 restore.
 
 `core/platform/identifier` exposes the reusable value types and conservative
-dialect defaults behind that contract.
+dialect defaults behind that contract. `identifier.FromDescriptor` reads the
+defaults from a dialect descriptor, and `ForDialect` is that function over the
+process dialect registry.
+
+`core/platform/descriptor.Dialect` is what an engine states about itself, as
+data only: names and aliases, protocol family, default schema, identifier rules
+and placeholder style. A `descriptor.Registry` is an immutable, validated set
+of them. `core/platform` serves the process registry through `Dialects` and
+`Lookup`, and `NormalizeDialect`, `DialectSpellings` and `IsPostgresFamily`
+read it. The registry starts with the built-in engines, ready before any
+package-level variable reads it. `platform.Register` adds an engine Ptah does
+not ship. It only adds: an equal descriptor registered again changes nothing,
+and one that claims a spelling a different descriptor owns fails with
+`descriptor.ErrConflict`, so a spelling keeps its first answer for the life of
+the process. `engine.New` registers nothing, and `engine/builtin.New` builds
+providers for the built-in engines only.
 
 `migration/generator.GenerateCheckpointFromShadow` preserves the same live
 semantics when a replayed history is rendered as a checkpoint: the render goes
