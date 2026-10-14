@@ -72,10 +72,10 @@ type Executor interface {
 // engine with nothing to add answers it, so an implementation embeds Base and
 // writes only what its engine does differently.
 type Service interface {
-	// CheckScope refuses, before anything is dialed, a URL the caller cannot
-	// be handed: wholeServer is false for a caller that reads and changes one
-	// database, and a URL that names a whole server is refused there.
-	CheckScope(parsed *url.URL, wholeServer bool) error
+	// RequireDatabase refuses, before anything is dialed, a URL that names a
+	// whole server rather than one database. It is asked for a caller that
+	// reads and changes one database, and not for one that handles a server.
+	RequireDatabase(parsed *url.URL) error
 	// Open opens the pool for request and verifies it with a ping. The pool
 	// is closed again on every error.
 	Open(ctx context.Context, request Request) (*Pool, error)
@@ -139,8 +139,8 @@ type Service interface {
 // NewWriter return nil, so an engine that connects implements both.
 type Base struct{}
 
-// CheckScope accepts every URL.
-func (Base) CheckScope(*url.URL, bool) error { return nil }
+// RequireDatabase accepts every URL.
+func (Base) RequireDatabase(*url.URL) error { return nil }
 
 // Open opens the dialect's driver with the URL as its data source.
 func (Base) Open(ctx context.Context, request Request) (*Pool, error) {

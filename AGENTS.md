@@ -56,8 +56,10 @@ Read facts out of their declaration rather than out of a count written here:
   out deliberately; `internal/lintdialect/dialect.go` says why. YDB renders,
   plans, reads and applies schemas, runs versioned migrations, is linted as
   YQL, writes data and runs embedding generations.
-- Which driver a URL takes: `databaseDriverConfig` in `dbschema/connection.go`.
-  It is not one driver per dialect, and a `sqlite` URL may take `libsql`.
+- Which driver a URL takes: the dialect descriptor's `Driver`, read by the
+  engine's connector in `internal/connector/<engine>connect`. It is not one
+  driver per dialect, and a `sqlite` URL may take `libsql`
+  (`internal/connector/sqliteconnect`).
 - What a dialect renders: `docs/capabilities.md`. Acceptance is not a promise;
   `SERIAL` is refused by name on ClickHouse, CockroachDB and Spanner rather than
   downgraded silently.

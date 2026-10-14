@@ -1328,8 +1328,8 @@ func TestResolveServerVersionUnreadablePostgresBannerNamesPostgres(t *testing.T)
 //
 // CockroachDB, YugabyteDB and Spanner are all reached over the PostgreSQL wire
 // protocol, and a deployment of any of them may report a banner carrying no
-// token of its own. dbschema.getDatabaseInfo answers that case by keeping the
-// dialect the operator connected with — the decision
+// token of its own. The PostgreSQL-wire connector (internal/connector/pgconnect)
+// answers that case by keeping the dialect the operator connected with — the decision
 // TestDetectPostgresWireDialect's "explicit cockroach survives generic banner"
 // row pins — and then hands this resolver that dialect together with the same
 // banner. Claiming the banner as PostgreSQL here overrules that decision at the

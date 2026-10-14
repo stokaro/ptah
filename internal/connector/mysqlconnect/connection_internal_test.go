@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
-
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/connector"

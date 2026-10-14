@@ -243,6 +243,7 @@ linters:
         - database/sql
         - ptah.run/dbschema
         - ptah.run/internal/atlasscript
+        - ptah.run/internal/connector
         - ptah.run/internal/dbexprprobe
         - ptah.run/internal/dbschema/postgres
         - ptah.run/internal/dbschema/sqlite
@@ -295,7 +296,7 @@ linters:
       - linters:
           - gosec
         text: 'G101:'
-        path: '(dbschema/connection.*_test\.go|internal/dburldisplay/.*_test\.go|migration/migrator/(debug|example)_test\.go|internal/cli/internal/schemaserve/.*_test\.go)$'
+        path: '(dbschema/connection.*_test\.go|internal/connector/[a-z]+connect/connection_internal_test\.go|internal/dburldisplay/.*_test\.go|migration/migrator/(debug|example)_test\.go|internal/cli/internal/schemaserve/.*_test\.go)$'
       # gosec G602 false positives on `j-1` slice access inside guarded test loops
       # (`for j := 1; j < len(...); j++`). Limited to the field-order tests.
       - linters:

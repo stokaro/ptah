@@ -260,8 +260,8 @@ func TestCompareWithDialect_PrimaryKeyKeepsTheNameTheDatabaseGaveIt(t *testing.T
 
 // mysqlConnectionInfo is the metadata a live MySQL-family connection carries:
 // the connected database as the schema, and the same value as the default
-// schema that owns unqualified objects. getDatabaseInfo pins the second field
-// from the first; dbschema's live test covers that it does.
+// schema that owns unqualified objects. The MySQL-wire connector pins the
+// second field from the first; dbschema's live test covers that it does.
 func mysqlConnectionInfo(dialect, schema string) catalog.ServerInfo {
 	semantics := identifier.ForDialect(dialect)
 	semantics.DefaultSchema = schema

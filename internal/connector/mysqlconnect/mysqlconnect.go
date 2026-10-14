@@ -50,11 +50,11 @@ var errURLNamesNoDatabase = errors.New(
 		"for a socket URL, in the database parameter (mysql+unix://user@/run/mysqld/mysqld.sock?database=app), " +
 		"and run the command once for each database")
 
-// CheckScope refuses a URL that names no database to a caller that reads and
-// changes one: its session would start with no default database, so what the
-// caller reads or changes would be decided by nothing the operator wrote.
-func (Service) CheckScope(parsed *url.URL, wholeServer bool) error {
-	if !wholeServer && strings.TrimPrefix(parsed.Path, "/") == "" {
+// RequireDatabase refuses a URL that names no database: its session would
+// start with no default database, so what a caller written for one database
+// reads or changes would be decided by nothing the operator wrote.
+func (Service) RequireDatabase(parsed *url.URL) error {
+	if strings.TrimPrefix(parsed.Path, "/") == "" {
 		return errURLNamesNoDatabase
 	}
 	return nil

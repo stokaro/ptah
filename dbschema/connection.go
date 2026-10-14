@@ -45,7 +45,7 @@ import (
 // for one database would otherwise be handed a whole server. [ConnectToServer]
 // is the connector that accepts one.
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	return connect(ctx, dbURL, false)
+	return connect(ctx, dbURL, requireDatabase)
 }
 
 // ConnectToServer is [ConnectToDatabase] for a caller that also handles a
@@ -60,19 +60,36 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 // The pinned Atlas community binary v1.3.0 reads such a URL the same way
 // (stokaro/ptah#3789).
 func ConnectToServer(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	return connect(ctx, dbURL, true)
+	return connect(ctx, dbURL, acceptServer)
+}
+
+// scopeRule decides, from the URL alone, whether a connector opens a URL its
+// dialect's service connects to: nil opens it, an error refuses it before
+// anything is dialed.
+type scopeRule func(service connector.Service, parsedURL *url.URL) error
+
+// requireDatabase refuses a URL that names a whole server rather than one
+// database, such as a MySQL-family URL that names no database, whose session
+// would start with no default database.
+func requireDatabase(service connector.Service, parsedURL *url.URL) error {
+	return service.RequireDatabase(parsedURL)
+}
+
+// acceptServer opens every URL, a MySQL-family one naming no database as the
+// whole server.
+func acceptServer(connector.Service, *url.URL) error {
+	return nil
 }
 
 // admitted is the request a URL connects with, and the service of its
-// dialect, once the caller's context and the dialect's scope both accept it.
-// A surface that refuses a dialect refuses it through the context, for every
-// path a URL can take to a connection; see internal/connectgate. wholeServer
-// is true for a caller that also handles a whole server.
+// dialect, once the caller's context and scope both accept it. A surface that
+// refuses a dialect refuses it through the context, for every path a URL can
+// take to a connection; see internal/connectgate.
 func admitted(
 	ctx context.Context,
 	dbURL string,
 	parsedURL *url.URL,
-	wholeServer bool,
+	scope scopeRule,
 ) (connector.Request, connector.Service, error) {
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
@@ -93,21 +110,20 @@ func admitted(
 			"connecting to %s is not supported yet: Ptah renders and plans %s schemas, "+
 				"and reading a live %s catalog is not implemented", dialect, dialect, dialect)
 	}
-	if err := service.CheckScope(parsedURL, wholeServer); err != nil {
+	if err := scope(service, parsedURL); err != nil {
 		return connector.Request{}, nil, err
 	}
 	return connector.Request{Dialect: described, URL: dbURL, Parsed: parsedURL}, service, nil
 }
 
-// connect opens dbURL once its dialect's scope accepts it for a caller that
-// does, or does not, handle a whole server.
-func connect(ctx context.Context, dbURL string, wholeServer bool) (*DatabaseConnection, error) {
+// connect opens dbURL once scope accepts it.
+func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConnection, error) {
 	parsedURL, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database URL: %w", err)
 	}
 
-	request, service, err := admitted(ctx, dbURL, parsedURL, wholeServer)
+	request, service, err := admitted(ctx, dbURL, parsedURL, scope)
 	if err != nil {
 		return nil, err
 	}

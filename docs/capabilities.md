@@ -757,8 +757,8 @@ them may report a banner carrying no token of its own — Cloud Spanner's
 PostgreSQL interface answers `SELECT version()` with exactly `PostgreSQL 14.1`,
 measured live against the Cloud Spanner emulator behind PGAdapter 0.55.2.
 
-`dbschema.getDatabaseInfo` answers that case by keeping the dialect the operator
-connected with, and `ResolveServerVersion` keeps that dialect's preset for the
+The PostgreSQL-wire connector (`internal/connector/pgconnect`) answers that case
+by keeping the dialect the operator connected with, and `ResolveServerVersion` keeps that dialect's preset for the
 same reason: claiming the banner there replaced `SpannerPostgres()` with a
 PostgreSQL line across 19 keys, among them `materialized_views`, `functions` and
 `triggers`, which exist to stop Ptah emitting DDL Spanner refuses. The two
