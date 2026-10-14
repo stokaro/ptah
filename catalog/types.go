@@ -440,7 +440,8 @@ type Column struct {
 	TypeIsDeclaredText bool `json:"type_is_declared_text,omitempty"`
 
 	// DomainName names the domain a column is declared with, empty for every
-	// column whose declared type is not a domain (PostgreSQL only today).
+	// column whose declared type is not a domain. The PostgreSQL reader fills
+	// it, and the Oracle 23 reader does for a domain its read describes.
 	//
 	// It is a separate fact rather than something read back out of
 	// FormattedType, because FormattedType is filled for arrays as well and the

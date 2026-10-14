@@ -134,6 +134,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		if err := r.readDomains(ctx, schema); err != nil {
 			return nil, fmt.Errorf("oracle: read domains: %w", err)
 		}
+		if err := r.adoptDomainColumns(ctx, schema); err != nil {
+			return nil, fmt.Errorf("oracle: read domain columns: %w", err)
+		}
 	}
 
 	if r.caps.Has(capability.CompositeTypes) {

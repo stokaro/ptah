@@ -102,6 +102,18 @@ then the domain its column was typed by answers
 alternative, `DROP DOMAIN ... FORCE`, is worse — with a live dependent it
 succeeds and silently untypes the column.
 
+A column a domain types is read as the domain. The column catalog reports
+such a column by its base type, `NOT NULL` where the domain is, with the
+domain's default, and with a copy of each domain constraint on the table. Ptah
+reads `DOMAIN_NAME` from `ALL_TAB_COLS` and `ALL_CONSTRAINTS` and leaves those
+facts to the domain, so a table whose columns a domain types plans nothing once
+it is applied, and `schema inspect` writes the column with the domain as its
+type. A `NOT NULL` the column states itself stays: Oracle keeps it as a
+constraint of the column. A default the column states itself cannot be told
+apart from the domain's, since Oracle refuses a different one (`ORA-11501`),
+so it reads as the domain's. A column typed by a domain of another schema, or
+by one the read cannot describe, keeps its base type.
+
 ## Object types
 
 **A composite type is Oracle's object type**, and the spelling is the whole
