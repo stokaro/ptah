@@ -103,13 +103,14 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 	c.Assert(oracleCompositeSummary(c, empty), qt.HasLen, 0)
 }
 
-// TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E pins the four
-// predicates the read applies, against types the server really holds.
+// TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E pins the shapes
+// the read declines, against types the server really holds.
 //
 // Each one is a shape the model would describe wrongly rather than not at all:
-// an object type with a method, a subtype, a collection, and the incomplete
-// shell PostgreSQL's own spelling leaves behind. Describing any of them by an
-// attribute list would say a replay produces the same type.
+// an object type with a method, the NOT FINAL root of a hierarchy and its
+// subtype, a collection, and the incomplete shell PostgreSQL's own spelling
+// leaves behind. Describing any of them by an attribute list would say a
+// replay produces the same type.
 func TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.Oracle)
 	c := qt.New(t)
@@ -139,10 +140,10 @@ func TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E(t *testing.T) {
 	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
-	// ORA_PARENT survives on its own merits -- it has no methods and no
-	// supertype -- which is what makes the ORA_CHILD row a statement about
-	// subtypes rather than about that pair.
-	c.Assert(oracleCompositeNames(c, schema), qt.DeepEquals, []string{"ORA_KEPT", "ORA_PARENT"})
+	// ORA_PARENT has no methods and no supertype, and is declined for being
+	// NOT FINAL: a replay of its attributes creates a FINAL type, under which
+	// ORA_CHILD could not be created again.
+	c.Assert(oracleCompositeNames(c, schema), qt.DeepEquals, []string{"ORA_KEPT"})
 }
 
 // oracleCompositeDeclaration declares two object types and a table typed by

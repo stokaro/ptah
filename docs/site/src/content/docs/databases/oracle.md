@@ -160,18 +160,22 @@ them out as `TIMESTAMP(6) WITH TIME ZONE` and
 `TIMESTAMP(6) WITH LOCAL TIME ZONE`.
 
 The read describes the subset the model can carry, and records the rest as
-found and not described rather than flattening it: an object type with a
-method, a subtype, a collection type (`VARRAY`, `TABLE OF`) and an incomplete
-shell, and on 23 a domain of several columns, an enumeration domain
-(`AS ENUM`) and a domain made by `CREATE FLEXIBLE DOMAIN`. Describing one by
-its attribute list or its first column alone would say a replay produces the
-same type when it produces a different one. A declaration that names such a
-type plans nothing for it: the comparison reports it as undecided, because
-`CREATE OR REPLACE TYPE` would replace the type the schema holds.
-`schema inspect --format sql` writes a comment for each one. Replacing a type
-a column uses answers `ORA-02303` and changes nothing — the server declining
-to leave that column naming a shape it no longer has, which is kept rather
-than forced.
+found and not described rather than flattening it:
+
+- an object type with a method, a subtype, a `NOT FINAL` or `NOT INSTANTIABLE`
+  type, a collection type (`VARRAY`, `TABLE OF`) and an incomplete shell;
+- on 23, a domain of several columns, an enumeration domain (`AS ENUM`) and a
+  domain made by `CREATE FLEXIBLE DOMAIN`.
+
+Describing one by its attribute list or its first column alone would say a
+replay produces the same type when it produces a different one. A declaration
+that names such a type plans nothing for it: the comparison reports it as
+undecided, because `CREATE OR REPLACE TYPE` would replace the type the schema
+holds. `schema inspect --format sql` writes a comment for each one.
+
+Replacing a type a column uses answers `ORA-02303` and changes nothing — the
+server declining to leave that column naming a shape it no longer has, which
+is kept rather than forced.
 
 ## Synonyms
 

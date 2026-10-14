@@ -8,7 +8,7 @@
 //
 // An object type here is the subset the model can describe: an ordered list of
 // named, typed attributes with no methods, no supertype and no collection
-// shape. Each value defines its type through [schemaext.TypeDefiner] under the
+// shape, FINAL and instantiable. Each value defines its type through [schemaext.TypeDefiner] under the
 // common kinds [objectidentity.KindDomain] and [objectidentity.KindComposite],
 // so a host orders and qualifies by the type without importing this package.
 package oratype

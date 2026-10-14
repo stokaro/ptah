@@ -3077,7 +3077,7 @@ Server and Oracle. The package holds every stage's service: `CompareService`,
 which Oracle 23 creates with CREATE DOMAIN, and object types
 (`ObjectTypeKind`), created with CREATE TYPE ... AS OBJECT. An object type is
 the subset the model describes: ordered, typed attributes with no methods and
-no supertype. Each type is a feature object identified by its schema and name
+no supertype, FINAL and instantiable. Each type is a feature object identified by its schema and name
 through `Ref`, under Oracle's identifier rules, which compare names without
 regard to ASCII case. Every value defines its type through
 `schemaext.TypeDefiner` under the common `objectidentity.KindDomain` or
