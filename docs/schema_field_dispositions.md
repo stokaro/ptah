@@ -149,12 +149,12 @@ migration nobody asked for.
 | `schemamodel.Function.Kind` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Function.Kind` | `mariadb`, `mysql`, `sqlserver` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Index.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Fields` | `clickhouse`, `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Index.Parts` | `clickhouse`, `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Fields` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Index.Parts` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Unique` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.IndexPart.Desc` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Expr` | `clickhouse`, `oracle`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.IndexPart.Name` | `clickhouse`, `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Expr` | `oracle`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.IndexPart.Name` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Desc` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |

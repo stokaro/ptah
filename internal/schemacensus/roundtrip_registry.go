@@ -321,13 +321,13 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Index.Fields",
-		Dialects:   []string{"clickhouse", "oracle"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.Index.Parts",
-		Dialects:   []string{"clickhouse", "oracle"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -345,13 +345,13 @@ var roundTripGaps = []Unreached{
 	},
 	{
 		Field:      "schemamodel.IndexPart.Expr",
-		Dialects:   []string{"clickhouse", "oracle", "sqlserver"},
+		Dialects:   []string{"oracle", "sqlserver"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{
 		Field:      "schemamodel.IndexPart.Name",
-		Dialects:   []string{"clickhouse", "oracle"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},

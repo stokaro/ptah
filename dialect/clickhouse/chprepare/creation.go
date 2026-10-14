@@ -13,7 +13,7 @@ import (
 	"ptah.run/core/schemaprojection"
 	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/clickhouse/internal/chkey"
+	"ptah.run/internal/chkey"
 )
 
 // ProjectTableCreations computes ClickHouse storage defaults and key membership

@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/clickhouse/internal/chkey"
+	"ptah.run/internal/chkey"
 )
 
 // clickHouseTable is a table whose ClickHouse key clauses are the overrides

@@ -14,7 +14,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/clickhouse/internal/chkey"
+	"ptah.run/internal/chkey"
 )
 
 // Service resolves typed table/index settings and desired column primary-key flags.

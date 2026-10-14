@@ -10,8 +10,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chdiff"
-	"ptah.run/dialect/clickhouse/internal/chkey"
 	"ptah.run/dialect/clickhouse/internal/chsql"
+	"ptah.run/internal/chkey"
 )
 
 // AlterStorageKind identifies an in-place change to a table's storage clauses.

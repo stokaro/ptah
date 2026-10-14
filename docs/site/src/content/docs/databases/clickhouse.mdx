@@ -408,14 +408,21 @@ afterwards; existing parts have no index data until a separate
 settings the same way and reports that it cannot restore materialized index
 data.
 
-Because the old index is gone before the new one is added, the change is
-refused when the declared key names a column the table does not declare, such
-as a misspelled field, and when the plan also removes a column the declared key
-reads. Only a name that can be nothing but a column is checked: a bare key part,
-or a bare argument of a call, such as `payload` in `lower(payload)`.
+A declared key that names a column the table does not declare, such as a
+misspelled field, is refused before anything runs, for a new index and for a
+changed one: ClickHouse refuses the `ADD INDEX`, and a changed index is gone
+before the new one is added. A settings change is refused the same way when the
+plan also removes a column the declared key reads. Only a name that can be
+nothing but a column is checked: a bare key part, or a bare argument of a call,
+such as `payload` in `lower(payload)`.
 
-The comparison matches skipping indexes by name. A changed key expression is
-applied when the settings change too; on its own it plans nothing.
+The comparison matches skipping indexes by name, and compares the key
+expression as well as the settings. A changed key is planned the same way, as
+`DROP INDEX` then `ADD INDEX`. ClickHouse stores a key in its own formatting:
+`b * 2 + 1` reads back as `(b * 2) + 1`, `LOWER(a)` as `lower(a)`, and
+`tuple(a, b)` as `a, b`. So spacing, case outside string literals, and
+parentheses that only group are not read as a change; a change that only
+regroups an expression or only changes the case of a name plans nothing.
 
 Database inspection reads the type with its parameters, from the `type_full`
 column, and the granularity from `system.data_skipping_indices`. A server whose

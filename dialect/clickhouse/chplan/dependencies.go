@@ -13,9 +13,9 @@ import (
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/clickhouse/internal/chkey"
 	"ptah.run/dialect/clickhouse/internal/chsql"
 	"ptah.run/internal/chcolumn"
+	"ptah.run/internal/chkey"
 )
 
 func assessParent(request featureplan.Request, table featureplan.Table) (string, error) {

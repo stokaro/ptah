@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/dialect/clickhouse/internal/chkey"
+	"ptah.run/internal/chkey"
 )
 
 func TestPlainColumnReferences(t *testing.T) {

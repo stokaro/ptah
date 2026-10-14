@@ -19,8 +19,8 @@ import (
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/clickhouse/internal/chkey"
 	"ptah.run/dialect/clickhouse/internal/chsql"
+	"ptah.run/internal/chkey"
 	"ptah.run/internal/schemaprep"
 )
 
@@ -118,6 +118,17 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	if err := captured.matches(change); err != nil {
 		return contribution, plan, err
 	}
+	// The replacement builds the declared index, as a rebuild does on every
+	// other target. Its key is checked whichever replacement builds it: the
+	// comparison reads a changed key as a common replacement, which drops the
+	// index before it adds it just as this one does.
+	expression, err := indexExpression(captured.desired.Name, schemaprep.IndexKeyParts(captured.desired))
+	if err != nil {
+		return contribution, plan, err
+	}
+	if err := refuseUndeclaredKeyColumns(request, captured, expression); err != nil {
+		return contribution, plan, err
+	}
 	switch replaced, err := commonReplacement(request, record.Subject); {
 	case err != nil:
 		return contribution, plan, err
@@ -129,18 +140,10 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	if err != nil {
 		return contribution, plan, err
 	}
-	// The replacement builds the declared index, as a rebuild does on every
-	// other target. The captured expression only orders the old index's
-	// removal around changes to the columns it reads.
+	// The captured expression only orders the old index's removal around
+	// changes to the columns it reads.
 	previous, err := indexExpression(captured.current.Name, captured.current.Columns)
 	if err != nil {
-		return contribution, plan, err
-	}
-	expression, err := indexExpression(captured.desired.Name, schemaprep.IndexKeyParts(captured.desired))
-	if err != nil {
-		return contribution, plan, err
-	}
-	if err := refuseUndeclaredKeyColumns(request, captured, expression); err != nil {
 		return contribution, plan, err
 	}
 	contribution.Owner = "ptah.run/clickhouse"
