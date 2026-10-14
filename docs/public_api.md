@@ -1587,6 +1587,15 @@ empty-valued keys and a selection ClickHouse cannot express, as do the
 `chdiff` and `chast` codecs that carry a policy, each refusal a
 `schemaext.InvalidModelError`. `RowPolicyCoverage` builds the model's coverage.
 
+`chast.RowPolicyCommand` represents authored CREATE, ALTER, and DROP syntax
+without an observed before state. `FilterSet` and `RolesSet` distinguish an
+omitted clause from `USING NONE` or `TO NONE`. It carries `DesiredRowPolicy`
+values, a versioned operation codec, and an unknown access assessment.
+`chsource.SQL` folds ALTER into an earlier declaration, preserving omitted
+clauses, and keeps DROP available to syntax readers while refusing it as a
+desired schema. `chrender.Handlers` renders authored commands and planned
+transitions through the same clause writer.
+
 The ClickHouse provider registers the row policy services, and row policies
 are the owner's alone. `chsource.Annotations` adds the Go directive
 `chsource.RowPolicyDirective` (`//ptah:schema:rowpolicy`), whose policies are

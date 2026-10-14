@@ -17,9 +17,8 @@ disposition: keep
 sourceMode: static-file-only
 ---
 
-Use SQL schema files when the desired schema is already written as local DDL
-(Data Definition Language). Ptah parses the file through its compatibility SQL
-parser; unsupported DDL fails explicitly instead of being skipped.
+Use local SQL DDL files as a desired schema. Ptah parses every statement and
+refuses unsupported DDL.
 
 ## Write a schema file
 
@@ -78,8 +77,6 @@ CREATE TABLE "users" (
 );
 ```
 
-Rendering a SQL file back out proves the parser understood every statement,
-and can retarget the schema at another dialect.
 `--schema-file` is accepted wherever Ptah needs a desired schema:
 `ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
 migration commands (`ptah migrations plan` / `ptah migrations generate`), and
@@ -91,6 +88,14 @@ Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
 For PostgreSQL application roles, see [Conditional role bootstrap](../postgres-role-bootstrap/).
+
+## Declare a ClickHouse row policy
+
+With `--dialect clickhouse`, `CREATE ROW POLICY` declares a policy and
+`ALTER ROW POLICY` amends an earlier declaration, preserving omitted clauses.
+`DROP ROW POLICY` is migration syntax and is refused in a desired schema.
+See [ClickHouse row policies](../../databases/clickhouse/#row-policies) for
+examples and supported clauses.
 
 ## Add a column after the table
 

@@ -37,30 +37,53 @@ func validateRowPolicy(ctx renderer.ExtensionContext, op *chast.RowPolicy) error
 // server defaults to: the composition is always written, and so is the role
 // clause of an ALTER. The filter is the declaration's spelling; the server's
 // own spelling is a fact for comparing, not for writing.
-func renderRowPolicy(_ renderer.ExtensionContext, op *chast.RowPolicy) ([]string, error) {
-	target := quoteName(op.Name) + " ON " + quotePolicyTable(op.Database, op.Table)
-	declared := op.Change.After
-	switch {
-	case declared == nil:
-		return []string{"DROP ROW POLICY " + target + ";"}, nil
-	case op.Change.Before == nil:
-		statement := "CREATE ROW POLICY " + target
-		if declared.Filter != nil {
-			statement += " USING (" + *declared.Filter + ")"
+func renderRowPolicy(ctx renderer.ExtensionContext, op *chast.RowPolicy) ([]string, error) {
+	command := &chast.RowPolicyCommand{Action: "DROP", Database: op.Database, Table: op.Table, Name: op.Name}
+	if op.Change.After != nil {
+		command.Values = op.Change.After.Copy()
+		if command.Values.Composition == "" {
+			command.Values.Composition = chschema.Permissive
 		}
-		statement += " AS " + compositionKeyword(declared.Composition)
-		if !declared.Roles.IsZero() {
-			statement += " TO " + chdiff.RoleClause(declared.Roles)
+		command.Action = "ALTER"
+		command.FilterSet, command.RolesSet = true, true
+		if op.Change.Before == nil {
+			command.Action = "CREATE"
+			command.FilterSet = command.Values.Filter != nil
+			command.RolesSet = !command.Values.Roles.IsZero()
 		}
-		return []string{statement + ";"}, nil
-	default:
-		using := "NONE"
-		if declared.Filter != nil {
-			using = "(" + *declared.Filter + ")"
-		}
-		return []string{fmt.Sprintf("ALTER ROW POLICY %s USING %s AS %s TO %s;", target, using,
-			compositionKeyword(declared.Composition), chdiff.RoleClause(declared.Roles))}, nil
 	}
+	return renderRowPolicyCommand(ctx, command)
+}
+
+func validateRowPolicyCommand(ctx renderer.ExtensionContext, op *chast.RowPolicyCommand) error {
+	if ctx.Target != platform.ClickHouse {
+		return fmt.Errorf("%w: ClickHouse row policy command on %q", ptaherr.ErrUnsupportedDialect, ctx.Target)
+	}
+	if !ctx.Capabilities.Has(capability.RowLevelSecurity) {
+		return fmt.Errorf("%w: the target does not host ClickHouse row policies", ptaherr.ErrUnsupportedFeature)
+	}
+	return op.Validate()
+}
+
+func renderRowPolicyCommand(_ renderer.ExtensionContext, op *chast.RowPolicyCommand) ([]string, error) {
+	statement := op.Action + " ROW POLICY " + quoteName(op.Name) + " ON " + quotePolicyTable(op.Database, op.Table)
+	if op.Values == nil {
+		return []string{statement + ";"}, nil
+	}
+	if op.FilterSet {
+		using := "NONE"
+		if op.Values.Filter != nil {
+			using = "(" + *op.Values.Filter + ")"
+		}
+		statement += " USING " + using
+	}
+	if op.Values.Composition != "" {
+		statement += " AS " + compositionKeyword(op.Values.Composition)
+	}
+	if op.RolesSet {
+		statement += " TO " + chdiff.RoleClause(op.Values.Roles)
+	}
+	return []string{statement + ";"}, nil
 }
 
 // compositionKeyword states the composition, ClickHouse's default included.

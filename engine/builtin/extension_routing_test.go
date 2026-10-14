@@ -28,6 +28,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/clickhouse/alter-ttl":                        {"clickhouse/alter-table"},
 	"ptah.run/clickhouse/drop-skipping-index":              {"clickhouse/alter-table"},
 	"ptah.run/clickhouse/modify-refresh":                   {"clickhouse/alter-table"},
+	"ptah.run/clickhouse/row-policy-command":               {"clickhouse/statement"},
 	"ptah.run/clickhouse/row-policy-operation":             {"clickhouse/statement"},
 	"ptah.run/cockroachdb/alter-row-ttl":                   {"cockroachdb/alter-table"},
 	"ptah.run/mssql/extended-property-operation":           {"sqlserver/statement"},
