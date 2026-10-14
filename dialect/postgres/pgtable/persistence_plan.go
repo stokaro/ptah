@@ -92,7 +92,7 @@ func planPersistence(request featureplan.Request, record schemaext.ChangeRecord,
 		return result, fmt.Errorf("%w: persistence operands disagree with captured table state", schemaext.ErrInvalidValue)
 	}
 	if table.Current.Table.Partitioned && persistenceDesiredUnlogged(change.After) {
-		return result, fmt.Errorf("%w: PostgreSQL partitioned table %s cannot be UNLOGGED", ptaherr.ErrUnsupportedFeature, table.Subject)
+		return result, fmt.Errorf("%w: PostgreSQL partitioned table %s cannot be UNLOGGED", ptaherr.ErrUnsupportedFeature, table.Subject.Path())
 	}
 	operation := &AlterPersistence{Change: *change.Copy()}
 	persistence := table.Subject

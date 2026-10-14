@@ -61,7 +61,7 @@ func TestPartitionComparison_RefusesImmutableChanges(t *testing.T) {
 		c := qt.New(t)
 		result, err := (pgtable.PartitionService{}).CompareFacets(t.Context(), partitionRequest(desired, &pgtable.ObservedPartition{Type: "RANGE", Parts: []pgtable.PartitionPart{{Name: "tenant"}}}))
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		c.Assert(err, qt.ErrorMatches, `.*partition key cannot change in place`)
+		c.Assert(err, qt.ErrorMatches, `.*: PostgreSQL table app\.cache partition key cannot change in place`)
 		c.Assert(result, qt.DeepEquals, schemaext.FacetComparisonResult{})
 	}
 }
