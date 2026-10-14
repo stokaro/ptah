@@ -40,8 +40,9 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/goschema` | Go annotation parser. Produces a `schemamodel.Database`. |
 | `core/manageddata` | YAML row-data loading and resolution, separate from captured declarations. |
 | `core/schemamodel` | The desired-schema model every authoring source produces: Go annotations, HCL, YAML, SQL, DBML and live-catalog conversion. |
-| `core/platform` | Dialect and platform constants. |
+| `core/platform` | Dialect names, the process dialect registry and `Register`. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
+| `core/platform/descriptor` | What a database engine states about itself, as data, and validated sets of such descriptors. |
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |

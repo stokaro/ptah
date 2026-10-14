@@ -41,3 +41,18 @@ func ExampleIsPostgresFamily() {
 	// spanner: true
 	// mysql: false
 }
+
+// ExampleLookup reads what a dialect states about itself instead of
+// comparing its name: the family it belongs to and how its statements mark a
+// bound parameter. Any accepted spelling selects the descriptor.
+func ExampleLookup() {
+	for _, spelling := range []string{"crdb", "mssql", "ydbs"} {
+		described, found := platform.Lookup(spelling)
+		fmt.Printf("%s: found=%t name=%s family=%q placeholder=%s\n", spelling, found, described.Name, described.Family, described.Placeholder)
+	}
+
+	// Output:
+	// crdb: found=true name=cockroachdb family="postgres" placeholder=dollar
+	// mssql: found=true name=sqlserver family="" placeholder=at-p
+	// ydbs: found=true name=ydb family="" placeholder=dollar-named
+}

@@ -49,8 +49,10 @@ the Atlas CLI.
 
 Read facts out of their declaration rather than out of a count written here:
 
-- Accepted dialects: `core/platform.NormalizeDialect` and
-  `core/platform/constants.go`. `migrations lint` and `sql lint` leave Oracle
+- Accepted dialects: the descriptors in `internal/builtindialects`, one file
+  per engine, which seed the registry `core/platform.Dialects` serves and
+  `NormalizeDialect` reads. New shared code reads a descriptor field rather
+  than comparing a dialect's name (stokaro/ptah#4204). `migrations lint` and `sql lint` leave Oracle
   out deliberately; `internal/lintdialect/dialect.go` says why. YDB renders,
   plans, reads and applies schemas, runs versioned migrations, is linted as
   YQL, writes data and runs embedding generations.

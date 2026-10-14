@@ -712,6 +712,12 @@
       "claimed_by": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
     },
     {
+      "id": "gopkg-core-platform-descriptor",
+      "kind": "public-package",
+      "surface": "ptah.run/core/platform/descriptor",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-platform-identifier",
       "kind": "public-package",
       "surface": "ptah.run/core/platform/identifier",
