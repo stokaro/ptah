@@ -48,7 +48,7 @@ func TestTableComparisonCapturesEveryChangedSetting(t *testing.T) {
 		{name: "partition", change: func(v *chschema.ObservedTable) { v.PartitionBy = "toYYYYMM(ts)" }},
 		{name: "sampling", change: func(v *chschema.ObservedTable) { v.SampleBy = "id" }},
 		{name: "remove TTL", change: func(v *chschema.ObservedTable) { v.TTL = "" }},
-		{name: "settings", change: func(v *chschema.ObservedTable) { v.Settings = "index_granularity = 4096" }},
+		{name: "settings", change: func(v *chschema.ObservedTable) { v.Settings = "merge_with_ttl_timeout = 3600" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -80,6 +80,13 @@ func TestTableComparisonRecognizesEquivalentForms(t *testing.T) {
 		{name: "outer parentheses", before: chschema.ObservedTable{Engine: "MergeTree", OrderBy: "(id, ts)", PrimaryKey: "(id)"}, after: chschema.ObservedTable{Engine: "MergeTree", OrderBy: "id,ts", PrimaryKey: "id"}},
 		{name: "empty tuple", before: chschema.ObservedTable{Engine: "MergeTree"}, after: chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tuple()", PrimaryKey: "tuple()"}},
 		{name: "expression whitespace", before: chschema.ObservedTable{Engine: "ReplacingMergeTree(version)", TTL: "ts + toIntervalDay(7)"}, after: chschema.ObservedTable{Engine: "ReplacingMergeTree ( version )", TTL: "ts+toIntervalDay( 7 )"}},
+		// MODIFY SETTING appends a setting the table did not have, so the
+		// server's order is not the declaration's.
+		{name: "settings order", before: chschema.ObservedTable{Engine: "MergeTree", Settings: "a = 1, b = 'x'"}, after: chschema.ObservedTable{Engine: "MergeTree", Settings: "b='x',a=1"}},
+		// The server records index_granularity on every MergeTree table, and a
+		// declaration that leaves it out does not manage it.
+		{name: "server-recorded index granularity", before: chschema.ObservedTable{Engine: "MergeTree", Settings: "a = 1, index_granularity = 8192"}, after: chschema.ObservedTable{Engine: "MergeTree", Settings: "a = 1"}},
+		{name: "index granularity only", before: chschema.ObservedTable{Engine: "MergeTree", Settings: "index_granularity = 4096"}, after: chschema.ObservedTable{Engine: "MergeTree"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -87,6 +94,31 @@ func TestTableComparisonRecognizesEquivalentForms(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Changes, qt.HasLen, 0)
 			c.Assert(result.Undecided, qt.HasLen, 0)
+		})
+	}
+}
+
+// Settings compare by name and value: a value that differs, a setting only one
+// side names, index_granularity only the declaration names, and a name
+// written twice all differ.
+func TestTableComparisonPreservesSettingsMeaning(t *testing.T) {
+	for _, test := range []struct{ name, before, after string }{
+		{name: "value", before: "a = 1", after: "a = 2"},
+		{name: "quoting", before: "storage_policy = 'default'", after: "storage_policy = default"},
+		{name: "setting only before", before: "a = 1, b = 2", after: "a = 1"},
+		{name: "setting only after", before: "a = 1", after: "a = 1, b = 2"},
+		{name: "fixed setting", before: "table_disk = 1", after: ""},
+		{name: "index granularity value", before: "index_granularity = 8192", after: "index_granularity = 4096"},
+		{name: "index granularity only the declaration names", before: "", after: "index_granularity = 4096"},
+		{name: "name written twice", before: "a = 1, a = 1", after: "a = 1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			before := &chschema.ObservedTable{Engine: "MergeTree", Settings: test.before}
+			after := &chschema.ObservedTable{Engine: "MergeTree", Settings: test.after}
+			result, err := comparisonRuntime().CompareFacets(t.Context(), tableRequest(before, after))
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 1)
 		})
 	}
 }

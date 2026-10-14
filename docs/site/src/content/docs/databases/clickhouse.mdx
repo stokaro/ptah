@@ -203,19 +203,6 @@ the same columns. The engine is taken with its parameters — a
 is the one that changes what the data does rather than how fast it is read: a
 table replayed without it keeps rows it was configured to delete.
 
-Ptah plans changes to a MergeTree table's TTL with `MODIFY TTL`; an explicitly
-empty TTL uses `REMOVE TTL`. Omitting TTL from the desired settings retains the
-inspected rule. The plan requires a complete storage observation. When a rule
-moves to a new column, the plan adds that column, changes TTL, then removes the
-old column. A column still used by the resulting TTL or another storage clause
-cannot be removed or modified by this plan.
-
-The reverse migration restores the captured rule. It cannot restore rows or
-values already expired or aggregated, or undo TTL data movement. TTL operations
-run outside a transaction. Changes to the engine, sorting or primary key,
-partitioning, sampling, or table settings require a separate supported storage
-plan and are refused.
-
 A MySQL-family storage engine is refused rather than rendered. A table's engine
 reaches the renderer through the same key both families fill, so `engine =
 "InnoDB"` on a struct, and `ENGINE=InnoDB` in a SQL source, arrive
@@ -239,10 +226,82 @@ answer rather than from the declaration's text:
 - **The settings are the server's resolved values, not the ones a `CREATE`
   named.** `system.tables` reports `index_granularity = 8192` for a table that
   never mentioned it, so a description carries that value and a replay pins it.
-  It is the value the source table is actually running with.
+  It is the value the source table is actually running with. A declaration
+  that leaves `index_granularity` out does not manage it, so it does not differ
+  from a table that carries it.
 - **A clause keyword is a legal column name, and the two are told apart by
   position.** A table sorted by a column named `settings` or `ttl` is read as
   what it is; the clause is only recognized where a clause can start.
+
+## Storage changes
+
+Ptah changes the storage clauses of an existing MergeTree table in place where
+ClickHouse has an `ALTER TABLE` for the change, and refuses the others by name.
+It does not create the table again and copy its rows, because that moves data
+and rows written during the copy can be lost. To change a refused clause, create
+a new table with it and copy the rows yourself. Omitting a clause from the
+declaration keeps the inspected one, and the plan needs a complete storage
+observation of the table.
+
+| Clause | Planned as | Rule |
+| --- | --- | --- |
+| `ORDER BY` | `MODIFY ORDER BY` | Drops expressions from the end, or adds expressions over columns the same `ALTER TABLE` adds. |
+| `SAMPLE BY` | `MODIFY SAMPLE BY`, `REMOVE SAMPLE BY` | The sampling key is one of the primary key's expressions. |
+| `TTL` | `MODIFY TTL`, `REMOVE TTL` | An explicitly empty TTL removes the rules. |
+| `SETTINGS` | `MODIFY SETTING`, `RESET SETTING` | Settings ClickHouse fixes at creation are refused. |
+| `ENGINE`, `PARTITION BY`, `PRIMARY KEY` | Refused | ClickHouse has no `ALTER TABLE` for them. |
+
+ClickHouse keeps the parts already on disk sorted by the old sorting key. A new
+key may therefore drop expressions from its end, and may add an expression only
+over columns the same `ALTER TABLE` adds. Such a column cannot be `Nullable` or
+have a `DEFAULT`, `MATERIALIZED` or `ALIAS` value. When the key gains an
+expression, the plan adds every new column of the table in the statement that
+changes the key:
+
+```sql
+ALTER TABLE events ADD COLUMN region String, MODIFY ORDER BY (id, region);
+```
+
+The primary key stays a prefix of the sorting key. A table created without
+`PRIMARY KEY` keeps its old sorting key as its primary key after the change,
+which is what ClickHouse records and what a declaration that omits the primary
+key asks for. A new key that reorders the old one, drops an expression that is
+not last, or adds a column the table already has is refused by name. On an
+engine that merges rows by its sorting key, such as `ReplacingMergeTree`,
+dropping an expression lets rows that differed only in it merge into one, so the
+plan marks that change destructive.
+
+ClickHouse refuses a sampling key that is not one of the primary key's
+expressions, and `allow_sampling_expression_not_in_primary_key` is not a table
+setting on the supported lines, so Ptah refuses such a key when the plan is
+made.
+
+Table settings compare as a set of `name = value` entries, so their order does
+not count. A setting the declaration adds or changes is set with
+`MODIFY SETTING`, and one it leaves out is reset with `RESET SETTING`.
+ClickHouse fixes some settings when the table is created, among them
+`index_granularity`, `index_granularity_bytes`,
+`enable_mixed_granularity_parts`, `table_disk` and the
+`add_minmax_index_for_*` family. A change to one of them is refused by name. A
+setting named twice in one `SETTINGS` clause is refused too, because the plan
+cannot know which value the table runs with.
+
+Each changed clause is one statement, outside a transaction. Settings the
+change sets come first, then the sorting key, the sampling key and TTL, and
+settings it resets come last. Column additions the new clauses need run before
+them, and removals of columns only the old clauses use run after them. A column
+the table's storage still uses after the change cannot be removed or modified
+by the same plan. When a TTL rule moves to a new column, for example, the plan
+adds that column, changes TTL, then removes the old column.
+
+The reverse migration restores the captured clauses in place. It cannot restore
+rows or values TTL already expired or aggregated, undo TTL data movement or the
+merges and moves done under changed settings, or separate rows a merging engine
+combined while its key lacked a dropped expression. A reverse ClickHouse cannot
+run in place is refused when the migration is generated. Dropping the last
+sorting-key expression while its column stays has no reverse, because the
+reverse would add a column the table already has to the key; `ptah schema
+apply`, which plans no reverse, plans that change.
 
 ## Data-skipping indexes
 

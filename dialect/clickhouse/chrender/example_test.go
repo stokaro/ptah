@@ -21,7 +21,7 @@ func ExampleRegistry() {
 	before := &chschema.ObservedTable{Engine: "MergeTree", TTL: "created_at + toIntervalDay(7)"}
 	after := before.Desired()
 	after.TTL.Value = ""
-	statements, err := registry.Render(renderer.ExtensionContext{Target: "clickhouse", Parent: &ast.AlterTableNode{Name: "events"}}, ast.AlterExtension, &chast.AlterTTL{Change: chdiff.Table{Before: before, After: after}})
+	statements, err := registry.Render(renderer.ExtensionContext{Target: "clickhouse", Parent: &ast.AlterTableNode{Name: "events"}}, ast.AlterExtension, &chast.AlterStorage{Change: chdiff.Table{Before: before, After: after}})
 	if err != nil {
 		panic(err)
 	}

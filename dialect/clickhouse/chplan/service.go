@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
@@ -22,9 +23,14 @@ import (
 	"ptah.run/dialect/clickhouse/internal/chsql"
 )
 
-// Service plans TTL changes and checks storage dependencies of common column
-// operations. Its zero value supports concurrent use without database access.
-// Other storage changes require an explicit supported plan and are refused.
+// Service plans changes to the sorting key, sampling key, TTL rules and
+// settings of a surviving MergeTree table in place, and checks the storage
+// dependencies of common column operations. A change to the engine, PARTITION
+// BY or PRIMARY KEY is refused by name: ClickHouse has no ALTER TABLE for them,
+// and creating the table again and copying its rows is not planned. When the
+// sorting key gains an expression, the operation takes over the table's column
+// additions, because ClickHouse adds to the key only columns the same ALTER
+// TABLE adds. Its zero value supports concurrent use without database access.
 type Service struct{}
 
 // PlanFeatures returns complete receipts or a completed refusal with no usable
@@ -48,17 +54,18 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		if err := ctx.Err(); err != nil {
 			return featureplan.Result{}, err
 		}
-		contribution, err := planChange(request, record, i)
+		planned, err := planChange(request, record, i)
 		if err != nil {
 			if canceled := ctx.Err(); canceled != nil {
 				return featureplan.Result{}, canceled
 			}
 			return refusal(chdiff.TableKind, err, new(i), nil), nil
 		}
-		result.Contributions = append(result.Contributions, contribution)
+		result.Contributions = append(result.Contributions, planned.contribution)
+		result.Rewrites = append(result.Rewrites, planned.rewrites...)
 		result.Changes = append(result.Changes, featureplan.ChangePlan{
-			Subject: record.Subject, Kind: chdiff.TableKind, Strategy: "change TTL rules in place after required column additions and before dependent column removals",
-			Steps: []plangraph.StepID{contribution.Steps[0].ID},
+			Subject: record.Subject, Kind: chdiff.TableKind, Strategy: planned.strategy,
+			Steps: []plangraph.StepID{planned.contribution.Steps[0].ID},
 		})
 	}
 	for i, table := range request.Tables {
@@ -94,51 +101,86 @@ func refusal(kind schemaext.Kind, err error, change, parent *int) featureplan.Re
 	}}}
 }
 
-func planChange(request featureplan.Request, record schemaext.ChangeRecord, index int) (plangraph.Contribution[featureplan.Operation], error) {
-	var result plangraph.Contribution[featureplan.Operation]
+// plannedChange is one table's storage operation, the common column additions
+// it takes over, and the strategy its receipt states.
+type plannedChange struct {
+	contribution plangraph.Contribution[featureplan.Operation]
+	rewrites     []plangraph.Rewrite
+	strategy     string
+}
+
+func planChange(request featureplan.Request, record schemaext.ChangeRecord, index int) (plannedChange, error) {
 	change, ok := record.Value.(*chdiff.Table)
 	if !ok {
-		return result, fmt.Errorf("%w: expected ClickHouse table change", schemaext.ErrInvalidValue)
+		return plannedChange{}, fmt.Errorf("%w: expected ClickHouse table change", schemaext.ErrInvalidValue)
 	}
-	if err := chsql.ValidateTTLChange(change); err != nil {
-		return result, err
+	if err := chsql.ValidateStorageChange(change); err != nil {
+		return plannedChange{}, err
 	}
 	indexOfTable := slices.IndexFunc(request.Tables, func(table featureplan.Table) bool { return table.Subject.Key() == record.Subject.Key() })
 	if indexOfTable < 0 {
-		return result, fmt.Errorf("%w: table change requires captured parent state", schemaext.ErrInvalidValue)
+		return plannedChange{}, fmt.Errorf("%w: table change requires captured parent state", schemaext.ErrInvalidValue)
 	}
 	table := request.Tables[indexOfTable]
 	if table.Action != "" && table.Action != featureplan.AlterTable {
-		return result, fmt.Errorf("%w: a TTL change requires a surviving table outside a rebuild", schemaext.ErrInvalidValue)
+		return plannedChange{}, fmt.Errorf("%w: a storage change requires a surviving table outside a rebuild", schemaext.ErrInvalidValue)
 	}
 	before, after, err := capturedStorage(table)
 	if err != nil {
-		return result, err
+		return plannedChange{}, err
 	}
 	projected, err := change.After.Observed()
 	if err != nil {
-		return result, err
+		return plannedChange{}, err
 	}
 	if !chsql.SameTable(before, change.Before) || !chsql.SameTable(after, projected) {
-		return result, fmt.Errorf("%w: storage change disagrees with captured parent operands", schemaext.ErrInvalidValue)
+		return plannedChange{}, fmt.Errorf("%w: storage change disagrees with captured parent operands", schemaext.ErrInvalidValue)
 	}
-	result.Owner = "ptah.run/clickhouse"
-	id := plangraph.StepID{Owner: result.Owner, Name: fmt.Sprintf("table-ttl/%d", index)}
-	payload := &chast.AlterTTL{Change: *change.CloneChange().(*chdiff.Table)}
+	owner := "ptah.run/clickhouse"
+	id := plangraph.StepID{Owner: owner, Name: fmt.Sprintf("table-storage/%d", index)}
+	additions, err := keyColumnAdditions(request, table, before, after)
+	if err != nil {
+		return plannedChange{}, err
+	}
+	payload := &chast.AlterStorage{Change: *change.CloneChange().(*chdiff.Table), Columns: additions.columns}
+	if err := payload.Validate(); err != nil {
+		return plannedChange{}, err
+	}
 	subject := table.Subject
 	subject.Kind = objectidentity.Kind(chschema.TableKind)
 	step := plangraph.Step[featureplan.Operation]{
-		ID: id, Payload: featureplan.Operation{Role: ast.AlterExtension, Parent: table.Subject, Payload: payload},
+		ID:          id,
+		Payload:     featureplan.Operation{Role: ast.AlterExtension, Parent: table.Subject, Payload: payload, Notes: additions.notes},
 		Effects:     []plangraph.Effect{{Subject: table.Subject, Action: plangraph.Read}, {Subject: subject, Action: plangraph.Alter}},
 		Transaction: plangraph.TransactionForbidden, Impact: payload.Effect(),
 	}
-	dependencies, effects, err := ttlDependencies(request, table, before, after, id)
+	step.Effects = withEffects(step.Effects, additions.effects...)
+	dependencies, effects, err := storageDependencies(request, table, before, after, id, additions.steps)
 	if err != nil {
-		return plangraph.Contribution[featureplan.Operation]{}, err
+		return plannedChange{}, err
 	}
-	step.Effects = append(step.Effects, effects...)
-	result.Steps, result.Dependencies = []plangraph.Step[featureplan.Operation]{step}, dependencies
-	return result, nil
+	step.Effects = withEffects(step.Effects, effects...)
+	planned := plannedChange{
+		contribution: plangraph.Contribution[featureplan.Operation]{Owner: owner, Steps: []plangraph.Step[featureplan.Operation]{step}, Dependencies: dependencies},
+		strategy:     strategy(before, after, additions.columns),
+	}
+	if len(additions.steps) > 0 {
+		planned.rewrites = []plangraph.Rewrite{{Sources: additions.steps, Replacement: id}}
+	}
+	return planned, nil
+}
+
+func strategy(before, after *chschema.ObservedTable, columns []chast.Column) string {
+	clauses := chsql.Changed(before, after)
+	names := make([]string, len(clauses))
+	for i, clause := range clauses {
+		names[i] = string(clause)
+	}
+	result := "change " + strings.Join(names, ", ") + " in place after the column additions the new clauses need and before removals of columns only the old ones use"
+	if len(columns) > 0 {
+		result += "; the table's new columns are added in the ALTER TABLE that changes the sorting key"
+	}
+	return result
 }
 
 func capturedStorage(table featureplan.Table) (before, after *chschema.ObservedTable, err error) {

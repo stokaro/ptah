@@ -78,10 +78,10 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table and index property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table and index settings with explicit knowledge limits. |
-| `dialect/clickhouse/chast` | Typed TTL and skipping-index operations with explicit codecs. |
-| `dialect/clickhouse/chrender` | Owner-selected TTL and skipping-index rendering. |
-| `dialect/clickhouse/chplan` | TTL and skipping-index planning with common-column dependencies. |
-| `dialect/clickhouse/chreverse` | Reverse TTL and index definitions with recovery limits. |
+| `dialect/clickhouse/chast` | Typed storage-clause and skipping-index operations with explicit codecs. |
+| `dialect/clickhouse/chrender` | Owner-selected storage-clause and skipping-index rendering. |
+| `dialect/clickhouse/chplan` | Storage-clause and skipping-index planning with common-column dependencies. |
+| `dialect/clickhouse/chreverse` | Reverse storage-clause and index definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Conversion between complete table/index declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired storage settings for directional changes. |
 | `dialect/cockroachdb/crdbschema` | Desired and observed row-level TTL with versioned model codecs. |
@@ -404,16 +404,20 @@ settings. `chdiff.Table` and `chdiff.Index` retain complete before and after
 operands. Missing evidence for declared settings is undecided; unmentioned
 objects stay unmanaged, and explicit inspection limits remain visible.
 
-`chplan.Service` orders MergeTree TTL changes after required column additions
-and before dependent removals, and refuses changes to columns used by retained
-storage. `chplan.IndexService` replaces an index whose type or granularity
-changes, unless the host already replaces it. `chast.AlterTTL`,
+`chplan.Service` changes a MergeTree table's sorting key, sampling key, TTL
+and settings in place, after required column additions and before dependent
+removals, and refuses an engine, `PARTITION BY` or `PRIMARY KEY` change by name.
+A sorting key that gains an expression claims the table's column additions,
+since ClickHouse adds to the key only columns the same `ALTER TABLE` adds.
+`chplan.IndexService` replaces an index whose type or granularity
+changes, unless the host already replaces it. `chast.AlterStorage`,
 `AddSkippingIndex`, and `DropSkippingIndex` use explicit codecs and `chrender`
 handlers outside transactions. Wrap them in `ast.ExtensionAlterOperation` under
 `ast.AlterTableNode`; non-owning targets refuse them without partial SQL.
 
 `chreverse.Service` and `IndexService` restore captured definitions and report
-what they cannot recover: expired TTL data and materialized index data. Their
+what they cannot recover: expired TTL data, work done under changed settings,
+rows a merging engine combined, and materialized index data. Their
 state projections feed reverse planning without claiming new inspection.
 
 `chschema.DesiredRefresh` and `ObservedRefresh` hold a materialized view's

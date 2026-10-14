@@ -78,7 +78,7 @@ func TestTTLPlanOrdersColumnDependenciesAndPreservesOperands(t *testing.T) {
 	c.Assert(plan.Steps, qt.HasLen, 3)
 	c.Assert(plan.Steps[0].ID, qt.Equals, request.CommonSteps[0].ID)
 	c.Assert(plan.Steps[2].ID, qt.Equals, request.CommonSteps[1].ID)
-	op := plan.Steps[1].Payload.Payload.(*chast.AlterTTL)
+	op := plan.Steps[1].Payload.Payload.(*chast.AlterStorage)
 	c.Assert(op.Change.Before.TTL, qt.Equals, "old_time + INTERVAL 1 DAY")
 	op.Change.After.TTL.Value = "mutated"
 	c.Assert(request.Changes[0].Value.(*chdiff.Table).After.TTL.Value, qt.Equals, "new_time + INTERVAL 7 DAY")
@@ -94,7 +94,7 @@ func TestTTLPlanRefusesIncompleteOrConflictingStateWithoutOutput(t *testing.T) {
 		{"removed parent", func(r *featureplan.Request) { r.Tables[0].Action = featureplan.DropTable }, "surviving table"},
 		{"other storage change", func(r *featureplan.Request) {
 			r.Changes[0].Value.(*chdiff.Table).After.Engine.Value = "ReplacingMergeTree"
-		}, "separate storage plan"},
+		}, "no ALTER TABLE that changes a table's ENGINE"},
 		{"unknown effects", func(r *featureplan.Request) { r.CommonSteps[0].Effects = nil }, "unknown effects"},
 		{"new TTL loses column", func(r *featureplan.Request) {
 			r.CommonSteps[0].Effects[0].Action = plangraph.Drop

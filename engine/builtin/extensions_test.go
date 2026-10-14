@@ -96,7 +96,7 @@ func clickhouseTTLFixture() extensionFixture {
 	before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tuple()", TTL: "created_at + INTERVAL 1 DAY"}
 	after := before.Desired()
 	after.TTL.Value = ""
-	return extensionFixture{payload: &chast.AlterTTL{Change: chdiff.Table{Before: before, After: after}}, wantSQL: "ALTER TABLE items REMOVE TTL;\n"}
+	return extensionFixture{payload: &chast.AlterStorage{Change: chdiff.Table{Before: before, After: after}}, wantSQL: "ALTER TABLE items REMOVE TTL;\n"}
 }
 
 // cockroachDBRowTTLFixture drops one parameter and changes the expression, so
