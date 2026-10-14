@@ -57,9 +57,8 @@ type NormalizedExclusion struct {
 }
 
 // SupportsExclusion reports whether this owner creates EXCLUDE constraints on
-// target. Only PostgreSQL is such a target: planning refuses a declaration for
-// any other, and a reader of a target outside it that cannot query
-// pg_constraint records the namespace as described rather than unknown.
+// target. Only PostgreSQL is such a target: planning a declaration or a change
+// for any other wraps ptaherr.ErrUnsupportedFeature.
 func SupportsExclusion(target string) bool {
 	return platform.NormalizeDialect(target) == platform.Postgres
 }
