@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -59,6 +60,9 @@ const baselineName = "docs/architecture_boundaries.json"
 type rule struct {
 	ID      string
 	Summary string
+	// perPackage records the rule's count per package as well as in total, so
+	// debt moving from one package to another is a change the gate sees.
+	perPackage bool
 	// violations answers the rule for one loaded package, returning a finding
 	// per offence.
 	violations func(pkg *packages.Package) []finding
@@ -76,10 +80,13 @@ type finding struct {
 
 // ruleReport is a rule's measured state.
 type ruleReport struct {
-	Rule     string    `json:"rule"`
-	Summary  string    `json:"summary"`
-	Count    int       `json:"count"`
-	Findings []finding `json:"findings"`
+	Rule    string `json:"rule"`
+	Summary string `json:"summary"`
+	Count   int    `json:"count"`
+	// Packages is the count per package of a per-package rule, and nil for
+	// any other.
+	Packages map[string]int `json:"packages,omitempty"`
+	Findings []finding      `json:"findings"`
 }
 
 // baseline is the checked-in permitted state.
@@ -87,6 +94,9 @@ type baseline struct {
 	// Comment is for whoever opens the file rather than for the program.
 	Comment string         `json:"comment"`
 	Rules   map[string]int `json:"rules"`
+	// Packages is the permitted count of each package, for the rules that
+	// record one. A package absent from a rule's map is permitted none.
+	Packages map[string]map[string]int `json:"packages,omitempty"`
 }
 
 func main() {
@@ -130,8 +140,16 @@ func summarize(reports []ruleReport) string {
 	return strings.Join(parts, " ")
 }
 
+// corpus is what a rule may need beyond the one package it answers for.
+type corpus struct {
+	// identity is what names a dialect.
+	identity dialectIdentity
+	// shared is the module-relative path of every package in the shared set.
+	shared map[string]bool
+}
+
 // rules preserve the pipeline directions and isolate public provider contracts.
-func rules() []rule {
+func rules(c corpus) []rule {
 	return []rule{
 		{
 			ID:      "model-imports-pipeline",
@@ -191,6 +209,18 @@ func rules() []rule {
 			ID:         "sql-reader-links-owners",
 			Summary:    "the shared SQL reader must not link a concrete dialect, feature or built-in owner",
 			violations: sqlReaderOwnerLinks,
+		},
+		{
+			ID:         dialectNameRule,
+			Summary:    "shared packages must not name a dialect, so that a new engine needs no edit to shared code",
+			perPackage: true,
+			violations: func(pkg *packages.Package) []finding {
+				self := relative(pkg.PkgPath)
+				if !c.shared[self] {
+					return nil
+				}
+				return dialectNameFindings(pkg, self, c.identity)
+			},
 		},
 	}
 }
@@ -328,8 +358,14 @@ func measure(root string) ([]ruleReport, error) {
 		}
 	}
 
-	reports := make([]ruleReport, 0, len(rules()))
-	for _, r := range rules() {
+	shared, err := sharedCorpus(root, loaded)
+	if err != nil {
+		return nil, err
+	}
+
+	all := rules(shared)
+	reports := make([]ruleReport, 0, len(all))
+	for _, r := range all {
 		found := make([]finding, 0)
 		for _, pkg := range loaded {
 			found = append(found, r.violations(pkg)...)
@@ -338,13 +374,45 @@ func measure(root string) ([]ruleReport, error) {
 			if found[i].Package != found[j].Package {
 				return found[i].Package < found[j].Package
 			}
-			return found[i].Detail < found[j].Detail
+			if found[i].Detail != found[j].Detail {
+				return found[i].Detail < found[j].Detail
+			}
+			return found[i].Position < found[j].Position
 		})
-		reports = append(reports, ruleReport{
-			Rule: r.ID, Summary: r.Summary, Count: len(found), Findings: found,
-		})
+		report := ruleReport{Rule: r.ID, Summary: r.Summary, Count: len(found), Findings: found}
+		if r.perPackage {
+			report.Packages = make(map[string]int)
+			for _, item := range found {
+				report.Packages[item.Package]++
+			}
+		}
+		reports = append(reports, report)
 	}
 	return reports, nil
+}
+
+// sharedCorpus derives dialect identity and the shared package set, and
+// refuses a set too small to mean anything.
+func sharedCorpus(root string, loaded []*packages.Package) (corpus, error) {
+	identity, err := deriveDialectIdentity(loaded)
+	if err != nil {
+		return corpus{}, err
+	}
+	tracked, err := trackedPackageDirs(root)
+	if err != nil {
+		return corpus{}, err
+	}
+	shared := sharedPackageSet(loaded, tracked, identity.spellings)
+	if len(shared) < dialectNameFloor {
+		return corpus{}, fmt.Errorf("rule %q measures %d shared packages, below its floor of %d",
+			dialectNameRule, len(shared), dialectNameFloor)
+	}
+	for _, required := range requiredDialectNamePackages {
+		if !shared[required] {
+			return corpus{}, fmt.Errorf("rule %q does not measure %q, which it must", dialectNameRule, required)
+		}
+	}
+	return corpus{identity: identity, shared: shared}, nil
 }
 
 func repoRoot() (string, error) {
@@ -379,11 +447,18 @@ func readBaseline(root string) (baseline, error) {
 func writeBaseline(root string, reports []ruleReport) error {
 	recorded := baseline{
 		Comment: "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). " +
-			"A count may fall and may never rise. Regenerate with: go run ./internal/cmd/boundaries -update",
+			"A count may fall and may never rise, and a rule with package counts is compared package by package. " +
+			"Regenerate with: go run ./internal/cmd/boundaries -update",
 		Rules: make(map[string]int),
 	}
 	for _, report := range reports {
 		recorded.Rules[report.Rule] = report.Count
+		if report.Packages != nil {
+			if recorded.Packages == nil {
+				recorded.Packages = make(map[string]map[string]int)
+			}
+			recorded.Packages[report.Rule] = report.Packages
+		}
 	}
 	data, err := json.MarshalIndent(recorded, "", "  ")
 	if err != nil {
@@ -406,6 +481,10 @@ func check(root string, reports []ruleReport) error {
 			problems = append(problems, fmt.Sprintf(
 				"rule %q has no recorded baseline; add it with -update after deciding it is acceptable",
 				report.Rule))
+			continue
+		}
+		if report.Packages != nil {
+			problems = append(problems, checkPackages(report, permitted, recorded.Packages[report.Rule])...)
 			continue
 		}
 		if report.Count > permitted {
@@ -436,6 +515,55 @@ func check(root string, reports []ruleReport) error {
 	}
 	return fmt.Errorf("boundaries: %s\n\na count may fall and may never rise (stokaro/ptah#1344)",
 		strings.Join(problems, "\n"))
+}
+
+// checkPackages compares a per-package rule package by package. Debt that
+// moves between packages changes no total, and is still a change: the package
+// it left must record the fall and the one it reached is refused.
+func checkPackages(report ruleReport, permittedTotal int, permitted map[string]int) []string {
+	problems := make([]string, 0)
+	sum := 0
+	for _, count := range permitted {
+		sum += count
+	}
+	if sum != permittedTotal {
+		problems = append(problems, fmt.Sprintf(
+			"rule %q records a total of %d and package counts that sum to %d; regenerate with -update",
+			report.Rule, permittedTotal, sum))
+	}
+	names := slices.Sorted(maps.Keys(permitted))
+	for name := range maps.Keys(report.Packages) {
+		if _, recorded := permitted[name]; !recorded {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		measured, allowed := report.Packages[name], permitted[name]
+		switch {
+		case measured > allowed:
+			problems = append(problems, fmt.Sprintf(
+				"rule %q grew in %s from %d to %d -- %s\n%s",
+				report.Rule, name, allowed, measured, report.Summary,
+				indentPositions(slices.DeleteFunc(slices.Clone(report.Findings), func(item finding) bool {
+					return item.Package != name
+				}))))
+		case measured < allowed:
+			problems = append(problems, fmt.Sprintf(
+				"rule %q fell in %s from %d to %d -- record it so it cannot come back: "+
+					"go run ./internal/cmd/boundaries -update",
+				report.Rule, name, allowed, measured))
+		}
+	}
+	return problems
+}
+
+func indentPositions(found []finding) string {
+	lines := make([]string, 0, len(found))
+	for _, item := range found {
+		lines = append(lines, "    "+item.Position+" "+item.Detail)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func indent(found []finding) string {
