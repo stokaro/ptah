@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/datadiff"
 )
 
@@ -53,6 +52,10 @@ func renderBootstrapData(
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: select the data services: %w", err)
 	}
+	if described, _ := platform.Lookup(conn.Info().Dialect); described.ManagedData.TypedRows && services.Rows == nil {
+		return "", fmt.Errorf("checkpoint generation failed: %s types its rows through its owner's row service, "+
+			"and the runtime registered none", described.Name)
+	}
 	var rendered strings.Builder
 	for _, name := range tables {
 		statements, err := renderBootstrapTable(ctx, conn, services, schema, name)
@@ -80,7 +83,7 @@ func renderBootstrapTable(
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
 	}
-	columnTypes, rows, err := bootstrapColumnTypes(ctx, conn, tableSchema, table, rows)
+	columnTypes, rows, err := bootstrapColumnTypes(ctx, conn, services.Rows, tableSchema, table, rows)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
 	}
@@ -102,23 +105,27 @@ func renderBootstrapTable(
 	return header + up, nil
 }
 
-// bootstrapColumnTypes answers, on YDB, the type of each column of the table as
-// the shadow database holds it, and the rows with every value in the form
-// ydbtype.CanonicalValue gives it; every other dialect renders a value from
-// its Go value alone, and gets rows back as they are.
+// bootstrapColumnTypes answers, on an engine whose descriptor asks for typed
+// rows (descriptor.ManagedData.TypedRows), the type of each column of the
+// table as the shadow database holds it, and the rows in the form the owner's
+// row service gives them; every other engine renders a value from its Go value
+// alone, and gets rows back as they are. renderBootstrapData has refused such
+// an engine when its runtime registered no row service, so typer is set.
 //
-// YQL types every literal, so a statement that inserts a row writes each value
-// in its column's YDB type, and the replayed table is where that type is: it is
-// the table the checkpoint's version produces. The canonical form is what the
+// YQL types every literal, so on YDB a statement that inserts a row writes each
+// value in its column's YDB type, and the replayed table is where that type is:
+// it is the table the checkpoint's version produces. The typed form is what the
 // driver's local time, a Decimal's digits and a UUID's case read as one value
 // in, so two runs over one history write the same bytes.
 func bootstrapColumnTypes(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	typer dataext.Rows,
 	tableSchema, table string,
 	rows []map[string]any,
 ) (map[string]string, []map[string]any, error) {
-	if platform.NormalizeDialect(conn.Info().Dialect) != platform.YDB {
+	described, _ := platform.Lookup(conn.Info().Dialect)
+	if !described.ManagedData.TypedRows {
 		return nil, rows, nil
 	}
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{tableSchema})
@@ -132,15 +139,13 @@ func bootstrapColumnTypes(
 		return nil, nil, fmt.Errorf("the shadow database has no table %s to read the column types of",
 			path.Join(tableSchema, table))
 	}
-	columnTypes := make(map[string]string, len(live.Tables[index].Columns))
-	for _, column := range live.Tables[index].Columns {
-		columnTypes[column.Name] = column.DataType
-	}
-	typed, err := ydbtype.CanonicalRows(columnTypes, rows)
+	// The rows are the shadow's own, so they are the live side, and the live
+	// table names every column: nothing is declared that the table lacks.
+	typed, err := typer.TypeRows(conn.Info().Capabilities, &live.Tables[index], nil, nil, rows)
 	if err != nil {
 		return nil, nil, err
 	}
-	return columnTypes, typed, nil
+	return typed.ColumnTypes, typed.Live, nil
 }
 
 // bootstrapColumns names what is read and what identifies a row.

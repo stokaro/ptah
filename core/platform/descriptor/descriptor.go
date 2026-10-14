@@ -198,6 +198,37 @@ type Dialect struct {
 	// read from the URL, rather than a rule of the engine. Two connections to
 	// two databases of one server therefore resolve names in two places.
 	SchemaIsDatabase bool `json:"schema_is_database,omitempty"`
+
+	// Lowering: how the common model is lowered for the engine.
+
+	// GeneratedTimeouts are the lock and statement timeouts a generated
+	// migration file states when one of its statements waits for a lock on a
+	// table. Empty states none.
+	GeneratedTimeouts GeneratedTimeouts `json:"generated_timeouts,omitzero"`
+	// GeneratedColumnDefault is the persistence a generated column is created
+	// with when its declaration names none, such as "STORED", "VIRTUAL" or
+	// "PERSISTED". Empty creates the column as the declaration states it.
+	GeneratedColumnDefault string `json:"generated_column_default,omitempty"`
+	// InlineEnum is how a column of an enum is written on an engine that
+	// keeps the values on the column rather than in a type of their own.
+	// Zero writes the column as declared.
+	InlineEnum InlineEnum `json:"inline_enum,omitzero"`
+	// ForeignKeysInCreateTable reports that a foreign key is declared inside
+	// its table's CREATE TABLE and never added to an existing table, as on
+	// SQLite, which has no ALTER TABLE ... ADD CONSTRAINT.
+	ForeignKeysInCreateTable bool `json:"foreign_keys_in_create_table,omitempty"`
+	// IndexesBeforeForeignKeys reports that every index a schema declares is
+	// created before the schema's foreign keys are added, because the server
+	// builds an index of its own for a foreign key no declared index covers, as
+	// the MySQL family does.
+	IndexesBeforeForeignKeys bool `json:"indexes_before_foreign_keys,omitempty"`
+	// Lexical is how the engine's SQL text differs from the standard, where
+	// the shared scanner of routine and view bodies honors the difference. It
+	// is the beginning of a lexer description, not all of one: a difference
+	// that scanner does not honor, such as MySQL's # comments and backslash
+	// escapes, is not stated yet, since stating it changes how the scanner
+	// reads such a body.
+	Lexical Lexical `json:"lexical,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and
@@ -249,6 +280,59 @@ const (
 	// second statement whose scan takes a weaker lock.
 	OnlineAlterNotValid OnlineAlter = "not-valid"
 )
+
+// GeneratedTimeouts are the timeouts a generated migration file states, each a
+// duration in the spelling the migration directives read, such as "3s".
+type GeneratedTimeouts struct {
+	// Lock bounds how long a statement waits for a lock.
+	Lock string `json:"lock,omitempty"`
+	// Statement bounds how long a statement runs.
+	Statement string `json:"statement,omitempty"`
+}
+
+// InlineEnum is how a column of an enum holds its values.
+type InlineEnum struct {
+	// Type is the column's type. [InlineEnumValues] lists the values in the
+	// type, as MySQL's ENUM('a', 'b'); [InlineEnumNumbered] lists them
+	// numbered, as ClickHouse's Enum8('a' = 1, 'b' = 2). Any other type, such
+	// as "TEXT", holds the values under a CHECK.
+	Type string `json:"type,omitempty"`
+	// Check is how that CHECK names the column: [InlineEnumCheckBare] as
+	// written, or [InlineEnumCheckQuoted] spelled as the engine spells an
+	// identifier. Empty writes no CHECK.
+	Check string `json:"check,omitempty"`
+}
+
+const (
+	// InlineEnumValues is the [InlineEnum.Type] that lists the values in the
+	// column type.
+	InlineEnumValues = "values"
+	// InlineEnumNumbered is the [InlineEnum.Type] that lists the values
+	// numbered in the column type.
+	InlineEnumNumbered = "numbered"
+	// InlineEnumCheckBare is the [InlineEnum.Check] that names the column as
+	// written.
+	InlineEnumCheckBare = "bare"
+	// InlineEnumCheckQuoted is the [InlineEnum.Check] that names the column as
+	// the engine spells an identifier.
+	InlineEnumCheckQuoted = "quoted"
+)
+
+// Lexical describes the engine's SQL text where it differs from the standard.
+type Lexical struct {
+	// Lexer names a lexer of the engine's own its text is read with, such as
+	// [LexerYQL]. Empty reads the shared SQL lexer, with the rules below.
+	Lexer string `json:"lexer,omitempty"`
+	// LineComments are the markers, beside "--", that open a comment running
+	// to the end of the line, such as "#" and "//".
+	LineComments []string `json:"line_comments,omitempty"`
+	// BackslashEscapes reports that a backslash escapes the next character
+	// inside a string literal and a quoted identifier.
+	BackslashEscapes bool `json:"backslash_escapes,omitempty"`
+}
+
+// LexerYQL is the [Lexical.Lexer] of YDB's query language.
+const LexerYQL = "yql"
 
 // Identifiers states how an engine compares identifiers offline. The values
 // are spelled as core/platform/identifier spells its IndexNamespace and

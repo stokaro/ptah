@@ -42,8 +42,9 @@ type ManagedData struct {
 	// would fail. Empty means none does.
 	IdentityRefusesInsert IdentityInsert `json:"identity_refuses_insert,omitempty"`
 	// TypedRows reports that the engine's owner types the declared and live
-	// rows before they are compared, through the dataext.Rows service its
-	// runtime provides. A comparison given no such service refuses the engine.
+	// rows before they are compared, and the rows a checkpoint bootstraps
+	// before they are written, through the dataext.Rows service its runtime
+	// provides. A caller given no such service refuses the engine.
 	TypedRows bool `json:"typed_rows,omitempty"`
 }
 

@@ -125,6 +125,9 @@ END;`,
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
+
+		// How the common model is lowered for the engine.
+		InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted},
 	}
 }
 

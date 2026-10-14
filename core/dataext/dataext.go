@@ -37,7 +37,8 @@ type Services struct {
 	// literal it takes, for an engine whose literals are otherwise written
 	// from the value.
 	Columns Columns
-	// Rows types managed rows before they are compared.
+	// Rows types managed rows before they are compared, and the rows a
+	// checkpoint bootstraps before they are written.
 	Rows Rows
 }
 

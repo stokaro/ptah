@@ -132,6 +132,9 @@ func ydb() descriptor.Dialect {
 		DevRealm: descriptor.DevRealm{
 			Identity: "writer",
 		},
+
+		// How the common model is lowered for the engine.
+		Lexical: descriptor.Lexical{Lexer: descriptor.LexerYQL},
 	}
 }
 

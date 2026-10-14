@@ -124,5 +124,8 @@ func cockroachDB() descriptor.Dialect {
 			FileLock:        "loopback",
 			ScratchDatabase: true,
 		},
+
+		// How the common model is lowered for the engine.
+		GeneratedColumnDefault: "STORED",
 	}
 }

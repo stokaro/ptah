@@ -4798,12 +4798,25 @@ index build (`ConcurrentIndexes`) and an online ALTER TABLE (`OnlineAlter`). A
 capability says whether a given server takes such a grammar, and a capability
 set cannot claim one the dialect lacks.
 
+A descriptor also states how the common model is lowered for the engine:
+
+- `GeneratedTimeouts`: the lock and statement timeouts a generated migration
+  states when a statement waits for a table lock;
+- `GeneratedColumnDefault`: the persistence of a generated column whose
+  declaration names none;
+- `InlineEnum`: how an enum column holds its values where the engine has no
+  enum type;
+- `ForeignKeysInCreateTable` and `IndexesBeforeForeignKeys`: where foreign keys
+  go in a rendered schema;
+- `Lexical`: how a routine or view body is scanned.
+
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:
 
 - `Literals` writes a value in its column's type.
 - `Columns` names the declared types that hold a moment.
-- `Rows` types the rows a managed-data comparison pairs.
+- `Rows` types the rows a managed-data comparison pairs, and the rows a
+  checkpoint bootstraps.
 - `Seeds` runs a seed file, records one, and lists the tables a seed run
   guards.
 

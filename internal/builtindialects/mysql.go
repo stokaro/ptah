@@ -137,6 +137,12 @@ func mysql() descriptor.Dialect {
 			ScratchDatabase: true,
 		},
 		SchemaIsDatabase: true,
+
+		// How the common model is lowered for the engine.
+		GeneratedTimeouts:        descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"},
+		GeneratedColumnDefault:   "VIRTUAL",
+		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
+		IndexesBeforeForeignKeys: true,
 	}
 }
 

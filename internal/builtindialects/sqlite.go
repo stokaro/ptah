@@ -93,6 +93,11 @@ func sqlite() descriptor.Dialect {
 			Query:    "SELECT file FROM pragma_database_list WHERE name = 'main'",
 			FileLock: "local",
 		},
+
+		// How the common model is lowered for the engine.
+		GeneratedColumnDefault:   "VIRTUAL",
+		InlineEnum:               descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare},
+		ForeignKeysInCreateTable: true,
 	}
 }
 
