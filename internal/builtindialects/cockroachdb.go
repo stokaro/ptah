@@ -1,6 +1,9 @@
 package builtindialects
 
-import "ptah.run/core/platform/descriptor"
+import (
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/capabilityline"
+)
 
 // cockroachDB is CockroachDB, in the PostgreSQL family.
 //
@@ -23,5 +26,27 @@ func cockroachDB() descriptor.Dialect {
 			ColumnNames:    "exact",
 		},
 		Placeholder: descriptor.PlaceholderDollar,
+
+		// The whole 25 line takes CockroachDB25, not only the measured 25.4
+		// minor: autocommit_before_ddl defaults on across the line, measured
+		// on v25.1.10, v25.2.22, v25.3.7 and v25.4.5 (stokaro/ptah#1849).
+		// 26.3 is the first line carrying CREATE DOMAIN (stokaro/ptah#1735).
+		Capabilities: descriptor.Capabilities{
+			DefaultPreset: "CockroachDB26",
+			BannerTokens:  []string{"cockroachdb"},
+			Versions: descriptor.Versions{
+				Scheme: "dotted",
+				Floor:  "CockroachDB23",
+				Steps: []descriptor.VersionStep{
+					{Min: "25", Preset: "CockroachDB25"},
+					{Min: capabilityline.CockroachDB26, Preset: "CockroachDB26"},
+					{Min: capabilityline.CockroachDB263, Preset: "CockroachDB263"},
+				},
+				Attribution: "measured-lines",
+				Measured:    capabilityline.CockroachDBMeasured(),
+				Newest:      capabilityline.CockroachDB263,
+			},
+		},
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes"},
 	}
 }

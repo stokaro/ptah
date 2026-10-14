@@ -117,7 +117,9 @@ func TestGrantOptionIsPerObject(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb", "maria"} {
 		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}
-	for _, dialect := range []string{"postgres", "cockroachdb", "clickhouse", "sqlite", "sqlserver", "oracle", "bogus"} {
+	for _, dialect := range []string{
+		"postgres", "cockroachdb", "yugabytedb", "spanner", "clickhouse", "sqlite", "sqlserver", "oracle", "ydb", "bogus",
+	} {
 		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
 	}
 }

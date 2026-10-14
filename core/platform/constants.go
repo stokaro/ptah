@@ -62,20 +62,17 @@ func IsPostgresFamily(dialect string) bool {
 
 // GrantOptionIsPerObject reports whether a WITH GRANT OPTION grant on this
 // target belongs to the grantee at the whole object, rather than to one
-// privilege.
+// privilege. The answer is the descriptor's GrantOptionPerObject; see
+// [Lookup]. A spelling no descriptor claims answers false.
 //
 // Measured on MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3: after
 // `GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION`, `REVOKE GRANT OPTION ON
 // t FROM r` leaves both privileges in place and makes neither grantable, and a
 // later `GRANT INSERT ON t TO r` -- without repeating WITH GRANT OPTION --
 // makes SELECT grantable again along with it. The option is a property of
-// (grantee, object), not of (grantee, object, privilege). Every other target
-// this constant answers false for keeps one grantable flag per privilege.
+// (grantee, object), not of (grantee, object, privilege). Every other built-in
+// target keeps one grantable flag per privilege.
 func GrantOptionIsPerObject(dialect string) bool {
-	switch NormalizeDialect(dialect) {
-	case MySQL, MariaDB:
-		return true
-	default:
-		return false
-	}
+	described, found := Lookup(dialect)
+	return found && described.GrantOptionPerObject
 }

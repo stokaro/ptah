@@ -69,6 +69,16 @@ type Dialect struct {
 	Identifiers Identifiers `json:"identifiers"`
 	// Placeholder is how a statement marks a bound parameter.
 	Placeholder Placeholder `json:"placeholder"`
+
+	// Capabilities states how a capability preset is chosen for the dialect,
+	// offline and from a server's version string.
+	Capabilities Capabilities `json:"capabilities"`
+	// IdentifierLimit is the longest identifier the engine accepts.
+	IdentifierLimit IdentifierLimit `json:"identifier_limit"`
+	// GrantOptionPerObject reports that a WITH GRANT OPTION grant belongs to
+	// the grantee at the whole object rather than to one privilege, so
+	// revoking the option from one privilege revokes it from all of them.
+	GrantOptionPerObject bool `json:"grant_option_per_object,omitempty"`
 }
 
 // Identifiers states how an engine compares identifiers offline. The values
