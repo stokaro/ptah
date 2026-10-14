@@ -9,10 +9,17 @@ goal: "Look up the ClickHouse objects and operations Ptah supports."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
+  - "dialect/clickhouse"
+  - "internal/schemaload"
+  - "core/yamlschema"
+  - "internal/atlashcl"
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 ---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ClickHouse support is capability-limited. The preset models enums as inline
 `Enum8`/`Enum16` column types: a column typed with a declared enum, or typed
@@ -23,6 +30,128 @@ boundaries [Roles and grants](#roles-and-grants) states.
 Review generated SQL and the
 [capability gates](../../reference/capabilities/) before adopting a workflow
 on ClickHouse.
+
+## Schema sources
+
+Choose SQL, YAML, HCL, DBML, or Go annotations for the desired schema.
+These examples declare the same `events` table with a MergeTree engine sorted
+by `id`. Save the selected file, then run the command below it to preview SQL
+without connecting to a database.
+
+<Tabs syncKey="schema-source">
+<TabItem label="SQL">
+
+```sql title="schema.sql"
+CREATE TABLE events (
+  id UInt64,
+  payload String
+) ENGINE = MergeTree ORDER BY id;
+```
+
+```console
+ptah schema render --schema-file schema.sql --dialect clickhouse
+```
+
+</TabItem>
+<TabItem label="YAML">
+
+```yaml title="schema.yaml"
+tables:
+  events:
+    columns:
+      id:
+        type: UInt64
+        primary: true
+        not_null: true
+      payload:
+        type: String
+        not_null: true
+```
+
+```console
+ptah schema render --schema-file schema.yaml --dialect clickhouse
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl title="schema.hcl"
+table "events" {
+  column "id" {
+    type = "UInt64"
+  }
+  column "payload" {
+    type = "String"
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+```
+
+```console
+ptah schema render --schema-file schema.hcl --dialect clickhouse
+```
+
+</TabItem>
+<TabItem label="DBML">
+
+```text title="schema.dbml"
+Table events {
+  id UInt64 [pk, not null]
+  payload String [not null]
+}
+```
+
+```console
+ptah schema render --schema-file schema.dbml --dialect clickhouse
+```
+
+</TabItem>
+<TabItem label="Go">
+
+```go title="models/events.go"
+package models
+
+//ptah:schema:table name="events"
+type Event struct {
+    //ptah:schema:field name="id" type="UInt64" primary="true" not_null="true"
+    ID uint64
+    //ptah:schema:field name="payload" type="String" not_null="true"
+    Payload string
+}
+```
+
+```console
+ptah schema render --root-dir ./models --dialect clickhouse
+```
+
+</TabItem>
+</Tabs>
+
+SQL expresses ClickHouse engine clauses directly. YAML and HCL use table
+`platform` properties for `clickhouse`; Go annotations use
+`platform.clickhouse.*` attributes. DBML uses the default MergeTree engine and
+the declared primary key for sorting. It cannot declare engine overrides,
+skipping-index granularity, views, roles, or grants. Use another format when
+the desired schema must own those settings or objects.
+
+The supported declarations differ by format:
+
+| Format | Engine overrides and index granularity | Views, roles, and grants | Refresh schedules | Row policies |
+| --- | --- | --- | --- | --- |
+| SQL | Yes | Yes | Yes | No |
+| YAML | Yes | Yes | No | Yes |
+| HCL | Yes | Yes | No | No |
+| DBML | No | No | No | No |
+| Go annotations | Yes | Yes | Yes | Yes |
+
+The same source selectors work with schema comparison and migration planning.
+See [Work with a desired schema](../../schema/work-with-a-source/) for the
+shared workflow and [DBML limitations](../../schema/dbml/#what-it-cannot) for
+objects a DBML source leaves outside its scope. External programs emit
+[SQL, YAML, or HCL](../../schema/orm-and-external/); they use the same syntax
+as the corresponding file format.
 
 ## Dev-database cleanup
 
@@ -93,9 +222,10 @@ reaches the renderer through the same key both families fill, so `engine =
 indistinguishable from a value written for ClickHouse. Rendering one produces
 statements the server rejects with `Code: 56 ... Unknown table engine`, and
 because the whole `CREATE TABLE` is lost the author gets no table at all rather
-than a weaker one. Ptah names the engine instead and points at the two ways to
-declare a working one: `platform.clickhouse.engine` on a struct, or the `ENGINE`
-clause of a SQL source. Removing the engine takes the `MergeTree` default.
+than a weaker one. Ptah names the engine instead. Declare a ClickHouse engine
+with SQL's `ENGINE` clause, YAML or HCL table platform properties, or
+`platform.clickhouse.engine` in Go annotations. Removing the engine takes the
+`MergeTree` default.
 
 Only names that belong to the MySQL and MariaDB families are refused, and only
 those they do not share with ClickHouse — `Memory`, `Merge` and `S3` are real
@@ -117,15 +247,85 @@ answer rather than from the declaration's text:
 ## Data-skipping indexes
 
 A data-skipping index declares its type and granularity as ClickHouse settings
-of the index. In Go annotations they are `platform.clickhouse.type` and
-`platform.clickhouse.granularity`; YAML and HCL use the index's `platform` group
-for `clickhouse`. On ClickHouse the common `type` attribute names the
+of the index. SQL uses `TYPE` and `GRANULARITY`; YAML and HCL use the index's
+`platform` group for `clickhouse`. Go annotations use
+`platform.clickhouse.type` and `platform.clickhouse.granularity`.
+On ClickHouse the common `type` attribute names the
 skipping-index type too, and declaring the type both ways is refused. The type
 keeps its parameters, such as `set(100)` or `bloom_filter(0.01)`.
+
+Add the index to the `events` declaration above. SQL, YAML, HCL, and Go declare
+`bloom_filter(0.01)` with granularity 64. The DBML variant uses the creation
+defaults because DBML cannot set granularity:
+
+<Tabs syncKey="schema-source">
+<TabItem label="SQL">
+
+Place the index inside the `CREATE TABLE` column list:
+
+```sql
+INDEX idx_e_payload payload TYPE bloom_filter(0.01) GRANULARITY 64
+```
+
+</TabItem>
+<TabItem label="YAML">
+
+Add this top-level `indexes` entry:
+
+```yaml
+indexes:
+  idx_e_payload:
+    table: events
+    fields: [payload]
+    type: bloom_filter(0.01)
+    platform:
+      clickhouse:
+        granularity: 64
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+Add this block inside `table "events"`:
+
+```hcl
+index "idx_e_payload" {
+  columns = [column.payload]
+  type = "bloom_filter(0.01)"
+  platform "clickhouse" {
+    override "granularity" {
+      value = "64"
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="DBML">
+
+Add this block inside `Table events`. It creates a `minmax` index with
+granularity 1:
+
+```text title="DBML index"
+Indexes {
+  payload [name: 'idx_e_payload']
+}
+```
+
+</TabItem>
+<TabItem label="Go">
+
+Place the annotation on the `Payload` field, beside its field annotation:
 
 ```go
 //ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" platform.clickhouse.granularity="64"
 ```
+
+</TabItem>
+</Tabs>
+
+DBML cannot declare the granularity in this example. Use SQL, YAML, HCL, or
+Go annotations to manage both skipping-index settings.
 
 A new index that declares neither setting is a `minmax` index with
 `GRANULARITY 1`. Index granularity counts table granules per index block; it is
@@ -277,6 +477,58 @@ qualified names and query bodies, and reads ordinary views from
 `system.tables`. An empty query body, `WITH CHECK OPTION`, or
 `DROP VIEW ... CASCADE` fails instead of being ignored.
 
+Add these declarations to the selected schema source from the table example:
+
+<Tabs syncKey="schema-source">
+<TabItem label="SQL">
+
+```sql
+CREATE VIEW event_count AS SELECT count() AS c FROM events;
+CREATE MATERIALIZED VIEW event_stats
+ENGINE = MergeTree ORDER BY tuple() AS SELECT count() AS c FROM events;
+```
+
+</TabItem>
+<TabItem label="YAML">
+
+```yaml
+views:
+  event_count:
+    body: SELECT count() AS c FROM events
+matviews:
+  event_stats:
+    body: SELECT count() AS c FROM events
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl
+view "event_count" {
+  as = "SELECT count() AS c FROM events"
+}
+materialized "event_stats" {
+  as = "SELECT count() AS c FROM events"
+}
+```
+
+</TabItem>
+<TabItem label="Go">
+
+```go
+//ptah:schema:view name="event_count" body="SELECT count() AS c FROM events"
+type EventCount struct{}
+
+//ptah:schema:matview name="event_stats" body="SELECT count() AS c FROM events"
+type EventStats struct{}
+```
+
+</TabItem>
+</Tabs>
+
+DBML has no view or materialized-view declaration. Use another format for
+these objects.
+
 Materialized views do too. Ptah emits
 `CREATE MATERIALIZED VIEW <name> ENGINE = MergeTree ORDER BY tuple() AS <query>`,
 reads the object back from `system.tables`, and plans a changed query as a drop
@@ -291,8 +543,18 @@ before adopting them:
   carries the schedule as ClickHouse spells it, and Ptah renders it, reads it
   back, and reconciles it:
 
+  SQL and Go annotations can declare a refresh schedule. For example:
+
+  ```sql
+  CREATE MATERIALIZED VIEW event_stats REFRESH EVERY 1 HOUR
+  ENGINE = MergeTree ORDER BY tuple() AS SELECT count() AS c FROM events;
+  ```
+
+  Go annotations:
+
   ```go
-  //ptah:schema:matview name="user_stats" body="SELECT count() AS c FROM users" refresh="every 1 hour"
+  //ptah:schema:matview name="event_stats" body="SELECT count() AS c FROM events" refresh="every 1 hour"
+  type EventStats struct{}
   ```
 
   The server rewrites what it stores — `EVERY 60 MINUTE` becomes `EVERY 1 HOUR`,
@@ -319,14 +581,8 @@ before adopting them:
   has its schedule read up to the target table.
 
   The schedule is a ClickHouse setting of the view, not part of the shared
-  materialized view. Go annotations and ClickHouse SQL schema files declare it.
-  A SQL file states it the way the server prints it, between the view name and
-  `AS`:
-
-  ```sql
-  CREATE MATERIALIZED VIEW user_stats REFRESH EVERY 1 HOUR
-  ENGINE = MergeTree ORDER BY tuple() AS SELECT count() AS c FROM users;
-  ```
+  materialized view. A SQL file states it between the view name and `AS`, as
+  shown above.
 
   The storage clause may be left out. When it is written, it has to be
   `ENGINE = MergeTree ORDER BY tuple()`, the storage Ptah creates every view
@@ -401,22 +657,62 @@ manage a `TO` materialized view with Ptah.
 Roles and grants complete the render, plan, apply, introspect, and diff cycle.
 A declared role and a database- or table-scoped grant are applied, read back
 from `system.roles` and `system.grants`, and compared to zero difference on the
-next run. Declaring them is the same pair of annotations every other engine
-uses, with the grant scope written as `database.table`:
+next run. SQL, YAML, HCL, and Go annotations declare them, with the grant scope
+written as `database.table`. These examples grant read access to the `events`
+table in the `ptah_test` database:
+
+<Tabs syncKey="schema-source">
+<TabItem label="SQL">
+
+```sql
+CREATE ROLE ptah_reader;
+GRANT SELECT ON ptah_test.events TO ptah_reader;
+```
+
+</TabItem>
+<TabItem label="YAML">
+
+```yaml
+roles:
+  ptah_reader: {}
+grants:
+  ptah_reader_events:
+    role: ptah_reader
+    privileges: [SELECT]
+    on_table: ptah_test.events
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl
+role "ptah_reader" {}
+permission {
+  to = role.ptah_reader
+  for = "ptah_test.events"
+  privileges = [SELECT]
+}
+```
+
+</TabItem>
+<TabItem label="Go">
 
 ```go
 //ptah:schema:role name="ptah_reader"
 type PtahReaderRole struct{}
 
-//ptah:schema:grant role="ptah_reader" privileges="SELECT" on_table="ptah_test.orders"
-type PtahReaderOrdersGrant struct{}
+//ptah:schema:grant role="ptah_reader" privileges="SELECT" on_table="ptah_test.events"
+type PtahReaderEventsGrant struct{}
 ```
 
-`ptah schema render --dialect clickhouse` emits those as:
+</TabItem>
+</Tabs>
+
+DBML cannot declare roles or grants. Rendering the selected source emits:
 
 ```sql
 CREATE ROLE IF NOT EXISTS `ptah_reader`;
-GRANT SELECT ON `ptah_test`.`orders` TO `ptah_reader`;
+GRANT SELECT ON `ptah_test`.`events` TO `ptah_reader`;
 ```
 
 Roles are always planned before grants, because ClickHouse refuses a grant to a
@@ -524,18 +820,50 @@ is what gives its `ptah_user` that authority.
 ## Row policies
 
 A row policy filters the rows of one table that the users and roles it names
-may read. Declare one with its own directive:
+may read. YAML and Go annotations can declare one:
+
+<Tabs syncKey="schema-source">
+<TabItem label="YAML">
+
+```yaml title="schema.yaml"
+tables:
+  orders:
+    columns:
+      id:
+        type: UInt64
+        primary: true
+        not_null: true
+      tenant_id:
+        type: UInt64
+        not_null: true
+row_policies:
+  tenant_rows:
+    table: orders
+    using: tenant_id = 1
+    to: ALL EXCEPT admin
+    as: RESTRICTIVE
+```
+
+</TabItem>
+<TabItem label="Go">
 
 ```go
+package models
+
 //ptah:schema:table name="orders"
 //ptah:schema:rowpolicy name="tenant_rows" table="orders" using="tenant_id = 1" to="ALL EXCEPT admin" as="RESTRICTIVE"
 type Order struct {
-	//ptah:schema:field name="id" type="UInt64" primary="true"
+	//ptah:schema:field name="id" type="UInt64" primary="true" not_null="true"
 	ID uint64
-	//ptah:schema:field name="tenant_id" type="UInt64"
+	//ptah:schema:field name="tenant_id" type="UInt64" not_null="true"
 	TenantID uint64
 }
 ```
+
+</TabItem>
+</Tabs>
+
+SQL schema files, HCL, and DBML cannot declare ClickHouse row policies.
 
 - `using` is the filter. Without one, the policy admits every row to the
   users it names.
@@ -645,4 +973,4 @@ ClickHouse, because revision history cannot be updated atomically there.
 
 - Which release lines are declared and at what support level: [Database support matrix](../support-matrix/).
 - Capability keys per dialect: [Capabilities](../../reference/capabilities/).
-- Declaring roles and grants in Go sources: [Go annotation reference](../../reference/go-annotations/).
+- Choosing an input format and source selector: [Work with a desired schema](../../schema/work-with-a-source/).
