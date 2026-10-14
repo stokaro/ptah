@@ -185,6 +185,33 @@ func (v *RangeChange) CreatedType(subject objectidentity.ID) (schemaext.DefinedT
 	return v.After.DefinedType(subject), true
 }
 
+// ObservedType reports the current domain definition and its references.
+// An addition has no current definition; see [schemaext.TypeObserver].
+func (v *DomainChange) ObservedType(subject objectidentity.ID) (schemaext.DefinedType, bool) {
+	if v == nil || v.Before == nil {
+		return schemaext.DefinedType{}, false
+	}
+	return v.Before.DefinedType(subject), true
+}
+
+// ObservedType reports the current composite definition and its references.
+// An addition has no current definition; see [schemaext.TypeObserver].
+func (v *CompositeChange) ObservedType(subject objectidentity.ID) (schemaext.DefinedType, bool) {
+	if v == nil || v.Before == nil {
+		return schemaext.DefinedType{}, false
+	}
+	return v.Before.DefinedType(subject), true
+}
+
+// ObservedType reports the current range definition and its references.
+// An addition has no current definition; see [schemaext.TypeObserver].
+func (v *RangeChange) ObservedType(subject objectidentity.ID) (schemaext.DefinedType, bool) {
+	if v == nil || v.Before == nil {
+		return schemaext.DefinedType{}, false
+	}
+	return v.Before.DefinedType(subject), true
+}
+
 // PlacementSchema is the schema a change that creates the domain puts it
 // into: the one subject names, empty where the declaration leaves it to the
 // connection's default; see [schemaext.SchemaPlacement]. A domain that
@@ -475,4 +502,19 @@ func nonNull(data json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return data
+}
+
+// RebuildsType reports whether the domain changes its base type.
+func (v *DomainChange) RebuildsType() bool {
+	return v != nil && v.Before != nil && v.After != nil && v.Differ(DiffBaseType)
+}
+
+// RebuildsType reports whether the composite has no in-place attribute delta.
+func (v *CompositeChange) RebuildsType() bool {
+	return v != nil && v.Before != nil && v.After != nil && v.Differ(DiffAttributes) && len(v.Added) == 0 && len(v.Removed) == 0
+}
+
+// RebuildsType reports whether any range property other than its comment changes.
+func (v *RangeChange) RebuildsType() bool {
+	return v != nil && v.Before != nil && v.After != nil && slices.ContainsFunc(v.Differs, func(name string) bool { return name != DiffComment })
 }

@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 )
@@ -34,11 +33,11 @@ range "measurement" {
 func TestParse_AnEmptyRangeAttributeIsToldFromAnAbsentOne(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(clearedRangeHCL), "schema.hcl")
+	db, err := parseTypeHCL([]byte(clearedRangeHCL), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Ranges, qt.HasLen, 1)
-	rangeType := db.Ranges[0]
+	c.Assert(rangeObjects(db), qt.HasLen, 1)
+	rangeType := rangeValues(db)[0]
 
 	c.Assert(rangeType.Clears("subtype_diff"), qt.IsTrue)
 	c.Assert(rangeType.Canonical, qt.Equals, "int8canon")
@@ -55,17 +54,17 @@ func TestParse_AnEmptyRangeAttributeIsToldFromAnAbsentOne(t *testing.T) {
 func TestRender_AnEmptyRangeAttributeSurvivesTheRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(clearedRangeHCL), "schema.hcl")
+	db, err := parseTypeHCL([]byte(clearedRangeHCL), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `subtype_diff = ""`)
 
-	again, err := atlashcl.Parse(rendered.Data, "rendered.hcl")
+	again, err := parseTypeHCL(rendered.Data, "rendered.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(again.Ranges, qt.HasLen, 1)
-	c.Assert(again.Ranges[0].Clears("subtype_diff"), qt.IsTrue)
+	c.Assert(rangeObjects(again), qt.HasLen, 1)
+	c.Assert(rangeValues(again)[0].Clears("subtype_diff"), qt.IsTrue)
 }
 
 // TestRender_AnAbsentRangeAttributeStaysAbsent is the control.
@@ -77,7 +76,7 @@ func TestRender_AnEmptyRangeAttributeSurvivesTheRoundTrip(t *testing.T) {
 func TestRender_AnAbsentRangeAttributeStaysAbsent(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 schema "public" {}
 
 range "measurement" {

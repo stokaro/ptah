@@ -189,7 +189,6 @@ func compareReportingUndecidedAdditions(
 	// Compare PostgreSQL user-defined types (domains, composites, ranges)
 	compare.DomainsWithSemantics(desired, database, diff, cov, identifierSemantics, opts.DomainExpressions)
 	compare.CompositeTypesWithSemantics(desired, database, diff, cov, identifierSemantics)
-	compare.RangesWithSemantics(desired, database, diff, cov, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies, rules.Views)

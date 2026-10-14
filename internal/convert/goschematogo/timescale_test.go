@@ -146,6 +146,7 @@ func TestRender_ATimescaleAggregatePrecedesTheYDBObjects(t *testing.T) {
 
 package models
 
+//ptah:schema:notdescribed kind="range"
 //ptah:schema:continuousaggregate name="hourly" body="SELECT 1"
 //ptah:schema:resourcepool name="olap" concurrent_query_limit="3"
 //ptah:schema:coordinationnode name="locks"

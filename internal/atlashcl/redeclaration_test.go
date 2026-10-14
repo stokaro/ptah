@@ -351,7 +351,7 @@ range "floatrange" {
   subtype = float8
 }
 `,
-			wantErr: `parse HCL schema schema.hcl: range "public.floatrange" is declared more than once;.*`,
+			wantErr: `parse HCL schema at schema.hcl:6,1-6: range public.floatrange is declared twice:.*`,
 		},
 		{
 			name: "a trigger declared twice",
@@ -385,7 +385,7 @@ trigger "users_touch" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -697,7 +697,7 @@ func TestParse_StrictRedeclarationsEnvVarRefusesWhatTheBinaryReads(t *testing.T)
 			c := qt.New(t)
 			t.Setenv(atlashcl.StrictRedeclarationsEnvVar, "1")
 
-			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -813,7 +813,7 @@ enum "mood" {
 			c := qt.New(t)
 			t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, test.value)
 
-			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -936,7 +936,7 @@ enum "a" "b" "c" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

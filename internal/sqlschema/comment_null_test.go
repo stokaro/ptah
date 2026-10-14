@@ -43,12 +43,12 @@ func TestRead_CommentOnNullClearsOnlyNamedObject(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.target, func(t *testing.T) {
 			c := qt.New(t)
-			before, _, err := readWithPolicyOwners([]byte(setup.String()), "postgres")
+			before, _, err := readWithCommentOwners([]byte(setup.String()), "postgres")
 			c.Assert(err, qt.IsNil)
 			want := commentsOf(before)
 			c.Assert(want[test.key], qt.Equals, "retained")
 			want[test.key] = ""
-			database, _, err := readWithPolicyOwners([]byte(setup.String()+"COMMENT ON "+test.target+" IS NULL;"), "postgres")
+			database, _, err := readWithCommentOwners([]byte(setup.String()+"COMMENT ON "+test.target+" IS NULL;"), "postgres")
 			c.Assert(err, qt.IsNil)
 			c.Assert(commentsOf(database), qt.DeepEquals, want)
 		})

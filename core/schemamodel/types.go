@@ -50,7 +50,6 @@ type Database struct {
 	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
 	Domains                    []Domain                       // PostgreSQL domain types (CREATE DOMAIN)
 	CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
-	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
 	Views                      []View                         // Database views
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -864,64 +863,6 @@ func (c *CompositeType) Canonicalize() {
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (c CompositeType) QualifiedName() string {
 	return QualifyTableName(c.Schema, c.Name)
-}
-
-// Range represents a PostgreSQL range type parsed from Go annotations.
-//
-// Range types are defined using //ptah:schema:range annotations:
-//
-//	//ptah:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
-//	type FloatRange struct{}
-type Range struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets         schemaext.Facets `json:"facets,omitzero"`
-	StructName     string           // Name of the Go struct this type is associated with
-	Name           string           // Range type name (e.g., "floatrange")
-	Schema         string           // Optional schema/namespace (PostgreSQL-style)
-	Subtype        string           // Required element subtype (e.g., "float8")
-	SubtypeOpClass string           // Optional operator class for the subtype
-	Collation      string           // Optional collation for the subtype
-	Canonical      string           // Optional canonicalization function
-	SubtypeDiff    string           // Optional subtype difference function
-	Comment        string           // Optional comment for documentation
-
-	// ClearedAttributes names the optional attributes this declaration writes
-	// as empty, which is how it asks for none of them.
-	//
-	// An omitted attribute and an attribute written empty are the same string
-	// in the fields above, and the comparator has to tell them apart. Omission
-	// means "say nothing about this", so adopting Ptah over a database whose
-	// range carries a SUBTYPE_DIFF does not plan its removal; `subtype_diff=""`
-	// means "this range has none", which is a difference from a catalog that
-	// holds one (stokaro/ptah#2223).
-	//
-	// Only a surface that can spell an empty value fills this. A `CREATE TYPE
-	// ... AS RANGE` statement has no way to write one, so a range read from SQL
-	// never clears anything.
-	ClearedAttributes []string `json:",omitempty"`
-
-	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToTarget].
-	Dialects []string `json:",omitempty"`
-}
-
-// Clears reports whether the declaration asks for this attribute to be absent,
-// as opposed to saying nothing about it.
-func (r Range) Clears(attribute string) bool {
-	return slices.Contains(r.ClearedAttributes, attribute)
-}
-
-// Canonicalize normalizes range-type attributes for downstream consumers.
-func (r *Range) Canonicalize() {
-	r.Name = strings.TrimSpace(r.Name)
-	r.Schema = strings.TrimSpace(r.Schema)
-	r.Subtype = strings.TrimSpace(r.Subtype)
-	r.Comment = strings.TrimSpace(r.Comment)
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (r Range) QualifiedName() string {
-	return QualifyTableName(r.Schema, r.Name)
 }
 
 // Function represents a PostgreSQL custom function definition parsed from Go struct annotations.

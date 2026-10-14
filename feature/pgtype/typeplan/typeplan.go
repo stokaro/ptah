@@ -22,6 +22,7 @@ import (
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/typeorder"
 	"ptah.run/internal/usertypescope"
 )
 
@@ -81,12 +82,13 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		problem.Kind = string(refused.changeKind)
 		return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Problem: problem, Change: new(refused.index)}}}, nil
 	}
-	steps := planChanges(changes)
+	steps := planChanges(changes, request.Types, request.CommonSteps)
 	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(changes))}
 	for i, planned := range changes {
 		result.Changes[i] = featureplan.ChangePlan{Subject: planned.subject, Kind: planned.changeKind, Strategy: planned.strategy(), Steps: planned.steps}
 	}
 	if contribution := steps.contribution(); len(contribution.Steps) > 0 {
+		contribution.Dependencies = append(contribution.Dependencies, commonDependencies(request.Types, request.CommonSteps, contribution.Steps)...)
 		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
 	}
 	return result, ctx.Err()
@@ -120,12 +122,13 @@ func (Service) PlanDeclarations(ctx context.Context, request featureplan.Declara
 		return featureplan.DeclarationResult{Complete: true,
 			Diagnostics: []featureplan.DeclarationDiagnostic{{Problem: problem, Object: new(refused.index)}}}, nil
 	}
-	steps := planDeclarations(changes)
+	steps := planDeclarations(changes, request.Types)
 	result := featureplan.DeclarationResult{Complete: true, Declarations: make([]featureplan.DeclarationPlan, len(changes))}
 	for i, planned := range changes {
 		result.Declarations[i] = featureplan.DeclarationPlan{Subject: planned.subject, Strategy: planned.strategy(), Steps: planned.steps}
 	}
 	if contribution := steps.contribution(); len(contribution.Steps) > 0 {
+		contribution.Dependencies = append(contribution.Dependencies, commonDependencies(featureplan.TypeContext{Desired: request.Types}, request.CommonSteps, contribution.Steps)...)
 		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
 	}
 	return result, ctx.Err()
@@ -198,22 +201,20 @@ func changeOf(index int, record schemaext.ChangeRecord) (*change, error) {
 	var (
 		valid    error
 		differs  []string
-		inPlace  []string
 		matching schemaext.Kind
 	)
 	switch value := record.Value.(type) {
 	case *pgtype.DomainChange:
-		valid, matching, differs, inPlace = value.Validate(), pgtype.DomainKind, value.Differs,
-			[]string{pgtype.DiffCheck, pgtype.DiffDefault, pgtype.DiffNotNull}
+		valid, matching, differs = value.Validate(), pgtype.DomainKind, value.Differs
+		planned.inPlace = !value.RebuildsType()
 		readDomain(planned, value)
 	case *pgtype.CompositeChange:
 		valid, matching, differs = value.Validate(), pgtype.CompositeKind, value.Differs
-		if len(value.Added) > 0 || len(value.Removed) > 0 {
-			inPlace = []string{pgtype.DiffAttributes}
-		}
+		planned.inPlace = !value.RebuildsType()
 		readComposite(planned, value)
 	case *pgtype.RangeChange:
 		valid, matching, differs = value.Validate(), pgtype.RangeKind, value.Differs
+		planned.inPlace = !value.RebuildsType()
 		readRange(planned, value)
 	default:
 		return nil, fmt.Errorf("%w: unexpected user type change %T", schemaext.ErrInvalidValue, record.Value)
@@ -225,15 +226,12 @@ func changeOf(index int, record schemaext.ChangeRecord) (*change, error) {
 		return nil, fmt.Errorf("%w: a %s change for %s", schemaext.ErrInvalidValue, matching, record.Subject)
 	}
 	planned.changeKind = record.Value.Kind()
-	planned.inPlace = true
 	for _, attribute := range differs {
-		switch {
-		case attribute == pgtype.DiffComment:
+		switch attribute {
+		case pgtype.DiffComment:
 			planned.commented = true
-		case slices.Contains(inPlace, attribute):
-			planned.changed = true
 		default:
-			planned.changed, planned.inPlace = true, false
+			planned.changed = true
 		}
 	}
 	return planned, nil
@@ -419,25 +417,25 @@ func (w windows) contribution() plangraph.Contribution[featureplan.Operation] {
 }
 
 // planChanges orders the steps of a batch of changes.
-func planChanges(changes []*change) windows {
-	markRebuilt(changes)
+func planChanges(changes []*change, types featureplan.TypeContext, common []featureplan.CommonStep) windows {
+	markRebuilt(changes, types.Current, common)
 	var plan windows
 	// The drops of rebuilt types run against the database as it stands, so
 	// they are ordered by what the current definitions name.
-	for _, planned := range dropOrder(changes) {
+	for _, planned := range dropOrder(changes, types.Current) {
 		plan.creation.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType, &pgtype.Drop{Target: pgtype.TargetOf(planned.subject)},
 			"Recreate modified "+pgtype.Label(planned.subject)+"; drop is non-CASCADE and fails if the "+rebuildNoun(planned)+" is in use"))
 	}
 	creations := slices.Concat(byKind(changes, func(c *change) bool { return !c.before }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind),
 		byKind(changes, func(c *change) bool { return c.rebuilt }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind))
-	for _, planned := range createOrder(creations) {
+	for _, planned := range createOrder(creations, types.Desired) {
 		addCreation(&plan.creation, planned)
 	}
 	for _, planned := range byKind(changes, func(c *change) bool { return c.survives() && c.changed && !c.rebuilt && c.alter != nil },
 		pgtype.DomainKind, pgtype.CompositeKind) {
 		plan.creation.add(planned, step(planned, "alter", plangraph.Alter, featureplan.PhaseType, planned.alter))
 	}
-	for _, planned := range byKind(changes, func(c *change) bool { return !c.after }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind) {
+	for _, planned := range removalOrder(byKind(changes, func(c *change) bool { return !c.after }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind), types.Current) {
 		plan.removal.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType,
 			&pgtype.Drop{Target: pgtype.TargetOf(planned.subject), Cascade: true},
 			"WARNING: Make sure no columns use this "+pgtype.Label(planned.subject)+"!"))
@@ -453,9 +451,9 @@ func planChanges(changes []*change) windows {
 }
 
 // planDeclarations orders the creation steps of declared types.
-func planDeclarations(changes []*change) windows {
+func planDeclarations(changes []*change, types []schemaext.DefinedType) windows {
 	var plan windows
-	for _, planned := range createOrder(byKind(changes, func(*change) bool { return true }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind)) {
+	for _, planned := range createOrder(byKind(changes, func(*change) bool { return true }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind), types) {
 		addCreation(&plan.creation, planned)
 	}
 	return plan
@@ -511,69 +509,66 @@ func byKind(changes []*change, keep func(*change) bool, kinds ...schemaext.Kind)
 	return selected
 }
 
-// markRebuilt decides which surviving types are dropped and created again:
-// the ones whose change has no in-place form, and, closed over the
-// references between them, the changed ones whose current definition names a
-// rebuilt type. The closure runs to a fixpoint because references chain: a
-// composite over a composite over a rebuilt domain is two steps from the
-// cause.
-func markRebuilt(changes []*change) {
-	rebuilt := make(map[string]bool)
+// markRebuilt closes replacement requirements across owned and common types.
+// Common effects supply replacement pairs without exposing their payloads.
+func markRebuilt(changes []*change, definitions []schemaext.DefinedType, common []featureplan.CommonStep) {
+	var changed, replacements []string
+	var selected []deporder.UserType
 	for _, planned := range changes {
-		if planned.survives() && planned.changed && !planned.inPlace {
-			rebuilt[bareTypeName(planned.name)] = true
+		selected = append(selected, deporder.UserType{Name: planned.name, References: planned.held})
+		if !planned.survives() || (!planned.changed && !planned.commented) {
+			continue
+		}
+		changed = append(changed, planned.name)
+		if !planned.inPlace {
+			replacements = append(replacements, planned.name)
 		}
 	}
-	for grew := true; grew; {
-		grew = false
-		for _, planned := range changes {
-			name := bareTypeName(planned.name)
-			if !planned.survives() || !planned.changed || rebuilt[name] ||
-				!slices.ContainsFunc(planned.held, func(spelling string) bool { return rebuilt[bareTypeName(spelling)] }) {
-				continue
+	created := make(map[objectidentity.Key]bool)
+	for _, step := range common {
+		for _, effect := range step.Effects {
+			if effect.Action == plangraph.Create {
+				created[effect.Subject.Key()] = true
 			}
-			rebuilt[name], grew = true, true
 		}
 	}
+	for _, step := range common {
+		for _, effect := range step.Effects {
+			if effect.Action == plangraph.Drop && created[effect.Subject.Key()] {
+				replacements = append(replacements, typeorder.Name(effect.Subject))
+			}
+		}
+	}
+	rebuilt := typeorder.RebuildNames(typeorder.Vocabulary(selected, definitions), changed, replacements)
 	for _, planned := range changes {
-		planned.rebuilt = planned.survives() && planned.changed && rebuilt[bareTypeName(planned.name)]
+		_, required := rebuilt[deporder.NormalizeTypeReference(planned.name)]
+		planned.rebuilt = planned.survives() && required
 	}
-}
-
-// bareTypeName reduces a type spelling to the name references are matched
-// on: lower-cased, unqualified, and without the array or length decoration a
-// catalog spelling may carry.
-func bareTypeName(name string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(name))
-	trimmed = strings.TrimSuffix(trimmed, "[]")
-	if open := strings.IndexByte(trimmed, '('); open >= 0 {
-		trimmed = trimmed[:open]
-	}
-	if dot := strings.LastIndexByte(trimmed, '.'); dot >= 0 {
-		trimmed = trimmed[dot+1:]
-	}
-	return strings.TrimSpace(strings.Trim(trimmed, `"`))
 }
 
 // dropOrder orders the rebuilt types for their drops: one that names another
 // first, by the definitions the database holds.
-func dropOrder(changes []*change) []*change {
+func dropOrder(changes []*change, definitions []schemaext.DefinedType) []*change {
 	rebuilt := byKind(changes, func(c *change) bool { return c.rebuilt }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind)
-	types := make([]deporder.UserType, 0, len(rebuilt))
-	for _, planned := range rebuilt {
+	return removalOrder(rebuilt, definitions)
+}
+
+func removalOrder(removals []*change, definitions []schemaext.DefinedType) []*change {
+	types := make([]deporder.UserType, 0, len(removals))
+	for _, planned := range removals {
 		types = append(types, deporder.UserType{Name: planned.name, References: planned.held})
 	}
-	return reorder(rebuilt, deporder.UserTypesForDrop(types))
+	return reorder(removals, deporder.UserTypesForDrop(typeorder.Vocabulary(types, definitions)))
 }
 
 // createOrder orders creations: one another names first, by the
 // declarations.
-func createOrder(creations []*change) []*change {
+func createOrder(creations []*change, definitions []schemaext.DefinedType) []*change {
 	types := make([]deporder.UserType, 0, len(creations))
 	for _, planned := range creations {
 		types = append(types, deporder.UserType{Name: planned.name, References: planned.declared})
 	}
-	return reorder(creations, deporder.UserTypesForCreate(types))
+	return reorder(creations, deporder.UserTypesForCreate(typeorder.Vocabulary(types, definitions)))
 }
 
 // reorder returns changes in the order names lists them. Two changes of one
@@ -590,4 +585,12 @@ func reorder(changes []*change, names []string) []*change {
 		delete(byName, name)
 	}
 	return ordered
+}
+
+func commonDependencies(types featureplan.TypeContext, common []featureplan.CommonStep, owned []plangraph.Step[featureplan.Operation]) []plangraph.Dependency {
+	steps := slices.Clone(common)
+	for _, step := range owned {
+		steps = append(steps, featureplan.CommonStep{ID: step.ID, Effects: step.Effects})
+	}
+	return typeorder.Dependencies(types.Current, types.Desired, steps)
 }

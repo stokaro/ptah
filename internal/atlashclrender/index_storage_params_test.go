@@ -60,7 +60,10 @@ func TestIndexStorageParams_SurviveTheHCLRoundTrip(t *testing.T) {
 			rendered, err := atlashclrender.Render(indexedSchema(test.params), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := atlashcl.Parse([]byte(string(rendered.Data)), "round-trip.hcl")
+			parsed, err := atlashcl.ParseWithOptions([]byte(string(rendered.Data)), "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Indexes, qt.HasLen, 1)
 			c.Assert(parsed.Indexes[0].StorageParams, qt.DeepEquals, test.params,
@@ -126,7 +129,10 @@ func TestIndexStorageParams_ADocumentIsRefusedWhenTheSwitchIsOff(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Contains, "storage_params")
 
 	t.Setenv(pgindexstorage.EnvVar, "false")
-	_, err = atlashcl.Parse(rendered.Data, "round-trip.hcl")
+	_, err = atlashcl.ParseWithOptions(rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*storage_params.*`)
 	c.Assert(err.Error(), qt.Contains, pgindexstorage.EnvVar)
@@ -140,7 +146,10 @@ func TestIndexStorageParams_TheSameDocumentLoadsWithTheSwitchOn(t *testing.T) {
 	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "round-trip.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"m": "32"})
@@ -157,7 +166,10 @@ func TestIndexStorageParams_ADocumentWithoutTheAttributeIsUnaffected(t *testing.
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "storage_params")
 
-	parsed, err := atlashcl.Parse(rendered.Data, "round-trip.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "32"})

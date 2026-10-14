@@ -49,19 +49,15 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 	email := schemamodel.Domain{Name: "email", Schema: "app", BaseType: "text", NotNull: true, Default: "it's", Check: "VALUE <> ''",
 		Comment: "mail"}
 	addr := schemamodel.CompositeType{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}, {Name: "zip", Type: "int"}}}
-	span := schemamodel.Range{Name: "span", Subtype: "numeric", SubtypeOpClass: "numeric_ops", Collation: "C", Canonical: "f",
-		SubtypeDiff: "g", Comment: "spans"}
 	attributes := []pgtype.Attribute{{Name: "street", Type: "text"}, {Name: "zip", Type: "int"}}
 	scenarios := []typeScenario{
 		{
 			name:   "creations",
-			common: &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{email}, CompositeTypesAdded: difftypes.CompositeTypeChanges{addr}, RangesAdded: difftypes.RangeChanges{span}},
+			common: &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{email}, CompositeTypesAdded: difftypes.CompositeTypeChanges{addr}},
 			owner: []schemaext.ChangeRecord{
 				typeRecord(pgtype.DomainKind, "app", "email", &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "text", NotNull: true,
 					Default: "it's", Check: "VALUE <> ''", Comment: "mail"}}),
 				typeRecord(pgtype.CompositeKind, "", "addr", &pgtype.CompositeChange{After: &pgtype.DesiredComposite{Attributes: attributes}}),
-				typeRecord(pgtype.RangeKind, "", "span", &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "numeric", SubtypeOpClass: "numeric_ops",
-					Collation: "C", Canonical: "f", SubtypeDiff: "g", Comment: "spans"}}),
 			},
 		},
 		{
@@ -80,12 +76,10 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 			common: &difftypes.SchemaDiff{
 				DomainsRemoved:        difftypes.DomainChanges{{Name: "email", Schema: "app", BaseType: "text"}},
 				CompositeTypesRemoved: difftypes.CompositeTypeChanges{addr},
-				RangesRemoved:         difftypes.RangeChanges{{Name: "span", Subtype: "numeric"}},
 			},
 			owner: []schemaext.ChangeRecord{
 				typeRecord(pgtype.DomainKind, "app", "email", &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "text"}}),
 				typeRecord(pgtype.CompositeKind, "", "addr", &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: attributes}}),
-				typeRecord(pgtype.RangeKind, "", "span", &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "numeric"}}),
 			},
 		},
 		{
@@ -118,8 +112,6 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 					Changes: map[string]string{"type": "varchar -> text"}, Desired: email}},
 				CompositeTypesModified: []difftypes.CompositeTypeDiff{{TypeName: "addr", Changes: map[string]string{"fields": "a -> b"},
 					CurrentFieldTypes: []string{"int", "text"}, Desired: addr}},
-				RangesModified: []difftypes.RangeDiff{{RangeName: "span", Changes: map[string]string{"subtype": "int4 -> numeric"},
-					CurrentSubtype: "int4", Desired: span}},
 			},
 			owner: []schemaext.ChangeRecord{
 				typeRecord(pgtype.DomainKind, "app", "email", &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "varchar"},
@@ -128,9 +120,6 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 				typeRecord(pgtype.CompositeKind, "", "addr", &pgtype.CompositeChange{
 					Before: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "zip", Type: "int"}, {Name: "street", Type: "text"}}},
 					After:  &pgtype.DesiredComposite{Attributes: attributes}, Differs: []string{pgtype.DiffAttributes}}),
-				typeRecord(pgtype.RangeKind, "", "span", &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"},
-					After: &pgtype.DesiredRange{Subtype: "numeric", SubtypeOpClass: "numeric_ops", Collation: "C", Canonical: "f", SubtypeDiff: "g",
-						Comment: "spans"}, Differs: []string{pgtype.DiffSubtype}}),
 			},
 		},
 		{
@@ -156,15 +145,12 @@ func TestPlanner_PlansOwnerTypesAsTheCommonPathDoes(t *testing.T) {
 			common: &difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{
 				{Kind: difftypes.CommentedCompositeType, Name: "addr", Current: "old", Desired: "addresses"},
 				{Kind: difftypes.CommentedDomain, Name: "app.email", Current: "old", Desired: "mail"},
-				{Kind: difftypes.CommentedRangeType, Name: "span", Current: "old"},
 			}},
 			owner: []schemaext.ChangeRecord{
 				typeRecord(pgtype.DomainKind, "app", "email", &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "text", Comment: "old"},
 					After: &pgtype.DesiredDomain{BaseType: "text", Comment: "mail"}, Differs: []string{pgtype.DiffComment}}),
 				typeRecord(pgtype.CompositeKind, "", "addr", &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: attributes, Comment: "old"},
 					After: &pgtype.DesiredComposite{Attributes: attributes, Comment: "addresses"}, Differs: []string{pgtype.DiffComment}}),
-				typeRecord(pgtype.RangeKind, "", "span", &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "numeric", Comment: "old"},
-					After: &pgtype.DesiredRange{Subtype: "numeric"}, Differs: []string{pgtype.DiffComment}}),
 			},
 		},
 	}

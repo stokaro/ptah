@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/core/selectext"
@@ -172,7 +173,7 @@ func PlaceCompositePart(ctx context.Context, selections selectext.Set, part *sch
 //
 // The families a schema scope filters are judged by that filter, so what lies
 // "in" a schema is decided in one place for both. The type families it keeps
-// whole are checked here by their own Schema field.
+// whole are checked here by their declared identity.
 func checkCompositePlacement(ctx context.Context, selections selectext.Set, part *schemamodel.Database, schema, defaultSchema string) error {
 	inScope, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, part, []string{schema}, defaultSchema)
 	if err != nil {
@@ -232,11 +233,11 @@ func checkTypePlacement(part *schemamodel.Database, schema, defaultSchema string
 	for _, composite := range part.CompositeTypes {
 		objects = append(objects, declared{"composite type", composite.Name, composite.Schema})
 	}
-	for _, rangeType := range part.Ranges {
-		objects = append(objects, declared{"range type", rangeType.Name, rangeType.Schema})
-	}
 	for _, sequence := range part.Sequences {
 		objects = append(objects, declared{"sequence", sequence.Name, sequence.Schema})
+	}
+	for _, defined := range schemaext.DefinedTypes(part.FeatureObjects) {
+		objects = append(objects, declared{string(defined.ID.Kind), defined.ID.Name.Source, defined.ID.Schema.Authored()})
 	}
 	for _, object := range objects {
 		if effectiveSchema(object.schema, defaultSchema) != schema {

@@ -101,7 +101,6 @@ var convertedFamilies = map[string]string{
 	"Sequences":   "Sequences",
 	"Domains":     "Domains",
 	"Composites":  "CompositeTypes",
-	"Ranges":      "Ranges",
 	"Views":       "Views",
 	"MatViews":    "MaterializedViews",
 	"Triggers":    "Triggers",

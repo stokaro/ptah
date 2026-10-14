@@ -97,7 +97,6 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		Sequences:   toDBSequences(db.Sequences),
 		Domains:     toDBDomains(db.Domains),
 		Composites:  toDBCompositeTypes(db.CompositeTypes),
-		Ranges:      toDBRanges(db.Ranges),
 		Views:       toDBViews(db.Views),
 		MatViews:    toDBMaterializedViews(db.MaterializedViews),
 		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
@@ -750,31 +749,6 @@ func toDBCompositeTypes(composites []schemamodel.CompositeType) []catalog.Compos
 			Schema:  composite.Schema,
 			Fields:  fields,
 			Comment: composite.Comment,
-		})
-	}
-	return out
-}
-
-func toDBRanges(ranges []schemamodel.Range) []catalog.Range {
-	out := make([]catalog.Range, 0, len(ranges))
-	for _, rangeType := range ranges {
-		out = append(out, catalog.Range{
-			Facets:  rangeType.Facets,
-			Name:    rangeType.Name,
-			Schema:  rangeType.Schema,
-			Subtype: rangeType.Subtype,
-			// The four attributes beside the subtype are carried for the
-			// reason dbschematogo's convertUserTypes gives in the other
-			// direction (stokaro/ptah#2200): a declaration used as the
-			// current side of a comparison, as `schema diff --from file`
-			// uses it, otherwise reads as a range without them, and a
-			// file compared with itself planned a DROP and a CREATE of
-			// every range that names one.
-			SubtypeOpClass: rangeType.SubtypeOpClass,
-			Collation:      rangeType.Collation,
-			Canonical:      rangeType.Canonical,
-			SubtypeDiff:    rangeType.SubtypeDiff,
-			Comment:        rangeType.Comment,
 		})
 	}
 	return out

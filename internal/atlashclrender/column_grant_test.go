@@ -24,7 +24,10 @@ func TestRenderedColumnGrantRoundTrips(t *testing.T) {
 	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
-	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Grants, qt.HasLen, 1)
@@ -39,7 +42,10 @@ func TestParseColumnGrant_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	document := "schema \"app\" {}\n\npermission {\n  to = \"r\"\n  for = schema.app\n  privileges = [\"USAGE\"]\n  columns = [\"a\"]\n}\n"
 
-	parsed, err := atlashcl.Parse([]byte(document), "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*permission columns need a table target: column privileges apply to a table.*`)
 	c.Assert(parsed, qt.IsNil)

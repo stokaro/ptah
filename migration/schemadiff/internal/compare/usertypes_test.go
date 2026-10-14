@@ -188,17 +188,3 @@ func TestUserTypes_CurrentShapeKeepsTheCatalogSpelling(t *testing.T) {
 	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesModified[0].CurrentFieldTypes, qt.DeepEquals, []string{"decimal"})
 }
-
-func TestRanges_AddRemoveByNameOnly(t *testing.T) {
-	c := qt.New(t)
-
-	desired := &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "floatrange", Subtype: "float8"}}}
-	// Subtype spelling differs (float8 vs double precision) but ranges compare by name only.
-	database := &catalog.Database{Ranges: []catalog.Range{{Name: "floatrange", Subtype: "double precision"}, {Name: "legacy", Subtype: "integer"}}}
-	diff := &difftypes.SchemaDiff{}
-
-	compare.Ranges(desired, database, diff, compare.CoverageOf(desired, database))
-
-	c.Assert(diff.RangesAdded, qt.IsNil)
-	c.Assert(diff.RangesRemoved.Names(), qt.DeepEquals, []string{"legacy"})
-}

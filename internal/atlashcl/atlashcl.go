@@ -473,7 +473,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"sequence":     (*parser).parseSequence,
 	"domain":       (*parser).parseDomain,
 	"composite":    (*parser).parseComposite,
-	"range":        (*parser).parseRange,
 	"table":        (*parser).parseTable,
 	"function":     (*parser).parseFunction,
 	"procedure":    (*parser).parseProcedure,
@@ -2405,7 +2404,6 @@ var ownTypeBlocks = []hclext.Block{
 	{Site: hclext.TopLevel, Type: "enum", Naming: hclext.SchemaAndName, DeclaresType: true},
 	{Site: hclext.TopLevel, Type: "domain", Naming: hclext.SchemaAndName, DeclaresType: true},
 	{Site: hclext.TopLevel, Type: "composite", Naming: hclext.SchemaAndName, DeclaresType: true},
-	{Site: hclext.TopLevel, Type: "range", Naming: hclext.SchemaAndName, DeclaresType: true},
 }
 
 // declaresType reports whether the labels of a top-level block of type block

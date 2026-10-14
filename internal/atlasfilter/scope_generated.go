@@ -133,8 +133,6 @@ func (s *scopeSelection) projectGeneratedSupport(db, out *schemamodel.Database) 
 		func(d schemamodel.Domain) (string, string) { return d.Schema, d.Name })
 	out.CompositeTypes = keepTypeObjects(s, db.CompositeTypes, "composite_type", referenced,
 		func(c schemamodel.CompositeType) (string, string) { return c.Schema, c.Name })
-	out.Ranges = keepTypeObjects(s, db.Ranges, "range", referenced,
-		func(r schemamodel.Range) (string, string) { return r.Schema, r.Name })
 }
 
 // keepEnumObjects keeps enums that are either selected by the scope or
@@ -238,9 +236,6 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, sup
 	}
 	for _, composite := range out.CompositeTypes {
 		owning[s.effectiveSchema(composite.Schema)] = struct{}{}
-	}
-	for _, item := range out.Ranges {
-		owning[s.effectiveSchema(item.Schema)] = struct{}{}
 	}
 	for _, view := range out.Views {
 		schema, _ := splitQualified(view.Name)

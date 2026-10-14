@@ -119,7 +119,7 @@ const (
 // sorted order. An owner's kinds join it through a [Vocabulary].
 var kinds = []Kind{
 	Composite, Domain,
-	Extension, Grant, Policy, Range,
+	Extension, Grant, Policy,
 	Role, Schema, Sequence,
 	View,
 }

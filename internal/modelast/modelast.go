@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/typeorder"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -1196,29 +1197,6 @@ func FromCompositeType(composite schemamodel.CompositeType) *ast.CreateTypeNode 
 	return node
 }
 
-// FromRange converts a schemamodel.Range into a CreateTypeNode wrapping a range
-// type definition.
-func FromRange(rangeType schemamodel.Range) *ast.CreateTypeNode {
-	rangeDef := ast.NewRangeTypeDef(rangeType.Subtype)
-	if rangeType.SubtypeOpClass != "" {
-		rangeDef.SetSubtypeOpClass(rangeType.SubtypeOpClass)
-	}
-	if rangeType.Collation != "" {
-		rangeDef.SetCollation(rangeType.Collation)
-	}
-	if rangeType.Canonical != "" {
-		rangeDef.SetCanonical(rangeType.Canonical)
-	}
-	if rangeType.SubtypeDiff != "" {
-		rangeDef.SetSubtypeDiff(rangeType.SubtypeDiff)
-	}
-	node := ast.NewCreateType(qualifyTypeName(rangeType.Schema, rangeType.Name), rangeDef)
-	if rangeType.Comment != "" {
-		node.SetComment(rangeType.Comment)
-	}
-	return node
-}
-
 // FromFunction converts a schemamodel.Function to an ast.CreateFunctionNode.
 //
 // This function creates a PostgreSQL function definition from the parsed function metadata.
@@ -1740,13 +1718,12 @@ func WalkDatabase(
 }
 
 // walkCommonDatabase visits the statements that create database, in creation
-// order. typeWindow, when it is not nil, is called once, where the statements
-// that create a type an owner defines belong: after the enums and the common
-// user types, before the routines whose signatures name a type and the
-// tables.
+// order. typeWindow marks the start and end of the common type statements,
+// after enums and before routines whose signatures name a type and tables.
+// Owned type steps share this span and order by their captured references.
 func walkCommonDatabase(
 	database schemamodel.Database, targetPlatform string, names grantName, resolves deporder.BodyResolution, visit func(ast.Node) error,
-	typeWindow func(),
+	typeWindow func(start bool),
 ) error {
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
@@ -1833,7 +1810,7 @@ func appendPreTableStatements(
 	database schemamodel.Database,
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
-	typeWindow func(),
+	typeWindow func(start bool),
 ) error {
 	// Schemas come first because tables and extension installation clauses may
 	// reference them.
@@ -1879,13 +1856,16 @@ func appendPreTableStatements(
 
 	// User-defined types precede tables and are ordered by their references,
 	// rather than by kind. Enums are already out and reference nothing.
+	if typeWindow != nil {
+		typeWindow(true)
+	}
 	if err := visitDatabaseNodes(visit, orderedUserTypeStatements(database)...); err != nil {
 		return err
 	}
 	// The types an owner defines are created here, where the common ones
 	// are, and the routines that name a type follow them all.
 	if typeWindow != nil {
-		typeWindow()
+		typeWindow(false)
 	}
 	return appendRoutineStatements(visit, database, placements, deporder.RoutineAfterTypes)
 }
@@ -1930,17 +1910,13 @@ func visitDatabaseNodes(visit func(ast.Node) error, nodes ...ast.Node) error {
 // whole has to hold it too, or `ptah generate` writes a script that stops at
 // `ERROR: type "addr" does not exist`.
 func orderedUserTypeStatements(database schemamodel.Database) []ast.Node {
-	total := len(database.Domains) + len(database.Ranges) + len(database.CompositeTypes)
+	total := len(database.Domains) + len(database.CompositeTypes)
 	byName := make(map[string]ast.Node, total)
 	userTypes := make([]deporder.UserType, 0, total)
 
 	for _, domain := range database.Domains {
 		byName[domain.QualifiedName()] = FromDomain(domain)
 		userTypes = append(userTypes, deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}})
-	}
-	for _, rangeType := range database.Ranges {
-		byName[rangeType.QualifiedName()] = FromRange(rangeType)
-		userTypes = append(userTypes, deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}})
 	}
 	for _, composite := range database.CompositeTypes {
 		references := make([]string, 0, len(composite.Fields))
@@ -1952,7 +1928,7 @@ func orderedUserTypeStatements(database schemamodel.Database) []ast.Node {
 	}
 
 	nodes := make([]ast.Node, 0, len(userTypes))
-	for _, name := range deporder.UserTypesForCreate(userTypes) {
+	for _, name := range deporder.UserTypesForCreate(typeorder.Vocabulary(userTypes, schemaext.DefinedTypes(database.FeatureObjects))) {
 		if node, ok := byName[name]; ok {
 			nodes = append(nodes, node)
 		}
@@ -2378,9 +2354,6 @@ func declaredRoutinePlacements(
 	}
 	for _, composite := range database.CompositeTypes {
 		created.Types = append(created.Types, composite.QualifiedName())
-	}
-	for _, rangeType := range database.Ranges {
-		created.Types = append(created.Types, rangeType.QualifiedName())
 	}
 	for _, table := range database.Tables {
 		created.Relations = append(created.Relations, table.QualifiedName())

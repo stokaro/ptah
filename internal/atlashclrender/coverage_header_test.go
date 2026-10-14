@@ -57,6 +57,7 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 				"// ptah:not-described extension reason=suppressed provenance=defaulted",
 				"// ptah:not-described policy reason=suppressed provenance=defaulted",
 				"// ptah:not-described sequence reason=suppressed provenance=defaulted",
+				"// ptah:not-described range",
 			})
 		})
 	}
@@ -90,7 +91,7 @@ func TestNativeRenderDeclaresNoCommonLimits(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
-			c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
+			c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{"// ptah:not-described range"})
 		})
 	}
 }
@@ -104,7 +105,7 @@ func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
-	c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
+	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{"// ptah:not-described range"})
 }
 
 // TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser is the
@@ -202,6 +203,7 @@ func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{
 		`// ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,
 		"// ptah:not-described role reason=not-inspected provenance=observed",
+		"// ptah:not-described range",
 	})
 	c.Assert(result.NotDescribed.Directives(), qt.DeepEquals, []string{
 		`ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,

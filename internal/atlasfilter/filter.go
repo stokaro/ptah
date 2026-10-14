@@ -129,7 +129,6 @@ func excludeDatabase(
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
 	filtered.Domains = state.filterDomains(filtered.Domains)
 	filtered.Composites = state.filterComposites(filtered.Composites)
-	filtered.Ranges = state.filterRanges(filtered.Ranges)
 	filtered.Indexes = state.filterIndexes(filtered.Indexes)
 	filtered.Constraints = state.filterConstraints(filtered.Constraints)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
@@ -254,7 +253,6 @@ func excludeGenerated(
 	filtered.Sequences = state.filterGeneratedSequences(filtered.Sequences)
 	filtered.Domains = state.filterGeneratedDomains(filtered.Domains)
 	filtered.CompositeTypes = state.filterGeneratedCompositeTypes(filtered.CompositeTypes)
-	filtered.Ranges = state.filterGeneratedRanges(filtered.Ranges)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
 		return nil, ExcludeReport{}, err
@@ -1007,13 +1005,6 @@ func (s *exclusionState) filterComposites(composites []catalog.CompositeType) []
 	})
 }
 
-func (s *exclusionState) filterRanges(ranges []catalog.Range) []catalog.Range {
-	return keep(ranges, func(value catalog.Range) bool {
-		named := s.matches("range", s.nameCandidates(value.Schema, value.Name)...)
-		return !named && !s.schemaExcluded(value.Schema)
-	})
-}
-
 // noteRolesOutOfScope asks the patterns about the cluster roles this
 // description deliberately does not define.
 //
@@ -1389,13 +1380,6 @@ func (s *exclusionState) filterGeneratedCompositeTypes(types []schemamodel.Compo
 	})
 }
 
-func (s *exclusionState) filterGeneratedRanges(ranges []schemamodel.Range) []schemamodel.Range {
-	return keep(ranges, func(value schemamodel.Range) bool {
-		named := s.matches("range", s.nameCandidates(value.Schema, value.Name)...)
-		return !named && !s.schemaExcluded(value.Schema)
-	})
-}
-
 func (s *exclusionState) filterGeneratedFunctions(functions []schemamodel.Function) []schemamodel.Function {
 	return keep(functions, func(function schemamodel.Function) bool {
 		named := s.matches("function", s.qualifiedNameCandidatesFor(function.Name)...)
@@ -1703,7 +1687,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Sequences:       slices.Clone(schema.Sequences),
 		Domains:         slices.Clone(schema.Domains),
 		Composites:      slices.Clone(schema.Composites),
-		Ranges:          slices.Clone(schema.Ranges),
 		Views:           slices.Clone(schema.Views),
 		MatViews:        slices.Clone(schema.MatViews),
 		Triggers:        slices.Clone(schema.Triggers),
@@ -1752,7 +1735,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Sequences = slices.Clone(schema.Sequences)
 	filtered.Domains = slices.Clone(schema.Domains)
 	filtered.CompositeTypes = slices.Clone(schema.CompositeTypes)
-	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

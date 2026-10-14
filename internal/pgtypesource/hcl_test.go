@@ -33,14 +33,13 @@ func declared(kind schemaext.Kind, schema, name string, value schemaext.Value) s
 // TestHCL_WritesTypesAsTheCommonModelDoes renders each type twice through the
 // runtime a command builds, once from the common model and once as the type
 // owner's object, and gets the same bytes: every attribute of each kind, the
-// space the common model trims, a default schema, cleared range attributes,
-// and the order of several types of every kind in one document.
+// space the common model trims, a default schema,
+// and the order of several domains and composites in one document.
 func TestHCL_WritesTypesAsTheCommonModelDoes(t *testing.T) {
 	tests := []struct {
 		name       string
 		domains    []schemamodel.Domain
 		composites []schemamodel.CompositeType
-		ranges     []schemamodel.Range
 		objects    []schemaext.Object
 		opening    string
 	}{
@@ -64,25 +63,11 @@ func TestHCL_WritesTypesAsTheCommonModelDoes(t *testing.T) {
 			objects: []schemaext.Object{declared(pgtype.CompositeKind, "app", "addr", &pgtype.DesiredComposite{Comment: " where ",
 				Attributes: []pgtype.Attribute{{Name: "zip", Type: "character varying(10)"}, {Name: "street", Type: "text"}}})},
 			opening: `composite "addr" {`},
-		{name: "a range with every attribute",
-			ranges: []schemamodel.Range{{Schema: "app", Name: "span", Subtype: " int4 ", SubtypeOpClass: "int4_ops", Collation: "C",
-				Canonical: "span_canonical", SubtypeDiff: "span_diff", Comment: "spans"}},
-			objects: []schemaext.Object{declared(pgtype.RangeKind, "app", "span", &pgtype.DesiredRange{Subtype: " int4 ", SubtypeOpClass: "int4_ops",
-				Collation: "C", Canonical: "span_canonical", SubtypeDiff: "span_diff", Comment: "spans"})},
-			opening: `range "span" {`},
-		{name: "a range that clears attributes",
-			ranges: []schemamodel.Range{{Name: "span", Subtype: "numeric", Canonical: "span_canonical",
-				ClearedAttributes: []string{pgtype.RangeSubtypeDiff, pgtype.RangeCollation}}},
-			objects: []schemaext.Object{declared(pgtype.RangeKind, "", "span", &pgtype.DesiredRange{Subtype: "numeric", Canonical: "span_canonical",
-				Cleared: []string{pgtype.RangeSubtypeDiff, pgtype.RangeCollation}})},
-			opening: `range "span" {`},
-		{name: "several types of every kind",
+		{name: "several domains and composites",
 			domains: []schemamodel.Domain{{Schema: "app", Name: "b", BaseType: "int4"}, {Name: "a", BaseType: "int4"}},
 			composites: []schemamodel.CompositeType{{Schema: "app", Name: "c", Fields: []schemamodel.CompositeField{{Name: "f", Type: "int4"}}},
 				{Schema: "other", Name: "a", Fields: []schemamodel.CompositeField{{Name: "f", Type: "int4"}}}},
-			ranges: []schemamodel.Range{{Schema: "app", Name: "r", Subtype: "int4"}},
 			objects: []schemaext.Object{
-				declared(pgtype.RangeKind, "app", "r", &pgtype.DesiredRange{Subtype: "int4"}),
 				declared(pgtype.DomainKind, "app", "b", &pgtype.DesiredDomain{BaseType: "int4"}),
 				declared(pgtype.CompositeKind, "other", "a", &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "f", Type: "int4"}}}),
 				declared(pgtype.DomainKind, "", "a", &pgtype.DesiredDomain{BaseType: "int4"}),
@@ -94,7 +79,7 @@ func TestHCL_WritesTypesAsTheCommonModelDoes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			common := owned()
-			common.Domains, common.CompositeTypes, common.Ranges = test.domains, test.composites, test.ranges
+			common.Domains, common.CompositeTypes = test.domains, test.composites
 			options := atlashclrender.Options{HCL: builtintest.Runtime().HCL()}
 
 			fromCommon, commonErr := atlashclrender.Render(common, options)

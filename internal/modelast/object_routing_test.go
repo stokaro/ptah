@@ -32,7 +32,7 @@ type routedKind struct {
 
 var routedKinds = []routedKind{
 	{name: "sequence", want: 1, count: countNodes[*ast.CreateSequenceNode]},
-	{name: "user type", want: 3, count: countNodes[*ast.CreateTypeNode]},
+	{name: "user type", want: 2, count: countNodes[*ast.CreateTypeNode]},
 	{name: "role", want: 1, count: countNodes[*ast.CreateRoleNode]},
 	{name: "table", want: 1, count: countNodes[*ast.CreateTableNode]},
 	{name: "function", want: 1, count: countNodes[*ast.CreateFunctionNode]},
@@ -55,9 +55,9 @@ func countNodes[T ast.Node](statements []ast.Node) int {
 	return found
 }
 
-// routingFixture declares one object of every kind in routedKinds. The three
-// user types are a domain, a composite and a range, which share one CREATE TYPE
-// node kind and one ordering pass.
+// routingFixture declares one object of every common kind in routedKinds.
+// Domains and composite types share the CREATE TYPE node. Owner types use the
+// feature lowering contract, whose fixtures select a runtime.
 //
 // Enums are deliberately absent. Four engines model an enum on the column
 // instead of as a standalone type, so the enum node count legitimately differs
@@ -69,7 +69,6 @@ func routingFixture() schemamodel.Database {
 		Sequences:      []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
 		Domains:        []schemamodel.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
 		CompositeTypes: []schemamodel.CompositeType{{Name: "composite_probe", Fields: []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}}}},
-		Ranges:         []schemamodel.Range{{Name: "range_probe", Subtype: "float8"}},
 		Roles:          []schemamodel.Role{{Name: "role_probe", Login: true, Inherit: true}},
 		Tables:         []schemamodel.Table{{StructName: "T", Name: "table_probe"}},
 		Fields: []schemamodel.Field{

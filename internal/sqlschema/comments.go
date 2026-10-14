@@ -174,10 +174,6 @@ func typeCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatf
 			targets = append(targets, &database.CompositeTypes[i].Comment)
 			names = append(names, database.CompositeTypes[i].QualifiedName())
 		}
-		for i := range database.Ranges {
-			targets = append(targets, &database.Ranges[i].Comment)
-			names = append(names, database.Ranges[i].QualifiedName())
-		}
 		for i := range database.Enums {
 			targets = append(targets, &database.Enums[i].Comment)
 			names = append(names, database.Enums[i].QualifiedName())

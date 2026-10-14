@@ -27,9 +27,4 @@ func TestFromSchemaObjects_PreservesReferenceIdentity(t *testing.T) {
 		qt.Equals,
 		`"tenant.data"`,
 	)
-	c.Assert(
-		modelast.FromRange(schemamodel.Range{Name: "tenant.data", Subtype: "integer"}).Name,
-		qt.Equals,
-		`"tenant.data"`,
-	)
 }

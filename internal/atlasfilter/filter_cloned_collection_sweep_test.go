@@ -110,14 +110,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "Ranges", present: "intrange", absent: "nosuch_range",
-			seed: func(s *catalog.Database) {
-				s.Ranges = append(s.Ranges, catalog.Range{
-					Name: "intrange", Subtype: "integer",
-				})
-			},
-		},
-		{
 			field: "Views", present: "v_users", absent: "nosuch_view",
 			seed: func(s *catalog.Database) {
 				s.Views = append(s.Views, catalog.View{Name: "v_users"})

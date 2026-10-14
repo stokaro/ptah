@@ -119,7 +119,10 @@ func TestRenderInspected_AProcedureSurvivesItsOwnDescription(t *testing.T) {
 			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
-			reparsed, err := atlashcl.Parse(result.Data, "schema.hcl")
+			reparsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(reparsed.Functions, qt.HasLen, 1)

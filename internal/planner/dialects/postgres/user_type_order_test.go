@@ -7,8 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -64,10 +66,7 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 		// The subtypes travel WITH the change; the ordering this test is about
 		// is computed from them, and the planner does not read them back out of
 		// the schema by name.
-		RangesAdded: difftypes.RangeChanges{
-			{Name: "myrange", Subtype: "integer"},
-			{Name: "posrange", Subtype: "d_int"},
-		},
+		FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "myrange"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "integer"}}}, {Subject: pgtype.Ref(pgtype.RangeKind, "", "posrange"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "d_int"}}}},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(

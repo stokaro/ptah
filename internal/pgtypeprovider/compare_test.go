@@ -274,7 +274,6 @@ func TestProvider_MapsTheTypeCoverageKinds(t *testing.T) {
 		{name: "a record naming the domain qualified", held: domain, limited: []coverage.Object{{Kind: coverage.Domain, Name: "public.t"}}},
 		{name: "a record naming the domain bare", held: domain, limited: []coverage.Object{{Kind: coverage.Domain, Name: "t"}}},
 		{name: "a record naming composite types", held: composite, limited: []coverage.Object{coverage.Refused(coverage.Composite)}},
-		{name: "a record naming range types", held: span, limited: []coverage.Object{coverage.Refused(coverage.Range)}},
 		{name: "control: a record naming another domain", held: domain, limited: []coverage.Object{{Kind: coverage.Domain, Name: "u"}}, changes: 1},
 		{name: "control: a record naming another kind", held: span, limited: []coverage.Object{coverage.Refused(coverage.Domain)}, changes: 1},
 	}

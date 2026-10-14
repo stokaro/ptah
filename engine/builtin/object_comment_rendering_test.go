@@ -8,12 +8,14 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 )
 
 // objectCommentSchema declares one object of every kind whose comment is a
@@ -30,8 +32,7 @@ func objectCommentSchema() *schemamodel.Database {
 		CompositeTypes: []schemamodel.CompositeType{{
 			Name: "point2", Fields: []schemamodel.CompositeField{{Name: "x", Type: "integer"}}, Comment: "composite note",
 		}},
-		Ranges:          []schemamodel.Range{{Name: "span", Subtype: "integer", Comment: "range note"}},
-		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("hstore"), pgextension.DesiredExtension{Comment: "extension note"})))),
+		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.DesiredRange{Subtype: "integer", Comment: "range note"}, Targets: []string{"postgres"}}, must.Must(pgextension.DesiredObject(pgextension.Ref("hstore"), pgextension.DesiredExtension{Comment: "extension note"})))),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 	}
 }
@@ -58,7 +59,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_ObjectComments(t *testing.
 		name          string
 		dialect       string
 		caps          capability.Capabilities
-		ranges        []schemamodel.Range
 		wantComments  []string
 		wantOmissions []string
 	}{
@@ -66,7 +66,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_ObjectComments(t *testing.
 			name:    "PostgreSQL stores every one",
 			dialect: platform.Postgres,
 			caps:    capability.Postgres18(),
-			ranges:  objectCommentSchema().Ranges,
 			// The omission list is empty rather than absent when nothing
 			// was left out.
 			wantOmissions: make([]string, 0),
@@ -74,8 +73,8 @@ func TestGetOrderedCreateStatementsReportingOmissions_ObjectComments(t *testing.
 				`COMMENT ON EXTENSION "hstore" IS 'extension note';`,
 				`COMMENT ON SEQUENCE "ticket" IS 'sequence note';`,
 				`COMMENT ON DOMAIN "positive" IS 'domain note';`,
-				`COMMENT ON TYPE "span" IS 'range note';`,
 				`COMMENT ON TYPE "point2" IS 'composite note';`,
+				`COMMENT ON TYPE "span" IS 'range note';`,
 				`COMMENT ON VIEW "recent" IS 'view note';`,
 			},
 		},
@@ -100,14 +99,15 @@ func TestGetOrderedCreateStatementsReportingOmissions_ObjectComments(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			schema := objectCommentSchema()
-			// CockroachDB has no range type, and a declaration it cannot
-			// host is refused before anything renders.
-			schema.Ranges = test.ranges
+			// Apply the declaration scope before lowering for the selected target.
+			schema.FeatureObjects = schema.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+				return ref.Kind != objectidentity.Kind(pgtype.RangeKind) || test.dialect == platform.Postgres
+			})
 
 			statements, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(schema, test.dialect, test.caps)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(commentLines(statements), qt.DeepEquals, test.wantComments)
+			c.Assert(commentLines(statements), qt.ContentEquals, test.wantComments)
 			c.Assert(omissionSubjects(c, omissions), qt.DeepEquals, test.wantOmissions)
 			c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "-- view note")
 		})

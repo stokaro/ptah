@@ -6,10 +6,13 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 )
 
 func TestMerge_RejectsEveryConflictingNamedObject(t *testing.T) {
@@ -135,9 +138,9 @@ func TestMerge_RejectsEveryConflictingNamedObject(t *testing.T) {
 		},
 		{
 			name:    "range",
-			first:   &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "amount_range", Subtype: "numeric"}}},
-			second:  &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "amount_range", Subtype: "bigint"}}},
-			wantErr: `conflicting range "amount_range" definitions`,
+			first:   &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "amount_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))},
+			second:  &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "amount_range"), Value: &pgtype.DesiredRange{Subtype: "bigint"}}))},
+			wantErr: `.*conflicting range definitions.*`,
 		},
 		{
 			name:    "view",
@@ -226,7 +229,7 @@ func TestMerge_DeduplicatesEveryIdenticalNamedObject(t *testing.T) {
 		Sequences:         []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 		Domains:           []schemamodel.Domain{{Name: "email", BaseType: "TEXT"}},
 		CompositeTypes:    []schemamodel.CompositeType{{Name: "address", Fields: []schemamodel.CompositeField{{Name: "city", Type: "TEXT"}}}},
-		Ranges:            []schemamodel.Range{{Name: "amount_range", Subtype: "numeric"}},
+		FeatureObjects:    must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "amount_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
 		Views:             []schemamodel.View{{Name: "active_users", Body: "SELECT id FROM users"}},
 		MaterializedViews: []schemamodel.MaterializedView{{Name: "user_stats", Body: "SELECT count(*) FROM users"}},
 		Triggers:          []schemamodel.Trigger{{Name: "set_updated_at", Table: "users", Timing: "BEFORE", Event: "UPDATE", Body: "RETURN NEW"}},
@@ -253,7 +256,7 @@ func TestMerge_DeduplicatesEveryIdenticalNamedObject(t *testing.T) {
 	c.Assert(merged.Sequences, qt.HasLen, 1)
 	c.Assert(merged.Domains, qt.HasLen, 1)
 	c.Assert(merged.CompositeTypes, qt.HasLen, 1)
-	c.Assert(merged.Ranges, qt.HasLen, 1)
+	c.Assert(merged.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(merged.Views, qt.HasLen, 1)
 	c.Assert(merged.MaterializedViews, qt.HasLen, 1)
 	c.Assert(merged.Triggers, qt.HasLen, 1)

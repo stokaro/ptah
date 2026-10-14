@@ -9,8 +9,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/schemaprep"
 )
@@ -53,9 +55,7 @@ func declareShadowingComposite(database *schemamodel.Database) {
 }
 
 func declareShadowingRange(database *schemamodel.Database) {
-	database.Ranges = []schemamodel.Range{{
-		Name: "numrange", Schema: "advr", Subtype: "numeric",
-	}}
+	database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "advr", "numrange"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))
 }
 
 func declareShadowingEnum(database *schemamodel.Database) {
@@ -217,9 +217,7 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 			name:       "a range, array",
 			columnType: "numrng[]",
 			declare: func(database *schemamodel.Database) {
-				database.Ranges = []schemamodel.Range{{
-					Name: "numrng", Schema: "advr", Subtype: "numeric",
-				}}
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "advr", "numrng"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))
 			},
 			want: "advr.numrng[]",
 		},

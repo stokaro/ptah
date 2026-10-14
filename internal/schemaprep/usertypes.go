@@ -14,7 +14,6 @@ import (
 type DeclaredUserTypes struct {
 	Domains        []schemamodel.Domain
 	CompositeTypes []schemamodel.CompositeType
-	Ranges         []schemamodel.Range
 	Enums          []schemamodel.Enum
 	// Defined are the types feature owners' objects define, which a column
 	// names as it names a common domain, composite type or range type.
@@ -37,7 +36,6 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 	clone.Fields = QualifyFieldUserTypes(database.Fields, DeclaredUserTypes{
 		Domains:        database.Domains,
 		CompositeTypes: database.CompositeTypes,
-		Ranges:         database.Ranges,
 		Enums:          database.Enums,
 		Defined:        schemaext.DefinedTypes(database.FeatureObjects),
 	}, targetPlatform)
@@ -89,9 +87,6 @@ func declaredUserTypeQualifiers(
 	}
 	for _, composite := range declared.CompositeTypes {
 		declare(base, composite.Name, composite.Schema, composite.QualifiedName())
-	}
-	for _, rangeType := range declared.Ranges {
-		declare(base, rangeType.Name, rangeType.Schema, rangeType.QualifiedName())
 	}
 	for _, defined := range declared.Defined {
 		schema, name := defined.ID.Schema.Authored(), defined.ID.Name.Source

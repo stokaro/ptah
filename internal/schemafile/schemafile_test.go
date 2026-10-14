@@ -10,11 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
@@ -66,11 +68,6 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 			Schema: "app",
 			Fields: []schemamodel.CompositeField{{Name: "city", Type: "text"}},
 		}},
-		Ranges: []schemamodel.Range{{
-			Name:    "price_range",
-			Schema:  "app",
-			Subtype: "numeric",
-		}},
 		ManagedData: []schemamodel.ManagedData{{
 			Table:  "users",
 			Schema: "app",
@@ -78,6 +75,9 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 			File:   "users.yaml",
 		}},
 	}
+	db.FeatureObjects = must.Must(db.FeatureObjects.With(must.Must(pgtype.DesiredObject(
+		pgtype.Ref(pgtype.RangeKind, "app", "price_range"), &pgtype.DesiredRange{Subtype: "numeric"},
+	))))
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
@@ -90,7 +90,7 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Domains, qt.HasLen, 1)
 	c.Assert(got.CompositeTypes, qt.HasLen, 1)
-	c.Assert(got.Ranges, qt.HasLen, 1)
+	c.Assert(rangeObjects(got), qt.HasLen, 1)
 	c.Assert(got.ManagedData, qt.HasLen, 1)
 	resolvedDir, err := filepath.EvalSymlinks(dir)
 	c.Assert(err, qt.IsNil)
@@ -359,4 +359,10 @@ func TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails(t *testing.T) {
 	c.Assert(db, qt.IsNil)
 	c.Assert(reported.String(), qt.Matches,
 		`warning: schema file block "zzz_nonsense" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
+}
+
+func rangeObjects(database *schemamodel.Database) []schemaext.Object {
+	return must.Must(database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgtype.RangeKind)
+	}).All())
 }

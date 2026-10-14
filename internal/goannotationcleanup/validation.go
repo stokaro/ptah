@@ -111,7 +111,6 @@ var representationMatchers = map[string]representationMatcher{
 	"ptah:schema:sequence":   sequenceRepresented,
 	"ptah:schema:domain":     domainRepresented,
 	"ptah:schema:composite":  compositeRepresented,
-	"ptah:schema:range":      rangeRepresented,
 	"ptah:schema:view":       viewRepresented,
 	"ptah:schema:matview":    materializedViewRepresented,
 	"ptah:schema:trigger":    triggerRepresented,
@@ -171,13 +170,6 @@ func compositeRepresented(removal removedLine, _, exportedDB *schemamodel.Databa
 	return slices.ContainsFunc(exportedDB.CompositeTypes, func(composite schemamodel.CompositeType) bool {
 		return sameSchemaObject(composite.Schema, composite.Name, removal.values["schema"], removal.values["name"])
 	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindComposite, "")
-}
-
-func rangeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
-	return slices.ContainsFunc(exportedDB.Ranges, func(rangeType schemamodel.Range) bool {
-		return sameSchemaObject(rangeType.Schema, rangeType.Name, removal.values["schema"], removal.values["name"]) &&
-			rangeType.Subtype == removal.values["subtype"]
-	}) || ownerTypeRepresented(removal, exportedDB, objectidentity.KindRange, removal.values["subtype"])
 }
 
 // ownerTypeRepresented reports whether the export holds, as an owner's

@@ -219,7 +219,7 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Domains, qt.HasLen, 1)
 	c.Assert(got.CompositeTypes, qt.HasLen, 1)
-	c.Assert(got.Ranges, qt.HasLen, 1)
+	c.Assert(rangeObjects(got), qt.HasLen, 1)
 	c.Assert(got.Roles, qt.HasLen, 1)
 	c.Assert(got.Views, qt.HasLen, 1)
 	c.Assert(got.MaterializedViews, qt.HasLen, 1)

@@ -190,7 +190,9 @@ func TestInspectedTwoSchemaEnumsRoundTrip(t *testing.T) {
 	first, err := atlashclrender.RenderInspected(inspected, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
-	reparsed, err := atlashcl.Parse(first.Data, "inspected.hcl")
+	reparsed, err := atlashcl.ParseWithOptions(first.Data, "inspected.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL()},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(reparsed.Enums, qt.HasLen, 2)
 
@@ -215,7 +217,9 @@ func TestInspectedTwoSchemaEnumsAreRefusedByDefault(t *testing.T) {
 	rendered, err := atlashclrender.RenderInspected(inspected, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
-	_, err = atlashcl.Parse(rendered.Data, "inspected.hcl")
+	_, err = atlashcl.ParseWithOptions(rendered.Data, "inspected.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL()},
+	)
 
 	c.Assert(err, qt.ErrorMatches, `.*enum "mood" is declared more than once;.*PTAH_HCL_SCHEMA_SCOPED_ENUMS=1.*`)
 }

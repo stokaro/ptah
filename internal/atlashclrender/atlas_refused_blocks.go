@@ -647,11 +647,6 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 			add(field.Type)
 		}
 	}
-	for _, rangeType := range db.Ranges {
-		add(rangeType.Subtype)
-		add(rangeType.Canonical)
-		add(rangeType.SubtypeDiff)
-	}
 	// A grant's target is an HCL traversal in the rendered `permission` block,
 	// so an omitted target leaves a reference to a block that is not there.
 	// Both target fields are read: PostgreSQL accepts GRANT ... ON TABLE for a

@@ -8,8 +8,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -52,10 +54,7 @@ func grammarFixture() *catalog.Database {
 			{Name: "comp_pub"},
 			{Schema: "app", Name: "comp_app"},
 		},
-		Ranges: []catalog.Range{
-			{Name: "rng_pub", Subtype: "int4"},
-			{Schema: "app", Name: "rng_app", Subtype: "int4"},
-		},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "rng_pub"), Value: &pgtype.ObservedRange{Subtype: "int4"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "rng_app"), Value: &pgtype.ObservedRange{Subtype: "int4"}})),
 		Indexes: []catalog.Index{
 			{TableName: "users", Name: "users_name_idx", Columns: []string{"name"}},
 			{Schema: "app", TableName: "orders", Name: "orders_id_idx", Columns: []string{"id"}},
@@ -113,8 +112,8 @@ func grammarCensus(schema *catalog.Database) []string {
 	for _, value := range schema.Composites {
 		add("composite", value.QualifiedName())
 	}
-	for _, value := range schema.Ranges {
-		add("range", value.QualifiedName())
+	for _, name := range rangeNames(schema.FeatureObjects) {
+		add("range", name)
 	}
 	for _, name := range pgextension.Names(schema.FeatureObjects) {
 		add("extension", name)

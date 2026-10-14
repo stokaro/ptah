@@ -648,7 +648,7 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "standalone sequences", present: len(database.Sequences) > 0},
 		{name: "domains", present: len(database.Domains) > 0 || definesType(database, objectidentity.KindDomain)},
 		{name: "composite types", present: len(database.CompositeTypes) > 0 || definesType(database, objectidentity.KindComposite)},
-		{name: "range types", present: len(database.Ranges) > 0 || definesType(database, objectidentity.KindRange)},
+		{name: "range types", present: definesType(database, objectidentity.KindRange)},
 		{name: "views", present: len(database.Views) > 0},
 		{name: "materialized views", present: len(database.MaterializedViews) > 0},
 		{name: "triggers", present: len(database.Triggers) > 0},

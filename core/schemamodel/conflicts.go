@@ -296,7 +296,6 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.sequences,
 		validator.domains,
 		validator.compositeTypes,
-		validator.ranges,
 		validator.views,
 		validator.materializedViews,
 		validator.triggers,
@@ -497,17 +496,6 @@ func (v compositeDefinitionValidator) compositeTypes() error {
 		canonicalCompositeTypeDefinition,
 		func(_ CompositeType, key string) error {
 			return fmt.Errorf("conflicting composite type %q definitions", key)
-		},
-	)
-}
-
-func (v compositeDefinitionValidator) ranges() error {
-	return validateNamedDefinitions(
-		v.database.Ranges,
-		func(rangeType Range) string { return rangeType.QualifiedName() },
-		canonicalRangeDefinition,
-		func(_ Range, key string) error {
-			return fmt.Errorf("conflicting range %q definitions", key)
 		},
 	)
 }
@@ -753,12 +741,6 @@ func canonicalCompositeTypeDefinition(composite CompositeType) CompositeType {
 	composite.StructName = ""
 	composite.Canonicalize()
 	return composite
-}
-
-func canonicalRangeDefinition(rangeType Range) Range {
-	rangeType.StructName = ""
-	rangeType.Canonicalize()
-	return rangeType
 }
 
 func canonicalViewDefinition(view View) View {

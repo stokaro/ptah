@@ -52,7 +52,6 @@ func ObjectComments(
 	}
 	if caps.Has(capability.TypeComments) {
 		changes = append(changes, compositeComments(desired, database, semantics)...)
-		changes = append(changes, rangeComments(desired, database, semantics)...)
 		changes = append(changes, enumComments(desired, database, semantics)...)
 	}
 	if caps.Has(capability.MaterializedViewComments) {
@@ -237,29 +236,6 @@ func compositeComments(
 		}
 		if change, changed := commentTransition(
 			difftypes.CommentedCompositeType, composite.QualifiedName(), composite.Comment, current.Comment,
-		); changed {
-			changes = append(changes, change)
-		}
-	}
-	return changes
-}
-
-func rangeComments(
-	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
-) []difftypes.ObjectCommentChange {
-	reported := make(map[objectIdentity]catalog.Range, len(database.Ranges))
-	for _, rangeType := range database.Ranges {
-		reported[newObjectIdentity(objectidentity.KindRange, rangeType.Schema, rangeType.Name, semantics)] = rangeType
-	}
-	var changes []difftypes.ObjectCommentChange
-	for _, rangeType := range desired.Ranges {
-		identity := newObjectIdentity(objectidentity.KindRange, rangeType.Schema, rangeType.Name, semantics)
-		current, exists := reported[identity]
-		if !exists {
-			continue
-		}
-		if change, changed := commentTransition(
-			difftypes.CommentedRangeType, rangeType.QualifiedName(), rangeType.Comment, current.Comment,
 		); changed {
 			changes = append(changes, change)
 		}

@@ -68,7 +68,7 @@ func TestValidateRef_FailurePath(t *testing.T) {
 			ref.Parent = objectidentity.Part{Source: "t", Normalized: "t"}
 			return ref
 		}(), want: `.*a domain requires a schema-scoped identity with a name`},
-		{name: "a type without a name", ref: pgtype.Ref(pgtype.RangeKind, "app", " "),
+		{name: "a type without a name", ref: pgtype.Ref(pgtype.RangeKind, "app", ""),
 			want: `.*a range type requires a schema-scoped identity with a name`},
 	}
 	for _, test := range tests {

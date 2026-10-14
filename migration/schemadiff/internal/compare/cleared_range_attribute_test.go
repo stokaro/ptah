@@ -7,29 +7,29 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/schemadiff"
 )
 
 // clearedRangeSchemas builds one declared range and one catalog range for a
 // comparison.
-func clearedRangeSchemas(declared schemamodel.Range, current catalog.Range) (*schemamodel.Database, *catalog.Database) {
-	declared.Name = "measurement"
-	current.Name = "measurement"
+func clearedRangeSchemas(declared pgtype.DesiredRange, current pgtype.ObservedRange) (*schemamodel.Database, *catalog.Database) {
 	current.Subtype = "int8"
 	declared.Subtype = "int8"
-	return &schemamodel.Database{Ranges: []schemamodel.Range{declared}},
-		&catalog.Database{Ranges: []catalog.Range{current}}
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "measurement"), Value: &declared})), FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired))},
+		&catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "measurement"), Value: &current})), FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed))}
 }
 
 // rangeIsModified reports whether the comparison plans to change the range.
-func rangeIsModified(c *qt.C, declared schemamodel.Range, current catalog.Range) bool {
+func rangeIsModified(c *qt.C, declared pgtype.DesiredRange, current pgtype.ObservedRange) bool {
 	c.Helper()
 
 	target, currentSchema := clearedRangeSchemas(declared, current)
-	diff := must.Must(schemadiff.Compare(c.Context(), target, currentSchema, must.Must(builtin.New())))
-	return len(diff.RangesModified) > 0
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), target, currentSchema, "postgres", must.Must(builtin.New())))
+	return len(diff.FeatureChanges) > 0
 }
 
 // TestCompare_AnOmittedRangeAttributeIsNotARemoval is the adoption rule, and it
@@ -43,35 +43,33 @@ func TestCompare_AnOmittedRangeAttributeIsNotARemoval(t *testing.T) {
 	c := qt.New(t)
 
 	modified := rangeIsModified(c,
-		schemamodel.Range{},
-		catalog.Range{SubtypeDiff: "int8_subdiff", Canonical: "int8_canonical"})
+		pgtype.DesiredRange{},
+		pgtype.ObservedRange{SubtypeDiff: "int8_subdiff", Canonical: "int8_canonical"})
 
 	c.Assert(modified, qt.IsFalse)
 }
 
-// TestCompare_AClearedRangeAttributeIsARemoval is what the omission rule cost
-// until now: with a bare string in the model there was no spelling that removed
-// one of these at all, and a schema holding an attribute the declaration does
-// not want reported itself synced forever.
+// TestCompare_AClearedRangeAttributeIsARemoval distinguishes explicit clearing
+// from an omitted attribute. Other catalog attributes remain unmanaged.
 func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 	tests := []struct {
 		name      string
 		cleared   []string
-		current   catalog.Range
+		current   pgtype.ObservedRange
 		wantPlan  bool
 		wantEntry string
 	}{
 		{
 			name:      "a cleared subtype_diff removes the one the catalog holds",
 			cleared:   []string{"subtype_diff"},
-			current:   catalog.Range{SubtypeDiff: "int8_subdiff"},
+			current:   pgtype.ObservedRange{SubtypeDiff: "int8_subdiff"},
 			wantPlan:  true,
 			wantEntry: "subtype_diff",
 		},
 		{
 			name:     "a cleared canonical removes the one the catalog holds",
 			cleared:  []string{"canonical"},
-			current:  catalog.Range{Canonical: "int8_canonical"},
+			current:  pgtype.ObservedRange{Canonical: "int8_canonical"},
 			wantPlan: true,
 		},
 		{
@@ -79,7 +77,7 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 			// attribute the catalog also has none of is agreement, not a change.
 			name:     "a cleared attribute the catalog does not hold is no change",
 			cleared:  []string{"subtype_diff"},
-			current:  catalog.Range{},
+			current:  pgtype.ObservedRange{},
 			wantPlan: false,
 		},
 		{
@@ -87,7 +85,7 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 			// others, so a catalog value beside it is still not planned away.
 			name:     "clearing one attribute leaves its neighbor alone",
 			cleared:  []string{"canonical"},
-			current:  catalog.Range{SubtypeDiff: "int8_subdiff"},
+			current:  pgtype.ObservedRange{SubtypeDiff: "int8_subdiff"},
 			wantPlan: false,
 		},
 	}
@@ -97,7 +95,7 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 			c := qt.New(t)
 
 			modified := rangeIsModified(c,
-				schemamodel.Range{ClearedAttributes: test.cleared},
+				pgtype.DesiredRange{Cleared: test.cleared},
 				test.current)
 
 			c.Assert(modified, qt.Equals, test.wantPlan)

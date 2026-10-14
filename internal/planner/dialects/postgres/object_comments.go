@@ -163,7 +163,7 @@ func createdTypeObject(definition ast.TypeDefinition) (ast.CommentedObject, bool
 	switch definition.(type) {
 	case *ast.DomainTypeDef:
 		return ast.CommentedDomain, true
-	case *ast.CompositeTypeDef, *ast.RangeTypeDef, *ast.EnumTypeDef:
+	case *ast.CompositeTypeDef, *ast.EnumTypeDef:
 		return ast.CommentedType, true
 	default:
 		return "", false

@@ -30,7 +30,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 		{"grants", len(db.Grants)},
 		{"managed data", len(db.ManagedData)},
 		{"materialized views", len(db.MaterializedViews)},
-		{"ranges", len(db.Ranges)},
 		{"revoked grants", len(db.RevokedGrants)},
 		{"roles", len(db.Roles)},
 		{"row-level security policies", len(db.RLSPolicies)},

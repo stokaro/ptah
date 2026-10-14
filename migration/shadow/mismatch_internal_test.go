@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -207,4 +208,25 @@ func TestCollectMismatches_ReportsEveryOwnerChange(t *testing.T) {
 			Changes: map[string]string{"example.org/described": "EVERY 1 HOUR -> EVERY 2 HOUR"},
 			Message: "feature mismatch example.org/schedule app.hourly: example.org/described EVERY 1 HOUR -> EVERY 2 HOUR"},
 	})
+}
+
+func TestCollectMismatchesReportsRangeChanges(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value *pgtype.RangeChange
+	}{
+		{"addition", &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "numeric"}}},
+		{"removal", &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "numeric"}}},
+		{"replacement", &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "numeric"}, After: &pgtype.DesiredRange{Subtype: "int8"}, Differs: []string{pgtype.DiffSubtype}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := pgtype.Ref(pgtype.RangeKind, "app", "span")
+			got := collectMismatches(&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ref, Value: test.value}}})
+			c.Assert(got, qt.HasLen, 1)
+			c.Assert(got[0].Kind, qt.Equals, "feature_mismatch")
+			c.Assert(got[0].Object, qt.Equals, ref.String())
+			c.Assert(got[0].Changes[string(pgtype.RangeChangeKind)], qt.Not(qt.Equals), "")
+		})
+	}
 }

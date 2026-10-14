@@ -34,17 +34,6 @@ func TestPostgreSQLRenderer_VisitCreateType_Composite(t *testing.T) {
 	c.Assert(sql, qt.Contains, `CREATE TYPE "address" AS ("street" TEXT, "zip" INTEGER);`)
 }
 
-func TestPostgreSQLRenderer_VisitCreateType_Range(t *testing.T) {
-	c := qt.New(t)
-	renderer := postgres.New()
-
-	rangeDef := ast.NewRangeTypeDef("float8").SetSubtypeDiff("float8mi")
-	sql, err := renderer.Render(ast.NewCreateType("floatrange", rangeDef))
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, `CREATE TYPE "floatrange" AS RANGE (SUBTYPE = float8, SUBTYPE_DIFF = float8mi);`)
-}
-
 func TestPostgreSQLRenderer_VisitDropType_Domain(t *testing.T) {
 	c := qt.New(t)
 	renderer := postgres.New()

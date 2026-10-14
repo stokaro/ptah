@@ -7,76 +7,41 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
-// rangeSchema is one range type as the reader reports it.
-func rangeSchema(rangeType catalog.Range) *catalog.Database {
-	return &catalog.Database{Ranges: []catalog.Range{rangeType}}
-}
-
-// onlyRange returns the single converted range.
-func onlyRange(c *qt.C, database *schemamodel.Database) schemamodel.Range {
+func onlyRange(c *qt.C, database *schemamodel.Database) *pgtype.DesiredRange {
 	c.Helper()
-	c.Assert(database.Ranges, qt.HasLen, 1)
-	return database.Ranges[0]
+	objects := must.Must(database.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	value, ok := objects[0].Value.(*pgtype.DesiredRange)
+	c.Assert(ok, qt.IsTrue)
+	return value
 }
 
-// TestConvert_CarriesEveryRangeAttribute pins the four attributes beside the
-// subtype.
-//
-// The reader asks pg_range for all of them and the PostgreSQL renderer emits an
-// option for each, but this conversion listed Name, Schema and Subtype and
-// stopped. A range read off a live server was therefore described as having no
-// canonicalization and no subtype difference function, and replaying that
-// description built a different type: discrete values stop folding, so two
-// ranges that compared equal in the source stop comparing equal in the replay,
-// and a GiST index loses the penalty function it was built with
-// (stokaro/ptah#2200).
+// Every catalog attribute reaches the declaration used to replay a range.
+// A subtype-only observation gains no invented optional attributes.
 func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
-	c := qt.New(t)
-
-	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), rangeSchema(catalog.Range{
-		Name:           "fancy",
-		Schema:         "public",
-		Subtype:        "double precision",
-		SubtypeOpClass: "float8_ops",
-		Collation:      "en_US",
-		Canonical:      "fancy_canonical",
-		SubtypeDiff:    "f8diff",
-	}), "postgres", must.Must(builtin.New())))
-
-	converted := onlyRange(c, database)
-	c.Assert(converted.Name, qt.Equals, "fancy")
-	c.Assert(converted.Schema, qt.Equals, "public")
-	c.Assert(converted.Subtype, qt.Equals, "double precision")
-	c.Assert(converted.SubtypeOpClass, qt.Equals, "float8_ops")
-	c.Assert(converted.Collation, qt.Equals, "en_US")
-	c.Assert(converted.Canonical, qt.Equals, "fancy_canonical")
-	c.Assert(converted.SubtypeDiff, qt.Equals, "f8diff")
-}
-
-// TestConvert_LeavesARangeWithNoAttributesBare is the control.
-//
-// A range whose catalog row carries nothing beside the subtype must not gain
-// invented attributes: the renderer emits an option for each non-empty one, and
-// a description declaring a canonicalization function the type does not have
-// would fail to apply.
-func TestConvert_LeavesARangeWithNoAttributesBare(t *testing.T) {
-	c := qt.New(t)
-
-	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), rangeSchema(catalog.Range{
-		Name:    "plainrange",
-		Schema:  "public",
-		Subtype: "double precision",
-	}), "postgres", must.Must(builtin.New())))
-
-	converted := onlyRange(c, database)
-	c.Assert(converted.Subtype, qt.Equals, "double precision")
-	c.Assert(converted.SubtypeOpClass, qt.Equals, "")
-	c.Assert(converted.Collation, qt.Equals, "")
-	c.Assert(converted.Canonical, qt.Equals, "")
-	c.Assert(converted.SubtypeDiff, qt.Equals, "")
+	for _, test := range []struct {
+		name     string
+		observed pgtype.ObservedRange
+		want     pgtype.DesiredRange
+	}{
+		{name: "all attributes", observed: pgtype.ObservedRange{Subtype: "double precision", SubtypeOpClass: "float8_ops", Collation: "en_US", Canonical: "fancy_canonical", SubtypeDiff: "f8diff", Comment: "range note"}, want: pgtype.DesiredRange{Subtype: "double precision", SubtypeOpClass: "float8_ops", Collation: "en_US", Canonical: "fancy_canonical", SubtypeDiff: "f8diff", Comment: "range note"}},
+		{name: "subtype only", observed: pgtype.ObservedRange{Subtype: "double precision"}, want: pgtype.DesiredRange{Subtype: "double precision"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := pgtype.Ref(pgtype.RangeKind, "public", "fancy")
+			source := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &test.observed}))}
+			converted, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), source, "postgres", must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
+			c.Assert(onlyRange(c, converted), qt.DeepEquals, &test.want)
+			c.Assert(must.Must(converted.FeatureObjects.All())[0].Ref, qt.DeepEquals, ref)
+		})
+	}
 }

@@ -26,6 +26,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -92,13 +93,6 @@ func roundTripRows() []roundTripRow {
 				})
 			},
 			count: func(d *schemamodel.Database) int { return len(d.CompositeTypes) },
-		},
-		{
-			field: "Ranges",
-			seed: func(d *schemamodel.Database) {
-				d.Ranges = append(d.Ranges, schemamodel.Range{StructName: "R", Name: "r1", Subtype: "integer"})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.Ranges) },
 		},
 		{
 			field: "Views",
@@ -203,23 +197,26 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 			Schema: "public", Name: "c1",
 			Fields: []catalog.CompositeField{{Name: "a", Type: "integer"}},
 		}},
-		Ranges: []catalog.Range{{Schema: "public", Name: "r1", Subtype: "integer"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r1"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
 		// A read that asked the catalog about row-level security, as the
 		// PostgreSQL reader does, so the fixture's policies compare.
 		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
 	}
 
+	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtype.CompleteCoverage(schemaext.Observed))))
 	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PersistenceCoverage(
 		schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PartitionCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 
-	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
+	declared := roundTripFixture()
+	declared.FeatureCoverage = must.Must(declared.FeatureCoverage.Combine(must.Must(pgtype.CompleteCoverage(schemaext.Desired))))
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, declared))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesRemoved.Names(), qt.HasLen, 1)
-	c.Assert(diff.RangesRemoved, qt.HasLen, 1)
+	c.Assert(rangeChangesOf(diff), qt.HasLen, 1)
 }
 
 // yamlUnwritableFields are the object families the YAML surface has no
@@ -240,7 +237,6 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Sequences":      coverage.Sequence,
 	"Domains":        coverage.Domain,
 	"CompositeTypes": coverage.Composite,
-	"Ranges":         coverage.Range,
 }
 
 // The YAML surface has a topics key, so a YAML document that leaves a topic
@@ -555,4 +551,20 @@ func TestRoundTrip_DefaultPrivilegesSurvive(t *testing.T) {
 	c.Assert(found, qt.IsTrue)
 	c.Assert(object.Value, qt.DeepEquals, declared.Value)
 	c.Assert(parsed.FeatureCoverage.Lookup(pgdefaultprivilege.DefaultPrivilegeKind, declared.Ref).State, qt.Equals, schemaext.Complete)
+}
+
+func TestRoundTripRangeTypeSurvives(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	db.FeatureCoverage = must.Must(db.FeatureCoverage.Combine(must.Must(pgtype.CompleteCoverage(schemaext.Desired))))
+	ref := pgtype.Ref(pgtype.RangeKind, "public", "span")
+	value := &pgtype.DesiredRange{Subtype: "numeric", SubtypeOpClass: "numeric_ops", SubtypeDiff: "numrange_subdiff", Comment: "span"}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgtype.DesiredObject(ref, value))))
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+	object, found, err := parsed.FeatureObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(object.Value, qt.DeepEquals, value)
+	c.Assert(parsed.FeatureCoverage.Lookup(pgtype.RangeKind, ref).State, qt.Equals, schemaext.Complete)
+	c.Assert(loadYAMLDocument(c).FeatureCoverage.Lookup(pgtype.RangeKind, ref).State, qt.Equals, schemaext.Uninspected)
 }

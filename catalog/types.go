@@ -67,7 +67,6 @@ type Database struct {
 	Sequences   []Sequence         `json:"sequences"`  // PostgreSQL standalone sequences
 	Domains     []Domain           `json:"domains"`    // PostgreSQL domain types
 	Composites  []CompositeType    `json:"composites"` // PostgreSQL composite types
-	Ranges      []Range            `json:"ranges"`     // PostgreSQL range types
 	Views       []View             `json:"views"`      // Database views
 	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
 
@@ -609,39 +608,6 @@ type CompositeType struct {
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (c CompositeType) QualifiedName() string { return QualifyTableName(c.Schema, c.Name) }
-
-// Range represents a PostgreSQL range type read from the database.
-//
-// Everything after Subtype exists so a change to an EXISTING range type can be
-// detected. While the reader returned only the name and subtype, the comparator
-// had nothing to compare and reported a changed range as converged
-// (stokaro/ptah#931 item 2).
-type Range struct {
-	// Facets carries typed settings owned by feature providers.
-	Facets  schemaext.Facets `json:"facets,omitzero"`
-	Name    string           `json:"name"`
-	Schema  string           `json:"schema,omitempty"`
-	Subtype string           `json:"subtype"`
-	// SubtypeOpClass is the operator class backing the subtype's ordering
-	// (pg_range.rngsubopc). Always populated by the catalog, including when the
-	// author never named one, so the comparator only consults it when the
-	// desired schema declares one.
-	SubtypeOpClass string `json:"subtype_opclass,omitempty"`
-	// Collation is the subtype collation (pg_range.rngcollation), empty for
-	// non-collatable subtypes.
-	Collation string `json:"collation,omitempty"`
-	// Canonical is the canonicalization function (pg_range.rngcanonical), empty
-	// when the range has none.
-	Canonical string `json:"canonical,omitempty"`
-	// SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
-	// empty when the range has none.
-	SubtypeDiff string `json:"subtype_diff,omitempty"`
-	// Comment is the type's own comment, as obj_description reports it.
-	Comment string `json:"comment,omitempty"`
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (r Range) QualifiedName() string { return QualifyTableName(r.Schema, r.Name) }
 
 // IndexPart represents one ordered key column in an introspected index.
 type IndexPart struct {

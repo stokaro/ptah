@@ -64,7 +64,7 @@ func (r *renderer) renderSequences() {
 // as every placement is: by type, schema and name; see [renderer.renderSlot].
 // Atlas writes none of these blocks, so no Atlas output fixes their order.
 func (r *renderer) renderUserTypes() {
-	entries := make([]slotEntry, 0, len(r.db.Domains)+len(r.db.CompositeTypes)+len(r.db.Ranges))
+	entries := make([]slotEntry, 0, len(r.db.Domains)+len(r.db.CompositeTypes))
 	for _, domain := range r.db.Domains {
 		entries = append(entries, slotEntry{blockType: blockDomain, schema: r.schemaFor(domain.Schema), name: domain.Name,
 			write: func() { r.renderDomain(domain) }})
@@ -72,10 +72,6 @@ func (r *renderer) renderUserTypes() {
 	for _, composite := range r.db.CompositeTypes {
 		entries = append(entries, slotEntry{blockType: blockComposite, schema: r.schemaFor(composite.Schema), name: composite.Name,
 			write: func() { r.renderComposite(composite) }})
-	}
-	for _, rangeType := range r.db.Ranges {
-		entries = append(entries, slotEntry{blockType: blockRange, schema: r.schemaFor(rangeType.Schema), name: rangeType.Name,
-			write: func() { r.renderRange(rangeType) }})
 	}
 	r.renderSlot(hclext.UserTypes, nil, entries...)
 }
@@ -117,39 +113,6 @@ func (r *renderer) renderComposite(composite schemamodel.CompositeType) {
 	}
 	r.line("}")
 	r.line("")
-}
-
-func (r *renderer) renderRange(rangeType schemamodel.Range) {
-	rangeType.Canonicalize()
-	r.linef(`%s %s {`, blockRange, quote(rangeType.Name))
-	if schema := r.schemaFor(rangeType.Schema); schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(schema))
-	}
-	r.rawAttr(1, "subtype", userTypeExpr(rangeType.Subtype))
-	r.rangeAttr(rangeType, "subtype_opclass", rangeType.SubtypeOpClass)
-	r.rangeAttr(rangeType, "collation", rangeType.Collation)
-	r.rangeAttr(rangeType, "canonical", rangeType.Canonical)
-	r.rangeAttr(rangeType, "subtype_diff", rangeType.SubtypeDiff)
-	r.stringAttr(1, "comment", rangeType.Comment)
-	r.line("}")
-	r.line("")
-}
-
-// rangeAttr writes one optional range attribute, keeping an explicit empty
-// value that a declaration wrote on purpose.
-//
-// [schemamodel.Range.Clears] is filled only by a declaration -- a catalog read
-// carries the values the server reported and clears nothing -- so this never
-// changes what `schema inspect` emits. What it keeps is a declaration's
-// meaning: `subtype_diff = ""` says the range has none, and dropping the
-// attribute on the way out would turn that into "say nothing about it", which
-// is a different instruction (stokaro/ptah#2223).
-func (r *renderer) rangeAttr(rangeType schemamodel.Range, name, value string) {
-	if value == "" && rangeType.Clears(name) {
-		r.rawAttr(1, name, quote(""))
-		return
-	}
-	r.stringAttr(1, name, value)
 }
 
 func (r *renderer) renderManagedData() {

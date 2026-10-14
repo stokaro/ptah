@@ -71,7 +71,10 @@ func TestRenderedRoutinePrivilegeRoundTrips(t *testing.T) {
 			c.Assert(result.Diagnostics, qt.HasLen, 0)
 			c.Assert(string(result.Data), qt.Contains, test.wantFor)
 			c.Assert(string(result.Data), qt.Contains, `args = ["uuid"]`)
-			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+			parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(routineTargets(parsed.Grants), qt.DeepEquals, []string{"app_role EXECUTE " + test.wantKind + " app.purge(uuid)"})
@@ -115,7 +118,10 @@ func TestParseRoutinePrivilege_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			document := "schema \"public\" {}\n\ntable \"t\" {\n  schema = schema.public\n  column \"id\" {\n    type = int\n  }\n}\n\n" + test.body
 
-			parsed, err := atlashcl.Parse([]byte(document), "schema.hcl")
+			parsed, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(parsed, qt.IsNil)

@@ -50,6 +50,20 @@ type TypeCreator interface {
 	CreatedType(subject objectidentity.ID) (DefinedType, bool)
 }
 
+// TypeObserver is a change value carrying the definition the database holds.
+// A host uses these references to order drops against other types, whose
+// desired references can differ. An addition reports no current type.
+type TypeObserver interface {
+	ObservedType(subject objectidentity.ID) (DefinedType, bool)
+}
+
+// TypeRebuilder identifies a surviving type change without an in-place form.
+// Hosts use this declaration to rebuild other changed types that depend on it.
+// The owner validates the operands and decides the operations for its target.
+type TypeRebuilder interface {
+	RebuildsType() bool
+}
+
 // DefinedTypes returns the types the objects define, in identity order. An
 // object whose value is not a [TypeDefiner] defines none. Every answer is a
 // valid one: a collection refuses an object whose value answers with a kind

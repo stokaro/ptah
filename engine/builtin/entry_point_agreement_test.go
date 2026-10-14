@@ -219,7 +219,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"OpaqueRoutineNode":                       &ast.OpaqueRoutineNode{},
 		"PostgresDoBlockNode":                     &ast.PostgresDoBlockNode{},
 		"PostgresRoutineNode":                     &ast.PostgresRoutineNode{},
-		"RangeTypeDef":                            &ast.RangeTypeDef{},
 		"RawSQLNode":                              &ast.RawSQLNode{},
 		"RefreshMaterializedViewNode":             &ast.RefreshMaterializedViewNode{},
 		"RenameColumnOperation":                   &ast.RenameColumnOperation{},

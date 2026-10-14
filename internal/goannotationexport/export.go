@@ -306,7 +306,6 @@ func databaseHasSchemaObjects(db *schemamodel.Database) bool {
 		len(db.Sequences) +
 		len(db.Domains) +
 		len(db.CompositeTypes) +
-		len(db.Ranges) +
 		len(db.Views) +
 		len(db.MaterializedViews) +
 		len(db.Triggers) +

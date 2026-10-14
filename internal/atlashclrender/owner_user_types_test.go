@@ -82,7 +82,7 @@ func TestRender_WritesAnOwnersChildrenInItsOrder(t *testing.T) {
 var blockLabels = regexp.MustCompile(`(?m)^([a-z_]+) "([^"]*)"`)
 
 // TestRender_OrdersTypeBlocksAmongTheOwners writes the common model's
-// domains, composite types and ranges and the owners' blocks among the types
+// domains and composite types with the owners' type blocks
 // as one placement, after the sequences and before the enums, ordered by
 // type, schema and name whoever wrote a block: a domain without a schema
 // comes before one in app, and an owner's block of each type stands among the
@@ -94,8 +94,8 @@ func TestRender_OrdersTypeBlocksAmongTheOwners(t *testing.T) {
 	document.Enums = []schemamodel.Enum{{Name: "e", Values: []string{"a"}}}
 	document.Domains = []schemamodel.Domain{{Schema: "app", Name: "b", BaseType: "int4"}, {Name: "z", BaseType: "int4"}}
 	document.CompositeTypes = []schemamodel.CompositeType{{Schema: "app", Name: "c", Fields: []schemamodel.CompositeField{{Name: "f", Type: "int4"}}}}
-	document.Ranges = []schemamodel.Range{{Schema: "app", Name: "r", Subtype: "int4"}}
 	owners := gadgetOwners(blocksEncoder{blocks: []hclext.EncodedBlock{
+		{Type: "range", Placement: hclext.UserTypes, Schema: "app", Name: "r", Attributes: []hclext.EncodedAttribute{sqlAttribute("subtype", "int4")}},
 		{Type: "range", Placement: hclext.UserTypes, Schema: "app", Name: "q", Attributes: []hclext.EncodedAttribute{sqlAttribute("subtype", "int8")}},
 		{Type: "domain", Placement: hclext.UserTypes, Schema: "app", Name: "a", Attributes: []hclext.EncodedAttribute{sqlAttribute("type", "int8")}},
 		{Type: "composite", Placement: hclext.UserTypes, Schema: "app", Name: "b", Children: []hclext.EncodedChild{

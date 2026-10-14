@@ -34,7 +34,7 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *sc
 		caps,
 		domainNames(database),
 		compositeNames(database),
-		rangeNames(database),
+		nil,
 	)
 }
 
@@ -112,14 +112,6 @@ func compositeNames(database *schemamodel.Database) []string {
 	names := make([]string, 0, len(database.CompositeTypes))
 	for _, composite := range database.CompositeTypes {
 		names = append(names, composite.Name)
-	}
-	return names
-}
-
-func rangeNames(database *schemamodel.Database) []string {
-	names := make([]string, 0, len(database.Ranges))
-	for _, rangeType := range database.Ranges {
-		names = append(names, rangeType.Name)
 	}
 	return names
 }

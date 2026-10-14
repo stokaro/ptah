@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/atlashcl"
 )
 
 // A reference to a type the document declares resolves to that type's name in
@@ -206,7 +205,7 @@ function "f" {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(userTypeDeclarations+tt.hcl), "postgres")
+			db, err := parseTypeHCL([]byte(userTypeDeclarations+tt.hcl), "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tt.read(db), qt.Equals, tt.want)
@@ -227,7 +226,7 @@ func lastCompositeFieldType(db *schemamodel.Database) string {
 }
 
 func lastRangeSubtype(db *schemamodel.Database) string {
-	return db.Ranges[len(db.Ranges)-1].Subtype
+	return rangeValues(db)[len(rangeValues(db))-1].Subtype
 }
 
 func firstFunctionParameters(db *schemamodel.Database) string {

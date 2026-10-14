@@ -86,17 +86,6 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 			wantCreate:  false,
 			wantWarning: "composite type app.addr changed, but the change carries no definition",
 		},
-		{
-			name: "a modified range type the change carries no definition for is left alone",
-			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
-				RangeName:      "app.span",
-				Changes:        map[string]string{"subtype": "int4 -> int8"},
-				CurrentSubtype: "int4",
-			}}},
-			wantDrop:    false,
-			wantCreate:  false,
-			wantWarning: "range type app.span changed, but the change carries no definition",
-		},
 	}
 
 	for _, test := range tests {

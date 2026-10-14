@@ -104,8 +104,6 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		CompositeTypesAdded:       difftypes.CompositeTypeChanges{{Name: "missing_composite"}},
 		CompositeTypesRemoved:     difftypes.CompositeTypeChanges{{Name: "extra_composite"}},
 		CompositeTypesModified:    []difftypes.CompositeTypeDiff{{TypeName: "changed_composite", Changes: changes}},
-		RangesAdded:               difftypes.RangeChanges{{Name: "missing_range"}},
-		RangesRemoved:             difftypes.RangeChanges{{Name: "extra_range"}},
 		ViewsAdded:                difftypes.ViewChanges{{Name: "missing_view"}},
 		ViewsRemoved:              difftypes.ViewChanges{{Name: "extra_view"}},
 		ViewsModified:             []difftypes.ViewDiff{{ViewName: "changed_view", Changes: changes}},
@@ -170,8 +168,6 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		"missing_composite_type",
 		"extra_composite_type",
 		"composite_type_mismatch",
-		"missing_range",
-		"extra_range",
 		"missing_view",
 		"extra_view",
 		"view_mismatch",
@@ -204,7 +200,7 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c.Assert(mismatches[len(mismatches)-2].Table, qt.Equals, "accounts")
 	c.Assert(mismatches[len(mismatches)-1].Object, qt.Equals, "accounts.extra_global_constraint")
 	c.Assert(mismatches[len(mismatches)-1].Table, qt.Equals, "accounts")
-	c.Assert(mismatches[46], qt.DeepEquals, Mismatch{
+	c.Assert(mismatches[44], qt.DeepEquals, Mismatch{
 		Kind: "missing_role_membership", Object: "app in readers", Message: "missing membership app in readers",
 	})
 }

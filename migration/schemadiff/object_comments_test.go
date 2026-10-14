@@ -9,8 +9,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -19,11 +21,12 @@ import (
 // ObjectCommentsChanged carries, each with comment, in the schema app.
 func commentedObjects(comment string) *schemamodel.Database {
 	return &schemamodel.Database{
-		Views:          []schemamodel.View{{Name: "app.v", Body: "SELECT 1", Comment: comment}},
-		Sequences:      []schemamodel.Sequence{{Name: "s", Schema: "app", Comment: comment}},
-		Domains:        []schemamodel.Domain{{Name: "d", Schema: "app", BaseType: "integer", Comment: comment}},
-		CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "app", Fields: []schemamodel.CompositeField{{Name: "n", Type: "integer"}}, Comment: comment}},
-		Ranges:         []schemamodel.Range{{Name: "r", Schema: "app", Subtype: "integer", Comment: comment}},
+		Views:           []schemamodel.View{{Name: "app.v", Body: "SELECT 1", Comment: comment}},
+		Sequences:       []schemamodel.Sequence{{Name: "s", Schema: "app", Comment: comment}},
+		Domains:         []schemamodel.Domain{{Name: "d", Schema: "app", BaseType: "integer", Comment: comment}},
+		CompositeTypes:  []schemamodel.CompositeType{{Name: "c", Schema: "app", Fields: []schemamodel.CompositeField{{Name: "n", Type: "integer"}}, Comment: comment}},
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired)),
+		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "r"), Value: &pgtype.DesiredRange{Subtype: "integer", Comment: comment}})),
 	}
 }
 
@@ -31,11 +34,12 @@ func commentedObjects(comment string) *schemamodel.Database {
 // with comment on each, as a reader reports them.
 func reportedObjects(comment string) *catalog.Database {
 	return &catalog.Database{
-		Views:      []catalog.View{{Name: "v", Schema: "app", Body: "SELECT 1", Comment: comment}},
-		Sequences:  []catalog.Sequence{{Name: "s", Schema: "app", Comment: comment}},
-		Domains:    []catalog.Domain{{Name: "d", Schema: "app", BaseType: "integer", Comment: comment}},
-		Composites: []catalog.CompositeType{{Name: "c", Schema: "app", Fields: []catalog.CompositeField{{Name: "n", Type: "integer"}}, Comment: comment}},
-		Ranges:     []catalog.Range{{Name: "r", Schema: "app", Subtype: "integer", Comment: comment}},
+		Views:           []catalog.View{{Name: "v", Schema: "app", Body: "SELECT 1", Comment: comment}},
+		Sequences:       []catalog.Sequence{{Name: "s", Schema: "app", Comment: comment}},
+		Domains:         []catalog.Domain{{Name: "d", Schema: "app", BaseType: "integer", Comment: comment}},
+		Composites:      []catalog.CompositeType{{Name: "c", Schema: "app", Fields: []catalog.CompositeField{{Name: "n", Type: "integer"}}, Comment: comment}},
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
+		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "r"), Value: &pgtype.ObservedRange{Subtype: "integer", Comment: comment}})),
 	}
 }
 
@@ -45,7 +49,7 @@ func everyObjectComment(current, desired string) []difftypes.ObjectCommentChange
 	return []difftypes.ObjectCommentChange{
 		{Kind: difftypes.CommentedCompositeType, Name: "app.c", Current: current, Desired: desired},
 		{Kind: difftypes.CommentedDomain, Name: "app.d", Current: current, Desired: desired},
-		{Kind: difftypes.CommentedRangeType, Name: "app.r", Current: current, Desired: desired},
+
 		{Kind: difftypes.CommentedSequence, Name: "app.s", Current: current, Desired: desired},
 		{Kind: difftypes.CommentedView, Name: "app.v", Current: current, Desired: desired},
 	}
@@ -61,10 +65,11 @@ func TestCompareWithDialect_ObjectCommentDifferenceIsAChange(t *testing.T) {
 		declared   string
 		inDatabase string
 		want       []difftypes.ObjectCommentChange
+		wantRange  int
 	}{
-		{name: "a comment rewritten", declared: "new", inDatabase: "old", want: everyObjectComment("old", "new")},
-		{name: "a comment added", declared: "new", inDatabase: "", want: everyObjectComment("", "new")},
-		{name: "a comment removed from the declaration", declared: "", inDatabase: "old", want: everyObjectComment("old", "")},
+		{name: "a comment rewritten", declared: "new", inDatabase: "old", want: everyObjectComment("old", "new"), wantRange: 1},
+		{name: "a comment added", declared: "new", inDatabase: "", want: everyObjectComment("", "new"), wantRange: 1},
+		{name: "a comment removed from the declaration", declared: "", inDatabase: "old", want: everyObjectComment("old", ""), wantRange: 1},
 		{name: "the same comment on both sides", declared: "same", inDatabase: "same", want: nil},
 		{name: "a difference in surrounding space only", declared: "same", inDatabase: " same\n", want: nil},
 	}
@@ -83,7 +88,10 @@ func TestCompareWithDialect_ObjectCommentDifferenceIsAChange(t *testing.T) {
 			c.Assert(diff.SequencesModified, qt.HasLen, 0)
 			c.Assert(diff.DomainsModified, qt.HasLen, 0)
 			c.Assert(diff.CompositeTypesModified, qt.HasLen, 0)
-			c.Assert(diff.RangesModified, qt.HasLen, 0)
+			c.Assert(rangeChangesOf(diff), qt.HasLen, test.wantRange)
+			for _, change := range rangeChangesOf(diff) {
+				c.Assert(change.Value.(*pgtype.RangeChange).Differs, qt.DeepEquals, []string{pgtype.DiffComment})
+			}
 		})
 	}
 }
@@ -127,7 +135,8 @@ func TestCompareWithDatabaseInfo_ObjectCommentsFollowTheTargetsCapabilities(t *t
 			declared := commentedObjects("new")
 			// CockroachDB has neither domains nor ranges before 26.3, and a
 			// declaration it cannot host is refused before any comparison.
-			declared.Domains, declared.Ranges = nil, nil
+			declared.Domains = nil
+			declared.FeatureObjects = schemaext.Objects{}
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
 				t.Context(), declared,
@@ -165,7 +174,7 @@ func withoutKinds(
 func TestCompareWithDialect_ObjectCommentOnlyForObjectsBothSidesHold(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedObjects("new"), &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedObjects("new"), &catalog.Database{FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed))}, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.HasLen, 0)
 	c.Assert(diff.ViewsAdded, qt.HasLen, 1)
@@ -176,7 +185,7 @@ func TestCompareWithDialect_ObjectCommentOnlyForObjectsBothSidesHold(t *testing.
 func TestCompareSchemas_UnnamedDialectComparesObjectCommentsAsPostgreSQL(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.Compare(t.Context(), commentedObjects("new"), reportedObjects("old"), must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedObjects("new"), reportedObjects("old"), "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, everyObjectComment("old", "new"))
 }
@@ -198,12 +207,12 @@ func TestCompareSchemas_ObjectCommentsSurviveTheConversion(t *testing.T) {
 func TestCompareWithDialect_RemovedUserTypesCarryTheirComments(t *testing.T) {
 	c := qt.New(t)
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, reportedObjects("kept"), platform.Postgres, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired))}, reportedObjects("kept"), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.DomainsRemoved, qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved[0].Comment, qt.Equals, "kept")
 	c.Assert(diff.CompositeTypesRemoved, qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesRemoved[0].Comment, qt.Equals, "kept")
-	c.Assert(diff.RangesRemoved, qt.HasLen, 1)
-	c.Assert(diff.RangesRemoved[0].Comment, qt.Equals, "kept")
+	c.Assert(rangeChangesOf(diff), qt.HasLen, 1)
+	c.Assert(rangeChangesOf(diff)[0].Value.(*pgtype.RangeChange).Before.Comment, qt.Equals, "kept")
 }

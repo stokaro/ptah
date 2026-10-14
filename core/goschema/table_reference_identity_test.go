@@ -121,8 +121,6 @@ func TestQualifiedSchemaObjectNamesPreserveReferenceIdentity(t *testing.T) {
 	c.Assert(schemamodel.Domain{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
 	c.Assert(schemamodel.CompositeType{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
 	c.Assert(schemamodel.CompositeType{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
-	c.Assert(schemamodel.Range{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(schemamodel.Range{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
 	c.Assert(schemamodel.Sequence{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
 	c.Assert(schemamodel.Sequence{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
 }

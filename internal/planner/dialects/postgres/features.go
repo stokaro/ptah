@@ -46,11 +46,10 @@ const commonOwner = "ptah.run/postgres"
 // extensions the plan installs, before every other creation, and the
 // prerequisite removal window is after the last removal.
 //
-// The type creation window is after the enums, the routines that name no
-// type the plan creates and the common user types, and before the enum
-// changes, the routines whose signatures name a created type and the tables.
-// The type removal window is after the tables, routines and roles are
-// removed, and before the user types and the enums are.
+// The type creation window encloses common type operations after enums and
+// routines that name no created type, before tables and dependent routines.
+// The type removal window encloses common type drops after tables, routines
+// and roles, before enum drops. Captured references order steps within each span.
 func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, windows featurehost.Windows) ([]ast.Node, error) {
 	target := p.targetDialect()
 	if diff == nil || !hasFeatureChanges(target, diff) {
@@ -59,7 +58,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	semantics := diff.EffectiveIdentifierSemantics(target)
 	request := featureplan.Request{Target: target, Identifiers: semantics, Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges),
 		DatabasePath: diff.CurrentDatabasePath,
-		Types:        featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)}}
+		Types:        p.typeContext(diff)}
 	names := make(map[objectidentity.Key]string)
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range diff.TablesModified {
@@ -88,7 +87,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 				Table: creation.Table, Fields: creation.Fields, Enums: creation.Enums, Constraints: creation.Constraints}})
 		names[subject.Key()] = creation.Name
 	}
-	graph, err := featurehost.NewGraph(commonOwner, nodes, pgeffects.Sequence(builder, nodes), windows)
+	graph, err := featurehost.NewGraph(commonOwner, nodes, pgeffects.TypeSequence(builder, nodes, slices.Concat(request.Types.Current, request.Types.Desired)), windows)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +125,7 @@ func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Run
 	request := featureplan.Request{
 		Target: target, Identifiers: diff.EffectiveIdentifierSemantics(target), Capabilities: p.capabilities(),
 		DatabasePath: diff.CurrentDatabasePath,
-		Types:        featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)},
+		Types:        p.typeContext(diff),
 	}
 	names := make(map[objectidentity.Key]string)
 	builder := objectidentity.NewBuilder(request.Identifiers)

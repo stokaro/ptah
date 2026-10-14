@@ -70,10 +70,16 @@ type PrerequisiteWindows struct {
 // Every other step joins Creation: a creation, a change in place, and both
 // halves of a type dropped and created again, which its owner orders. A
 // rebuilt type is back before the tables, as it must be for a column to name
-// it.
+// it. Each span includes common type operations; owned operations may precede
+// or follow them when their definitions require that order.
 type TypeWindows struct {
-	Creation, Removal int
+	Creation, Removal Span
 }
+
+// Span encloses common operations between Start (inclusive) and End
+// (exclusive). Feature steps may run anywhere inside it, subject to their
+// dependencies on those operations. Equal bounds describe an insertion point.
+type Span struct{ Start, End int }
 
 // Graph is a host's common sequence as graph units, one per node, with an
 // empty marker pair around each window. Build it with [NewGraph], hand
@@ -107,10 +113,10 @@ var windowNames = [windowCount]string{"prerequisite-creations", "type-creations"
 // footprint orders nothing beyond its position. Windows outside the sequence
 // or out of order are refused.
 func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, windows Windows) (*Graph, error) {
-	positions := map[int]int{creationWindow: windows.Creation, dependentWindow: windows.Dependent, removalWindow: windows.Removal}
+	positions := map[int]Span{creationWindow: {windows.Creation, windows.Creation}, dependentWindow: {windows.Dependent, windows.Dependent}, removalWindow: {windows.Removal, windows.Removal}}
 	if windows.Prerequisites != nil {
-		positions[prerequisiteCreationWindow] = windows.Prerequisites.Creation
-		positions[prerequisiteRemovalWindow] = windows.Prerequisites.Removal
+		positions[prerequisiteCreationWindow] = Span{windows.Prerequisites.Creation, windows.Prerequisites.Creation}
+		positions[prerequisiteRemovalWindow] = Span{windows.Prerequisites.Removal, windows.Prerequisites.Removal}
 	}
 	if windows.Types != nil {
 		positions[typeCreationWindow] = windows.Types.Creation
@@ -118,7 +124,7 @@ func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, wind
 	}
 	ordered := make([]int, 0, len(positions))
 	for _, window := range slices.Sorted(maps.Keys(positions)) {
-		ordered = append(ordered, positions[window])
+		ordered = append(ordered, positions[window].Start, positions[window].End)
 	}
 	if !slices.IsSorted(ordered) || ordered[0] < 0 || ordered[len(ordered)-1] > len(nodes) {
 		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, ordered, len(nodes))
@@ -130,8 +136,11 @@ func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, wind
 		types: windows.Types != nil}
 	for i := 0; i <= len(nodes); i++ {
 		for _, window := range slices.Sorted(maps.Keys(positions)) {
-			if positions[window] == i {
-				graph.windows[window] = [2]plangraph.StepID{graph.marker("common/" + windowNames[window]), graph.marker("common/after-" + windowNames[window])}
+			if positions[window].Start == i {
+				graph.windows[window][0] = graph.marker("common/" + windowNames[window])
+			}
+			if positions[window].End == i {
+				graph.windows[window][1] = graph.marker("common/after-" + windowNames[window])
 			}
 		}
 		if i == len(nodes) {

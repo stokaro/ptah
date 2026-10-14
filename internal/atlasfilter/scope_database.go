@@ -112,8 +112,6 @@ func (s *scopeSelection) projectDatabaseSupport(db, out *catalog.Database) {
 		func(d catalog.Domain) (string, string) { return d.Schema, d.Name })
 	out.Composites = keepTypeObjects(s, db.Composites, "composite_type", referenced,
 		func(c catalog.CompositeType) (string, string) { return c.Schema, c.Name })
-	out.Ranges = keepTypeObjects(s, db.Ranges, "range", referenced,
-		func(r catalog.Range) (string, string) { return r.Schema, r.Name })
 	out.Enums = keepEnumObjects(s, db.Enums, referenced,
 		func(e catalog.Enum) (string, string) { return e.Schema, e.Name })
 }
@@ -167,9 +165,6 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, supportS
 	}
 	for _, composite := range out.Composites {
 		owning[s.effectiveSchema(composite.Schema)] = struct{}{}
-	}
-	for _, item := range out.Ranges {
-		owning[s.effectiveSchema(item.Schema)] = struct{}{}
 	}
 	for _, view := range out.Views {
 		owning[s.effectiveSchema(view.Schema)] = struct{}{}

@@ -605,22 +605,6 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "ptah:schema:range",
-		Description: "Declares a PostgreSQL range type.",
-		Scopes:      []Scope{ScopeStruct},
-		Attributes: []Attribute{
-			attr("name", "Range type name.", valueString, true, false),
-			attr("schema", "Target schema/namespace.", valueString, false, false),
-			attr("subtype", "Element subtype the range is built over.", valueString, true, false),
-			attr("subtype_opclass", "Operator class for the subtype.", valueString, false, false),
-			attr("collation", "Collation for the subtype.", valueString, false, false),
-			attr("canonical", "Canonicalization function.", valueString, false, false),
-			attr("subtype_diff", "Subtype difference function.", valueString, false, false),
-			attr("comment", "Range type comment.", valueString, false, false),
-			dialectsAttr(),
-		},
-	},
-	{
 		Name:        "ptah:schema:view",
 		Description: "Declares a database view.",
 		Scopes:      []Scope{ScopeStruct},

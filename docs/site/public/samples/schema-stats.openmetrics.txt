@@ -28,9 +28,6 @@ ptah_schema_domains{dialect="sqlite"} 0
 # HELP ptah_schema_composite_types Composite types.
 # TYPE ptah_schema_composite_types gauge
 ptah_schema_composite_types{dialect="sqlite"} 0
-# HELP ptah_schema_range_types Range types.
-# TYPE ptah_schema_range_types gauge
-ptah_schema_range_types{dialect="sqlite"} 0
 # HELP ptah_schema_views Views.
 # TYPE ptah_schema_views gauge
 ptah_schema_views{dialect="sqlite"} 0
@@ -103,6 +100,9 @@ ptah_schema_row_security_enabled_tables{dialect="sqlite"} 0
 # HELP ptah_schema_row_security_forced_tables Tables whose row-level security applies to their owner.
 # TYPE ptah_schema_row_security_forced_tables gauge
 ptah_schema_row_security_forced_tables{dialect="sqlite"} 0
+# HELP ptah_schema_range_types Range types.
+# TYPE ptah_schema_range_types gauge
+ptah_schema_range_types{dialect="sqlite"} 0
 # HELP ptah_schema_postgres_exclusion_constraints Captured PostgreSQL exclusion constraints.
 # TYPE ptah_schema_postgres_exclusion_constraints gauge
 ptah_schema_postgres_exclusion_constraints{dialect="sqlite"} 0

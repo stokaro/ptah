@@ -92,9 +92,6 @@ func reportRemovedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 	for _, composite := range diff.CompositeTypesRemoved {
 		result = append(result, ast.NewDropType(composite.QualifiedName()))
 	}
-	for _, rangeType := range diff.RangesRemoved {
-		result = append(result, ast.NewDropType(rangeType.QualifiedName()))
-	}
 	return result
 }
 

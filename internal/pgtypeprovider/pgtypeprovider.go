@@ -1,19 +1,21 @@
 // Package pgtypeprovider assembles the PostgreSQL user type owner of package
 // pgtype as one engine provider: its codecs, its conversion, comparison,
 // domain normalization, planning, declaration and reversal services on every
-// PostgreSQL-family target, and its reports in both representations. The
-// bundled runtime selects it without its reports.
+// PostgreSQL-family target, and its reports in both representations. It also
+// owns the Go, HCL and SQL range type source adapters.
 package pgtypeprovider
 
 import (
 	"slices"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
+	"ptah.run/core/sqlext"
 	"ptah.run/engine"
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/pgtype/typecompare"
@@ -45,11 +47,12 @@ func Provider() engine.Provider {
 		CoverageLimits: []schemaext.LimitMapping{
 			{Header: coverage.Domain, Model: pgtype.DomainKind, Names: typeNames},
 			{Header: coverage.Composite, Model: pgtype.CompositeKind, Names: typeNames},
-			{Header: coverage.Range, Model: pgtype.RangeKind, Names: typeNames},
 		},
 		// A scope names a type with the selector type of the common one.
-		Selections: []selectext.Extension{pgtype.Selections()},
-		HCL:        []hclext.Extension{pgtypesource.HCL()},
+		Selections:  []selectext.Extension{pgtype.Selections()},
+		HCL:         []hclext.Extension{pgtypesource.HCL()},
+		Annotations: []annotation.Extension{pgtypesource.Annotations()},
+		SQL:         []sqlext.Extension{pgtypesource.SQL(Targets())},
 		// A type on a target outside the family is refused, naming the scope
 		// that keeps it to the targets that host it: a column declared with
 		// the type would otherwise name something the server has no

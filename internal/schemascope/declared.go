@@ -49,9 +49,6 @@ func DeclaredSchemaNames(desired *schemamodel.Database) ([]string, error) {
 	for _, composite := range desired.CompositeTypes {
 		add(composite.Schema)
 	}
-	for _, rangeType := range desired.Ranges {
-		add(rangeType.Schema)
-	}
 	// An owner's type names its schema as a common one does; see
 	// [schemaext.TypeDefiner].
 	for _, defined := range schemaext.DefinedTypes(desired.FeatureObjects) {

@@ -357,7 +357,6 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.RevokedGrants) > 0 ||
 		len(ctx.db.CompositeTypes) > 0 ||
 		len(ctx.db.Domains) > 0 ||
-		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
 		ctx.hasOwnerGlobals() ||
 		len(ctx.featureLimitAnnotations) > 0
@@ -414,9 +413,6 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	for _, composite := range sortedCompositeTypes(ctx.db.CompositeTypes) {
 		w.writeComment(compositeAnnotation(composite))
-	}
-	for _, rangeType := range sortedRanges(ctx.db.Ranges) {
-		w.writeComment(rangeAnnotation(rangeType))
 	}
 	for _, sequence := range sortedSequences(ctx.db.Sequences) {
 		w.writeComment(sequenceAnnotation(sequence))
@@ -802,21 +798,6 @@ func compositeAnnotation(composite schemamodel.CompositeType) string {
 	)
 }
 
-// rangeAnnotation writes a range type.
-func rangeAnnotation(rangeType schemamodel.Range) string {
-	return annotation("ptah:schema:range",
-		attr{name: "name", value: rangeType.Name, set: true},
-		attr{name: "schema", value: rangeType.Schema, set: rangeType.Schema != ""},
-		attr{name: "subtype", value: rangeType.Subtype, set: true},
-		attr{name: "subtype_opclass", value: rangeType.SubtypeOpClass, set: rangeType.SubtypeOpClass != ""},
-		attr{name: "collation", value: rangeType.Collation, set: rangeType.Collation != ""},
-		attr{name: "canonical", value: rangeType.Canonical, set: rangeType.Canonical != ""},
-		attr{name: "subtype_diff", value: rangeType.SubtypeDiff, set: rangeType.SubtypeDiff != ""},
-		attr{name: "comment", value: rangeType.Comment, set: rangeType.Comment != ""},
-		dialectsAttr(rangeType.Dialects),
-	)
-}
-
 // sequenceAnnotation writes a standalone sequence.
 //
 // The numeric options are pointers on the model because "not stated" and
@@ -1176,14 +1157,6 @@ func sortedDomains(values []schemamodel.Domain) []schemamodel.Domain {
 
 func sortedCompositeTypes(values []schemamodel.CompositeType) []schemamodel.CompositeType {
 	result := append([]schemamodel.CompositeType(nil), values...)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
-	})
-	return result
-}
-
-func sortedRanges(values []schemamodel.Range) []schemamodel.Range {
-	result := append([]schemamodel.Range(nil), values...)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
 	})

@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -99,7 +100,8 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(after.Sequences, qt.DeepEquals, withoutSequenceProvenance(before.Sequences))
 	c.Assert(after.Domains, qt.DeepEquals, withoutDomainProvenance(before.Domains))
 	c.Assert(after.CompositeTypes, qt.DeepEquals, withoutCompositeProvenance(before.CompositeTypes))
-	c.Assert(after.Ranges, qt.DeepEquals, withoutRangeProvenance(before.Ranges))
+	c.Assert(declaredRanges(after), qt.DeepEquals, declaredRanges(before))
+	c.Assert(declaredRanges(before), qt.HasLen, 1)
 	c.Assert(after.Roles, qt.HasLen, 1)
 	c.Assert(after.Roles[0].Password, qt.Equals, before.Roles[0].Password)
 	c.Assert(after.Functions, qt.HasLen, 1)
@@ -219,12 +221,15 @@ func withoutCompositeProvenance(values []schemamodel.CompositeType) []schemamode
 	return result
 }
 
-func withoutRangeProvenance(values []schemamodel.Range) []schemamodel.Range {
-	result := append([]schemamodel.Range(nil), values...)
-	for i := range result {
-		result[i].StructName = ""
+func declaredRanges(database *schemamodel.Database) []schemaext.Object {
+	ranges := must.Must(database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgtype.RangeKind)
+	}).All())
+	for i := range ranges {
+		value := ranges[i].Value.(*pgtype.DesiredRange)
+		value.StructName = ""
 	}
-	return result
+	return ranges
 }
 
 func defaultPrivilegeObjects(database *schemamodel.Database) []schemaext.Object {

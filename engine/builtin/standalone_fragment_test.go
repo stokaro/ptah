@@ -313,7 +313,6 @@ func typeDefinitionFixtures() map[string]func() ast.Node {
 		},
 		"DomainTypeDef": func() ast.Node { return ast.NewDomainTypeDef("INTEGER") },
 		"EnumTypeDef":   func() ast.Node { return ast.NewEnumTypeDef("active", "inactive") },
-		"RangeTypeDef":  func() ast.Node { return ast.NewRangeTypeDef("INTEGER") },
 	}
 }
 

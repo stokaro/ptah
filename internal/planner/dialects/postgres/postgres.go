@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/typeorder"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -509,7 +510,6 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.EnumsAdded.Names()...)
 	names = append(names, diff.DomainsAdded.Names()...)
 	names = append(names, diff.CompositeTypesAdded.Names()...)
-	names = append(names, diff.RangesAdded.Names()...)
 	names = append(names, diff.SequencesAdded.Names()...)
 	names = append(names, diff.FunctionsAdded.Names()...)
 	names = append(names, diff.ViewsAdded.Names()...)
@@ -1460,7 +1460,7 @@ func (p *Planner) addNewUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 		deps = append(deps, userType.dep)
 	}
 
-	for _, name := range deporder.UserTypesForCreate(deps) {
+	for _, name := range deporder.UserTypesForCreate(typeorder.Vocabulary(deps, p.typeContext(diff).Desired)) {
 		if node, ok := byName[name]; ok {
 			result = append(result, node)
 		}
@@ -1475,29 +1475,20 @@ func (p *Planner) plannedUserTypes(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) []plannedUserType {
-	rebuiltForAdd := rebuiltUserTypes(diff)
+	rebuiltForAdd := p.rebuiltUserTypes(diff)
 	var planned []plannedUserType
 	// No lookup: the change carries the domain (stokaro/ptah#2315).
 	for _, domain := range diff.DomainsAdded {
 		planned = append(planned, plannedUserType{
-			dep:  deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}},
+			dep:  deporder.UserType{Name: tableref.CanonicalExact(domain.Schema, domain.Name), References: []string{domain.BaseType}},
 			node: modelast.FromDomain(domain),
-		})
-	}
-	// No lookup, and no `if found` around it. The change carries the range
-	// type, so a name the desired schema cannot resolve still plans its
-	// statement (stokaro/ptah#2315).
-	for _, rangeType := range diff.RangesAdded {
-		planned = append(planned, plannedUserType{
-			dep:  deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}},
-			node: modelast.FromRange(rangeType),
 		})
 	}
 	// No lookup: the change carries the composite type, so a name the desired
 	// schema cannot resolve still plans its statement (stokaro/ptah#2315).
 	for _, composite := range diff.CompositeTypesAdded {
 		planned = append(planned, plannedUserType{
-			dep:  deporder.UserType{Name: composite.QualifiedName(), References: compositeFieldTypes(composite)},
+			dep:  deporder.UserType{Name: tableref.CanonicalExact(composite.Schema, composite.Name), References: compositeFieldTypes(composite)},
 			node: modelast.FromCompositeType(composite),
 		})
 	}
@@ -1520,7 +1511,7 @@ func (p *Planner) plannedUserTypes(
 		// withheld the drop for it, so there is nothing to put back.
 		if domain := domainDiff.Desired; domain.Name != "" {
 			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
+				dep:  deporder.UserType{Name: domainTypeName(domainDiff), References: []string{domain.BaseType}},
 				node: modelast.FromDomain(domain),
 			})
 		}
@@ -1533,19 +1524,8 @@ func (p *Planner) plannedUserTypes(
 		}
 		if composite := compositeDiff.Desired; composite.Name != "" {
 			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(composite)},
+				dep:  deporder.UserType{Name: compositeTypeName(compositeDiff), References: compositeFieldTypes(composite)},
 				node: modelast.FromCompositeType(composite),
-			})
-		}
-	}
-	// PostgreSQL has no ALTER TYPE ... AS RANGE, so a changed range type takes
-	// the same drop-and-recreate path domains and composites already use
-	// (stokaro/ptah#931 item 2).
-	for _, rangeDiff := range diff.RangesModified {
-		if rangeType := rangeDiff.Desired; rangeType.Name != "" {
-			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
-				node: modelast.FromRange(rangeType),
 			})
 		}
 	}
@@ -1564,17 +1544,19 @@ func compositeFieldTypes(composite schemamodel.CompositeType) []string {
 // domains, ranges, and composite types. Modified objects are dropped here and
 // recreated by addNewUserTypes (there is no in-place ALTER for these forms).
 func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	byName := make(map[string]ast.Node)
 	for _, domain := range diff.DomainsRemoved {
-		result = append(result, ast.NewDropType(domain.QualifiedName()).SetDomain().SetIfExists().SetCascade().
-			SetComment("WARNING: Make sure no columns use this domain!"))
+		byName[tableref.CanonicalExact(domain.Schema, domain.Name)] = ast.NewDropType(domain.QualifiedName()).SetDomain().SetIfExists().SetCascade().
+			SetComment("WARNING: Make sure no columns use this domain!")
 	}
 	for _, composite := range diff.CompositeTypesRemoved {
-		result = append(result, ast.NewDropType(composite.QualifiedName()).SetIfExists().SetCascade().
-			SetComment("WARNING: Make sure no columns use this composite type!"))
+		byName[tableref.CanonicalExact(composite.Schema, composite.Name)] = ast.NewDropType(composite.QualifiedName()).SetIfExists().SetCascade().
+			SetComment("WARNING: Make sure no columns use this composite type!")
 	}
-	for _, rangeType := range diff.RangesRemoved {
-		result = append(result, ast.NewDropType(rangeType.QualifiedName()).SetIfExists().SetCascade().
-			SetComment("WARNING: Make sure no columns use this range type!"))
+	for _, name := range deporder.UserTypesForDrop(typeorder.Vocabulary(nil, p.typeContext(diff).Current)) {
+		if node, ok := byName[name]; ok {
+			result = append(result, node)
+		}
 	}
 	return result
 }
@@ -1613,7 +1595,7 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 // withheld and a comment says so: a type Ptah cannot rebuild is a type Ptah must
 // not drop.
 func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	rebuilt := rebuiltUserTypes(diff)
+	rebuilt := p.rebuiltUserTypes(diff)
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	var unresolved []ast.Node
@@ -1629,9 +1611,9 @@ func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.Schem
 			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
 		}
-		byName[domainDiff.DomainName] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
+		byName[domainTypeName(domainDiff)] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
 			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use")
-		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
+		deps = append(deps, deporder.UserType{Name: domainTypeName(domainDiff), References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
 		if compositeIsAlterableInPlace(compositeDiff, rebuilt) {
@@ -1644,22 +1626,12 @@ func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.Schem
 			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
 		}
-		byName[compositeDiff.TypeName] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
+		byName[compositeTypeName(compositeDiff)] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
 			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
-		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
+		deps = append(deps, deporder.UserType{Name: compositeTypeName(compositeDiff), References: compositeDiff.CurrentFieldTypes})
 	}
-	for _, rangeDiff := range diff.RangesModified {
-		if rangeDiff.Desired.Name == "" {
-			unresolved = append(unresolved, unrecreatableUserTypeComment("range type", rangeDiff.RangeName))
-			continue
-		}
-		byName[rangeDiff.RangeName] = ast.NewDropType(rangeDiff.RangeName).SetIfExists().
-			SetComment("Recreate modified range type; drop is non-CASCADE and fails if the type is in use")
-		deps = append(deps, deporder.UserType{Name: rangeDiff.RangeName, References: currentRangeReferences(rangeDiff)})
-	}
-
 	result = append(result, unresolved...)
-	for _, name := range deporder.UserTypesForDrop(deps) {
+	for _, name := range deporder.UserTypesForDrop(typeorder.Vocabulary(deps, p.typeContext(diff).Current)) {
 		if node, ok := byName[name]; ok {
 			result = append(result, node)
 		}
@@ -1687,16 +1659,6 @@ func currentDomainReferences(domainDiff difftypes.DomainDiff) []string {
 		return nil
 	}
 	return []string{domainDiff.CurrentBaseType}
-}
-
-// currentRangeReferences reports the from-side subtype of a modified range, for
-// the same reason and with the same Changes-is-prose caveat as
-// currentDomainReferences.
-func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
-	if rangeDiff.CurrentSubtype == "" {
-		return nil
-	}
-	return []string{rangeDiff.CurrentSubtype}
 }
 
 // refuseYDBChanges refuses the changes only the YDB planner plans: a table's
@@ -1919,6 +1881,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
+	types := &featurehost.TypeWindows{Creation: featurehost.Span{Start: len(result)}}
 	result = p.dropModifiedUserTypes(result, diff)
 	result = p.addNewUserTypes(result, diff)
 
@@ -1934,7 +1897,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// routines that name no type the plan creates, which a type may name, and
 	// before the routines whose signatures name a type and the tables whose
 	// columns may. Their pure drops join it at step 15.
-	types := &featurehost.TypeWindows{Creation: len(result)}
+	types.Creation.End = len(result)
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff)
@@ -2089,8 +2052,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 15. Remove enums (dangerous!). The type phase's drops go first: after
 	// the tables, routines and roles that may use a type are gone, and before
 	// the enums a type may name.
-	types.Removal = len(result)
+	types.Removal.Start = len(result)
 	result = p.removeUserTypes(result, diff)
+	types.Removal.End = len(result)
 	result = p.removeEnums(result, diff)
 
 	prerequisites.Removal = len(result)

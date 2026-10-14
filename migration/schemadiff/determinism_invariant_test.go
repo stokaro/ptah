@@ -1,15 +1,18 @@
 package schemadiff_test
 
 import (
-	"encoding/json"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
+	"ptah.run/internal/featurejson"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -38,10 +41,11 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 	// so that ordering has something to vary.
 	current := func() *catalog.Database {
 		return &catalog.Database{
-			Sequences:  []catalog.Sequence{{Name: "s_b"}, {Name: "s_a"}},
-			Domains:    []catalog.Domain{{Name: "d_b"}, {Name: "d_a"}},
-			Composites: []catalog.CompositeType{{Name: "c_b"}, {Name: "c_a"}},
-			Ranges:     []catalog.Range{{Name: "r_b"}, {Name: "r_a"}},
+			Sequences:       []catalog.Sequence{{Name: "s_b"}, {Name: "s_a"}},
+			Domains:         []catalog.Domain{{Name: "d_b"}, {Name: "d_a"}},
+			Composites:      []catalog.CompositeType{{Name: "c_b"}, {Name: "c_a"}},
+			FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
+			FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r_b"), Value: &pgtype.ObservedRange{Subtype: "int4"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r_a"), Value: &pgtype.ObservedRange{Subtype: "int4"}})),
 		}
 	}
 	reversed := func() *catalog.Database {
@@ -50,7 +54,11 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 			func() { db.Sequences[0], db.Sequences[1] = db.Sequences[1], db.Sequences[0] },
 			func() { db.Domains[0], db.Domains[1] = db.Domains[1], db.Domains[0] },
 			func() { db.Composites[0], db.Composites[1] = db.Composites[1], db.Composites[0] },
-			func() { db.Ranges[0], db.Ranges[1] = db.Ranges[1], db.Ranges[0] },
+			func() {
+				objects := must.Must(db.FeatureObjects.All())
+				slices.Reverse(objects)
+				db.FeatureObjects = must.Must(schemaext.NewObjects(objects...))
+			},
 		} {
 			swap()
 		}
@@ -59,7 +67,7 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 
 	encode := func(c *qt.C, db *catalog.Database) string {
 		c.Helper()
-		encoded, err := json.Marshal(must.Must(schemadiff.Compare(t.Context(), &schemamodel.Database{}, db, must.Must(builtin.New()))))
+		encoded, err := featurejson.Marshal(c.Context(), must.Must(builtin.New()).Codecs(), schemaext.Desired, must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired))}, db, "postgres", must.Must(builtin.New()))))
 		c.Assert(err, qt.IsNil)
 		return string(encoded)
 	}

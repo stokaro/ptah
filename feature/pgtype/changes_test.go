@@ -222,3 +222,29 @@ func TestChanges_PlaceACreatedType(t *testing.T) {
 		})
 	}
 }
+
+func TestTypeChangesExposeCurrentReferences(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		kind  schemaext.Kind
+		value schemaext.TypeObserver
+		refs  []string
+	}{
+		{"domain", pgtype.DomainKind, &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "old_type"}, After: &pgtype.DesiredDomain{BaseType: "new_type"}}, []string{"old_type"}},
+		{"composite", pgtype.CompositeKind, &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "item", Type: "old_type"}}}, After: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "item", Type: "new_type"}}}}, []string{"old_type"}},
+		{"range", pgtype.RangeKind, &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "old_type"}, After: &pgtype.DesiredRange{Subtype: "new_type"}}, []string{"old_type"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := pgtype.Ref(test.kind, "app", "value")
+			observed, found := test.value.ObservedType(ref)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(observed.ID, qt.DeepEquals, pgtype.Subject(ref))
+			c.Assert(observed.References, qt.DeepEquals, test.refs)
+			observed.References[0] = "mutated"
+			again, found := test.value.ObservedType(ref)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(again.References, qt.DeepEquals, test.refs)
+		})
+	}
+}

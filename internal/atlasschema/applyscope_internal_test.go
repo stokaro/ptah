@@ -31,6 +31,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/feature/pgtype"
 )
 
 // postgresPinned is a connection whose URL pins one schema, so its scope is a
@@ -122,7 +123,7 @@ func TestApplyReadScope(t *testing.T) {
 				Sequences:      []schemamodel.Sequence{{Name: "s", Schema: "seqs"}},
 				Domains:        []schemamodel.Domain{{Name: "d", Schema: "doms"}},
 				CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "comps"}},
-				Ranges:         []schemamodel.Range{{Name: "r", Schema: "rngs"}},
+				FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "rngs", "r"), Value: &pgtype.DesiredRange{}})),
 			},
 			want: []string{"comps", "doms", "public", "rngs", "seqs"},
 		},

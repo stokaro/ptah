@@ -9,8 +9,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
 )
@@ -26,10 +28,9 @@ import (
 func TestGenerateMigration_AClearedRangeAttributeIsRecreatedWithoutIt(t *testing.T) {
 	c := qt.New(t)
 
-	sql := clearedRangeMigrationSQL(c, schemamodel.Range{
-		Name:              "measurement",
-		Subtype:           "int8",
-		ClearedAttributes: []string{"subtype_diff"},
+	sql := clearedRangeMigrationSQL(c, pgtype.DesiredRange{
+		Subtype: "int8",
+		Cleared: []string{"subtype_diff"},
 	})
 
 	c.Assert(sql, qt.Contains, "DROP TYPE")
@@ -48,26 +49,22 @@ func TestGenerateMigration_AClearedRangeAttributeIsRecreatedWithoutIt(t *testing
 func TestGenerateMigration_AnOmittedRangeAttributeIsPlannedAway(t *testing.T) {
 	c := qt.New(t)
 
-	sql := clearedRangeMigrationSQL(c, schemamodel.Range{Name: "measurement", Subtype: "int8"})
+	sql := clearedRangeMigrationSQL(c, pgtype.DesiredRange{Subtype: "int8"})
 
 	c.Assert(sql, qt.Equals, "")
 }
 
 // clearedRangeMigrationSQL plans the declaration against a catalog whose range
 // carries a subtype_diff, and returns the statements as one string.
-func clearedRangeMigrationSQL(c *qt.C, declared schemamodel.Range) string {
+func clearedRangeMigrationSQL(c *qt.C, declared pgtype.DesiredRange) string {
 	c.Helper()
 
-	target := &schemamodel.Database{Ranges: []schemamodel.Range{declared}}
-	current := &catalog.Database{Ranges: []catalog.Range{{
-		Name:        "measurement",
-		Subtype:     "int8",
-		SubtypeDiff: "int8_subdiff",
-	}}}
+	target := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "", "measurement"), &declared))))}
+	current := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "measurement"), Value: &pgtype.ObservedRange{Subtype: "int8", SubtypeDiff: "int8_subdiff"}}))}
 
 	nodes, err := postgres.New().GenerateMigrationAST(
 		context.Background(), must.Must(builtin.New()),
-		must.Must(schemadiff.Compare(c.Context(), target, current, must.Must(builtin.New()))),
+		must.Must(schemadiff.CompareWithDialect(c.Context(), target, current, "postgres", must.Must(builtin.New()))),
 	)
 	c.Assert(err, qt.IsNil)
 

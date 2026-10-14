@@ -79,16 +79,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-644 fields are reachable from the desired schema, and each one carries
+631 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 533 | reaches rendered SQL on at least one target |
-| `comparison` | 35 | read when two schemas are compared, and written into no statement |
+| `ddl` | 522 | reaches rendered SQL on at least one target |
+| `comparison` | 34 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 32 | identifies the source text the declaration was read from |
+| `source` | 31 | identifies the source text the declaration was read from |
 | `export` | 13 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-71 known gaps: a conversion or the comparison drops each one on the dialects named.
+70 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -168,7 +168,6 @@ migration nobody asked for.
 | `schemamodel.PrimaryKeyPart.Name` | `clickhouse` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.PrimaryKeyPart.Name` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Prefix` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.Range.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Schema.Name` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Sequence.Dialects` | `cockroachdb`, `mariadb`, `oracle`, `spanner`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.Collate` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
@@ -189,7 +188,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-53 exemptions, each with the reason it is right.
+52 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -230,7 +229,6 @@ migration nobody asked for.
 | `schemamodel.Grant.Dialects` | `cockroachdb`, `yugabytedb` | to-catalog | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
 | `schemamodel.RLSEnabledTable.Forced` | any | both | a shared row-level security declaration reaches no catalog: each target converts it to its owner's model or skips it, so only the dialect-free comparison of two declarations reads it |
 | `schemamodel.RLSPolicy.Comment` | any | both | a shared row-level security declaration reaches no catalog: each target converts it to its owner's model or skips it, so only the dialect-free comparison of two declarations reads it |
-| `schemamodel.Range.ClearedAttributes` | any | both | a cleared range attribute converts to the empty attribute an absent one converts to, so it differs only from a current range that holds the attribute; compare.TestRanges_AttributeChangesAreReported measures that |
 | `schemamodel.Role.Dialects` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | both | removing the selection either changes nothing, on a target the role is selected for, or puts on the converted side a role the declaration does not name, and the comparison never removes such a role (compare.TestRolesComparison) |
 | `schemamodel.Role.Password` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | a catalog holds no readable password, so a declaration converted back from one has none |
 | `schemamodel.Schema.Charset` | `mariadb`, `mysql` | both | a MySQL-family schema is a database, and only a whole-server comparison compares databases (stokaro/ptah#3789); this comparison reads one database |
@@ -483,7 +481,6 @@ migration nobody asked for.
 | `schemamodel.Database.NotDescribed` | `comparison` | what the description does not claim to describe; it decides what a diff may conclude about an object nobody looked at, and reaches no statement |
 | `schemamodel.Database.RLSEnabledTables` | `ddl` | — |
 | `schemamodel.Database.RLSPolicies` | `ddl` | — |
-| `schemamodel.Database.Ranges` | `ddl` | — |
 | `schemamodel.Database.RevokedGrants` | `ddl` | — |
 | `schemamodel.Database.Roles` | `ddl` | — |
 | `schemamodel.Database.Schemas` | `ddl` | — |
@@ -652,18 +649,6 @@ migration nobody asked for.
 | `schemamodel.RLSPolicy.ToRoles` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.RLSPolicy.UsingExpression` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.RLSPolicy.WithCheckExpression` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
-| `schemamodel.Range.Canonical` | `ddl` | — |
-| `schemamodel.Range.ClearedAttributes` | `comparison` | records the attributes a declaration explicitly cleared, so a comparison can tell a value nobody wrote from one somebody removed |
-| `schemamodel.Range.Collation` | `ddl` | — |
-| `schemamodel.Range.Comment` | `ddl` | — |
-| `schemamodel.Range.Dialects` | `ddl` | — |
-| `schemamodel.Range.Facets` | `ddl` | — |
-| `schemamodel.Range.Name` | `ddl` | — |
-| `schemamodel.Range.Schema` | `ddl` | — |
-| `schemamodel.Range.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.Range.Subtype` | `ddl` | — |
-| `schemamodel.Range.SubtypeDiff` | `ddl` | — |
-| `schemamodel.Range.SubtypeOpClass` | `ddl` | — |
 | `schemamodel.Role.Comment` | `ddl` | — |
 | `schemamodel.Role.CreateDB` | `ddl` | — |
 | `schemamodel.Role.CreateRole` | `ddl` | — |

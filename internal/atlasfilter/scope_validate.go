@@ -215,13 +215,6 @@ func validateGeneratedTypes(
 			report("composite type", composite.Schema, composite.Name)
 		}
 	}
-	for _, item := range original.Ranges {
-		if !typeObjectKept(final.Ranges, item.Schema, item.Name, func(r schemamodel.Range) (string, string) {
-			return r.Schema, r.Name
-		}) {
-			report("range type", item.Schema, item.Name)
-		}
-	}
 	reportDroppedOwnerTypes(original.FeatureObjects, final.FeatureObjects, report)
 }
 
@@ -318,13 +311,6 @@ func validateDatabaseTypes(
 			return c.Schema, c.Name
 		}) {
 			report("composite type", composite.Schema, composite.Name)
-		}
-	}
-	for _, item := range original.Ranges {
-		if !typeObjectKept(final.Ranges, item.Schema, item.Name, func(r catalog.Range) (string, string) {
-			return r.Schema, r.Name
-		}) {
-			report("range type", item.Schema, item.Name)
 		}
 	}
 	reportDroppedOwnerTypes(original.FeatureObjects, final.FeatureObjects, report)

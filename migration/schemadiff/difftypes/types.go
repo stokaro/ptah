@@ -39,7 +39,7 @@ import (
 // the read is routed by [sqlutil.CheckOptionRequestsCheck] so the comparison
 // and the conversion cannot answer it differently.
 //
-// See [RangeChanges] for why both sides carry the operand and why the wire
+// See [ColumnChanges] for why both sides carry the operand and why the wire
 // shape does not change.
 type ViewChanges []schemamodel.View
 
@@ -71,7 +71,7 @@ func (v ViewChanges) Names() []string {
 // fields, including the refresh schedule, which is the ast type on both sides
 // rather than a copy of it.
 //
-// See [ViewChanges] for why the name is the identity here, and [RangeChanges]
+// See [ViewChanges] for why the name is the identity here, and [ColumnChanges]
 // for why the wire shape does not change.
 type MaterializedViewChanges []schemamodel.MaterializedView
 
@@ -113,7 +113,7 @@ func (m MaterializedViewChanges) Names() []string {
 //
 // A removal carries the column and NOT its keys. See [TableDiff.ColumnsRemoved].
 //
-// See [RangeChanges] for why the wire shape does not change.
+// JSON contains only names; the complete definitions stay in memory for planning.
 type ColumnChanges []schemamodel.Field
 
 // MarshalJSON writes the names alone, the shape `columns_added` and
@@ -209,7 +209,7 @@ type RoutineChange struct {
 // A routine is addressed by its argument list as well as its name, so the drop
 // identity travels with the change rather than in a list beside it.
 //
-// See [RangeChanges] for why both sides carry and why the wire shape does not
+// See [ColumnChanges] for why both sides carry and why the wire shape does not
 // change.
 type FunctionChanges []RoutineChange
 
@@ -267,7 +267,7 @@ func (f FunctionChanges) Removals() []RoutineRemoval {
 // expression. [sqlutil.DefaultLooksLikeExpression] is that rule, and the column
 // path reaches the same one, so the two cannot answer it differently.
 //
-// See [RangeChanges] for why both sides carry the operand and why the wire
+// See [ColumnChanges] for why both sides carry the operand and why the wire
 // shape does not change.
 type DomainChanges []schemamodel.Domain
 
@@ -297,7 +297,7 @@ func (d DomainChanges) Names() []string {
 //
 // catalog.Enum and schemamodel.Enum declare the same three properties -- name,
 // schema and ordered values -- with nothing on either side the other cannot
-// hold. See [RangeChanges] for why both sides carry the operand and why the
+// hold. See [ColumnChanges] for why both sides carry the operand and why the
 // wire shape is a list of names.
 type EnumChanges []schemamodel.Enum
 
@@ -325,7 +325,7 @@ func (e EnumChanges) Names() []string {
 // SequenceChanges is a set of sequences one change applies to, carrying each
 // one's definition and not only its name.
 //
-// See [RangeChanges] for why both sides carry the operand and why the wire
+// See [ColumnChanges] for why both sides carry the operand and why the wire
 // shape is a list of names.
 type SequenceChanges []schemamodel.Sequence
 
@@ -353,7 +353,7 @@ func (s SequenceChanges) Names() []string {
 // CompositeTypeChanges is a set of composite types one change applies to,
 // carrying each one's fields and not only its name.
 //
-// See [RangeChanges] for why both sides carry the operand and why the wire
+// See [ColumnChanges] for why both sides carry the operand and why the wire
 // shape is a list of names.
 type CompositeTypeChanges []schemamodel.CompositeType
 
@@ -374,56 +374,6 @@ func (c CompositeTypeChanges) Names() []string {
 	names := make([]string, 0, len(c))
 	for _, composite := range c {
 		names = append(names, composite.QualifiedName())
-	}
-	return names
-}
-
-// RangeChanges is a set of range types one change applies to, carrying each
-// one's definition and not only its name.
-//
-// Carrying the operand is what lets a planner work from the change alone. The
-// alternative is to recover each definition by name from the desired schema,
-// and a name that fails to resolve there plans nothing at all -- silently,
-// because such a lookup is guarded rather than checked.
-//
-// ON THE WIRE IT IS A LIST OF NAMES. `ptah schema diff --format json`
-// serializes this type under `format_version: 1` as the name list it has always
-// been, and every sibling family below does the same. The carried operand is
-// for a planner in the same process; the document is written and never read
-// back, so its encoding is a presentation choice rather than a contract the
-// operand has to fit.
-//
-// A nil list stays null and an empty one stays an empty array, which is the
-// distinction every field of this type keeps: null is a comparison that did not
-// run, and [] is one that found nothing.
-type RangeChanges []schemamodel.Range
-
-// MarshalJSON writes the names alone, preserving the shape `ranges_added` and
-// `ranges_removed` have carried since they existed.
-//
-// A nil list stays null and an empty one stays an empty array, which is the
-// distinction every other field of this type keeps: null is a comparison that
-// did not run, and [] is one that found nothing.
-func (r RangeChanges) MarshalJSON() ([]byte, error) {
-	if r == nil {
-		return []byte("null"), nil
-	}
-	names := make([]string, 0, len(r))
-	for _, rangeType := range r {
-		names = append(names, rangeType.QualifiedName())
-	}
-	return json.Marshal(names)
-}
-
-// Names is the range names this change applies to, for the callers that key on
-// a name rather than plan from a definition.
-func (r RangeChanges) Names() []string {
-	if r == nil {
-		return nil
-	}
-	names := make([]string, 0, len(r))
-	for _, rangeType := range r {
-		names = append(names, rangeType.QualifiedName())
 	}
 	return names
 }
@@ -990,36 +940,18 @@ type SchemaDiff struct {
 
 	// DomainsAdded/Removed/Modified track PostgreSQL domain types.
 	//
-	// Both lists carry the domain itself, for the reason [RangeChanges] gives.
+	// Both lists carry the domain itself, for the reason [ColumnChanges] gives.
 	DomainsAdded    DomainChanges `json:"domains_added"`
 	DomainsRemoved  DomainChanges `json:"domains_removed"`
 	DomainsModified []DomainDiff  `json:"domains_modified"`
 
 	// CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
 	//
-	// Both lists carry the composite type itself, for the reason [RangeChanges]
+	// Both lists carry the composite type itself, for the reason [ColumnChanges]
 	// gives.
 	CompositeTypesAdded    CompositeTypeChanges `json:"composite_types_added"`
 	CompositeTypesRemoved  CompositeTypeChanges `json:"composite_types_removed"`
 	CompositeTypesModified []CompositeTypeDiff  `json:"composite_types_modified"`
-
-	// RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
-	// no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE
-	// DROP TYPE followed by a CREATE TYPE, the same shape domains and composite
-	// types already use.
-	//
-	// Modified is what makes a changed subtype visible at all: a comparison that
-	// built name sets alone found no difference in it, so `schema apply` reported
-	// a synced schema while the database still holds the old definition
-	// (stokaro/ptah#931 item 2).
-	//
-	// The two lists carry the range type itself rather than its name, and both
-	// sides carry it: the reverse of an addition is a removal and the reverse of
-	// a removal is an addition, so a planner that had to look one of them up
-	// would need a schema again for exactly the direction that swap produces.
-	RangesAdded    RangeChanges `json:"ranges_added"`
-	RangesRemoved  RangeChanges `json:"ranges_removed"`
-	RangesModified []RangeDiff  `json:"ranges_modified"`
 
 	// ViewsAdded is the views that exist in the target schema and not in the
 	// current database, each carrying its body; see [ViewChanges].
@@ -1681,11 +1613,10 @@ func (d *SchemaDiff) hasSequenceChanges() bool {
 		len(d.SequencesModified) > 0
 }
 
-// hasUserTypeChanges returns true if there are any domain/composite/range changes.
+// hasUserTypeChanges returns true if there are any domain or composite type changes.
 func (d *SchemaDiff) hasUserTypeChanges() bool {
 	return len(d.DomainsAdded) > 0 || len(d.DomainsRemoved) > 0 || len(d.DomainsModified) > 0 ||
-		len(d.CompositeTypesAdded) > 0 || len(d.CompositeTypesRemoved) > 0 || len(d.CompositeTypesModified) > 0 ||
-		len(d.RangesAdded) > 0 || len(d.RangesRemoved) > 0 || len(d.RangesModified) > 0
+		len(d.CompositeTypesAdded) > 0 || len(d.CompositeTypesRemoved) > 0 || len(d.CompositeTypesModified) > 0
 }
 
 func (d *SchemaDiff) hasViewChanges() bool {
@@ -2203,29 +2134,6 @@ type DomainDiff struct {
 	Desired schemamodel.Domain `json:"-"`
 }
 
-// RangeDiff represents changes to an existing PostgreSQL range type.
-type RangeDiff struct {
-	RangeName string            `json:"range_name"`
-	Changes   map[string]string `json:"changes"`
-
-	// CurrentSubtype is the subtype the range has in the database being compared
-	// against, in that catalog's own spelling. It is the from-side used to order
-	// the non-CASCADE DROP, for the same reason DomainDiff.CurrentBaseType is:
-	// the DROP runs against the database as it stands, so only the references
-	// that database holds now can block it.
-	//
-	// Empty when the caller built the diff by hand; the drop ordering then falls
-	// back to declaration order.
-	CurrentSubtype string `json:"current_subtype,omitempty"`
-
-	// Desired is the range type this change asks the database to hold.
-	//
-	// PostgreSQL has no ALTER TYPE ... AS RANGE, so every change here is a drop
-	// and a recreate. It plays the part [DomainDiff.Desired] plays, with the
-	// same empty-means-withhold-the-drop rule.
-	Desired schemamodel.Range `json:"-"`
-}
-
 // CompositeTypeDiff represents changes to a PostgreSQL composite type.
 //
 // Changes is the human-readable "old -> new" payload. CurrentFieldTypes is the
@@ -2660,7 +2568,6 @@ type TableCreation struct {
 type UserTypeVocabulary struct {
 	Domains        []schemamodel.Domain
 	CompositeTypes []schemamodel.CompositeType
-	Ranges         []schemamodel.Range
 	Enums          []schemamodel.Enum
 	Defined        []schemaext.DefinedType
 }
@@ -2683,7 +2590,6 @@ func UserTypeVocabularyOf(desired *schemamodel.Database) UserTypeVocabulary {
 	return UserTypeVocabulary{
 		Domains:        nilWhenEmpty(desired.Domains),
 		CompositeTypes: nilWhenEmpty(desired.CompositeTypes),
-		Ranges:         nilWhenEmpty(desired.Ranges),
 		Enums:          nilWhenEmpty(desired.Enums),
 		Defined:        schemaext.DefinedTypes(desired.FeatureObjects),
 	}
@@ -3118,7 +3024,6 @@ func (v UserTypeVocabulary) declared() schemaprep.DeclaredUserTypes {
 	return schemaprep.DeclaredUserTypes{
 		Domains:        v.Domains,
 		CompositeTypes: v.CompositeTypes,
-		Ranges:         v.Ranges,
 		Enums:          v.Enums,
 		Defined:        v.Defined,
 	}

@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/builtintest"
 )
 
 // An inspected ClickHouse skipping index carries its type and granularity as
@@ -39,7 +40,9 @@ func TestSchemaInspectHCLExportsSkippingIndexSettings(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals, "")
 	c.Assert(document, qt.Contains, `platform "clickhouse"`)
-	parsed, err := atlashcl.Parse([]byte(document), "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL()},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, map[string]map[string]string{"clickhouse": {"type": "bloom_filter(0.01)", "granularity": "4"}})

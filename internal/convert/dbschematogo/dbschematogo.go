@@ -144,7 +144,6 @@ func newDatabase() *schemamodel.Database {
 		Sequences:         make([]schemamodel.Sequence, 0),
 		Domains:           make([]schemamodel.Domain, 0),
 		CompositeTypes:    make([]schemamodel.CompositeType, 0),
-		Ranges:            make([]schemamodel.Range, 0),
 		Views:             make([]schemamodel.View, 0),
 		MaterializedViews: make([]schemamodel.MaterializedView, 0),
 		Triggers:          make([]schemamodel.Trigger, 0),
@@ -447,27 +446,6 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			Schema:  composite.Schema,
 			Fields:  fields,
 			Comment: composite.Comment,
-		})
-	}
-	for _, rangeType := range dbSchema.Ranges {
-		database.Ranges = append(database.Ranges, schemamodel.Range{
-			Facets:  rangeType.Facets,
-			Name:    rangeType.Name,
-			Schema:  rangeType.Schema,
-			Subtype: rangeType.Subtype,
-			// The four attributes beside the subtype are what make one range
-			// type a different type from another. The reader asks pg_range for
-			// all of them and the renderer emits an option for each; listing
-			// only the subtype here described `CREATE TYPE r AS RANGE (SUBTYPE
-			// = timestamptz, SUBTYPE_DIFF = f)` as a range with no diff
-			// function, and replaying that built a type whose GiST indexes lose
-			// their penalty function and whose discrete values stop
-			// canonicalizing (stokaro/ptah#2200).
-			SubtypeOpClass: rangeType.SubtypeOpClass,
-			Collation:      rangeType.Collation,
-			Canonical:      rangeType.Canonical,
-			SubtypeDiff:    rangeType.SubtypeDiff,
-			Comment:        rangeType.Comment,
 		})
 	}
 }

@@ -759,15 +759,7 @@ func compositeObjects(schema *catalog.Database) []Object {
 }
 
 func rangeObjects(schema *catalog.Database) []Object {
-	objects := make([]Object, 0, len(schema.Ranges))
-	for _, rangeType := range schema.Ranges {
-		objects = append(objects, Object{
-			Type:   ObjectTypeRange,
-			Schema: rangeType.Schema,
-			Name:   rangeType.Name,
-		})
-	}
-	return append(objects, ownerTypeObjects(schema, objectidentity.KindRange, ObjectTypeRange)...)
+	return ownerTypeObjects(schema, objectidentity.KindRange, ObjectTypeRange)
 }
 
 // ownerTypeObjects reports the types of the common kind an owner's
