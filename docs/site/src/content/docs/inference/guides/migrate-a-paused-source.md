@@ -40,7 +40,8 @@ consistency:
 ```
 
 No triggers are installed, no companion table is created, and no catch-up is
-needed.
+needed. It is also the path a generation on YDB takes, because YDB has no row
+triggers for the outbox mode to use.
 
 ## Run it
 

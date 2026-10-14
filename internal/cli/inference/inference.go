@@ -45,7 +45,13 @@ separately:
 
 None of them is implied by another. A backfill finishing does not mean the
 corpus is right; verification passing does not mean anything has cut over; and
-cutting over does not make the old generation disposable.`,
+cutting over does not make the old generation disposable.
+
+The database is PostgreSQL with pgvector or YDB, and the --db-url scheme
+decides which. Both keep the run state in tables of their own beside the
+vectors. On YDB a vector is stored as a float vector in a String column and
+indexed with vector_kmeans_tree, and the consistency mode is immutable: the
+outbox mode records changes with row triggers, which YDB does not have.`,
 		SilenceUsage: true,
 	}
 

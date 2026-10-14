@@ -457,3 +457,17 @@ func lookupFact(facts embedplan.Facts, name string) (embedplan.Fact, bool) {
 	}
 	return embedplan.Fact{}, false
 }
+
+// A database that cannot run the specification at all says why, and each
+// reason is a blocker in the database's own words: a YDB server asked for the
+// outbox mode names the capability and the line it lacks.
+func TestBuild_ADatabaseRefusalBlocksThePlan(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.Refusals = []string{"YDB 26.2.1.14 has no triggers, and the outbox consistency mode needs them"}
+
+	plan := embedplan.Build(inputs)
+
+	c.Assert(plan.Runnable(), qt.IsFalse)
+	c.Assert(plan.Blockers, qt.DeepEquals, inputs.Refusals)
+}

@@ -522,7 +522,7 @@ func (t *Target) writeStatement(write embedrun.TargetWrite) (string, []any, erro
 	selected := make([]string, 0, len(t.key)+6)
 	for _, part := range t.key {
 		columns = append(columns, quote(part.name))
-		selected = append(selected, qualified("source", part.name)+" AS "+quote(part.name))
+		selected = append(selected, qualified(sourceAlias, part.name)+" AS "+quote(part.name))
 	}
 	columns = append(columns, quote(column+ordinalSuffix), quote(column), quote(column+generationSuffix),
 		quote(column+inputHashSuffix), quote(column+versionSuffix), quote(column+stateSuffix))
@@ -532,12 +532,16 @@ func (t *Target) writeStatement(write embedrun.TargetWrite) (string, []any, erro
 		"$p1 AS "+quote(column+generationSuffix), "$p2 AS "+quote(column+inputHashSuffix),
 		"$p3 AS "+quote(column+versionSuffix), "$p4 AS "+quote(column+stateSuffix))
 	// #nosec G201 -- names from the specification, through quote.
-	statement := fmt.Sprintf("UPSERT INTO %s (%s) SELECT %s FROM %s AS source WHERE %s",
+	statement := fmt.Sprintf("UPSERT INTO %s (%s) SELECT %s FROM %s AS "+sourceAlias+" WHERE %s",
 		quoteTable(t.spec.Target.Schema, t.spec.Target.Table), strings.Join(columns, ", "),
 		strings.Join(selected, ", "), quoteTable(t.spec.Source.Schema, t.spec.Source.Table),
-		keyMatch("source", t.key, first))
+		keyMatch(sourceAlias, t.key, first))
 	return statement, arguments, nil
 }
+
+// sourceAlias names the source table in an own-table write, which selects the
+// key out of it.
+const sourceAlias = "src"
 
 // setsByKey groups a batch's writes into one set per source key, in the order
 // the keys first appear, each set in ordinal order.

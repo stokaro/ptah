@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/internal/embedengine"
 	"ptah.run/internal/embedconnect"
+	"ptah.run/internal/embedengine"
 	"ptah.run/internal/embedrun"
 )
 

@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications, transfers, secrets and external data sources, type mappings, keys, defaults and indexes, comments, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications, transfers, secrets and external data sources, type mappings, keys, defaults and indexes, comments, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, embedding generations, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -9,7 +9,7 @@ goal: "Look up what Ptah renders, plans, reads and applies on YDB."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema/ydb"
-  - "internal/ydbgap"
+  - "internal/embedydb"
   - "internal/ydbtype"
 generated: false
 searchAliases:
@@ -35,8 +35,9 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Inference and the YDB object families such as JSON
-indexes are not supported yet. See
+`ptah inference` builds embedding generations on YDB; see
+[Embedding generations](#embedding-generations). The YDB object families such
+as JSON indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -2748,6 +2749,35 @@ statement rejects the whole document. YQL files describe the supported object
 families listed above; omitted objects follow the same removal and preservation
 rules as Go and YAML declarations.
 
+## Embedding generations
+
+`ptah inference` and the `inference_plan` and `inference_status` tools of
+`ptah mcp` run an embedding migration on YDB through its own vector support. A
+`ydb://` or `ydbs://` `--db-url` selects it.
+
+- The run state lives in row tables named `ptah_embedding_*`, created at the
+  root of the database the URL names, or of its dev realm.
+- A vector is stored as the bytes `Knn::ToBinaryStringFloat` writes, in a
+  `String` column, with four `Utf8` bookkeeping columns beside it. The
+  specification names `representation: float`.
+- The index is `GLOBAL USING vector_kmeans_tree`, with the distance or
+  similarity the metric names and the `levels` and `clusters` the
+  specification's index options give. Search uses the `Knn` functions, through
+  `VIEW <index>` or without it.
+- A batch's vectors and its checkpoint are written in one serializable
+  transaction. Every run-state decision is made inside such a transaction, and
+  one that conflicts with another is aborted by YDB and runs again.
+- `source.key_fields` name the source table's primary key.
+- The consistency mode is `immutable`. The outbox mode needs row triggers, which
+  YDB does not have, and it is refused by name.
+- YDB 25.1 builds the index with its `EnableVectorIndex` flag on, and on 25.1
+  and 25.2 the index does not take in rows written after its build, so a write
+  into an indexed generation is refused there.
+
+[Support and limitations](../../inference/reference/support-and-limitations/)
+lists the full set, and [Plan vector
+indexes](../../inference/strategies/plan-vector-indexes/) the index settings.
+
 ## What is not supported yet
 
 When a row table contains an unsupported index kind, inspection refuses the
@@ -2756,14 +2786,6 @@ index or omit it from the schema.
 
 JSON indexes are not modeled. The certified 25.1 and 26.2 lines refuse their
 creation, and a read that encounters an unmodeled index refuses the whole schema.
-
-The remaining unimplemented workflow is:
-
-<!-- BEGIN GENERATED YDB GAPS -->
-- `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
-<!-- END GENERATED YDB GAPS -->
-
-Inference is tracked separately in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 

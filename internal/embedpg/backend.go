@@ -8,7 +8,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical connects with
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/engine/builtin"
+	"ptah.run/core/renderer"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
@@ -66,14 +66,10 @@ func (b *Backend) Close() error { return b.db.Close() }
 // Store is the run state.
 func (b *Backend) Store() embedbackend.Store { return b.store }
 
-// EnsureSchema creates the run-state tables, rendered for the PostgreSQL
-// baseline profile.
-func (b *Backend) EnsureSchema(ctx context.Context) error {
-	runtime, err := builtin.New()
-	if err != nil {
-		return err
-	}
-	return b.store.EnsureSchema(ctx, runtime, capability.ForDialect(Dialect))
+// EnsureSchema creates the run-state tables, rendered by service for the
+// PostgreSQL baseline profile.
+func (b *Backend) EnsureSchema(ctx context.Context, service renderer.Service) error {
+	return b.store.EnsureSchema(ctx, service, capability.ForDialect(Dialect))
 }
 
 // ResolveRelation resolves a spelling through the session's search_path.

@@ -48,8 +48,8 @@ var inferenceYDBLines = []inferenceYDBLine{
 // the second. Each line runs in a dev realm of its own, so the run state, the
 // source and the vectors are all inside one directory the test removes.
 //
-// It fails where YDB is refused before it connects, which is how inference on
-// YDB stood before this backend (stokaro/ptah#4181).
+// It fails wherever a YDB URL is refused before it connects: every verb after
+// plan needs the backend to reach the database.
 func TestInferenceYDBCLIE2E(t *testing.T) {
 	for _, line := range inferenceYDBLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -78,6 +78,106 @@ func TestInferenceYDBCLIE2E(t *testing.T) {
 			assertYDBRollbackReturnsToTheFirst(c, ctx, second, dbURL, firstGeneration)
 			assertYDBRetirementDropsTheSecond(c, ctx, db, second, dbURL, secondGeneration)
 			assertYDBWritesAfterTheIndexFollowTheLine(c, ctx, db, first, dbURL, line)
+		})
+	}
+}
+
+// TestInferenceYDBExhaustiveSearchE2E evaluates a generation that declares no
+// index, so both of evaluate's searches are exhaustive Knn scans and every
+// answer is exact: recall and agreement are 1.000, which a wrong distance
+// function or a wrong order cannot reach.
+func TestInferenceYDBExhaustiveSearchE2E(t *testing.T) {
+	for _, line := range inferenceYDBLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			dbURL := enterYDBRealm(c, ctx, line)
+			db := openYDBRealm(c, ctx, dbURL)
+			seedYDBArticles(c, ctx, db)
+			endpoint := httptest.NewServer(http.HandlerFunc(topicEmbeddingsHandler(c)))
+			defer endpoint.Close()
+			specPath := writeYDBSpec(c, ydbSpec{endpoint: endpoint.URL, column: "embedding", revision: "1", noIndex: true})
+
+			runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-exact")
+			runInference(c, ctx, "backfill", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-exact")
+			index := runInference(c, ctx, "index", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-exact")
+			c.Assert(index, qt.Contains, "declares no index method")
+			corpus := writeCorpus(c, `
+version: 1
+name: topics
+default_k: 2
+cases:
+  - id: pricing
+    query: pricing
+    required: ["1"]
+    relevant: {"1": 3, "5": 2}
+  - id: support
+    query: support
+    required: ["2"]
+    relevant: {"2": 3, "5": 2}
+  - id: billing
+    query: billing
+    required: ["3"]
+    relevant: {"3": 3, "4": 1}
+`)
+			output := runInference(c, ctx, "evaluate", "--spec", specPath, "--db-url", dbURL, "--corpus", corpus,
+				"--min-recall", "1.0", "--min-exact-agreement", "1.0")
+
+			c.Assert(output, qt.Contains, "recall 1.000, MRR 1.000, NDCG 1.000 over 3 cases")
+			c.Assert(output, qt.Contains, "the index agrees with an exhaustive search on 1.000 of results, over 3 cases")
+		})
+	}
+}
+
+// TestInferenceYDBOwnTableE2E is a generation in a table of its own, with each
+// source row split into a set of chunks: prepare creates the table keyed by the
+// source key and the chunk ordinal and marks it as the generation's, the
+// backfill writes every set, verification walks the two tables in one full
+// join, and retirement drops the table only because the mark names this
+// generation.
+func TestInferenceYDBOwnTableE2E(t *testing.T) {
+	for _, line := range inferenceYDBLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			dbURL := enterYDBRealm(c, ctx, line)
+			db := openYDBRealm(c, ctx, dbURL)
+			seedYDBArticles(c, ctx, db)
+			endpoint := httptest.NewServer(http.HandlerFunc(topicEmbeddingsHandler(c)))
+			defer endpoint.Close()
+			specPath := writeYDBSpec(c, ydbSpec{
+				endpoint: endpoint.URL, column: "embedding", revision: "1",
+				ownTable: "article_chunks", chunkBytes: 16,
+			})
+
+			runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-chunks")
+			again := runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-chunks")
+			c.Assert(again, qt.Contains, "already exists")
+			backfill := runInference(c, ctx, "backfill",
+				"--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-chunks", "--batch-rows", "2")
+			c.Assert(backfill, qt.Contains, "backfill finished: ")
+			runInference(c, ctx, "index", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-chunks")
+			verify := runInference(c, ctx, "verify", "--spec", specPath, "--db-url", dbURL, "--run-id", "ydb-chunks")
+			c.Assert(verify, qt.Contains, "every deterministic layer passed")
+			c.Assert(verify, qt.Contains, "5 source rows, ")
+
+			names, err := tableNamesInRealm(ctx, db)
+			c.Assert(err, qt.IsNil)
+			c.Assert(names, qt.Contains, "article_chunks")
+			generation := activeGenerationOfRun(c, ctx, specPath, dbURL, "ydb-chunks")
+			refused, err := runInferenceExpectingFailure(c, ctx, "retire",
+				"--spec", specPath, "--db-url", dbURL, "--generation", generation)
+			c.Assert(err, qt.IsNotNil)
+			output := runInference(c, ctx, "retire", "--spec", specPath, "--db-url", dbURL,
+				"--generation", generation, "--approve", planDigestFrom(c, refused), "--approver", "an operator")
+			c.Assert(output, qt.Contains, "and the table article_chunks they were in")
+
+			names, err = tableNamesInRealm(ctx, db)
+			c.Assert(err, qt.IsNil)
+			c.Assert(names, qt.Not(qt.Contains), "article_chunks")
+			c.Assert(names, qt.Contains, "articles")
 		})
 	}
 }
@@ -214,6 +314,12 @@ type ydbSpec struct {
 	revision       string
 	mode           string
 	representation string
+	// ownTable, when set, names a table of the generation's own, and the
+	// source rows are split into chunks of at most chunkBytes.
+	ownTable   string
+	chunkBytes int
+	// noIndex declares no index method, so every search is exhaustive.
+	noIndex bool
 }
 
 // writeYDBSpec writes a specification for the realm's articles table.
@@ -226,6 +332,15 @@ func writeYDBSpec(c *qt.C, spec ydbSpec) string {
 	representation := spec.representation
 	if representation == "" {
 		representation = "float"
+	}
+	target, layout, truncate, chunking := "articles", "", "refuse", ""
+	index := "  index_method: vector_kmeans_tree\n  index_options:\n    levels: \"1\"\n    clusters: \"2\"\n"
+	if spec.noIndex {
+		index = ""
+	}
+	if spec.ownTable != "" {
+		target, layout, truncate = spec.ownTable, "  layout: own_table\n", "chunk"
+		chunking = fmt.Sprintf("  max_input_bytes: %d\n  overlap_bytes: 4\n", spec.chunkBytes)
 	}
 	document := fmt.Sprintf(`
 version: 1
@@ -242,8 +357,8 @@ preprocessing:
   null_policy: empty
   empty_policy: skip
   unicode_normalization: none
-  truncate: refuse
-model:
+  truncate: %s
+%smodel:
   provider: openai-compatible
   endpoint_class: local
   endpoint: %s/v1
@@ -252,20 +367,16 @@ model:
   reported_dimension: 4
   normalization: none
 target:
-  table: articles
+  table: %s
   column: %s
   representation: %s
   metric: cosine
-  index_method: vector_kmeans_tree
-  index_options:
-    levels: "1"
-    clusters: "2"
-consistency:
+%s%sconsistency:
   mode: %s
 policy:
   require_exact_approval: true
   require_consistency_mode: true
-`, spec.endpoint, spec.revision, spec.column, representation, mode)
+`, truncate, chunking, spec.endpoint, spec.revision, target, spec.column, representation, index, layout, mode)
 	path := filepath.Join(c.TempDir(), "spec-"+spec.column+"-"+mode+".yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path
@@ -320,8 +431,15 @@ func buildYDBGeneration(c *qt.C, ctx context.Context, specPath, dbURL, runID str
 }
 
 // assertYDBEvaluationFindsTheCorpus searches the generation through its
-// vector_kmeans_tree index and exhaustively, and both find what the corpus
-// says they should.
+// vector_kmeans_tree index and exhaustively, and reports both under the
+// setting that decides what the indexed search reaches.
+//
+// No floor is set on either number. The index is approximate by design and
+// its clusters come from a k-means build over five rows, so which cluster a
+// query descends into differs between builds: measured, the same corpus agreed
+// with exhaustive search on 1.000 of results on one build and 0.667 on the
+// next. What is deterministic is that both searches ran and what they ran
+// under.
 func assertYDBEvaluationFindsTheCorpus(c *qt.C, ctx context.Context, specPath, dbURL string) {
 	c.Helper()
 	corpus := writeCorpus(c, `
@@ -343,12 +461,11 @@ cases:
     relevant: {"3": 3}
 `)
 	output := runInference(c, ctx, "evaluate",
-		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus,
-		"--min-recall", "1.0", "--min-exact-agreement", "1.0")
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus)
 
-	c.Assert(output, qt.Contains, "recall 1.000, MRR 1.000, NDCG 1.000 over 3 cases")
-	c.Assert(output, qt.Contains, "exhaustive search on 1.000 of results, over 3 cases")
-	c.Assert(output, qt.Contains, "measured under ydb.KMeansTreeSearchTopSize=")
+	c.Assert(output, qt.Contains, " over 3 cases")
+	c.Assert(output, qt.Contains, "the index agrees with an exhaustive search on ")
+	c.Assert(output, qt.Contains, "measured under ydb.KMeansTreeSearchTopSize=(server default)")
 }
 
 // assertYDBCutoverBindsToItsPlan is the approval flow: a cutover without an

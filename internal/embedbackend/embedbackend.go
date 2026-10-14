@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/renderer"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedengine"
 	"ptah.run/internal/embedeval"
@@ -41,9 +42,11 @@ type Backend interface {
 
 	// Store is where run state lives.
 	Store() Store
-	// EnsureSchema creates the run-state tables when they are not there. It is
-	// idempotent, because a worker starting is the normal time to call it.
-	EnsureSchema(ctx context.Context) error
+	// EnsureSchema creates the run-state tables when they are not there,
+	// rendered by service. It is idempotent, because a worker starting is the
+	// normal time to call it. The caller selects the renderer, so a backend
+	// links no built-in rendering of its own.
+	EnsureSchema(ctx context.Context, service renderer.Service) error
 
 	// ResolveRelation answers the physical relation a schema and table spell
 	// on this server. A spelling that names no relation is returned as

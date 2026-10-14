@@ -13,7 +13,9 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedconnect"
 	"ptah.run/internal/embedrun"
@@ -38,7 +40,7 @@ func TestYDBStore_ConcurrentLifecycleLive(t *testing.T) {
 			backend, err := embedconnect.Open(ctx, dbURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { _ = backend.Close() })
-			c.Assert(backend.EnsureSchema(ctx), qt.IsNil)
+			c.Assert(backend.EnsureSchema(ctx, must.Must(builtin.New())), qt.IsNil)
 
 			assertConcurrentClaimsEachTakeAToken(c, ctx, backend)
 			assertAFencedWorkerCannotSave(c, ctx, backend)

@@ -53,8 +53,7 @@ Read facts out of their declaration rather than out of a count written here:
   `core/platform/constants.go`. `migrations lint` and `sql lint` leave Oracle
   out deliberately; `internal/lintdialect/dialect.go` says why. YDB renders,
   plans, reads and applies schemas, runs versioned migrations, is linted as
-  YQL and writes data, and every layer that does not reach it yet refuses
-  through `internal/ydbgap`.
+  YQL, writes data and runs embedding generations.
 - Which driver a URL takes: `databaseDriverConfig` in `dbschema/connection.go`.
   It is not one driver per dialect, and a `sqlite` URL may take `libsql`.
 - What a dialect renders: `docs/capabilities.md`. Acceptance is not a promise;

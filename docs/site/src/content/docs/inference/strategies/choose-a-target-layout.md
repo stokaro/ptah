@@ -9,6 +9,7 @@ readerQuestion: "Which target layout fits my query and lifecycle needs?"
 goal: "Choose a vector target layout for the query and lifecycle needs."
 sourceOfTruth:
   - "internal/cli/inference"
+  - "internal/embedydb"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []
@@ -66,6 +67,14 @@ it, so a target pointed at a table you maintain is never dropped by a
 retirement.
 
 **What it costs.** A join on every search.
+
+On YDB the table has no foreign key, because YDB has none: `prepare` creates it
+keyed by the source key, with the source's column types, and the chunk ordinal,
+and writes the ownership comment as a table attribute. Deleting a source row
+does not delete its vectors there, and verification reports the rows left
+behind as outside the generation's source scope. A table that exists without
+the comment is adopted only when it is empty and has exactly the columns
+`prepare` would create; any other one is refused as somebody else's.
 
 Choose it when the source table is one you would rather not add columns to — a
 table owned by another team, or one with a `SELECT *` you cannot audit. Choose
@@ -156,12 +165,17 @@ care about the name, only that it differs.
 
 ```yaml
 target:
-  representation: vector    # vector | halfvec | sparsevec
+  representation: vector    # vector | halfvec | sparsevec on PostgreSQL; float on YDB
 ```
 
 `vector` stores four bytes per dimension. `halfvec` stores two, at some loss of
 precision — worth measuring on a large corpus where the index size matters.
 `sparsevec` is for models that produce mostly-zero vectors.
+
+On YDB the representation is `float`: four bytes per dimension, written as the
+bytes `Knn::ToBinaryStringFloat` produces into a `String` column. YDB's other
+element types hold quantized vectors, which an embedding provider does not
+return.
 
 The representation is part of the generation identity: a half-precision copy of
 a corpus is not the same corpus, and Ptah treats it as a different one.
@@ -179,11 +193,19 @@ for cosine similarity.
 The metric decides the operator class of the index Ptah builds, and your
 application's query operator has to match:
 
-| Metric | Operator |
-| --- | --- |
-| `cosine` | `<=>` |
-| `l2` | `<->` |
-| `inner_product` | `<#>` |
+| Metric | PostgreSQL operator | YDB function |
+| --- | --- | --- |
+| `cosine` | `<=>` | `Knn::CosineDistance`, ascending |
+| `l2` | `<->` | `Knn::EuclideanDistance`, ascending |
+| `inner_product` | `<#>` | `Knn::InnerProductSimilarity`, descending |
+
+On YDB a query reads the index with `VIEW`, for example:
+
+```sql
+SELECT id FROM articles VIEW articles_embedding_3b2b6d04c204_idx
+WHERE embedding IS NOT NULL
+ORDER BY Knn::CosineDistance(embedding, $query) LIMIT 10;
+```
 
 A mismatch does not error. It returns the wrong rows in a plausible order, which
 is the failure mode worth knowing about before you meet it.

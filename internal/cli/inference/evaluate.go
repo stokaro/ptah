@@ -9,10 +9,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcorpus"
 	"ptah.run/internal/embeddigest"
 	"ptah.run/internal/embedeval"
-	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedprovider"
 	"ptah.run/internal/embedspec"
 )

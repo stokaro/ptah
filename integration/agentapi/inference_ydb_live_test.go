@@ -11,8 +11,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedconnect"
@@ -81,7 +83,7 @@ func seedYDBRun(c *qt.C, ctx context.Context, dbURL string) string {
 	backend, err := embedconnect.Open(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = backend.Close() }()
-	c.Assert(backend.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(backend.EnsureSchema(ctx, must.Must(builtin.New())), qt.IsNil)
 	runID := fmt.Sprintf("agent-run-%d", time.Now().UnixNano())
 	c.Assert(backend.Store().CreateRun(ctx, embedrun.Run{
 		ID: runID, SpecDigest: "spec-1", GenerationIdentity: "gen-1",

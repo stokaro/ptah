@@ -40,7 +40,7 @@ func (b *Backend) RetireGeneration(
 			"generation %s was recorded as retired at %s; this run dropped what was left of it",
 			identity, registered.RetiredAt.UTC().Format(time.RFC3339)))
 	} else {
-		if err := b.revalidateArtifacts(ctx, registered, expectedRows, destruction.IndexExists); err != nil {
+		if err := b.revalidateArtifacts(ctx, registered, expectedRows, destruction); err != nil {
 			return embedbackend.Retirement{}, err
 		}
 		if _, err := b.store.decide(ctx, everything, "retire generation "+identity,
@@ -64,7 +64,8 @@ func (b *Backend) RetireGeneration(
 // revalidateArtifacts refuses a retirement whose approved row count or index
 // state is no longer what the table holds.
 func (b *Backend) revalidateArtifacts(
-	ctx context.Context, generation embedstore.Generation, rows int, indexExists bool,
+	ctx context.Context, generation embedstore.Generation, rows int,
+	approved embedbackend.RetirementDestruction,
 ) error {
 	counted, err := b.CountGenerationRows(ctx, generation)
 	if err != nil {
@@ -78,9 +79,9 @@ func (b *Backend) revalidateArtifacts(
 	if err != nil {
 		return err
 	}
-	if present != indexExists {
+	if present != approved.IndexExists {
 		return fmt.Errorf("%w: generation %s index state changed from approved %t to %t",
-			embedstore.ErrConflict, generation.Identity, indexExists, present)
+			embedstore.ErrConflict, generation.Identity, approved.IndexExists, present)
 	}
 	return nil
 }

@@ -681,8 +681,8 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 // (stokaro/ptah#2743).
 func retirementSummary(generation string, rows int, plan embedcutover.RetirementPlan) string {
 	if plan.DropsTable {
-		return fmt.Sprintf("generation %s is gone, with %d vectors and the table %s.%s they were in",
-			generation, rows, plan.Schema, plan.Table)
+		return fmt.Sprintf("generation %s is gone, with %d vectors and the table %s they were in",
+			generation, rows, embedstore.QualifiedName(plan.Schema, plan.Table))
 	}
 	if plan.DropsColumn {
 		return fmt.Sprintf("generation %s is gone, with %d vectors", generation, rows)

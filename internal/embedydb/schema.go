@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
-	"ptah.run/engine/builtin"
 )
 
 // EnsureSchema creates the run-state tables when they are not there.
@@ -23,8 +23,8 @@ import (
 // lifecycle transaction, which is what lets YDB serialize those decisions, so
 // a lookup index would serve no query; and a run's history is read by the
 // event table's own key, which begins with the run.
-func (b *Backend) EnsureSchema(ctx context.Context) error {
-	statements, err := SchemaSQL(ctx, b.caps)
+func (b *Backend) EnsureSchema(ctx context.Context, service renderer.Service) error {
+	statements, err := SchemaSQL(ctx, service, b.caps)
 	if err != nil {
 		return err
 	}
@@ -36,13 +36,10 @@ func (b *Backend) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// SchemaSQL renders the statements that create the run-state tables on a
-// server with caps. Every statement is rendered before any is returned.
-func SchemaSQL(ctx context.Context, caps capability.Capabilities) ([]string, error) {
-	runtime, err := builtin.New()
-	if err != nil {
-		return nil, err
-	}
+// SchemaSQL renders, through service, the statements that create the
+// run-state tables on a server with caps. Every statement is rendered before
+// any is returned.
+func SchemaSQL(ctx context.Context, service renderer.Service, caps capability.Capabilities) ([]string, error) {
 	var nodes []ast.Node
 	for _, store := range storeTables() {
 		node := ast.NewCreateTable(store.name).SetIfNotExists()
@@ -56,13 +53,12 @@ func SchemaSQL(ctx context.Context, caps capability.Capabilities) ([]string, err
 		node.AddConstraint(ast.NewPrimaryKeyConstraint(store.key...))
 		nodes = append(nodes, node)
 	}
-	result, err := renderer.Render(ctx, runtime, renderer.Request{Target: Dialect, Capabilities: caps, Nodes: nodes})
+	result, err := renderer.Render(ctx, service, renderer.Request{Target: Dialect, Capabilities: caps, Nodes: nodes})
 	if err != nil {
 		return nil, fmt.Errorf("render inference store schema: %w", err)
 	}
 	if len(result.Omissions) != 0 {
-		return nil, fmt.Errorf("render inference store schema: the renderer left out %d declarations",
-			len(result.Omissions))
+		return nil, fmt.Errorf("%w: inference store rendering omitted declarations", ptaherr.ErrUnsupportedFeature)
 	}
 	for index, fragment := range result.Fragments {
 		if strings.TrimSpace(fragment) == "" {

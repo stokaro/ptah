@@ -13,6 +13,7 @@ sourceOfTruth:
 generated: false
 searchAliases:
   - "pgvector"
+  - "YDB vector index"
 overlaps:
   - "/inference/quick-start/"
   - "/inference/concepts/lifecycle/"
@@ -24,8 +25,8 @@ import lifecycleLight from '../../../assets/inference-generation-lifecycle-light
 import lifecycleDark from '../../../assets/inference-generation-lifecycle-dark.svg';
 import lifecycleSource from '../../../../diagrams/inference-generation-lifecycle.mmd?url&no-inline';
 
-If your application stores embeddings in PostgreSQL and you need to change the
-model that produced them, this area is for you.
+If your application stores embeddings in PostgreSQL or YDB and you need to
+change the model that produced them, this area is for you.
 
 Changing an embedding model means every vector in the table has to be computed
 again. That is not a schema change. The column type may not move at all, and yet
@@ -38,7 +39,8 @@ and switches your queries over when you say so.
 
 Read on if all of these are true:
 
-- your data lives in **PostgreSQL** with the **pgvector** extension;
+- your data lives in **PostgreSQL** with the **pgvector** extension, or in
+  **YDB**;
 - your application searches by vector similarity;
 - something about how those vectors are produced is changing — the model, its
   parameters, or the text you feed it.
@@ -56,7 +58,7 @@ understand everything else here.
 | --- | --- |
 | Ptah | Plans, builds, verifies, activates, rolls back, and retires persistent inference state |
 | Embedding provider | Converts the configured input into a vector |
-| PostgreSQL and pgvector | Store source data, vectors, metadata, and indexes |
+| PostgreSQL with pgvector, or YDB | Store source data, vectors, metadata, and indexes |
 | Your application | Creates and updates source rows, produces query vectors, and reads the active generation |
 
 Ptah never produces a vector itself. It reads rows, builds the text to send,
@@ -114,7 +116,9 @@ when it is no longer an eligible rollback target.
 
 ## What is supported today
 
-PostgreSQL with pgvector, and an embedding endpoint that speaks the
+PostgreSQL with pgvector or YDB, and an embedding endpoint that speaks the
 OpenAI-compatible `/v1/embeddings` API. No other database engine and no other
-provider API. [Support and limitations](../reference/support-and-limitations/)
-is the exact list, including what Ptah cannot check for you.
+provider API. On YDB the consistency mode is `immutable`, because the outbox
+needs row triggers YDB does not have.
+[Support and limitations](../reference/support-and-limitations/) is the exact
+list, including what Ptah cannot check for you.

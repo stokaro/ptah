@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
@@ -77,7 +78,11 @@ func runPrepare(
 	if _, err := opened.backend.TargetObjects(spec); err != nil {
 		return err
 	}
-	if err := opened.backend.EnsureSchema(ctx); err != nil {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
+	if err := opened.backend.EnsureSchema(ctx, runtime); err != nil {
 		return err
 	}
 	generation := embedstore.Generation{
@@ -146,16 +151,19 @@ func newIndexCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Build the generation's vector index and wait for it to be valid",
-		Long: `Build the vector index the specification declares, concurrently.
+		Long: `Build the vector index the specification declares, after the backfill rather
+than before it. An IVFFlat index trains its lists on the data present when it is
+built, so one built over an empty column is valid and useless.
 
-After the backfill rather than before it. An IVFFlat index trains its lists on
-the data present when it is built, so one built over an empty column is valid
-and useless.
+On PostgreSQL the build runs concurrently, because the table is one an
+application is reading and writing while this runs. That is also why the index
+is read back afterwards: a concurrent build that fails leaves an index behind
+that PostgreSQL will not use, and it reports no error of its own.
 
-Concurrently, because the table is one an application is reading and writing
-while this runs. That is also why the index is read back afterwards: a
-concurrent build that fails leaves an index behind that PostgreSQL will not use,
-and it reports no error of its own.
+On YDB the index is a vector_kmeans_tree, built with ALTER TABLE ... ADD INDEX,
+which returns once the index holds every row. YDB 25.1 builds one only with its
+EnableVectorIndex feature flag on, and its index does not take in rows written
+after the build, so a later write into the generation is refused there.
 
 A specification naming no index method has no index to build, and this says so
 rather than failing. Every query over that generation is then a sequential scan

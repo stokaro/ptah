@@ -317,7 +317,7 @@ func (s *Store) RunsForGeneration(ctx context.Context, identity string) ([]embed
 		return nil, err
 	}
 	if runs == nil {
-		return []embedrun.Run{}, nil
+		return make([]embedrun.Run, 0), nil
 	}
 	return runs, nil
 }
