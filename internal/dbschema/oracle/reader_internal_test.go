@@ -182,6 +182,9 @@ func TestDropStatement_CarriesTheClausesCleanupNeeds(t *testing.T) {
 		{name: "sequence", kind: "SEQUENCE", want: `DROP SEQUENCE "ORA_POSTS"`},
 		{name: "materialized view", kind: "MATERIALIZED VIEW", want: `DROP MATERIALIZED VIEW "ORA_POSTS"`},
 		{name: "type", kind: "TYPE", want: `DROP TYPE "ORA_POSTS" FORCE`},
+		// No FORCE: with a column still using the domain, FORCE takes the
+		// domain off that column rather than failing.
+		{name: "domain", kind: "DOMAIN", want: `DROP DOMAIN "ORA_POSTS"`},
 	}
 
 	for _, test := range tests {

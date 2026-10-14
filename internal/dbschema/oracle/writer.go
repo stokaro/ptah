@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -104,10 +105,15 @@ func (w *transactionWriter) Rollback() error {
 // -- name starting BIN$ -- is already dropped; it is listed by USER_OBJECTS
 // until the bin is purged, and asking to drop it again is an error about a
 // table nobody has.
+//
+// Types and domains come after the tables whose columns they type, and
+// domains last: an object type whose attribute names a domain depends on the
+// domain, and DROP DOMAIN answers ORA-11502 while anything still does,
+// measured on 23.26.3.0.0. Oracle 21 has no domains, and lists none.
 const cleanupObjectQuery = `
 SELECT o.object_type, o.object_name
 FROM user_objects o
-WHERE o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'SYNONYM', 'TRIGGER', 'TYPE')
+WHERE o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'SYNONYM', 'TRIGGER', 'TYPE', 'DOMAIN')
   AND o.object_name NOT LIKE 'BIN$%'
   AND o.generated = 'N'
 ORDER BY CASE o.object_type
@@ -117,15 +123,135 @@ ORDER BY CASE o.object_type
            WHEN 'TABLE' THEN 4
            WHEN 'SEQUENCE' THEN 5
            WHEN 'SYNONYM' THEN 6
-           ELSE 7
+           WHEN 'TYPE' THEN 7
+           ELSE 8
          END,
          o.object_name`
 
+// domainDependencyQuery lists which of the account's domains each domain
+// references.
+//
+// A flexible domain references the domains it chooses from, and measured on
+// 23.26.3.0.0, dropping one of those first answers ORA-11502. USER_DEPENDENCIES
+// records the reference with TYPE and REFERENCED_TYPE both DOMAIN.
+const domainDependencyQuery = `
+SELECT d.name, d.referenced_name
+FROM user_dependencies d
+WHERE d.type = 'DOMAIN'
+  AND d.referenced_type = 'DOMAIN'
+  AND d.referenced_owner = USER
+ORDER BY d.name, d.referenced_name`
+
+// cleanupObject is one object DropAllTables drops: its kind as USER_OBJECTS
+// spells it, and its name.
+type cleanupObject struct{ kind, name string }
+
+// cleanupObjects lists the objects DropAllTables drops, in the order it drops
+// them: cleanupObjectQuery's order, with each domain after every domain that
+// references it.
+func (w *Writer) cleanupObjects(ctx context.Context) ([]cleanupObject, error) {
+	objects, err := w.listCleanupObjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	first := slices.IndexFunc(objects, func(object cleanupObject) bool { return object.kind == "DOMAIN" })
+	if first < 0 {
+		return objects, nil
+	}
+	references, err := w.domainReferences(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(objects[:first], dependentsFirst(objects[first:], references)...), nil
+}
+
+// listCleanupObjects runs cleanupObjectQuery and reads every row before it
+// returns, since go-ora answers a second query with EOF while a result set
+// has rows left to read.
+func (w *Writer) listCleanupObjects(ctx context.Context) ([]cleanupObject, error) {
+	rows, err := w.db.QueryContext(ctx, cleanupObjectQuery)
+	if err != nil {
+		return nil, fmt.Errorf("oracle: list objects to drop: %w", err)
+	}
+	var objects []cleanupObject
+	for rows.Next() {
+		var found cleanupObject
+		if err := rows.Scan(&found.kind, &found.name); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("oracle: list objects to drop: %w", err)
+		}
+		objects = append(objects, found)
+	}
+	closeErr := rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("oracle: list objects to drop: %w", err)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("oracle: list objects to drop: %w", closeErr)
+	}
+	return objects, nil
+}
+
+// domainReferences maps each domain to the domains it references.
+func (w *Writer) domainReferences(ctx context.Context) (map[string][]string, error) {
+	rows, err := w.db.QueryContext(ctx, domainDependencyQuery)
+	if err != nil {
+		return nil, fmt.Errorf("oracle: list domain dependencies: %w", err)
+	}
+	defer rows.Close()
+	references := make(map[string][]string)
+	for rows.Next() {
+		var name, referenced string
+		if err := rows.Scan(&name, &referenced); err != nil {
+			return nil, fmt.Errorf("oracle: list domain dependencies: %w", err)
+		}
+		references[name] = append(references[name], referenced)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("oracle: list domain dependencies: %w", err)
+	}
+	return references, nil
+}
+
+// dependentsFirst orders domains so each comes after every domain that
+// references it, keeping the given order otherwise. A cycle, which Oracle does
+// not allow, would leave the rest in the given order rather than lose them.
+func dependentsFirst(domains []cleanupObject, references map[string][]string) []cleanupObject {
+	referencedBy := make(map[string]int, len(domains))
+	listed := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		listed[domain.name] = true
+	}
+	for name, referenced := range references {
+		if !listed[name] {
+			continue
+		}
+		for _, target := range referenced {
+			referencedBy[target]++
+		}
+	}
+	ordered := make([]cleanupObject, 0, len(domains))
+	remaining := slices.Clone(domains)
+	for len(remaining) > 0 {
+		next := slices.IndexFunc(remaining, func(domain cleanupObject) bool { return referencedBy[domain.name] == 0 })
+		if next < 0 {
+			return append(ordered, remaining...)
+		}
+		domain := remaining[next]
+		remaining = slices.Delete(remaining, next, next+1)
+		ordered = append(ordered, domain)
+		for _, target := range references[domain.name] {
+			referencedBy[target]--
+		}
+	}
+	return ordered
+}
+
 // ResetObjects lists what DropAllTables drops, through the query it runs:
-// the tables, views, materialized views, sequences, synonyms, triggers and
-// types the connected account owns, in the order it drops them. The schema of
-// each is the account. A routine or a package is not listed, since the reset
-// leaves it in place. The scope is PostgreSQL's and is not read.
+// the tables, views, materialized views, sequences, synonyms, triggers, types
+// and domains the connected account owns, in the order it drops them. The
+// schema of each is the account. A routine or a package is not listed, since
+// the reset leaves it in place. The scope is PostgreSQL's and is not read.
 func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.Object, error) {
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
@@ -134,21 +260,13 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 	if err := w.db.QueryRowContext(ctx, "SELECT USER FROM dual").Scan(&account); err != nil {
 		return nil, fmt.Errorf("oracle: read the connected account: %w", err)
 	}
-	rows, err := w.db.QueryContext(ctx, cleanupObjectQuery)
+	found, err := w.cleanupObjects(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("oracle: list objects to drop: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-	var objects []dbreset.Object
-	for rows.Next() {
-		var kind, name string
-		if err := rows.Scan(&kind, &name); err != nil {
-			return nil, fmt.Errorf("oracle: scan object to drop: %w", err)
-		}
-		objects = append(objects, dbreset.Object{Kind: strings.ToLower(kind), Schema: account, Name: name})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("oracle: iterate objects to drop: %w", err)
+	objects := make([]dbreset.Object, 0, len(found))
+	for _, object := range found {
+		objects = append(objects, dbreset.Object{Kind: strings.ToLower(object.kind), Schema: account, Name: object.name})
 	}
 	return objects, nil
 }
@@ -158,33 +276,16 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 // Tables are dropped with CASCADE CONSTRAINTS so a cycle of foreign keys does
 // not decide the order, and with PURGE so the objects do not land in the
 // recycle bin -- where they would keep their storage and be listed by
-// USER_OBJECTS on the next run.
+// USER_OBJECTS on the next run. Domains are dropped last, each after the
+// domains that reference it.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.db == nil {
 		return fmt.Errorf("no database connection")
 	}
-	rows, err := w.db.QueryContext(ctx, cleanupObjectQuery)
+	objects, err := w.cleanupObjects(ctx)
 	if err != nil {
-		return fmt.Errorf("oracle: list objects to drop: %w", err)
+		return err
 	}
-	type object struct{ kind, name string }
-	var objects []object
-	for rows.Next() {
-		var found object
-		if err := rows.Scan(&found.kind, &found.name); err != nil {
-			rows.Close()
-			return fmt.Errorf("oracle: list objects to drop: %w", err)
-		}
-		objects = append(objects, found)
-	}
-	closeErr := rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("oracle: list objects to drop: %w", err)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("oracle: list objects to drop: %w", closeErr)
-	}
-
 	for _, found := range objects {
 		if err := w.ExecuteSQL(ctx, dropStatement(found.kind, found.name)); err != nil {
 			return err
