@@ -23,8 +23,12 @@ import (
 // and TYPE ENUMERATED over a NUMBER column, and a flexible domain with COLS 1,
 // DISCRIMINANTCOLS 1, TYPE FLEXIBLE and two rows in ALL_DOMAIN_COLS. So the
 // column count alone does not separate them, and TYPE is read beside it.
+//
+// DATA_DISPLAY and DATA_ORDER hold a domain's DISPLAY and ORDER expressions,
+// which the model has no place for either: `CREATE DOMAIN d AS VARCHAR2(10)
+// DISPLAY UPPER(d)` reports DATA_DISPLAY `UPPER(d)`.
 const domainQuery = `
-SELECT d.name, d.cols, d.type
+SELECT d.name, d.cols, d.type, d.data_display, d.data_order
 FROM all_domains d
 WHERE d.owner = :1
 ORDER BY d.name`
@@ -51,6 +55,18 @@ SELECT c.domain_name, c.column_name, c.data_type, c.data_length, c.data_precisio
 FROM all_domain_cols c
 WHERE c.owner = :1
 ORDER BY c.domain_name, c.column_id`
+
+// domainAnnotationQuery reads which of this schema's domains carry
+// annotations, on the domain or on one of its columns.
+//
+// ALL_ANNOTATIONS_USAGE has no owner column for the annotated object, and
+// ANNOTATION_OWNER is that owner: measured on 23.26.3.0.0, `CREATE DOMAIN d AS
+// NUMBER ANNOTATIONS (Sensitive, Owner 'billing')` reports two rows with
+// OBJECT_TYPE DOMAIN and ANNOTATION_OWNER the domain's schema.
+const domainAnnotationQuery = `
+SELECT DISTINCT a.object_name
+FROM all_annotations_usage a
+WHERE a.annotation_owner = :1 AND a.object_type = 'DOMAIN'`
 
 // domainConstraintQuery reads the CHECK constraints of this schema's domains.
 //
@@ -95,6 +111,10 @@ func (r *Reader) readDomains(ctx context.Context, db *catalog.Database) error {
 	if err != nil {
 		return err
 	}
+	annotated, err := r.readAnnotatedDomains(ctx)
+	if err != nil {
+		return err
+	}
 
 	rows, err := r.db.QueryContext(ctx, domainQuery, r.schema)
 	if err != nil {
@@ -106,15 +126,20 @@ func (r *Reader) readDomains(ctx context.Context, db *catalog.Database) error {
 	var limits []schemaext.SubjectCoverage
 	for rows.Next() {
 		var (
-			name     string
-			declared int
-			shape    sql.NullString
+			name           string
+			declared       int
+			shape          sql.NullString
+			display, order sql.NullString
 		)
-		if err := rows.Scan(&name, &declared, &shape); err != nil {
+		if err := rows.Scan(&name, &declared, &shape, &display, &order); err != nil {
 			return err
 		}
 		ref := oratype.Ref(oratype.DomainKind, "", name)
-		if reason := undescribedDomain(shape.String, declared, len(columns[name])); reason != "" {
+		reason := undescribedDomain(shape.String, declared, len(columns[name]))
+		if reason == "" {
+			reason = undescribedDomainClause(display.String, order.String, annotated[name])
+		}
+		if reason != "" {
 			limits = append(limits, unrepresentable(oratype.DomainKind, ref, reason))
 			continue
 		}
@@ -164,6 +189,42 @@ func undescribedDomain(shape string, declared, found int) string {
 		return fmt.Sprintf("the read found %d columns of a single-column domain", found)
 	}
 	return ""
+}
+
+// undescribedDomainClause says which clause of a domain the domain model has no
+// place for: its DISPLAY or ORDER expression, or its annotations. It is empty
+// for a domain that has none of them. Described without one, the domain would
+// read back and replay as a domain that has lost it.
+func undescribedDomainClause(display, order string, annotated bool) string {
+	switch {
+	case strings.TrimSpace(display) != "":
+		return "the domain has a DISPLAY expression, which the domain model cannot describe"
+	case strings.TrimSpace(order) != "":
+		return "the domain has an ORDER expression, which the domain model cannot describe"
+	case annotated:
+		return "the domain has annotations, which the domain model cannot describe"
+	}
+	return ""
+}
+
+// readAnnotatedDomains reads the names of the schema's domains that carry an
+// annotation.
+func (r *Reader) readAnnotatedDomains(ctx context.Context) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, domainAnnotationQuery, r.schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	annotated := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		annotated[name] = true
+	}
+	return annotated, rows.Err()
 }
 
 // unrepresentable is the claim that the read found the type ref names and
