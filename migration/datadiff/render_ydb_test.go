@@ -35,7 +35,7 @@ func TestRenderStatements_YDB_HappyPath(t *testing.T) {
 		}},
 	}
 
-	up, down, err := datadiff.RenderStatements(diff, "ydb")
+	up, down, err := datadiff.RenderStatements(diff, "ydb", dataServices(c, "ydb"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.DeepEquals, []string{

@@ -658,6 +658,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-dataext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/dataext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-featureplan",
       "kind": "public-package",
       "surface": "ptah.run/core/featureplan",

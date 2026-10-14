@@ -47,6 +47,34 @@ func spanner() descriptor.Dialect {
 		// object declared without a schema in public.
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSearchPath},
 		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced, Widenable: true},
+		// The bytea input reads a backslash as an escape and refuses a byte
+		// that is not UTF-8 (SQLSTATE 22021), so a binary value is spelled in
+		// hex digits, relying on standard_conforming_strings. A timestamp
+		// literal keeps the instant its offset names.
+		Literals: descriptor.Literals{
+			BinaryPrefix:    `'\x`,
+			BinarySuffix:    `'::bytea`,
+			TimestampOffset: true,
+		},
+		ManagedData: descriptor.ManagedData{
+			IdentityRefusesInsert: descriptor.IdentityInsertGeneratedAlways,
+		},
+		// The PostgreSQL interface has neither type the portable tracker
+		// uses. CHAR(64) arrives as bpchar and the endpoint answers `Type
+		// <bpchar> is not supported. (SQLSTATE P0001)`, and TIMESTAMP is
+		// refused next. Measured on the emulator: this statement is accepted,
+		// running it twice is a no-op, and a row written through it reads back
+		// (stokaro/ptah#3325).
+		Seeds: descriptor.Seeds{
+			Tracker: `CREATE TABLE IF NOT EXISTS schema_seeds (
+    seed_path VARCHAR(512) PRIMARY KEY,
+    env VARCHAR(128) NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL
+)`,
+			Transactional: true,
+			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
+		},
 	}
 }
 

@@ -484,7 +484,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	// checkpoint that created the tables and left the rows to a second
 	// mechanism would have a state in which the first ran and the second did
 	// not.
-	bootstrap, err := renderBootstrapData(ctx, shadowConn, goSchema, opts.DataTables)
+	bootstrap, err := renderBootstrapData(ctx, shadowConn, opts.Runtime, goSchema, opts.DataTables)
 	if err != nil {
 		return "", "", err
 	}

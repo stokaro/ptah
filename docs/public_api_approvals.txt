@@ -792,3 +792,15 @@ v0.13.0 ptah.run/catalog
 v0.13.0 ptah.run/core/ast
 v0.13.0 ptah.run/migration/schemadiff/difftypes
 v0.13.0 ptah.run/config
+
+# datadiff.Render and RenderStatements take the dialect's data services
+# (core/dataext), which the caller gets from engine.Runtime.DataServices. YDB
+# writes every literal in its column's type and Oracle refuses text for a
+# column that holds a moment; those are the engine owners' services now, not
+# branches on the dialect's name inside datadiff, and a dialect that needs one
+# is refused without it. engine.SchemaRuntime and generator.Runtime gain
+# DataServices for the same reason. Pre-v1, so compatibility with older Ptah
+# is not owed (#4204).
+v0.13.0 ptah.run/migration/datadiff
+v0.13.0 ptah.run/engine
+v0.13.0 ptah.run/migration/generator

@@ -22,6 +22,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/annotation"
+	"ptah.run/core/dataext"
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
@@ -86,6 +87,11 @@ type Options struct {
 	ProtectedTables []string
 	// AllowProd permits changing a protected table.
 	AllowProd bool
+	// Data are the data services of the dialect the rows are compared and
+	// rendered for, from engine.Runtime.DataServices. A dialect whose
+	// descriptor asks for typed rows or owner-written literals, as YDB's and
+	// Oracle's do, is refused without them.
+	Data dataext.Services
 }
 
 // Generate composes the full data-migration pipeline against conn and returns a
@@ -150,7 +156,7 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		dialect = conn.Info().Dialect
 	}
 	orderByDependency(inspected.desired, inspected.diffs)
-	return composeByPhase(inspected.diffs, dialect)
+	return composeByPhase(inspected.diffs, dialect, opts.Data)
 }
 
 // TableDrift is how far one managed table's live rows sit from its
@@ -280,6 +286,7 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 			Live:              columnCatalog,
 			CatalogIsComplete: opts.Live != nil,
 			Intent:            want,
+			Data:              opts.Data,
 		})
 		if err != nil {
 			return inspection{}, err
@@ -458,7 +465,7 @@ func orderByDependency(db *schemamodel.Database, diffs []*datadiff.DataDiff) {
 // then UPDATEs and INSERTs children-first). Each phase is rendered from a
 // single-operation sub-diff via datadiff.Render, so the proven per-table
 // inverse contract composes into a global reversible migration.
-func composeByPhase(ordered []*datadiff.DataDiff, dialect string) (upSQL, downSQL string, err error) {
+func composeByPhase(ordered []*datadiff.DataDiff, dialect string, services dataext.Services) (upSQL, downSQL string, err error) {
 	type phased struct {
 		insUp, insDown string
 		updUp, updDown string
@@ -467,13 +474,13 @@ func composeByPhase(ordered []*datadiff.DataDiff, dialect string) (upSQL, downSQ
 	rendered := make([]phased, len(ordered))
 	for i, d := range ordered {
 		var p phased
-		if p.insUp, p.insDown, err = datadiff.Render(subDiff(d, d.Inserts, nil, nil), dialect); err != nil {
+		if p.insUp, p.insDown, err = datadiff.Render(subDiff(d, d.Inserts, nil, nil), dialect, services); err != nil {
 			return "", "", err
 		}
-		if p.updUp, p.updDown, err = datadiff.Render(subDiff(d, nil, d.Updates, nil), dialect); err != nil {
+		if p.updUp, p.updDown, err = datadiff.Render(subDiff(d, nil, d.Updates, nil), dialect, services); err != nil {
 			return "", "", err
 		}
-		if p.delUp, p.delDown, err = datadiff.Render(subDiff(d, nil, nil, d.Deletes), dialect); err != nil {
+		if p.delUp, p.delDown, err = datadiff.Render(subDiff(d, nil, nil, d.Deletes), dialect, services); err != nil {
 			return "", "", err
 		}
 		rendered[i] = p

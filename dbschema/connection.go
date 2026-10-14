@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -406,6 +407,17 @@ func (dc *DatabaseConnection) readerScopedTo(schemas []string) (catalog.SchemaRe
 	}
 	scoped.SetSchemas(schemas)
 	return reader, func() { scoped.SetSchemas(nil) }
+}
+
+// Seeds returns the seed service of the engine the connection reaches: the
+// one that runs a seed file and lists the tables a seed run guards, for an
+// engine whose seed files do not run as split statements in one transaction.
+// It is nil for every other engine. A seed runs through the database driver,
+// so the service comes with the connection rather than with the rendering
+// runtime, which links no driver. migration/seeder refuses an engine whose
+// descriptor asks for one (descriptor.Seeds.ByOwner) when this is nil.
+func (dc *DatabaseConnection) Seeds() dataext.Seeds {
+	return dc.engine().Seeds()
 }
 
 // engine returns the connector of the connection's dialect.

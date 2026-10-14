@@ -3,6 +3,7 @@ package datadiff_test
 import (
 	"fmt"
 
+	"ptah.run/core/dataext"
 	"ptah.run/migration/datadiff"
 )
 
@@ -100,7 +101,7 @@ func ExampleRender() {
 		},
 	}
 
-	up, down, err := datadiff.Render(diff, "postgres")
+	up, down, err := datadiff.Render(diff, "postgres", dataext.Services{})
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -131,7 +132,7 @@ func ExampleRenderStatements() {
 		},
 	}
 
-	up, down, err := datadiff.RenderStatements(diff, "postgres")
+	up, down, err := datadiff.RenderStatements(diff, "postgres", dataext.Services{})
 	if err != nil {
 		fmt.Println(err)
 		return

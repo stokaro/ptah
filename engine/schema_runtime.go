@@ -3,6 +3,7 @@ package engine
 import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/dataext"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/hclext"
 	"ptah.run/core/renderer"
@@ -33,4 +34,5 @@ type SchemaRuntime interface {
 	schemavalidation.Service
 	schemaext.NormalizationService
 	schemaext.FacetNormalizationService
+	dataext.Runtime
 }

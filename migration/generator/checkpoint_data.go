@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -41,15 +42,20 @@ const BootstrapDataMarker = "-- ptah:checkpoint-data"
 func renderBootstrapData(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	runtime dataext.Runtime,
 	schema *schemamodel.Database,
 	tables []string,
 ) (string, error) {
 	if len(tables) == 0 {
 		return "", nil
 	}
+	services, err := runtime.DataServices(conn.Info().Dialect)
+	if err != nil {
+		return "", fmt.Errorf("checkpoint generation failed: select the data services: %w", err)
+	}
 	var rendered strings.Builder
 	for _, name := range tables {
-		statements, err := renderBootstrapTable(ctx, conn, schema, name)
+		statements, err := renderBootstrapTable(ctx, conn, services, schema, name)
 		if err != nil {
 			return "", err
 		}
@@ -61,6 +67,7 @@ func renderBootstrapData(
 func renderBootstrapTable(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	services dataext.Services,
 	schema *schemamodel.Database,
 	name string,
 ) (string, error) {
@@ -84,7 +91,7 @@ func renderBootstrapTable(
 		Keys:        keys,
 		ColumnTypes: columnTypes,
 		Inserts:     rows,
-	}, conn.Info().Dialect)
+	}, conn.Info().Dialect, services)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: render bootstrap rows for %s: %w", name, err)
 	}

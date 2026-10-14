@@ -54,6 +54,16 @@ func sqlite() descriptor.Dialect {
 		RevisionTable:   sqliteRevisionTable(),
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSingle, Implicit: true},
+		// SQLite stores a timestamp's text verbatim, offset included.
+		Literals: descriptor.Literals{
+			BinaryPrefix:    "X'",
+			BinarySuffix:    "'",
+			TimestampOffset: true,
+		},
+		Seeds: descriptor.Seeds{
+			Transactional: true,
+			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
+		},
 	}
 }
 

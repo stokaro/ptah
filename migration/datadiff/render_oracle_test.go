@@ -30,7 +30,7 @@ func TestRender_OracleNamesTheTableItsSchemaRendererCreated(t *testing.T) {
 		Deletes: []datadiff.Row{{"code": "three", "comment": "gone"}},
 	}
 
-	up, _, err := datadiff.Render(diff, "oracle")
+	up, _, err := datadiff.Render(diff, "oracle", dataServices(c, "oracle"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "INSERT INTO app.ora_flags (code, \"comment\") VALUES ('one', 'kept');\n"+
 		"UPDATE app.ora_flags SET \"comment\" = 'new' WHERE code = 'two';\n"+
@@ -112,7 +112,7 @@ func TestRender_OracleDeclaredMoment_HappyPath(t *testing.T) {
 				ColumnTypes: map[string]string{"v": tt.columnType},
 				Inserts:     []datadiff.Row{{"id": "r1", "v": tt.value}},
 			}
-			up, _, err := datadiff.Render(diff, tt.dialect)
+			up, _, err := datadiff.Render(diff, tt.dialect, dataServices(c, tt.dialect))
 			c.Assert(err, qt.IsNil)
 			c.Assert(up, qt.Equals, tt.wantUp)
 		})
@@ -136,7 +136,7 @@ func TestRender_OracleDeclaredMomentReachesEveryStatement(t *testing.T) {
 		Deletes: []datadiff.Row{{"at": "2024-03-02", "until": "2024-03-03"}},
 	}
 
-	up, down, err := datadiff.Render(diff, "oracle")
+	up, down, err := datadiff.Render(diff, "oracle", dataServices(c, "oracle"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals,
 		"UPDATE t SET until = TIMESTAMP '2024-04-01 00:00:00+00:00' WHERE at = TIMESTAMP '2024-03-01 00:00:00+00:00';\n"+
@@ -158,7 +158,7 @@ func TestRender_OracleDeclaredMoment_FailurePath(t *testing.T) {
 		Inserts:     []datadiff.Row{{"id": "r1", "v": "next tuesday"}},
 	}
 
-	up, down, err := datadiff.Render(diff, "oracle")
+	up, down, err := datadiff.Render(diff, "oracle", dataServices(c, "oracle"))
 	c.Assert(err, qt.ErrorMatches,
 		`datadiff: column "v": datadiff: "next tuesday" does not name a moment, and a TIMESTAMP column on oracle does not accept text; write it as 2006-01-02, 2006-01-02 15:04:05 or RFC 3339`)
 	c.Assert(up, qt.Equals, "")

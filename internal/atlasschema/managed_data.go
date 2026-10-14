@@ -2,6 +2,7 @@ package atlasschema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -65,6 +67,7 @@ type dataStatement struct {
 func managedDataStatements(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	runtime dataext.Runtime,
 	desired *schemamodel.Database,
 	current *catalog.Database,
 	projectRoot string,
@@ -72,6 +75,13 @@ func managedDataStatements(
 ) ([]dataStatement, []PlanRowSet, error) {
 	if conn == nil || desired == nil || len(desired.ManagedData) == 0 {
 		return nil, nil, nil
+	}
+	if runtime == nil {
+		return nil, nil, errors.New("planning managed rows requires a runtime")
+	}
+	services, err := runtime.DataServices(conn.Info().Dialect)
+	if err != nil {
+		return nil, nil, fmt.Errorf("select the data services: %w", err)
 	}
 	ranker := dataorder.New(desired)
 	declarations := slices.Clone(desired.ManagedData)
@@ -94,7 +104,7 @@ func managedDataStatements(
 	// and refuse when they moved (stokaro/ptah#3378).
 	var covered []PlanRowSet
 	for _, declaration := range declarations {
-		declared, read, err := managedDataDiff(ctx, conn, declaration, desired, current, projectRoot)
+		declared, read, err := managedDataDiff(ctx, conn, services, declaration, desired, current, projectRoot)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -201,6 +211,7 @@ func declaredRows(
 func managedDataDiff(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	services dataext.Services,
 	declaration schemamodel.ManagedData,
 	desired *schemamodel.Database,
 	current *catalog.Database,
@@ -259,6 +270,7 @@ func managedDataDiff(
 		// it starts from.
 		Intent: managedrows.Plan,
 		Read:   &read,
+		Data:   services,
 	})
 	if err != nil {
 		return nil, managedrows.Read{}, err
@@ -267,7 +279,7 @@ func managedDataDiff(
 	// be cut back into statements at line breaks: a declared value may carry a
 	// newline, which is legal inside a literal and is the byte the script joins
 	// statements with (stokaro/ptah#3278).
-	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect)
+	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect, services)
 	if err != nil {
 		return nil, managedrows.Read{}, fmt.Errorf("render managed rows of %s: %w", qualified, err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/dataext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/migration/datadiff"
 )
@@ -40,7 +41,7 @@ func TestRender_SplitterRoundTrip(t *testing.T) {
 					Live:    datadiff.Row{"code": "US", "name": "United States"},
 				}},
 			}
-			up, down, err := datadiff.Render(diff, tt.dialect)
+			up, down, err := datadiff.Render(diff, tt.dialect, dataServices(c, tt.dialect))
 			c.Assert(err, qt.IsNil)
 			// Each script is a single UPDATE; re-splitting must not free the
 			// embedded "; DROP TABLE ..." into its own statement.
@@ -65,14 +66,14 @@ func TestRender_SchemaQualifiedTableName(t *testing.T) {
 	}
 
 	// PostgreSQL: double-quoted schema.table in both directions.
-	up, down, err := datadiff.Render(qualified, "postgres")
+	up, down, err := datadiff.Render(qualified, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `INSERT INTO "app"."regions" `)
 	c.Assert(up, qt.Contains, `DELETE FROM "app"."regions" `)
 	c.Assert(down, qt.Contains, `INSERT INTO "app"."regions" `)
 
 	// MySQL: backtick-quoted schema.table.
-	upMy, _, err := datadiff.Render(qualified, "mysql")
+	upMy, _, err := datadiff.Render(qualified, "mysql", dataServices(c, "mysql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(upMy, qt.Contains, "INSERT INTO `app`.`regions` ")
 
@@ -83,7 +84,7 @@ func TestRender_SchemaQualifiedTableName(t *testing.T) {
 		Keys:    []string{"code"},
 		Inserts: []datadiff.Row{{"code": "US", "name": "United States"}},
 	}
-	upBare, _, err := datadiff.Render(unqualified, "postgres")
+	upBare, _, err := datadiff.Render(unqualified, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(upBare, qt.Contains, `INSERT INTO "regions" `)
 	c.Assert(upBare, qt.Not(qt.Contains), `"."`)
@@ -96,7 +97,7 @@ func TestRender_SchemaQualifiedTableName(t *testing.T) {
 		Keys:    []string{"code"},
 		Inserts: []datadiff.Row{{"code": "US", "name": "United States"}},
 	}
-	upWeird, _, err := datadiff.Render(weird, "postgres")
+	upWeird, _, err := datadiff.Render(weird, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(upWeird, qt.Contains, `INSERT INTO "a""b"."regions" `)
 }
@@ -142,7 +143,7 @@ DELETE FROM "regions" WHERE "code" = 'CZ';
 DELETE FROM "regions" WHERE "code" = 'AT';
 `
 
-	up, down, err := datadiff.Render(diff, "postgres")
+	up, down, err := datadiff.Render(diff, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, wantUp)
 	c.Assert(down, qt.Equals, wantDown)
@@ -176,7 +177,7 @@ DELETE FROM "prices" WHERE "code" = 'B' AND "tenant" = 2;
 UPDATE "prices" SET "val" = 'old' WHERE "code" = 'A' AND "tenant" = 1;
 `
 
-	up, down, err := datadiff.Render(diff, "postgres")
+	up, down, err := datadiff.Render(diff, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, wantUp)
 	c.Assert(down, qt.Equals, wantDown)
@@ -202,7 +203,7 @@ func TestRenderEmptyDiff(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			up, down, err := datadiff.Render(tt.diff, "postgres")
+			up, down, err := datadiff.Render(tt.diff, "postgres", dataServices(c, "postgres"))
 			c.Assert(err, qt.IsNil)
 			c.Assert(up, qt.Equals, "")
 			c.Assert(down, qt.Equals, "")
@@ -424,7 +425,7 @@ func TestRenderLiterals(t *testing.T) {
 				Keys:    []string{"id"},
 				Inserts: []datadiff.Row{{"id": "r1", "v": tt.value}},
 			}
-			up, _, err := datadiff.Render(diff, tt.dialect)
+			up, _, err := datadiff.Render(diff, tt.dialect, dataServices(c, tt.dialect))
 			c.Assert(err, qt.IsNil)
 			c.Assert(up, qt.Equals, tt.wantUp)
 		})
@@ -446,7 +447,7 @@ func TestRenderStringInjectionIsEscaped(t *testing.T) {
 		Inserts: []datadiff.Row{{"id": "r1", "v": `'); DROP TABLE users;--`}},
 	}
 
-	up, _, err := datadiff.Render(diff, "postgres")
+	up, _, err := datadiff.Render(diff, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals,
 		"INSERT INTO \"users\" (\"id\", \"v\") VALUES ('r1', '''); DROP TABLE users;--');\n")
@@ -476,7 +477,7 @@ func TestRenderLiteralErrors(t *testing.T) {
 				Keys:    []string{"id"},
 				Inserts: []datadiff.Row{{"id": "r1", "v": tt.value}},
 			}
-			up, down, err := datadiff.Render(diff, "postgres")
+			up, down, err := datadiff.Render(diff, "postgres", dataServices(c, "postgres"))
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(up, qt.Equals, "")
 			c.Assert(down, qt.Equals, "")
@@ -495,7 +496,7 @@ func TestRenderBinaryLiteral_FailurePath(t *testing.T) {
 		Inserts: []datadiff.Row{{"id": "r1", "v": []byte{0x5c, 0xff, 0x41}}},
 	}
 
-	up, down, err := datadiff.Render(diff, "db2")
+	up, down, err := datadiff.Render(diff, "db2", dataext.Services{})
 
 	c.Assert(err, qt.ErrorMatches,
 		`datadiff: column "v": datadiff: no binary literal is known for dialect "db2", so a \[\]byte value cannot be rendered`)
@@ -572,7 +573,7 @@ func TestRenderErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			up, down, err := datadiff.Render(tt.diff, "postgres")
+			up, down, err := datadiff.Render(tt.diff, "postgres", dataServices(c, "postgres"))
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(up, qt.Equals, "")
 			c.Assert(down, qt.Equals, "")
@@ -608,7 +609,7 @@ DELETE FROM "scoped" WHERE "code" = 'two' AND "tenant" IS NULL;
 UPDATE "scoped" SET "label" = 'old' WHERE "code" = 'one' AND "tenant" IS NULL;
 `
 
-	up, down, err := datadiff.Render(diff, "postgres")
+	up, down, err := datadiff.Render(diff, "postgres", dataServices(c, "postgres"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, wantUp)
 	c.Assert(down, qt.Equals, wantDown)
@@ -642,7 +643,7 @@ func TestRenderClickHouseUpdateIsAlterTable(t *testing.T) {
 		"ALTER TABLE `settings` UPDATE `label` = 'old' WHERE `code` = 'one';\n" +
 		"DELETE FROM `settings` WHERE `code` = 'two';\n"
 
-	up, down, err := datadiff.Render(diff, "clickhouse")
+	up, down, err := datadiff.Render(diff, "clickhouse", dataServices(c, "clickhouse"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, wantUp)
 	c.Assert(down, qt.Equals, wantDown)
@@ -666,7 +667,7 @@ func TestRenderStatements_ANewlineStaysInsideItsStatement(t *testing.T) {
 		Deletes: []datadiff.Row{{"code": "c\nd", "body": "gone"}},
 	}
 
-	up, down, err := datadiff.RenderStatements(diff, "postgres")
+	up, down, err := datadiff.RenderStatements(diff, "postgres", dataServices(c, "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.DeepEquals, []string{
@@ -693,9 +694,9 @@ func TestRenderStatements_RenderIsTheirJoin(t *testing.T) {
 		Deletes: []datadiff.Row{{"code": "ZZ", "name": "Zeta"}},
 	}
 
-	upStatements, downStatements, err := datadiff.RenderStatements(diff, "mysql")
+	upStatements, downStatements, err := datadiff.RenderStatements(diff, "mysql", dataServices(c, "mysql"))
 	c.Assert(err, qt.IsNil)
-	up, down, err := datadiff.Render(diff, "mysql")
+	up, down, err := datadiff.Render(diff, "mysql", dataServices(c, "mysql"))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(up, qt.Equals, strings.Join(upStatements, "\n")+"\n")
@@ -707,7 +708,7 @@ func TestRenderStatements_RenderIsTheirJoin(t *testing.T) {
 func TestRenderStatements_EmptyDiff(t *testing.T) {
 	c := qt.New(t)
 
-	up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{Table: "regions"}, "postgres")
+	up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{Table: "regions"}, "postgres", dataServices(c, "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.IsNil)
@@ -717,7 +718,7 @@ func TestRenderStatements_EmptyDiff(t *testing.T) {
 func TestRenderStatements_FailurePath(t *testing.T) {
 	t.Run("nil diff", func(t *testing.T) {
 		c := qt.New(t)
-		up, down, err := datadiff.RenderStatements(nil, "postgres")
+		up, down, err := datadiff.RenderStatements(nil, "postgres", dataServices(c, "postgres"))
 		c.Assert(err, qt.ErrorMatches, `datadiff: nil diff`)
 		c.Assert(up, qt.IsNil)
 		c.Assert(down, qt.IsNil)
@@ -727,7 +728,7 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
 			Table:   "t",
 			Inserts: []datadiff.Row{{"code": "US"}},
-		}, "postgres")
+		}, "postgres", dataServices(c, "postgres"))
 		c.Assert(err, qt.ErrorMatches, `datadiff: keys must be non-empty to render a non-empty diff`)
 		c.Assert(up, qt.IsNil)
 		c.Assert(down, qt.IsNil)
@@ -743,7 +744,7 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 				Keys:        []string{"code"},
 				ColumnTypes: map[string]string{"code": "Utf8"},
 				Inserts:     []datadiff.Row{{"code": "US", "name": "x"}},
-			}, dialect)
+			}, dialect, dataServices(c, dialect))
 			c.Assert(err, qt.ErrorMatches, `datadiff: column "name": YDB stores a literal only in its column's own `+
 				`type, and the diff names no type for this column`)
 			c.Assert(up, qt.IsNil)
@@ -757,7 +758,7 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 			Keys:        []string{"id"},
 			ColumnTypes: map[string]string{"id": "Int64", "n": "Int32"},
 			Inserts:     []datadiff.Row{{"id": 1, "n": int64(5000000000)}},
-		}, "ydb")
+		}, "ydb", dataServices(c, "ydb"))
 		c.Assert(err, qt.ErrorMatches, `datadiff: column "n": Int32 cannot hold 5000000000: it is outside the `+
 			`range -2147483648 to 2147483647`)
 		c.Assert(up, qt.IsNil)
@@ -770,7 +771,7 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 			Keys:        []string{"id"},
 			ColumnTypes: map[string]string{"id": "Uint32", "n": "Int32"},
 			Deletes:     []datadiff.Row{{"id": -1, "n": 1}},
-		}, "ydb")
+		}, "ydb", dataServices(c, "ydb"))
 		c.Assert(err, qt.ErrorMatches, `datadiff: key column "id": Uint32 cannot hold -1: it is outside the `+
 			`range 0 to 4294967295`)
 		c.Assert(up, qt.IsNil)
@@ -782,7 +783,7 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 			Table:   "t",
 			Keys:    []string{"code"},
 			Inserts: []datadiff.Row{{"code": "US", "name": "a\x00b"}},
-		}, "postgres")
+		}, "postgres", dataServices(c, "postgres"))
 		c.Assert(err, qt.ErrorMatches, `datadiff: column "name": datadiff: string value contains a NUL byte.*`)
 		c.Assert(up, qt.IsNil)
 		c.Assert(down, qt.IsNil)

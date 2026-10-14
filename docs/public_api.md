@@ -18,6 +18,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/ast`
 - `ptah.run/core/astbuilder`
 - `ptah.run/core/coverage`
+- `ptah.run/core/dataext`
 - `ptah.run/core/featureplan`
 - `ptah.run/core/goschema`
 - `ptah.run/core/lintext`
@@ -4774,6 +4775,9 @@ in place of a dialect's name:
 
 - `Query`: how `core/query` spells what engines spell differently.
 - `Scripts`: how a script is cut into statements.
+- `Literals`: how `migration/datadiff` writes a value as a literal.
+- `ManagedData`: how managed rows are compared and changed.
+- `Seeds`: how `migration/seeder` runs seed files and records them.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,
@@ -4790,6 +4794,28 @@ A descriptor also states the planning grammars the engine has: a concurrent
 index build (`ConcurrentIndexes`) and an online ALTER TABLE (`OnlineAlter`). A
 capability says whether a given server takes such a grammar, and a capability
 set cannot claim one the dialect lacks.
+
+`core/dataext` is the contract for what an engine does with data that its
+descriptor cannot state:
+
+- `Literals` writes a value in its column's type.
+- `Columns` names the declared types that hold a moment.
+- `Rows` types the rows a managed-data comparison pairs.
+- `Seeds` runs a seed file, records one, and lists the tables a seed run
+  guards.
+
+The first three link no database driver. An owner registers them on its target
+as `engine.Target.Data`, and `engine.Runtime.DataServices` returns them for a
+dialect: the zero `Services` when the owner registered none, and
+`ptaherr.ErrUnsupportedDialect` for a target the runtime does not know. They
+belong to the runtime that loaded the owner, never to the process.
+`migration/datadiff.Render` and the managed-data comparison take them from the
+caller. A seed runs through the driver, which the rendering runtime does not
+link, so `dbschema.DatabaseConnection.Seeds` hands out the seed service of the
+engine a connection reaches. The descriptor says which engines need which
+service (`Literals.ByOwner`, `ManagedData.TypedRows`, `Seeds.ByOwner`), and each
+package refuses such an engine when it is given none, rather than write its
+rows the generic way.
 
 `migration/generator.GenerateCheckpointFromShadow` preserves the same live
 semantics when a replayed history is rendered as a checkpoint: the render goes

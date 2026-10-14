@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
-	"ptah.run/internal/oracletype"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbtype"
 )
 
 // Render renders diff into a pair of SQL scripts: up applies the desired state
@@ -70,17 +70,26 @@ import (
 // A []byte value is written as a hexadecimal binary literal, and a dialect with
 // no known binary literal is refused (see [binaryLiteral]).
 //
+// # Data services
+//
+// services are the dialect's data services, from
+// engine.Runtime.DataServices. Most dialects have none and render every value
+// from its Go value. A dialect whose descriptor says its owner writes some
+// literals (descriptor.Literals.ByOwner), as YDB's and Oracle's do, is refused
+// with an error naming it when services carries neither a Literals nor a
+// Columns service; an empty diff needs none.
+//
 // # YDB
 //
 // YQL types every literal and converts few of them, so on YDB each value is
-// written in the type of its column, which [DataDiff.ColumnTypes] names: an
-// Int32 column takes `5`, an Int64 column `5l`, a Utf8 column `'x'u`, a
-// Timestamp column `Timestamp('...')`. A column the map does not name is an
+// written by the YDB owner in the type of its column, which
+// [DataDiff.ColumnTypes] names: an Int32 column takes `5`, an Int64 column
+// `5l`, a Utf8 column `'x'u`, a Timestamp column `Timestamp('...')`. A column the map does not name is an
 // error rather than a guess, and so is a value its column cannot hold -- an
 // integer outside the type's range, a negative one for an unsigned type -- which
 // the error names together with the column and its type.
-func Render(diff *DataDiff, dialect string) (up, down string, err error) {
-	upStmts, downStmts, err := RenderStatements(diff, dialect)
+func Render(diff *DataDiff, dialect string, services dataext.Services) (up, down string, err error) {
+	upStmts, downStmts, err := RenderStatements(diff, dialect, services)
 	if err != nil {
 		return "", "", err
 	}
@@ -100,7 +109,7 @@ func Render(diff *DataDiff, dialect string) (up, down string, err error) {
 //
 // Both slices are nil when diff carries no changes. On error both are nil and
 // the error is the one [Render] returns for the same diff.
-func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err error) {
+func RenderStatements(diff *DataDiff, dialect string, services dataext.Services) (up, down []string, err error) {
 	if diff == nil {
 		return nil, nil, errors.New("datadiff: nil diff")
 	}
@@ -113,13 +122,17 @@ func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err er
 		return nil, nil, errors.New("datadiff: keys must be non-empty to render a non-empty diff")
 	}
 
-	table := sqlident.QualifiedIdent(dialect, diff.Schema, diff.Table)
-
-	up, err = renderUp(dialect, table, diff)
+	t, err := newTarget(dialect, services)
 	if err != nil {
 		return nil, nil, err
 	}
-	down, err = renderDown(dialect, table, diff)
+	table := sqlident.QualifiedIdent(dialect, diff.Schema, diff.Table)
+
+	up, err = renderUp(t, table, diff)
+	if err != nil {
+		return nil, nil, err
+	}
+	down, err = renderDown(t, table, diff)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,24 +140,24 @@ func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err er
 }
 
 // renderUp builds the forward statements in Inserts, Updates, Deletes order.
-func renderUp(dialect, table string, diff *DataDiff) ([]string, error) {
+func renderUp(t target, table string, diff *DataDiff) ([]string, error) {
 	stmts := make([]string, 0, len(diff.Inserts)+len(diff.Updates)+len(diff.Deletes))
 	for _, row := range diff.Inserts {
-		s, err := insertStmt(dialect, table, diff.ColumnTypes, row)
+		s, err := insertStmt(t, table, diff.ColumnTypes, row)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, u := range diff.Updates {
-		s, err := updateStmt(dialect, table, diff.ColumnTypes, diff.Keys, u.Desired, u.Key)
+		s, err := updateStmt(t, table, diff.ColumnTypes, diff.Keys, u.Desired, u.Key)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, row := range diff.Deletes {
-		s, err := deleteStmt(dialect, table, diff.ColumnTypes, diff.Keys, row)
+		s, err := deleteStmt(t, table, diff.ColumnTypes, diff.Keys, row)
 		if err != nil {
 			return nil, err
 		}
@@ -156,24 +169,24 @@ func renderUp(dialect, table string, diff *DataDiff) ([]string, error) {
 // renderDown builds the inverse statements in fully reversed order: the inverse
 // of each Delete (re-insert), then of each Update (restore Live), then of each
 // Insert (delete), with every group iterated back to front.
-func renderDown(dialect, table string, diff *DataDiff) ([]string, error) {
+func renderDown(t target, table string, diff *DataDiff) ([]string, error) {
 	stmts := make([]string, 0, len(diff.Inserts)+len(diff.Updates)+len(diff.Deletes))
 	for _, row := range slices.Backward(diff.Deletes) {
-		s, err := insertStmt(dialect, table, diff.ColumnTypes, row)
+		s, err := insertStmt(t, table, diff.ColumnTypes, row)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, u := range slices.Backward(diff.Updates) {
-		s, err := updateStmt(dialect, table, diff.ColumnTypes, diff.Keys, u.Live, u.Key)
+		s, err := updateStmt(t, table, diff.ColumnTypes, diff.Keys, u.Live, u.Key)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, row := range slices.Backward(diff.Inserts) {
-		s, err := deleteStmt(dialect, table, diff.ColumnTypes, diff.Keys, row)
+		s, err := deleteStmt(t, table, diff.ColumnTypes, diff.Keys, row)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +197,7 @@ func renderDown(dialect, table string, diff *DataDiff) ([]string, error) {
 
 // insertStmt renders an INSERT for every column of row, columns sorted so the
 // output is deterministic. A row with no columns is an error.
-func insertStmt(dialect, table string, types map[string]string, row Row) (string, error) {
+func insertStmt(t target, table string, types map[string]string, row Row) (string, error) {
 	cols := sortedColumns(row)
 	if len(cols) == 0 {
 		return "", errors.New("datadiff: cannot render INSERT for a row with no columns")
@@ -192,11 +205,11 @@ func insertStmt(dialect, table string, types map[string]string, row Row) (string
 	quotedCols := make([]string, len(cols))
 	literals := make([]string, len(cols))
 	for i, col := range cols {
-		lit, err := renderColumnLiteral(dialect, types[col], row[col])
+		lit, err := renderColumnLiteral(t, types[col], row[col])
 		if err != nil {
 			return "", fmt.Errorf("datadiff: column %q: %w", col, err)
 		}
-		quotedCols[i] = sqlident.Ident(dialect, col)
+		quotedCols[i] = sqlident.Ident(t.dialect, col)
 		literals[i] = lit
 	}
 	return fmt.Sprintf(
@@ -209,7 +222,7 @@ func insertStmt(dialect, table string, types map[string]string, row Row) (string
 // and matches rows on the key columns, whose values are taken from keyRow. Key
 // columns are skipped in the SET clause. An empty setRow, a setRow with no
 // non-key columns, or a keyRow missing a key column is an error.
-func updateStmt(dialect, table string, types map[string]string, keys []string, setRow, keyRow Row) (string, error) {
+func updateStmt(t target, table string, types map[string]string, keys []string, setRow, keyRow Row) (string, error) {
 	if len(setRow) == 0 {
 		return "", errors.New("datadiff: cannot render UPDATE for a row with no columns")
 	}
@@ -232,18 +245,18 @@ func updateStmt(dialect, table string, types map[string]string, keys []string, s
 
 	assignments := make([]string, len(setCols))
 	for i, col := range setCols {
-		lit, err := renderColumnLiteral(dialect, types[col], setRow[col])
+		lit, err := renderColumnLiteral(t, types[col], setRow[col])
 		if err != nil {
 			return "", fmt.Errorf("datadiff: column %q: %w", col, err)
 		}
-		assignments[i] = sqlident.Ident(dialect, col) + " = " + lit
+		assignments[i] = sqlident.Ident(t.dialect, col) + " = " + lit
 	}
 
-	where, err := keyPredicate(dialect, types, keys, keyRow)
+	where, err := keyPredicate(t, types, keys, keyRow)
 	if err != nil {
 		return "", err
 	}
-	if usesAlterTableDML(dialect) {
+	if t.managed.AlterTableUpdate {
 		return fmt.Sprintf(
 			"ALTER TABLE %s UPDATE %s WHERE %s;",
 			table, strings.Join(assignments, ", "), where,
@@ -252,23 +265,48 @@ func updateStmt(dialect, table string, types map[string]string, keys []string, s
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s;", table, strings.Join(assignments, ", "), where), nil
 }
 
-// usesAlterTableDML reports whether the dialect writes a row change as an ALTER
-// TABLE rather than as an UPDATE.
+// target is the dialect a diff renders for: the spelling the caller named,
+// which identifiers are quoted for, what its descriptor states about literals
+// and row changes, and the owner's data services.
 //
-// ClickHouse answers a plain UPDATE with "Lightweight updates are not
-// supported" unless the table carries a materialized _block_number column,
-// which a reference table does not. Its own spelling is ALTER TABLE ... UPDATE,
-// a mutation the server applies in the background. DELETE needs no arm: the
-// lightweight delete has been on by default there since 23.3, and the plain
-// statement is accepted (stokaro/ptah#3281).
-func usesAlterTableDML(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.ClickHouse
+// A row change is written as ALTER TABLE ... UPDATE where the descriptor says
+// so (descriptor.ManagedData.AlterTableUpdate). ClickHouse answers a plain
+// UPDATE with "Lightweight updates are not supported" unless the table
+// carries a materialized _block_number column, which a reference table does
+// not; DELETE needs no such arm (stokaro/ptah#3281).
+type target struct {
+	dialect  string
+	name     string
+	literals descriptor.Literals
+	managed  descriptor.ManagedData
+	services dataext.Services
+}
+
+// newTarget reads the descriptor of dialect from the process registry. A
+// dialect it does not describe renders with the standard spelling, as an
+// unrecognized dialect always has. A dialect whose owner writes some of its
+// literals (descriptor.Literals.ByOwner) is refused when services carries no
+// literal service, rather than written from each value alone.
+func newTarget(dialect string, services dataext.Services) (target, error) {
+	described, _ := platform.Lookup(dialect)
+	if described.Literals.ByOwner && services.Literals == nil && services.Columns == nil {
+		return target{}, fmt.Errorf(
+			"datadiff: %s writes literals through its owner's data services, and the caller gave none; "+
+				"pass the services engine.Runtime.DataServices returns for the dialect", described.Name)
+	}
+	return target{
+		dialect:  dialect,
+		name:     described.Name,
+		literals: described.Literals,
+		managed:  described.ManagedData,
+		services: services,
+	}, nil
 }
 
 // deleteStmt renders a DELETE that matches rows on the key columns, whose values
 // are taken from row.
-func deleteStmt(dialect, table string, types map[string]string, keys []string, row Row) (string, error) {
-	where, err := keyPredicate(dialect, types, keys, row)
+func deleteStmt(t target, table string, types map[string]string, keys []string, row Row) (string, error) {
+	where, err := keyPredicate(t, types, keys, row)
 	if err != nil {
 		return "", err
 	}
@@ -278,7 +316,7 @@ func deleteStmt(dialect, table string, types map[string]string, keys []string, r
 // keyPredicate builds a "<key> = <literal>" predicate for every key column,
 // sorted and joined with AND. Values are taken from values; a missing key column
 // is an error.
-func keyPredicate(dialect string, types map[string]string, keys []string, values Row) (string, error) {
+func keyPredicate(t target, types map[string]string, keys []string, values Row) (string, error) {
 	sorted := slices.Clone(keys)
 	slices.Sort(sorted)
 	parts := make([]string, len(sorted))
@@ -292,14 +330,14 @@ func keyPredicate(dialect string, types map[string]string, keys []string, values
 		// succeeds and changes nothing: the row the diff found stays exactly
 		// where it was, and the next run finds it again (stokaro/ptah#3279).
 		if v == nil {
-			parts[i] = sqlident.Ident(dialect, k) + " IS NULL"
+			parts[i] = sqlident.Ident(t.dialect, k) + " IS NULL"
 			continue
 		}
-		lit, err := renderColumnLiteral(dialect, types[k], v)
+		lit, err := renderColumnLiteral(t, types[k], v)
 		if err != nil {
 			return "", fmt.Errorf("datadiff: key column %q: %w", k, err)
 		}
-		parts[i] = sqlident.Ident(dialect, k) + " = " + lit
+		parts[i] = sqlident.Ident(t.dialect, k) + " = " + lit
 	}
 	return strings.Join(parts, " AND "), nil
 }
@@ -326,56 +364,35 @@ func joinStatements(stmts []string) string {
 // renderColumnLiteral renders v for a column declared as declaredType.
 //
 // The declared type matters only where a dialect refuses the literal a Go value
-// would otherwise take. A declaration writes a moment as text, and Oracle
-// refuses text for a DATE or TIMESTAMP column (see [refusesTextForDatetime]), so
-// there the text is read as the moment it names and rendered as a typed
-// timestamp literal. Text that names no moment is refused here rather than sent
-// to a server that would refuse it. An empty declaredType is a column whose type
-// the caller does not know, and v renders from its Go value alone.
-//
-// On YDB the declared type is the column's YDB type, and every literal is
-// written in it through ydbtype.ValueLiteral, the map the YDB renderer writes
-// the column with; see [Render].
-func renderColumnLiteral(dialect, declaredType string, v any) (string, error) {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return ydbColumnLiteral(declaredType, v)
+// would otherwise take, and the dialect's owner says where through its data
+// services. An owner's dataext.Literals service writes the literal itself:
+// YQL types every literal, so on YDB every value is written in the type of its
+// column, the one [DataDiff.ColumnTypes] names; see [Render]. An owner's
+// dataext.Columns service names the columns that hold a moment and refuse
+// text: a declaration writes a moment as text, and Oracle refuses text for a
+// DATE or TIMESTAMP column, so there the text is read as the moment it names
+// and rendered as a timestamp literal. Text that names no moment is refused
+// here rather than sent to a server that would refuse it. An empty
+// declaredType is a column whose type the caller does not know, and v renders
+// from its Go value alone, unless the owner writes it.
+func renderColumnLiteral(t target, declaredType string, v any) (string, error) {
+	if t.services.Literals != nil {
+		literal, handled, err := t.services.Literals.Literal(declaredType, v)
+		if handled {
+			return literal, err
+		}
 	}
 	text, isText := textValue(v)
-	if !isText || !refusesTextForDatetime(dialect, declaredType) {
-		return renderLiteral(dialect, v)
+	if !isText || declaredType == "" || t.services.Columns == nil || !t.services.Columns.HoldsMoment(declaredType) {
+		return renderLiteral(t, v)
 	}
 	moment, ok := parseMoment(text)
 	if !ok {
 		return "", fmt.Errorf(
 			"datadiff: %q does not name a moment, and a %s column on %s does not accept text; write it as 2006-01-02, 2006-01-02 15:04:05 or RFC 3339",
-			text, declaredType, platform.NormalizeDialect(dialect))
+			text, declaredType, t.name)
 	}
-	return timeLiteral(dialect, moment), nil
-}
-
-// ydbColumnLiteral writes v for a YDB column of ydbType. YDB converts almost no
-// literal to a column's type, so without the type there is no literal to
-// write, and the column is refused rather than given the type its Go value
-// suggests.
-func ydbColumnLiteral(ydbType string, v any) (string, error) {
-	if strings.TrimSpace(ydbType) == "" {
-		return "", errors.New("YDB stores a literal only in its column's own type, " +
-			"and the diff names no type for this column")
-	}
-	return ydbtype.ValueLiteral(ydbType, v)
-}
-
-// refusesTextForDatetime reports whether dialect refuses a string literal for a
-// column declared as declaredType because the column holds a moment.
-//
-// Only Oracle does, and which of its columns hold a moment is the type map's
-// answer rather than a second list here: the column is whatever
-// oracletype.Map created. PostgreSQL, MySQL and the rest convert the text
-// themselves, and their string literals stay as the declaration wrote them.
-func refusesTextForDatetime(dialect, declaredType string) bool {
-	return declaredType != "" &&
-		platform.NormalizeDialect(dialect) == platform.Oracle &&
-		oracletype.IsDatetime(declaredType)
+	return timeLiteral(t, moment), nil
 }
 
 // textValue returns v as text when it is a string or a []byte.
@@ -397,8 +414,9 @@ func textValue(v any) (string, bool) {
 // Mapping:
 //
 //   - nil            -> NULL
-//   - bool           -> TRUE/FALSE, except 1/0 for MySQL, MariaDB, ClickHouse,
-//     SQL Server, and Oracle (see [usesNumericBool])
+//   - bool           -> TRUE/FALSE, except 1/0 where the dialect's descriptor
+//     says so (descriptor.Literals.NumericBool): MySQL, MariaDB, ClickHouse,
+//     SQL Server and Oracle
 //   - signed ints    -> decimal digits
 //   - unsigned ints  -> decimal digits
 //   - float32/float64 -> strconv.FormatFloat(f, 'g', -1, bitSize); NaN and
@@ -418,18 +436,18 @@ func textValue(v any) (string, bool) {
 //
 //	'  ->  ''
 //
-// For MySQL, MariaDB, and ClickHouse the backslash is ALSO escaped (\ -> \\)
-// because those dialects process C-style backslash escapes inside string
-// literals by default; for the PostgreSQL family, SQLite, SQL Server, and any
+// Where the dialect's descriptor says string literals process C-style
+// backslash escapes (descriptor.Literals.BackslashEscapes), as MySQL, MariaDB
+// and ClickHouse do by default, the backslash is ALSO escaped (\ -> \\); for the PostgreSQL family, SQLite, SQL Server, and any
 // unrecognized dialect the backslash is left untouched, as standard SQL treats
 // it literally. A string containing a NUL byte is rejected because it is not
 // portably representable as a SQL literal.
-func renderLiteral(dialect string, v any) (string, error) {
+func renderLiteral(t target, v any) (string, error) {
 	switch val := v.(type) {
 	case nil:
 		return "NULL", nil
 	case bool:
-		if usesNumericBool(dialect) {
+		if t.literals.NumericBool {
 			if val {
 				return "1", nil
 			}
@@ -440,11 +458,11 @@ func renderLiteral(dialect string, v any) (string, error) {
 		}
 		return "FALSE", nil
 	case string:
-		return stringLiteral(dialect, val)
+		return stringLiteral(t, val)
 	case []byte:
-		return binaryLiteral(dialect, val)
+		return binaryLiteral(t, val)
 	case time.Time:
-		return timeLiteral(dialect, val), nil
+		return timeLiteral(t, val), nil
 	}
 	if lit, ok, err := numericLiteral(v); ok {
 		return lit, err
@@ -492,9 +510,11 @@ func numericLiteral(v any) (string, bool, error) {
 	}
 }
 
-// timeLiteral renders t as a quoted SQL timestamp literal. The layout uses a
-// space separator, fractional seconds (trailing zeros trimmed), and the numeric
-// UTC offset for dialects whose timestamp literals accept one, so both
+// timeLiteral renders moment as a quoted SQL timestamp literal, as the
+// dialect's descriptor spells it (descriptor.Literals.TimestampOffset and
+// TimestampPrefix). The layout uses a space separator, fractional seconds
+// (trailing zeros trimmed), and the numeric UTC offset for dialects whose
+// timestamp literals accept one, so both
 // timestamp-with-time-zone and plain-timestamp columns round-trip: PostgreSQL and
 // SQLite preserve the instant from the offset (verified against the driver), a
 // PostgreSQL "timestamp without time zone" simply ignores the offset, and SQLite
@@ -512,25 +532,12 @@ func numericLiteral(v any) (string, bool, error) {
 // and drops the offset, a TIMESTAMP WITH TIME ZONE column keeps both, and the
 // driver hands either back as the time.Time this renders, so the value
 // round-trips.
-func timeLiteral(dialect string, t time.Time) string {
-	if platform.NormalizeDialect(dialect) == platform.Oracle {
-		return "TIMESTAMP '" + t.Format("2006-01-02 15:04:05.999999999-07:00") + "'"
+func timeLiteral(t target, moment time.Time) string {
+	layout := "2006-01-02 15:04:05.999999999"
+	if t.literals.TimestampOffset {
+		layout += "-07:00"
 	}
-	if usesTimeZoneOffsetLiteral(dialect) {
-		return "'" + t.Format("2006-01-02 15:04:05.999999999-07:00") + "'"
-	}
-	return "'" + t.Format("2006-01-02 15:04:05.999999999") + "'"
-}
-
-// usesTimeZoneOffsetLiteral reports whether dialect accepts (and round-trips) a
-// numeric time-zone offset inside a timestamp literal. See [timeLiteral].
-func usesTimeZoneOffsetLiteral(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.SQLite:
-		return true
-	default:
-		return false
-	}
+	return t.literals.TimestampPrefix + "'" + moment.Format(layout) + "'"
 }
 
 // floatLiteral renders f using the shortest representation that round-trips at
@@ -548,11 +555,11 @@ func floatLiteral(f float64, bitSize int) (string, error) {
 
 // stringLiteral renders s as a single-quoted SQL literal, escaping per the rules
 // documented on [renderLiteral].
-func stringLiteral(dialect, s string) (string, error) {
+func stringLiteral(t target, s string) (string, error) {
 	if strings.IndexByte(s, 0) >= 0 {
 		return "", errors.New("datadiff: string value contains a NUL byte, which has no portable SQL literal representation")
 	}
-	if usesBackslashEscapes(dialect) {
+	if t.literals.BackslashEscapes {
 		s = strings.ReplaceAll(s, `\`, `\\`)
 	}
 	s = strings.ReplaceAll(s, "'", "''")
@@ -572,51 +579,13 @@ func stringLiteral(dialect, s string) (string, error) {
 //   - SQL Server                                  -> 0x<hex>
 //   - Oracle                                      -> HEXTORAW('<hex>')
 //
-// The PostgreSQL spelling relies on standard_conforming_strings, as
-// [stringLiteral] does. Any other dialect is refused rather than given a guess.
-func binaryLiteral(dialect string, b []byte) (string, error) {
-	digits := hex.EncodeToString(b)
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return `'\x` + digits + `'::bytea`, nil
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.ClickHouse:
-		return "X'" + digits + "'", nil
-	case platform.SQLServer:
-		return "0x" + digits, nil
-	case platform.Oracle:
-		return "HEXTORAW('" + digits + "')", nil
-	default:
-		return "", fmt.Errorf("datadiff: no binary literal is known for dialect %q, so a []byte value cannot be rendered", dialect)
+// The dialect's descriptor holds the spelling (descriptor.Literals.BinaryPrefix
+// and BinarySuffix). The PostgreSQL spelling relies on
+// standard_conforming_strings, as [stringLiteral] does. A dialect whose
+// descriptor names none is refused rather than given a guess.
+func binaryLiteral(t target, b []byte) (string, error) {
+	if t.literals.BinaryPrefix == "" {
+		return "", fmt.Errorf("datadiff: no binary literal is known for dialect %q, so a []byte value cannot be rendered", t.dialect)
 	}
-}
-
-// usesBackslashEscapes reports whether dialect processes C-style backslash
-// escapes inside string literals by default, requiring backslashes to be
-// doubled.
-func usesBackslashEscapes(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
-		return true
-	default:
-		return false
-	}
-}
-
-// usesNumericBool reports whether dialect spells boolean literals as 1/0 rather
-// than TRUE/FALSE.
-//
-// Oracle follows the type a BOOLEAN column is created as. oracletype.Map makes
-// it NUMBER(1), because 21.3 has no BOOLEAN type, and 1/0 is the literal a
-// NUMBER(1) column takes on every line. 23.26 also converts TRUE and FALSE, but
-// a literal chosen by the server's leniency would stop matching the column the
-// day the type map changes, and reading the map keeps the two in step.
-func usesNumericBool(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.SQLServer:
-		return true
-	case platform.Oracle:
-		return oracletype.Map("BOOLEAN") != "BOOLEAN"
-	default:
-		return false
-	}
+	return t.literals.BinaryPrefix + hex.EncodeToString(b) + t.literals.BinarySuffix, nil
 }

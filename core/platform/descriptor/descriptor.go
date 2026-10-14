@@ -136,6 +136,12 @@ type Dialect struct {
 	// cluster. A display of the URL hides the credentials inside them too.
 	// They are matched without regard to case.
 	URLValuedParameters []string `json:"url_valued_parameters,omitempty"`
+	// Literals states how a value is written into a statement as a literal.
+	Literals Literals `json:"literals,omitzero"`
+	// ManagedData states how managed rows are compared and changed.
+	ManagedData ManagedData `json:"managed_data,omitzero"`
+	// Seeds states how seed files run and are recorded.
+	Seeds Seeds `json:"seeds,omitzero"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE

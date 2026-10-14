@@ -62,6 +62,38 @@ func sqlServer() descriptor.Dialect {
 		RevisionTable:   sqlServerRevisionTable(),
 
 		Lock: descriptor.Lock{Protocol: descriptor.LockAppLock},
+		// SQL Server refuses to convert a varchar literal to varbinary, so a
+		// binary value is a 0x constant. The reader marks only IDENTITY
+		// columns auto-increment, and those refuse an explicit value unless
+		// IDENTITY_INSERT is on.
+		//
+		// T-SQL has no IF NOT EXISTS on CREATE TABLE (Msg 156), so the tracker
+		// is guarded by OBJECT_ID, as the migrator's revision table is, and
+		// its TIMESTAMP is rowversion, a counter the server fills in (Msg 273
+		// on insert), so the column is DATETIME2. The savepoint statements are
+		// SAVE TRANSACTION and ROLLBACK TRANSACTION, with no release: measured
+		// (stokaro/ptah#3330), SAVEPOINT answers 2812, ROLLBACK TO SAVEPOINT
+		// Msg 156 and RELEASE SAVEPOINT Msg 102.
+		Literals: descriptor.Literals{
+			NumericBool:  true,
+			BinaryPrefix: "0x",
+		},
+		ManagedData: descriptor.ManagedData{
+			IdentityRefusesInsert: descriptor.IdentityInsertAutoIncrement,
+		},
+		Seeds: descriptor.Seeds{
+			Tracker: `IF OBJECT_ID(N'schema_seeds', N'U') IS NULL
+BEGIN
+    CREATE TABLE schema_seeds (
+        seed_path VARCHAR(512) PRIMARY KEY,
+        env VARCHAR(128) NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        applied_at DATETIME2 NOT NULL
+    )
+END`,
+			Transactional: true,
+			Savepoint:     descriptor.Savepoint{Create: "SAVE TRANSACTION", Rollback: "ROLLBACK TRANSACTION"},
+		},
 	}
 }
 

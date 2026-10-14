@@ -7,13 +7,12 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
-	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -90,6 +89,12 @@ type Request struct {
 	CatalogIsComplete bool
 	// Intent is what the caller will do with the diff.
 	Intent Intent
+	// Data are the dialect's data services, from engine.Runtime.DataServices.
+	// A dialect whose descriptor asks for typed rows
+	// (descriptor.ManagedData.TypedRows) is refused without Data.Rows; with
+	// it, the declared and live rows and the column types are the ones the
+	// owner gives, as YDB compares and writes each value in its column's type.
+	Data dataext.Services
 	// Read, when set, receives what the comparison read from the database.
 	//
 	// A caller that has to recognize later whether those rows moved reads them
@@ -132,6 +137,11 @@ func Compare(
 	if len(declaration.Keys) == 0 {
 		return nil, fmt.Errorf("managed data for table %s declares no key column", qualified)
 	}
+	if described, _ := platform.Lookup(conn.Info().Dialect); described.ManagedData.TypedRows && req.Data.Rows == nil {
+		return nil, fmt.Errorf(
+			"comparing declared rows of %s on %s needs the owner's row service, and the caller gave none; "+
+				"pass the services engine.Runtime.DataServices returns for the dialect", qualified, described.Name)
+	}
 	names := conn.Info().IdentifierSemantics
 	liveTable := LiveTable(req.Live, declaration.Schema, declaration.Table, names)
 
@@ -158,12 +168,12 @@ func Compare(
 	}
 
 	references, columnTypes := declarationShape(req.Desired, declaration)
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		typed, err := typedYDBRows(conn.Info().Capabilities, liveTable, columnTypes, desired, live)
+	if req.Data.Rows != nil {
+		typed, err := req.Data.Rows.TypeRows(conn.Info().Capabilities, liveTable, columnTypes, desired, live)
 		if err != nil {
 			return nil, fmt.Errorf("compare declared rows of %s: %w", qualified, err)
 		}
-		columnTypes, desired, live = typed.columnTypes, typed.desired, typed.live
+		columnTypes, desired, live = typed.ColumnTypes, typed.Desired, typed.Live
 	}
 	diff, err := datadiff.Compute(declaration.Schema, declaration.Table, declaration.Keys, desired, live)
 	if err != nil {
@@ -281,59 +291,4 @@ func declarationShape(
 		}
 	}
 	return nil, nil
-}
-
-// typedYDBRows answers, for a YDB table, the YDB type of each column, and the
-// declared and live rows with every typed value in one canonical Go form.
-//
-// YQL types every literal, so the diff writes each value in its column's YDB
-// type, and that type is the live table's where the column exists: YDB cannot
-// change a column's type, so what the table holds is what a statement writes
-// into. A column the table does not have yet takes the type its declaration
-// lands on for this target's capabilities, which is the type the schema stage
-// of the same plan creates it with.
-//
-// The rows are compared in canonical form (see ydbtype.CanonicalValue):
-// declared as `12.50` or as a moment in UTC, a value pairs with the 12.5 a
-// Decimal reads back and with the local moment the driver returns, so a
-// converged row plans nothing. A declared value its column cannot hold is an
-// error naming the column and the type.
-func typedYDBRows(
-	caps capability.Capabilities,
-	liveTable *catalog.Table,
-	declaredTypes map[string]string,
-	desired, live []map[string]any,
-) (typedRows, error) {
-	columnTypes := make(map[string]string, len(declaredTypes))
-	if liveTable != nil {
-		for _, column := range liveTable.Columns {
-			columnTypes[column.Name] = column.DataType
-		}
-	}
-	for column, declared := range declaredTypes {
-		if _, isLive := columnTypes[column]; isLive {
-			continue
-		}
-		mapping, err := ydbtype.Map(declared, caps)
-		if err != nil {
-			return typedRows{}, fmt.Errorf("column %q: %w", column, err)
-		}
-		columnTypes[column] = mapping.Type
-	}
-	typedDesired, err := ydbtype.CanonicalRows(columnTypes, desired)
-	if err != nil {
-		return typedRows{}, fmt.Errorf("declared %w", err)
-	}
-	typedLive, err := ydbtype.CanonicalRows(columnTypes, live)
-	if err != nil {
-		return typedRows{}, fmt.Errorf("live %w", err)
-	}
-	return typedRows{columnTypes: columnTypes, desired: typedDesired, live: typedLive}, nil
-}
-
-// typedRows is a YDB table's column types and its declared and live rows in
-// canonical form.
-type typedRows struct {
-	columnTypes   map[string]string
-	desired, live []map[string]any
 }
