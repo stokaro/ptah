@@ -12,7 +12,7 @@ import (
 	"ptah.run/internal/embedcorpus"
 	"ptah.run/internal/embeddigest"
 	"ptah.run/internal/embedeval"
-	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedprovider"
 	"ptah.run/internal/embedspec"
 )
@@ -144,7 +144,7 @@ func evaluateCorpus(
 	if err != nil {
 		return embedeval.Report{}, err
 	}
-	searcher, err := embedpg.NewSearcher(opened.db, opened.loaded.Spec)
+	searcher, err := opened.backend.NewSearcher(opened.loaded.Spec)
 	if err != nil {
 		return embedeval.Report{}, err
 	}
@@ -199,7 +199,7 @@ func baselineScores(
 	if err != nil {
 		return embedeval.Scores{}, err
 	}
-	searcher, err := embedpg.NewSearcher(opened.db, previous.Spec)
+	searcher, err := opened.backend.NewSearcher(previous.Spec)
 	if err != nil {
 		return embedeval.Scores{}, err
 	}
@@ -264,7 +264,7 @@ func (o evaluateOptions) resolveBaseline() (*embedspec.Loaded, error) {
 // a different fix, and folding one into the other makes a provider outage look
 // like a bad model.
 func askOneCase(
-	ctx context.Context, provider embedprovider.Provider, searcher *embedpg.Searcher,
+	ctx context.Context, provider embedprovider.Provider, searcher embedbackend.Searcher,
 	testCase embedeval.Case, defaultK int,
 ) embedeval.Result {
 	answered, err := provider.Embed(ctx, []string{testCase.Query})

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
@@ -24,29 +25,29 @@ import (
 // during the index build and fence a worker still carrying its old snapshot.
 func (s *Store) EnsureRunIndex(
 	ctx context.Context, runID string, spec embedgen.Spec,
-) (IndexOutcome, error) {
+) (embedbackend.IndexOutcome, error) {
 	initial, err := s.Run(ctx, runID)
 	if err != nil {
 		return "", err
 	}
 	identity := spec.Identity().Digest
-	if err := validateIndexRun(initial, identity); err != nil {
+	if err := embedbackend.ValidateIndexRun(initial, identity); err != nil {
 		return "", err
 	}
 
-	var outcome IndexOutcome
+	var outcome embedbackend.IndexOutcome
 	err = s.withLifecycleSession(ctx, "generation", identity, func(conn *sql.Conn) error {
 		stored, err := scanRun(conn.QueryRowContext(ctx, selectRunSQL, runID), runID)
 		if err != nil {
 			return err
 		}
-		if err := validateIndexRun(stored, identity); err != nil {
+		if err := embedbackend.ValidateIndexRun(stored, identity); err != nil {
 			return err
 		}
 		// Validate the phase before changing the catalog. A run that has not
 		// caught up cannot truthfully record indexing, and building first would
 		// leave a successful artifact beside a refused lifecycle transition.
-		if _, err := indexedRun(stored, identity); err != nil {
+		if _, err := embedbackend.IndexedRun(stored, identity, time.Now()); err != nil {
 			return err
 		}
 
@@ -80,7 +81,7 @@ func recordIndexedRun(
 	if err != nil {
 		return err
 	}
-	indexed, err := indexedRun(stored, identity)
+	indexed, err := embedbackend.IndexedRun(stored, identity, time.Now())
 	if err != nil {
 		return err
 	}
@@ -206,28 +207,4 @@ func discardLifecycleConnection(conn *sql.Conn) error {
 		closeErr = nil
 	}
 	return errors.Join(rawErr, closeErr)
-}
-
-// indexedRun returns the exact row to persist after an index build.
-func indexedRun(run embedrun.Run, identity string) (embedrun.Run, error) {
-	if err := validateIndexRun(run, identity); err != nil {
-		return embedrun.Run{}, err
-	}
-	run.FencingToken++
-	run.LeaseOwner = ""
-	run.LeaseExpires = time.Time{}
-	if err := run.Reach(run.FencingToken, embedrun.PhaseIndexed); err != nil {
-		return embedrun.Run{}, err
-	}
-	// Reach is deliberately a no-op when the run is already beyond indexed.
-	// Raising the token still changed the row and needs its own timestamp.
-	run.UpdatedAt = time.Now().UTC()
-	return run, nil
-}
-
-func validateIndexRun(run embedrun.Run, identity string) error {
-	if run.Terminal() {
-		return fmt.Errorf("%w: run %s is %s", embedrun.ErrTerminal, run.ID, run.Status)
-	}
-	return run.DescribesGeneration(identity)
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/embedengine"
-	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedconnect"
 	"ptah.run/internal/embedrun"
 )
 
@@ -175,13 +175,13 @@ func runAbandon(
 	if err := validateDatabaseURL(dbURL); err != nil {
 		return err
 	}
-	db, err := connectDatabase(ctx, dbURL)
+	backend, err := embedconnect.Open(ctx, dbURL)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = backend.Close() }()
 
-	run, err := (embedengine.Runs{Store: embedpg.NewStore(db)}).Abandon(ctx, runID, reason)
+	run, err := (embedengine.Runs{Store: backend.Store()}).Abandon(ctx, runID, reason)
 	if err != nil {
 		return err
 	}

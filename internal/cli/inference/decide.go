@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcutover"
-	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrelease"
 	"ptah.run/internal/embedreport"
 	"ptah.run/internal/embedrun"
@@ -330,7 +330,7 @@ func runCutover(
 
 	now := time.Now().UTC()
 	plan, observed, err := embedreport.BuildCutoverPlan(
-		ctx, opened.db, opened.store, opened.loaded, run, report, accepting, now)
+		ctx, opened.backend, opened.loaded, run, report, accepting, now)
 	if err != nil {
 		return err
 	}
@@ -598,14 +598,14 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
-	rows, err := embedpg.CountGenerationRows(ctx, opened.db, registered)
+	rows, err := opened.backend.CountGenerationRows(ctx, registered)
 	if err != nil {
 		return err
 	}
 	// Measured rather than asserted. `DropsIndex: true` promised the operator
 	// an index would go whether or not one was there, and the record afterwards
 	// said one had (stokaro/ptah#2642).
-	hasIndex, err := embedpg.GenerationIndexExists(ctx, opened.db, registered)
+	hasIndex, err := opened.backend.GenerationIndexExists(ctx, registered)
 	if err != nil {
 		return err
 	}
@@ -650,9 +650,9 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		return refusal(out, "retirement refused", decision.Blockers)
 	}
 
-	release, err := opened.store.RetireGenerationObjects(
+	retirement, err := opened.backend.RetireGeneration(
 		ctx, options.generation, facts.pointer, plan.RowCount,
-		embedpg.RetirementDestruction{
+		embedbackend.RetirementDestruction{
 			IndexExists: plan.DropsIndex,
 			DropColumns: plan.DropsColumn,
 			DropTable:   plan.DropsTable,
@@ -660,10 +660,10 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
-	retiredAt := release.RetiredAt
+	retiredAt := retirement.RetiredAt
 	lines := []string{retirementSummary(options.generation, rows, plan)}
-	if sentence := release.Sentence(); sentence != "" {
-		lines = append(lines, bullet(sentence))
+	for _, note := range retirement.Notes {
+		lines = append(lines, bullet(note))
 	}
 	if err := writeLines(out, lines...); err != nil {
 		return err
@@ -703,7 +703,7 @@ func retirementSummary(generation string, rows int, plan embedcutover.Retirement
 // and leaving the relation, with every row still in it, credited to a
 // generation the registry now calls retired.
 func retirementOwnsTable(registered embedstore.Generation) (bool, error) {
-	recorded, err := embedpg.RecordedSpec(registered, "stored in a table of its own")
+	recorded, err := embedbackend.RecordedSpec(registered, "stored in a table of its own")
 	if err != nil {
 		return false, err
 	}
@@ -857,7 +857,7 @@ func retirementFacts(
 func rollbackEligibility(
 	ctx context.Context, opened *session, generation string, pointer embedstore.Pointer,
 ) (embedcutover.RollbackEligibility, error) {
-	state, err := embedpg.RollbackState(ctx, opened.db, generation, pointer)
+	state, err := embedbackend.MeasureRollback(ctx, opened.backend, generation, pointer)
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}
@@ -865,7 +865,7 @@ func rollbackEligibility(
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}
-	policy, err := rollbackPolicy(destination, 0)
+	policy, err := rollbackPolicy(opened.backend, destination, 0)
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}
@@ -925,6 +925,6 @@ func verify(
 	if err := run.DescribesGeneration(opened.loaded.Spec.Identity().Digest); err != nil {
 		return embedverify.Report{}, embedrun.Run{}, err
 	}
-	report, err := embedreport.VerifyGeneration(ctx, opened.db, opened.store, opened.loaded, run)
+	report, err := embedreport.VerifyGeneration(ctx, opened.backend, opened.loaded, run)
 	return report, run, err
 }

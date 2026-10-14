@@ -1,8 +1,4 @@
-package embedpg
-
-// White-box testing required: indexedRun is the pure transition shared with
-// the live PostgreSQL operation. Keeping its fence, lease, and high-water phase
-// controls here avoids exporting a persistence implementation detail.
+package embedbackend_test
 
 import (
 	"testing"
@@ -10,8 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedrun"
 )
+
+// at is the instant an index build is recorded at.
+var at = time.Date(2026, 9, 2, 12, 30, 0, 0, time.UTC)
 
 func TestIndexedRunAdvancesAndFences(t *testing.T) {
 	c := qt.New(t)
@@ -22,13 +22,14 @@ func TestIndexedRunAdvancesAndFences(t *testing.T) {
 		LeaseOwner: "worker-a", LeaseExpires: lease, FencingToken: 7,
 	}
 
-	indexed, err := indexedRun(run, "generation-1")
+	indexed, err := embedbackend.IndexedRun(run, "generation-1", at)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(indexed.Phase, qt.Equals, embedrun.PhaseIndexed)
 	c.Assert(indexed.FencingToken, qt.Equals, int64(8))
 	c.Assert(indexed.LeaseOwner, qt.Equals, "")
 	c.Assert(indexed.LeaseExpires.IsZero(), qt.IsTrue)
+	c.Assert(indexed.UpdatedAt, qt.Equals, at)
 	// The input is a snapshot and must remain untouched.
 	c.Assert(run.Phase, qt.Equals, embedrun.PhaseCaughtUp)
 	c.Assert(run.FencingToken, qt.Equals, int64(7))
@@ -42,7 +43,7 @@ func TestIndexedRunFencesAnAlreadyAdvancedRunWithoutMovingItBack(t *testing.T) {
 		FencingToken: 11,
 	}
 
-	indexed, err := indexedRun(run, "generation-1")
+	indexed, err := embedbackend.IndexedRun(run, "generation-1", at)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(indexed.Phase, qt.Equals, embedrun.PhaseVerified)
@@ -85,9 +86,9 @@ func TestIndexedRunRefusesWorkThatCannotTruthfullyReachIndexing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := indexedRun(test.run, test.identity)
+			_, err := embedbackend.IndexedRun(test.run, test.identity, at)
 			c.Assert(err, qt.ErrorIs, test.wantTarget,
-				qt.Commentf("indexedRun() error = %v, want errors.Is(_, %v)",
+				qt.Commentf("IndexedRun() error = %v, want errors.Is(_, %v)",
 					err, test.wantTarget))
 		})
 	}

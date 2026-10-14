@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedgen"
 )
 
@@ -20,27 +21,6 @@ type indexDatabase interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
-
-// IndexOutcome is what EnsureIndex did, for a caller that has to say so.
-type IndexOutcome string
-
-const (
-	// IndexNotDeclared means the specification names no index method. It is an
-	// answer rather than a failure: a generation may be queried by sequential
-	// scan, and an author who wrote no method asked for that.
-	IndexNotDeclared IndexOutcome = "not declared"
-	// IndexAlreadyValid means it was there and usable, which is the finished
-	// state and not an error to run into twice.
-	IndexAlreadyValid IndexOutcome = "already valid"
-	// IndexRebuilt means an invalid index was dropped and built again. A
-	// concurrent build that fails leaves one behind, and PostgreSQL will not
-	// use it -- so it is neither present nor absent, and saying "already
-	// exists" about it would report a generation as ready for queries that all
-	// become sequential scans.
-	IndexRebuilt IndexOutcome = "rebuilt"
-	// IndexBuilt means it was created.
-	IndexBuilt IndexOutcome = "built"
-)
 
 // EnsureIndex builds the generation's vector index and leaves it valid.
 //
@@ -55,13 +35,13 @@ const (
 // After the backfill rather than in prepare. An IVFFlat index trains its lists
 // on the data present when it is built, so one built over an empty column is
 // valid and useless.
-func EnsureIndex(ctx context.Context, db indexDatabase, spec embedgen.Spec) (IndexOutcome, error) {
+func EnsureIndex(ctx context.Context, db indexDatabase, spec embedgen.Spec) (embedbackend.IndexOutcome, error) {
 	objects, err := spec.TargetObjects()
 	if err != nil {
 		return "", err
 	}
 	if !objects.HasIndex {
-		return IndexNotDeclared, nil
+		return embedbackend.IndexNotDeclared, nil
 	}
 	name := objects.Index.Name
 
@@ -75,16 +55,16 @@ func EnsureIndex(ctx context.Context, db indexDatabase, spec embedgen.Spec) (Ind
 		return "", err
 	}
 	if present && valid {
-		return IndexAlreadyValid, nil
+		return embedbackend.IndexAlreadyValid, nil
 	}
-	outcome := IndexBuilt
+	outcome := embedbackend.IndexBuilt
 	if present {
 		// #nosec G201 -- a derived index name, through quoteIdentifier.
 		if _, err := db.ExecContext(ctx,
 			"DROP INDEX "+quoteIdentifier(name)); err != nil {
 			return "", fmt.Errorf("drop the invalid index %s: %w", name, err)
 		}
-		outcome = IndexRebuilt
+		outcome = embedbackend.IndexRebuilt
 	}
 
 	statement, err := createIndexStatement(spec, objects.Index.Name, objects.Index.Operator)

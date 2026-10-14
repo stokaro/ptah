@@ -8,19 +8,12 @@ import (
 	"strconv"
 	"time"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
 )
-
-// PrepareResult is the durable run produced by [Store.PrepareRun]. Created is
-// false when an idempotent retry found that exact nonterminal run already
-// prepared.
-type PrepareResult struct {
-	Run     embedrun.Run
-	Created bool
-}
 
 // PrepareRun creates the target, installs change capture, records its boundary,
 // registers the generation, and creates the run behind one source-and-generation
@@ -39,30 +32,10 @@ func (s *Store) PrepareRun(
 	generation embedstore.Generation,
 	run embedrun.Run,
 	mode embedcatchup.Mode,
-) (PrepareResult, error) {
+) (embedbackend.PrepareResult, error) {
 	identity := spec.Identity().Digest
-	if generation.Identity != identity {
-		return PrepareResult{}, fmt.Errorf(
-			"%w: generation registry identity %s does not match specification %s",
-			embedrun.ErrGeneration, generation.Identity, identity)
-	}
-	if err := run.DescribesGeneration(identity); err != nil {
-		return PrepareResult{}, err
-	}
-	if run.Phase != embedrun.PhasePrepared {
-		return PrepareResult{}, fmt.Errorf(
-			"prepare run %s: %w: starting phase is %s, want %s",
-			run.ID, embedrun.ErrPhase, run.Phase, embedrun.PhasePrepared)
-	}
-	if run.Terminal() {
-		return PrepareResult{}, fmt.Errorf(
-			"prepare run %s: %w: run is already %s",
-			run.ID, embedrun.ErrTerminal, run.Status)
-	}
-	if generation.ConsistencyMode != string(mode) {
-		return PrepareResult{}, fmt.Errorf(
-			"%w: generation %s records consistency mode %q, prepare selected %q",
-			embedstore.ErrConflict, identity, generation.ConsistencyMode, mode)
+	if err := embedbackend.ValidatePrepare(spec, generation, run, mode); err != nil {
+		return embedbackend.PrepareResult{}, err
 	}
 	// Resolved before it is compared, and against this connection: the run's
 	// digest is taken over the physical relation, so comparing it to a digest
@@ -70,15 +43,15 @@ func (s *Store) PrepareRun(
 	// a specification whose schema was omitted (stokaro/ptah#2806).
 	source, _, err := ResolveRelation(ctx, s.db, spec.Source.Schema, spec.Source.Table)
 	if err != nil {
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 	if run.Source != SourceIdentity(source.Schema, source.Table) {
-		return PrepareResult{}, fmt.Errorf(
+		return embedbackend.PrepareResult{}, fmt.Errorf(
 			"%w: run %s records source %s, specification uses %s",
 			embedstore.ErrConflict, run.ID, run.Source, source)
 	}
 
-	var result PrepareResult
+	var result embedbackend.PrepareResult
 	scopes := []lifecycleSessionScope{
 		{kind: "source", identity: run.Source},
 		{kind: "generation", identity: identity},
@@ -138,44 +111,44 @@ func (s *Store) prepareRunLocked(
 	run embedrun.Run,
 	mode embedcatchup.Mode,
 	identity string,
-) (PrepareResult, error) {
+) (embedbackend.PrepareResult, error) {
 	existing, err := scanRun(conn.QueryRowContext(ctx, selectRunSQL, run.ID), run.ID)
 	switch {
 	case err == nil:
 		if err := validatePreparedRunRetry(
 			ctx, conn, spec, generation, run, existing, mode); err != nil {
-			return PrepareResult{}, err
+			return embedbackend.PrepareResult{}, err
 		}
-		return PrepareResult{Run: existing}, nil
+		return embedbackend.PrepareResult{Run: existing}, nil
 	case !errors.Is(err, embedstore.ErrNotFound):
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 
 	registered, err := readGeneration(ctx, conn, identity)
 	switch {
 	case err == nil && registered.Retired():
-		return PrepareResult{}, fmt.Errorf("%w: generation %s was retired at %s",
+		return embedbackend.PrepareResult{}, fmt.Errorf("%w: generation %s was retired at %s",
 			embedstore.ErrRetired, identity,
 			registered.RetiredAt.UTC().Format(time.RFC3339))
 	case err == nil:
-		if err := validatePreparedGeneration(registered, generation); err != nil {
-			return PrepareResult{}, err
+		if err := embedbackend.ValidatePreparedGeneration(registered, generation); err != nil {
+			return embedbackend.PrepareResult{}, err
 		}
 	case errors.Is(err, embedstore.ErrNotFound):
 	default:
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 
 	outbox, contracts, err := prepareOutboxForSource(ctx, conn, spec, mode)
 	if err != nil {
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 
 	if err := EnsureTarget(ctx, conn, spec); err != nil {
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 	if _, err := registerGeneration(ctx, conn, generation); err != nil {
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 
 	if outbox != nil {
@@ -185,11 +158,11 @@ func (s *Store) prepareRunLocked(
 			err = outbox.installForSpecs(ctx, contracts)
 		}
 		if err != nil {
-			return PrepareResult{}, err
+			return embedbackend.PrepareResult{}, err
 		}
 		boundary, err := outbox.Horizon(ctx)
 		if err != nil {
-			return PrepareResult{}, err
+			return embedbackend.PrepareResult{}, err
 		}
 		run.SnapshotWatermark = strconv.FormatUint(boundary, 10)
 	}
@@ -200,19 +173,19 @@ func (s *Store) prepareRunLocked(
 	run.Phase = embedrun.PhaseBoundaryCaptured
 	run.UpdatedAt = time.Now().UTC()
 	if err := createRunRecord(ctx, conn, run); err != nil {
-		return PrepareResult{}, err
+		return embedbackend.PrepareResult{}, err
 	}
 	return createdPrepareResult(ctx, conn, run.ID)
 }
 
 func createdPrepareResult(
 	ctx context.Context, conn *sql.Conn, runID string,
-) (PrepareResult, error) {
+) (embedbackend.PrepareResult, error) {
 	durable, err := scanRun(conn.QueryRowContext(ctx, selectRunSQL, runID), runID)
 	if err != nil {
-		return PrepareResult{}, fmt.Errorf("read prepared run %s: %w", runID, err)
+		return embedbackend.PrepareResult{}, fmt.Errorf("read prepared run %s: %w", runID, err)
 	}
-	return PrepareResult{Run: durable, Created: true}, nil
+	return embedbackend.PrepareResult{Run: durable, Created: true}, nil
 }
 
 // validatePreparedRunRetry distinguishes a completed prepare from a row that
@@ -232,43 +205,16 @@ func validatePreparedRunRetry(
 	wantRun, existing embedrun.Run,
 	mode embedcatchup.Mode,
 ) error {
-	if existing.Terminal() {
-		return fmt.Errorf("%w: run %s is %s",
-			embedrun.ErrTerminal, existing.ID, existing.Status)
-	}
-	if err := existing.DescribesGeneration(wantGeneration.Identity); err != nil {
+	if err := embedbackend.ValidatePreparedRun(wantGeneration, existing); err != nil {
 		return err
 	}
-	if !existing.Reached(embedrun.PhaseBoundaryCaptured) {
-		return fmt.Errorf(
-			"prepare run %s: %w: existing run is at %s and has no committed prepare boundary",
-			existing.ID, embedrun.ErrPhase, existing.Phase)
-	}
-
 	registered, err := readGeneration(ctx, conn, wantGeneration.Identity)
 	if err != nil {
 		return fmt.Errorf("validate prepared run %s: %w", existing.ID, err)
 	}
-	if registered.Retired() {
-		return fmt.Errorf("%w: generation %s was retired at %s",
-			embedstore.ErrRetired, registered.Identity,
-			registered.RetiredAt.UTC().Format(time.RFC3339))
-	}
-	if err := validatePreparedGeneration(registered, wantGeneration); err != nil {
+	if err := embedbackend.ValidatePreparedRegistration(
+		wantGeneration, registered, wantRun, existing); err != nil {
 		return err
-	}
-	if _, err := validateRunSource(existing, registered); err != nil {
-		return err
-	}
-	if existing.SpecDigest != wantRun.SpecDigest {
-		return fmt.Errorf(
-			"%w: run %s records specification %s, prepare requested %s",
-			embedstore.ErrConflict, existing.ID, existing.SpecDigest, wantRun.SpecDigest)
-	}
-	if existing.Target != wantRun.Target {
-		return fmt.Errorf(
-			"%w: run %s records target %s, prepare requested %s",
-			embedstore.ErrConflict, existing.ID, existing.Target, wantRun.Target)
 	}
 
 	if err := requirePreparedTarget(ctx, conn, spec); err != nil {
@@ -313,34 +259,6 @@ func validatePreparedRunRetry(
 		return fmt.Errorf(
 			"%w: run %s records a prepared outbox generation, but table %s is absent",
 			embedstore.ErrConflict, existing.ID, outbox.TableName())
-	}
-	return nil
-}
-
-func validatePreparedGeneration(
-	registered, requested embedstore.Generation,
-) error {
-	type field struct {
-		name       string
-		registered string
-		requested  string
-	}
-	fields := []field{
-		{"dimension", strconv.Itoa(registered.Dimension), strconv.Itoa(requested.Dimension)},
-		{"target schema", registered.TargetSchema, requested.TargetSchema},
-		{"target table", registered.TargetTable, requested.TargetTable},
-		{"target column", registered.TargetColumn, requested.TargetColumn},
-		{"source schema", registered.SourceSchema, requested.SourceSchema},
-		{"source table", registered.SourceTable, requested.SourceTable},
-		{"consistency mode", registered.ConsistencyMode, requested.ConsistencyMode},
-	}
-	for _, candidate := range fields {
-		if candidate.registered != candidate.requested {
-			return fmt.Errorf(
-				"%w: generation %s records %s %q, prepare requested %q",
-				embedstore.ErrConflict, registered.Identity, candidate.name,
-				candidate.registered, candidate.requested)
-		}
 	}
 	return nil
 }
@@ -435,7 +353,7 @@ func liveOutboxContracts(
 			currentIncluded = true
 			continue
 		}
-		loaded, err := RecordedSpec(registered,
+		loaded, err := embedbackend.RecordedSpec(registered,
 			"preserved while another generation reinstalls its shared outbox")
 		if err != nil {
 			return nil, err

@@ -2,19 +2,19 @@ package embedreport
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"slices"
 	"strconv"
 	"time"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedcutover"
 	"ptah.run/internal/embedgen"
-	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrelease"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedspec"
+	"ptah.run/internal/embedstore"
 	"ptah.run/internal/embedverify"
 )
 
@@ -66,10 +66,10 @@ type Readiness struct {
 // cutover verb only by coincidence is one that will eventually let a deployment
 // proceed against a generation the cutover then refuses.
 func ReadReadiness(
-	ctx context.Context, db *sql.DB, store *embedpg.Store,
+	ctx context.Context, backend embedbackend.Backend,
 	loaded embedspec.Loaded, runID string, now time.Time,
 ) (Readiness, error) {
-	run, err := store.Run(ctx, runID)
+	run, err := backend.Store().Run(ctx, runID)
 	if err != nil {
 		return Readiness{}, err
 	}
@@ -82,7 +82,7 @@ func ReadReadiness(
 	// asking anyway means selecting a column that does not exist -- an error
 	// about SQL, where the fact is that `prepare` has not run. A gate polling
 	// from the start of a run meets this case first.
-	exists, err := embedpg.ColumnExists(ctx, db, loaded.Spec.Target.Table, loaded.Spec.Target.Column)
+	exists, err := backend.TargetColumnExists(ctx, loaded.Spec)
 	if err != nil {
 		return Readiness{}, err
 	}
@@ -94,7 +94,7 @@ func ReadReadiness(
 		return readiness, nil
 	}
 
-	report, err := VerifyGeneration(ctx, db, store, loaded, run)
+	report, err := VerifyGeneration(ctx, backend, loaded, run)
 	if err != nil {
 		return Readiness{}, err
 	}
@@ -106,7 +106,7 @@ func ReadReadiness(
 			"["+string(finding.Layer)+"/"+string(finding.Severity)+"] "+finding.Summary)
 	}
 
-	plan, observed, err := BuildCutoverPlan(ctx, db, store, loaded, run, report, nil, now)
+	plan, observed, err := BuildCutoverPlan(ctx, backend, loaded, run, report, nil, now)
 	if err != nil {
 		return Readiness{}, err
 	}
@@ -151,7 +151,7 @@ func terminalReadiness(run embedrun.Run, now time.Time) (Readiness, bool) {
 // readiness a rollout waits on. Two of those existed before this one, and the
 // third is the reason the answer had to stop being assembled at the CLI.
 func VerifyGeneration(
-	ctx context.Context, db *sql.DB, store *embedpg.Store,
+	ctx context.Context, backend embedbackend.Backend,
 	loaded embedspec.Loaded, run embedrun.Run,
 ) (embedverify.Report, error) {
 	spec := loaded.Spec
@@ -159,24 +159,24 @@ func VerifyGeneration(
 	// the server resolves rather than by the spelling the document used: two
 	// spellings of one table must not have two active pointers
 	// (stokaro/ptah#2806).
-	physical, err := embedpg.WithResolvedRelations(ctx, db, spec)
+	physical, err := backend.WithResolvedRelations(ctx, spec)
 	if err != nil {
 		return embedverify.Report{}, err
 	}
-	structure, err := embedpg.ReadStructure(ctx, db, spec,
-		ActivePointer(ctx, store, physical.Target.Schema, physical.Target.Table))
+	structure, err := backend.ReadStructure(ctx, spec,
+		ActivePointer(ctx, backend.Store(), physical.Target.Schema, physical.Target.Table))
 	if err != nil {
 		return embedverify.Report{}, err
 	}
-	corpus, err := embedpg.VerificationCorpus(ctx, db, spec)
+	corpus, err := backend.VerificationCorpus(ctx, spec)
 	if err != nil {
 		return embedverify.Report{}, err
 	}
-	guarantee, err := AssessConsistency(ctx, db, loaded, run)
+	guarantee, err := AssessConsistency(ctx, backend, loaded, run)
 	if err != nil {
 		return embedverify.Report{}, err
 	}
-	objects, err := spec.TargetObjects()
+	objects, err := backend.TargetObjects(spec)
 	if err != nil {
 		return embedverify.Report{}, err
 	}
@@ -271,26 +271,26 @@ func splitBlocking(
 // cutover do -- measures one instant rather than two that drift apart between
 // the plan's staleness check and the record it writes.
 func BuildCutoverPlan(
-	ctx context.Context, db *sql.DB, store *embedpg.Store,
+	ctx context.Context, backend embedbackend.Backend,
 	loaded embedspec.Loaded, run embedrun.Run, report embedverify.Report,
 	accepting []string, now time.Time,
 ) (embedcutover.Plan, embedcutover.Observed, error) {
 	spec := loaded.Spec
-	physical, err := embedpg.WithResolvedRelations(ctx, db, spec)
+	physical, err := backend.WithResolvedRelations(ctx, spec)
 	if err != nil {
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
 	}
-	active := ActivePointer(ctx, store, physical.Target.Schema, physical.Target.Table)
-	structure, err := embedpg.ReadStructure(ctx, db, spec, active)
+	active := ActivePointer(ctx, backend.Store(), physical.Target.Schema, physical.Target.Table)
+	structure, err := backend.ReadStructure(ctx, spec, active)
 	if err != nil {
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
 	}
-	guarantee, err := AssessConsistency(ctx, db, loaded, run)
+	guarantee, err := AssessConsistency(ctx, backend, loaded, run)
 	if err != nil {
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
 	}
 
-	objects, err := spec.TargetObjects()
+	objects, err := backend.TargetObjects(spec)
 	if err != nil {
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
 	}
@@ -379,9 +379,9 @@ func indexReady(objects embedgen.TargetObjects, structure embedverify.Structure)
 
 // AssessConsistency asks the selected mode whether it proved its condition.
 func AssessConsistency(
-	ctx context.Context, db *sql.DB, loaded embedspec.Loaded, run embedrun.Run,
+	ctx context.Context, backend embedbackend.Backend, loaded embedspec.Loaded, run embedrun.Run,
 ) (embedcatchup.Guarantee, error) {
-	barrier, err := readBarrier(ctx, db, loaded, run)
+	barrier, err := readBarrier(ctx, backend, loaded, run)
 	if err != nil {
 		return embedcatchup.Guarantee{}, err
 	}
@@ -391,16 +391,12 @@ func AssessConsistency(
 
 // readBarrier measures the outbox's completion condition.
 func readBarrier(
-	ctx context.Context, db *sql.DB, loaded embedspec.Loaded, run embedrun.Run,
+	ctx context.Context, backend embedbackend.Backend, loaded embedspec.Loaded, run embedrun.Run,
 ) (embedcatchup.Barrier, error) {
 	if loaded.Mode != embedcatchup.ModeOutbox {
 		return embedcatchup.Barrier{}, nil
 	}
-	physical, err := embedpg.WithResolvedRelations(ctx, db, loaded.Spec)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	outbox, err := embedpg.NewOutbox(db, physical)
+	outbox, err := backend.Outbox(ctx, loaded.Spec)
 	if err != nil {
 		return embedcatchup.Barrier{}, err
 	}
@@ -454,7 +450,7 @@ func parseWatermark(raw string) uint64 {
 }
 
 // ActivePointer reads which generation queries currently read, or nothing.
-func ActivePointer(ctx context.Context, store *embedpg.Store, schema, table string) string {
+func ActivePointer(ctx context.Context, store embedstore.Store, schema, table string) string {
 	pointer, err := store.Pointer(ctx, schema, table)
 	if err != nil {
 		return ""

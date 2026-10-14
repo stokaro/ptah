@@ -105,7 +105,7 @@ func runPlan(
 	}
 	defer opened.close()
 
-	plan, err := embedreport.BuildPlan(ctx, opened.db, opened.loaded, current)
+	plan, err := embedreport.BuildPlan(ctx, opened.backend, opened.loaded, current)
 	if err != nil {
 		return err
 	}

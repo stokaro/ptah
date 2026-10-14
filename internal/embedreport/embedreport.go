@@ -16,14 +16,15 @@ package embedreport
 
 import (
 	"context"
-	"database/sql"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedconnect"
 	"ptah.run/internal/embedgen"
-	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedplan"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedspec"
+	"ptah.run/internal/embedstore"
 )
 
 // Disclosure is what leaves the database if this plan runs.
@@ -184,9 +185,9 @@ func (p Plan) Runnable() bool {
 // It measures what it can and says so when it cannot. Nothing is created and
 // nothing is written.
 func BuildPlan(
-	ctx context.Context, db *sql.DB, loaded embedspec.Loaded, current string,
+	ctx context.Context, backend embedbackend.Backend, loaded embedspec.Loaded, current string,
 ) (Plan, error) {
-	inputs, err := planInputs(ctx, db, loaded, current)
+	inputs, err := planInputs(ctx, backend, loaded, current)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -218,48 +219,35 @@ func BuildPlan(
 
 // planInputs measures what it can and reports what it cannot.
 func planInputs(
-	ctx context.Context, db *sql.DB, loaded embedspec.Loaded, current string,
+	ctx context.Context, backend embedbackend.Backend, loaded embedspec.Loaded, current string,
 ) (embedplan.Inputs, error) {
 	spec := loaded.Spec
 	facts := configuredFacts(loaded)
 
-	targetExists, err := embedpg.ColumnExists(ctx, db, spec.Target.Table, spec.Target.Column)
+	measured, err := backend.Measure(ctx, spec)
 	if err != nil {
 		return embedplan.Inputs{}, err
 	}
-	sourceExists, err := embedpg.SourceTableExists(ctx, db, spec)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-	targetTableExists, err := embedpg.TargetTableExists(ctx, db, spec)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-	rows, err := embedpg.CountRows(ctx, db, spec)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-	capabilities, err := embedpg.VectorCapabilities(ctx, db)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-	indexBuildable, err := embedpg.VectorIndexBuildable(ctx, db, spec)
-	if err != nil {
-		return embedplan.Inputs{}, err
+	refusals := measured.Refusals
+	// The mode is the specification's and the database decides whether it can
+	// provide it, so the refusal prepare would give is a blocker here first.
+	if err := backend.CheckMode(loaded.Mode); err != nil {
+		refusals = append(refusals, err.Error())
 	}
 
 	return embedplan.Inputs{
 		Current:              current,
 		Desired:              spec.Identity().Digest,
 		Facts:                facts,
-		SourceExists:         sourceExists,
-		TargetTableExists:    targetTableExists,
-		VectorIndexBuildable: indexBuildable,
-		TargetExists:         targetExists,
+		SourceExists:         measured.SourceExists,
+		TargetTableExists:    measured.TargetTableExists,
+		VectorIndexBuildable: measured.IndexBuildable,
+		TargetExists:         measured.TargetColumnExists,
 		SourceMutable:        loaded.Source.Mutable,
 		ConsistencyMode:      string(loaded.Mode),
-		EstimatedRows:        rows,
-		Capabilities:         capabilities,
+		EstimatedRows:        measured.Rows,
+		Capabilities:         measured.Capabilities,
+		Refusals:             refusals,
 		// Planning reads. The permission a plan needs is the one it has by
 		// being able to open the database at all, and pretending otherwise
 		// would be a check with nothing behind it.
@@ -390,7 +378,7 @@ func modeName(mode embedcatchup.Mode) string {
 // under an outbox and "this mode records none" under the other two, and only
 // the specification can tell them apart (stokaro/ptah#2646).
 func ReadStatus(
-	ctx context.Context, store *embedpg.Store, runID string, mode embedcatchup.Mode,
+	ctx context.Context, store embedstore.Store, runID string, mode embedcatchup.Mode,
 ) (Status, error) {
 	run, err := store.Run(ctx, runID)
 	if err != nil {
@@ -523,7 +511,7 @@ type Specification struct {
 
 // DescribeSpecification reads a loaded specification into what it says.
 func DescribeSpecification(loaded embedspec.Loaded) (Specification, error) {
-	objects, err := loaded.Spec.TargetObjects()
+	objects, err := embedconnect.TargetObjects(loaded.Spec)
 	if err != nil {
 		return Specification{}, err
 	}
