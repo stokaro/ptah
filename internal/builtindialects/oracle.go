@@ -55,5 +55,13 @@ func oracle() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "oracle",
+
+		// Measured on 23.26: LIMIT answers ORA-03049, while `OFFSET n ROWS
+		// FETCH NEXT m ROWS ONLY` is accepted without an ORDER BY, so Oracle
+		// gets no ORDER BY sentinel and runs on every line Ptah targets.
+		Query: descriptor.Query{
+			OffsetFetch: true,
+		},
+		Scripts: descriptor.Scripts{ClientDelimiters: true},
 	}
 }

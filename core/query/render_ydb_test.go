@@ -304,12 +304,12 @@ func TestRenderYDB_FailurePath_RefusesWhatYQLHasNoSpellingFor(t *testing.T) {
 		{
 			ydbRender: ydbRender{name: "a negative limit", caps: capability.YDB262(),
 				render: selectFor(query.Select("id").From("users").Limit(-1))},
-			wantErr: "renderer: YDB takes LIMIT as a Uint64, and -1 is negative",
+			wantErr: "renderer: ydb binds LIMIT as an unsigned integer, and -1 is negative",
 		},
 		{
 			ydbRender: ydbRender{name: "a negative offset", caps: capability.YDB262(),
 				render: selectFor(query.Select("id").From("users").Limit(1).Offset(-2))},
-			wantErr: "renderer: YDB takes OFFSET as a Uint64, and -2 is negative",
+			wantErr: "renderer: ydb binds OFFSET as an unsigned integer, and -2 is negative",
 		},
 	}
 

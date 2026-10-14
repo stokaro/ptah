@@ -120,8 +120,9 @@ func splitSQLStatements(sql, dialect string) []string {
 	var statements []string
 	var currentStatement strings.Builder
 	state := sqlcompound.New(dialect)
-	skippingGoBatchLine := false
-	sqlServerBatchStart := 0
+	separator := batchSeparator(dialect)
+	skippingSeparatorLine := false
+	batchStart := 0
 
 	for {
 		token := lexr.NextToken()
@@ -129,29 +130,29 @@ func splitSQLStatements(sql, dialect string) []string {
 		if token.Type == lexer.TokenEOF {
 			break
 		}
-		if skippingGoBatchLine {
+		if skippingSeparatorLine {
 			if (token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment) &&
 				strings.ContainsAny(token.Value, "\r\n") {
-				skippingGoBatchLine = false
+				skippingSeparatorLine = false
 			}
 			continue
 		}
-		if platform.NormalizeDialect(dialect) == platform.SQLServer && token.MatchIdentifierValue("GO") {
+		if separator != "" && token.MatchIdentifierValue(separator) {
 			var handled bool
-			statements, sqlServerBatchStart, handled = handleSQLServerGoBatchSeparator(
+			statements, batchStart, handled = handleBatchSeparator(
 				sql,
 				token,
 				statements,
 				&currentStatement,
 				&state,
-				sqlServerBatchStart,
+				batchStart,
 			)
 			if !handled {
 				observeToken(&state, token)
 				currentStatement.WriteString(token.Value)
 				continue
 			}
-			skippingGoBatchLine = true
+			skippingSeparatorLine = true
 			continue
 		}
 
@@ -188,19 +189,35 @@ func splitSQLStatements(sql, dialect string) []string {
 	return statements
 }
 
-// normalizeClientDelimitersFor honors client delimiter directives for every
-// dialect but YDB. The rewriter reads strings and comments by the rules the
-// other dialects share, so on YQL it would rewrite a delimiter inside an
-// @@...@@ literal and stop at a # it reads as a comment; and no YDB client
-// writes a delimiter directive, so there is nothing to honor.
+// normalizeClientDelimitersFor honors client delimiter directives unless the
+// dialect's descriptor says its scripts carry none
+// (descriptor.Scripts.ClientDelimiters). The rewriter reads strings and
+// comments by the rules most dialects share, so on YQL it would rewrite a
+// delimiter inside an @@...@@ literal and stop at a # it reads as a comment;
+// and no YDB client writes a delimiter directive, so there is nothing to
+// honor. A blank or unknown dialect honors them.
 func normalizeClientDelimitersFor(sql, dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	if described, ok := platform.Lookup(dialect); ok && !described.Scripts.ClientDelimiters {
 		return sql
 	}
 	return NormalizeClientDelimiters(sql)
 }
 
-func handleSQLServerGoBatchSeparator(
+// batchSeparator is the word that ends a batch in the dialect's scripts
+// (descriptor.Scripts.BatchSeparator), such as SQL Server's GO, or "" for a
+// dialect without one, a blank one and an unknown one.
+func batchSeparator(dialect string) string {
+	described, ok := platform.Lookup(dialect)
+	if !ok {
+		return ""
+	}
+	return described.Scripts.BatchSeparator
+}
+
+// handleBatchSeparator ends the batch at a separator token that stands alone
+// on its line, and reports false for one that does not, which is an ordinary
+// word of the statement.
+func handleBatchSeparator(
 	sql string,
 	token lexer.Token,
 	statements []string,
@@ -208,17 +225,17 @@ func handleSQLServerGoBatchSeparator(
 	state *sqlcompound.State,
 	batchStart int,
 ) ([]string, int, bool) {
-	repeatCount, ok := sqlServerGoBatchSeparatorRepeatCountAt(sql, token.Start, token.End)
+	repeatCount, ok := batchSeparatorRepeatCountAt(sql, token.Start, token.End)
 	if !ok {
 		return statements, batchStart, false
 	}
-	statements, batchStart = appendSQLServerBatch(statements, batchStart, currentStatement.String(), repeatCount)
+	statements, batchStart = appendBatch(statements, batchStart, currentStatement.String(), repeatCount)
 	currentStatement.Reset()
 	state.Reset()
 	return statements, batchStart, true
 }
 
-func appendSQLServerBatch(statements []string, batchStart int, currentStatement string, repeatCount int) ([]string, int) {
+func appendBatch(statements []string, batchStart int, currentStatement string, repeatCount int) ([]string, int) {
 	stmt := strings.TrimSpace(currentStatement)
 	if stmt != "" {
 		statements = append(statements, stmt)
@@ -266,18 +283,18 @@ func observeToken(state *sqlcompound.State, token lexer.Token) {
 	}
 }
 
-// sqlServerGoBatchSeparatorRepeatCountAt reports whether a GO token is a SQL
-// Server utility batch separator and returns the optional GO count. Plain GO
-// has count 1; GO 0 discards the pending batch just like SQL Server client
-// tooling.
-func sqlServerGoBatchSeparatorRepeatCountAt(input string, start, end int) (int, bool) {
-	if !sqlServerGoLinePrefixIsEmpty(input, start) {
+// batchSeparatorRepeatCountAt reports whether a separator token, such as SQL
+// Server's GO, stands alone on its line, and returns the optional count after
+// it. A plain separator has count 1; a count of 0 discards the pending batch,
+// as SQL Server client tooling does.
+func batchSeparatorRepeatCountAt(input string, start, end int) (int, bool) {
+	if !separatorLinePrefixIsEmpty(input, start) {
 		return 0, false
 	}
-	return sqlServerGoTrailerRepeatCount(input, end)
+	return separatorTrailerRepeatCount(input, end)
 }
 
-func sqlServerGoLinePrefixIsEmpty(input string, start int) bool {
+func separatorLinePrefixIsEmpty(input string, start int) bool {
 	for i := start - 1; i >= 0 && input[i] != '\n' && input[i] != '\r'; i-- {
 		if input[i] != ' ' && input[i] != '\t' {
 			return false
@@ -286,16 +303,16 @@ func sqlServerGoLinePrefixIsEmpty(input string, start int) bool {
 	return true
 }
 
-func sqlServerGoTrailerRepeatCount(input string, pos int) (int, bool) {
+func separatorTrailerRepeatCount(input string, pos int) (int, bool) {
 	i := pos
 	count := 1
 	consumedCount := false
 	for {
-		i = skipSQLServerHorizontalSpace(input, i)
+		i = skipHorizontalSpace(input, i)
 		if !consumedCount && i < len(input) && input[i] >= '0' && input[i] <= '9' {
 			consumedCount = true
 			countStart := i
-			i = skipSQLServerDigits(input, i)
+			i = skipDigits(input, i)
 			parsedCount, err := strconv.Atoi(input[countStart:i])
 			if err != nil {
 				return 0, false
@@ -309,7 +326,7 @@ func sqlServerGoTrailerRepeatCount(input string, pos int) (int, bool) {
 		case strings.HasPrefix(input[i:], "--"):
 			return count, true
 		case strings.HasPrefix(input[i:], "/*"):
-			next, ok := skipSQLServerBlockComment(input, i)
+			next, ok := skipBlockComment(input, i)
 			if !ok {
 				return 0, false
 			}
@@ -320,21 +337,21 @@ func sqlServerGoTrailerRepeatCount(input string, pos int) (int, bool) {
 	}
 }
 
-func skipSQLServerHorizontalSpace(input string, pos int) int {
+func skipHorizontalSpace(input string, pos int) int {
 	for pos < len(input) && (input[pos] == ' ' || input[pos] == '\t') {
 		pos++
 	}
 	return pos
 }
 
-func skipSQLServerDigits(input string, pos int) int {
+func skipDigits(input string, pos int) int {
 	for pos < len(input) && input[pos] >= '0' && input[pos] <= '9' {
 		pos++
 	}
 	return pos
 }
 
-func skipSQLServerBlockComment(input string, pos int) (int, bool) {
+func skipBlockComment(input string, pos int) (int, bool) {
 	commentEnd := strings.Index(input[pos+2:], "*/")
 	if commentEnd == -1 {
 		return pos, false

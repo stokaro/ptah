@@ -45,5 +45,10 @@ func postgres() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "pgx",
+
+		Query: descriptor.Query{
+			Upsert: descriptor.UpsertOnConflict,
+		},
+		Scripts: descriptor.Scripts{ClientDelimiters: true},
 	}
 }

@@ -47,5 +47,17 @@ func mariaDB() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "mysql",
+
+		// No release of the family has a FULL OUTER JOIN, and OFFSET is
+		// accepted only after a LIMIT: the largest BIGINT UNSIGNED is the
+		// documented "every row from the offset on". ON DUPLICATE KEY UPDATE
+		// fires for every unique key on the table, so it cannot be scoped to
+		// the columns a caller names.
+		Query: descriptor.Query{
+			UnsupportedJoins: []descriptor.Join{descriptor.JoinFull},
+			OffsetOnlyLimit:  "18446744073709551615",
+			Upsert:           descriptor.UpsertOnDuplicateKey,
+		},
+		Scripts: descriptor.Scripts{ClientDelimiters: true},
 	}
 }

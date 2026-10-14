@@ -44,5 +44,21 @@ func clickHouse() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "clickhouse",
+
+		// ClickHouse runs DELETE, but a plain UPDATE answers `Lightweight
+		// updates are not supported. Lightweight updates are supported only
+		// for tables with materialized _block_number column`, a per-table
+		// setting a statement cannot declare. Its own spelling, ALTER TABLE
+		// ... UPDATE, is an asynchronous mutation outside any transaction, so
+		// the portable builder does not write it (stokaro/ptah#941). Measured
+		// on 24.10.4.191 and 25.8.30.
+		Query: descriptor.Query{
+			UpsertRefusal: "ClickHouse has no upsert statement: a ReplacingMergeTree deduplicates in the background " +
+				"rather than at insert time, which is a table design and not a clause on this INSERT",
+			UpdateRefusal: "UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs only on a table " +
+				"with the materialized _block_number column, which a statement cannot declare; use " +
+				"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table",
+		},
+		Scripts: descriptor.Scripts{ClientDelimiters: true},
 	}
 }

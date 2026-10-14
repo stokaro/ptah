@@ -332,8 +332,8 @@ func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
 		joinType    query.JoinType
 		wantErrLike string
 	}{
-		{name: "right", joinType: query.JoinRight, wantErrLike: "renderer: SQLite does not support RIGHT JOIN"},
-		{name: "full", joinType: query.JoinFull, wantErrLike: "renderer: SQLite does not support FULL OUTER JOIN"},
+		{name: "right", joinType: query.JoinRight, wantErrLike: "renderer: sqlite does not support RIGHT JOIN"},
+		{name: "full", joinType: query.JoinFull, wantErrLike: "renderer: sqlite does not support FULL OUTER JOIN"},
 	}
 
 	for _, tt := range tests {

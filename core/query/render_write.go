@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 )
 
 // This file renders the write-side DML statements — INSERT, UPDATE, and DELETE —
@@ -153,54 +154,36 @@ func RenderDeleteWithCapabilities(
 // expression rendering (renderExpr). kind names the statement in the
 // unsupported-dialect error.
 func newWriteRenderer(dialect, kind string, caps capability.Capabilities) (*selectRenderer, error) {
-	normalized := platform.NormalizeDialect(dialect)
-	style, ok := selectPlaceholderStyle(normalized)
+	described, ok := platform.Lookup(dialect)
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)
 	}
-	if err := refuseUnportableWrite(normalized, kind); err != nil {
+	if err := refuseUnportableWrite(described.Query, kind); err != nil {
 		return nil, err
 	}
-	return &selectRenderer{dialect: normalized, caps: caps, placeholder: style}, nil
+	return newDescribedRenderer(described, caps), nil
 }
 
 // refuseUnportableWrite refuses a verb whose portable spelling the dialect does
 // not execute, by an ENGINE reason rather than by the generic
-// dialect-not-taught refusal.
+// dialect-not-taught refusal. The dialect's descriptor states the reason
+// (descriptor.Query.UpdateRefusal).
 //
-// ClickHouse is the only such case today. It parses no standalone
-// `UPDATE … SET …` or `DELETE FROM … WHERE …`: those are mutations there,
-// spelled `ALTER TABLE … UPDATE` and `ALTER TABLE … DELETE`, applied
-// asynchronously and outside any transaction. Emitting the portable spelling
-// would produce SQL the server rejects; emitting the mutation spelling from a
-// portable builder would give one dialect silently different semantics --
-// asynchronous, non-transactional -- behind an API whose other dialects apply
-// the row change before the call returns.
-//
-// So the verbs the engine does execute portably are rendered, and the two it
-// does not are refused with the reason. SELECT and INSERT are ordinary
-// statements on ClickHouse and are unaffected (stokaro/ptah#941).
-// DELETE was refused here too, and that was stricter than the engine. Measured
-// on ClickHouse 24.10.4.191 -- the oldest line the presets and the compose
-// service cover -- `DELETE FROM u WHERE id = 1` runs and the row is gone;
-// measured again on 25.8.30 with the same result. Lightweight delete has been
-// on by default since 23.3, so every version Ptah supports has it.
-//
-// UPDATE is different, and the server says so rather than the docs: a plain
-// UPDATE answers `Lightweight updates are not supported. Lightweight updates
-// are supported only for tables with materialized _block_number column`, which
-// is a per-table setting a statement cannot declare (stokaro/ptah#941).
-func refuseUnportableWrite(normalized, kind string) error {
-	if normalized != platform.ClickHouse {
+// ClickHouse is the only such case today, and only for UPDATE. A plain UPDATE
+// runs there only on a table with a materialized _block_number column, a
+// per-table setting a statement cannot declare; its own spelling, ALTER TABLE
+// … UPDATE, is a mutation applied asynchronously and outside any transaction.
+// Emitting the mutation spelling from a portable builder would give one
+// dialect silently different semantics behind an API whose other dialects
+// apply the row change before the call returns, so the verb is refused with
+// the reason (stokaro/ptah#941). DELETE runs there as written: lightweight
+// delete has been on by default since 23.3. SELECT and INSERT are ordinary
+// statements and are unaffected.
+func refuseUnportableWrite(described descriptor.Query, kind string) error {
+	if kind != "UPDATE" || described.UpdateRefusal == "" {
 		return nil
 	}
-	if kind != "UPDATE" {
-		return nil
-	}
-	return fmt.Errorf(
-		"renderer: UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs only on a table " +
-			"with the materialized _block_number column, which a statement cannot declare; use " +
-			"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table")
+	return errors.New("renderer: " + described.UpdateRefusal)
 }
 
 func (r *selectRenderer) renderInsert(stmt *InsertStatement) error {
@@ -278,16 +261,16 @@ func (r *selectRenderer) writeInsertSelect(columns []string, query *SelectStatem
 // checkUpsert refuses an UPSERT where the dialect has no such statement, and
 // one that also carries an ON CONFLICT clause.
 //
-// UPSERT INTO is YDB's statement: it writes each row over the row with the
-// same primary key, keeping the columns the statement does not name, and
-// inserts it where there is none. The other dialects say the same thing only
-// by naming the key in an ON CONFLICT clause, and the builder does not know a
-// table's key, so it refuses rather than guess one.
+// UPSERT INTO is YDB's statement (descriptor.UpsertInto): it writes each row
+// over the row with the same primary key, keeping the columns the statement
+// does not name, and inserts it where there is none. The other dialects say
+// the same thing only by naming the key in an ON CONFLICT clause, and the
+// builder does not know a table's key, so it refuses rather than guess one.
 func (r *selectRenderer) checkUpsert(stmt *InsertStatement) error {
 	if !stmt.Upsert {
 		return nil
 	}
-	if r.dialect != platform.YDB {
+	if r.query.Upsert != descriptor.UpsertInto {
 		return fmt.Errorf(
 			"renderer: %s has no UPSERT statement: UPSERT INTO is YDB's, and here an upsert names "+
 				"the key it watches; use OnConflictDoUpdate", r.dialect)
@@ -301,7 +284,8 @@ func (r *selectRenderer) checkUpsert(stmt *InsertStatement) error {
 }
 
 // renderOnConflict writes the upsert clause in the dialect's own spelling, or
-// refuses the combination the dialect cannot express.
+// refuses the combination the dialect cannot express. The spelling is the
+// dialect's descriptor.Query.Upsert.
 //
 // The refusals are the substance. PostgreSQL and SQLite watch the constraint
 // the caller NAMED; MySQL and MariaDB watch every unique key on the table and
@@ -310,8 +294,10 @@ func (r *selectRenderer) checkUpsert(stmt *InsertStatement) error {
 // the caller never mentioned -- a statement that inserts correctly in testing
 // and overwrites the wrong row the first time a second unique index exists.
 //
-// SQL Server spells this as MERGE and ClickHouse has no upsert statement, so
-// both are refused by name (stokaro/ptah#941).
+// A dialect with no clause the builder writes is refused with the reason its
+// descriptor gives (descriptor.Query.UpsertRefusal): SQL Server spells an
+// upsert as MERGE, ClickHouse has no upsert statement, and YDB writes UPSERT
+// INTO in place of a clause (stokaro/ptah#941).
 func (r *selectRenderer) renderOnConflict(clause *OnConflict, inserted []string) error {
 	if clause == nil {
 		return nil
@@ -330,28 +316,15 @@ func (r *selectRenderer) renderOnConflict(clause *OnConflict, inserted []string)
 			}
 		}
 	}
-	switch {
-	case platform.IsPostgresFamily(r.dialect) || r.dialect == platform.SQLite:
+	switch r.query.Upsert {
+	case descriptor.UpsertOnConflict:
 		return r.renderOnConflictTarget(clause)
-	case r.dialect == platform.MySQL || r.dialect == platform.MariaDB:
+	case descriptor.UpsertOnDuplicateKey:
 		return r.renderOnDuplicateKey(clause, inserted)
-	case r.dialect == platform.SQLServer:
-		return errors.New(
-			"renderer: SQL Server has no ON CONFLICT: it expresses an upsert as MERGE, " +
-				"a different statement with its own source, join condition and match clauses")
-	case r.dialect == platform.ClickHouse:
-		return errors.New(
-			"renderer: ClickHouse has no upsert statement: a ReplacingMergeTree deduplicates " +
-				"in the background rather than at insert time, which is a table design and not " +
-				"a clause on this INSERT")
-	case r.dialect == platform.YDB:
-		// Measured on 26.2.1.14 and 25.1.4.7: `INSERT OR IGNORE INTO` answers
-		// `INSERT OR IGNORE is not yet supported for Kikimr`, and YQL has no
-		// ON CONFLICT.
-		return errors.New(
-			"renderer: YDB has no ON CONFLICT: UpsertInto writes each row over the row with the same " +
-				"primary key, and the server refuses INSERT OR IGNORE")
 	default:
+		if r.query.UpsertRefusal != "" {
+			return errors.New("renderer: " + r.query.UpsertRefusal)
+		}
 		return fmt.Errorf("renderer: %s has no upsert statement this builder emits", r.dialect)
 	}
 }

@@ -91,6 +91,12 @@ type Dialect struct {
 	// PostgreSQL protocol to a driver that does not know its name. Empty keeps
 	// the scheme the URL carries. It uses the alphabet of Name.
 	WireScheme string `json:"wire_scheme,omitempty"`
+
+	// Query states how the query builder spells what engines spell
+	// differently.
+	Query Query `json:"query,omitzero"`
+	// Scripts states how a script of several statements is cut into them.
+	Scripts Scripts `json:"scripts,omitzero"`
 }
 
 // Identifiers states how an engine compares identifiers offline. The values

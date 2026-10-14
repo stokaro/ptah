@@ -38,5 +38,15 @@ func sqlite() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "sqlite",
+
+		// SQLite gained RIGHT and FULL [OUTER] JOIN only in 3.39 (2022), and
+		// Ptah cannot assume a release that new, so both are refused. OFFSET
+		// is accepted only after a LIMIT, and -1 is the documented "no limit".
+		Query: descriptor.Query{
+			UnsupportedJoins: []descriptor.Join{descriptor.JoinRight, descriptor.JoinFull},
+			OffsetOnlyLimit:  "-1",
+			Upsert:           descriptor.UpsertOnConflict,
+		},
+		Scripts: descriptor.Scripts{ClientDelimiters: true},
 	}
 }
