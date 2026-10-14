@@ -487,6 +487,9 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 
 func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 	if parse, modeled := objectBlockParsers[block.Type]; modeled {
+		if p.owners.Scoped(hclext.TopLevel, block.Type) {
+			return p.parseSharedBlock(block, parse)
+		}
 		return parse(p, block)
 	}
 	switch block.Type {
@@ -522,6 +525,22 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 	default:
 		return p.parseOwnerTopBlock(block)
 	}
+}
+
+// parseSharedBlock reads a block of a type an owner scopes by dialect and this
+// package also reads, such as a domain. The owner reads it in a document of
+// one of its dialects, or the block's own `dialect` names one; this package
+// reads it for every other target into the common model, which holds an
+// Oracle domain.
+func (p *parser) parseSharedBlock(block *hclsyntax.Block, parse func(*parser, *hclsyntax.Block) error) error {
+	dialect, err := p.ownerDialect(block)
+	if err != nil {
+		return err
+	}
+	if _, owned := p.owners.ForDialect(dialect).Lookup(hclext.TopLevel, block.Type); owned {
+		return p.parseOwnerTopBlock(block)
+	}
+	return parse(p, block)
 }
 
 func (p *parser) parseSchema(block *hclsyntax.Block) error {

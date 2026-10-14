@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	annotationext "ptah.run/core/annotation"
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -47,7 +48,9 @@ type Options struct {
 	// type of a field where a type name means one thing on that server and
 	// another elsewhere: YDB's Int8 is one byte and PostgreSQL's int8 is
 	// eight, and YDB's String is bytes. Empty reads every type name the way
-	// the SQL engines spell it.
+	// the SQL engines spell it. A dialect outside the PostgreSQL family also
+	// scopes each common domain and composite type that names no target to
+	// itself, since an unscoped declaration reads back as PostgreSQL's.
 	Dialect string
 }
 
@@ -409,9 +412,11 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	// declared over a domain keeps the domain's name as its type, so the
 	// declaration has to be in the file that carries the column.
 	for _, domain := range sortedDomains(ctx.db.Domains) {
+		domain.Dialects = ctx.commonTypeScope(domain.Dialects)
 		w.writeComment(domainAnnotation(domain))
 	}
 	for _, composite := range sortedCompositeTypes(ctx.db.CompositeTypes) {
+		composite.Dialects = ctx.commonTypeScope(composite.Dialects)
 		w.writeComment(compositeAnnotation(composite))
 	}
 	for _, sequence := range sortedSequences(ctx.db.Sequences) {
@@ -757,6 +762,18 @@ func functionAnnotation(function schemamodel.Function, owned ...attr) string {
 		{name: "comment", value: function.Comment, set: function.Comment != ""},
 		dialectsAttr(function.Dialects),
 	}, owned...)...)
+}
+
+// commonTypeScope is the scope a common domain or composite type is written
+// with. A declaration that names no target is read back as the PostgreSQL
+// type owner's, so one the export's dialect, such as Oracle, holds on the
+// common model is scoped to that dialect. Any other scope is written as it is.
+func (ctx *renderContext) commonTypeScope(scope []string) []string {
+	dialect := platform.NormalizeDialect(ctx.opts.Dialect)
+	if len(scope) > 0 || dialect == "" || platform.IsPostgresFamily(dialect) {
+		return scope
+	}
+	return []string{dialect}
 }
 
 // domainAnnotation writes a domain.

@@ -319,7 +319,7 @@ domain "email" {
   type   = text
 }
 `,
-			wantErr: `parse HCL schema schema.hcl: domain "public.email" is declared more than once;.*`,
+			wantErr: `parse HCL schema at schema.hcl:6,1-7: domain public.email is declared twice:.*`,
 		},
 		{
 			name: "a composite type declared twice",
@@ -337,7 +337,7 @@ composite "address" {
   }
 }
 `,
-			wantErr: `parse HCL schema schema.hcl: composite type "public.address" is declared more than once;.*`,
+			wantErr: `parse HCL schema at schema.hcl:8,1-10: composite public.address is declared twice:.*`,
 		},
 		{
 			name: "a range declared twice",

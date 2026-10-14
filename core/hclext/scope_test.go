@@ -113,6 +113,34 @@ func TestSet_EncodeBindsTheReaderDialect(t *testing.T) {
 	c.Assert(owner.Encoder.(answeringEncoder).result.Blocks[0], qt.DeepEquals, original)
 }
 
+// TestSet_EncodeLeavesAnUnscopedShapeWithoutASelector pins that a block of the
+// shape reading unscoped declarations is written without a dialect, so the
+// document stays plain HCL; a block of a shape scoped to its dialects alone
+// still carries one.
+func TestSet_EncodeLeavesAnUnscopedShapeWithoutASelector(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		unscoped bool
+		want     string
+	}{
+		{name: "unscoped shape", unscoped: true},
+		{name: "scoped shape", want: "postgres"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			owner := extension("example.org/pg", "example.org/pg/domain", answeringDecoder{}, scopedShape([]string{"postgres"}, test.unscoped))
+			owner.Encoder = answeringEncoder{result: hclext.EncodeResult{Blocks: []hclext.EncodedBlock{{Type: "domain", Name: "d", Placement: hclext.UserTypes}}}}
+			set := must.Must(hclext.NewSet(owner))
+
+			result, err := set.Encode(t.Context(), hclext.EncodeRequest{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Blocks, qt.HasLen, 1)
+			c.Assert(result.Blocks[0].Dialect, qt.Equals, test.want)
+		})
+	}
+}
+
 func TestSet_EncodeRefusesAnotherReader(t *testing.T) {
 	for _, test := range []struct {
 		name  string

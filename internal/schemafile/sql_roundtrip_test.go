@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
@@ -217,8 +218,8 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 		"pg_trgm": {Schema: "public", Version: "1.6", Comment: "trigram search", IfNotExists: true},
 	})
 	c.Assert(got.Sequences, qt.HasLen, 1)
-	c.Assert(got.Domains, qt.HasLen, 1)
-	c.Assert(got.CompositeTypes, qt.HasLen, 1)
+	c.Assert(typeObjects(got, pgtype.DomainKind), qt.HasLen, 1)
+	c.Assert(typeObjects(got, pgtype.CompositeKind), qt.HasLen, 1)
 	c.Assert(rangeObjects(got), qt.HasLen, 1)
 	c.Assert(got.Roles, qt.HasLen, 1)
 	c.Assert(got.Views, qt.HasLen, 1)

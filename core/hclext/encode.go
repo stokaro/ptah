@@ -172,8 +172,10 @@ const (
 type EncodedBlock struct {
 	// Dialect selects the block's reader independently of the caller's
 	// target. Set.Encode fills it for scoped shapes, using their first
-	// dialect when the encoder leaves it empty. The writer emits it as a
-	// dialect attribute. It is not the object's target scope.
+	// dialect when the encoder leaves it empty, except for a shape that also
+	// reads unscoped declarations, whose blocks it leaves without one. The
+	// writer emits it as a dialect attribute. It is not the object's target
+	// scope.
 	Dialect string
 	// Type is the block's type, such as "synonym".
 	Type string

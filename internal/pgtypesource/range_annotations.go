@@ -15,34 +15,28 @@ import (
 
 const rangeDirective = "ptah:schema:range"
 
-// Annotations reads and writes range declarations through the type owner.
-// Empty optional attributes request their removal; absent attributes leave
-// the corresponding catalog properties unmanaged.
-func Annotations() annotation.Extension {
-	attrs := []annotation.Attribute{
-		{Name: "name", Description: "Range type name.", Value: "string", Required: true},
-		{Name: "schema", Description: "Target schema/namespace.", Value: "string"},
-		{Name: "subtype", Description: "Element subtype the range is built over.", Value: "string", Required: true},
-		{Name: "subtype_opclass", Description: "Operator class for the subtype.", Value: "string"},
-		{Name: "collation", Description: "Collation for the subtype.", Value: "string"},
-		{Name: "canonical", Description: "Canonicalization function.", Value: "string"},
-		{Name: "subtype_diff", Description: "Subtype difference function.", Value: "string"},
-		{Name: "comment", Description: "Range type comment.", Value: "string"},
-		{Name: "dialects", Description: "Comma-separated target dialects for this declaration.", Value: "list"},
+// Annotations reads and writes PostgreSQL user type declarations. The range
+// directive is the owner's own. The domain and composite directives are the
+// frontend's, and the owner reads a declaration of either that names no
+// target or only targets: a declaration scoped to another target, such as
+// Oracle, stays on the common model. Empty optional range attributes request
+// their removal; absent ones leave the catalog properties unmanaged.
+func Annotations(targets []string) annotation.Extension {
+	scope := func(directive string) annotation.TargetScope {
+		return annotation.TargetScope{Directive: directive, Targets: slices.Clone(targets), Unscoped: true, Label: "PostgreSQL-family targets"}
 	}
-	return annotation.Extension{Owner: pgtype.Owner, Kinds: []schemaext.Kind{pgtype.RangeKind},
-		Directives: []annotation.Directive{{Name: rangeDirective, Description: "Declares a PostgreSQL range type.", Scopes: []annotation.Scope{annotation.ScopeStruct}, Attributes: attrs}},
-		Decode:     decodeRangeAnnotation, Coverage: rangeCoverage, Limits: []string{"range"},
-		Encoder: rangeAnnotations{}, Retainer: rangeAnnotations{}, Encodes: []schemaext.Kind{pgtype.RangeKind},
-	}
+	return annotation.Extension{Owner: pgtype.Owner, Kinds: pgtype.Kinds(),
+		Directives: rangeDirectives(), TargetScopes: []annotation.TargetScope{scope(domainDirective), scope(compositeDirective)},
+		Decode: decodeTypeAnnotation, Coverage: sourceCoverage, Limits: []string{"range"},
+		Encoder: typeAnnotations{}, Retainer: typeAnnotations{}, Encodes: pgtype.Kinds()}
 }
 
-func decodeRangeAnnotation(declaration annotation.Declaration) ([]annotation.Contribution, error) {
-	object, err := rangeAnnotationObject(declaration)
+func decodeTypeAnnotation(declaration annotation.Declaration) ([]annotation.Contribution, error) {
+	object, err := typeAnnotationObject(declaration)
 	if err != nil {
 		return nil, &annotation.DeclarationError{Declaration: declaration, Err: err}
 	}
-	return []annotation.Contribution{{Object: &object, Source: declaration, Label: "range " + pgtype.QualifiedName(object.Ref)}}, nil
+	return []annotation.Contribution{{Object: &object, Source: declaration, Label: pgtype.Label(object.Ref) + " " + pgtype.QualifiedName(object.Ref)}}, nil
 }
 
 func rangeAnnotationObject(declaration annotation.Declaration) (schemaext.Object, error) {
@@ -72,13 +66,13 @@ func rangeAnnotationObject(declaration annotation.Declaration) (schemaext.Object
 	return object, err
 }
 
-type rangeAnnotations struct{}
+type typeAnnotations struct{}
 
-func (rangeAnnotations) EncodeAnnotations(ctx context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
+func (typeAnnotations) EncodeAnnotations(ctx context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
 	if ctx == nil {
 		return annotation.EncodeResult{}, fmt.Errorf("%w: range export requires a context", schemaext.ErrInvalidValue)
 	}
-	limits, err := rangeLimits(request.Coverage)
+	limits, err := rangeLimits(request.Coverage.SelectKinds([]schemaext.Kind{pgtype.RangeKind}))
 	if err != nil {
 		return annotation.EncodeResult{}, err
 	}
@@ -87,27 +81,11 @@ func (rangeAnnotations) EncodeAnnotations(ctx context.Context, request annotatio
 		if err := ctx.Err(); err != nil {
 			return annotation.EncodeResult{}, err
 		}
-		value, ok := object.Value.(*pgtype.DesiredRange)
-		if !ok {
-			return annotation.EncodeResult{}, fmt.Errorf("%w: range export requires a declaration", schemaext.ErrInvalidValue)
-		}
-		if _, err := pgtype.DesiredObject(object.Ref, value); err != nil {
+		directive, err := encodeTypeAnnotation(object)
+		if err != nil {
 			return annotation.EncodeResult{}, err
 		}
-		attrs := []annotation.EncodedAttribute{{Name: "name", Value: tableref.CanonicalExact("", object.Ref.Name.Source)}}
-		if schema := pgtype.AuthoredSchema(object.Ref); schema != "" {
-			attrs = append(attrs, annotation.EncodedAttribute{Name: "schema", Value: tableref.CanonicalExact("", schema)})
-		}
-		attrs = append(attrs, annotation.EncodedAttribute{Name: "subtype", Value: value.Subtype})
-		for _, name := range pgtype.RangeAttributes() {
-			if text := value.Attribute(name); text != "" || value.Clears(name) {
-				attrs = append(attrs, annotation.EncodedAttribute{Name: name, Value: text})
-			}
-		}
-		if value.Comment != "" {
-			attrs = append(attrs, annotation.EncodedAttribute{Name: "comment", Value: value.Comment})
-		}
-		result.Directives = append(result.Directives, annotation.EncodedDirective{Directive: rangeDirective, Placement: annotation.AfterSchemas, Attributes: attrs, Targets: slices.Clone(object.Targets)})
+		result.Directives = append(result.Directives, directive)
 	}
 	if err := ctx.Err(); err != nil {
 		return annotation.EncodeResult{}, err
@@ -115,7 +93,7 @@ func (rangeAnnotations) EncodeAnnotations(ctx context.Context, request annotatio
 	return result, nil
 }
 
-func (rangeAnnotations) RetainAnnotations(ctx context.Context, request annotation.RetentionRequest) ([]bool, error) {
+func (typeAnnotations) RetainAnnotations(ctx context.Context, request annotation.RetentionRequest) ([]bool, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: range retention requires a context", schemaext.ErrInvalidValue)
 	}
@@ -124,7 +102,7 @@ func (rangeAnnotations) RetainAnnotations(ctx context.Context, request annotatio
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		expected, err := rangeAnnotationObject(declaration)
+		expected, err := typeAnnotationObject(declaration)
 		if err != nil {
 			return nil, err
 		}
@@ -135,16 +113,14 @@ func (rangeAnnotations) RetainAnnotations(ctx context.Context, request annotatio
 		if !found {
 			continue
 		}
-		value, ok := actual.Value.(*pgtype.DesiredRange)
-		if !ok || value == nil {
-			continue
+		before, err := annotationTypeValue(expected.Value)
+		if err != nil {
+			return nil, err
 		}
-		before, ok := expected.Value.(*pgtype.DesiredRange)
-		if !ok || before == nil {
-			return nil, fmt.Errorf("%w: range annotation does not declare a range", schemaext.ErrInvalidValue)
+		after, err := annotationTypeValue(actual.Value)
+		if err != nil {
+			return nil, err
 		}
-		after := value.Copy()
-		before.StructName, after.StructName = "", ""
 		result[i] = before.Equal(after) && slices.Equal(expected.Targets, actual.Targets)
 	}
 	if err := ctx.Err(); err != nil {

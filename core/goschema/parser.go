@@ -1454,9 +1454,35 @@ func parseOptionalInt64(value string) (*int64, error) {
 	return &n, nil
 }
 
+// domainDirective and compositeDirective are the frontend's user type
+// directives. A selected owner may read them by their target scope.
+const (
+	domainDirective    = "ptah:schema:domain"
+	compositeDirective = "ptah:schema:composite"
+)
+
+// handTypeToOwner hands a domain or composite type declaration to the owner
+// that reads its target scope, and reports whether it did. A declaration no
+// owner reads stays on the common model: one scoped to a target outside every
+// owner's scope, such as an Oracle domain, or any declaration of a parse that
+// selected no owner of the directive. A scope that mixes an owner's targets
+// with others is refused, since it declares two objects.
+func (s *schemaParseState) handTypeToOwner(directive string, kv map[string]string, structName string, scope []string,
+	ctx annotationErrorContext,
+) (bool, error) {
+	_, owned, err := s.annotations.TargetOwner(directive, scope)
+	if err != nil {
+		return false, s.targetScopeError(ctx, dialectscope.Attribute, err)
+	}
+	if !owned {
+		return false, nil
+	}
+	return true, s.handToOwner(directive, kv, structName, scope, ctx)
+}
+
 func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName string) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:domain", kv["name"])
+	ctx := s.annotationContext(comment, "//"+domainDirective, kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
@@ -1466,6 +1492,9 @@ func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName s
 
 	scope, err := parseDialectScope(kv, ctx)
 	if err != nil {
+		return err
+	}
+	if owned, err := s.handTypeToOwner(domainDirective, kv, structName, scope, ctx); owned || err != nil {
 		return err
 	}
 
@@ -1488,11 +1517,19 @@ func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName s
 
 func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structName string) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:composite", kv["name"])
+	ctx := s.annotationContext(comment, "//"+compositeDirective, kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
 	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
+	// The owner reads its own field list, which may quote a name.
+	if owned, err := s.handTypeToOwner(compositeDirective, kv, structName, scope, ctx); owned || err != nil {
 		return err
 	}
 
@@ -1506,11 +1543,6 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 			Err:       ptaherr.ErrInvalidAttributeValue,
 			Message:   fmt.Sprintf("%v for \"fields\" on %s at %s; expected \"name:type,name:type\"", err, ctx.directive, ctx.location),
 		}
-	}
-
-	scope, err := parseDialectScope(kv, ctx)
-	if err != nil {
-		return err
 	}
 
 	composite := schemamodel.CompositeType{

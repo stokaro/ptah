@@ -4,7 +4,7 @@ Ptah supports three PostgreSQL user-defined type objects as first-class, annotat
 
 These are PostgreSQL features Atlas keeps out of its open-source core (they exist only in the proprietary "Pro" build). Ptah provides them as open (MIT), local, no-account, embeddable capabilities — see epic [#654](https://github.com/stokaro/ptah/issues/654).
 
-User-defined types are PostgreSQL-only. On MySQL, MariaDB, and SQLite they are not emitted (the SQLite planner rejects them explicitly).
+These are PostgreSQL types. A declaration without `dialects`, an SQL file or an HCL document read for a PostgreSQL-family target or for no target, and a PostgreSQL catalog read produce them, and a plan for another target refuses them. Oracle 23 also has domains and object types, which a declaration scoped with `dialects="oracle"` and an Oracle document declare; see the Oracle database page.
 
 ## Domains
 
@@ -30,7 +30,7 @@ Renders `CREATE DOMAIN "email" AS TEXT NOT NULL CHECK (VALUE ~ '@');`.
 
 > Round-trip and reconciliation notes:
 > - Base types are canonicalized before comparison (`VARCHAR(n)` ↔ `character varying(n)`, `float8` ↔ `double precision`, `int4` ↔ `integer`, etc.), so a domain over any spelling round-trips cleanly.
-> - `check` and `default`/`default_expr` are compared through the server. PostgreSQL rewrites both on read-back (adding parentheses and `::casts`), so against a live database Ptah asks the server to normalize the declaration and compares that with what the catalog holds. A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and `ADD CHECK`; a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`. A declaration that leaves either out does not remove the one the database holds, and a comparison with no server to ask leaves both uncompared.
+> - `check` and `default`/`default_expr` are compared through the server. PostgreSQL rewrites both on read-back (adding parentheses and `::casts`), so against a live database Ptah asks the server to normalize the declaration and compares that with what the catalog holds. A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and `ADD CONSTRAINT ... CHECK`, which names the new constraint so the rollback can drop it; a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`. A declaration that leaves either out does not remove the one the database holds, and a comparison with no server to ask leaves both uncompared.
 > - `default` is the value itself, and Ptah quotes it when it writes SQL; `default_expr` is SQL, written as it is. A SQL schema file's `DEFAULT 'ab'` reads as the value `ab`, in any spelling of the string PostgreSQL reads, and any other default (`42`, `now()`, `'ab'::text`) reads as SQL. `DEFAULT NULL` is no default, which is what PostgreSQL stores for it.
 > - There is no in-place `ALTER` for a base-type change, so a genuine `type` or `not_null` modification is emitted as a **non-`CASCADE`** drop + recreate. If the domain is still used by a column the drop fails loudly rather than dropping the column; reconcile such changes manually.
 

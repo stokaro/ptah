@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
+	"ptah.run/internal/pgtypeprovider"
 	"ptah.run/internal/pgtypesource"
 	"ptah.run/internal/sqlschema"
 )
@@ -69,7 +70,7 @@ func TestRangeLimitsPreserveUnmanagedTypes(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			owners := must.Must(annotation.NewSet(pgtypesource.Annotations()))
+			owners := must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets())))
 			original := &schemamodel.Database{FeatureCoverage: test.coverage}
 			files, err := goschematogo.Render(c.Context(), original, goschematogo.Options{Annotations: owners, SingleFile: true})
 			c.Assert(err, qt.IsNil)
@@ -97,7 +98,7 @@ func TestRangeLimitsPreserveUnmanagedTypes(t *testing.T) {
 // there would declare a gap in a family the target does not have.
 func TestRangeLimitsAbsentCoverageWritesNoLimit(t *testing.T) {
 	c := qt.New(t)
-	owners := must.Must(annotation.NewSet(pgtypesource.Annotations()))
+	owners := must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets())))
 	original := &schemamodel.Database{}
 
 	files, err := goschematogo.Render(c.Context(), original, goschematogo.Options{Annotations: owners, SingleFile: true})
@@ -114,7 +115,7 @@ func TestRangeLimitsRefuseLossOfCompleteException(t *testing.T) {
 	c := qt.New(t)
 	ref := pgtype.Ref(pgtype.RangeKind, "app", "span")
 	known := must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "partial source"}, []schemaext.SubjectCoverage{{Kind: pgtype.RangeKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}))
-	encoded, err := must.Must(annotation.NewSet(pgtypesource.Annotations())).Encode(c.Context(), annotation.EncodeRequest{Coverage: known})
+	encoded, err := must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets()))).Encode(c.Context(), annotation.EncodeRequest{Coverage: known})
 	c.Assert(err, qt.ErrorMatches, `.*cannot preserve a complete subject inside an unknown namespace`)
 	c.Assert(encoded, qt.DeepEquals, annotation.EncodeResult{})
 }
@@ -123,7 +124,7 @@ func TestRangeHCLCanceledBatchReturnsNoDeclarations(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithCancel(c.Context())
 	cancel()
-	result, err := pgtypesource.HCL().Decoder.DecodeHCL(ctx, hclext.Request{Claims: []hclext.Claim{{Block: "range", Name: "span", Attributes: map[string]hclext.Value{"subtype": {Text: "numeric"}}}}})
+	result, err := pgtypesource.HCL(pgtypeprovider.Targets()).Decoder.DecodeHCL(ctx, hclext.Request{Claims: []hclext.Claim{{Block: "range", Name: "span", Attributes: map[string]hclext.Value{"subtype": {Text: "numeric"}}}}})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(result, qt.DeepEquals, hclext.Result{})
 }

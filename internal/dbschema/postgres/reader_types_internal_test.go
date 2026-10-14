@@ -280,7 +280,7 @@ var (
 		domains, err := r.readDomains(ctx)
 		names := make([]string, 0, len(domains))
 		for _, domain := range domains {
-			names = append(names, domain.Name)
+			names = append(names, domain.Ref.Name.Source)
 		}
 		return names, err
 	}
@@ -288,7 +288,7 @@ var (
 		composites, err := r.readComposites(ctx)
 		names := make([]string, 0, len(composites))
 		for _, composite := range composites {
-			names = append(names, composite.Name)
+			names = append(names, composite.Ref.Name.Source)
 		}
 		return names, err
 	}

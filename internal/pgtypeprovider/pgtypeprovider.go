@@ -2,7 +2,7 @@
 // pgtype as one engine provider: its codecs, its conversion, comparison,
 // domain normalization, planning, declaration and reversal services on every
 // PostgreSQL-family target, and its reports in both representations. It also
-// owns the Go, HCL and SQL range type source adapters.
+// wires the Go, HCL and SQL source adapters of the three kinds.
 package pgtypeprovider
 
 import (
@@ -43,15 +43,17 @@ func Provider() engine.Provider {
 		Codecs: slices.Concat(pgtype.Codecs(), pgtype.ChangeCodecs(), pgtype.OperationCodecs()),
 		// A description that does not describe a kind, such as a document
 		// whose blocks of that kind the compatibility surface left out,
-		// describes none of the owner's types of the kind either.
+		// describes none of the owner's types of the kind either. Domains
+		// and composite types keep the common not-described kinds because
+		// Oracle's, which the common model holds, read the same records.
 		CoverageLimits: []schemaext.LimitMapping{
 			{Header: coverage.Domain, Model: pgtype.DomainKind, Names: typeNames},
 			{Header: coverage.Composite, Model: pgtype.CompositeKind, Names: typeNames},
 		},
 		// A scope names a type with the selector type of the common one.
 		Selections:  []selectext.Extension{pgtype.Selections()},
-		HCL:         []hclext.Extension{pgtypesource.HCL()},
-		Annotations: []annotation.Extension{pgtypesource.Annotations()},
+		HCL:         []hclext.Extension{pgtypesource.HCL(Targets())},
+		Annotations: []annotation.Extension{pgtypesource.Annotations(Targets())},
 		SQL:         []sqlext.Extension{pgtypesource.SQL(Targets())},
 		// A type on a target outside the family is refused, naming the scope
 		// that keeps it to the targets that host it: a column declared with

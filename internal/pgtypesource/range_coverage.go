@@ -68,3 +68,26 @@ func rangeLimits(known schemaext.Coverage) ([]annotation.EncodedLimit, error) {
 	}
 	return limits, nil
 }
+
+// sourceCoverage is what a document read through the owner knows of its
+// models. It describes every domain and composite type: a not-described
+// record of either kind is a common record, since Oracle's domains and
+// composite types read it too, and the runtime folds it into this claim
+// before the owner compares. The document's range records limit its range
+// types.
+func sourceCoverage(limits []coverage.Object) (schemaext.Coverage, error) {
+	claim, err := rangeCoverage(limits)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	for _, kind := range []schemaext.Kind{pgtype.DomainKind, pgtype.CompositeKind} {
+		complete, err := pgtype.Coverage(kind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
+		if claim, err = claim.Combine(complete); err != nil {
+			return schemaext.Coverage{}, err
+		}
+	}
+	return claim, nil
+}

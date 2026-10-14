@@ -121,10 +121,10 @@ func TestPlanTypes_HappyPath(t *testing.T) {
 		{name: "a domain's CHECK, default and NOT NULL changed in place", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{
 			Before: checked, After: everything, Differs: []string{pgtype.DiffCheck, pgtype.DiffDefault, pgtype.DiffNotNull}}),
 			want: []planned{{Subject: "domain t", Payload: &pgtype.AlterDomain{Target: domainTarget, DropChecks: []string{"t_check", "t_check1"},
-				AddCheck: "VALUE > ''", SetDefault: "'it''s'", NotNull: new(true)}, Phase: typePhase, Effect: plangraph.Alter}}},
-		{name: "a CHECK changed to none beside NOT NULL keeps the constraints", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{
+				AddCheck: "VALUE > ''", CheckName: "ptah_check", SetDefault: "'it''s'", NotNull: new(true)}, Phase: typePhase, Effect: plangraph.Alter}}},
+		{name: "a CHECK changed to none beside NOT NULL drops the constraints", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{
 			Before: checked, After: &pgtype.DesiredDomain{BaseType: "text", NotNull: true}, Differs: []string{pgtype.DiffCheck, pgtype.DiffNotNull}}),
-			want: []planned{{Subject: "domain t", Payload: &pgtype.AlterDomain{Target: domainTarget, NotNull: new(true)}, Phase: typePhase,
+			want: []planned{{Subject: "domain t", Payload: &pgtype.AlterDomain{Target: domainTarget, DropChecks: []string{"t_check", "t_check1"}, NotNull: new(true)}, Phase: typePhase,
 				Effect: plangraph.Alter}}},
 		{name: "a domain's default expression", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{
 			Before: text, After: expression, Differs: []string{pgtype.DiffDefault}}),

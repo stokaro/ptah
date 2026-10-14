@@ -71,7 +71,7 @@ func typeComments(ctx context.Context, reader *Reader) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []string{domains[0].Comment, composites[0].Comment, ranges[0].Value.(*pgtype.ObservedRange).Comment}, nil
+	return []string{domains[0].Value.(*pgtype.ObservedDomain).Comment, composites[0].Value.(*pgtype.ObservedComposite).Comment, ranges[0].Value.(*pgtype.ObservedRange).Comment}, nil
 }
 
 // A domain's, a composite's and a range's comment are read where the target

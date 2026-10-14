@@ -518,3 +518,18 @@ func (v *CompositeChange) RebuildsType() bool {
 func (v *RangeChange) RebuildsType() bool {
 	return v != nil && v.Before != nil && v.After != nil && slices.ContainsFunc(v.Differs, func(name string) bool { return name != DiffComment })
 }
+
+// ReplacementCheck names the CHECK an in-place domain change adds. Reusing a
+// sole constraint's name preserves its identity. Replacing a set, or adding
+// the first constraint, uses a fixed name local to this domain. The reverse
+// plan uses the same answer before it can inspect the changed catalog.
+func (v *DomainChange) ReplacementCheck() DomainCheck {
+	if v.After == nil || v.After.Check == "" {
+		return DomainCheck{}
+	}
+	name := "ptah_check"
+	if v.Before != nil && len(v.Before.Checks) == 1 {
+		name = v.Before.Checks[0].Name
+	}
+	return DomainCheck{Name: name, Expression: v.After.Check}
+}

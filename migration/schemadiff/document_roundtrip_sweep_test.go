@@ -82,7 +82,9 @@ func roundTripRows() []roundTripRow {
 			seed: func(d *schemamodel.Database) {
 				d.Domains = append(d.Domains, schemamodel.Domain{StructName: "D", Name: "d1", BaseType: "text"})
 			},
-			count: func(d *schemamodel.Database) int { return len(d.Domains) },
+			// The shared declaration reads back as the type owner's in a
+			// PostgreSQL document.
+			count: func(d *schemamodel.Database) int { return ownedTypes(d, pgtype.DomainKind) },
 		},
 		{
 			field: "CompositeTypes",
@@ -92,7 +94,7 @@ func roundTripRows() []roundTripRow {
 					Fields: []schemamodel.CompositeField{{Name: "a", Type: "integer"}},
 				})
 			},
-			count: func(d *schemamodel.Database) int { return len(d.CompositeTypes) },
+			count: func(d *schemamodel.Database) int { return ownedTypes(d, pgtype.CompositeKind) },
 		},
 		{
 			field: "Views",
@@ -299,6 +301,11 @@ func loadYAMLDocument(c *qt.C) *schemamodel.Database {
 	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
+}
+
+// ownedTypes counts the PostgreSQL type owner's objects of kind.
+func ownedTypes(d *schemamodel.Database, kind schemaext.Kind) int {
+	return len(d.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(kind) }).Refs())
 }
 
 // nonObjectDatabaseFields are the slice fields of [schemamodel.Database] that no

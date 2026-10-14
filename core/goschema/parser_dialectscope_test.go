@@ -45,13 +45,13 @@ type Seq struct{}`,
 			name: "domain",
 			code: `//ptah:schema:domain name="email_t" type="TEXT" dialects="postgresql"
 type Dom struct{}`,
-			scope: func(db schemamodel.Database) []string { return db.Domains[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return must.Must(db.FeatureObjects.All())[0].Targets },
 		},
 		{
 			name: "composite",
 			code: `//ptah:schema:composite name="address" fields="city:TEXT" dialects="postgresql"
 type Comp struct{}`,
-			scope: func(db schemamodel.Database) []string { return db.CompositeTypes[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return must.Must(db.FeatureObjects.All())[0].Targets },
 		},
 		{
 			name: "range",

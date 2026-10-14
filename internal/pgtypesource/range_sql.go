@@ -14,16 +14,24 @@ import (
 
 const createRangePattern = "create-range"
 const commentTypePattern = "comment-type"
+const createDomainPattern = "create-domain"
+const createCompositePattern = "create-composite"
+const commentDomainPattern = "comment-domain"
 
-// SQL reads range declarations and comments in source order. A COMMENT ON
-// TYPE referring to another type family returns to the shared SQL grammar.
+// SQL reads PostgreSQL user type declarations and comments in source order.
+// A comment on a type outside this owner returns to the shared SQL grammar.
 func SQL(targets []string) sqlext.Extension {
-	return sqlext.Extension{Owner: pgtype.Owner, Targets: targets, Kinds: []schemaext.Kind{pgtype.RangeKind},
+	return sqlext.Extension{Owner: pgtype.Owner, Targets: targets, Kinds: pgtype.Kinds(),
 		Patterns: []sqlext.Pattern{
 			{Name: createRangePattern, Site: sqlext.Statement, Words: []string{"CREATE", "TYPE"}, AfterName: []string{"AS", "RANGE"}},
+			{Name: createDomainPattern, Site: sqlext.Statement, Words: []string{"CREATE", "DOMAIN"}},
+			{Name: createCompositePattern, Site: sqlext.Statement, Words: []string{"CREATE", "TYPE"}, AfterName: []string{"AS"}, Next: []string{"("}},
+			{Name: commentDomainPattern, Site: sqlext.Statement, Words: []string{"COMMENT", "ON", "DOMAIN"}},
 			{Name: commentTypePattern, Site: sqlext.Statement, Words: []string{"COMMENT", "ON", "TYPE"}},
-		}, Parser: rangeSQL{}, Header: []coverage.Kind{coverage.Range},
-		Coverage: func(request sqlext.CoverageRequest) (schemaext.Coverage, error) { return rangeCoverage(request.Limits) },
+		}, Parser: rangeSQL{}, Header: []coverage.Kind{coverage.Domain, coverage.Composite, coverage.Range},
+		Coverage: func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {
+			return sourceCoverage(request.Limits)
+		},
 	}
 }
 
@@ -65,8 +73,12 @@ func (t *rangeTokens) read(pattern string, known map[objectidentity.Key]schemaex
 	switch pattern {
 	case createRangePattern:
 		return t.create()
-	case commentTypePattern:
-		return t.comment(known)
+	case createDomainPattern:
+		return t.createDomain()
+	case createCompositePattern:
+		return t.createComposite()
+	case commentTypePattern, commentDomainPattern:
+		return t.typeComment(pattern, known)
 	default:
 		return sqlext.Value{}, fmt.Errorf("%w: range SQL pattern %q", schemaext.ErrInvalidValue, pattern)
 	}
@@ -127,36 +139,4 @@ func (t *rangeTokens) create() (sqlext.Value, error) {
 		return sqlext.Value{}, err
 	}
 	return sqlext.Value{Statement: pgtype.CreateRangeOf(ref, declared), Objects: []schemaext.Object{object}}, nil
-}
-
-func (t *rangeTokens) comment(known map[objectidentity.Key]schemaext.Object) (sqlext.Value, error) {
-	if err := t.words("COMMENT", "ON", "TYPE"); err != nil {
-		return sqlext.Value{}, err
-	}
-	ref, err := t.reference()
-	if err != nil {
-		return sqlext.Value{}, err
-	}
-	object, found := known[ref.Key()]
-	if !found {
-		return sqlext.Value{Declined: true}, nil
-	}
-	declared, ok := object.Value.(*pgtype.DesiredRange)
-	if !ok || declared == nil {
-		return sqlext.Value{}, fmt.Errorf("%w: SQL range comment requires a declaration", schemaext.ErrInvalidValue)
-	}
-	if err := t.words("IS"); err != nil {
-		return sqlext.Value{}, err
-	}
-	comment, err := t.commentText()
-	if err != nil {
-		return sqlext.Value{}, err
-	}
-	value := declared.Copy()
-	value.Comment = comment
-	object, err = pgtype.DesiredObject(object.Ref, value)
-	if err != nil {
-		return sqlext.Value{}, err
-	}
-	return sqlext.Value{Statement: &pgtype.Comment{Target: pgtype.TargetOf(ref), Comment: comment}, Replaces: []schemaext.Object{object}}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgtype"
+	"ptah.run/internal/pgtypeprovider"
 	"ptah.run/internal/pgtypesource"
 )
 
@@ -99,7 +100,7 @@ func TestParseRangeAnnotation(t *testing.T) {
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	db := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations())), "fixture.go", src))
+	db := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets()))), "fixture.go", src))
 	r := parsedRange(c, db)
 	c.Assert(must.Must(db.FeatureObjects.All())[0].Ref.Name.Source, qt.Equals, "floatrange")
 	c.Assert(r.Subtype, qt.Equals, "float8")
@@ -122,7 +123,7 @@ func TestParseRangeAnnotation_AnEmptyAttributeIsToldFromAnAbsentOne(t *testing.T
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	db := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations())), "fixture.go", src))
+	db := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets()))), "fixture.go", src))
 	r := parsedRange(c, db)
 
 	// Written empty: cleared.
@@ -147,7 +148,7 @@ func TestParseRangeAnnotation_MissingSubtypeRejected(t *testing.T) {
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations())), "fixture.go", src)
+	_, err := goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations(pgtypeprovider.Targets()))), "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:range")

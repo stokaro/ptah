@@ -5,7 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgtype"
 )
 
 // A reference to a type the document declares resolves to that type's name in
@@ -217,12 +219,23 @@ func firstFieldType(db *schemamodel.Database) string {
 	return db.Fields[0].Type
 }
 
+// lastDomainBaseType is the base type of the domain the row declares, which
+// the PostgreSQL type owner holds.
 func lastDomainBaseType(db *schemamodel.Database) string {
-	return db.Domains[len(db.Domains)-1].BaseType
+	return ownerType(db, pgtype.DomainKind, "wrapped").(*pgtype.DesiredDomain).BaseType
 }
 
+// lastCompositeFieldType is the first field type of the composite type the
+// row declares.
 func lastCompositeFieldType(db *schemamodel.Database) string {
-	return db.CompositeTypes[len(db.CompositeTypes)-1].Fields[0].Type
+	return ownerType(db, pgtype.CompositeKind, "holder").(*pgtype.DesiredComposite).Attributes[0].Type
+}
+
+// ownerType is the declaration of the public type name of kind. A missing one
+// is nil, which the caller's assertion on its type turns into a failure.
+func ownerType(db *schemamodel.Database, kind schemaext.Kind, name string) schemaext.Value {
+	object, _, _ := db.FeatureObjects.Get(pgtype.Ref(kind, "public", name))
+	return object.Value
 }
 
 func lastRangeSubtype(db *schemamodel.Database) string {

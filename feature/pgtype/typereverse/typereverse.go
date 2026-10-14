@@ -115,13 +115,20 @@ func reverseDomain(record schemaext.ChangeRecord, change *pgtype.DomainChange) (
 	if change.Before == nil {
 		return reversal(record, &pgtype.DomainChange{Before: forward}, forward.Copy(), strategy(label, false, true)), nil
 	}
-	reversed := reversal(record, &pgtype.DomainChange{Before: forward, After: change.Before.Desired(), Differs: change.Differs},
-		forward.Copy(), strategy(label, true, true))
-	if change.Differ(pgtype.DiffCheck) && change.Before.Check != "" {
-		reversed.Limitations = []string{fmt.Sprintf("the rollback adds the CHECK domain %s had, but cannot drop the one the migration added: "+
-			"the server named it, and the name is not recorded", pgtype.QualifiedName(record.Subject))}
+	if !change.Differ(pgtype.DiffBaseType) {
+		if change.Differ(pgtype.DiffCheck) {
+			if replacement := change.ReplacementCheck(); replacement.Name != "" {
+				forward.Checks = []pgtype.DomainCheck{replacement}
+			}
+		} else {
+			forward.Check, forward.Checks = change.Before.Check, change.Before.Copy().Checks
+		}
+		if !change.Differ(pgtype.DiffDefault) {
+			forward.Default = change.Before.Default
+		}
 	}
-	return reversed, nil
+	return reversal(record, &pgtype.DomainChange{Before: forward, After: change.Before.Desired(), Differs: change.Differs},
+		forward.Copy(), strategy(label, true, true)), nil
 }
 
 func reverseComposite(record schemaext.ChangeRecord, change *pgtype.CompositeChange) (schemaext.Reversal, error) {

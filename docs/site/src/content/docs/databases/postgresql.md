@@ -1361,12 +1361,18 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
 - A domain's `check` and `default` are compared through the server.
   PostgreSQL rewrites both on read-back, so against a live database Ptah asks
   the server to normalize the declaration and compares that with the catalog.
-  A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and `ADD CHECK`,
-  and a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`. A declaration
-  that leaves either out does not remove the one the database holds.
+  A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and
+  `ADD CONSTRAINT ... CHECK`, which names the new constraint so the rollback
+  can drop it, and a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`.
+  A declaration that leaves either out does not remove the one the database
+  holds.
 - A domain nullability change uses `ALTER DOMAIN ... SET NOT NULL` or
   `DROP NOT NULL`. A base-type change uses a non-`CASCADE` drop and recreation.
-  PostgreSQL refuses the drop while a column uses the domain.
+  PostgreSQL refuses the drop while a column uses the domain. A domain's
+  `NOT NULL` belongs to the domain: a column typed by it reads as `NOT NULL`
+  only when the column states it.
+- A composite type's attributes are compared in order, by the name the
+  catalog stores, so a quoted `"N"` and `n` are two attributes.
 - Range types match by schema and name. Ptah compares the subtype, comment,
   and optional attributes that the declaration states or explicitly clears.
   A comment-only change uses `COMMENT ON TYPE`. Other changes recreate the range.

@@ -41,7 +41,7 @@ func TestPlanTypes_Receipts(t *testing.T) {
 		{name: "a comment", change: &pgtype.DomainChange{Before: text, After: &pgtype.DesiredDomain{BaseType: "text", Comment: "mail"},
 			Differs: []string{pgtype.DiffComment}}, steps: 1, want: "set the type's comment"},
 		{name: "a CHECK changed to none", change: &pgtype.DomainChange{Before: checked, After: &pgtype.DesiredDomain{BaseType: "text"},
-			Differs: []string{pgtype.DiffCheck}}, want: "keep the type, as the change states nothing to change it to"},
+			Differs: []string{pgtype.DiffCheck}}, steps: 1, want: "change the type in place"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

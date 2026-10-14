@@ -58,16 +58,6 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 			Name:   "order_seq",
 			Schema: "app",
 		}},
-		Domains: []schemamodel.Domain{{
-			Name:     "email",
-			Schema:   "app",
-			BaseType: "text",
-		}},
-		CompositeTypes: []schemamodel.CompositeType{{
-			Name:   "address",
-			Schema: "app",
-			Fields: []schemamodel.CompositeField{{Name: "city", Type: "text"}},
-		}},
 		ManagedData: []schemamodel.ManagedData{{
 			Table:  "users",
 			Schema: "app",
@@ -75,9 +65,14 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 			File:   "users.yaml",
 		}},
 	}
-	db.FeatureObjects = must.Must(db.FeatureObjects.With(must.Must(pgtype.DesiredObject(
-		pgtype.Ref(pgtype.RangeKind, "app", "price_range"), &pgtype.DesiredRange{Subtype: "numeric"},
-	))))
+	for _, object := range []schemaext.Object{
+		must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.DomainKind, "app", "email"), &pgtype.DesiredDomain{BaseType: "text"})),
+		must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.CompositeKind, "app", "address"),
+			&pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "city", Type: "text"}}})),
+		must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "app", "price_range"), &pgtype.DesiredRange{Subtype: "numeric"})),
+	} {
+		db.FeatureObjects = must.Must(db.FeatureObjects.With(object))
+	}
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
@@ -88,8 +83,8 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Sequences, qt.HasLen, 1)
-	c.Assert(got.Domains, qt.HasLen, 1)
-	c.Assert(got.CompositeTypes, qt.HasLen, 1)
+	c.Assert(typeObjects(got, pgtype.DomainKind), qt.HasLen, 1)
+	c.Assert(typeObjects(got, pgtype.CompositeKind), qt.HasLen, 1)
 	c.Assert(rangeObjects(got), qt.HasLen, 1)
 	c.Assert(got.ManagedData, qt.HasLen, 1)
 	resolvedDir, err := filepath.EvalSymlinks(dir)
@@ -362,7 +357,12 @@ func TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails(t *testing.T) {
 }
 
 func rangeObjects(database *schemamodel.Database) []schemaext.Object {
+	return typeObjects(database, pgtype.RangeKind)
+}
+
+// typeObjects are the PostgreSQL type owner's objects of kind.
+func typeObjects(database *schemamodel.Database, kind schemaext.Kind) []schemaext.Object {
 	return must.Must(database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
-		return ref.Kind == objectidentity.Kind(pgtype.RangeKind)
+		return ref.Kind == objectidentity.Kind(kind)
 	}).All())
 }

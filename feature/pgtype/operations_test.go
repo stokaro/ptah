@@ -40,8 +40,8 @@ func TestOperationCodecs_HappyPath(t *testing.T) {
 				`"default":"","default_expr":"","check":""}`},
 		{name: "a domain alteration, its empty list written null",
 			operation: &pgtype.AlterDomain{Target: target(pgtype.DomainKind, "", "qty"), DropChecks: make([]string, 0), AddCheck: "VALUE = 1"},
-			wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"qty"},"drop_checks":null,"add_check":"VALUE = 1",` +
-				`"set_default":"","not_null":null}`},
+			wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"qty"},"drop_checks":null,"add_check":"VALUE = 1","check_name":"",` +
+				`"set_default":"","drop_default":false,"not_null":null}`},
 		{name: "a composite type alteration",
 			operation: &pgtype.AlterComposite{Target: target(pgtype.CompositeKind, "", "addr"), Drop: []string{"zip"},
 				Add: []pgtype.Attribute{{Name: "postcode", Type: "text"}}},
@@ -118,8 +118,8 @@ func TestOperationCodecs_FailurePath(t *testing.T) {
 		wire string
 	}{
 		{name: "an empty constraint list", kind: pgtype.AlterDomainKind,
-			wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"x"},"drop_checks":[],"add_check":"VALUE = 1",` +
-				`"set_default":"","not_null":null}`},
+			wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"x"},"drop_checks":[],"add_check":"VALUE = 1","check_name":"",` +
+				`"set_default":"","drop_default":false,"not_null":null}`},
 		{name: "a missing key", kind: pgtype.DropKind, wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"x"}}`},
 		{name: "a target without its schema", kind: pgtype.DropKind,
 			wire: `{"target":{"kind":"ptah.run/pgtype/domain","name":"x"},"cascade":false}`},

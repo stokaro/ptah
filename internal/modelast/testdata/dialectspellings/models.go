@@ -23,7 +23,9 @@
 //
 // Common declarations reach every target's renderer, whose support and
 // spelling distinguish the engines. Owner declarations select their target
-// explicitly; the range declaration targets PostgreSQL.
+// explicitly: the domain, composite and range declarations scoped to
+// PostgreSQL are the type owner's. The domain and composite type scoped to
+// Oracle stay on the common model, which the Oracle renderer reads.
 //
 // The app-qualified audit table exercises renderTableName, but it does not pin
 // sqlident.Quote's quote style: the dialect renderer re-quotes the table name,
@@ -43,11 +45,17 @@ type AppRoleMarker struct{}
 //ptah:schema:sequence name="order_number_seq" as="bigint" start="1000" increment="1"
 type OrderSeqMarker struct{}
 
-//ptah:schema:domain name="email_domain" type="TEXT" not_null="true" check="VALUE ~ '@'"
+//ptah:schema:domain name="email_domain" type="TEXT" not_null="true" check="VALUE ~ '@'" dialects="postgres"
 type EmailDomainMarker struct{}
 
-//ptah:schema:composite name="addr_type" fields="street:TEXT,city:TEXT"
+//ptah:schema:composite name="addr_type" fields="street:TEXT,city:TEXT" dialects="postgres"
 type AddressCompositeMarker struct{}
+
+//ptah:schema:domain name="email_domain" type="VARCHAR2(320)" not_null="true" dialects="oracle"
+type OracleEmailDomainMarker struct{}
+
+//ptah:schema:composite name="addr_type" fields="street:VARCHAR2(80),city:VARCHAR2(80)" dialects="oracle"
+type OracleAddressCompositeMarker struct{}
 
 //ptah:schema:range name="float_range" subtype="float8" dialects="postgres"
 type FloatRangeMarker struct{}

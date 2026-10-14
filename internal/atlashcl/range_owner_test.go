@@ -18,7 +18,13 @@ func parseTypeHCL(data []byte, name string) (*schemamodel.Database, error) {
 }
 
 func rangeObjects(database *schemamodel.Database) []schemaext.Object {
-	return must.Must(database.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgtype.RangeKind) }).All())
+	return typeObjects(database, pgtype.RangeKind)
+}
+
+// typeObjects are the PostgreSQL type owner's objects of kind a document
+// declares.
+func typeObjects(database *schemamodel.Database, kind schemaext.Kind) []schemaext.Object {
+	return must.Must(database.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(kind) }).All())
 }
 
 func rangeValues(database *schemamodel.Database) []*pgtype.DesiredRange {

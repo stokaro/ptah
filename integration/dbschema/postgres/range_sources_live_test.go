@@ -46,7 +46,7 @@ func TestRangeSourcesConvergeLive(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newRangeSourceFixture(c)
+			f := newTypeSourceFixture(c)
 			f.apply(c, f.qualify(test.setup))
 			desired, _, err := sqlschema.ReadWith(c.Context(), []byte("CREATE SCHEMA "+f.quotedSchema()+"; "+f.qualify(test.body)), "postgres", nil, sqlschema.Options{Owners: f.runtime.SQL()})
 			c.Assert(err, qt.IsNil)
@@ -76,7 +76,7 @@ func TestRangeRebuildDependenciesConvergeLive(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newRangeSourceFixture(c)
+			f := newTypeSourceFixture(c)
 			f.apply(c, f.qualify(test.before))
 			desired, _, err := sqlschema.ReadWith(c.Context(), []byte("CREATE SCHEMA "+f.quotedSchema()+"; "+f.qualify(test.after)), "postgres", nil, sqlschema.Options{Owners: f.runtime.SQL()})
 			c.Assert(err, qt.IsNil)
@@ -93,18 +93,18 @@ func TestRangeRebuildDependenciesConvergeLive(t *testing.T) {
 	}
 }
 
-type rangeSourceFixture struct {
+type typeSourceFixture struct {
 	conn    *dbschema.DatabaseConnection
 	runtime *engine.Runtime
 	schema  string
 }
 
-func newRangeSourceFixture(c *qt.C) rangeSourceFixture {
+func newTypeSourceFixture(c *qt.C) typeSourceFixture {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	f := rangeSourceFixture{conn: conn, runtime: must.Must(builtin.New()), schema: fmt.Sprintf("ptah_range_%d", time.Now().UnixNano())}
+	f := typeSourceFixture{conn: conn, runtime: must.Must(builtin.New()), schema: fmt.Sprintf("ptah_type_%d", time.Now().UnixNano())}
 	f.apply(c, "CREATE SCHEMA "+f.quotedSchema())
 	c.Cleanup(func() {
 		_, err := conn.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+f.quotedSchema()+" CASCADE")
@@ -113,12 +113,12 @@ func newRangeSourceFixture(c *qt.C) rangeSourceFixture {
 	return f
 }
 
-func (f rangeSourceFixture) quotedSchema() string { return pgx.Identifier{f.schema}.Sanitize() }
-func (f rangeSourceFixture) qualify(sql string) string {
+func (f typeSourceFixture) quotedSchema() string { return pgx.Identifier{f.schema}.Sanitize() }
+func (f typeSourceFixture) qualify(sql string) string {
 	return strings.ReplaceAll(sql, "%s", f.quotedSchema())
 }
 
-func (f rangeSourceFixture) apply(c *qt.C, sql string) {
+func (f typeSourceFixture) apply(c *qt.C, sql string) {
 	c.Helper()
 	for _, statement := range sqlutil.SplitStatementsForDialect("postgres", sql) {
 		_, err := f.conn.ExecContext(c.Context(), statement)
@@ -126,7 +126,7 @@ func (f rangeSourceFixture) apply(c *qt.C, sql string) {
 	}
 }
 
-func (f rangeSourceFixture) assertConverged(c *qt.C, desired *schemamodel.Database) {
+func (f typeSourceFixture) assertConverged(c *qt.C, desired *schemamodel.Database) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)
@@ -135,7 +135,7 @@ func (f rangeSourceFixture) assertConverged(c *qt.C, desired *schemamodel.Databa
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("remaining changes: %#v", diff))
 }
 
-func (f rangeSourceFixture) assertExportsConverged(c *qt.C) {
+func (f typeSourceFixture) assertExportsConverged(c *qt.C) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)

@@ -97,11 +97,18 @@ func commentsOf(database schemamodel.Database) map[string]string {
 		comments["policy "+policy.Name+" on "+policy.Table] = policy.Comment
 	}
 	// A PostgreSQL-family document hands its policies to the row-security
-	// owner, which keeps the comment on the policy.
+	// owner, which keeps the comment on the policy, and its user types to the
+	// type owner.
 	objects, _ := database.FeatureObjects.All()
 	for _, object := range objects {
 		if rangeType, ok := object.Value.(*pgtype.DesiredRange); ok {
 			comments["range "+pgtype.QualifiedName(object.Ref)] = rangeType.Comment
+		}
+		if domain, ok := object.Value.(*pgtype.DesiredDomain); ok {
+			comments["domain "+pgtype.QualifiedName(object.Ref)] = domain.Comment
+		}
+		if composite, ok := object.Value.(*pgtype.DesiredComposite); ok {
+			comments["composite "+pgtype.QualifiedName(object.Ref)] = composite.Comment
 		}
 		if policy, ok := object.Value.(*pgpolicy.DesiredPolicy); ok {
 			comments["policy "+object.Ref.Name.Source+" on "+schemamodel.QualifyTableName(object.Ref.Schema.Authored(), object.Ref.Parent.Source)] = policy.Comment

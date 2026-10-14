@@ -33,8 +33,8 @@ import (
 // server stores a parse tree and prints it back, so the declaration and the
 // catalog never agree as written (stokaro/ptah#1717). Without that spelling
 // they are written when the domain is created and never compared. A
-// composite type's attribute list is compared in order, by name without
-// regard to case and by type. A comment is compared only where the target
+// composite type's attribute list is compared in order, by case-sensitive name
+// and by type. A comment is compared only where the target
 // stores the kind's comment.
 //
 // The comparison does not create a type whose presence the read could not
@@ -158,7 +158,7 @@ func difference(caps capability.Capabilities, pair pair) schemaext.ChangeValue {
 		var differs []string
 		var added []pgtype.Attribute
 		var removed []string
-		if attributeList(declared.Attributes) != attributeList(held.Attributes) {
+		if !attributesEqual(declared.Attributes, held.Attributes) {
 			differs = append(differs, pgtype.DiffAttributes)
 			added, removed = pgtype.AttributeDelta(declared.Attributes, held.Attributes)
 		}
@@ -260,14 +260,12 @@ func commentDifference(differs []string, caps capability.Capabilities, key capab
 	return differs
 }
 
-// attributeList is a composite type's attributes as compared: each name in
-// lower case beside its canonical type, in order.
-func attributeList(attributes []pgtype.Attribute) string {
-	parts := make([]string, len(attributes))
-	for i, attribute := range attributes {
-		parts[i] = strings.ToLower(attribute.Name) + " " + pgtypealias.Canonical(attribute.Type)
-	}
-	return strings.Join(parts, ", ")
+// attributesEqual preserves attribute boundaries and catalog case. Quoted
+// names can contain spaces and commas, so joined text is not an identity.
+func attributesEqual(declared, held []pgtype.Attribute) bool {
+	return slices.EqualFunc(declared, held, func(a, b pgtype.Attribute) bool {
+		return a.Name == b.Name && pgtypealias.Canonical(a.Type) == pgtypealias.Canonical(b.Type)
+	})
 }
 
 // unknown reports knowledge that establishes neither presence nor absence.
