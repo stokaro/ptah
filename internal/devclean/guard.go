@@ -7,8 +7,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
+	"ptah.run/internal/devclean/replayguards"
 	"ptah.run/internal/devdocker"
-	"ptah.run/internal/lexer"
 )
 
 // ReplayGuard rejects migration statements whose effects cannot be confined to
@@ -16,6 +17,9 @@ import (
 type ReplayGuard struct {
 	info  catalog.ServerInfo
 	realm ReplayRealm
+	// guard is the replay guard of the connection's dialect, and nil for a
+	// dialect no engine guards.
+	guard replay.Guard
 	// remedy ends a refusal that [ReplayRealmServer] lifts; see
 	// [ReplayGuard.WithServerRealmRemedy].
 	remedy string
@@ -69,7 +73,7 @@ func (r ReplayRealm) ownsServer() bool {
 // NewReplayGuard creates a dialect-aware migration replay guard for a replay
 // confined to realm.
 func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
-	return &ReplayGuard{info: info, realm: realm}
+	return &ReplayGuard{info: info, realm: realm, guard: replayGuard(info.Dialect)}
 }
 
 // NewDevReplayGuard is the guard for statements a run executes on the dev
@@ -140,9 +144,9 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	if err == nil {
 		return nil
 	}
-	if unsafe, ok := errors.AsType[*unsafeStatementError](err); ok && g.baseline {
+	if unsafe, ok := errors.AsType[*replay.Refusal](err); ok && g.baseline {
 		refusal := *unsafe
-		refusal.baseline = true
+		refusal.Baseline = true
 		err = &refusal
 	}
 	return g.withRemedy(stmt, err)
@@ -163,195 +167,38 @@ func (g *ReplayGuard) withRemedy(stmt string, err error) error {
 	return err
 }
 
-// validate is [ReplayGuard.ValidateStatement] for one realm.
+// validate is [ReplayGuard.ValidateStatement] for one realm. It asks the
+// guard of the connection's dialect, and refuses a dialect no engine guards.
 func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
-	dialect := platform.NormalizeDialect(g.info.Dialect)
-	if dialect == platform.MySQL || dialect == platform.MariaDB {
-		if err := rejectMySQLExecutableComments(dialect, stmt); err != nil {
-			return err
-		}
-	}
-	tokens := significantTokens(stmt, replayLexerOptions(dialect))
-	switch dialect {
-	case platform.SQLite:
-		return validateSQLiteReplayStatement(tokens)
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		if realm.ownsServer() && postgresServerWideOperation(tokens, realm) != "" {
-			return validatePostgresServerWideStatement(dialect, tokens)
-		}
-		return validatePostgresReplayStatement(dialect, tokens)
-	case platform.MySQL, platform.MariaDB:
-		if realm.ownsServer() && mysqlServerWideOperation(tokens) != "" {
-			return nil
-		}
-		if realm == ReplayRealmServerDatabases && mysqlDatabaseOperation(tokens) {
-			return nil
-		}
-		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, realm)
-	case platform.SQLServer:
-		return validateSQLServerReplayStatement(tokens)
-	case platform.ClickHouse:
-		return validateClickHouseReplayStatement(g.info.Schema, tokens)
-	case platform.YDB:
-		return validateYDBReplayStatement(tokens, realm)
-	default:
+	if g.guard == nil {
 		unsupportedDialect := strings.TrimSpace(g.info.Dialect)
 		if unsupportedDialect == "" {
 			unsupportedDialect = "unknown"
 		}
-		return unsafeReplayStatement(unsupportedDialect, "unsupported dialect")
+		return replay.Refuse(unsupportedDialect, "unsupported dialect")
 	}
+	return g.guard.Validate(stmt, realm.scope(g.info.Schema))
 }
 
-func rejectMySQLExecutableComments(dialect, stmt string) error {
-	lex := lexer.NewLexerWithOptions(stmt, replayLexerOptions(dialect))
-	for {
-		token := lex.NextToken()
-		if token.Type == lexer.TokenEOF {
-			return nil
+// replayGuard returns the guard of the engine dialect names, folded through
+// platform.NormalizeDialect, and nil when no engine guards the dialect.
+func replayGuard(dialect string) replay.Guard {
+	name := platform.NormalizeDialect(dialect)
+	for _, service := range replayguards.All() {
+		if name != "" && service.Dialect == name {
+			return service.Guard
 		}
-		if token.Type != lexer.TokenComment {
-			continue
-		}
-		comment := strings.ToUpper(token.Value)
-		if strings.HasPrefix(comment, "/*!") || strings.HasPrefix(comment, "/*M!") {
-			return unsafeReplayStatement(dialect, "executable comment")
-		}
-	}
-}
-
-func validateSQLiteReplayStatement(tokens []lexer.Token) error {
-	if len(tokens) == 0 {
-		return nil
-	}
-
-	first := normalizedIdentifier(tokens[0])
-	switch first {
-	case "ATTACH", "DETACH":
-		return unsafeReplayStatement(platform.SQLite, first)
-	case "CREATE":
-		if createsSQLiteTemporaryObject(tokens) {
-			return unsafeReplayStatement(platform.SQLite, "TEMP object")
-		}
-	case "PRAGMA":
-		if !isRestorableSQLitePragma(tokens) {
-			return unsafeReplayStatement(platform.SQLite, "state-changing or unsupported PRAGMA")
-		}
-	case "VACUUM":
-		if containsIdentifier(tokens[1:], "INTO") {
-			return unsafeReplayStatement(platform.SQLite, "VACUUM INTO")
-		}
-	}
-
-	if containsIdentifier(tokens, "LOAD_EXTENSION") {
-		return unsafeReplayStatement(platform.SQLite, "load_extension")
-	}
-	if mutatesSQLiteRealm(first) && containsQualifiedIdentifier(tokens, "temp") {
-		return unsafeReplayStatement(platform.SQLite, "TEMP schema target")
 	}
 	return nil
 }
 
-func createsSQLiteTemporaryObject(tokens []lexer.Token) bool {
-	if len(tokens) < 2 {
-		return false
+// scope is what realm lets a statement change, on the dev connection that
+// selected database.
+func (r ReplayRealm) scope(database string) replay.Scope {
+	return replay.Scope{
+		Database:    database,
+		Server:      r.ownsServer(),
+		Provisioned: r == ReplayRealmProvisionedServer,
+		Databases:   r == ReplayRealmServerDatabases,
 	}
-	modifier := normalizedIdentifier(tokens[1])
-	return modifier == "TEMP" || modifier == "TEMPORARY"
-}
-
-func isRestorableSQLitePragma(tokens []lexer.Token) bool {
-	if len(tokens) < 2 {
-		return true
-	}
-	return normalizedIdentifier(tokens[1]) == "FOREIGN_KEYS"
-}
-
-func significantTokens(stmt string, opts lexer.Options) []lexer.Token {
-	lex := lexer.NewLexerWithOptions(stmt, opts)
-	var tokens []lexer.Token
-	for {
-		token := lex.NextToken()
-		switch token.Type {
-		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenSemicolon:
-			continue
-		case lexer.TokenEOF:
-			return tokens
-		default:
-			tokens = append(tokens, token)
-		}
-	}
-}
-
-func containsIdentifier(tokens []lexer.Token, value string) bool {
-	for _, token := range tokens {
-		if normalizedIdentifier(token) == value {
-			return true
-		}
-	}
-	return false
-}
-
-func containsQualifiedIdentifier(tokens []lexer.Token, value string) bool {
-	for index := range len(tokens) - 1 {
-		if normalizedIdentifier(tokens[index]) == strings.ToUpper(value) &&
-			tokens[index+1].MatchOperatorValue(".") {
-			return true
-		}
-	}
-	return false
-}
-
-func normalizedIdentifier(token lexer.Token) string {
-	value := token.Value
-	switch token.Type {
-	case lexer.TokenIdentifier:
-	case lexer.TokenString:
-	default:
-		return ""
-	}
-	value = strings.TrimPrefix(value, "`")
-	value = strings.TrimSuffix(value, "`")
-	value = strings.TrimPrefix(value, `"`)
-	value = strings.TrimSuffix(value, `"`)
-	value = strings.TrimPrefix(value, "'")
-	value = strings.TrimSuffix(value, "'")
-	value = strings.TrimPrefix(value, "[")
-	value = strings.TrimSuffix(value, "]")
-	value = strings.ReplaceAll(value, "``", "`")
-	value = strings.ReplaceAll(value, `""`, `"`)
-	value = strings.ReplaceAll(value, "''", "'")
-	value = strings.ReplaceAll(value, "]]", "]")
-	return strings.ToUpper(value)
-}
-
-func mutatesSQLiteRealm(first string) bool {
-	switch first {
-	case "ALTER", "CREATE", "DELETE", "DROP", "INSERT", "PRAGMA", "REINDEX",
-		"REPLACE", "UPDATE", "VACUUM":
-		return true
-	default:
-		return false
-	}
-}
-
-func unsafeReplayStatement(dialect, operation string) error {
-	return &unsafeStatementError{dialect: dialect, operation: operation}
-}
-
-// unsafeStatementError is the refusal of one statement: the dialect, and the
-// operation whose effects cannot be confined. The baseline guard words the
-// same refusal as its own; see [BaselineGuard.ValidateStatement].
-type unsafeStatementError struct {
-	dialect, operation string
-	baseline           bool
-}
-
-func (e *unsafeStatementError) Error() string {
-	if e.baseline {
-		return fmt.Sprintf("%s rehearsal baseline refuses %s because its effects cannot be confined to the dev database realm",
-			e.dialect, e.operation)
-	}
-	return fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
-		e.dialect, e.operation)
 }

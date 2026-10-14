@@ -1,10 +1,11 @@
-package devclean
+package clickhousereplay
 
 import (
 	"fmt"
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 )
 
@@ -13,16 +14,16 @@ func validateClickHouseReplayStatement(database string, tokens []lexer.Token) er
 		return nil
 	}
 	if containsClickHouseKeywordSequence(tokens, "PARALLEL", "WITH") {
-		return unsafeReplayStatement(platform.ClickHouse, "PARALLEL WITH")
+		return replay.Refuse(platform.ClickHouse, "PARALLEL WITH")
 	}
 	if err := rejectClickHouseGlobalMutation(tokens); err != nil {
 		return err
 	}
 	if source := unsafeClickHouseDictionarySource(tokens); source != "" {
-		return unsafeReplayStatement(platform.ClickHouse, source+" dictionary source")
+		return replay.Refuse(platform.ClickHouse, source+" dictionary source")
 	}
 	if engine := unconfinedClickHouseEngine(tokens); engine != "" {
-		return unsafeReplayStatement(platform.ClickHouse, engine+" table engine")
+		return replay.Refuse(platform.ClickHouse, engine+" table engine")
 	}
 	if err := validateClickHouseReplayStatementBase(database, tokens); err != nil {
 		return err
@@ -34,23 +35,23 @@ func validateClickHouseReplayStatement(database string, tokens []lexer.Token) er
 }
 
 func unconfinedClickHouseEngine(tokens []lexer.Token) string {
-	if normalizedIdentifier(tokens[0]) != "CREATE" || usesTemporaryObject(tokens) {
+	if replay.NormalizedIdentifier(tokens[0]) != "CREATE" || replay.UsesTemporaryObject(tokens) {
 		return ""
 	}
-	kindIndex := statementObjectKindIndex(tokens)
-	if kindIndex == mutationTargetNotFound ||
-		!isClickHouseTableLikeKind(normalizedIdentifier(tokens[kindIndex])) {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound ||
+		!isClickHouseTableLikeKind(replay.NormalizedIdentifier(tokens[kindIndex])) {
 		return ""
 	}
-	engine, assigned := topLevelValueAfterKeyword(
+	engine, assigned := replay.TopLevelValueAfterKeyword(
 		tokens,
 		"ENGINE",
-		objectNameIndex(tokens, kindIndex)+1,
+		replay.ObjectNameIndex(tokens, kindIndex)+1,
 	)
 	if !assigned || engine == "" {
-		if normalizedIdentifier(tokens[kindIndex]) == "TABLE" ||
-			normalizedIdentifier(tokens[kindIndex]) == "MATERIALIZED" &&
-				!containsIdentifier(tokens, "TO") {
+		if replay.NormalizedIdentifier(tokens[kindIndex]) == "TABLE" ||
+			replay.NormalizedIdentifier(tokens[kindIndex]) == "MATERIALIZED" &&
+				!replay.ContainsIdentifier(tokens, "TO") {
 			return "implicit/default"
 		}
 		return ""
@@ -62,15 +63,15 @@ func unconfinedClickHouseEngine(tokens []lexer.Token) string {
 }
 
 func unsafeClickHouseDictionarySource(tokens []lexer.Token) string {
-	if !isDDLAction(tokens) {
+	if !replay.IsDDLAction(tokens) {
 		return ""
 	}
-	kindIndex := statementObjectKindIndex(tokens)
-	if kindIndex == mutationTargetNotFound ||
-		normalizedIdentifier(tokens[kindIndex]) != "DICTIONARY" {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound ||
+		replay.NormalizedIdentifier(tokens[kindIndex]) != "DICTIONARY" {
 		return ""
 	}
-	source := clickHouseDictionarySource(tokens, objectNameIndex(tokens, kindIndex)+1)
+	source := clickHouseDictionarySource(tokens, replay.ObjectNameIndex(tokens, kindIndex)+1)
 	if source == "" || source == "NULL" {
 		return ""
 	}
@@ -85,13 +86,13 @@ func clickHouseDictionarySource(tokens []lexer.Token, start int) string {
 			depth++
 		case tokens[index].MatchOperatorValue(")"):
 			depth = max(depth-1, 0)
-		case depth == 0 && normalizedIdentifier(tokens[index]) == "SOURCE":
+		case depth == 0 && replay.NormalizedIdentifier(tokens[index]) == "SOURCE":
 			index++
 			if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
 				index++
 			}
 			if index < len(tokens) {
-				return normalizedIdentifier(tokens[index])
+				return replay.NormalizedIdentifier(tokens[index])
 			}
 			return ""
 		}
@@ -125,26 +126,26 @@ func isConfinedClickHouseEngine(engine string) bool {
 }
 
 func rejectClickHouseGlobalMutation(tokens []lexer.Token) error {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "GRANT", "REVOKE":
-		return unsafeReplayStatement(platform.ClickHouse, first+" RBAC change")
+		return replay.Refuse(platform.ClickHouse, first+" RBAC change")
 	case "ATTACH", "DETACH", "UNDROP", "BACKUP", "RESTORE":
-		return unsafeReplayStatement(platform.ClickHouse, first)
+		return replay.Refuse(platform.ClickHouse, first)
 	case "ALTER":
 		if clickHouseHasPersistentSnapshotAction(tokens) {
-			return unsafeReplayStatement(platform.ClickHouse, "persistent table snapshot")
+			return replay.Refuse(platform.ClickHouse, "persistent table snapshot")
 		}
 	case "SET":
 		if clickHouseKeywordSequenceAt(tokens, 1, "ROLE") ||
 			clickHouseKeywordSequenceAt(tokens, 1, "DEFAULT", "ROLE") {
-			return unsafeReplayStatement(platform.ClickHouse, "role change")
+			return replay.Refuse(platform.ClickHouse, "role change")
 		}
 	case "TRUNCATE":
 		if clickHouseKeywordSequenceAt(tokens, 1, "DATABASE") ||
 			clickHouseKeywordSequenceAt(tokens, 1, "ALL") ||
 			clickHouseKeywordSequenceAt(tokens, 1, "TABLES") {
-			return unsafeReplayStatement(platform.ClickHouse, "database-wide TRUNCATE")
+			return replay.Refuse(platform.ClickHouse, "database-wide TRUNCATE")
 		}
 	}
 	return nil
@@ -154,9 +155,9 @@ func clickHouseHasPersistentSnapshotAction(tokens []lexer.Token) bool {
 	if !clickHouseKeywordSequenceAt(tokens, 0, "ALTER", "TABLE") {
 		return false
 	}
-	_, index := qualifiedIdentifierAt(tokens, 2)
+	_, index := replay.QualifiedIdentifierAt(tokens, 2)
 	if clickHouseKeywordSequenceAt(tokens, index, "ON", "CLUSTER") {
-		_, index = qualifiedIdentifierAt(tokens, index+2)
+		_, index = replay.QualifiedIdentifierAt(tokens, index+2)
 	}
 	expectAction := true
 	depth := 0
@@ -181,11 +182,11 @@ func clickHouseHasPersistentSnapshotAction(tokens []lexer.Token) bool {
 
 func validateClickHouseInsertTarget(database string, tokens []lexer.Token) error {
 	insertIndex := clickHouseInsertIndex(tokens)
-	if insertIndex == mutationTargetNotFound {
+	if insertIndex == replay.MutationTargetNotFound {
 		return nil
 	}
 	intoIndex := findClickHouseKeyword(tokens, "INTO", insertIndex+1)
-	if intoIndex == mutationTargetNotFound {
+	if intoIndex == replay.MutationTargetNotFound {
 		return nil
 	}
 
@@ -194,9 +195,9 @@ func validateClickHouseInsertTarget(database string, tokens []lexer.Token) error
 		targetIndex++
 	}
 	if clickHouseKeywordSequenceAt(tokens, targetIndex, "FUNCTION") {
-		return unsafeReplayStatement(platform.ClickHouse, "table-function write")
+		return replay.Refuse(platform.ClickHouse, "table-function write")
 	}
-	target, _ := qualifiedIdentifierAt(tokens, targetIndex)
+	target, _ := replay.QualifiedIdentifierAt(tokens, targetIndex)
 	return rejectClickHouseCrossDatabaseTarget(database, target)
 }
 
@@ -205,13 +206,13 @@ func clickHouseInsertIndex(tokens []lexer.Token) int {
 		return 0
 	}
 	if !clickHouseKeywordSequenceAt(tokens, 0, "WITH") {
-		return mutationTargetNotFound
+		return replay.MutationTargetNotFound
 	}
 	return findTopLevelClickHouseKeyword(tokens, "INSERT", 1)
 }
 
 func validateClickHouseSecondaryTargets(database string, tokens []lexer.Token) error {
-	switch normalizedIdentifier(tokens[0]) {
+	switch replay.NormalizedIdentifier(tokens[0]) {
 	case "RENAME":
 		return validateClickHouseRenameTargets(database, tokens)
 	case "EXCHANGE":
@@ -232,14 +233,14 @@ func validateClickHouseRenameTargets(database string, tokens []lexer.Token) erro
 		index++
 	}
 	for index < len(tokens) {
-		source, next := qualifiedIdentifierAt(tokens, index)
+		source, next := replay.QualifiedIdentifierAt(tokens, index)
 		if err := rejectClickHouseCrossDatabaseTarget(database, source); err != nil {
 			return err
 		}
 		if !clickHouseKeywordSequenceAt(tokens, next, "TO") {
 			return nil
 		}
-		destination, next := qualifiedIdentifierAt(tokens, next+1)
+		destination, next := replay.QualifiedIdentifierAt(tokens, next+1)
 		if err := rejectClickHouseCrossDatabaseTarget(database, destination); err != nil {
 			return err
 		}
@@ -259,14 +260,14 @@ func validateClickHouseExchangeTargets(database string, tokens []lexer.Token) er
 		index++
 	}
 	for index < len(tokens) {
-		left, next := qualifiedIdentifierAt(tokens, index)
+		left, next := replay.QualifiedIdentifierAt(tokens, index)
 		if err := rejectClickHouseCrossDatabaseTarget(database, left); err != nil {
 			return err
 		}
 		if !clickHouseKeywordSequenceAt(tokens, next, "AND") {
 			return nil
 		}
-		right, next := qualifiedIdentifierAt(tokens, next+1)
+		right, next := replay.QualifiedIdentifierAt(tokens, next+1)
 		if err := rejectClickHouseCrossDatabaseTarget(database, right); err != nil {
 			return err
 		}
@@ -284,7 +285,7 @@ func validateClickHouseMovePartitionTarget(database string, tokens []lexer.Token
 		if !clickHouseKeywordSequenceAt(tokens, index, "TO", "TABLE") {
 			continue
 		}
-		target, _ := qualifiedIdentifierAt(tokens, index+2)
+		target, _ := replay.QualifiedIdentifierAt(tokens, index+2)
 		if err := rejectClickHouseCrossDatabaseTarget(database, target); err != nil {
 			return err
 		}
@@ -293,24 +294,24 @@ func validateClickHouseMovePartitionTarget(database string, tokens []lexer.Token
 }
 
 func validateClickHouseViewTarget(database string, tokens []lexer.Token) error {
-	kindIndex := statementObjectKindIndex(tokens)
-	if kindIndex == mutationTargetNotFound ||
-		!isClickHouseTargetViewKind(normalizedIdentifier(tokens[kindIndex])) {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound ||
+		!isClickHouseTargetViewKind(replay.NormalizedIdentifier(tokens[kindIndex])) {
 		return nil
 	}
 
-	nameIndex := objectNameIndex(tokens, kindIndex)
-	_, searchStart := qualifiedIdentifierAt(tokens, nameIndex)
+	nameIndex := replay.ObjectNameIndex(tokens, kindIndex)
+	_, searchStart := replay.QualifiedIdentifierAt(tokens, nameIndex)
 	asIndex := findClickHouseKeyword(tokens, "AS", searchStart)
 	searchEnd := len(tokens)
-	if asIndex != mutationTargetNotFound {
+	if asIndex != replay.MutationTargetNotFound {
 		searchEnd = asIndex
 	}
 	for index := searchStart; index < searchEnd; index++ {
 		if !clickHouseKeywordSequenceAt(tokens, index, "TO") {
 			continue
 		}
-		target, _ := qualifiedIdentifierAt(tokens, index+1)
+		target, _ := replay.QualifiedIdentifierAt(tokens, index+1)
 		return rejectClickHouseCrossDatabaseTarget(database, target)
 	}
 	return nil
@@ -330,12 +331,12 @@ func rejectClickHouseCrossDatabaseTarget(database string, target []string) error
 		return nil
 	}
 	if strings.TrimSpace(database) == "" {
-		return unsafeReplayStatement(platform.ClickHouse, "qualified target without a configured database")
+		return replay.Refuse(platform.ClickHouse, "qualified target without a configured database")
 	}
 	if target[0] == database {
 		return nil
 	}
-	return unsafeReplayStatement(
+	return replay.Refuse(
 		platform.ClickHouse,
 		fmt.Sprintf("cross-database target %q", strings.Join(target, ".")),
 	)
@@ -356,7 +357,7 @@ func clickHouseKeywordSequenceAt(tokens []lexer.Token, index int, values ...stri
 	}
 	for offset, value := range values {
 		token := tokens[index+offset]
-		if token.Type != lexer.TokenIdentifier || normalizedIdentifier(token) != value {
+		if token.Type != lexer.TokenIdentifier || replay.NormalizedIdentifier(token) != value {
 			return false
 		}
 	}
@@ -369,7 +370,7 @@ func findClickHouseKeyword(tokens []lexer.Token, value string, start int) int {
 			return index
 		}
 	}
-	return mutationTargetNotFound
+	return replay.MutationTargetNotFound
 }
 
 func findTopLevelClickHouseKeyword(tokens []lexer.Token, value string, start int) int {
@@ -387,5 +388,5 @@ func findTopLevelClickHouseKeyword(tokens []lexer.Token, value string, start int
 			return index
 		}
 	}
-	return mutationTargetNotFound
+	return replay.MutationTargetNotFound
 }

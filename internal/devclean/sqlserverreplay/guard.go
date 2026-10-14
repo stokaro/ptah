@@ -1,7 +1,8 @@
-package devclean
+package sqlserverreplay
 
 import (
 	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 )
 
@@ -17,69 +18,69 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 	replayTokens := tokens
 	tokens = sqlServerExecutableTokens(tokens)
 
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "EXEC" || first == "EXECUTE" {
-		return unsafeReplayStatement(platform.SQLServer, "EXEC/EXECUTE sublanguage")
+		return replay.Refuse(platform.SQLServer, "EXEC/EXECUTE sublanguage")
 	}
 	if operation := sqlServerExternalOrServerOperation(tokens); operation != "" {
-		return unsafeReplayStatement(platform.SQLServer, operation)
+		return replay.Refuse(platform.SQLServer, operation)
 	}
 	if first == "GRANT" || first == "DENY" || first == "REVOKE" {
-		return unsafeReplayStatement(platform.SQLServer, "permission mutation")
+		return replay.Refuse(platform.SQLServer, "permission mutation")
 	}
 	if sqlServerHasGlobalScope(tokens) {
-		return unsafeReplayStatement(platform.SQLServer, "ON SERVER or ON ALL SERVER")
+		return replay.Refuse(platform.SQLServer, "ON SERVER or ON ALL SERVER")
 	}
 	if sqlServerHasDatabaseTriggerScope(tokens) {
-		return unsafeReplayStatement(
+		return replay.Refuse(
 			platform.SQLServer,
 			first+" DATABASE DDL TRIGGER",
 		)
 	}
 	if sqlServerDefinesExecutableBody(tokens) {
-		return unsafeReplayStatement(platform.SQLServer, first+" executable stored body")
+		return replay.Refuse(platform.SQLServer, first+" executable stored body")
 	}
 	if sqlServerSelectIntoEscapesRealm(tokens) {
-		return unsafeReplayStatement(platform.SQLServer, "cross-database SELECT INTO")
+		return replay.Refuse(platform.SQLServer, "cross-database SELECT INTO")
 	}
 	if sqlServerSelectIntoTemporaryObject(tokens) {
-		return unsafeReplayStatement(platform.SQLServer, "temporary SELECT INTO target")
+		return replay.Refuse(platform.SQLServer, "temporary SELECT INTO target")
 	}
 	destination := sqlServerMutationRowsetDestination(tokens)
 	if destination == "" {
 		destination = sqlServerMutationRowsetCTEDestination(replayTokens, tokens)
 	}
 	if destination != "" {
-		return unsafeReplayStatement(
+		return replay.Refuse(
 			platform.SQLServer,
 			destination+" mutation destination",
 		)
 	}
 	if sqlServerExternalTableWritesData(tokens) {
-		return unsafeReplayStatement(
+		return replay.Refuse(
 			platform.SQLServer,
 			"CREATE EXTERNAL TABLE AS SELECT",
 		)
 	}
 	if sqlServerRejectsExternalTableDDL(tokens) {
-		return unsafeReplayStatement(platform.SQLServer, first+" EXTERNAL TABLE")
+		return replay.Refuse(platform.SQLServer, first+" EXTERNAL TABLE")
 	}
 	if sqlServerEnablesLedger(tokens) {
-		return unsafeReplayStatement(platform.SQLServer, "LEDGER table")
+		return replay.Refuse(platform.SQLServer, "LEDGER table")
 	}
 	if operation := sqlServerUnsupportedRealmOperation(tokens); operation != "" {
-		return unsafeReplayStatement(platform.SQLServer, operation)
+		return replay.Refuse(platform.SQLServer, operation)
 	}
 	return nil
 }
 
 func sqlServerRejectsExternalTableDDL(tokens []lexer.Token) bool {
-	return normalizedIdentifier(tokens[0]) != "DROP" &&
+	return replay.NormalizedIdentifier(tokens[0]) != "DROP" &&
 		sqlServerDDLStartsWith(tokens, "EXTERNAL", "TABLE")
 }
 
 func sqlServerExternalOrServerOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "BACKUP", "RESTORE":
 		return first + " external storage operation"
@@ -98,7 +99,7 @@ func sqlServerExternalOrServerOperation(tokens []lexer.Token) string {
 }
 
 func sqlServerDefinesExecutableBody(tokens []lexer.Token) bool {
-	if normalizedIdentifier(tokens[0]) == "DROP" &&
+	if replay.NormalizedIdentifier(tokens[0]) == "DROP" &&
 		sqlServerDDLStartsWith(tokens, "FUNCTION") {
 		return false
 	}
@@ -136,7 +137,7 @@ func sqlServerTriggerStatement(tokens []lexer.Token) bool {
 	if len(tokens) < 2 {
 		return false
 	}
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	return (first == "ENABLE" || first == "DISABLE") &&
 		sqlServerKeywordSequenceAt(tokens, 1, "TRIGGER")
 }
@@ -180,27 +181,27 @@ func sqlServerSelectIntoTemporaryObject(tokens []lexer.Token) bool {
 	if targetIndex < 0 || targetIndex >= len(tokens) {
 		return false
 	}
-	target := normalizedIdentifier(tokens[targetIndex])
+	target := replay.NormalizedIdentifier(tokens[targetIndex])
 	return len(target) > 0 && target[0] == '#'
 }
 
 func sqlServerSelectIntoTargetIndex(tokens []lexer.Token) int {
 	if len(tokens) == 0 {
-		return mutationTargetNotFound
+		return replay.MutationTargetNotFound
 	}
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if first != "SELECT" && first != "WITH" {
-		return mutationTargetNotFound
+		return replay.MutationTargetNotFound
 	}
 	intoIndex := sqlServerFindKeyword(tokens, "INTO", 1)
-	if intoIndex == mutationTargetNotFound {
-		return mutationTargetNotFound
+	if intoIndex == replay.MutationTargetNotFound {
+		return replay.MutationTargetNotFound
 	}
 	return intoIndex + 1
 }
 
 func sqlServerQualifiedNameArityAt(tokens []lexer.Token, index int) int {
-	if index < 0 || index >= len(tokens) || identifierValue(tokens[index]) == "" {
+	if index < 0 || index >= len(tokens) || replay.IdentifierValue(tokens[index]) == "" {
 		return 0
 	}
 	arity := 1
@@ -208,7 +209,7 @@ func sqlServerQualifiedNameArityAt(tokens []lexer.Token, index int) int {
 	for index < len(tokens) && tokens[index].MatchOperatorValue(".") {
 		arity++
 		index++
-		if index < len(tokens) && identifierValue(tokens[index]) != "" {
+		if index < len(tokens) && replay.IdentifierValue(tokens[index]) != "" {
 			index++
 		}
 	}
@@ -217,7 +218,7 @@ func sqlServerQualifiedNameArityAt(tokens []lexer.Token, index int) int {
 
 func sqlServerMutationRowsetDestination(tokens []lexer.Token) string {
 	index := sqlServerMutationDestinationIndex(tokens)
-	if index == mutationTargetNotFound {
+	if index == replay.MutationTargetNotFound {
 		return ""
 	}
 	if destination := sqlServerRowsetFunctionAt(tokens, index); destination != "" {
@@ -243,16 +244,16 @@ func sqlServerRowsetFunctionAt(tokens []lexer.Token, index int) string {
 }
 
 func sqlServerMutationRowsetAliasDestination(tokens []lexer.Token, targetIndex int) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if first != "UPDATE" && first != "DELETE" {
 		return ""
 	}
 	if targetIndex+1 < len(tokens) && tokens[targetIndex+1].MatchOperatorValue(".") {
 		return ""
 	}
-	target := normalizedIdentifier(tokens[targetIndex])
+	target := replay.NormalizedIdentifier(tokens[targetIndex])
 	fromIndex := sqlServerFindKeyword(tokens, "FROM", targetIndex+1)
-	if target == "" || fromIndex == mutationTargetNotFound {
+	if target == "" || fromIndex == replay.MutationTargetNotFound {
 		return ""
 	}
 	for index := fromIndex + 1; index < len(tokens); index++ {
@@ -265,7 +266,7 @@ func sqlServerMutationRowsetAliasDestination(tokens []lexer.Token, targetIndex i
 			aliasIndex++
 		}
 		if aliasIndex < len(tokens) &&
-			normalizedIdentifier(tokens[aliasIndex]) == target {
+			replay.NormalizedIdentifier(tokens[aliasIndex]) == target {
 			return destination
 		}
 	}
@@ -282,19 +283,19 @@ func sqlServerMutationRowsetCTEDestination(
 		return ""
 	}
 	targetIndex := sqlServerMutationDestinationIndex(executableTokens)
-	if targetIndex == mutationTargetNotFound ||
+	if targetIndex == replay.MutationTargetNotFound ||
 		targetIndex+1 < len(executableTokens) &&
 			executableTokens[targetIndex+1].MatchOperatorValue(".") {
 		return ""
 	}
-	target := normalizedIdentifier(executableTokens[targetIndex])
+	target := replay.NormalizedIdentifier(executableTokens[targetIndex])
 	definitionTokens := replayTokens[:len(replayTokens)-len(executableTokens)]
 	return sqlServerCTERowsetDefinition(definitionTokens, target)
 }
 
 func sqlServerCTERowsetDefinition(tokens []lexer.Token, target string) string {
 	for index := 1; index < len(tokens); {
-		name := normalizedIdentifier(tokens[index])
+		name := replay.NormalizedIdentifier(tokens[index])
 		index++
 		if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
 			index = skipSQLServerParenthesized(tokens, index)
@@ -334,7 +335,7 @@ func sqlServerFindKeyword(tokens []lexer.Token, value string, start int) int {
 			return index
 		}
 	}
-	return mutationTargetNotFound
+	return replay.MutationTargetNotFound
 }
 
 func sqlServerContainsKeywordSequence(tokens []lexer.Token, values ...string) bool {
@@ -359,7 +360,7 @@ func sqlServerKeywordSequenceAt(tokens []lexer.Token, index int, values ...strin
 }
 
 func sqlServerDDLStartsWith(tokens []lexer.Token, values ...string) bool {
-	if !isDDLAction(tokens) {
+	if !replay.IsDDLAction(tokens) {
 		return false
 	}
 	index := 1
@@ -371,10 +372,10 @@ func sqlServerDDLStartsWith(tokens []lexer.Token, values ...string) bool {
 
 func sqlServerMutationDestinationIndex(tokens []lexer.Token) int {
 	if len(tokens) == 0 {
-		return mutationTargetNotFound
+		return replay.MutationTargetNotFound
 	}
 	index := skipSQLServerTopClause(tokens, 1)
-	switch normalizedIdentifier(tokens[0]) {
+	switch replay.NormalizedIdentifier(tokens[0]) {
 	case "INSERT", "MERGE":
 		if sqlServerKeywordSequenceAt(tokens, index, "INTO") {
 			index++
@@ -385,10 +386,10 @@ func sqlServerMutationDestinationIndex(tokens []lexer.Token) int {
 			index++
 		}
 	default:
-		return mutationTargetNotFound
+		return replay.MutationTargetNotFound
 	}
 	if index >= len(tokens) {
-		return mutationTargetNotFound
+		return replay.MutationTargetNotFound
 	}
 	return index
 }
@@ -460,10 +461,10 @@ func sqlServerEnablesLedger(tokens []lexer.Token) bool {
 }
 
 func sqlServerUnsupportedRealmOperation(tokens []lexer.Token) string {
-	if !isDDLAction(tokens) {
+	if !replay.IsDDLAction(tokens) {
 		return ""
 	}
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if sqlServerDDLStartsWith(tokens, "USER") ||
 		sqlServerDDLStartsWith(tokens, "ROLE") ||
 		sqlServerDDLStartsWith(tokens, "APPLICATION", "ROLE") {

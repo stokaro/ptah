@@ -1,10 +1,11 @@
-package devclean
+package ydbreplay
 
 import (
 	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 )
 
@@ -54,20 +55,20 @@ import (
 // A statement the guard does not recognize is refused, as an unknown
 // ClickHouse engine is.
 
-// validateYDBReplayStatement is [ReplayGuard.ValidateStatement] for YDB.
-func validateYDBReplayStatement(tokens []lexer.Token, realm ReplayRealm) error {
+// validateYDBReplayStatement is the replay guard of YDB statements.
+func validateYDBReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 	if tokens[0].Type == lexer.TokenUnknown && strings.HasPrefix(tokens[0].Value, "--!") {
 		// A translation setting changes how the rest of the text is read,
 		// which the reading below cannot follow.
-		return unsafeReplayStatement(platform.YDB, "translation setting "+tokens[0].Value)
+		return replay.Refuse(platform.YDB, "translation setting "+tokens[0].Value)
 	}
 	if operation := ydbBeyondTheServer(tokens); operation != "" {
-		return unsafeReplayStatement(platform.YDB, operation)
+		return replay.Refuse(platform.YDB, operation)
 	}
-	if realm.ownsServer() {
+	if scope.Server {
 		return nil
 	}
 	return validateYDBRealmStatement(tokens)
@@ -119,22 +120,22 @@ func validateYDBRealmStatement(tokens []lexer.Token) error {
 		return nil
 	case "PRAGMA":
 		if name := ydbPragmaName(tokens); strings.EqualFold(name, "TablePathPrefix") {
-			return unsafeReplayStatement(platform.YDB, "PRAGMA TablePathPrefix")
+			return replay.Refuse(platform.YDB, "PRAGMA TablePathPrefix")
 		}
 		return nil
 	case "USE":
-		return unsafeReplayStatement(platform.YDB, "USE")
+		return replay.Refuse(platform.YDB, "USE")
 	case "DEFINE":
 		if ydbKeywordAt(tokens, 1) == "SUBQUERY" {
 			return nil
 		}
-		return unsafeReplayStatement(platform.YDB, "DEFINE ACTION")
+		return replay.Refuse(platform.YDB, "DEFINE ACTION")
 	case "DO", "EVALUATE":
-		return unsafeReplayStatement(platform.YDB, first)
+		return replay.Refuse(platform.YDB, first)
 	case "GRANT", "REVOKE":
-		return unsafeReplayStatement(platform.YDB, first+" permission change")
+		return replay.Refuse(platform.YDB, first+" permission change")
 	case "BACKUP", "RESTORE":
-		return unsafeReplayStatement(platform.YDB, first)
+		return replay.Refuse(platform.YDB, first)
 	case "INSERT", "UPSERT", "REPLACE":
 		return ydbCheckTargetAfter(tokens, 1, "INTO")
 	case "UPDATE":
@@ -155,7 +156,7 @@ func validateYDBRealmStatement(tokens []lexer.Token) error {
 		// nothing; a write that uses it is judged by its own statement.
 		return nil
 	}
-	return unsafeReplayStatement(platform.YDB, "unrecognized statement "+strings.ToUpper(tokens[0].Value))
+	return replay.Refuse(platform.YDB, "unrecognized statement "+strings.ToUpper(tokens[0].Value))
 }
 
 // validateYDBObjectStatement refuses a CREATE, ALTER or DROP whose object the
@@ -175,14 +176,14 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 		// connection resolves against the realm's prefix as YDB resolves a
 		// table, and which the reset drops.
 		if ydbKeywordAt(tokens, kind+1) != "NODE" {
-			return unsafeReplayStatement(platform.YDB, "unrecognized object "+
+			return replay.Refuse(platform.YDB, "unrecognized object "+
 				strings.ToUpper(tokens[0].Value)+" COORDINATION "+strings.ToUpper(tokenValueAt(tokens, kind+1)))
 		}
 		return ydbCheckTarget(tokens, kind+2)
 	case "TEMP", "TEMPORARY":
-		return unsafeReplayStatement(platform.YDB, "temporary table")
+		return replay.Refuse(platform.YDB, "temporary table")
 	case "USER", "GROUP":
-		return unsafeReplayStatement(platform.YDB, "a "+strings.ToLower(ydbKeywordAt(tokens, kind))+
+		return replay.Refuse(platform.YDB, "a "+strings.ToLower(ydbKeywordAt(tokens, kind))+
 			" of the whole database")
 	case "SECRET":
 		// A secret is a path in the scheme tree: after the prefix, `CREATE
@@ -193,15 +194,15 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 		// CREATE OBJECT makes the deprecated secret object, which belongs to
 		// the user rather than to a path, and the other objects of the
 		// database's metadata service.
-		return unsafeReplayStatement(platform.YDB, "an object of the whole database")
+		return replay.Refuse(platform.YDB, "an object of the whole database")
 	case "RESOURCE":
-		return unsafeReplayStatement(platform.YDB, "a resource pool of the whole database")
+		return replay.Refuse(platform.YDB, "a resource pool of the whole database")
 	case "BACKUP":
-		return unsafeReplayStatement(platform.YDB, "a backup collection of the whole database")
+		return replay.Refuse(platform.YDB, "a backup collection of the whole database")
 	case "DATABASE":
-		return unsafeReplayStatement(platform.YDB, "a change to the whole database")
+		return replay.Refuse(platform.YDB, "a change to the whole database")
 	default:
-		return unsafeReplayStatement(platform.YDB, "unrecognized object "+
+		return replay.Refuse(platform.YDB, "unrecognized object "+
 			strings.ToUpper(tokens[0].Value)+" "+strings.ToUpper(tokenValueAt(tokens, kind)))
 	}
 }
@@ -238,7 +239,7 @@ func ydbCheckTargetAfter(tokens []lexer.Token, index int, keyword string) error 
 		return ydbKeyword(token) == keyword
 	})
 	if position < 0 {
-		return unsafeReplayStatement(platform.YDB, "a "+strings.ToUpper(tokens[0].Value)+" with no "+keyword+
+		return replay.Refuse(platform.YDB, "a "+strings.ToUpper(tokens[0].Value)+" with no "+keyword+
 			" the guard can read")
 	}
 	return ydbCheckTarget(tokens, index+position+1)
@@ -248,23 +249,23 @@ func ydbCheckTargetAfter(tokens []lexer.Token, index int, keyword string) error 
 // path inside the realm.
 func ydbCheckTarget(tokens []lexer.Token, index int) error {
 	if index >= len(tokens) {
-		return unsafeReplayStatement(platform.YDB, "a statement whose target the guard cannot read")
+		return replay.Refuse(platform.YDB, "a statement whose target the guard cannot read")
 	}
 	target := tokens[index]
 	switch {
 	case target.Type != lexer.TokenIdentifier:
-		return unsafeReplayStatement(platform.YDB, "a target written as "+target.Value)
+		return replay.Refuse(platform.YDB, "a target written as "+target.Value)
 	case strings.HasPrefix(target.Value, "$"):
-		return unsafeReplayStatement(platform.YDB, "a target named through "+target.Value)
+		return replay.Refuse(platform.YDB, "a target named through "+target.Value)
 	case index+1 < len(tokens) && (tokens[index+1].MatchOperatorValue(".") || tokens[index+1].MatchOperatorValue(":")):
-		return unsafeReplayStatement(platform.YDB, "a target in the cluster "+target.Value)
+		return replay.Refuse(platform.YDB, "a target in the cluster "+target.Value)
 	}
 	targetPath := ydbUnquote(target.Value)
 	if strings.HasPrefix(targetPath, "/") {
-		return unsafeReplayStatement(platform.YDB, "the absolute path "+targetPath)
+		return replay.Refuse(platform.YDB, "the absolute path "+targetPath)
 	}
 	if slices.Contains(strings.Split(targetPath, "/"), "..") {
-		return unsafeReplayStatement(platform.YDB, "the path "+targetPath+", which climbs out of the dev database")
+		return replay.Refuse(platform.YDB, "the path "+targetPath+", which climbs out of the dev database")
 	}
 	return nil
 }

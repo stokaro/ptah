@@ -1,4 +1,4 @@
-package devclean
+package sqlserverreplay
 
 // White-box testing required: the SQL Server replay policy is an internal
 // safety boundary whose token-level decisions are not observable through an
@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 )
 
@@ -554,5 +554,5 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 }
 
 func sqlServerReplayTokens(statement string) []lexer.Token {
-	return significantTokens(statement, replayLexerOptions(platform.SQLServer))
+	return replay.Tokens(statement, lexerOptions())
 }
