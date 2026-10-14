@@ -45,8 +45,11 @@ func checkTarget(ctx context.Context, target, stage string) error {
 //
 // The comparison does not create a type whose presence the read could not
 // establish, and reports it undecided instead: CREATE DOMAIN has no
-// conditional form a plan could fall back on. It does not drop a type the
-// desired source did not describe or asked to default.
+// conditional form a plan could fall back on. Nor does it create a type the
+// read found and could not describe, such as an object type with methods: CREATE
+// OR REPLACE TYPE would replace it with the declaration. A read's claim about
+// one type is matched under the comparison's identifier rules. It does not
+// drop a type the desired source did not describe or asked to default.
 type CompareService struct{}
 
 // CompareObjects returns one change per type that differs. Inputs remain
@@ -65,12 +68,13 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	claims := subjectClaims(request.Identifiers, request.Current.Coverage)
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
 		}
-		compare(request, pair, &result)
+		compare(request, claims, pair, &result)
 	}
 	return result, ctx.Err()
 }
@@ -98,7 +102,9 @@ func (p pair) ref() objectidentity.ID {
 	return p.observedRef
 }
 
-func compare(request schemaext.ObjectComparisonRequest, pair pair, result *schemaext.ObjectComparisonResult) {
+func compare(request schemaext.ObjectComparisonRequest, claims map[objectidentity.Key]schemaext.Knowledge, pair pair,
+	result *schemaext.ObjectComparisonResult,
+) {
 	ref := pair.ref()
 	kind := schemaext.Kind(ref.Kind)
 	switch {
@@ -107,10 +113,13 @@ func compare(request schemaext.ObjectComparisonRequest, pair pair, result *schem
 		// read recorded, so the creation reaches the plan, which refuses it
 		// by name. Oracle 21 has no CREATE DOMAIN, and its read asks nothing
 		// about domains.
-		current := request.Current.Coverage.Lookup(kind, ref)
+		current, claimed := claims[identityKey(request.Identifiers, ref)]
+		if !claimed {
+			current = request.Current.Coverage.Lookup(kind, ref)
+		}
 		if unknown(current) && request.Capabilities.Has(capabilityOf(kind)) {
 			result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: kind, Subject: ref,
-				Reason: fmt.Sprintf("whether the %s exists was not established: %s", Label(ref), current.Reason)})
+				Reason: undecidedReason(Label(ref), current)})
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: ref, Value: pair.creation()})
@@ -173,6 +182,30 @@ func (p pair) difference() schemaext.ChangeValue {
 		return nil
 	}
 	return &ObjectTypeChange{Before: p.observedObjectType, After: p.desiredObjectType, Differs: []string{DiffAttributes}}
+}
+
+// subjectClaims keys each claim the read made about one type by the type's
+// identity under the comparison's identifier rules, as the pairing keys the
+// types. A read names a type without its schema, and a declaration may name
+// the connection's schema; both name one type.
+func subjectClaims(semantics identifier.Semantics, coverage schemaext.Coverage) map[objectidentity.Key]schemaext.Knowledge {
+	claims := make(map[objectidentity.Key]schemaext.Knowledge)
+	for _, record := range coverage.SubjectRecords() {
+		if slices.Contains(Kinds(), record.Kind) && record.Subject.Kind == objectidentity.Kind(record.Kind) {
+			claims[identityKey(semantics, record.Subject)] = record.Knowledge
+		}
+	}
+	return claims
+}
+
+// undecidedReason says why the comparison cannot decide a declared type the
+// read did not describe: the read found it and cannot describe it, or it did
+// not establish whether the type exists.
+func undecidedReason(label string, knowledge schemaext.Knowledge) string {
+	if knowledge.State == schemaext.Unrepresentable {
+		return fmt.Sprintf("the %s exists and the read cannot describe it: %s", label, knowledge.Reason)
+	}
+	return fmt.Sprintf("whether the %s exists was not established: %s", label, knowledge.Reason)
 }
 
 // unknown reports knowledge that establishes neither presence nor absence.

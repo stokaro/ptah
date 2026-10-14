@@ -3,49 +3,40 @@ package oracle
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/feature/oratype"
 )
 
-// compositeQuery reads the object types this schema owns that Ptah's composite
-// model can describe.
+// compositeQuery reads the types this schema owns, one row per type, with the
+// facts that decide whether the object type model can describe it.
 //
-// The predicates are the model's limits written as SQL, and each one was
-// measured on 23.26.2.0.0 and 21.3.0.0.0:
+// The model describes an object type that is a list of attributes and nothing
+// else. Each of the other shapes was measured on 23.26.2.0.0 and 21.3.0.0.0:
 //
-//   - TYPECODE = 'OBJECT' keeps out the collection types (VARRAY, TABLE),
-//     which are a different shape with no field list.
-//   - METHODS = 0 keeps out an object type with behavior.
+//   - TYPECODE other than OBJECT is a collection type (VARRAY, TABLE), a
+//     different shape with no field list.
+//   - METHODS above 0 is an object type with behavior.
 //     `CREATE TYPE m AS OBJECT (a NUMBER, MEMBER FUNCTION doubled RETURN NUMBER)`
 //     reports METHODS = 1, and describing it as its attributes alone would say
 //     a replay produces the same type when it produces one that has lost its
 //     methods.
-//   - SUPERTYPE_NAME IS NULL keeps out a subtype, whose full attribute list is
-//     its parent's plus its own and whose declaration is UNDER rather than AS.
-//   - INCOMPLETE = 'NO' keeps out the shells. PostgreSQL's own spelling,
+//   - SUPERTYPE_NAME is a subtype, whose full attribute list is its parent's
+//     plus its own and whose declaration is UNDER rather than AS.
+//   - INCOMPLETE = 'YES' is a shell. PostgreSQL's own spelling,
 //     `CREATE TYPE t AS (a NUMBER)`, is ACCEPTED here and leaves exactly that:
 //     ATTRIBUTES 0, INCOMPLETE YES, and USER_OBJECTS reporting INVALID.
 //
-// The last predicate overlaps [Reader.readComposites]'s own guard on an empty
-// attribute list, and that is said here rather than left for the next reader to
-// discover: measured on 23.26.2.0.0, EVERY incomplete type reports ATTRIBUTES 0
-// and has no ALL_TYPE_ATTRS row -- a forward declaration `CREATE TYPE t;`, a
-// body naming a type that does not exist, and a body where only one attribute
-// does. So neither rule can be observed without the other today. Both are kept
-// because they answer different questions: this one is about what the type IS,
-// the other about what the read FOUND, and a catalog that ever reports an
-// attribute for an incomplete type would otherwise turn a shell into a
-// described composite.
+// Every such type is read rather than filtered out in SQL, because the read
+// records it: a type the read leaves out is one the schema does not have, and
+// a declaration of that name would plan a CREATE OR REPLACE TYPE over it.
 const compositeQuery = `
-SELECT t.type_name
+SELECT t.type_name, t.typecode, t.methods, t.supertype_name, t.incomplete
 FROM all_types t
 WHERE t.owner = :1
-  AND t.typecode = 'OBJECT'
-  AND t.methods = 0
-  AND t.supertype_name IS NULL
-  AND t.incomplete = 'NO'
 ORDER BY t.type_name`
 
 // compositeAttributeQuery reads the attributes of this schema's object catalog.
@@ -62,11 +53,15 @@ ORDER BY a.type_name, a.attr_no`
 // readComposites reads the schema's object types into db as the Oracle type
 // owner's observations, with the knowledge that the read looked.
 //
-// A type whose attributes this read finds none of is left out rather than
-// described as empty: the query above already excludes the incomplete shells,
-// so an object type with no attribute row is one the attribute read could not
-// see, and describing it as a type with no attributes would plan a
-// CREATE OR REPLACE that empties it.
+// A type the model cannot describe is recorded as unrepresentable rather than
+// left out, and so is an object type whose attributes this read finds none of.
+// Measured on 23.26.2.0.0, every incomplete type reports ATTRIBUTES 0 and has
+// no ALL_TYPE_ATTRS row -- a forward declaration `CREATE TYPE t;`, a body
+// naming a type that does not exist, and a body where only one attribute does
+// -- so the two rules overlap today. Both are kept because they answer
+// different questions: one is about what the type IS, the other about what the
+// read FOUND, and describing a type with no attributes would plan a CREATE OR
+// REPLACE that empties it.
 func (r *Reader) readComposites(ctx context.Context, db *catalog.Database) error {
 	attributes, err := r.readCompositeAttributes(ctx)
 	if err != nil {
@@ -80,16 +75,24 @@ func (r *Reader) readComposites(ctx context.Context, db *catalog.Database) error
 	defer rows.Close()
 
 	objects := db.FeatureObjects
+	var limits []schemaext.SubjectCoverage
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var (
+			name                            string
+			typeCode, supertype, incomplete sql.NullString
+			methods                         sql.NullInt64
+		)
+		if err := rows.Scan(&name, &typeCode, &methods, &supertype, &incomplete); err != nil {
 			return err
 		}
-		if len(attributes[name]) == 0 {
+		ref := oratype.Ref(oratype.ObjectTypeKind, "", name)
+		shape := typeShape{code: typeCode.String, methods: methods.Int64, supertype: supertype.String,
+			incomplete: incomplete.String, attributes: len(attributes[name])}
+		if reason := shape.undescribed(); reason != "" {
+			limits = append(limits, unrepresentable(oratype.ObjectTypeKind, ref, reason))
 			continue
 		}
-		object, err := oratype.ObservedObject(oratype.Ref(oratype.ObjectTypeKind, "", name),
-			&oratype.ObservedObjectType{Attributes: attributes[name]})
+		object, err := oratype.ObservedObject(ref, &oratype.ObservedObjectType{Attributes: attributes[name]})
 		if err != nil {
 			return err
 		}
@@ -100,7 +103,35 @@ func (r *Reader) readComposites(ctx context.Context, db *catalog.Database) error
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	return recordTypes(db, objects, oratype.ObjectTypeKind)
+	return recordTypes(db, objects, oratype.ObjectTypeKind, limits)
+}
+
+// typeShape is what ALL_TYPES reports about a type, and the number of
+// attributes the attribute read returned for it.
+type typeShape struct {
+	code       string
+	methods    int64
+	supertype  string
+	incomplete string
+	attributes int
+}
+
+// undescribed says why the object type model cannot describe the type, or is
+// empty for one it can.
+func (s typeShape) undescribed() string {
+	switch {
+	case !strings.EqualFold(strings.TrimSpace(s.code), "OBJECT"):
+		return fmt.Sprintf("the type is a %s type, which the object type model cannot describe", strings.ToLower(strings.TrimSpace(s.code)))
+	case strings.EqualFold(strings.TrimSpace(s.incomplete), "YES"):
+		return "the object type is incomplete"
+	case strings.TrimSpace(s.supertype) != "":
+		return fmt.Sprintf("the object type is a subtype of %s, which the object type model cannot describe", s.supertype)
+	case s.methods > 0:
+		return "the object type has methods, which the object type model cannot describe"
+	case s.attributes == 0:
+		return "the read found no attribute of the object type"
+	}
+	return ""
 }
 
 // readCompositeAttributes groups the attributes by type name, in declaration
