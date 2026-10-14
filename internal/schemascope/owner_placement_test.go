@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/schemascope"
 )
 
@@ -33,6 +34,25 @@ func TestDeclaredSchemaNamesCountsDefaultPrivilegePlacement(t *testing.T) {
 			names, err := schemascope.DeclaredSchemaNames(desired)
 			c.Assert(err, qt.IsNil)
 			c.Assert(names, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// An extension's installation schema holds the extension's members, not the
+// extension. plpgsql is installed in pg_catalog on every PostgreSQL server, so
+// a read widened to it reported the system catalog's indexes as objects to drop.
+func TestDeclaredSchemaNamesLeavesExtensionInstallationSchemas(t *testing.T) {
+	for _, schema := range []string{"pg_catalog", "extensions"} {
+		t.Run(schema, func(t *testing.T) {
+			c := qt.New(t)
+			object := must.Must(pgextension.DesiredObject(pgextension.Ref("plpgsql"), pgextension.DesiredExtension{Schema: schema}))
+			desired := &schemamodel.Database{
+				Tables:         []schemamodel.Table{{Name: "x", Schema: "public"}},
+				FeatureObjects: must.Must(schemaext.NewObjects(object)),
+			}
+			names, err := schemascope.DeclaredSchemaNames(desired)
+			c.Assert(err, qt.IsNil)
+			c.Assert(names, qt.DeepEquals, []string{"public"})
 		})
 	}
 }

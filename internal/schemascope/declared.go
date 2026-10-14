@@ -22,8 +22,14 @@ import (
 // Grants are not walked here. A grant is written against a target object, which
 // a document usually declares in its own right, so the schema is already on
 // this list by the time the grant is read.
-// Feature values contribute their declared SchemaPlacement without SQL quoting
-// or name trimming. Invalid text or an unreadable captured value returns no names.
+//
+// A feature value contributes its [schemaext.SchemaPlacement] only when its
+// identity is qualified by the same schema, so the object lives there, as a
+// default privilege's does. The name is used without SQL quoting or trimming.
+// An extension's identity names no schema: its installation schema holds the
+// extension's members, and it is pg_catalog for plpgsql. Reading it would
+// report every system catalog index as an object to drop. Invalid text or an
+// unreadable captured value returns no names.
 func DeclaredSchemaNames(desired *schemamodel.Database) ([]string, error) {
 	if desired == nil {
 		return nil, nil
@@ -67,7 +73,7 @@ func DeclaredSchemaNames(desired *schemamodel.Database) ([]string, error) {
 		if err := schemaext.ValidText("declared schema", name); err != nil {
 			return nil, err
 		}
-		if name != "" {
+		if name != "" && name == object.Ref.Schema.Source {
 			names = append(names, name)
 		}
 	}
