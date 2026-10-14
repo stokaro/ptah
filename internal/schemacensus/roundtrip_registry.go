@@ -86,6 +86,8 @@ const (
 		"it differs only from a current range that holds the attribute; compare.TestRanges_AttributeChangesAreReported measures that"
 	exemptDomainNormalized = "an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them " +
 		"only once a server has normalized them"
+	exemptOracleDomainSpelling = "Oracle stores its own spelling of a domain's CHECK and DEFAULT and no probe asks the " +
+		"server how it spells a declaration's, so a comparison leaves both create-only"
 	exemptIfNotExists = "IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it"
 	exemptCustomSQL   = "statements the author appends verbatim; no catalog describes them, so a comparison has " +
 		"nothing to hold them against"
@@ -452,6 +454,9 @@ var roundTripExemptions = []Unreached{
 	{Field: "pgtype.DesiredDomain.Default", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
 	{Field: "pgtype.DesiredDomain.DefaultExpr", Dialects: []string{"postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
 	{Field: "pgtype.DesiredRange.Cleared", Dialects: nil, Directions: nil, Reason: exemptTypeClearedAttributes},
+	{Field: "oratype.DesiredDomain.Check", Dialects: []string{"oracle"}, Directions: nil, Reason: exemptOracleDomainSpelling},
+	{Field: "oratype.DesiredDomain.Default", Dialects: []string{"oracle"}, Directions: nil, Reason: exemptOracleDomainSpelling},
+	{Field: "oratype.DesiredDomain.DefaultExpr", Dialects: []string{"oracle"}, Directions: nil, Reason: exemptOracleDomainSpelling},
 	{Field: "schemamodel.Database.FeatureCoverage", Dialects: nil, Directions: nil, Reason: exemptFeatureCoverage},
 	{Field: "schemamodel.Database.NotDescribed", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "schemamodel.Domain.Check", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},

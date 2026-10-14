@@ -141,6 +141,37 @@ func TestSet_EncodeLeavesAnUnscopedShapeWithoutASelector(t *testing.T) {
 	}
 }
 
+// TestSet_EncodeLeavesTheTargetWithoutASelector pins that a scoped block whose
+// dialect is the one target the document is written for carries no selector,
+// whether the set filled the dialect or the encoder wrote it, and that a block
+// of another dialect, or of a document written for no target, keeps one.
+func TestSet_EncodeLeavesTheTargetWithoutASelector(t *testing.T) {
+	for _, test := range []struct {
+		name, written, target, want string
+	}{
+		{name: "filled dialect is the target", target: "oracle"},
+		{name: "written dialect is the target", written: "oracle", target: "oracle"},
+		{name: "target in another spelling", target: " Oracle "},
+		{name: "another target", target: "postgres", want: "oracle"},
+		{name: "no target", want: "oracle"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			owner := extension("example.org/oracle", "example.org/oracle/domain", answeringDecoder{}, scopedShape([]string{"oracle"}, false))
+			owner.Encoder = answeringEncoder{result: hclext.EncodeResult{Blocks: []hclext.EncodedBlock{
+				{Type: "domain", Name: "d", Placement: hclext.UserTypes, Dialect: test.written},
+			}}}
+			set := must.Must(hclext.NewSet(owner))
+
+			result, err := set.Encode(t.Context(), hclext.EncodeRequest{Target: test.target})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Blocks, qt.HasLen, 1)
+			c.Assert(result.Blocks[0].Dialect, qt.Equals, test.want)
+		})
+	}
+}
+
 func TestSet_EncodeRefusesAnotherReader(t *testing.T) {
 	for _, test := range []struct {
 		name  string

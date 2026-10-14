@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -68,6 +69,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: pgdefaultprivilege.Owner, codecs: pgdefaultprivilege.Codecs()},
 		{owner: pgextension.Owner, codecs: pgextension.Codecs()},
 		{owner: pgtype.Owner, codecs: pgtype.Codecs()},
+		{owner: oratype.Owner, codecs: oratype.Codecs()},
 		{owner: pgroutine.PropertiesOwner, codecs: pgroutine.PropertiesCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PersistenceCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PartitionCodecs()},

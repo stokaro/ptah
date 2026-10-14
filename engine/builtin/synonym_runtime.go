@@ -3,7 +3,6 @@ package builtin
 import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/hclext"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
 	"ptah.run/engine"
@@ -39,10 +38,4 @@ func synonymProvider() engine.Provider {
 			Definitions: synonym.Definitions(), Service: synonym.ReportService{}})
 	}
 	return provider
-}
-
-// oracleRegistry is the Oracle owners' handler registry, which is the
-// synonym owner's alone.
-func oracleRegistry() (renderer.Extensions, error) {
-	return renderer.NewExtensions(synonym.Handlers()...)
 }

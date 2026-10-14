@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/oratype"
 )
 
 // domainQuery reads the SQL domains this schema owns, one row per domain.
@@ -51,29 +53,32 @@ FROM all_domain_constraints c
 WHERE c.domain_owner = :1 AND c.constraint_type = 'C'
 ORDER BY c.domain_name, c.name`
 
-// readDomains reads the schema's SQL domains.
+// readDomains reads the schema's SQL domains into db as the Oracle type
+// owner's observations, with the knowledge that the read looked.
 //
 // It is called only where the preset says this target has them, which is what
 // keeps the query off Oracle 21: ALL_DOMAINS does not exist there, CREATE
 // DOMAIN answers ORA-00901, and asking anyway would fail the statement -- and
 // a failed statement aborts the enclosing transaction, so every later read
 // would answer ORA-25P02's Oracle equivalent rather than the read that broke.
-func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
+// The same gate keeps the coverage claim off that line: a target without
+// domains records no knowledge of them.
+func (r *Reader) readDomains(ctx context.Context, db *catalog.Database) error {
 	checks, err := r.readDomainChecks(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	rows, err := r.db.QueryContext(ctx, domainQuery, r.schema)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 
-	var domains []catalog.Domain
+	objects := db.FeatureObjects
 	for rows.Next() {
 		var (
-			domain     catalog.Domain
+			name       string
 			columnName string
 			dataType   string
 			length     sql.NullInt64
@@ -85,10 +90,10 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 			columns    int
 		)
 		if err := rows.Scan(
-			&domain.Name, &columnName, &dataType, &length, &precision,
+			&name, &columnName, &dataType, &length, &precision,
 			&scale, &charLength, &nullable, &def, &columns,
 		); err != nil {
-			return nil, err
+			return err
 		}
 		// A multi-column domain has no counterpart in the model, and reporting
 		// its first column as the whole domain would describe something the
@@ -98,14 +103,38 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 		}
 		// The domain catalog carries no vector description, so a domain over a
 		// vector reads as a bare VECTOR here.
-		domain.BaseType = formatDomainType(dataType, length, charLength, precision, scale)
-		domain.NotNull = strings.EqualFold(strings.TrimSpace(nullable), "N")
-		domain.Default = strings.TrimSpace(def.String)
-		domain.CheckConstraints = declaredDomainChecks(checks[domain.Name], columnName)
-		domain.Check = joinDomainChecks(domain.CheckConstraints)
-		domains = append(domains, domain)
+		domain := &oratype.ObservedDomain{
+			BaseType: formatDomainType(dataType, length, charLength, precision, scale),
+			NotNull:  strings.EqualFold(strings.TrimSpace(nullable), "N"),
+			Default:  strings.TrimSpace(def.String),
+			Check:    joinDomainChecks(declaredDomainChecks(checks[name], columnName)),
+		}
+		object, err := oratype.ObservedObject(oratype.Ref(oratype.DomainKind, "", name), domain)
+		if err != nil {
+			return err
+		}
+		if objects, err = objects.With(object); err != nil {
+			return err
+		}
 	}
-	return domains, rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return recordTypes(db, objects, oratype.DomainKind)
+}
+
+// recordTypes stores the read's types of kind in db, with the claim that the
+// read describes every one of them.
+func recordTypes(db *catalog.Database, objects schemaext.Objects, kind schemaext.Kind) error {
+	known, err := oratype.Coverage(kind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return err
+	}
+	if db.FeatureCoverage, err = db.FeatureCoverage.Combine(known); err != nil {
+		return err
+	}
+	db.FeatureObjects = objects
+	return nil
 }
 
 // formatDomainType keeps facts whose meaning differs from the column catalog.
@@ -121,18 +150,25 @@ func formatDomainType(dataType string, length, charLength, precision, scale sql.
 	return formatColumnType(dataType, sql.NullString{}, length, precision, scale)
 }
 
+// domainCheck is one CHECK constraint of a domain: the name the catalog
+// gives it and its condition.
+type domainCheck struct {
+	Name       string
+	Expression string
+}
+
 // readDomainChecks groups the CHECK constraints by domain name.
-func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]catalog.DomainCheck, error) {
+func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]domainCheck, error) {
 	rows, err := r.db.QueryContext(ctx, domainConstraintQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	checks := make(map[string][]catalog.DomainCheck)
+	checks := make(map[string][]domainCheck)
 	for rows.Next() {
 		var domainName string
-		var check catalog.DomainCheck
+		var check domainCheck
 		var condition sql.NullString
 		if err := rows.Scan(&domainName, &check.Name, &condition); err != nil {
 			return nil, err
@@ -155,8 +191,8 @@ func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]catalog.Dom
 //
 // The nullability itself is not lost: it is read from the column, which is
 // where it is a fact rather than a restatement.
-func declaredDomainChecks(checks []catalog.DomainCheck, columnName string) []catalog.DomainCheck {
-	kept := make([]catalog.DomainCheck, 0, len(checks))
+func declaredDomainChecks(checks []domainCheck, columnName string) []domainCheck {
+	kept := make([]domainCheck, 0, len(checks))
 	for _, check := range checks {
 		if notNullRestatement(check.Expression, columnName) {
 			continue
@@ -181,7 +217,7 @@ func notNullRestatement(expression, columnName string) bool {
 }
 
 // joinDomainChecks renders the constraint set the way a declaration writes it.
-func joinDomainChecks(checks []catalog.DomainCheck) string {
+func joinDomainChecks(checks []domainCheck) string {
 	if len(checks) == 0 {
 		return ""
 	}

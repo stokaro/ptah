@@ -26,7 +26,7 @@ func (r *renderer) encodeOwnerBlocks(owners hclext.Set) (hclext.EncodeResult, er
 	if err != nil {
 		return hclext.EncodeResult{}, err
 	}
-	request.Objects, request.Coverage = objects, r.db.FeatureCoverage
+	request.Objects, request.Coverage, request.Target = objects, r.db.FeatureCoverage, r.target
 	r.ownerRequirements = make(map[objectidentity.Key][]objectidentity.ID)
 	for _, object := range objects {
 		if value, ok := object.Value.(schemaext.Requirer); ok {

@@ -40,6 +40,12 @@ type EncodeRequest struct {
 	// Coverage is what the document knows of the extension's Kinds, such
 	// as a limit the format may have no spelling for.
 	Coverage schemaext.Coverage
+	// Target is the one target the document is written for, such as
+	// "oracle", or empty for a document written for none. A scoped block
+	// whose dialect would be Target is written without one: a reader of the
+	// document for that target selects the same shape, so the attribute
+	// would only restate the target.
+	Target string
 }
 
 // SlotKind is the kind of one of the writer's own blocks an owner adds to.
@@ -173,9 +179,10 @@ type EncodedBlock struct {
 	// Dialect selects the block's reader independently of the caller's
 	// target. Set.Encode fills it for scoped shapes, using their first
 	// dialect when the encoder leaves it empty, except for a shape that also
-	// reads unscoped declarations, whose blocks it leaves without one. The
-	// writer emits it as a dialect attribute. It is not the object's target
-	// scope.
+	// reads unscoped declarations, whose blocks it leaves without one. It
+	// also leaves it empty where it would be the request's
+	// [EncodeRequest.Target]. The writer emits it as a dialect attribute. It
+	// is not the object's target scope.
 	Dialect string
 	// Type is the block's type, such as "synonym".
 	Type string
@@ -320,7 +327,7 @@ func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, 
 			return EncodeResult{}, err
 		}
 		result.Blocks = slices.Clone(result.Blocks)
-		if err := s.bindEncodedDialects(index, result.Blocks); err != nil {
+		if err := s.bindEncodedDialects(index, result.Blocks, document.Target); err != nil {
 			return EncodeResult{}, err
 		}
 		if err := checkEncodeResult(extension, request, result); err != nil {
@@ -382,7 +389,7 @@ func (s Slot) String() string {
 // selectRequest is what document holds of the extension's Kinds: its objects,
 // its tables with those facets alone, and its coverage of them.
 func (e Extension) selectRequest(document EncodeRequest) EncodeRequest {
-	request := EncodeRequest{Coverage: document.Coverage.SelectKinds(e.Kinds)}
+	request := EncodeRequest{Coverage: document.Coverage.SelectKinds(e.Kinds), Target: document.Target}
 	for _, object := range document.Objects {
 		if slices.Contains(e.Kinds, schemaext.Kind(object.Ref.Kind)) {
 			request.Objects = append(request.Objects, object)

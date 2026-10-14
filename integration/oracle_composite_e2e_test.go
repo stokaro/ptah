@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/oratype"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -48,7 +49,7 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 	dropOracleComposites(context.WithoutCancel(ctx), conn)
 	defer dropOracleComposites(context.WithoutCancel(ctx), conn)
 
-	declared := oracleCompositeDeclaration()
+	declared := oracleCompositeDeclaration(c)
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
@@ -73,20 +74,18 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 
 	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(oracleCompositeSummary(after), qt.DeepEquals, []string{
+	c.Assert(oracleCompositeSummary(c, after), qt.DeepEquals, []string{
 		"ORA_ADDR(STREET VARCHAR2(100), ZIP VARCHAR2(10))",
 		"ORA_POINT(X NUMBER(10,2), Y NUMBER(10,2))",
 	})
 
 	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	c.Assert(settled.CompositeTypesAdded, qt.HasLen, 0)
-	c.Assert(settled.CompositeTypesRemoved, qt.HasLen, 0)
-	c.Assert(settled.CompositeTypesModified, qt.HasLen, 0)
+	c.Assert(settled.FeatureChanges, qt.HasLen, 0)
 
 	// And the removal direction, whose ordering matters: dropping a type a
 	// column still uses answers ORA-02303.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil, must.Must(builtin.New()))
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, oracleTypesDeclared(c), after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
@@ -101,7 +100,7 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 
 	empty, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(oracleCompositeSummary(empty), qt.HasLen, 0)
+	c.Assert(oracleCompositeSummary(c, empty), qt.HasLen, 0)
 }
 
 // TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E pins the four
@@ -143,34 +142,28 @@ func TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E(t *testing.T) {
 	// ORA_PARENT survives on its own merits -- it has no methods and no
 	// supertype -- which is what makes the ORA_CHILD row a statement about
 	// subtypes rather than about that pair.
-	c.Assert(oracleCompositeNames(schema), qt.DeepEquals, []string{"ORA_KEPT", "ORA_PARENT"})
+	c.Assert(oracleCompositeNames(c, schema), qt.DeepEquals, []string{"ORA_KEPT", "ORA_PARENT"})
 }
 
-// oracleCompositeDeclaration declares two composites and a table typed by one.
-func oracleCompositeDeclaration() *schemamodel.Database {
-	return &schemamodel.Database{
-		CompositeTypes: []schemamodel.CompositeType{
-			{
-				StructName: "P", Name: "ora_point",
-				Fields: []schemamodel.CompositeField{
-					{Name: "x", Type: "NUMBER(10,2)"},
-					{Name: "y", Type: "NUMBER(10,2)"},
-				},
-			},
-			{
-				StructName: "A", Name: "ora_addr",
-				Fields: []schemamodel.CompositeField{
-					{Name: "street", Type: "VARCHAR2(100)"},
-					{Name: "zip", Type: "VARCHAR2(10)"},
-				},
-			},
-		},
-		Tables: []schemamodel.Table{{StructName: "T", Name: "ora_places"}},
-		Fields: []schemamodel.Field{
-			{StructName: "T", Name: "id", Type: "INT", Primary: true},
-			{StructName: "T", Name: "at", Type: "ora_point"},
-		},
+// oracleCompositeDeclaration declares two object types and a table typed by
+// one.
+func oracleCompositeDeclaration(c *qt.C) *schemamodel.Database {
+	declared := oracleTypesDeclared(c,
+		oracleTypeObject(c, oratype.ObjectTypeKind, "ora_point", &oratype.DesiredObjectType{Attributes: []oratype.Attribute{
+			{Name: "x", Type: "NUMBER(10,2)"},
+			{Name: "y", Type: "NUMBER(10,2)"},
+		}}),
+		oracleTypeObject(c, oratype.ObjectTypeKind, "ora_addr", &oratype.DesiredObjectType{Attributes: []oratype.Attribute{
+			{Name: "street", Type: "VARCHAR2(100)"},
+			{Name: "zip", Type: "VARCHAR2(10)"},
+		}}),
+	)
+	declared.Tables = []schemamodel.Table{{StructName: "T", Name: "ora_places"}}
+	declared.Fields = []schemamodel.Field{
+		{StructName: "T", Name: "id", Type: "INT", Primary: true},
+		{StructName: "T", Name: "at", Type: "ora_point"},
 	}
+	return declared
 }
 
 func dropOracleComposites(ctx context.Context, conn *dbschema.DatabaseConnection) {
@@ -188,25 +181,42 @@ func dropOracleDeclinedTypes(ctx context.Context, conn *dbschema.DatabaseConnect
 	}
 }
 
-// oracleCompositeSummary renders each read composite in one line, sorted.
-func oracleCompositeSummary(read *catalog.Database) []string {
-	summary := make([]string, 0, len(read.Composites))
-	for _, composite := range read.Composites {
-		fields := make([]string, 0, len(composite.Fields))
-		for _, field := range composite.Fields {
-			fields = append(fields, field.Name+" "+field.Type)
+// oracleCompositeSummary renders each read object type in one line, sorted.
+func oracleCompositeSummary(c *qt.C, read *catalog.Database) []string {
+	c.Helper()
+	var summary []string
+	for name, attributes := range oracleObjectTypes(c, read) {
+		fields := make([]string, 0, len(attributes))
+		for _, attribute := range attributes {
+			fields = append(fields, attribute.Name+" "+attribute.Type)
 		}
-		summary = append(summary, composite.Name+"("+strings.Join(fields, ", ")+")")
+		summary = append(summary, name+"("+strings.Join(fields, ", ")+")")
 	}
 	sort.Strings(summary)
 	return summary
 }
 
-func oracleCompositeNames(read *catalog.Database) []string {
-	names := make([]string, 0, len(read.Composites))
-	for _, composite := range read.Composites {
-		names = append(names, composite.Name)
+func oracleCompositeNames(c *qt.C, read *catalog.Database) []string {
+	c.Helper()
+	var names []string
+	for name := range oracleObjectTypes(c, read) {
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names
+}
+
+// oracleObjectTypes is the attributes of each object type a read holds, by
+// name.
+func oracleObjectTypes(c *qt.C, read *catalog.Database) map[string][]oratype.Attribute {
+	c.Helper()
+	objects, err := read.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	types := make(map[string][]oratype.Attribute)
+	for _, object := range objects {
+		if objectType, ok := object.Value.(*oratype.ObservedObjectType); ok {
+			types[object.Ref.Name.Source] = objectType.Attributes
+		}
+	}
+	return types
 }

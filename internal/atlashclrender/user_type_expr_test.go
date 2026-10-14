@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -86,8 +87,8 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 //
 // Without this the change would be measured only against the other binary, and
 // a rendering Ptah itself could no longer read would still look like progress.
-// The domain and composite type are common ones, which an Oracle document
-// holds, so the document is read back for Oracle.
+// The domain and composite type are written from the common model; read back
+// for Oracle, they reach the Oracle type owner.
 func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
@@ -104,14 +105,20 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: "oracle"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.Domains, qt.HasLen, 1)
-	c.Assert(parsed.Domains[0].BaseType, qt.Equals, "text")
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
-	c.Assert(parsed.CompositeTypes[0].Fields, qt.HasLen, 1)
-	c.Assert(parsed.CompositeTypes[0].Fields[0].Type, qt.Equals, "text")
-	objects := must.Must(parsed.FeatureObjects.All())
-	c.Assert(objects, qt.HasLen, 1)
-	c.Assert(objects[0].Value.(*pgtype.DesiredRange).Subtype, qt.Equals, "int4")
+	c.Assert(parsed.Domains, qt.HasLen, 0)
+	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
+	domain, found, err := parsed.FeatureObjects.Get(oratype.Ref(oratype.DomainKind, "public", "d"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(domain.Value.(*oratype.DesiredDomain).BaseType, qt.Equals, "text")
+	objectType, found, err := parsed.FeatureObjects.Get(oratype.Ref(oratype.ObjectTypeKind, "public", "c"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(objectType.Value.(*oratype.DesiredObjectType).Attributes, qt.DeepEquals, []oratype.Attribute{{Name: "f", Type: "text"}})
+	rangeType, found, err := parsed.FeatureObjects.Get(pgtype.Ref(pgtype.RangeKind, "public", "r"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(rangeType.Value.(*pgtype.DesiredRange).Subtype, qt.Equals, "int4")
 }
 
 // TestRenderKeepsAnEmptyUserTypeBaseUnwrapped pins the one value that must not
