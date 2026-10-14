@@ -62,3 +62,12 @@ func TestCleanupObjectQuery_ListsDomains(t *testing.T) {
 	c.Assert(cleanupObjectQuery, qt.Contains, "'TYPE', 'DOMAIN')")
 	c.Assert(domainDependencyQuery, qt.Contains, "d.referenced_type = 'DOMAIN'")
 }
+
+// TestCleanupObjectQuery_LeavesAMaterializedViewsTableToTheView pins the
+// exclusion that keeps the cleanup from dropping a table that DROP
+// MATERIALIZED VIEW already took: measured on 23.26.3.0.0, that DROP TABLE
+// answered ORA-00942 and stopped the cleanup.
+func TestCleanupObjectQuery_LeavesAMaterializedViewsTableToTheView(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(cleanupObjectQuery, qt.Contains, "SELECT 1 FROM user_mviews m WHERE m.mview_name = o.object_name")
+}

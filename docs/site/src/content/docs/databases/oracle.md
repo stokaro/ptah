@@ -140,6 +140,13 @@ so each domain is dropped after the domains that reference it. The cleanup
 writes `DROP DOMAIN` without `FORCE`, which would take the domain off any
 column still using it.
 
+The cleanup plan `ptah db drop-all` reports is the cleanup's own list: every
+table, view, materialized view, sequence, synonym, trigger, type and domain
+the account owns, Ptah's revision tables included, each with the statement the
+cleanup runs, in the order it runs them. A materialized view keeps its rows
+in a table of its own name, and that table goes with the view rather than as
+a drop of its own.
+
 ## Object types
 
 **A composite type is Oracle's object type**, and the spelling is the whole

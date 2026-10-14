@@ -26,6 +26,11 @@ type Object struct {
 	// belongs to no schema and on SQLite, which has one.
 	Schema string
 	Name   string
+	// Statement is the statement the reset drops the object with, where the
+	// writer drops each object with one of its own, as the Oracle writer
+	// does. It is empty where the writer drops objects some other way, such
+	// as with the schema that holds them.
+	Statement string
 }
 
 // Scope is the part of a PostgreSQL-family database a reset empties: the

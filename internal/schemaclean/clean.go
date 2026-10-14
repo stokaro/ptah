@@ -39,7 +39,10 @@ const (
 	ObjectTypeProcedure        = "procedure"
 	ObjectTypeRange            = "range"
 	ObjectTypeSequence         = "sequence"
+	ObjectTypeSynonym          = "synonym"
 	ObjectTypeTable            = "table"
+	ObjectTypeTrigger          = "trigger"
+	ObjectTypeType             = "type"
 	ObjectTypeView             = "view"
 )
 
@@ -172,6 +175,12 @@ type dialectCoverage struct {
 	// migration bookkeeping tables while its reader hides them by name, so
 	// Inspect has to find them in the live catalog. See inspectRevisionTables.
 	revisionTables bool
+
+	// writerListing records that this dialect's writer lists what it drops,
+	// each object with its drop statement, in the order it drops them, so the
+	// plan is that list rather than a reading of the schema snapshot. See
+	// inspectWriterObjects.
+	writerListing bool
 }
 
 func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Plan, error) {
@@ -192,6 +201,13 @@ func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, 
 		}
 	}
 	dialect := conn.Info().Dialect
+	if coverageFor(dialect).writerListing {
+		objects, depths, err := inspectWriterObjects(ctx, conn)
+		if err != nil {
+			return Plan{}, err
+		}
+		return planFromObjects(objects, dialect, depths), nil
+	}
 	if IsServer(conn) {
 		objects, err := inspectServer(ctx, conn)
 		if err != nil {
@@ -557,6 +573,15 @@ func changesFromObjects(objects []Object, dialect string) []Change {
 // tables, views and materialized views. LiveView and WindowView stay out of
 // both the writer and this plan because the reader never reports them.
 //
+// Oracle — internal/dbschema/oracle/writer.go, DropAllTables ->
+// cleanupObjects, which reads USER_OBJECTS for tables, views, materialized
+// views, sequences, synonyms, triggers, types and domains, and orders each
+// domain after the domains that reference it. ResetObjects lists the same
+// objects through the same function with the statement each is dropped with,
+// so the plan is that list (writerListing). The Oracle reader hides Ptah's
+// revision tables, which the writer drops as ordinary tables, and the listing
+// carries them too.
+//
 // The revisionTables field below is not about kinds but about names: the
 // PostgreSQL, MySQL and SQL Server readers exclude Ptah's own revision tables
 // from every snapshot by name, while those dialects' writers drop them as
@@ -608,6 +633,8 @@ func coverageFor(dialect string) dialectCoverage {
 		return dialectCoverage{foreignKeys: true, revisionTables: true}
 	case "clickhouse":
 		return dialectCoverage{views: true, materializedViews: true}
+	case "oracle":
+		return dialectCoverage{writerListing: true}
 	case "ydb":
 		// The writer drops row tables and nothing else; a view, a column
 		// table and a topic stay, and the reader records them as not
@@ -793,6 +820,53 @@ func functionObjects(schema *catalog.Database, dialect string) []Object {
 
 // inspectRuntimeObjects enumerates the object kinds a dialect's writer destroys
 // that the dbschema reader's snapshot does not carry.
+// resetLister is a writer that lists what its DropAllTables drops.
+type resetLister interface {
+	ResetObjects(ctx context.Context, scope dbreset.Scope) ([]dbreset.Object, error)
+}
+
+// writerObjectTypes maps the kinds a writer's listing names to the plan's.
+var writerObjectTypes = map[string]string{
+	"table":             ObjectTypeTable,
+	"view":              ObjectTypeView,
+	"materialized view": ObjectTypeMaterializedView,
+	"sequence":          ObjectTypeSequence,
+	"synonym":           ObjectTypeSynonym,
+	"trigger":           ObjectTypeTrigger,
+	"type":              ObjectTypeType,
+	"domain":            ObjectTypeDomain,
+}
+
+// inspectWriterObjects lists what the connection's writer drops, each object
+// with the statement it drops the object with, and the depth that keeps the
+// writer's own order when the plan is executed: the first object it drops has
+// the greatest depth. A kind the plan has no name for, and an object the
+// writer names no statement for, are refused rather than reported as
+// something else.
+func inspectWriterObjects(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, map[executionObjectIdentity]int, error) {
+	lister, ok := conn.SchemaWriter().(resetLister)
+	if !ok {
+		return nil, nil, fmt.Errorf("inspect schema before cleanup: the %s writer does not list what it drops", conn.Info().Dialect)
+	}
+	listed, err := lister.ResetObjects(ctx, dbreset.Scope{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("inspect schema before cleanup: %w", err)
+	}
+	objects := make([]Object, 0, len(listed))
+	depths := make(map[executionObjectIdentity]int, len(listed))
+	for i, found := range listed {
+		objectType, known := writerObjectTypes[found.Kind]
+		if !known || strings.TrimSpace(found.Statement) == "" {
+			return nil, nil, fmt.Errorf("inspect schema before cleanup: the %s writer drops %s %q, which the plan cannot name",
+				conn.Info().Dialect, found.Kind, found.Name)
+		}
+		object := Object{Type: objectType, Schema: found.Schema, Name: found.Name, Command: found.Statement}
+		objects = append(objects, object)
+		depths[objectExecutionIdentity(object)] = len(listed) - i
+	}
+	return objects, depths, nil
+}
+
 func inspectRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
 	return InspectRuntimeObjects(conn, nil)
 }
@@ -1515,6 +1589,11 @@ func sortExecutionObjects(
 }
 
 func executionPriority(dialect, objectType string) int {
+	// The Oracle writer's listing is already in its drop order, which the
+	// plan's depths carry, so no kind goes first on its own.
+	if coverageFor(dialect).writerListing {
+		return 0
+	}
 	if isMySQLFamily(dialect) {
 		switch objectType {
 		case ObjectTypeView, ObjectTypeMaterializedView:
