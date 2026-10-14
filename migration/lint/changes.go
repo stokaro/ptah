@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/sqlsyntax"
 )
 
 // SchemaChangeKind classifies the DDL effect of one semantic schema change.
@@ -107,11 +108,7 @@ func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]Sche
 // left alone -- silence there is absence of evidence, and it must not be able to
 // drop a finding.
 func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]SchemaChange, bool) {
-	opts := []parser.Option{parser.WithSQL(file.owners)}
-	if strings.TrimSpace(dialect) != "" {
-		opts = append(opts, parser.WithDialect(dialect))
-	}
-	list, err := parser.NewParser(stmt.SQL, opts...).Parse()
+	list, err := sqlsyntax.Parse(stmt.SQL, dialect, parser.WithSQL(file.owners))
 	if err != nil || list == nil {
 		// A statement Ptah's parser cannot model contributes no structural
 		// change here. The dev-database replay independently validates that the

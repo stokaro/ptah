@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -71,10 +71,9 @@ func TestReadYQLPrivileges(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			document := sqlschema.NewDocument(nil)
-			document.YDBDatabasePath = test.root
-			database, _, err := sqlschema.ReadOnto([]byte(test.sql), "ydb", document)
+			load, err := readYQLLoad(c, test.root, test.sql)
 			c.Assert(err, qt.IsNil)
+			database := load.Database
 			c.Assert(database.Grants, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.SortSlices(func(a, b string) bool { return a < b })), test.grants)
 			c.Assert(database.RevokedGrants, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.SortSlices(func(a, b string) bool { return a < b })), test.revoked)
 		})
@@ -83,7 +82,7 @@ func TestReadYQLPrivileges(t *testing.T) {
 
 func TestReadYQLMultiplePrivilegeTargets(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte(yqlGrantTable+"GRANT LIST ON shop, `shop/orders` TO readers, auditors;"), "ydb")
+	database, err := readYQL(c, yqlGrantTable+"GRANT LIST ON shop, `shop/orders` TO readers, auditors;")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Grants, qt.DeepEquals, []schemamodel.Grant{
 		{Role: "readers", OnSchema: "shop", Privileges: []string{"YDB.GENERIC.LIST"}},
@@ -118,19 +117,16 @@ func TestReadYQLPrivilegeRefusals(t *testing.T) {
 	} {
 		t.Run(sql, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(yqlGrantTable+sql), "ydb")
+			database, err := readYQL(c, yqlGrantTable+sql)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(database.Grants, qt.HasLen, 0)
-			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
 
 func TestReadYQLPrivilegeRootBoundary(t *testing.T) {
 	c := qt.New(t)
-	document := sqlschema.NewDocument(nil)
-	document.YDBDatabasePath = "/Root/db"
-	_, _, err := sqlschema.ReadOnto([]byte(yqlGrantTable+"GRANT SELECT ON `/Root/db-other/shop/orders` TO readers;"), "ydb", document)
+	_, err := readYQLLoad(c, "/Root/db", yqlGrantTable+"GRANT SELECT ON `/Root/db-other/shop/orders` TO readers;")
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 	c.Assert(err.Error(), qt.Contains, "outside database")
 }

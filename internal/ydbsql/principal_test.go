@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -39,7 +39,7 @@ func TestReadYQLPrincipals(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database, _, err := sqlschema.Read([]byte(test.sql), "ydb")
+			database, err := readYQL(c, test.sql)
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Roles, qt.DeepEquals, test.want)
 			c.Assert(database.NotDescribed.Describes(coverage.Role), qt.IsTrue)
@@ -69,10 +69,9 @@ func TestReadYQLPrincipalRefusals(t *testing.T) {
 	} {
 		t.Run(sql, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(sql), "ydb")
+			database, err := readYQL(c, sql)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(database.Roles, qt.HasLen, 0)
-			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
@@ -89,23 +88,23 @@ func TestReadYQLUserErrorHidesCredentials(t *testing.T) {
 	} {
 		t.Run(sql, func(t *testing.T) {
 			c := qt.New(t)
-			_, _, err := sqlschema.Read([]byte(sql), "ydb")
+			_, err := readYQL(c, sql)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "SENTINEL")
 		})
 	}
 }
 
-func TestReadOntoYQLPrincipals(t *testing.T) {
+func TestReadYQLPrincipalsAcrossFiles(t *testing.T) {
 	c := qt.New(t)
-	earlier, _, err := sqlschema.Read([]byte("CREATE USER app; CREATE GROUP readers;"), "ydb")
+	load, err := readYQLLoad(c, "", "CREATE USER app; CREATE GROUP readers;",
+		"ALTER USER app PASSWORD 'Secret2!' NOLOGIN; ALTER GROUP readers ADD USER app;")
 	c.Assert(err, qt.IsNil)
-	later, _, err := sqlschema.ReadOnto([]byte("ALTER USER app PASSWORD 'Secret2!' NOLOGIN; ALTER GROUP readers ADD USER app;"), "ydb", sqlschema.NewDocument(&earlier))
-	c.Assert(err, qt.IsNil)
-	c.Assert(later.Roles, qt.HasLen, 0)
+	c.Assert(load.Files[1].Objects, qt.HasLen, 0)
+	earlier := load.Database
 	c.Assert(earlier.Roles[0].Login, qt.IsFalse)
 	c.Assert(earlier.Roles[0].Password, qt.Equals, "Secret2!")
 	c.Assert(earlier.Roles[0].MemberOf, qt.DeepEquals, []string{"readers"})
-	_, _, err = sqlschema.ReadOnto([]byte("CREATE GROUP app;"), "ydb", sqlschema.NewDocument(&earlier))
+	_, err = readYQLLoad(c, "", "CREATE USER app; CREATE GROUP readers;", "CREATE GROUP app;")
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 }

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -102,10 +103,10 @@ func TestCompare_YQLPrivileges(t *testing.T) {
 	c := qt.New(t)
 	const objects = "CREATE TABLE `shop/orders` (id Int64 NOT NULL, PRIMARY KEY(id)); CREATE GROUP readers; CREATE USER app PASSWORD 'Secret1!'; ALTER GROUP readers ADD USER app; ALTER GROUP `DATA-READERS` ADD USER app;"
 	const grants = "GRANT SELECT ROW, LIST ON `shop/orders` TO readers; GRANT LIST ON shop TO readers; GRANT CONNECT ON `/local` TO app;"
-	document := sqlschema.NewDocument(nil)
-	document.YDBDatabasePath = "/local"
-	desired, _, err := sqlschema.ReadOnto([]byte(objects+grants), "ydb", document)
+	load, err := sqlschema.ReadLoad(c.Context(), sqlext.GrammarRequest{Target: "ydb", DatabasePath: "/local",
+		Files: []sqlext.SourceFile{{Path: "schema.sql", Text: objects + grants}}}, yqlOwners())
 	c.Assert(err, qt.IsNil)
+	desired := load.Database
 	held := ydbAccessCatalog()
 	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 	omitted, _, err := sqlschema.ReadWith(c.Context(), []byte(objects), "ydb", nil, yqlOwners())

@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"strings"
@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLExternalObjects(t *testing.T) {
@@ -39,7 +38,7 @@ func TestReadYQLExternalObjectsRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	source := "CREATE OR REPLACE EXTERNAL DATA SOURCE `dir/bucket` WITH (SOURCE_TYPE = 'ObjectStorage', LOCATION = 'https://storage.invalid/root/', AUTH_METHOD = 'NONE');" +
 		"CREATE OR REPLACE EXTERNAL TABLE `dir/data.v1` (`d` Date, `body` Utf8) WITH (DATA_SOURCE = 'dir/bucket', LOCATION = '/', FORMAT = 'csv_with_names', CSV_DELIMITER = ' ', PARTITIONED_BY = '[\"d\"]');"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	table, found, err := database.FeatureObjects.Get(ydbexternal.TableRef("dir", "data.v1"))
 	c.Assert(err, qt.IsNil)
@@ -48,7 +47,7 @@ func TestReadYQLExternalObjectsRoundTrip(t *testing.T) {
 	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
 		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ExternalDataSources, true))
 		c.Assert(renderErr, qt.IsNil)
-		again, _, readErr := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
+		again, readErr := readYQL(c, strings.Join(statements, "\n"))
 		c.Assert(readErr, qt.IsNil)
 		c.Assert(again.FeatureObjects.Equal(database.FeatureObjects), qt.IsTrue)
 	}
@@ -78,9 +77,8 @@ func TestReadYQLExternalObjectsRefusals(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(source), "ydb")
+			database, err := readYQL(c, source)
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
@@ -93,7 +91,7 @@ func TestReadYQLExternalObjectDeclaredTwice(t *testing.T) {
 	source := "CREATE EXTERNAL DATA SOURCE s WITH (SOURCE_TYPE = 'ObjectStorage', AUTH_METHOD = 'NONE');" +
 		"CREATE OR REPLACE EXTERNAL DATA SOURCE s WITH (SOURCE_TYPE = 'ObjectStorage', AUTH_METHOD = 'NONE');"
 
-	_, _, err := sqlschema.Read([]byte(source), "ydb")
+	_, err := readYQL(c, source)
 
 	c.Assert(err, qt.ErrorMatches, "external data source s is declared twice")
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)

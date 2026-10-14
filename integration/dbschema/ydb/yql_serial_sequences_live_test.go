@@ -9,17 +9,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 	"ptah.run/internal/sqlschema"
 )
 
 func desiredSerialYQL(c *qt.C, root string, increment int) *schemamodel.Database {
 	c.Helper()
 	source := fmt.Sprintf("CREATE TABLE `ptah_ydb_serials/orders` (id BigSerial NOT NULL,note Utf8,PRIMARY KEY(id)); ALTER SEQUENCE `%s/ptah_ydb_serials/orders/_serial_column_id` START WITH 100 INCREMENT BY 5; CREATE TABLE `ptah_ydb_serials/counters` (id BigSerial NOT NULL,note Utf8,PRIMARY KEY(id)); ALTER SEQUENCE `%s/ptah_ydb_serials/counters/_serial_column_id` INCREMENT %d;", root, root, increment)
-	document := sqlschema.NewDocument(nil)
-	document.YDBDatabasePath = root
-	database, _, err := sqlschema.ReadOnto([]byte(source), "ydb", document)
+	load, err := sqlschema.ReadLoad(c.Context(), sqlext.GrammarRequest{Target: "ydb", DatabasePath: root,
+		Files: []sqlext.SourceFile{{Path: "schema.sql", Text: source}}}, yqlOwners())
 	c.Assert(err, qt.IsNil)
-	return &database
+	return &load.Database
 }
 
 func TestYDBDesiredYQL_SerialSequences(t *testing.T) {

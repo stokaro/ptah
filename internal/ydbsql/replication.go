@@ -1,4 +1,4 @@
-package sqlschema
+package ydbsql
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbreplication"
+	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/yqlparse"
 )
 
@@ -48,9 +49,9 @@ func applyReplicationSettings(database, base *schemamodel.Database, node *yqlpar
 		}
 	}
 	if node.Kind == ydbreplication.TransferSource {
-		return fmt.Errorf("%w: ALTER TRANSFER needs an earlier declaration", ErrUnmodeledStatement)
+		return fmt.Errorf("%w: ALTER TRANSFER needs an earlier declaration", sqlschema.ErrUnmodeledStatement)
 	}
-	return fmt.Errorf("%w: ALTER ASYNC REPLICATION needs an earlier declaration", ErrUnmodeledStatement)
+	return fmt.Errorf("%w: ALTER ASYNC REPLICATION needs an earlier declaration", sqlschema.ErrUnmodeledStatement)
 }
 
 // applyDeclaredReplicationSettings folds node into the object database
@@ -68,13 +69,13 @@ func applyDeclaredReplicationSettings(database *schemamodel.Database, node *yqlp
 	case *ydbreplication.DesiredReplication:
 		spec, err := ydbreplication.ApplyReplicationSettings(value.Spec, node.Settings)
 		if err != nil {
-			return true, fmt.Errorf("%w: invalid async replication settings change", ErrUnmodeledStatement)
+			return true, fmt.Errorf("%w: invalid async replication settings change", sqlschema.ErrUnmodeledStatement)
 		}
 		value.Spec = spec
 	case *ydbreplication.DesiredTransfer:
 		spec, err := ydbreplication.ApplyTransferSettings(value.Spec, node.Settings)
 		if err != nil {
-			return true, fmt.Errorf("%w: invalid transfer settings change", ErrUnmodeledStatement)
+			return true, fmt.Errorf("%w: invalid transfer settings change", sqlschema.ErrUnmodeledStatement)
 		}
 		value.Spec = spec
 	default:

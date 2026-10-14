@@ -22,11 +22,16 @@ import (
 // than for a declaration, and a later statement needs that to name an index
 // and to know what `DROP FOREIGN KEY` leaves behind; see [keyIndex].
 type Document struct {
-	// YDBDatabasePath supplies the explicit database root for absolute source
-	// paths. It is source context, never persisted into the desired model.
-	YDBDatabasePath string
-	base            *schemamodel.Database
-	keys            keyIndexes
+	base *schemamodel.Database
+	keys keyIndexes
+	// script is the owner whose grammar parsed the statements being
+	// converted, and nil for a document in the shared grammar; see
+	// [ConvertScript].
+	script Converter
+	// databasePath is the database root a document's absolute paths are read
+	// against, as [sqlext.GrammarRequest.DatabasePath] names it. It is source
+	// context, never part of the model.
+	databasePath string
 	// comments holds final source edits until the owner receives a file batch.
 	comments map[objectidentity.Key]string
 	// notes is what the parse of the file being read found about its AST that

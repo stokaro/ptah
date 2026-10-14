@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -12,12 +12,11 @@ import (
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLTable(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE TABLE `app/a.b` (`i\\x64` Int64 NOT NULL, `v\\`x.y` Utf8, PRIMARY KEY (`i\\x64`), INDEX `by.v` GLOBAL ASYNC ON (`v\\`x.y`) COVER (`i\\x64`) WITH (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 2)) WITH (AUTO_PARTITIONING_BY_SIZE = ENABLED, UNIFORM_PARTITIONS = 4);"), "ydb")
+	database, err := readYQL(c, "CREATE TABLE `app/a.b` (`i\\x64` Int64 NOT NULL, `v\\`x.y` Utf8, PRIMARY KEY (`i\\x64`), INDEX `by.v` GLOBAL ASYNC ON (`v\\`x.y`) COVER (`i\\x64`) WITH (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 2)) WITH (AUTO_PARTITIONING_BY_SIZE = ENABLED, UNIFORM_PARTITIONS = 4);")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Schema, qt.Equals, "app")
@@ -36,7 +35,7 @@ func TestReadYQLTable(t *testing.T) {
 
 func TestReadYQLColumnTable(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE TABLE events (`a,b` Uint64 NOT NULL, body Utf8, PRIMARY KEY (`a,b`), INDEX body_bloom LOCAL USING bloom_filter ON (body) WITH (false_positive_probability = 0.05)) PARTITION BY HASH (`a,b`) WITH (STORE = COLUMN, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 8);"), "ydb")
+	database, err := readYQL(c, "CREATE TABLE events (`a,b` Uint64 NOT NULL, body Utf8, PRIMARY KEY (`a,b`), INDEX body_bloom LOCAL USING bloom_filter ON (body) WITH (false_positive_probability = 0.05)) PARTITION BY HASH (`a,b`) WITH (STORE = COLUMN, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 8);")
 	c.Assert(err, qt.IsNil)
 	store, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnStore](database.Tables[0].Facets, ydbschema.ColumnStoreKind)
 	c.Assert(err, qt.IsNil)
@@ -59,7 +58,7 @@ func TestReadYQLDefaults(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database, _, err := sqlschema.Read([]byte("CREATE TABLE t (id Int64 NOT NULL, v "+test.columnType+" DEFAULT "+test.literal+", PRIMARY KEY (id));"), "ydb")
+			database, err := readYQL(c, "CREATE TABLE t (id Int64 NOT NULL, v "+test.columnType+" DEFAULT "+test.literal+", PRIMARY KEY (id));")
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Fields[1].Default, qt.Equals, test.want)
 			c.Assert(database.Fields[1].DefaultSet, qt.IsTrue)
@@ -84,9 +83,8 @@ func TestReadYQLRefusals(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(text), "ydb")
+			database, err := readYQL(c, text)
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.Tables, qt.HasLen, 0)
 		})
 	}

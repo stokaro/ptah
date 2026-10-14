@@ -150,18 +150,32 @@ func convert(
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	document.notes, document.relations = parsed, relations
+	database, err := convertStatements(ctx, statements, parsed, dialect, document, owners, relations)
+	if err != nil {
+		return schemamodel.Database{}, nil, err
+	}
+	return database, statements, nil
+}
+
+// convertStatements converts statements onto document. notes is what their
+// parse found that no node carries, and nil for statements an owner's grammar
+// parsed.
+func convertStatements(
+	ctx context.Context, statements *ast.StatementList, notes parseNotes, dialect string, document *Document,
+	owners sqlext.Set, relations featureselect.RelationRuntime,
+) (schemamodel.Database, error) {
+	document.notes, document.relations = notes, relations
 	defer func() { document.notes, document.relations = nil, nil }()
 	document.comments = make(map[objectidentity.Key]string)
 	defer func() { document.comments = nil }()
 	database, err := toDatabase(ctx, statements, dialect, document)
 	if err != nil {
-		return schemamodel.Database{}, nil, err
+		return schemamodel.Database{}, err
 	}
 	if err := document.applyOwnedComments(ctx, &database, dialect, owners); err != nil {
-		return schemamodel.Database{}, nil, err
+		return schemamodel.Database{}, err
 	}
-	return database, statements, nil
+	return database, nil
 }
 
 // describe adds to database what data's `ptah:not-described` header says it

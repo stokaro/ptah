@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"strings"
@@ -7,7 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestParseRender(t *testing.T) {
@@ -33,11 +32,11 @@ func TestParseRender(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			database, _, err := sqlschema.Read([]byte(text), "ydb")
+			database, err := readYQL(c, text)
 			c.Assert(err, qt.IsNil)
 			rendered, err := builtin.GetOrderedCreateStatements(&database, "ydb")
 			c.Assert(err, qt.IsNil)
-			again, _, err := sqlschema.Read([]byte(strings.Join(rendered, "\n")), "ydb")
+			again, err := readYQL(c, strings.Join(rendered, "\n"))
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", rendered))
 			second, err := builtin.GetOrderedCreateStatements(&again, "ydb")
 			c.Assert(err, qt.IsNil)

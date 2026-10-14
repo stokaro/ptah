@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"strings"
@@ -11,12 +11,11 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLResourcePools(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 4, QUEUE_SIZE = 8, QUERY_MEMORY_LIMIT_PERCENT_PER_NODE = '12.5'); CREATE RESOURCE POOL idle WITH (CONCURRENT_QUERY_LIMIT = '-1'); CREATE RESOURCE POOL CLASSIFIER to_batch WITH (RESOURCE_POOL = 'batch', RANK = 20, MEMBER_NAME = 'worker');"), "ydb")
+	database, err := readYQL(c, "CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 4, QUEUE_SIZE = 8, QUERY_MEMORY_LIMIT_PERCENT_PER_NODE = '12.5'); CREATE RESOURCE POOL idle WITH (CONCURRENT_QUERY_LIMIT = '-1'); CREATE RESOURCE POOL CLASSIFIER to_batch WITH (RESOURCE_POOL = 'batch', RANK = 20, MEMBER_NAME = 'worker');")
 	c.Assert(err, qt.IsNil)
 	objects, err := database.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)
@@ -29,7 +28,7 @@ func TestReadYQLResourcePools(t *testing.T) {
 
 func TestReadYQLCoordinationNode(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE COORDINATION NODE `app/locks.v1` WITH (self_check_period = Interval('PT0.5S'), attach_consistency_mode = 'strict');"), "ydb")
+	database, err := readYQL(c, "CREATE COORDINATION NODE `app/locks.v1` WITH (self_check_period = Interval('PT0.5S'), attach_consistency_mode = 'strict');")
 	c.Assert(err, qt.IsNil)
 	objects, err := database.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)
@@ -56,9 +55,8 @@ func TestReadYQLResourceRefusals(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(text), "ydb")
+			database, err := readYQL(c, text)
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
@@ -67,14 +65,14 @@ func TestReadYQLResourceRefusals(t *testing.T) {
 func TestReadYQLResourcePoolsRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	source := "ALTER RESOURCE POOL default SET (RESOURCE_WEIGHT = 30); CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 4, QUEUE_SIZE = 8); CREATE RESOURCE POOL idle WITH (CONCURRENT_QUERY_LIMIT = '-1'); CREATE RESOURCE POOL CLASSIFIER worker WITH (RESOURCE_POOL = 'batch', RANK = 20, MEMBER_NAME = 'worker');"
-	database, _, err := sqlschema.Read([]byte(source), "ydb")
+	database, err := readYQL(c, source)
 	c.Assert(err, qt.IsNil)
 	want, err := database.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)
 	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
 		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ResourcePools, true))
 		c.Assert(renderErr, qt.IsNil)
-		again, _, readErr := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
+		again, readErr := readYQL(c, strings.Join(statements, "\n"))
 		c.Assert(readErr, qt.IsNil)
 		c.Assert(again.FeatureObjects.Len(), qt.Equals, 4)
 		objects, err := again.FeatureObjects.All()

@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -6,18 +6,20 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlschema"
+	"ptah.run/internal/ydbsql"
 )
 
-// TestReadScript_ReadsTheLoadAsOneScript reads the documents of a load in
+// TestGrammar_ReadsTheLoadAsOneScript reads the documents of a load in
 // order, each against what the earlier ones declared: the second document's
 // ALTER TABLE adds a changefeed to the table the first one created, and the
 // sequence it names resolves against the request's database root. Each file's
 // declarations are its own: the changefeed is the second file's, as an index
 // an ALTER TABLE adds is, so a third file that adds it again is refused.
-func TestReadScript_ReadsTheLoadAsOneScript(t *testing.T) {
+func TestGrammar_ReadsTheLoadAsOneScript(t *testing.T) {
 	c := qt.New(t)
 	request := sqlext.GrammarRequest{Target: "ydb", DatabasePath: "/Root/db", Files: []sqlext.SourceFile{
 		{Path: "001.sql", Text: yqlSerialTable},
@@ -25,7 +27,7 @@ func TestReadScript_ReadsTheLoadAsOneScript(t *testing.T) {
 			"ALTER SEQUENCE `/Root/db/app/orders/_serial_column_id` START WITH 100;"},
 	}}
 
-	result, err := sqlschema.ReadScript(t.Context(), request)
+	result, err := ydbsql.SQL().Grammar.ReadSQL(t.Context(), request)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Database.Tables, qt.HasLen, 1)
@@ -43,14 +45,16 @@ func TestReadScript_ReadsTheLoadAsOneScript(t *testing.T) {
 	c.Assert(result.Files[1].Tables, qt.HasLen, 0)
 }
 
-// TestReadScript_ReadsADocumentAlone reads a load of one document as that
+// TestGrammar_ReadsADocumentAlone reads a load of one document as that
 // document, without the merge a larger load takes.
-func TestReadScript_ReadsADocumentAlone(t *testing.T) {
+func TestGrammar_ReadsADocumentAlone(t *testing.T) {
 	c := qt.New(t)
-	alone, _, err := sqlschema.Read([]byte(yqlSerialTable), "ydb")
+	alone, err := readYQL(c, yqlSerialTable)
 	c.Assert(err, qt.IsNil)
+	// The reader adds the coverage claim; the grammar's answer describes none.
+	alone.FeatureCoverage = schemaext.Coverage{}
 
-	result, err := sqlschema.ReadScript(t.Context(),
+	result, err := ydbsql.SQL().Grammar.ReadSQL(t.Context(),
 		sqlext.GrammarRequest{Target: "ydb", Files: []sqlext.SourceFile{{Path: "schema.sql", Text: yqlSerialTable}}})
 
 	c.Assert(err, qt.IsNil)
@@ -58,17 +62,17 @@ func TestReadScript_ReadsADocumentAlone(t *testing.T) {
 	c.Assert(result.Files, qt.HasLen, 1)
 }
 
-// TestReadScript_FailurePath names the refused document, and marks a change
+// TestGrammar_FailurePath names the refused document, and marks a change
 // to an object no document of the load declares as such, keeping the
 // refusal's text and its kind.
-func TestReadScript_FailurePath(t *testing.T) {
+func TestGrammar_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	request := sqlext.GrammarRequest{Target: "ydb", Files: []sqlext.SourceFile{
 		{Path: "001.sql", Text: yqlSerialTable},
 		{Path: "002.sql", Text: "ALTER TABLE users ADD CHANGEFEED updates WITH (mode = 'UPDATES', format = 'JSON');"},
 	}}
 
-	result, err := sqlschema.ReadScript(t.Context(), request)
+	result, err := ydbsql.SQL().Grammar.ReadSQL(t.Context(), request)
 
 	c.Assert(err, qt.ErrorMatches,
 		`002.sql: the schema model has no place for this statement: ALTER TABLE users ADD CHANGEFEED updates names a table this schema does not declare`)

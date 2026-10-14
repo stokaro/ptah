@@ -31,7 +31,6 @@ import (
 	"ptah.run/core/ast"
 	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
 )
 
@@ -687,22 +686,23 @@ func appendStatement(
 }
 
 // appendFamilyStatement applies a statement of a family with a converter of
-// its own: an owner's statement, a routine, a privilege, a YDB
-// object, a view, a namespace, or a change to an earlier declaration. handled
-// is false for any other statement, which [appendStatement] converts itself.
+// its own: a statement of the owner whose grammar parsed the document, an
+// owner's statement, a routine, a privilege, a view, a namespace, or a change
+// to an earlier declaration. handled is false for any other statement, which
+// [appendStatement] converts itself.
 func appendFamilyStatement(
 	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
+	if handled, err := document.convertOwned(database, stmt, sourcePlatform); handled {
+		return true, err
+	}
 	if handled, err := applyOwnerStatement(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
 	if handled, err := appendRoutine(database, stmt, sourcePlatform); handled {
 		return true, err
 	}
-	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
-		return true, err
-	}
-	if handled, err := appendYDBDeclaration(database, document, stmt, sourcePlatform); handled {
+	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
 		return true, err
 	}
 	if appendView(database, stmt, sourcePlatform) || appendNamespace(database, stmt, sourcePlatform) {
@@ -817,10 +817,7 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform
 // neither function is refused by that switch's default, so nothing is dropped
 // by falling through; a node kind this package decides not to model says so
 // there, in a case of its own.
-func appendPrivilegeDeclaration(database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string) (bool, error) {
-	if sqlplatform.NormalizeDialect(sourcePlatform) == sqlplatform.YDB {
-		return appendYDBPrivilege(database, document, stmt)
-	}
+func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
 	switch node := stmt.(type) {
 	case *ast.GrantPrivilegeNode:
 		appendGrant(database, node, sourcePlatform)
@@ -1112,8 +1109,8 @@ func applyOwnedAlterOperation(
 	if index, declared := target.document.declaredIndex(operation); declared {
 		return appendDeclaredIndex(database, target, index, sourcePlatform)
 	}
-	if added, ok := operation.Payload.(*ydbast.AddChangefeed); ok {
-		return appendChangefeed(target, added.Changefeed)
+	if handled, err := target.document.applyOwnedOperation(database, target, operation); handled {
+		return err
 	}
 	return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(operation))
 }
@@ -1173,8 +1170,8 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 func describeAlterOperation(op ast.AlterOperation) string {
 	switch typed := op.(type) {
 	case *ast.ExtensionAlterOperation:
-		if added, ok := typed.Payload.(*ydbast.AddChangefeed); ok {
-			return "ADD CHANGEFEED " + added.Changefeed.Name
+		if clause, ok := typed.Payload.(AlterClause); ok {
+			return clause.AlterClause()
 		}
 		return "extension operation"
 	case *ast.AddColumnOperation:

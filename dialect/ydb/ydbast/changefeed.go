@@ -30,6 +30,12 @@ func (p *AddChangefeed) CloneExtension() ast.ExtensionPayload {
 	return &AddChangefeed{Changefeed: p.Changefeed.Clone()}
 }
 
+// AlterClause names the operation as an ALTER TABLE writes it, such as
+// `ADD CHANGEFEED updates`, for a refusal that quotes it.
+func (p *AddChangefeed) AlterClause() string {
+	return "ADD CHANGEFEED " + p.Changefeed.Name
+}
+
 // Effect describes the operation's additive intent.
 func (*AddChangefeed) Effect() schemaext.Effect {
 	return schemaext.Effect{Impact: schemaext.Additive, Reason: "does not remove data or tighten constraints"}

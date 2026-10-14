@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -9,13 +9,12 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLViewQuery(t *testing.T) {
 	c := qt.New(t)
 	body := "SELECT id, ';' AS text FROM `app/items` /* keep the query */ WHERE id > 0"
-	database, _, err := sqlschema.Read([]byte("CREATE VIEW `app/summary` WITH (security_invoker = TRUE) AS "+body+"; CREATE TOPIC `app/events`;"), "ydb")
+	database, err := readYQL(c, "CREATE VIEW `app/summary` WITH (security_invoker = TRUE) AS "+body+"; CREATE TOPIC `app/events`;")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Views, qt.DeepEquals, []schemamodel.View{{Name: "app.summary", Body: body}})
 	c.Assert(topicObjects(c, database), qt.DeepEquals, []schemaext.Object{ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{})})
@@ -33,7 +32,7 @@ func topicObjects(c *qt.C, database schemamodel.Database) []schemaext.Object {
 
 func TestReadYQLTopicConsumers(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE TOPIC `app/events.v1` (CONSUMER `work\\x65r` WITH (important = TRUE, read_from = Timestamp('2026-01-01T00:00:00Z'), supported_codecs = 'raw,gzip')) WITH (min_active_partitions = 2, retention_period = Interval('P1D'));"), "ydb")
+	database, err := readYQL(c, "CREATE TOPIC `app/events.v1` (CONSUMER `work\\x65r` WITH (important = TRUE, read_from = Timestamp('2026-01-01T00:00:00Z'), supported_codecs = 'raw,gzip')) WITH (min_active_partitions = 2, retention_period = Interval('P1D'));")
 	c.Assert(err, qt.IsNil)
 	c.Assert(topicObjects(c, database), qt.DeepEquals, []schemaext.Object{ydbtopic.DesiredObject("app", "events.v1", "", ydbtopic.Spec{
 		MinActivePartitions: 2, RetentionPeriod: "P1D", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}},
@@ -65,9 +64,8 @@ func TestReadYQLObjectRefusals(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			database, statements, err := sqlschema.Read([]byte(text), "ydb")
+			database, err := readYQL(c, text)
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
-			c.Assert(statements, qt.IsNil)
 			c.Assert(database.Views, qt.HasLen, 0)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})

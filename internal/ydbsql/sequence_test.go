@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -6,18 +6,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/sqlschema"
 )
 
 const yqlSerialTable = "CREATE TABLE `app/orders` (id BigSerial NOT NULL,note Utf8,PRIMARY KEY(id));"
 
 func readYQLSerial(c *qt.C, source, root string) schemamodel.Database {
 	c.Helper()
-	document := sqlschema.NewDocument(nil)
-	document.YDBDatabasePath = root
-	database, _, err := sqlschema.ReadOnto([]byte(source), "ydb", document)
+	load, err := readYQLLoad(c, root, source)
 	c.Assert(err, qt.IsNil)
-	return database
+	return load.Database
 }
 
 func TestReadYQLSerialSequence(t *testing.T) {
@@ -73,33 +70,9 @@ func TestReadYQLSerialSequenceRefusals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			document := sqlschema.NewDocument(nil)
-			document.YDBDatabasePath = tc.root
-			database, statements, err := sqlschema.ReadOnto([]byte(tc.source), "ydb", document)
+			load, err := readYQLLoad(c, tc.root, tc.source)
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(statements, qt.IsNil)
-			c.Assert(database.Tables, qt.HasLen, 0)
-		})
-	}
-}
-
-// A sequence setting must not replace an earlier identity policy. In
-// particular, GENERATED ALWAYS remains available for the planner to refuse.
-func TestReadYQLSequenceKeepsEarlierIdentityPolicy(t *testing.T) {
-	for _, generation := range []string{"BY_DEFAULT", "ALWAYS"} {
-		t.Run(generation, func(t *testing.T) {
-			c := qt.New(t)
-			earlier := &schemamodel.Database{
-				Tables: []schemamodel.Table{{Name: "orders", Schema: "app", StructName: "Order"}},
-				Fields: []schemamodel.Field{{Name: "id", StructName: "Order", Type: "Int64", Primary: true, IdentityGeneration: generation}},
-			}
-			document := sqlschema.NewDocument(earlier)
-			document.YDBDatabasePath = "/local"
-			_, _, err := sqlschema.ReadOnto([]byte("ALTER SEQUENCE `/local/app/orders/_serial_column_id` INCREMENT 5;"), "ydb", document)
-			c.Assert(err, qt.IsNil)
-			c.Assert(earlier.Fields[0].IdentityGeneration, qt.Equals, generation)
-			c.Assert(earlier.Fields[0].AutoInc, qt.IsFalse)
-			c.Assert(earlier.Fields[0].IdentityIncrement, qt.Equals, "5")
+			c.Assert(load.Database.Tables, qt.HasLen, 0)
 		})
 	}
 }

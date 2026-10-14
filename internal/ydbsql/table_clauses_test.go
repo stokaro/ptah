@@ -1,4 +1,4 @@
-package sqlschema_test
+package ydbsql_test
 
 import (
 	"testing"
@@ -7,12 +7,11 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/internal/sqlschema"
 )
 
 func TestReadYQLTieredTTL(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE TABLE events (ts Timestamp NOT NULL, id Uint64, PRIMARY KEY (ts)) WITH (STORE = COLUMN, TTL = Interval('PT1H') TO EXTERNAL DATA SOURCE `/local/archive/cold`, Interval('P7D') DELETE ON ts);"), "ydb")
+	database, err := readYQL(c, "CREATE TABLE events (ts Timestamp NOT NULL, id Uint64, PRIMARY KEY (ts)) WITH (STORE = COLUMN, TTL = Interval('PT1H') TO EXTERNAL DATA SOURCE `/local/archive/cold`, Interval('P7D') DELETE ON ts);")
 	c.Assert(err, qt.IsNil)
 	store, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnStore](database.Tables[0].Facets, ydbschema.ColumnStoreKind)
 	c.Assert(err, qt.IsNil)
@@ -26,7 +25,7 @@ func TestReadYQLTieredTTL(t *testing.T) {
 
 func TestReadYQLColumnFamilies(t *testing.T) {
 	c := qt.New(t)
-	database, _, err := sqlschema.Read([]byte("CREATE TABLE t (id Int64 NOT NULL, `a,b` Utf8 FAMILY `pay\\x6coad`, v String FAMILY payload, PRIMARY KEY (id), FAMILY payload (COMPRESSION = 'lz4'), FAMILY `default` (CACHE_MODE = 'regular'));"), "ydb")
+	database, err := readYQL(c, "CREATE TABLE t (id Int64 NOT NULL, `a,b` Utf8 FAMILY `pay\\x6coad`, v String FAMILY payload, PRIMARY KEY (id), FAMILY payload (COMPRESSION = 'lz4'), FAMILY `default` (CACHE_MODE = 'regular'));")
 	c.Assert(err, qt.IsNil)
 	declared, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](database.Tables[0].Facets, ydbschema.ColumnFamiliesKind)
 	c.Assert(err, qt.IsNil)
@@ -51,9 +50,8 @@ func TestReadYQLTableClauseRefusals(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			_, statements, err := sqlschema.Read([]byte(text), "ydb")
+			_, err := readYQL(c, text)
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
-			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
