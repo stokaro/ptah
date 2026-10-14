@@ -70,22 +70,64 @@ func windowsOf(steps []planned) (creation, removal []planned) {
 	return creation, removal
 }
 
-// TestPlanTypes_KeepsAChangedDomain pins that a surviving domain whose base
-// type or NOT NULL changed plans no statement, and says so: Oracle's ALTER
-// DOMAIN changes neither.
-func TestPlanTypes_KeepsAChangedDomain(t *testing.T) {
+// TestPlanTypes_RefusesAChangedDomain pins that a surviving domain whose base
+// type or NOT NULL changed is refused by name rather than planned as nothing:
+// Oracle's ALTER DOMAIN changes neither. Of several, the refusal names the
+// lexicographically first whatever the input order.
+func TestPlanTypes_RefusesAChangedDomain(t *testing.T) {
+	tests := []struct {
+		name    string
+		differs []string
+		want    string
+	}{
+		{name: "a base type", differs: []string{oratype.DiffBaseType},
+			want: `oracle: domain a_d: Oracle cannot change its base type in place, since ALTER DOMAIN changes only a domain's DISPLAY, ORDER and annotations; .*`},
+		{name: "NOT NULL", differs: []string{oratype.DiffNotNull},
+			want: `oracle: domain a_d: Oracle cannot change its NOT NULL in place, .*`},
+		{name: "both", differs: []string{oratype.DiffBaseType, oratype.DiffNotNull},
+			want: `oracle: domain a_d: Oracle cannot change its base type and its NOT NULL in place, .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			changed := func(name string) schemaext.ChangeRecord {
+				return change(oratype.DomainKind, name, &oratype.DomainChange{Before: &oratype.ObservedDomain{BaseType: "NUMBER"},
+					After: &oratype.DesiredDomain{BaseType: "NUMBER(5)", NotNull: true}, Differs: test.differs})
+			}
+			request := planning(changed("z_d"), changed("a_d"),
+				change(oratype.DomainKind, "new_d", &oratype.DomainChange{After: &oratype.DesiredDomain{BaseType: "NUMBER"}}))
+
+			result, err := newRuntime(c).PlanFeatures(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Complete, qt.IsTrue)
+			c.Assert(result.Contributions, qt.HasLen, 0)
+			c.Assert(result.Diagnostics, qt.HasLen, 1)
+			c.Assert(*result.Diagnostics[0].Change, qt.Equals, 1)
+			c.Assert(result.Diagnostics[0].Problem.Code, qt.Equals, schemavalidation.UnsupportedFeature)
+			c.Assert(result.Diagnostics[0].Problem.Kind, qt.Equals, string(oratype.DomainChangeKind))
+			c.Assert(result.Diagnostics[0].Problem.Object, qt.Equals, "a_d")
+			c.Assert(result.Diagnostics[0].Problem.Message, qt.Matches, test.want)
+		})
+	}
+}
+
+// TestPlanTypes_ReplacesAChangedObjectType is the control: a surviving object
+// type whose attributes changed is planned as the one statement Oracle has for
+// it.
+func TestPlanTypes_ReplacesAChangedObjectType(t *testing.T) {
 	c := qt.New(t)
-	request := planning(change(oratype.DomainKind, "d", &oratype.DomainChange{Before: &oratype.ObservedDomain{BaseType: "NUMBER"},
-		After: &oratype.DesiredDomain{BaseType: "NUMBER(5)", NotNull: true}, Differs: []string{oratype.DiffBaseType, oratype.DiffNotNull}}))
+	number := []oratype.Attribute{{Name: "n", Type: "NUMBER"}}
+	request := planning(change(oratype.ObjectTypeKind, "t", &oratype.ObjectTypeChange{Before: &oratype.ObservedObjectType{Attributes: number},
+		After: &oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "n", Type: "NUMBER(5)"}}}, Differs: []string{oratype.DiffAttributes}}))
 
 	result, err := newRuntime(c).PlanFeatures(t.Context(), request)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Complete, qt.IsTrue)
-	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
 	c.Assert(result.Changes, qt.HasLen, 1)
-	c.Assert(result.Changes[0].Steps, qt.HasLen, 0)
-	c.Assert(result.Changes[0].Strategy, qt.Matches, `keep the domain as it is: .*`)
+	c.Assert(result.Changes[0].Steps, qt.HasLen, 1)
+	c.Assert(result.Changes[0].Strategy, qt.Matches, `replace the object type with CREATE OR REPLACE TYPE, .*`)
 }
 
 // TestPlanTypes_RefusesADomainOracle21CannotCreate pins the refusal of a

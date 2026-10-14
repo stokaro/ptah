@@ -3099,10 +3099,10 @@ The package holds every stage's service for the Oracle target:
   undecided rather than created.
 - `PlanService` joins `featureplan.PhaseType`: creations before the routines
   and tables that may name a type, and drops after the tables. An object type
-  whose attributes changed is replaced in place, and a domain whose base type
-  or NOT NULL changed is kept, since Oracle's ALTER DOMAIN changes neither. A
-  domain on a release line without CREATE DOMAIN is refused with the scope
-  advice the common refusal gives.
+  whose attributes changed is replaced in place. A change of a domain's base
+  type or NOT NULL is refused, naming the domain, since Oracle's ALTER DOMAIN
+  changes neither. A domain on a release line without CREATE DOMAIN is
+  refused with the scope advice the common refusal gives.
 - `ReverseService`, `ConvertService`, `ReportService`, which counts under
   `domains` and `composite_types`, and the render `Handlers` complete it.
 

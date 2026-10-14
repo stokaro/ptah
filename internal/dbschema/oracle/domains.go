@@ -119,10 +119,16 @@ func (r *Reader) readDomains(ctx context.Context, db *catalog.Database) error {
 			continue
 		}
 		column := columns[name][0]
+		baseType := formatDomainType(column.dataType, column.length, column.charLength, column.precision, column.scale)
+		if baseType == undefinedDomainType {
+			limits = append(limits, unrepresentable(oratype.DomainKind, ref,
+				"the catalog reports the domain's base type as UNDEFINED"))
+			continue
+		}
 		// The domain catalog carries no vector description, so a domain over a
 		// vector reads as a bare VECTOR here.
 		domain := &oratype.ObservedDomain{
-			BaseType: formatDomainType(column.dataType, column.length, column.charLength, column.precision, column.scale),
+			BaseType: baseType,
 			NotNull:  strings.EqualFold(strings.TrimSpace(column.nullable), "N"),
 			Default:  strings.TrimSpace(column.def.String),
 			Check:    joinDomainChecks(declaredDomainChecks(checks[name], column.name)),
@@ -217,15 +223,38 @@ func (r *Reader) readDomainColumns(ctx context.Context) (map[string][]domainColu
 	return columns, rows.Err()
 }
 
+// undefinedDomainType is what ALL_DOMAIN_COLS writes for a base type its
+// DATA_TYPE decode does not name.
+const undefinedDomainType = "UNDEFINED"
+
 // formatDomainType keeps facts whose meaning differs from the column catalog.
 // A scale without precision constrains NUMBER's scale. National character
 // lengths count characters, while DATA_LENGTH counts their encoded bytes.
+//
+// Two more were measured on 23.26.3.0.0. ALL_DOMAIN_COLS has no CHAR_USED, and
+// a domain declared VARCHAR2(10 CHAR) reports DATA_LENGTH 40 and CHAR_LENGTH
+// 10 on an AL32UTF8 database, while VARCHAR2(10 BYTE) reports 10 and 10; a
+// column the first domain types takes ten characters. So a length in bytes
+// above the length in characters is a length in characters. Where the two are
+// equal the unit cannot be told, and the length is written bare. And the view's
+// DATA_TYPE decode has no arm for BOOLEAN, which it reports as UNDEFINED with
+// DATA_LENGTH 1.
 func formatDomainType(dataType string, length, charLength, precision, scale sql.NullInt64) string {
-	if dataType == "NUMBER" && !precision.Valid && scale.Valid {
-		return fmt.Sprintf("NUMBER(*,%d)", scale.Int64)
-	}
-	if dataType == "NCHAR" || dataType == "NVARCHAR2" {
+	switch dataType {
+	case "NUMBER":
+		if !precision.Valid && scale.Valid {
+			return fmt.Sprintf("NUMBER(*,%d)", scale.Int64)
+		}
+	case "NCHAR", "NVARCHAR2":
 		length = charLength
+	case "VARCHAR2", "CHAR":
+		if charLength.Valid && charLength.Int64 > 0 && length.Int64 > charLength.Int64 {
+			return fmt.Sprintf("%s(%d CHAR)", dataType, charLength.Int64)
+		}
+	case undefinedDomainType:
+		if length.Valid && length.Int64 == 1 && !precision.Valid && !scale.Valid {
+			return "BOOLEAN"
+		}
 	}
 	return formatColumnType(dataType, sql.NullString{}, length, precision, scale)
 }
