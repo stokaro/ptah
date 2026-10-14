@@ -346,7 +346,7 @@ func refuseLossyViewReplacements(diff *difftypes.SchemaDiff, desired *schemamode
 				continue
 			}
 			return &RefusalError{cause: fmt.Errorf("%w: materialized view %s is replaced, and its %q could not be read (%s), so the replacement would recreate it without that setting; "+
-				"declare the setting, or leave the view's definition unchanged", ptaherr.ErrUnsupportedFeature, view.ViewName, record.Kind, record.Knowledge.Reason)}
+				"leave the view's definition unchanged, or declare the setting where a source can state it", ptaherr.ErrUnsupportedFeature, view.ViewName, record.Kind, record.Knowledge.Reason)}
 		}
 	}
 	return nil

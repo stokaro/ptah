@@ -104,7 +104,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read views: %w", err)
 	}
-	matViews, refreshLimits, err := r.readMaterializedViews(ctx, dbName)
+	matViews, viewLimits, err := r.readMaterializedViews(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
@@ -117,7 +117,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		Views:    views,
 		MatViews: matViews,
 	}, revisiontable.NativeNames())
-	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge, refreshLimits)
+	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge, viewLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -359,39 +359,24 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 // view's schedule is reported uninspected for the same reason, and the rest of
 // the read goes on.
 //
-// What this read cannot tell apart, stated rather than hidden: a view created
-// with `TO <target table>` routes its rows into a table the user owns and has no
-// inner storage of its own, and system.tables reports it with the same engine
-// and the same as_select as a view that does own its storage. Measured on
-// 26.7.3.19:
-//
-//	name    engine            as_select
-//	mv_to   MaterializedView  SELECT count() AS c FROM wf9d_alias.users
-//	create_table_query: CREATE MATERIALIZED VIEW wf9d_alias.mv_to
-//	                    TO wf9d_alias.mv_target (`c` UInt64) AS SELECT ...
-//
-// The target survives only in create_table_query, and catalog.MaterializedView has
-// nowhere to put it, so such a view is reported as an ordinary one: it compares
-// as synchronized against a declaration of the same query, and a body change
-// would be planned as a drop and a create that recreates it without the target.
-// Representing the shape would be a model change (a target on the shared node,
-// the renderer emitting `TO`, the comparator diffing it); refusing the read
-// outright would take away a read that works today. Neither is decided here --
-// the support matrix says plainly not to manage a `TO` view with Ptah.
+// A view's storage is not modeled. A view the server stores any way but the
+// one Ptah creates, `ENGINE = MergeTree ORDER BY tuple()`, including one
+// created with `TO <target table>`, gets a view storage limit that names the
+// stored clause; see viewStorageLimits.
 func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]catalog.MaterializedView, []schemaext.SubjectCoverage, error) {
 	views, statements, err := r.readMaterializedViewRows(ctx, dbName)
 	if err != nil || len(views) == 0 {
 		return views, nil, err
 	}
+	limits := viewStorageLimits(views, statements)
 	refreshable, err := r.readRefreshableViews(ctx, dbName)
 	if err != nil {
 		if !isAccessDenied(err) && !isUnknownTable(err) {
 			return nil, nil, fmt.Errorf("read system.view_refreshes: %w", err)
 		}
-		return views, refreshLimits(views, schemaext.Knowledge{State: schemaext.Uninspected,
-			Reason: "the account may not read system.view_refreshes, so which views refresh on a schedule is unknown"}), nil
+		return views, append(limits, refreshLimits(views, schemaext.Knowledge{State: schemaext.Uninspected,
+			Reason: "the account may not read system.view_refreshes, so which views refresh on a schedule is unknown"})...), nil
 	}
-	var limits []schemaext.SubjectCoverage
 	for i := range views {
 		if !refreshable[views[i].Name] {
 			continue

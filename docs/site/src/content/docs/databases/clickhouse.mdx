@@ -718,14 +718,27 @@ before adopting them:
 The `TO <target table>` form is not emitted: the shared schema model carries a
 name and a query, so it cannot name a separate target table.
 
-A materialized view created elsewhere with `TO <target table>` is still read, and
-it is read as though it owned its storage: `system.tables` reports the same
-engine and the same `as_select` for both forms, and the target appears only in
-`create_table_query`, which this reader does not consult. Such a view therefore
-compares as synchronized against a declaration of the same query, and a later
-body change is planned as a drop and a create that recreates it in the
-inner-storage form, so inserts stop reaching the original target table. Do not
-manage a `TO` materialized view with Ptah.
+Ptah models no storage for a materialized view but the
+`ENGINE = MergeTree ORDER BY tuple()` it creates every view with. A view the
+server stores any other way is read with its storage marked as not described:
+another engine, a sorting key, a `PARTITION BY`, `SAMPLE BY` or `TTL` clause, a
+setting other than the `index_granularity = 8192` the server adds, or a `TO`
+target. The read takes the clause from `system.tables.create_table_query`,
+because `system.tables` reports every form with the same engine and the same
+`as_select`, and the reason names the clause:
+
+```sql
+-- materialized view analytics.totals: ptah.run/clickhouse/view-storage was not captured (the view stores its rows with ENGINE = SummingMergeTree ORDER BY c SETTINGS index_granularity = 8192, which Ptah does not model), and its statement does not carry it
+```
+
+`schema inspect --format sql` and `ptah db read` write that comment beside the
+view, whose statement still carries Ptah's storage. A comparison reports the
+view undecided rather than synchronized, so `schema drift` against such a
+description fails instead of reporting no drift. A change to the view's query is
+refused, because the drop and create it plans would recreate the view with
+Ptah's storage, and for a `TO` view inserts would stop reaching the target
+table. HCL, YAML and Go annotations state no storage for a view, so an export to
+them carries none. Manage such a view's storage outside Ptah.
 
 ## Roles and grants
 
