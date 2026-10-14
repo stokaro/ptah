@@ -1078,7 +1078,10 @@ emitted as a leading SQL comment because the engine cannot store one. See
 A MySQL or MariaDB role carries none of them either, and the same attributes
 are refused there. `inherit="false"` is refused too: a role on those engines
 always passes on the privileges of the roles granted to it. See
-[MySQL and MariaDB](../../databases/mysql/).
+[MySQL and MariaDB](../../databases/mysql/). On CockroachDB,
+`superuser="true"` and `inherit="false"` are refused, because a CockroachDB
+role is a superuser only as a member of `admin` and always inherits. See
+[CockroachDB, YugabyteDB, and Spanner](../../databases/distributed/).
 
 On YDB a role is a user, and `group="true"` declares a group instead. A user
 takes `login` and `password`; a group takes neither. `member_of` names the

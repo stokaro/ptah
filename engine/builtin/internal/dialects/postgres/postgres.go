@@ -3111,6 +3111,13 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	if r.refuses(capability.RoleManagement, "role", node.Name) {
 		return nil
 	}
+	cockroach := r.dialect == platform.CockroachDB
+	if cockroach {
+		attributes := roleAttributes{superuser: node.Superuser, inherit: node.Inherit}
+		if err := attributes.cockroachError("CREATE ROLE", node.Name); err != nil {
+			return err
+		}
+	}
 
 	// Build CREATE ROLE statement
 	var parts []string
@@ -3134,10 +3141,15 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 		attributes = append(attributes, fmt.Sprintf("PASSWORD %s", r.escapeValue(node.Password)))
 	}
 
-	if node.Superuser {
-		attributes = append(attributes, "SUPERUSER")
-	} else {
-		attributes = append(attributes, "NOSUPERUSER")
+	// CockroachDB has neither SUPERUSER nor INHERIT; see cockroach_roles.go.
+	// What it cannot express was refused above, so leaving the words out
+	// keeps what the role declared.
+	if !cockroach {
+		if node.Superuser {
+			attributes = append(attributes, "SUPERUSER")
+		} else {
+			attributes = append(attributes, "NOSUPERUSER")
+		}
 	}
 
 	if node.CreateDB {
@@ -3152,10 +3164,12 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 		attributes = append(attributes, "NOCREATEROLE")
 	}
 
-	if node.Inherit {
-		attributes = append(attributes, "INHERIT")
-	} else {
-		attributes = append(attributes, "NOINHERIT")
+	if !cockroach {
+		if node.Inherit {
+			attributes = append(attributes, "INHERIT")
+		} else {
+			attributes = append(attributes, "NOINHERIT")
+		}
 	}
 
 	if node.Replication {
@@ -3377,6 +3391,9 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 		}
 
 	case *ast.SetSuperuserOperation:
+		if r.dialect == platform.CockroachDB {
+			return cockroachAlterRoleError(roleName, "SUPERUSER")
+		}
 		if op.Superuser {
 			parts = append(parts, "SUPERUSER")
 		} else {
@@ -3398,6 +3415,9 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 		}
 
 	case *ast.SetInheritOperation:
+		if r.dialect == platform.CockroachDB {
+			return cockroachAlterRoleError(roleName, "INHERIT")
+		}
 		if op.Inherit {
 			parts = append(parts, "INHERIT")
 		} else {

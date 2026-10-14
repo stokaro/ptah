@@ -228,6 +228,7 @@ func corpus() []Fixture {
 			Flags: []capability.Capability{capability.ExternalDataSources}},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
+		{Name: "role-cockroachdb", Schema: cockroachRoleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
 		{Name: "ydb-grant-database", Schema: ydbGrantDatabaseFixture()},
 		{Name: "grant-table", Schema: grantTableFixture()},
@@ -340,7 +341,7 @@ func twoIndexedTables() schemamodel.Database {
 
 func rlsHostStructTwoTablesFixture() schemamodel.Database {
 	db := twoNamedTables()
-	db.Roles = []schemamodel.Role{{Name: "app_reader"}}
+	db.Roles = []schemamodel.Role{{Name: "app_reader", Inherit: true}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "B", Dialects: []string{"sqlserver"}}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName: "B", Name: "b_read", PolicyFor: "SELECT",
@@ -368,7 +369,7 @@ func indexHostStructOnlyFixture() schemamodel.Database {
 
 func rlsHostStructOnlyFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{Name: "app_reader"}}
+	db.Roles = []schemamodel.Role{{Name: "app_reader", Inherit: true}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "T", Dialects: []string{"sqlserver"}}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName: "T", Name: "t_read", PolicyFor: "SELECT",
@@ -379,7 +380,7 @@ func rlsHostStructOnlyFixture() schemamodel.Database {
 
 func rlsHostTableOnlyFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{Name: "app_reader"}}
+	db.Roles = []schemamodel.Role{{Name: "app_reader", Inherit: true}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{Table: "t", Dialects: []string{"sqlserver"}}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		Table: "t", Name: "t_read", PolicyFor: "SELECT",
@@ -1657,7 +1658,20 @@ func roleFixture() schemamodel.Database {
 	db.Roles = []schemamodel.Role{{
 		StructName: "RO", Name: "app_reader", Login: true, Password: "s3cret",
 		Superuser: true, CreateDB: true, CreateRole: true, Inherit: true, Replication: true,
-		Comment: "reader", Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+		Comment: "reader", Dialects: []string{"postgres", "yugabytedb"},
+	}}
+	return db
+}
+
+// cockroachRoleFixture declares every role attribute CockroachDB has an
+// option for. CockroachDB has no SUPERUSER and no NOINHERIT, and refuses a
+// role that declares either, so the role fixture above leaves it out.
+func cockroachRoleFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{
+		StructName: "RO", Name: "app_reader", Login: true, Password: "s3cret",
+		CreateDB: true, CreateRole: true, Inherit: true, Replication: true,
+		Comment: "reader", Dialects: []string{"cockroachdb"},
 	}}
 	return db
 }
@@ -1688,7 +1702,7 @@ func ydbGrantDatabaseFixture() schemamodel.Database {
 
 func grantTableFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true, Inherit: true}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "t",
 		WithOption: true, GrantedBy: "postgres", Comment: "read",
@@ -1699,7 +1713,7 @@ func grantTableFixture() schemamodel.Database {
 
 func grantSchemaFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true, Inherit: true}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app_reader", Privileges: []string{"USAGE"}, OnSchema: "public",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
@@ -1709,7 +1723,7 @@ func grantSchemaFixture() schemamodel.Database {
 
 func grantSequenceFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true, Inherit: true}}
 	db.Sequences = []schemamodel.Sequence{{StructName: "S", Name: "order_seq"}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app_reader", Privileges: []string{"USAGE"}, OnSequence: "order_seq",
@@ -1724,7 +1738,7 @@ func grantSequenceFixture() schemamodel.Database {
 // see.
 func grantRoutineFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true, Inherit: true}}
 	db.Functions = []schemamodel.Function{{
 		StructName: "F", Name: "do_it", Parameters: "p uuid", Language: "sql", Body: "SELECT 1;", Kind: "procedure",
 	}}
@@ -1741,7 +1755,7 @@ func grantRoutineFixture() schemamodel.Database {
 func grantColumnsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"},
 		schemamodel.Field{StructName: "T", FieldName: "Label", Name: "label", Type: "TEXT"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true, Inherit: true}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app_reader", Privileges: []string{"UPDATE"}, OnTable: "t", Columns: []string{"label"},
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
@@ -1752,7 +1766,7 @@ func grantColumnsFixture() schemamodel.Database {
 // revokedGrantFixture asserts a privilege absent.
 func revokedGrantFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true, Inherit: true}}
 	db.RevokedGrants = []schemamodel.Grant{{
 		StructName: "RG", Role: "app_reader", Privileges: []string{"INSERT"}, OnTable: "t",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
@@ -1776,8 +1790,8 @@ func defaultPrivilegeBase() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t", Schema: "app"})
 	db.Schemas = []schemamodel.Schema{{Name: "app"}}
 	db.Roles = []schemamodel.Role{
-		{StructName: "OWNER", Name: "app_owner", Login: true},
-		{StructName: "READER", Name: "app_reader", Login: true},
+		{StructName: "OWNER", Name: "app_owner", Login: true, Inherit: true},
+		{StructName: "READER", Name: "app_reader", Login: true, Inherit: true},
 	}
 	return db
 }
@@ -1835,7 +1849,7 @@ func defaultPrivilegeFixture(schema, class, grantee string, value pgdefaultprivi
 
 func rlsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader"}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Inherit: true}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{
 		StructName: "T", Table: "t", Comment: "rls",
 		Dialects: []string{"sqlserver"},
@@ -1858,7 +1872,7 @@ func rlsFixture() schemamodel.Database {
 // measuring that.
 func rlsStrengthFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader"}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Inherit: true}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{
 		StructName: "T", Table: "t", Forced: true,
 		Dialects: []string{"sqlserver"},
