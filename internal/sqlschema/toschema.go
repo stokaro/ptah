@@ -32,6 +32,7 @@ import (
 	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/sqlident"
 )
 
 // ToField converts an ast.ColumnNode to a schemamodel.Field with comprehensive attribute extraction.
@@ -429,7 +430,10 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 }
 
 func indexParts(index *ast.IndexNode, sourcePlatform string) []schemamodel.IndexPart {
-	if sqlplatform.NormalizeDialect(sourcePlatform) == sqlplatform.YDB {
+	// A key column of a dialect whose names are paths is one name, never an
+	// expression: a dot or a quote in it belongs to the name, so the key list
+	// is read as names alone.
+	if sqlident.NamesArePaths(sourcePlatform) {
 		return nil
 	}
 	if len(index.Parts) > 0 {

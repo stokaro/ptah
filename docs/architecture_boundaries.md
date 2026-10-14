@@ -111,10 +111,10 @@ document. Two seams carry it, and both are plugin debt under
   reaches a YQL syntax tree through `internal/sqlsyntax`. Whether a grammar
   owner also serves syntax trees, and in what form, is not decided yet.
 
-The reader still reads the names of the tables it converts for the YDB owner by
-YDB's rules, and gives a YDB index no key parts. Neither links an owner;
-[#4204](https://github.com/stokaro/ptah/issues/4204) moves the name rules to
-`internal/sqlident`.
+The tables the shared conversion reads for the YDB owner carry YDB names: one
+path in backticks, where a dot is part of the name. The reader asks
+`internal/sqlident`, the helper that also quotes and qualifies a name, how a
+dialect writes one, so the reader names no dialect for it.
 
 The reader also imports dialect helpers under `internal/`. They are allowed,
 because each interprets an object of the common model that every reader of the

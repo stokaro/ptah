@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/uniquename"
 )
 
@@ -33,12 +33,13 @@ import (
 // ClickHouse, SQLite and Oracle each have their own case rules, which this
 // package does not model. A read with no dialect keeps names as written too,
 // so a file mixing conventions can be read at all.
+//
+// A dialect with quoting of its own, as YQL's backslash escapes are YDB's, is
+// read by internal/sqlident first; see [sqlident.ReadName].
 func identifierPart(sourcePlatform, part string) string {
 	part = strings.TrimSpace(part)
-	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
-		if name, ok := lexer.YQLIdentifierValue(part); ok {
-			return name
-		}
+	if name, ok := sqlident.ReadName(sourcePlatform, part); ok {
+		return name
 	}
 	if isQuotedSQLIdentifierPart(part) {
 		return unquoteSQLIdentifierPart(part)
@@ -128,9 +129,10 @@ func resolveDeclaredName(sourcePlatform, written string, declared []string) int 
 
 // identifierParts reads each dot-separated component of value through
 // [identifierPart]. The components are independent: `"App".ORDERS` names the
-// relation `orders` inside the schema `App` on PostgreSQL.
+// relation `orders` inside the schema `App` on PostgreSQL. A dialect whose
+// names are paths writes one component; see [sqlident.NamesArePaths].
 func identifierParts(sourcePlatform, value string) []string {
-	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+	if sqlident.NamesArePaths(sourcePlatform) {
 		return []string{identifierPart(sourcePlatform, value)}
 	}
 	parts := splitSQLIdentifier(value)
@@ -145,12 +147,8 @@ func normalizeSQLIdentifier(sourcePlatform, value string) string {
 }
 
 func normalizeSQLTableIdentifier(sourcePlatform, value string) (schema, name string) {
-	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
-		name = identifierPart(sourcePlatform, value)
-		if slash := strings.LastIndex(name, "/"); slash >= 0 {
-			return name[:slash], name[slash+1:]
-		}
-		return "", name
+	if sqlident.NamesArePaths(sourcePlatform) {
+		return sqlident.SplitPath(identifierPart(sourcePlatform, value))
 	}
 	parts := identifierParts(sourcePlatform, value)
 	if len(parts) == 1 {
@@ -278,7 +276,7 @@ func uniqueStructName(databases []*schemamodel.Database, table schemamodel.Table
 }
 
 func normalizeSQLIdentifierReference(sourcePlatform, value string) string {
-	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+	if sqlident.NamesArePaths(sourcePlatform) {
 		return identifierPart(sourcePlatform, value)
 	}
 	if !isSQLIdentifierReference(value) {
