@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
 
 	"ptah.run/catalog"
@@ -94,6 +96,38 @@ func TestReader_ReadsThePermissionsOfOwnedObjects(t *testing.T) {
 		{Kind: "external data source", Schema: "ext", Name: "pg", Owner: "app"},
 		{Kind: "secret", Schema: "ext", Name: "pg_password", Owner: "app"},
 		{Kind: "topic", Schema: "ext", Name: "stream", Owner: "app"},
+	})
+}
+
+// TestReader_ReadsThePermissionsOfViewsAndReplications reads the owner and
+// the permission entries of a view, an async replication and a transfer from
+// the descriptions their services answer with. A grant on a view is reported
+// as a grant on a table, the shape a declaration names a view with, and its
+// owner row says it is a view.
+func TestReader_ReadsThePermissionsOfViewsAndReplications(t *testing.T) {
+	c := qt.New(t)
+	source := replicationSource()
+	source.directories["/local"] = append(source.directories["/local"], entry("active_users", Ydb_Scheme.Entry_VIEW))
+	source.tables["/local/active_users"] = &Ydb_Table.DescribeTableResult{}
+	source.views = map[string]*Ydb_View.DescribeViewResult{"/local/active_users": {
+		QueryText: "SELECT id FROM order_log", Self: owned("app", permission("readers", "ydb.granular.select_row"))}}
+	source.replications["/local/mirror"].Self = owned("root@builtin", permission("replicators", "ydb.generic.full"))
+	source.transfers["/local/ingest"].Self = owned("app",
+		permission("readers", "ydb.generic.read"), permission("writers", "ydb.generic.write", "ydb.generic.list"))
+
+	db := readFrom(c, source)
+
+	c.Assert(db.Grants, qt.DeepEquals, []catalog.Grant{
+		{Role: "readers", Privilege: "ydb.granular.select_row", ObjectType: "TABLE", ObjectName: "active_users"},
+		{Role: "readers", Privilege: "ydb.generic.read", ObjectType: "TRANSFER", ObjectName: "ingest"},
+		{Role: "writers", Privilege: "ydb.generic.write", ObjectType: "TRANSFER", ObjectName: "ingest"},
+		{Role: "writers", Privilege: "ydb.generic.list", ObjectType: "TRANSFER", ObjectName: "ingest"},
+		{Role: "replicators", Privilege: "ydb.generic.full", ObjectType: "ASYNC REPLICATION", ObjectName: "mirror"},
+	})
+	c.Assert(db.ObjectOwners, qt.DeepEquals, []catalog.ObjectOwner{
+		{Kind: "view", Name: "active_users", Owner: "app"},
+		{Kind: "transfer", Name: "ingest", Owner: "app"},
+		{Kind: "async replication", Name: "mirror", Owner: "root@builtin"},
 	})
 }
 

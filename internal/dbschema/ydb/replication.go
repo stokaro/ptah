@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbacl"
 )
 
 // replicaAttribute is the attribute YDB gives a table an async replication
@@ -62,6 +63,7 @@ func (r *Reader) replication(ctx context.Context, source Source, schema, name st
 	if err != nil {
 		return fmt.Errorf("YDB async replication %s: %w", objectPath, err)
 	}
+	r.objectAccess(ydbacl.ObjectAsyncReplication, schema, name, described.GetSelf(), db)
 	db.FeatureObjects, err = db.FeatureObjects.With(ydbreplication.ObservedReplicationObject(schema, name, spec, state))
 	return err
 }
@@ -82,6 +84,7 @@ func (r *Reader) transfer(ctx context.Context, source Source, schema, name strin
 	if err != nil {
 		return fmt.Errorf("YDB transfer %s: %w", objectPath, err)
 	}
+	r.objectAccess(ydbacl.ObjectTransfer, schema, name, described.GetSelf(), db)
 	db.FeatureObjects, err = db.FeatureObjects.With(ydbreplication.ObservedTransferObject(schema, name, spec, state))
 	return err
 }

@@ -794,14 +794,19 @@ func dialectsAttr() Attribute {
 // objectTargetAttributes are the attributes a grant and a revoke name a
 // target by when no other attribute names its kind, one per kind
 // [schemamodel.GrantObjectKinds] lists, so the parser and this table accept
-// the same set.
+// the same set. A resource pool belongs to the database and is named by its
+// name alone; every other kind is named as a table is.
 func objectTargetAttributes() []Attribute {
 	kinds := schemamodel.GrantObjectKinds()
 	attributes := make([]Attribute, 0, len(kinds))
 	for _, kind := range kinds {
-		attributes = append(attributes, attr(kind.Attribute, fmt.Sprintf("Target %s, its name qualified by its "+
-			"directory as on_table names a table, such as app.events. YDB only.", strings.ToLower(kind.Kind)),
-			valueString, false, false))
+		description := fmt.Sprintf("Target %s, its name qualified by its directory as on_table names a table, "+
+			"such as app.events. YDB only.", strings.ToLower(kind.Kind))
+		if kind.Kind == schemamodel.GrantObjectResourcePool {
+			description = "Target resource pool, named by its name alone, such as batch: a pool belongs to the " +
+				"database, not to a directory. YDB only."
+		}
+		attributes = append(attributes, attr(kind.Attribute, description, valueString, false, false))
 	}
 	return attributes
 }

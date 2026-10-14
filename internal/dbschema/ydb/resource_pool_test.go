@@ -11,6 +11,7 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
+	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -22,11 +23,21 @@ import (
 )
 
 // poolSource is a database holding one table, the pool default, a pool of its
-// own and a classifier, as .sys reports them.
+// own and a classifier, as .sys reports them, with the entry each pool's path
+// answers with. The pool default holds the two entries YDB gives it, each
+// naming two permissions, beside one a GRANT made.
 func poolSource() fakeSource {
 	return fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 		tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": plainTable()},
+		paths: map[string]*Ydb_Scheme.Entry{
+			"/local/.metadata/workload_manager/pools/default": owned("metadata@system",
+				permission("all-users@well-known", "ydb.granular.select_row", "ydb.granular.describe_schema"),
+				permission("root@builtin", "ydb.granular.select_row", "ydb.granular.describe_schema"),
+				permission("etl", "ydb.granular.select_row")),
+			"/local/.metadata/workload_manager/pools/batch": owned("root@builtin",
+				permission("etl", "ydb.granular.describe_schema"), permission("etl", "ydb.granular.select_row")),
+		},
 		pools: ydbschema.ResourcePools{
 			Database: "/local",
 			Objects: []schemaext.Object{
@@ -57,6 +68,91 @@ func TestReadSchema_ResourcePools_HappyPath(t *testing.T) {
 			c.Assert(objects, qt.ContentEquals, poolSource().pools.Objects)
 			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals, schemaext.Complete)
 			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("missing")).State, qt.Equals, schemaext.Complete)
+		})
+	}
+}
+
+// TestReadSchema_ResourcePoolPermissions_HappyPath reads the owner and the
+// permission entries of each pool, on a target with resource pools, from the
+// path under .metadata/workload_manager/pools. The two entries YDB gives the
+// pool default name two permissions each, which no GRANT does, and are
+// implicit; the entry a GRANT made there is not. A pool default the server
+// lists before it has made its scheme object holds no entry, and a target
+// without resource pools asks for none.
+func TestReadSchema_ResourcePoolPermissions_HappyPath(t *testing.T) {
+	batch := []catalog.Grant{
+		{Role: "etl", Privilege: "ydb.granular.describe_schema", ObjectType: "RESOURCE POOL", ObjectName: "batch"},
+		{Role: "etl", Privilege: "ydb.granular.select_row", ObjectType: "RESOURCE POOL", ObjectName: "batch"},
+	}
+	tests := []struct {
+		name       string
+		pools      bool
+		pathErrors map[string]error
+		want       []catalog.Grant
+		owners     []catalog.ObjectOwner
+	}{
+		{name: "every pool", pools: true, want: append([]catalog.Grant{
+			{Role: "all-users@well-known", Privilege: "ydb.granular.select_row", ObjectType: "RESOURCE POOL", ObjectName: "default", Implicit: true},
+			{Role: "all-users@well-known", Privilege: "ydb.granular.describe_schema", ObjectType: "RESOURCE POOL", ObjectName: "default", Implicit: true},
+			{Role: "root@builtin", Privilege: "ydb.granular.select_row", ObjectType: "RESOURCE POOL", ObjectName: "default", Implicit: true},
+			{Role: "root@builtin", Privilege: "ydb.granular.describe_schema", ObjectType: "RESOURCE POOL", ObjectName: "default", Implicit: true},
+			{Role: "etl", Privilege: "ydb.granular.select_row", ObjectType: "RESOURCE POOL", ObjectName: "default"},
+		}, batch...), owners: []catalog.ObjectOwner{
+			{Kind: "resource pool", Name: "default", Owner: "metadata@system"},
+			{Kind: "resource pool", Name: "batch", Owner: "root@builtin"},
+		}},
+		{name: "a pool default not made yet", pools: true, pathErrors: map[string]error{
+			"/local/.metadata/workload_manager/pools/default": fmt.Errorf("describe: %w", ydbschema.ErrPathNotVisible),
+		}, want: batch, owners: []catalog.ObjectOwner{{Kind: "resource pool", Name: "batch", Owner: "root@builtin"}}},
+		{name: "no resource pools", pathErrors: map[string]error{
+			"/local/.metadata/workload_manager/pools/default": errors.New("asked for a pool's entry"),
+			"/local/.metadata/workload_manager/pools/batch":   errors.New("asked for a pool's entry"),
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := poolSource()
+			source.pathErrors = test.pathErrors
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local",
+				capability.YDB262().With(capability.ResourcePools, test.pools)).ReadSchemaContext(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Grants, qt.DeepEquals, test.want)
+			c.Assert(db.ObjectOwners, qt.DeepEquals, test.owners)
+		})
+	}
+}
+
+// TestReadSchema_ResourcePoolPermissions_FailurePath fails a read that cannot
+// reach a pool's entry: a pool other than default the path does not reach,
+// and a pool default whose request fails for any other reason.
+func TestReadSchema_ResourcePoolPermissions_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		err     error
+		wantErr string
+	}{
+		{name: "a pool the path does not reach", path: "/local/.metadata/workload_manager/pools/batch",
+			err:     fmt.Errorf("describe: %w", ydbschema.ErrPathNotVisible),
+			wantErr: `read the permissions of YDB resource pool batch: describe: the path does not exist or the account may not see it`},
+		{name: "the pool default unreachable for another reason", path: "/local/.metadata/workload_manager/pools/default",
+			err:     errors.New("connection reset"),
+			wantErr: `read the permissions of YDB resource pool default: connection reset`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := poolSource()
+			source.pathErrors = map[string]error{test.path: test.err}
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local",
+				capability.YDB262().With(capability.ResourcePools, true)).ReadSchemaContext(t.Context())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
 		})
 	}
 }

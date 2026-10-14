@@ -78,27 +78,12 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
 	}
-	// Capture graph units through one common walk. An owner may require a
-	// position before, between, or after them; streaming SQL before scheduling
-	// would make a late conflict leave a successful prefix.
-	var nodes []ast.Node
-	typeStart, typeEnd := 0, 0
-	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
-		nodes = append(nodes, node)
-		return lowering.Context.Err()
-	}, func(start bool) {
-		if start {
-			typeStart = len(nodes)
-		} else {
-			typeEnd = len(nodes)
-		}
-	}); err != nil {
-		return err
-	}
-	common, metadata, err := declarationCommonGraph(lowering, nodes)
+	sequence, err := captureCommonSequence(tables, target, lowering, objects)
 	if err != nil {
 		return err
 	}
+	nodes, typeStart, typeEnd := sequence.nodes, sequence.typeStart, sequence.typeEnd
+	common, metadata := declarationCommonGraph(nodes, sequence.metadata)
 	semantics := identifier.ForDialect(target)
 	request := featureplan.DeclarationRequest{Target: target, Identifiers: semantics, Capabilities: lowering.Capabilities,
 		Objects: objects, CommonSteps: metadata, Types: schemaext.DefinedTypes(database.FeatureObjects)}
@@ -155,7 +140,93 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 			return err
 		}
 	}
+	if err := visitDatabaseNodes(visit, sequence.trailing...); err != nil {
+		return err
+	}
 	return lowering.Context.Err()
+}
+
+// commonSequence is the common statements of a render, each with its
+// metadata, the span the types take in it, and the permission statements that
+// go after every scheduled statement instead.
+type commonSequence struct {
+	nodes              []ast.Node
+	metadata           []featureplan.CommonStep
+	typeStart, typeEnd int
+	trailing           []ast.Node
+}
+
+// captureCommonSequence walks the common statements of tables once, as graph
+// units: an owner may require a position before, between or after them, and
+// streaming SQL before scheduling would make a late conflict leave a
+// successful prefix. objects are the declared objects the owners create.
+func captureCommonSequence(tables schemamodel.Database, target string, lowering Lowering, objects []schemaext.Object) (commonSequence, error) {
+	var sequence commonSequence
+	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
+		sequence.nodes = append(sequence.nodes, node)
+		return lowering.Context.Err()
+	}, func(start bool) {
+		if start {
+			sequence.typeStart = len(sequence.nodes)
+		} else {
+			sequence.typeEnd = len(sequence.nodes)
+		}
+	}); err != nil {
+		return commonSequence{}, err
+	}
+	metadata, err := commonMetadata(lowering, sequence.nodes)
+	if err != nil {
+		return commonSequence{}, err
+	}
+	sequence.metadata = metadata
+	return sequence.withoutDeclaredObjectPermissions(objects), nil
+}
+
+// withoutDeclaredObjectPermissions takes out of the sequence each GRANT and
+// REVOKE that reads an object an owner declares, such as a YDB topic, into
+// trailing, in their order, to be written after every scheduled statement.
+// The type span moves with the statements.
+//
+// The owner decides where its object is created, and one creates it after
+// every common statement: YDB's streaming query owner, so the query reads the
+// schema the rest leaves. A permission statement inside the common sequence
+// would then come before the object it names. Nothing depends on a GRANT or
+// a REVOKE, and the end of the script is after both its object and its
+// grantee.
+func (s commonSequence) withoutDeclaredObjectPermissions(objects []schemaext.Object) commonSequence {
+	declared := make(map[objectidentity.Key]bool, len(objects))
+	for _, object := range objects {
+		declared[object.Ref.Key()] = true
+	}
+	kept := commonSequence{typeStart: s.typeStart, typeEnd: s.typeEnd}
+	for i, node := range s.nodes {
+		if !permissionOnDeclaredObject(node, s.metadata[i].Effects, declared) {
+			kept.nodes = append(kept.nodes, node)
+			kept.metadata = append(kept.metadata, s.metadata[i])
+			continue
+		}
+		kept.trailing = append(kept.trailing, node)
+		if i < s.typeStart {
+			kept.typeStart--
+		}
+		if i < s.typeEnd {
+			kept.typeEnd--
+		}
+	}
+	return kept
+}
+
+// permissionOnDeclaredObject reports whether node is a GRANT or a REVOKE whose
+// effects read one of the declared objects.
+func permissionOnDeclaredObject(node ast.Node, effects []plangraph.Effect, declared map[objectidentity.Key]bool) bool {
+	switch node.(type) {
+	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+	default:
+		return false
+	}
+	return slices.ContainsFunc(effects, func(effect plangraph.Effect) bool {
+		return effect.Action == plangraph.Read && declared[effect.Subject.Key()]
+	})
 }
 
 // phaseDependencies places a declaration step of phase among the common
@@ -231,28 +302,36 @@ func declaredObjects(database schemamodel.Database, target string, lowering Lowe
 	return objects, tables, nil
 }
 
-func declarationCommonGraph(lowering Lowering, nodes []ast.Node) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep, error) {
-	common := plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/schema-creation"}
-	metadata := make([]featureplan.CommonStep, len(nodes))
-	if lowering.CommonMetadata != nil {
-		var err error
-		metadata, err = lowering.CommonMetadata(lowering.Context, nodes)
-		if err != nil {
-			return common, nil, err
-		}
-		if len(metadata) != len(nodes) {
-			return common, nil, fmt.Errorf("%w: common creation metadata changed the node count", schemaext.ErrInvalidValue)
-		}
+// commonMetadata is the metadata lowering gives each common node, one record
+// per node, and empty records where it gives none.
+func commonMetadata(lowering Lowering, nodes []ast.Node) ([]featureplan.CommonStep, error) {
+	if lowering.CommonMetadata == nil {
+		return make([]featureplan.CommonStep, len(nodes)), nil
 	}
+	metadata, err := lowering.CommonMetadata(lowering.Context, nodes)
+	if err != nil {
+		return nil, err
+	}
+	if len(metadata) != len(nodes) {
+		return nil, fmt.Errorf("%w: common creation metadata changed the node count", schemaext.ErrInvalidValue)
+	}
+	return metadata, nil
+}
+
+// declarationCommonGraph gives each common node, with its metadata, an
+// identity and a step, each after the one before it.
+func declarationCommonGraph(nodes []ast.Node, metadata []featureplan.CommonStep) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep) {
+	common := plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/schema-creation"}
+	identified := make([]featureplan.CommonStep, len(nodes))
 	for i, node := range nodes {
 		step := metadata[i].Clone()
 		step.ID = plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("common/%06d", i)}
-		metadata[i] = step
+		identified[i] = step
 		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{ID: step.ID,
 			Payload: []ast.Node{node}, Effects: step.Effects, Transaction: step.Transaction, Impact: step.Impact})
 		if i > 0 {
-			common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: metadata[i-1].ID, After: step.ID})
+			common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: identified[i-1].ID, After: step.ID})
 		}
 	}
-	return common, metadata, nil
+	return common, identified
 }

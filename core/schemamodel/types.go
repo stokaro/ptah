@@ -1456,11 +1456,12 @@ type Grant struct {
 
 	// OnObject names a target of a kind none of the fields above names, and
 	// ObjectKind names that kind, one of [GrantObjectKinds]. Both are YDB's
-	// today: a topic, a coordination node, a secret, an external data source
-	// or an external table, each a scheme object with an access list of its
-	// own. OnObject is spelled as OnTable is, the object's name qualified by
-	// its schema, and is mutually exclusive with the other targets. A target
-	// without the capability key of the kind refuses it.
+	// today: a scheme object with an access list of its own, such as a topic
+	// or an async replication. OnObject is spelled as OnTable is, the
+	// object's name qualified by its schema, except that a resource pool,
+	// which belongs to the database, is named by its name alone. It is
+	// mutually exclusive with the other targets. A target without the
+	// capability key of the kind refuses it.
 	OnObject   string `json:",omitempty"`
 	ObjectKind string `json:",omitempty"`
 

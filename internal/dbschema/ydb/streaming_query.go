@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/internal/ydbacl"
 )
 
 type streamingQuerySource interface {
@@ -59,6 +60,9 @@ func (r *Reader) streamingQuery(ctx context.Context, source Source, schema, name
 		return unreadStreamingQuery(db, schema, name, "streaming query metadata access was refused")
 	}
 	if err != nil {
+		return err
+	}
+	if err := r.pathAccess(ctx, source, ydbacl.ObjectStreamingQuery, schema, name, db); err != nil {
 		return err
 	}
 	db.FeatureObjects, err = db.FeatureObjects.With(ydbstreaming.ObservedObject(schema, name, spec))

@@ -35,12 +35,14 @@ import (
 // and the database's users, groups, memberships, resource pools, classifiers,
 // external data sources and external tables. A path is absolute.
 //
-// A directory's own entry, and the description of a table, a topic, a
-// coordination node, an external data source and an external table, each
-// carry the object's owner and its permission entries, which is where the
-// reader reads them from: the scheme service answers for exactly the objects
-// the read walks. An entry a directory lists carries neither, so a secret,
-// which has no description of its own, is asked for its entry by path.
+// A directory's own entry, and the description of a table, a view, a topic,
+// a coordination node, an external data source, an external table, an async
+// replication and a transfer, each carry the object's owner and its
+// permission entries, which is where the reader reads them from: the scheme
+// service answers for exactly the objects the read walks. An entry a
+// directory lists carries neither, so a secret and a streaming query, which
+// have no such description, and a resource pool, which is in a directory the
+// read does not walk, are asked for their entry by path.
 type Source interface {
 	ListDirectory(ctx context.Context, path string) (self *Ydb_Scheme.Entry, children []*Ydb_Scheme.Entry, err error)
 	DescribePath(ctx context.Context, path string) (*Ydb_Scheme.Entry, error)
@@ -342,6 +344,12 @@ func operationStatus(operation *Ydb_Operations.Operation) error {
 	return nil
 }
 
+// ErrPathNotVisible reports a path the server answered SCHEME_ERROR for: one
+// that does not exist, or one the account may not see, which YDB does not tell
+// apart (see [isSchemeError]). An error a [Source] returns for such a path
+// matches it with [errors.Is].
+var ErrPathNotVisible = errors.New("the path does not exist or the account may not see it")
+
 // statusError is an operation the server finished with a status other than
 // success.
 type statusError struct {
@@ -351,6 +359,11 @@ type statusError struct {
 
 func (e *statusError) Error() string {
 	return fmt.Sprintf("%s: %s", e.status, e.issues)
+}
+
+// Is reports a SCHEME_ERROR as [ErrPathNotVisible].
+func (e *statusError) Is(target error) bool {
+	return target == ErrPathNotVisible && e.status == Ydb.StatusIds_SCHEME_ERROR
 }
 
 // isSchemeError reports a SCHEME_ERROR, which is how YDB answers a path that

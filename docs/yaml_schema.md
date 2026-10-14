@@ -497,8 +497,9 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
   `on_sequence`, `on_function`, `on_procedure`, `on_database` (YDB),
   `on_topic`, `on_coordination_node`, `on_secret`,
-  `on_external_data_source`, `on_external_table` (YDB), `with_option`,
-  `comment`
+  `on_external_data_source`, `on_external_table`, `on_async_replication`,
+  `on_transfer`, `on_streaming_query`, `on_resource_pool` (YDB),
+  `with_option`, `comment`
 - `default_privileges`: `for_role`, `schema`, `object_type`, `grantee`,
   `privileges`, `grantable`, `comment`, `dialects`
 - `topics` (YDB only): `name`, `schema`, `min_active_partitions`,

@@ -85,6 +85,20 @@ const GrantPermission = "ydb.access.grant"
 // the same directory hold no entry of their own.
 const DescribeSchemaPermission = "ydb.granular.describe_schema"
 
+// DefaultPoolEntry reports whether an entry of the resource pool default,
+// which names the permissions names, is one YDB gave the pool when it made
+// it rather than one a GRANT made.
+//
+// Measured on 25.1.4.7 and 26.2.1.14: the pool default holds one entry for
+// all-users@well-known and one for root@builtin, each naming
+// ydb.granular.select_row and ydb.granular.describe_schema together. A GRANT
+// makes one entry per permission it names, so no GRANT makes an entry that
+// names those two.
+func DefaultPoolEntry(names []string) bool {
+	return len(names) == 2 && slices.Contains(names, "ydb.granular.select_row") &&
+		slices.Contains(names, DescribeSchemaPermission)
+}
+
 // describingPermissions are the permissions that carry
 // [DescribeSchemaPermission]. Measured on 26.2.1.14 by granting each
 // permission alone on a directory and creating a secret in it: these seven

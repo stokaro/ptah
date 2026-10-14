@@ -1,6 +1,7 @@
 package ydb
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbacl"
 )
@@ -139,11 +142,11 @@ func (r *Reader) directoryAccess(schema string, self *Ydb_Scheme.Entry, db *cata
 		return
 	}
 	if schema == "" {
-		r.recordAccess(self, ydbacl.ObjectDatabase, "", "", nil, db)
+		recordAccess(self, accessObject{objectType: ydbacl.ObjectDatabase}, db)
 		return
 	}
 	if r.inScope(schema) {
-		r.recordAccess(self, ydbacl.ObjectDirectory, "", schema, nil, db)
+		recordAccess(self, accessObject{objectType: ydbacl.ObjectDirectory, name: schema}, db)
 	}
 }
 
@@ -151,7 +154,18 @@ func (r *Reader) directoryAccess(schema string, self *Ydb_Scheme.Entry, db *cata
 // in the directory schema.
 func (r *Reader) tableAccess(schema, name string, self *Ydb_Scheme.Entry, db *catalog.Database) {
 	if self != nil {
-		r.recordAccess(self, ydbacl.ObjectTable, schema, name, nil, db)
+		recordAccess(self, accessObject{objectType: ydbacl.ObjectTable, schema: schema, name: name}, db)
+	}
+}
+
+// viewAccess records the owner and the permission entries of the view name
+// in the directory schema, from the entry its description carries. A grant on
+// a view is reported as a grant on a table, the shape a PostgreSQL read gives
+// it and the one a declaration names a view with (on_table); the owner row
+// says the object is a view.
+func (r *Reader) viewAccess(schema, name string, self *Ydb_Scheme.Entry, db *catalog.Database) {
+	if self != nil {
+		recordAccess(self, accessObject{objectType: ydbacl.ObjectTable, ownerKind: "view", schema: schema, name: name}, db)
 	}
 }
 
@@ -160,8 +174,21 @@ func (r *Reader) tableAccess(schema, name string, self *Ydb_Scheme.Entry, db *ca
 // [ydbacl.ObjectTopic], from the entry its description carries.
 func (r *Reader) objectAccess(objectType, schema, name string, self *Ydb_Scheme.Entry, db *catalog.Database) {
 	if self != nil {
-		r.recordAccess(self, objectType, schema, name, nil, db)
+		recordAccess(self, accessObject{objectType: objectType, schema: schema, name: name}, db)
 	}
+}
+
+// pathAccess records the owner and the permission entries of name in the
+// directory schema, a scheme object of a kind whose description carries
+// neither, such as [ydbacl.ObjectStreamingQuery], so its entry is asked for
+// by path.
+func (r *Reader) pathAccess(ctx context.Context, source Source, objectType, schema, name string, db *catalog.Database) error {
+	self, err := source.DescribePath(ctx, r.absolute(schema, name))
+	if err != nil {
+		return err
+	}
+	r.objectAccess(objectType, schema, name, self, db)
+	return nil
 }
 
 // secretAccess records the owner and the permission entries of the secret
@@ -184,11 +211,46 @@ func (r *Reader) secretAccess(ctx context.Context, source Source, schema, name s
 			describers[permission.GetSubject()] = true
 		}
 	}
-	implicit := func(subject, permission string) bool {
-		return permission == ydbacl.DescribeSchemaPermission && describers[subject]
+	implicit := func(entry *Ydb_Scheme.Permissions, permission string) bool {
+		return permission == ydbacl.DescribeSchemaPermission && describers[entry.GetSubject()]
 	}
 	if self != nil {
-		r.recordAccess(self, ydbacl.ObjectSecret, schema, name, implicit, db)
+		recordAccess(self, accessObject{objectType: ydbacl.ObjectSecret, schema: schema, name: name, implicit: implicit}, db)
+	}
+	return nil
+}
+
+// poolAccess records the owner and the permission entries of the resource
+// pool name in the database at the absolute path database, on a target with
+// [capability.ResourcePools]. A pool's entry is under
+// [ydbacl.ResourcePoolDirectory], which the read does not walk, so it is asked
+// for by path.
+//
+// The entries YDB gives the pool default when it makes it are recorded as
+// implicit; see [ydbacl.DefaultPoolEntry]. A pool default the server lists
+// before it has made its scheme object holds no entry: measured on 25.1.4.7,
+// .sys/resource_pools reports default while its path answers `Path not
+// found`, until the server makes it. Any other pool the path does not reach
+// fails the read.
+func (r *Reader) poolAccess(ctx context.Context, source Source, database, name string, db *catalog.Database) error {
+	if !r.caps.Has(capability.ResourcePools) {
+		return nil
+	}
+	self, err := source.DescribePath(ctx, strings.TrimRight(database, "/")+"/"+ydbacl.ResourcePoolDirectory+"/"+name)
+	if name == ydbworkload.DefaultPool && errors.Is(err, ErrPathNotVisible) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the permissions of YDB resource pool %s: %w", name, err)
+	}
+	var implicit func(*Ydb_Scheme.Permissions, string) bool
+	if name == ydbworkload.DefaultPool {
+		implicit = func(entry *Ydb_Scheme.Permissions, _ string) bool {
+			return ydbacl.DefaultPoolEntry(entry.GetPermissionNames())
+		}
+	}
+	if self != nil {
+		recordAccess(self, accessObject{objectType: ydbacl.ObjectResourcePool, name: name, implicit: implicit}, db)
 	}
 	return nil
 }
@@ -203,23 +265,32 @@ var ownerKinds = map[string]string{
 	ydbacl.ObjectSecret:             "secret",
 	ydbacl.ObjectExternalDataSource: "external data source",
 	ydbacl.ObjectExternalTable:      "external table",
+	ydbacl.ObjectAsyncReplication:   "async replication",
+	ydbacl.ObjectTransfer:           "transfer",
+	ydbacl.ObjectStreamingQuery:     "streaming query",
+	ydbacl.ObjectResourcePool:       "resource pool",
+}
+
+// accessObject is the object whose owner and permission entries one entry
+// carries: the object type a grant on it reports, the kind its owner row
+// names when that is not the object type's own, such as a view's, its
+// directory and its name. implicit, when not nil, marks the grants the object
+// holds because it exists rather than because a GRANT made them.
+type accessObject struct {
+	objectType, ownerKind string
+	schema, name          string
+	implicit              func(entry *Ydb_Scheme.Permissions, permission string) bool
 }
 
 // recordAccess records one object's owner and one grant per permission each
 // of its entries names. An entry can name several permissions -- one YDB
 // created with a mask no single name covers is reported as the names it is
 // made of -- and each is a grant of its own, as the GRANT that made it would
-// be. implicit, when not nil, marks the grants the object holds because it
-// exists rather than because a GRANT made them.
-func (r *Reader) recordAccess(
-	entry *Ydb_Scheme.Entry,
-	objectType, schema, name string,
-	implicit func(subject, permission string) bool,
-	db *catalog.Database,
-) {
+// be.
+func recordAccess(entry *Ydb_Scheme.Entry, object accessObject, db *catalog.Database) {
 	if owner := entry.GetOwner(); owner != "" {
 		db.ObjectOwners = append(db.ObjectOwners, catalog.ObjectOwner{
-			Kind: ownerKinds[objectType], Schema: schema, Name: name, Owner: owner,
+			Kind: cmp.Or(object.ownerKind, ownerKinds[object.objectType]), Schema: object.schema, Name: object.name, Owner: owner,
 		})
 	}
 	seen := make(map[string]bool)
@@ -233,10 +304,10 @@ func (r *Reader) recordAccess(
 			db.Grants = append(db.Grants, catalog.Grant{
 				Role:       permission.GetSubject(),
 				Privilege:  permissionName,
-				ObjectType: objectType,
-				Schema:     schema,
-				ObjectName: name,
-				Implicit:   implicit != nil && implicit(permission.GetSubject(), permissionName),
+				ObjectType: object.objectType,
+				Schema:     object.schema,
+				ObjectName: object.name,
+				Implicit:   object.implicit != nil && object.implicit(permission, permissionName),
 			})
 		}
 	}

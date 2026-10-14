@@ -79,11 +79,13 @@ func privilegeTarget(scope sqlschema.Scope, kind, name string) (schemamodel.Gran
 			grant.OnSchema = scope.Name(name)
 		case ydbacl.ObjectTable:
 			grant.OnTable = scope.TableName(name)
-		case ydbacl.ObjectTopic, ydbacl.ObjectCoordinationNode, ydbacl.ObjectSecret,
-			ydbacl.ObjectExternalDataSource, ydbacl.ObjectExternalTable:
-			grant.OnObject, grant.ObjectKind = scope.TableName(name), kind
+		case ydbacl.ObjectResourcePool:
+			grant.OnObject, grant.ObjectKind = name, kind
 		default:
-			return grant, fmt.Errorf("%w: unsupported YDB permission object kind %q", sqlschema.ErrUnmodeledStatement, kind)
+			if !ydbacl.IsSchemeObject(kind) {
+				return grant, fmt.Errorf("%w: unsupported YDB permission object kind %q", sqlschema.ErrUnmodeledStatement, kind)
+			}
+			grant.OnObject, grant.ObjectKind = scope.TableName(name), kind
 		}
 		return grant, nil
 	}
@@ -103,6 +105,12 @@ func privilegeTarget(scope sqlschema.Scope, kind, name string) (schemamodel.Gran
 				return schemamodel.Grant{OnTable: scope.TableName(sqlident.Quote(platform.YDB, relative))}, nil
 			}
 		}
+		// A grant on a view is a grant on a table, as the reader reports it.
+		for _, view := range source.Views {
+			if viewPath, err := ydbacl.RelativePath(ydbacl.ObjectTable, view.Name); err == nil && viewPath == relative {
+				return schemamodel.Grant{OnTable: view.Name}, nil
+			}
+		}
 		if grant, ok := declaredSchemeObject(source, relative); ok {
 			return grant, nil
 		}
@@ -110,20 +118,22 @@ func privilegeTarget(scope sqlschema.Scope, kind, name string) (schemamodel.Gran
 			return schemamodel.Grant{OnSchema: relative}, nil
 		}
 	}
-	return schemamodel.Grant{}, undeclared(fmt.Errorf("%w: YDB permission path %q must name a table, a directory, a topic, "+
-		"a coordination node, a secret, an external data source or an external table declared earlier in this desired schema",
+	return schemamodel.Grant{}, undeclared(fmt.Errorf("%w: YDB permission path %q must name a table, a view, a directory "+
+		"or another scheme object, such as a topic or a resource pool, declared earlier in this desired schema",
 		sqlschema.ErrUnmodeledStatement, name))
 }
 
 // declaredSchemeObject is a grant on the scheme object a feature owner
 // declares at relative, of a kind whose permissions the reader reads, and
-// false when database declares none there.
+// false when database declares none there. A resource pool's path is under
+// [ydbacl.ResourcePoolDirectory], not at its name.
 func declaredSchemeObject(database *schemamodel.Database, relative string) (schemamodel.Grant, bool) {
 	for _, ref := range database.FeatureObjects.Refs() {
-		if path.Join(ref.Schema.Source, ref.Name.Source) != relative {
+		objectType, objectName, ok := ydbacl.ObjectName(ref)
+		if !ok {
 			continue
 		}
-		if objectType, objectName, ok := ydbacl.ObjectName(ref); ok {
+		if objectPath, err := ydbacl.RelativePath(objectType, objectName); err == nil && objectPath == relative {
 			return schemamodel.Grant{OnObject: objectName, ObjectKind: objectType}, true
 		}
 	}
@@ -160,7 +170,8 @@ func relativeSourcePath(name, databasePath string) (string, error) {
 }
 
 // Every path-bearing YDB family can create its parent directories. The leaf
-// object is not a directory: a topic or view cannot become a table grant here.
+// object is not a directory: a topic or a view cannot become a directory grant
+// here.
 func declaredDirectory(database *schemamodel.Database, name string) bool {
 	var directories []string
 	for _, schema := range database.Schemas {

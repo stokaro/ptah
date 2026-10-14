@@ -16,6 +16,15 @@ const (
 	GrantObjectExternalDataSource = "EXTERNAL DATA SOURCE"
 	// GrantObjectExternalTable is an external table.
 	GrantObjectExternalTable = "EXTERNAL TABLE"
+	// GrantObjectAsyncReplication is an async replication.
+	GrantObjectAsyncReplication = "ASYNC REPLICATION"
+	// GrantObjectTransfer is a transfer.
+	GrantObjectTransfer = "TRANSFER"
+	// GrantObjectStreamingQuery is a streaming query.
+	GrantObjectStreamingQuery = "STREAMING QUERY"
+	// GrantObjectResourcePool is a resource pool, named by the pool's name
+	// alone: a pool belongs to the database, not to a directory.
+	GrantObjectResourcePool = "RESOURCE POOL"
 )
 
 // GrantObjectKind is one kind of object [Grant.OnObject] names, with the
@@ -37,6 +46,10 @@ var grantObjectKinds = []GrantObjectKind{
 	{Kind: GrantObjectSecret, Attribute: "on_secret"},
 	{Kind: GrantObjectExternalDataSource, Attribute: "on_external_data_source"},
 	{Kind: GrantObjectExternalTable, Attribute: "on_external_table"},
+	{Kind: GrantObjectAsyncReplication, Attribute: "on_async_replication"},
+	{Kind: GrantObjectTransfer, Attribute: "on_transfer"},
+	{Kind: GrantObjectStreamingQuery, Attribute: "on_streaming_query"},
+	{Kind: GrantObjectResourcePool, Attribute: "on_resource_pool"},
 }
 
 // GrantObjectKinds returns every kind of object [Grant.OnObject] names, each

@@ -44,8 +44,9 @@
 // A grant or revoke names its target with on_table, on_schema, on_sequence,
 // on_database, on_function and on_procedure, whose value carries the
 // argument types: purge(uuid), or, on YDB, on_topic, on_coordination_node,
-// on_secret, on_external_data_source or on_external_table, each spelled as
-// on_table is. A revokes entry says the role must not hold the privileges,
+// on_secret, on_external_data_source, on_external_table,
+// on_async_replication, on_transfer or on_streaming_query, each spelled as
+// on_table is, or on_resource_pool, which takes the pool's name alone. A revokes entry says the role must not hold the privileges,
 // and a privilege both granted and revoked to one role on one object is
 // refused.
 //
@@ -423,6 +424,10 @@ type objectTargets struct {
 	OnSecret             stringScalar `yaml:"on_secret"`
 	OnExternalDataSource stringScalar `yaml:"on_external_data_source"`
 	OnExternalTable      stringScalar `yaml:"on_external_table"`
+	OnAsyncReplication   stringScalar `yaml:"on_async_replication"`
+	OnTransfer           stringScalar `yaml:"on_transfer"`
+	OnStreamingQuery     stringScalar `yaml:"on_streaming_query"`
+	OnResourcePool       stringScalar `yaml:"on_resource_pool"`
 }
 
 // byAttribute is each target named, by the attribute that names it.
@@ -433,6 +438,10 @@ func (t objectTargets) byAttribute() map[string]string {
 		"on_secret":               string(t.OnSecret),
 		"on_external_data_source": string(t.OnExternalDataSource),
 		"on_external_table":       string(t.OnExternalTable),
+		"on_async_replication":    string(t.OnAsyncReplication),
+		"on_transfer":             string(t.OnTransfer),
+		"on_streaming_query":      string(t.OnStreamingQuery),
+		"on_resource_pool":        string(t.OnResourcePool),
 	}
 }
 

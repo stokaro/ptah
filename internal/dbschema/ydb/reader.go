@@ -393,6 +393,7 @@ func (r *Reader) keyedEntry(
 		if err != nil {
 			return true, err
 		}
+		r.viewAccess(schema, name, described.GetSelf(), db)
 		return true, r.view(ctx, source, schema, name, described, db)
 	case Ydb_Scheme.Entry_TOPIC:
 		return true, r.topic(ctx, source, schema, name, db)

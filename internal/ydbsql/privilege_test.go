@@ -68,6 +68,24 @@ func TestReadYQLPrivileges(t *testing.T) {
 				{Role: "readers", OnObject: "ext.s3", ObjectKind: "EXTERNAL DATA SOURCE", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
 				{Role: "readers", OnObject: "ext.events", ObjectKind: "EXTERNAL TABLE", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
 			}},
+		{name: "a view is a table", sql: yqlGrantTable + "CREATE VIEW `shop/active` WITH (security_invoker = TRUE) AS SELECT 1; " +
+			"GRANT SELECT ON `shop/active` TO readers;", grants: []schemamodel.Grant{
+			{Role: "readers", OnTable: "shop.active", Privileges: []string{"YDB.GENERIC.READ"}},
+		}},
+		{name: "async replication and transfer", sql: "CREATE TOPIC `archive/events`; " + yqlReplication + yqlTransfer +
+			"GRANT 'manage' ON `archive/mirror`, `archive/ingest` TO operators;", grants: []schemamodel.Grant{
+			{Role: "operators", OnObject: "archive.mirror", ObjectKind: "ASYNC REPLICATION", Privileges: []string{"YDB.GENERIC.MANAGE"}},
+			{Role: "operators", OnObject: "archive.ingest", ObjectKind: "TRANSFER", Privileges: []string{"YDB.GENERIC.MANAGE"}},
+		}},
+		{name: "streaming query", sql: "CREATE TOPIC source; CREATE STREAMING QUERY `jobs/copy` WITH (RUN=FALSE) AS DO BEGIN\n" +
+			"INSERT INTO sink SELECT * FROM source;\nEND DO; REVOKE 'manage' ON `jobs/copy` FROM operators;", revoked: []schemamodel.Grant{
+			{Role: "operators", OnObject: "jobs.copy", ObjectKind: "STREAMING QUERY", Privileges: []string{"YDB.GENERIC.MANAGE"}},
+		}},
+		{name: "resource pool by the path YDB gives it", root: "/Root/db", sql: "CREATE RESOURCE POOL `batch.v2` WITH (CONCURRENT_QUERY_LIMIT=5); " +
+			"GRANT SELECT ROW ON `.metadata/workload_manager/pools/batch.v2`, `/Root/db/.metadata/workload_manager/pools/batch.v2` TO etl;",
+			grants: []schemamodel.Grant{
+				{Role: "etl", OnObject: "batch.v2", ObjectKind: "RESOURCE POOL", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"}},
+			}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -111,9 +129,7 @@ func TestReadYQLPrivilegeRefusals(t *testing.T) {
 		"GRANT SELECT ON `shop/orders` TO readers,",
 		"GRANT SELECT ON `shop/orders`, TO readers;",
 		"GRANT SELECT ON `shop/../orders` TO readers;",
-		"CREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1; GRANT SELECT ON v TO readers;",
-		"CREATE ASYNC REPLICATION r FOR `shop/orders` AS `copy/orders` WITH (CONNECTION_STRING = 'grpc://other:2135/?database=/db'," +
-			" TOKEN_SECRET_NAME = 't'); GRANT SELECT ON r TO readers;",
+		"CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT=5); GRANT SELECT ROW ON batch TO etl;",
 	} {
 		t.Run(sql, func(t *testing.T) {
 			c := qt.New(t)
