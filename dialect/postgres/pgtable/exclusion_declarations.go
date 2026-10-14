@@ -8,7 +8,6 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -96,7 +95,7 @@ func planExclusionParent(request featureplan.Request, table featureplan.Table, i
 }
 
 func createdExclusionStep(target string, caps capability.Capabilities, parent objectidentity.ID, object schemaext.Object, name string, phase featureplan.Phase) (plangraph.Step[featureplan.Operation], error) {
-	if platform.NormalizeDialect(target) != platform.Postgres {
+	if !SupportsExclusion(target) {
 		return plangraph.Step[featureplan.Operation]{}, fmt.Errorf("%w: EXCLUDE constraints require PostgreSQL", ptaherr.ErrUnsupportedFeature)
 	}
 	if err := ValidateExclusionRef(object.Ref); err != nil {

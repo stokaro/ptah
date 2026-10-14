@@ -39,7 +39,7 @@ func validateExclusion(ctx renderer.ExtensionContext, op *pgtable.AlterExclusion
 // ValidateExclusionTarget refuses targets without PostgreSQL exclusion indexes.
 // Every refusal wraps ptaherr.ErrUnsupportedFeature and names EXCLUDE.
 func ValidateExclusionTarget(target string) error {
-	if platform.NormalizeDialect(target) != platform.Postgres {
+	if !pgtable.SupportsExclusion(target) {
 		return fmt.Errorf("%w: EXCLUDE constraints require PostgreSQL; target is %q", ptaherr.ErrUnsupportedFeature, target)
 	}
 	return nil
