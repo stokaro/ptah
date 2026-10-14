@@ -65,7 +65,7 @@ func observedRefresh(schedule chschema.Schedule) (schemaext.Facets, error) {
 // built on every read.
 var storageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 	var codecs []schemaext.OwnedCodec
-	for _, codec := range slices.Concat(chschema.Codecs(), chschema.IndexCodecs(), chschema.RefreshCodecs()) {
+	for _, codec := range slices.Concat(chschema.Codecs(), chschema.IndexCodecs(), chschema.RefreshCodecs(), chschema.ViewStorageCodecs()) {
 		codecs = append(codecs, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
 	}
 	return schemaext.NewRegistry(codecs...)
@@ -74,26 +74,27 @@ var storageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 // The table query excludes unsupported engines and materialized-view storage.
 // Only returned, retained tables establish complete settings observations.
 // Index knowledge applies to the whole database; readSkippingIndexes says why.
-// Refresh schedules are known for every materialized view the read returns,
-// except the ones refreshLimits names.
-func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, refreshLimits []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
+// Refresh schedules and storage are known for every materialized view the read
+// returns, except the ones viewLimits names.
+func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, viewLimits []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
 	registry, err := storageRegistry()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
 	identities := objectidentity.NewBuilder(identifier.ForDialect(platform.ClickHouse))
-	subjects := make([]schemaext.SubjectCoverage, 0, len(tables)+len(refreshLimits))
+	subjects := make([]schemaext.SubjectCoverage, 0, len(tables)+len(viewLimits))
 	for _, table := range tables {
 		subjects = append(subjects, schemaext.SubjectCoverage{
 			Kind: chschema.TableKind, Subject: identities.TableParts(table.Schema, table.Name),
 			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 		})
 	}
-	subjects = append(subjects, refreshLimits...)
+	subjects = append(subjects, viewLimits...)
 	knowledge := map[schemaext.Kind]schemaext.Knowledge{
-		chschema.TableKind:   {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
-		chschema.IndexKind:   index,
-		chschema.RefreshKind: {State: schemaext.Complete},
+		chschema.TableKind:       {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
+		chschema.IndexKind:       index,
+		chschema.RefreshKind:     {State: schemaext.Complete},
+		chschema.ViewStorageKind: {State: schemaext.Complete},
 	}
 	var kinds []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {

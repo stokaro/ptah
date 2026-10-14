@@ -53,6 +53,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.IndexCodecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.RefreshCodecs()},
+		{owner: "ptah.run/clickhouse", codecs: chschema.ViewStorageCodecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.RowPolicyCodecs()},
 		{owner: crdbschema.Owner, codecs: crdbschema.Codecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.TableCodecs()},

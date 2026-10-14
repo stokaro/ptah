@@ -2130,6 +2130,17 @@ view. When the server refuses it for privilege or answers that it is unknown,
 every view's refresh coverage is uninspected and the read goes on; any other
 failure fails the read.
 
+`chschema.ViewStorageKind` names where a materialized view keeps its rows.
+Ptah models no storage but the `ENGINE = MergeTree ORDER BY tuple()` it creates
+every view with, so the kind carries no value, and the codecs
+`chschema.ViewStorageCodecs()` returns refuse every one; registering them lets
+coverage name the kind. The reader claims the kind for every view it returns
+and records each view stored another way, including a `TO` view, as an
+unrepresentable subject whose reason names the stored clause.
+`chcompare.ViewStorageService` reports such a view undecided when both sides
+hold it, and a replacement of it is refused like that of any view whose
+setting the read could not capture.
+
 Rendering a desired schema whose coverage marks a table, index or materialized
 view setting unrepresentable or uninspected lowers the object without it and
 emits a comment naming the setting and the reason. A comparison refuses to

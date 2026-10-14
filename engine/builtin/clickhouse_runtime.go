@@ -21,7 +21,9 @@ import (
 // skipping-index settings, materialized view refresh schedules and row
 // policies register their comparison, planning, reversal and reporting
 // services together, so no stage can accept a model another stage would
-// refuse or ignore.
+// refuse or ignore. A materialized view's storage holds no value, so it
+// registers only its codecs and the comparison that reports what a read could
+// not describe.
 //
 // Row policies are the owner's alone (ADR 0020): a source reads a declaration
 // scoped to ClickHouse as one, the reader reports each policy on a table of the
@@ -37,6 +39,7 @@ func registerClickHouseServices(provider *engine.Provider, name string) {
 	provider.Codecs = append(provider.Codecs, chschema.Codecs()...)
 	provider.Codecs = append(provider.Codecs, chschema.IndexCodecs()...)
 	provider.Codecs = append(provider.Codecs, chschema.RefreshCodecs()...)
+	provider.Codecs = append(provider.Codecs, chschema.ViewStorageCodecs()...)
 	provider.Codecs = append(provider.Codecs, chschema.RowPolicyCodecs()...)
 	provider.Codecs = append(provider.Codecs, chdiff.Codecs()...)
 	provider.Codecs = append(provider.Codecs, chdiff.IndexCodecs()...)
@@ -64,6 +67,10 @@ func registerClickHouseServices(provider *engine.Provider, name string) {
 		{
 			Target: name, OwnerKinds: []objectidentity.Kind{objectidentity.KindMatView},
 			Kinds: []schemaext.Kind{chschema.RefreshKind}, ChangeKinds: []schemaext.Kind{chdiff.RefreshKind}, Service: chcompare.RefreshService{},
+		},
+		{
+			Target: name, OwnerKinds: []objectidentity.Kind{objectidentity.KindMatView},
+			Kinds: []schemaext.Kind{chschema.ViewStorageKind}, Service: chcompare.ViewStorageService{},
 		},
 	}
 	provider.Planning = []engine.Planning{

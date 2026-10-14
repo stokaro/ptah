@@ -1,8 +1,8 @@
 // Package chschema owns the ClickHouse models in their desired and observed
 // representations: the storage settings of tables and data-skipping indexes,
-// the refresh schedule of a materialized view, and row policies as feature
-// objects of their own. It contains no provider selection, database access, or
-// DDL.
+// the refresh schedule of a materialized view and the coverage of its storage,
+// and row policies as feature objects of their own. It contains no provider
+// selection, database access, or DDL.
 package chschema
 
 import (
