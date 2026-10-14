@@ -84,7 +84,7 @@ var scopeAgreement = map[string]scopeAnswers{
 func TestDescriptors_ScopeAgreesWithTheNameSwitches(t *testing.T) {
 	described := builtindialects.Descriptors()
 	c := qt.New(t)
-	c.Assert(len(described), qt.Equals, len(scopeAgreement))
+	c.Assert(described, qt.HasLen, len(scopeAgreement))
 	for _, dialect := range described {
 		t.Run(dialect.Name, func(t *testing.T) {
 			c := qt.New(t)

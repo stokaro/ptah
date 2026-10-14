@@ -16,7 +16,8 @@
 // of an engine Ptah does not ship, builds one with [NewRegistry].
 //
 // This package checks the parts of a descriptor every reader shares: names,
-// aliases, family and the placeholder style. A package that interprets a
+// aliases, family, the placeholder style, and the enumerated schema, role and
+// lock values of [Schemas], [Roles] and [Lock]. A package that interprets a
 // field checks that field's values when it reads them; see
 // core/platform/identifier.FromDescriptor.
 package descriptor
