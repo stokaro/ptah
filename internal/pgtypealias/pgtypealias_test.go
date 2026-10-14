@@ -21,7 +21,7 @@ func TestCanonical(t *testing.T) {
 		{name: "numeric parameters", spelling: "DECIMAL(10, 2)", want: "numeric(10,2)"},
 		{name: "a canonical spelling", spelling: "character varying(20)", want: "character varying(20)"},
 		{name: "a user type", spelling: "App.Email", want: "app.email"},
-		{name: "an array keeps its marker", spelling: "int[]", want: "int[]"},
+		{name: "an array keeps its marker", spelling: "int[]", want: "integer[]"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

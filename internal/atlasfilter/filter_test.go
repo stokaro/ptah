@@ -10,6 +10,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -222,7 +223,7 @@ func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
 	schema.Sequences = []catalog.Sequence{{Schema: "auth", Name: "users_seq"}}
 	schema.Domains = []catalog.Domain{{Schema: "auth", Name: "email"}}
 	schema.Composites = []catalog.CompositeType{{Schema: "auth", Name: "address"}}
-	schema.Ranges = []catalog.Range{{Schema: "auth", Name: "floatrange", Subtype: "float8"}}
+	schema.FeatureObjects = must.Must(schema.FeatureObjects.With(must.Must(pgtype.ObservedObject(pgtype.Ref(pgtype.RangeKind, "auth", "floatrange"), &pgtype.ObservedRange{Subtype: "float8"}))))
 
 	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
 
@@ -231,7 +232,7 @@ func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Domains, qt.HasLen, 1)
 	c.Assert(got.Composites, qt.HasLen, 1)
-	c.Assert(got.Ranges, qt.HasLen, 1)
+	c.Assert(rangeNames(got.FeatureObjects), qt.DeepEquals, []string{"auth.floatrange"})
 }
 
 func TestExcludeGenerated_RemovesEnums(t *testing.T) {

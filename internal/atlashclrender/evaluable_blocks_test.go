@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -384,7 +387,7 @@ func TestEnumTypedColumnKeepsANameThatIsAlsoAnotherDeclaration(t *testing.T) {
 		{
 			name: "a range type",
 			declare: func(db *schemamodel.Database) {
-				db.Ranges = []schemamodel.Range{{Name: "status", Subtype: "int4"}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "status"), Value: &pgtype.DesiredRange{Subtype: "int4"}}))
 			},
 		},
 	}

@@ -491,7 +491,7 @@ func (p *parser) recordForeignKey(table schemamodel.Table, name string) {
 // Ptah's own two-schema inspect output readable again.
 func declaredTypes(db *schemamodel.Database, policy redeclarationPolicy) []declaration {
 	objects := make([]declaration, 0,
-		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes)+len(db.Ranges))
+		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes))
 	for _, enum := range db.Enums {
 		objects = append(objects, declaredEnum(enum, policy))
 	}
@@ -500,9 +500,6 @@ func declaredTypes(db *schemamodel.Database, policy redeclarationPolicy) []decla
 	}
 	for _, composite := range db.CompositeTypes {
 		objects = append(objects, declare(kindCompositeType, composite.QualifiedName()))
-	}
-	for _, rangeType := range db.Ranges {
-		objects = append(objects, declare(kindRange, rangeType.QualifiedName()))
 	}
 	return objects
 }

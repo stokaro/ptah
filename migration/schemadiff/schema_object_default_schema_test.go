@@ -7,8 +7,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -36,8 +38,10 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 	c.Assert(diff.DomainsRemoved.Names(), qt.DeepEquals, []string{"reporting.d_ctl"})
 	c.Assert(diff.CompositeTypesAdded.Names(), qt.DeepEquals, []string{"public.c_ctl"})
 	c.Assert(diff.CompositeTypesRemoved.Names(), qt.DeepEquals, []string{"reporting.c_ctl"})
-	c.Assert(diff.RangesAdded.Names(), qt.DeepEquals, []string{"public.r_ctl"})
-	c.Assert(diff.RangesRemoved.Names(), qt.DeepEquals, []string{"reporting.r_ctl"})
+	c.Assert(rangeChangesOf(diff), qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: pgtype.Ref(pgtype.RangeKind, "public", "r_ctl"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "integer"}}},
+		{Subject: pgtype.Ref(pgtype.RangeKind, "reporting", "r_ctl"), Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "integer"}}},
+	})
 	c.Assert(diff.ViewsAdded.Names(), qt.DeepEquals, []string{"public.v_ctl"})
 	c.Assert(diff.ViewsRemoved.Names(), qt.DeepEquals, []string{"reporting.v_ctl"})
 	c.Assert(diff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{"public.mv_ctl"})
@@ -86,11 +90,8 @@ func schemaObjectIdentityFixtures(
 			Schema: desiredSchema,
 			Fields: []schemamodel.CompositeField{{Name: "value", Type: "text"}},
 		}},
-		Ranges: []schemamodel.Range{{
-			Name:    "r_ctl",
-			Schema:  desiredSchema,
-			Subtype: "integer",
-		}},
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired)),
+		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, desiredSchema, "r_ctl"), Value: &pgtype.DesiredRange{Subtype: "integer"}})),
 		Views: []schemamodel.View{{
 			Name: desiredSchema + ".v_ctl",
 			Body: "SELECT 1",
@@ -133,11 +134,8 @@ func schemaObjectIdentityFixtures(
 			Schema: currentSchema,
 			Fields: []catalog.CompositeField{{Name: "value", Type: "text"}},
 		}},
-		Ranges: []catalog.Range{{
-			Name:    "r_ctl",
-			Schema:  currentSchema,
-			Subtype: "integer",
-		}},
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
+		FeatureObjects:  must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, currentSchema, "r_ctl"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
 		Views: []catalog.View{{
 			Name:        "v_ctl",
 			Schema:      currentSchema,

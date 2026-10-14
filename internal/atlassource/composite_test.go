@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgdefaultprivilege/privilegeselect"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -338,6 +339,20 @@ func TestPlaceCompositePart_HappyPath(t *testing.T) {
 			wantSchemas:   []string{"public"},
 		},
 		{
+			name: "an owner type in the declared schema",
+			part: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "auth", "span"), &pgtype.DesiredRange{Subtype: "numeric"})),
+			))},
+			schema: "auth", defaultSchema: "public", wantSchemas: []string{"auth"},
+		},
+		{
+			name: "an unqualified owner type in the default schema",
+			part: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "", "span"), &pgtype.DesiredRange{Subtype: "numeric"})),
+			))},
+			schema: "public", defaultSchema: "public", wantSchemas: []string{"public"},
+		},
+		{
 			name: "a schema the part already declares is not declared twice",
 			part: &schemamodel.Database{
 				Schemas: []schemamodel.Schema{{Name: "auth", Comment: "kept"}},
@@ -410,8 +425,16 @@ func TestPlaceCompositePart_FailurePath(t *testing.T) {
 		},
 		{
 			name:    "a range type",
-			part:    &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "span", Schema: "billing"}}},
+			part:    &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "billing", "span"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))},
 			wantErr: `range type "span" is in schema "billing", outside schema "auth"`,
+		},
+		{
+			name: "an unqualified owner type",
+			part: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				must.Must(pgtype.DesiredObject(pgtype.Ref(pgtype.RangeKind, "", "span"), &pgtype.DesiredRange{Subtype: "numeric"})),
+			))},
+			wantErr: `range type "span" is not in schema "auth": an unqualified name belongs to the run's default ` +
+				`schema, and Ptah does not move it; qualify it as auth\.span`,
 		},
 		{
 			name:    "a sequence",

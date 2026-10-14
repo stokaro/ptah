@@ -86,13 +86,6 @@ func scopedKinds() []scopedKind {
 			count: func(db *schemamodel.Database) int { return len(db.CompositeTypes) },
 		},
 		{
-			name: "Ranges",
-			declare: func(db *schemamodel.Database, scope []string) {
-				db.Ranges = []schemamodel.Range{{StructName: "Rng", Name: "floatrange", Subtype: "float8", Dialects: scope}}
-			},
-			count: func(db *schemamodel.Database) int { return len(db.Ranges) },
-		},
-		{
 			name: "Views",
 			declare: func(db *schemamodel.Database, scope []string) {
 				db.Views = []schemamodel.View{{StructName: "V", Name: "active", Body: "SELECT 1", Dialects: scope}}

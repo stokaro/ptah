@@ -89,7 +89,7 @@ func typeNodes() []ast.Node {
 // tables, and the type drops after the table drops and before the enum drops,
 // around default windows that follow the tables.
 func typeWindows() featurehost.Windows {
-	return featurehost.Windows{Creation: 2, Dependent: 3, Removal: 3, Types: &featurehost.TypeWindows{Creation: 1, Removal: 3}}
+	return featurehost.Windows{Creation: 2, Dependent: 3, Removal: 3, Types: &featurehost.TypeWindows{Creation: featurehost.Span{Start: 1, End: 1}, Removal: featurehost.Span{Start: 3, End: 3}}}
 }
 
 // typeResult is one owner's steps, each of phase, the first before the next:
@@ -180,9 +180,9 @@ func TestGraph_TypeWindows_FailurePath(t *testing.T) {
 		name  string
 		types featurehost.TypeWindows
 	}{
-		{name: "creation after the default creations", types: featurehost.TypeWindows{Creation: 3, Removal: 3}},
-		{name: "removal before the default removals", types: featurehost.TypeWindows{Creation: 1, Removal: 2}},
-		{name: "removal outside the sequence", types: featurehost.TypeWindows{Creation: 1, Removal: 5}},
+		{name: "creation after the default creations", types: featurehost.TypeWindows{Creation: featurehost.Span{Start: 3, End: 3}, Removal: featurehost.Span{Start: 3, End: 3}}},
+		{name: "removal before the default removals", types: featurehost.TypeWindows{Creation: featurehost.Span{Start: 1, End: 1}, Removal: featurehost.Span{Start: 2, End: 2}}},
+		{name: "removal outside the sequence", types: featurehost.TypeWindows{Creation: featurehost.Span{Start: 1, End: 1}, Removal: featurehost.Span{Start: 5, End: 5}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -230,4 +230,18 @@ func TestGraph_PrerequisiteWindows_FailurePath(t *testing.T) {
 			c.Assert(graph, qt.IsNil)
 		})
 	}
+}
+
+func TestGraphTypeSpanAllowsStepsAroundCommonTypes(t *testing.T) {
+	c := qt.New(t)
+	nodes := []ast.Node{ast.NewComment("enums"), ast.NewComment("common type"), ast.NewComment("tables"), ast.NewComment("drop tables"), ast.NewComment("drop enums")}
+	graph := must.Must(featurehost.NewGraph("example.org/host", nodes, nil, featurehost.Windows{Creation: 3, Dependent: 4, Removal: 4, Types: &featurehost.TypeWindows{Creation: featurehost.Span{Start: 1, End: 2}, Removal: featurehost.Span{Start: 4, End: 4}}}))
+	before, after := typeStep(plangraph.Create, "before"), typeStep(plangraph.Create, "after")
+	result := typeResult(featureplan.PhaseType, before, after)
+	middle := plangraph.StepID{Owner: "example.org/host", Name: "common/000001"}
+	c.Assert(graph.CommonSteps(), qt.Any(qt.DeepEquals), featureplan.CommonStep{ID: middle})
+	result.Contributions[0].Dependencies = append(result.Contributions[0].Dependencies, plangraph.Dependency{Before: before.ID, After: middle}, plangraph.Dependency{Before: middle, After: after.ID})
+	ordered, err := graph.Schedule(c.Context(), result)
+	c.Assert(err, qt.IsNil)
+	c.Assert(comments(ordered), qt.DeepEquals, []string{"enums", "creates before", "common type", "creates after", "tables", "drop tables", "drop enums"})
 }

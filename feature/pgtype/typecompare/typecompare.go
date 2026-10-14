@@ -223,8 +223,8 @@ func checkMatches(declared string, held *pgtype.ObservedDomain) bool {
 // rangeDifferences compares a range type's subtype, each optional attribute
 // the declaration states or clears, and its comment, sorted.
 //
-// An optional attribute is compared without regard to case on trimmed text,
-// because PostgreSQL reports each as a bare identifier. A declaration that
+// Optional attributes compare decoded PostgreSQL references, preserving quoted
+// case and schema qualifiers while resolving the implicit pg_catalog namespace. A declaration that
 // leaves one out says nothing about it: the catalog always resolves an
 // operator class, and a range carrying a SUBTYPE_DIFF its author never heard
 // of is not rebuilt without it. One the declaration clears differs from a
@@ -239,7 +239,7 @@ func rangeDifferences(caps capability.Capabilities, declared *pgtype.DesiredRang
 		if stated == "" && !declared.Clears(attribute) {
 			continue
 		}
-		if !strings.EqualFold(stated, strings.TrimSpace(held.Attribute(attribute))) {
+		if pgtypealias.Reference(stated) != pgtypealias.Reference(held.Attribute(attribute)) {
 			differs = append(differs, attribute)
 		}
 	}

@@ -12,7 +12,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/migration/schemadiff"
@@ -63,13 +65,13 @@ type FloatRange struct{}
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Domains, qt.HasLen, 2)
 	c.Assert(live.Composites, qt.HasLen, 1)
-	c.Assert(live.Ranges, qt.HasLen, 1)
+	c.Assert(live.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgtype.RangeKind) }).Len(), qt.Equals, 1)
 
 	roundTrip := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "postgres", must.Must(builtin.New())))
 	c.Assert(roundTrip.HasChanges(), qt.IsFalse, qt.Commentf(
 		"user types must survive apply->introspect->compare; domains+=%v ~=%v composites+=%v ~=%v ranges+=%v",
 		roundTrip.DomainsAdded, roundTrip.DomainsModified,
-		roundTrip.CompositeTypesAdded, roundTrip.CompositeTypesModified, roundTrip.RangesAdded))
+		roundTrip.CompositeTypesAdded, roundTrip.CompositeTypesModified, roundTrip.FeatureChanges))
 
 	// A SERIAL column's row type must not be surfaced as a composite type.
 	for _, composite := range live.Composites {

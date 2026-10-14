@@ -10,11 +10,14 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/modelast"
 )
@@ -36,7 +39,7 @@ func acceptedSpellings(c *qt.C) []string {
 // refuses part of the fixture still contributes a value both spellings of that
 // engine must agree on.
 func convertedStatements(database schemamodel.Database, dialect string) []string {
-	nodes := must.Must(modelast.CollectDatabase(scopedTo(database, dialect), dialect, modelast.Lowering{Context: context.Background(), Runtime: must.Must(builtin.New())}))
+	nodes := must.Must(modelast.CollectDatabase(scopedTo(database, dialect), dialect, builtinlowering.ForTarget(context.Background(), must.Must(builtin.New()), dialect, capability.ForDialect(dialect))))
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		sql, err := builtin.RenderSQL(dialect, node)
@@ -115,35 +118,22 @@ func scopedTo(database schemamodel.Database, dialect string) schemamodel.Databas
 // the test below for why.
 func nodeKinds(database schemamodel.Database, dialect string) []string {
 	nodes := must.Must(modelast.CollectDatabase(scopedTo(database, dialect), dialect,
-		modelast.Lowering{Context: context.Background(), Runtime: must.Must(builtin.New())}))
+		builtinlowering.ForTarget(context.Background(), must.Must(builtin.New()), dialect, capability.ForDialect(dialect))))
 	kinds := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
-		kinds = append(kinds, fmt.Sprintf("%T", node))
+		kind := fmt.Sprintf("%T", node)
+		for _, operation := range ast.OwnerOperations(node) {
+			kind += fmt.Sprintf("/%T", operation)
+		}
+		kinds = append(kinds, kind)
 	}
 	return kinds
 }
 
-// TestCollectDatabase_PostgresFamilyEmitsTheSameObjectKinds is the completion
-// criterion for stokaro/ptah#929 items 1 and 4: offline render and live plan
-// must answer the same question the same way.
-//
-// registerBuiltInPlanners routes cockroachdb, yugabytedb and spanner through
-// the PostgreSQL planner, so `schema apply --dry-run` planned sequences,
-// domains, composites, ranges, roles, grants, RLS, functions, views, matviews
-// and triggers for those targets. The offline converter gated all of them on a
-// predicate that matched the literal "postgres", so `schema render` dropped
-// every one -- with no comment, no warning and exit 0. Measured on the fixture
-// used here before the fix: postgres rendered 6 statements, each of the other
-// three rendered 1.
-//
-// The comparison is over node kinds rather than rendered SQL on purpose. Which
-// objects the converter emits is its decision; whether an engine accepts one is
-// the renderer's, and it already refuses what a preset cannot do -- rendering
-// this fixture for cockroachdb now reports `cockroachdb does not support role
-// management` instead of silently dropping the role AND everything near it.
-// Comparing SQL would fold those two separate answers into one string and make
-// this test fail for the renderer's reasons.
-func TestCollectDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
+// TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds checks that the
+// host preserves common declarations across PostgreSQL-family targets. Owner
+// declarations honor their explicit target scope; the range targets PostgreSQL.
+func TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds(t *testing.T) {
 	c := qt.New(t)
 
 	database := spellingFixture(c)
@@ -154,16 +144,20 @@ func TestCollectDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 	// what the predicate did.
 	c.Assert(len(want) > 1, qt.IsTrue, qt.Commentf("fixture emits %d nodes for postgres", len(want)))
 
-	// Spanner has no enum type and builds an enum column inline, as text with
-	// a CHECK, so it emits every kind but the enum's own node.
-	withoutEnumTypes := slices.DeleteFunc(slices.Clone(want), func(kind string) bool { return kind == "*ast.EnumNode" })
-	c.Assert(withoutEnumTypes, qt.HasLen, len(want)-1, qt.Commentf("the fixture declares one enum type"))
+	// The range declaration targets PostgreSQL. Spanner also represents the
+	// enum on its column, as text with a CHECK.
+	withoutRanges := slices.DeleteFunc(slices.Clone(want), func(kind string) bool {
+		return kind == "*ast.ExtensionStatement/*pgtype.CreateRange"
+	})
+	c.Assert(withoutRanges, qt.HasLen, len(want)-1, qt.Commentf("the fixture declares one owner range"))
+	withoutEnumTypes := slices.DeleteFunc(slices.Clone(withoutRanges), func(kind string) bool { return kind == "*ast.EnumNode" })
+	c.Assert(withoutEnumTypes, qt.HasLen, len(withoutRanges)-1, qt.Commentf("the fixture declares one enum type"))
 	tests := []struct {
 		dialect string
 		want    []string
 	}{
-		{dialect: platform.CockroachDB, want: want},
-		{dialect: platform.YugabyteDB, want: want},
+		{dialect: platform.CockroachDB, want: withoutRanges},
+		{dialect: platform.YugabyteDB, want: withoutRanges},
 		{dialect: platform.Spanner, want: withoutEnumTypes},
 	}
 	for _, test := range tests {

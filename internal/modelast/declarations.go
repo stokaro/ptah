@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/featureops"
+	"ptah.run/internal/schemaprep"
 )
 
 // Lowering supplies the selected owner runtime and target facts. CommonMetadata
@@ -82,11 +83,17 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	// position before, between, or after them; streaming SQL before scheduling
 	// would make a late conflict leave a successful prefix.
 	var nodes []ast.Node
-	typeWindow := 0
+	typeStart, typeEnd := 0, 0
 	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
 		nodes = append(nodes, node)
 		return lowering.Context.Err()
-	}, func() { typeWindow = len(nodes) }); err != nil {
+	}, func(start bool) {
+		if start {
+			typeStart = len(nodes)
+		} else {
+			typeEnd = len(nodes)
+		}
+	}); err != nil {
 		return err
 	}
 	common, metadata, err := declarationCommonGraph(lowering, nodes)
@@ -95,7 +102,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	}
 	semantics := identifier.ForDialect(target)
 	request := featureplan.DeclarationRequest{Target: target, Identifiers: semantics, Capabilities: lowering.Capabilities,
-		Objects: objects, CommonSteps: metadata, Types: schemaext.DefinedTypes(database.FeatureObjects)}
+		Objects: objects, CommonSteps: metadata, Types: slices.Concat(schemaprep.TypeDefinitions(objectidentity.NewBuilder(semantics), database.Domains, database.CompositeTypes), schemaext.DefinedTypes(database.FeatureObjects))}
 	names := make(map[objectidentity.Key]string, len(database.Tables))
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range database.Tables {
@@ -118,7 +125,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	for _, source := range reply.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: source.Owner, Dependencies: slices.Clone(source.Dependencies)}
 		for _, step := range source.Steps {
-			placed, err := phaseDependencies(step.ID, step.Payload.Phase, nodes, metadata, typeWindow)
+			placed, err := phaseDependencies(step.ID, step.Payload.Phase, nodes, metadata, typeStart, typeEnd)
 			if err != nil {
 				return err
 			}
@@ -156,11 +163,11 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 // steps. A whole-schema render orders an owner's steps by their dependencies
 // alone, except a prerequisite, which it runs after the schema statements
 // and before the rest: an object every other object may use; and a type,
-// which it runs at typeWindow, after the enums and before the routines that
+// which shares the common type span, after the enums and before routines that
 // name a type and the tables, as a migration plan does. It has no window for
 // any other phase.
 func phaseDependencies(
-	step plangraph.StepID, phase featureplan.Phase, nodes []ast.Node, metadata []featureplan.CommonStep, typeWindow int,
+	step plangraph.StepID, phase featureplan.Phase, nodes []ast.Node, metadata []featureplan.CommonStep, typeStart, typeEnd int,
 ) ([]plangraph.Dependency, error) {
 	switch phase {
 	case featureplan.PhaseDefault:
@@ -168,7 +175,7 @@ func phaseDependencies(
 	case featureplan.PhasePrerequisite:
 		return prerequisiteDependencies(nodes, metadata, step), nil
 	case featureplan.PhaseType:
-		return windowDependencies(metadata, typeWindow, step), nil
+		return spanDependencies(metadata, typeStart, typeEnd, step), nil
 	default:
 		return nil, fmt.Errorf("%w: declaration step %s/%s asks for the %q phase, which a schema render has no window for",
 			schemaext.ErrInvalidValue, step.Owner, step.Name, phase)
@@ -192,12 +199,16 @@ func prerequisiteDependencies(nodes []ast.Node, metadata []featureplan.CommonSte
 // windowDependencies places step after the common step before position and
 // before the one at it, metadata being the common steps in order.
 func windowDependencies(metadata []featureplan.CommonStep, position int, step plangraph.StepID) []plangraph.Dependency {
+	return spanDependencies(metadata, position, position, step)
+}
+
+func spanDependencies(metadata []featureplan.CommonStep, start, end int, step plangraph.StepID) []plangraph.Dependency {
 	var dependencies []plangraph.Dependency
-	if position > 0 {
-		dependencies = append(dependencies, plangraph.Dependency{Before: metadata[position-1].ID, After: step})
+	if start > 0 {
+		dependencies = append(dependencies, plangraph.Dependency{Before: metadata[start-1].ID, After: step})
 	}
-	if position < len(metadata) {
-		dependencies = append(dependencies, plangraph.Dependency{Before: step, After: metadata[position].ID})
+	if end < len(metadata) {
+		dependencies = append(dependencies, plangraph.Dependency{Before: step, After: metadata[end].ID})
 	}
 	return dependencies
 }

@@ -21,8 +21,8 @@ import (
 // recorded.
 // SetUnloggedOperation is accounted for by pgtable.AlterPersistence in the
 // extraction departure ledger rather than by a common node.
-// Default privileges use owner operations through ExtensionNode.
-const nodeKindFloor = 79
+// Default privileges and range types use owner operations through ExtensionNode.
+const nodeKindFloor = 78
 
 // censusRow is one node kind the census accepts.
 //
@@ -134,7 +134,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.DomainNotNullOperation{}},
 	{node: &ast.DomainTypeDef{}},
 	{node: &ast.EnumTypeDef{}},
-	{node: &ast.RangeTypeDef{}},
 	{node: &ast.RenameEnumValueOperation{}},
 	{node: &ast.RenameTypeOperation{}},
 
@@ -159,7 +158,7 @@ type acceptOutcome struct {
 // wantOutcome is the observation this row describes when the visitor answers
 // every call with answer.
 //
-// One shape for all 82 kinds: Accept reaches VisitNode once, hands it this node,
+// Each node kind reaches VisitNode once, hands it this node,
 // and returns what the visitor said.
 func (r censusRow) wantOutcome(answer string) acceptOutcome {
 	return acceptOutcome{

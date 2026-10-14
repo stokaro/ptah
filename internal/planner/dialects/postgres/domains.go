@@ -1,11 +1,13 @@
 package postgres
 
 import (
-	"strings"
-
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/tableref"
+	"ptah.run/internal/typeorder"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -54,7 +56,7 @@ func domainIsAlteredInPlace(domainDiff difftypes.DomainDiff, rebuilt map[string]
 	if !domainIsAlterableInPlace(domainDiff) {
 		return false
 	}
-	_, mustRebuild := rebuilt[bareTypeName(domainDiff.DomainName)]
+	_, mustRebuild := rebuilt[deporder.NormalizeTypeReference(domainTypeName(domainDiff))]
 	return !mustRebuild
 }
 
@@ -70,7 +72,7 @@ func compositeIsAlterableInPlace(
 	if !compositeHasAttributeDelta(compositeDiff) {
 		return false
 	}
-	_, mustRebuild := rebuilt[bareTypeName(compositeDiff.TypeName)]
+	_, mustRebuild := rebuilt[deporder.NormalizeTypeReference(compositeTypeName(compositeDiff))]
 	return !mustRebuild
 }
 
@@ -83,7 +85,7 @@ func compositeIsAlterableInPlace(
 // applied at all on any domain in use, which is every domain that matters
 // (stokaro/ptah#1717).
 func (p *Planner) alterModifiedDomains(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	rebuilt := rebuiltUserTypes(diff)
+	rebuilt := p.rebuiltUserTypes(diff)
 	for _, domainDiff := range diff.DomainsModified {
 		if !domainIsAlteredInPlace(domainDiff, rebuilt) {
 			continue
@@ -170,89 +172,56 @@ func compositeHasAttributeDelta(compositeDiff difftypes.CompositeTypeDiff) bool 
 	return len(compositeDiff.AttributesAdded) > 0 || len(compositeDiff.AttributesRemoved) > 0
 }
 
-// rebuiltUserTypes names every user type this plan drops and creates again,
-// closed over the references between them.
-//
-// A type is rebuilt when it has no in-place form -- a domain whose base type
-// changed, a range, a composite whose fields moved rather than only arriving
-// and leaving. And a type that REFERENCES one of those has to be rebuilt too,
-// whatever its own change looks like: the rebuild's DROP is non-CASCADE, and
-// PostgreSQL refuses to drop a type another type still names.
-//
-// That is not a hypothetical. A composite gaining a field, over a domain whose
-// base type changed in the same plan, is alterable by its own delta and still
-// has to go: leaving it in place made `DROP DOMAIN qty` fail with
-// `cannot drop type qty because other objects depend on it`, measured live
-// (stokaro/ptah#1717).
-//
-// The closure runs to a fixpoint because the references chain: a composite over
-// a composite over a rebuilt domain is two steps from the cause.
-func rebuiltUserTypes(diff *difftypes.SchemaDiff) map[string]struct{} {
-	rebuilt := make(map[string]struct{})
-	for _, domainDiff := range diff.DomainsModified {
-		if !domainIsAlterableInPlace(domainDiff) {
-			rebuilt[bareTypeName(domainDiff.DomainName)] = struct{}{}
+// rebuiltUserTypes closes replacement requirements across common and owned
+// types. Each changed dependent must leave before a non-CASCADE replacement.
+func (p *Planner) rebuiltUserTypes(diff *difftypes.SchemaDiff) map[string]struct{} {
+	var changed, replacements []string
+	for _, domain := range diff.DomainsModified {
+		name := domainTypeName(domain)
+		changed = append(changed, name)
+		if !domainIsAlterableInPlace(domain) {
+			replacements = append(replacements, name)
 		}
 	}
-	for _, rangeDiff := range diff.RangesModified {
-		rebuilt[bareTypeName(rangeDiff.RangeName)] = struct{}{}
-	}
-	for _, compositeDiff := range diff.CompositeTypesModified {
-		if !compositeHasAttributeDelta(compositeDiff) {
-			rebuilt[bareTypeName(compositeDiff.TypeName)] = struct{}{}
+	for _, composite := range diff.CompositeTypesModified {
+		name := compositeTypeName(composite)
+		changed = append(changed, name)
+		if !compositeHasAttributeDelta(composite) {
+			replacements = append(replacements, name)
 		}
 	}
-
-	for changed := true; changed; {
-		changed = false
-		for _, compositeDiff := range diff.CompositeTypesModified {
-			name := bareTypeName(compositeDiff.TypeName)
-			if _, already := rebuilt[name]; already {
-				continue
-			}
-			if referencesRebuiltType(compositeDiff.CurrentFieldTypes, rebuilt) {
-				rebuilt[name] = struct{}{}
-				changed = true
-			}
+	for _, change := range diff.FeatureChanges {
+		creator, creates := change.Value.(schemaext.TypeCreator)
+		observer, observes := change.Value.(schemaext.TypeObserver)
+		if !creates || !observes {
+			continue
 		}
-		for _, domainDiff := range diff.DomainsModified {
-			name := bareTypeName(domainDiff.DomainName)
-			if _, already := rebuilt[name]; already {
-				continue
-			}
-			if referencesRebuiltType([]string{domainDiff.CurrentBaseType}, rebuilt) {
-				rebuilt[name] = struct{}{}
-				changed = true
-			}
+		_, after := creator.CreatedType(change.Subject)
+		typ, before := observer.ObservedType(change.Subject)
+		if !before || !after {
+			continue
+		}
+		name := typeorder.Name(typ.ID)
+		changed = append(changed, name)
+		if value, ok := change.Value.(schemaext.TypeRebuilder); ok && value.RebuildsType() {
+			replacements = append(replacements, name)
 		}
 	}
-	return rebuilt
+	return typeorder.RebuildNames(typeorder.Vocabulary(nil, p.typeContext(diff).Current), changed, replacements)
 }
 
-// referencesRebuiltType reports whether any of these type spellings names a type
-// the plan rebuilds.
-func referencesRebuiltType(fieldTypes []string, rebuilt map[string]struct{}) bool {
-	for _, fieldType := range fieldTypes {
-		if _, found := rebuilt[bareTypeName(fieldType)]; found {
-			return true
-		}
+func domainTypeName(change difftypes.DomainDiff) string {
+	if change.Desired.Name != "" {
+		return tableref.CanonicalExact(change.Desired.Schema, change.Desired.Name)
 	}
-	return false
+	return change.DomainName
 }
 
-// bareTypeName reduces a type spelling to the name references are matched on:
-// lower-cased, unqualified, and without the array or length decoration a
-// catalog spelling may carry.
-func bareTypeName(name string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(name))
-	trimmed = strings.TrimSuffix(trimmed, "[]")
-	if open := strings.IndexByte(trimmed, '('); open >= 0 {
-		trimmed = trimmed[:open]
+func compositeTypeName(change difftypes.CompositeTypeDiff) string {
+	if change.Desired.Name != "" {
+		return tableref.CanonicalExact(change.Desired.Schema, change.Desired.Name)
 	}
-	if dot := strings.LastIndexByte(trimmed, '.'); dot >= 0 {
-		trimmed = trimmed[dot+1:]
-	}
-	return strings.TrimSpace(strings.Trim(trimmed, `"`))
+	return change.TypeName
 }
 
 // alterModifiedCompositeTypes emits the in-place ALTER TYPE statements for every
@@ -263,7 +232,7 @@ func bareTypeName(name string) string {
 // case. Before this, a composite gaining a field was reconciled by dropping and
 // recreating it, which is the one thing the engine will not do there.
 func (p *Planner) alterModifiedCompositeTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	rebuilt := rebuiltUserTypes(diff)
+	rebuilt := p.rebuiltUserTypes(diff)
 	for _, compositeDiff := range diff.CompositeTypesModified {
 		if !compositeIsAlterableInPlace(compositeDiff, rebuilt) {
 			continue

@@ -779,9 +779,6 @@ func adaptForUserTypeSupport(database *schemamodel.Database, dialect string) {
 	if !caps.Has(capability.CompositeTypes) {
 		database.CompositeTypes = nil
 	}
-	if !caps.Has(capability.RangeTypes) {
-		database.Ranges = nil
-	}
 }
 
 // TestRender_CockroachDBRefusesADomainItCannotCreate is the control on the

@@ -197,8 +197,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.DomainNotNullOperation,
 		*ast.EnumTypeDef,
 		*ast.DomainTypeDef,
-		*ast.CompositeTypeDef,
-		*ast.RangeTypeDef:
+		*ast.CompositeTypeDef:
 		return fmt.Errorf("%w: %s: %T renders as part of the statement that carries it, not on its own",
 			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
 
@@ -215,8 +214,6 @@ func typeKey(node *ast.CreateTypeNode) capability.Capability {
 		return capability.DomainTypes
 	case *ast.CompositeTypeDef:
 		return capability.CompositeTypes
-	case *ast.RangeTypeDef:
-		return capability.RangeTypes
 	default:
 		return capability.EnumCustomType
 	}

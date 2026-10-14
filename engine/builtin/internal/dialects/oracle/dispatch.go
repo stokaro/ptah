@@ -199,8 +199,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.DomainNotNullOperation,
 		*ast.EnumTypeDef,
 		*ast.DomainTypeDef,
-		*ast.CompositeTypeDef,
-		*ast.RangeTypeDef:
+		*ast.CompositeTypeDef:
 		return r.nodeNeedsParent(node)
 
 	default:

@@ -8,8 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
+	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/modelast"
 )
 
@@ -27,10 +31,7 @@ func userTypeOrderDatabase() schemamodel.Database {
 			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}}},
 			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
 		},
-		Ranges: []schemamodel.Range{
-			{Name: "myrange", Subtype: "integer"},
-			{Name: "posrange", Subtype: "d_int"},
-		},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "myrange"), Value: &pgtype.DesiredRange{Subtype: "integer"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "posrange"), Value: &pgtype.DesiredRange{Subtype: "d_int"}})),
 	}
 }
 
@@ -43,7 +44,7 @@ func userTypeOrderDatabase() schemamodel.Database {
 func TestCollectDatabase_CreatesUserTypesBeforeTheTypesThatNameThem(t *testing.T) {
 	c := qt.New(t)
 
-	statements := must.Must(modelast.CollectDatabase(userTypeOrderDatabase(), "postgres", modelast.Lowering{Context: context.Background()}))
+	statements := must.Must(modelast.CollectDatabase(userTypeOrderDatabase(), "postgres", builtinlowering.ForTarget(context.Background(), must.Must(builtin.New()), "postgres", capability.ForDialect("postgres"))))
 	sql, err := builtin.RenderSQL("postgres", statements.Statements...)
 	c.Assert(err, qt.IsNil)
 

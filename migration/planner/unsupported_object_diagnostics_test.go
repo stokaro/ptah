@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -217,10 +218,10 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		SequencesRemoved:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
-		DomainsRemoved:           difftypes.DomainChanges{{Name: "email"}},
-		CompositeTypesRemoved:    difftypes.CompositeTypeChanges{{Name: "addr"}},
-		RangesRemoved:            difftypes.RangeChanges{{Name: "tsr"}},
+		SequencesRemoved:      difftypes.SequenceChanges{{Name: "order_number_seq"}},
+		DomainsRemoved:        difftypes.DomainChanges{{Name: "email"}},
+		CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "addr"}},
+
 		RolesRemoved:             difftypes.RoleChanges{{Name: "app_role"}},
 		FunctionsRemoved:         difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
 		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
@@ -245,7 +246,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		// for something never declared under that word.
 		{name: "domain", want: `-- CLICKHOUSE: DROP DOMAIN "email" is not supported`},
 		{name: "composite type", want: `-- CLICKHOUSE: DROP TYPE "addr" is not supported`},
-		{name: "range type", want: `-- CLICKHOUSE: DROP TYPE "tsr" is not supported`},
 		// Ptah does not drop ClickHouse roles: the comparator computes no role
 		// removals at all, and the issue's non-goals forbid dropping a role
 		// that may be shared outside the managed schema. The planner names the
@@ -408,7 +408,6 @@ func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		DomainsRemoved:        difftypes.DomainChanges{{Name: "email"}},
 		CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "addr"}},
-		RangesRemoved:         difftypes.RangeChanges{{Name: "tsr"}},
 	}
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
@@ -420,7 +419,6 @@ func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 			upper := strings.ToUpper(dialect)
 			c.Assert(planned, qt.Contains, "-- "+upper+": DROP DOMAIN email is not generated")
 			c.Assert(planned, qt.Contains, "-- "+upper+": DROP TYPE addr is not generated")
-			c.Assert(planned, qt.Contains, "-- "+upper+": DROP TYPE tsr is not generated")
 		})
 	}
 }
@@ -683,7 +681,7 @@ func TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath(t *testin
 		{
 			name:    "cockroachdb range",
 			dialect: platform.CockroachDB,
-			diff:    &difftypes.SchemaDiff{RangesAdded: difftypes.RangeChanges{{Name: "span", Subtype: "int4"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "int4"}}}}},
 			wantErr: `cockroachdb: CREATE TYPE \.\.\. AS RANGE span: this target does not create it.*`,
 		},
 		{
@@ -735,7 +733,7 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 		{
 			name:    "postgres range",
 			dialect: platform.Postgres,
-			diff:    &difftypes.SchemaDiff{RangesAdded: difftypes.RangeChanges{{Name: "span", Subtype: "int4"}}},
+			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "int4"}}}}},
 		},
 	}
 
@@ -748,6 +746,19 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
+		})
+	}
+}
+
+func TestPlanRefusesRangeRemovalWithoutAnOwner(t *testing.T) {
+	for _, target := range []string{platform.ClickHouse, platform.MySQL, platform.MariaDB} {
+		t.Run(target, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"}}}}}
+			nodes, err := planner.GenerateSchemaDiffAST(c.Context(), must.Must(builtin.New()), diff, target)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err.Error(), qt.Contains, string(pgtype.RangeChangeKind))
+			c.Assert(nodes, qt.IsNil)
 		})
 	}
 }

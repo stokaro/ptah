@@ -192,7 +192,7 @@ func definesType(objects schemaext.Objects, ref objectidentity.ID) bool {
 // A type a feature owner's object defines is one of them.
 func declaredTypes(db *schemamodel.Database) []sqlext.Declaration {
 	listed := make([]sqlext.Declaration, 0,
-		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes)+len(db.Ranges))
+		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes))
 	for _, enum := range db.Enums {
 		listed = append(listed, declaration(Type, enum.Name))
 	}
@@ -201,9 +201,6 @@ func declaredTypes(db *schemamodel.Database) []sqlext.Declaration {
 	}
 	for _, composite := range db.CompositeTypes {
 		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(composite.Schema, composite.Name)))
-	}
-	for _, rangeType := range db.Ranges {
-		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(rangeType.Schema, rangeType.Name)))
 	}
 	// A type a feature owner's object defines takes a name in the same
 	// namespace, and collides with an enum or a common type the same way.

@@ -531,7 +531,7 @@ func GenerateSchemaDiffASTWithOptions(
 			opts.CapabilitiesFor(dialect),
 			diff.DomainsAdded.Names(),
 			diff.CompositeTypesAdded.Names(),
-			diff.RangesAdded.Names(),
+			nil,
 		); err != nil {
 			return nil, wrapPlanError(dialect, err)
 		}

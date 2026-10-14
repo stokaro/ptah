@@ -55,7 +55,7 @@ func (a schemaInspectArchive) String() string {
 	return out.String()
 }
 
-func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabulary, args ...any) (schemaInspectArchive, error) {
+func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabulary, readsOwned func(coverage.Kind) bool, args ...any) (schemaInspectArchive, error) {
 	opts, input, err := atlasSchemaInspectSplitArgs(args...)
 	if err != nil {
 		return schemaInspectArchive{}, err
@@ -70,7 +70,7 @@ func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabular
 	// from a parsed block, and a leading comment belongs to no block. Read it
 	// from the input before the split so each member can carry it
 	// (stokaro/ptah#1276).
-	directives, err := splitCoverageDirectives(input, vocabulary)
+	directives, err := splitCoverageDirectives(input, vocabulary, readsOwned)
 	if err != nil {
 		return schemaInspectArchive{}, fmt.Errorf("split schema output: %w", err)
 	}
@@ -98,12 +98,16 @@ func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabular
 // splitCoverageDirectives transports validated owner records without adding
 // them to the common coverage set. Reason, provenance, and exact names survive
 // even though the splitter does not interpret their schema semantics.
-func splitCoverageDirectives(input string, vocabulary coverage.Vocabulary) ([]string, error) {
+func splitCoverageDirectives(input string, vocabulary coverage.Vocabulary, readsOwned func(coverage.Kind) bool) ([]string, error) {
 	var directives []string
 	var limits ydbsource.Limits
 	common, err := coverage.DecodeHeader(input, vocabulary, func(object coverage.Object) (bool, error) {
 		if !ydbsource.RecognizesLimit(object.Kind) {
-			return false, nil
+			if readsOwned == nil || !readsOwned(object.Kind) {
+				return false, nil
+			}
+			directives = append(directives, object.Directive())
+			return true, nil
 		}
 		directives = append(directives, object.Directive())
 		limits.Add(string(object.Kind), object.Name)

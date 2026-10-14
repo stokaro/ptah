@@ -17,10 +17,12 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgindexstorage"
@@ -1155,7 +1157,11 @@ func (r *Reader) readUserTypesInto(ctx context.Context, schema *catalog.Database
 	// stand in for the way a missing function is. A target without the type
 	// system has nothing here to find either way (stokaro/ptah#942).
 	if !r.caps.Has(capability.CatalogDependencies) {
-		return nil
+		knowledge := schemaext.Knowledge{State: schemaext.Complete}
+		if r.caps.Has(capability.RangeTypes) {
+			knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "range type dependencies are unavailable"}
+		}
+		return recordRangeCoverage(schema, knowledge)
 	}
 	domains, err := r.readDomains(ctx)
 	if err != nil {
@@ -1173,8 +1179,13 @@ func (r *Reader) readUserTypesInto(ctx context.Context, schema *catalog.Database
 	if err != nil {
 		return fmt.Errorf("failed to read range types: %w", err)
 	}
-	schema.Ranges = ranges
-	return nil
+	for _, object := range ranges {
+		schema.FeatureObjects, err = schema.FeatureObjects.With(object)
+		if err != nil {
+			return err
+		}
+	}
+	return recordRangeCoverage(schema, schemaext.Knowledge{State: schemaext.Complete})
 }
 
 // extensionOwnedTypeExclusion is the correlated NOT EXISTS that keeps a type an
@@ -1403,8 +1414,8 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 }
 
 // readRanges reads PostgreSQL range types (typtype='r').
-func (r *Reader) readRanges(ctx context.Context) ([]catalog.Range, error) {
-	var ranges []catalog.Range
+func (r *Reader) readRanges(ctx context.Context) ([]schemaext.Object, error) {
+	var ranges []schemaext.Object
 	for _, schemaName := range r.schemasToRead() {
 		schemaRanges, err := r.readRangesForSchema(ctx, schemaName)
 		if err != nil {
@@ -1415,7 +1426,7 @@ func (r *Reader) readRanges(ctx context.Context) ([]catalog.Range, error) {
 	return ranges, nil
 }
 
-func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]catalog.Range, error) {
+func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]schemaext.Object, error) {
 	// The four attributes after the subtype are what makes a change to an
 	// existing range type visible at all; without them the comparator had only
 	// names to compare and called a changed range converged (stokaro/ptah#931
@@ -1426,8 +1437,10 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 			n.nspname AS schema_name,
 			t.typname AS range_name,
 			format_type(rng.rngsubtype, NULL) AS subtype,
-			COALESCE(opc.opcname, '') AS subtype_opclass,
-			COALESCE(coll.collname, '') AS collation_name,
+			COALESCE(CASE WHEN opcns.nspname = 'pg_catalog' THEN quote_ident(opc.opcname)
+                ELSE quote_ident(opcns.nspname) || '.' || quote_ident(opc.opcname) END, '') AS subtype_opclass,
+			COALESCE(CASE WHEN collns.nspname = 'pg_catalog' THEN quote_ident(coll.collname)
+                ELSE quote_ident(collns.nspname) || '.' || quote_ident(coll.collname) END, '') AS collation_name,
 			COALESCE(NULLIF(rng.rngcanonical, 0)::regproc::text, '') AS canonical,
 			COALESCE(NULLIF(rng.rngsubdiff, 0)::regproc::text, '') AS subtype_diff,
 			` + r.typeCommentExpr() + `
@@ -1435,7 +1448,9 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_range rng ON rng.rngtypid = t.oid
 		LEFT JOIN pg_opclass opc ON opc.oid = rng.rngsubopc
+        LEFT JOIN pg_namespace opcns ON opcns.oid = opc.opcnamespace
 		LEFT JOIN pg_collation coll ON coll.oid = rng.rngcollation
+        LEFT JOIN pg_namespace collns ON collns.oid = coll.collnamespace
 		WHERE t.typtype = 'r' AND n.nspname = $1` +
 		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
@@ -1446,13 +1461,13 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 	}
 	defer rows.Close()
 
-	var ranges []catalog.Range
+	var ranges []schemaext.Object
 	for rows.Next() {
-		var rangeType catalog.Range
-		var rawSchema string
+		var rangeType pgtype.ObservedRange
+		var rawSchema, name string
 		if err := rows.Scan(
 			&rawSchema,
-			&rangeType.Name,
+			&name,
 			&rangeType.Subtype,
 			&rangeType.SubtypeOpClass,
 			&rangeType.Collation,
@@ -1462,8 +1477,11 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan range type for schema %s: %w", schemaName, err)
 		}
-		rangeType.Schema = r.outputSchema(rawSchema)
-		ranges = append(ranges, rangeType)
+		object, err := pgtype.ObservedObject(pgtype.RefWith(identifier.ForDialect(r.dialect), pgtype.RangeKind, r.outputSchema(rawSchema), name), &rangeType)
+		if err != nil {
+			return nil, err
+		}
+		ranges = append(ranges, object)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read range types for schema %s: %w", schemaName, err)
@@ -2493,14 +2511,14 @@ func closingParenthesis(text string) int {
 }
 
 func unquotePostgresIdentifiers(identifiers []string) []string {
-	for i, identifier := range identifiers {
-		identifiers[i] = unquotePostgresIdentifier(identifier)
+	for i, name := range identifiers {
+		identifiers[i] = unquotePostgresIdentifier(name)
 	}
 	return identifiers
 }
 
-func unquotePostgresIdentifier(identifier string) string {
-	trimmed := strings.TrimSpace(identifier)
+func unquotePostgresIdentifier(name string) string {
+	trimmed := strings.TrimSpace(name)
 	if len(trimmed) < 2 || trimmed[0] != '"' || trimmed[len(trimmed)-1] != '"' {
 		return trimmed
 	}

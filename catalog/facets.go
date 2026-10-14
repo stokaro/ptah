@@ -31,9 +31,6 @@ func (db *Database) FacetSlots() []*schemaext.Facets {
 	for i := range db.Composites {
 		result = append(result, &db.Composites[i].Facets)
 	}
-	for i := range db.Ranges {
-		result = append(result, &db.Ranges[i].Facets)
-	}
 	for i := range db.Functions {
 		result = append(result, &db.Functions[i].Facets)
 	}

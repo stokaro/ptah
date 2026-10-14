@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/builtintest"
 )
 
 func TestCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
@@ -38,7 +39,7 @@ func TestCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
 			output, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(c, true))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(output.Text, qt.Equals, "schema \"main\" {\n}\n")
+			c.Assert(output.Text, qt.Equals, "// ptah:not-described range\n\nschema \"main\" {\n}\n")
 		})
 	}
 }
@@ -99,7 +100,9 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(hcl, "// ptah:not-described extension reason=suppressed provenance=defaulted\n"), qt.IsTrue)
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
-	parsed, err := atlashcl.Parse([]byte(hcl), "inspect.hcl")
+	parsed, err := atlashcl.ParseWithOptions([]byte(hcl), "inspect.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL()},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.NotDescribed, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension,
@@ -130,7 +133,7 @@ func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hcl, qt.Contains, `extension "pgcrypto"`)
-	c.Assert(leadingCommentLines(hcl), qt.HasLen, 0)
+	c.Assert(leadingCommentLines(hcl), qt.DeepEquals, []string{"// ptah:not-described range"})
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
 	c.Assert(strings.HasSuffix(hcl, "\n"), qt.IsTrue)
 	c.Assert(strings.HasSuffix(hcl, "\n\n"), qt.IsFalse)
@@ -158,7 +161,7 @@ func TestCompatibilityHCLFraming_NativeDocumentIsByteIdentical(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hcl, qt.Equals,
-		atlashclrender.GeneratedCodeMarker+"\n\nschema \"main\" {\n}\n\n")
+		atlashclrender.GeneratedCodeMarker+"\n// ptah:not-described range\n\nschema \"main\" {\n}\n\n")
 }
 
 func emptySQLiteInspectReport(c *qt.C, compatibilityHCLFraming bool) *atlasreport.SchemaInspectReport {

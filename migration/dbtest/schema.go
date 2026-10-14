@@ -275,7 +275,6 @@ func preserveUnmanagedObjects(ctx context.Context, diff *difftypes.SchemaDiff, d
 	diff.SequencesRemoved = nil
 	diff.DomainsRemoved = nil
 	diff.CompositeTypesRemoved = nil
-	diff.RangesRemoved = matchingRanges(diff.RangesRemoved, diff.RangesAdded, semantics.TableIdentityKey)
 	diff.ViewsRemoved = nil
 	diff.MaterializedViewsRemoved = nil
 	diff.TriggersRemoved = nil
@@ -367,22 +366,6 @@ func matchingNames(removed, added []string, key func(string) string) []string {
 	for _, name := range removed {
 		position := slices.IndexFunc(added, func(addedName string) bool {
 			return key(addedName) == key(name)
-		})
-		if position >= 0 {
-			matching = append(matching, added[position])
-		}
-	}
-	return matching
-}
-
-// matchingRanges is matchingNames for a family that carries its operands. The
-// added side is what survives, exactly as for the name lists: this replay keeps
-// the recreate pair and drops a removal with no partner.
-func matchingRanges(removed, added difftypes.RangeChanges, key func(string) string) difftypes.RangeChanges {
-	matching := make(difftypes.RangeChanges, 0, len(removed))
-	for _, rangeType := range removed {
-		position := slices.IndexFunc(added, func(candidate schemamodel.Range) bool {
-			return key(candidate.QualifiedName()) == key(rangeType.QualifiedName())
 		})
 		if position >= 0 {
 			matching = append(matching, added[position])

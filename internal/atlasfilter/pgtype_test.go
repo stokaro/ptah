@@ -13,9 +13,8 @@ import (
 	"ptah.run/internal/atlasfilter"
 )
 
-// These tests build the type owner's objects themselves, rather than read them
-// from a source: no source produces them yet. The filter names them with the
-// selector types of the common types and keeps the ones a kept column uses.
+// These tests build the type owner's objects directly. The filter names them
+// with the declared selector kinds and keeps the types a kept column uses.
 
 // typeNames lists the owner's types objects holds, as kind:name.
 func typeNames(c *qt.C, objects schemaext.Objects) []string {

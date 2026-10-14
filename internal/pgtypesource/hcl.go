@@ -1,9 +1,6 @@
-// Package pgtypesource writes the PostgreSQL type owner's objects in Ptah's
-// schema sources. A domain, a composite type and a range type are written as
-// the blocks the common model's types are written as today, so a document
-// keeps one spelling whichever model holds a type. It sits between
-// feature/pgtype, which owns the models, and the source frontends, which it
-// reaches only through their contracts, such as core/hclext.
+// Package pgtypesource connects PostgreSQL user type models to schema sources.
+// It reads and writes range declarations and writes domain and composite
+// declarations through source contracts, without owning a source frontend.
 package pgtypesource
 
 import (
@@ -12,18 +9,19 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgtype"
 )
 
-// HCL is the type owner's contribution to the HCL writer: each domain,
-// composite type and range type is written as a `domain`, `composite` or
-// `range` block among the types, as the writer writes the common model's.
-// It reads no block: the HCL reader reads the three blocks itself until the
-// sources hand the type owner its objects.
+// HCL reads range blocks and writes domain, composite and range objects.
+// Type references resolve through the frontend's declared type registry.
 func HCL() hclext.Extension {
-	return hclext.Extension{Owner: pgtype.Owner, Kinds: pgtype.Kinds(), Encoder: hclEncoder{}}
+	return hclext.Extension{Owner: pgtype.Owner, Kinds: pgtype.Kinds(), Encoder: hclEncoder{}, Decoder: hclEncoder{},
+		Blocks: []hclext.Block{rangeBlock()}, Header: []coverage.Kind{coverage.Range},
+		Coverage: func(request hclext.CoverageRequest) (schemaext.Coverage, error) { return rangeCoverage(request.Limits) },
+	}
 }
 
 // hclEncoder writes the types of one document.
@@ -32,6 +30,9 @@ type hclEncoder struct{}
 // EncodeHCL writes one block for each type. A value that is not a valid
 // declaration is refused rather than written.
 func (hclEncoder) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {
+	if ctx == nil {
+		return hclext.EncodeResult{}, fmt.Errorf("%w: type export requires a context", schemaext.ErrInvalidValue)
+	}
 	blocks := make([]hclext.EncodedBlock, 0, len(request.Objects))
 	for _, object := range request.Objects {
 		if err := ctx.Err(); err != nil {
@@ -43,7 +44,15 @@ func (hclEncoder) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (
 		}
 		blocks = append(blocks, block)
 	}
-	return hclext.EncodeResult{Blocks: blocks}, nil
+	limits, err := rangeLimits(request.Coverage.SelectKinds([]schemaext.Kind{pgtype.RangeKind}))
+	if err != nil {
+		return hclext.EncodeResult{}, err
+	}
+	result := hclext.EncodeResult{Blocks: blocks}
+	for _, limit := range limits {
+		result.Header = append(result.Header, (coverage.Object{Kind: coverage.Range, Name: limit.Name}).Directive())
+	}
+	return result, nil
 }
 
 // typeBlock is the block of one type: its type and attributes by its model,

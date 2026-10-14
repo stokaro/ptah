@@ -11,7 +11,9 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
@@ -119,14 +121,15 @@ func resolveUserTypeReference(userTypes []UserType, reference string) (string, b
 			return userType.Name, true
 		}
 	}
-	if strings.Contains(key, ".") {
+	keyRef, parsed := tableref.Parse(key)
+	if !parsed || keyRef.Qualified {
 		return "", false
 	}
 
 	var match string
 	for _, userType := range userTypes {
-		ref, ok := tableref.Parse(strings.TrimSpace(userType.Name))
-		if !ok || !strings.EqualFold(ref.Name, key) {
+		ref, ok := tableref.Parse(NormalizeTypeReference(userType.Name))
+		if !ok || ref.Name != keyRef.Name {
 			continue
 		}
 		if match != "" {
@@ -137,29 +140,36 @@ func resolveUserTypeReference(userTypes []UserType, reference string) (string, b
 	return match, match != ""
 }
 
-// NormalizeTypeReference reduces a SQL type spelling to the bare type name it
-// points at: it drops array markers and a length/precision modifier, unquotes
-// each part of a qualified name, and lowercases the result. `"app"."Addr"[]`
-// and `app.addr` normalize alike, and `character varying(255)` becomes
-// `character varying`.
+// NormalizeTypeReference removes array dimensions and type modifiers while
+// preserving quoted identifier case and punctuation. Unquoted identifiers
+// follow PostgreSQL's ASCII case folding. Quoted dots and parentheses belong
+// to the name, not to its qualification or modifiers.
 func NormalizeTypeReference(reference string) string {
-	value := strings.TrimSpace(reference)
-	for strings.HasSuffix(value, "]") {
-		open := strings.LastIndex(value, "[")
-		if open < 0 {
-			break
+	scan := lexer.NewLexerWithOptions(reference, dialectlexer.Options("postgres"))
+	var result strings.Builder
+	spaced := false
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		switch {
+		case token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment:
+			spaced = true
+		case token.Value == "(" || token.Value == "[":
+			return strings.TrimSpace(result.String())
+		case token.MatchOperatorValue("."):
+			result.WriteByte('.')
+			spaced = false
+		default:
+			if spaced && result.Len() > 0 && !strings.HasSuffix(result.String(), ".") {
+				result.WriteByte(' ')
+			}
+			if token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`) {
+				result.WriteString(tableref.CanonicalExact("", sqlident.UnquoteDoubleQuoted(token.Value)))
+			} else {
+				result.WriteString(identifier.ComparisonASCIIInsensitive.IdentityKey(token.Value))
+			}
+			spaced = false
 		}
-		value = strings.TrimSpace(value[:open])
 	}
-	if open := strings.Index(value, "("); open >= 0 {
-		value = strings.TrimSpace(value[:open])
-	}
-
-	parts := strings.Split(value, ".")
-	for i, part := range parts {
-		parts[i] = strings.Trim(strings.TrimSpace(part), `"`)
-	}
-	return strings.ToLower(strings.Join(parts, "."))
+	return strings.TrimSpace(result.String())
 }
 
 // StableTopologicalSort returns nodes ordered so dependencies come first while

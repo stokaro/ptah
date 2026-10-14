@@ -1281,9 +1281,6 @@ func deduplicateComposite(r *Database) {
 	r.CompositeTypes = deduplicateNamedDefinitions(r.CompositeTypes, func(composite CompositeType) string {
 		return composite.QualifiedName()
 	})
-	r.Ranges = deduplicateNamedDefinitions(r.Ranges, func(rangeType Range) string {
-		return rangeType.QualifiedName()
-	})
 	r.ManagedData = deduplicateNamedDefinitions(r.ManagedData, managedDataDefinitionIdentity)
 }
 

@@ -51,7 +51,10 @@ func TestRenderTriggerEvents_RoundTrip(t *testing.T) {
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 			c.Assert(string(rendered.Data), qt.Contains, "  before {\n"+test.want+"\n  }\n")
 
-			parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+			parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 			c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 			c.Assert(parsed.Triggers, qt.HasLen, 1)
 			c.Assert(parsed.Triggers[0].Event, qt.Equals, test.event)

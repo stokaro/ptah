@@ -19,7 +19,6 @@ import (
 var typeMetrics = map[string]objectidentity.Kind{
 	"domains":         objectidentity.KindDomain,
 	"composite_types": objectidentity.KindComposite,
-	"range_types":     objectidentity.KindRange,
 }
 
 // joinsCommon reports whether an owner's metric adds to the common metric of
@@ -90,15 +89,12 @@ type typeKey struct {
 // share an object with the common model, so a type metric that joins both
 // would count that type twice, and a larger number is no way to say so.
 func refuseTypesCountedTwice(db *schemamodel.Database) error {
-	common := make(map[typeKey]bool, len(db.Domains)+len(db.CompositeTypes)+len(db.Ranges))
+	common := make(map[typeKey]bool, len(db.Domains)+len(db.CompositeTypes))
 	for _, domain := range db.Domains {
 		common[typeKey{kind: objectidentity.KindDomain, schema: domain.Schema, name: domain.Name}] = true
 	}
 	for _, composite := range db.CompositeTypes {
 		common[typeKey{kind: objectidentity.KindComposite, schema: composite.Schema, name: composite.Name}] = true
-	}
-	for _, rangeType := range db.Ranges {
-		common[typeKey{kind: objectidentity.KindRange, schema: rangeType.Schema, name: rangeType.Name}] = true
 	}
 	for _, defined := range schemaext.DefinedTypes(db.FeatureObjects) {
 		key := typeKey{kind: defined.ID.Kind, schema: defined.ID.Schema.Authored(), name: defined.ID.Name.Source}

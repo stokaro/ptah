@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 )
 
 // TestParse_DialectsIsAcceptedOnEveryStandaloneObjectDirective walks every
@@ -56,7 +57,7 @@ type Comp struct{}`,
 			name: "range",
 			code: `//ptah:schema:range name="floatrange" subtype="float8" dialects="postgresql"
 type Rng struct{}`,
-			scope: func(db schemamodel.Database) []string { return db.Ranges[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return must.Must(db.FeatureObjects.All())[0].Targets },
 		},
 		{
 			name: "view",
@@ -109,7 +110,7 @@ type Grn struct{}`,
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := mustParseSource(c, "models.go", "package test\n\n"+test.code+"\n")
+			database := must.Must(goschema.ParseSource(builtintest.Runtime().Annotations(), "models.go", "package test\n\n"+test.code+"\n"))
 
 			c.Assert(test.scope(database), qt.DeepEquals, []string{"postgres"})
 		})

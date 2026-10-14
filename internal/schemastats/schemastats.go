@@ -73,7 +73,6 @@ func Collect(ctx context.Context, db *schemamodel.Database, target string, runti
 		{Name: "sequences", Help: "Standalone sequences", Value: len(db.Sequences)},
 		{Name: "domains", Help: "Domain types", Value: len(db.Domains)},
 		{Name: "composite_types", Help: "Composite types", Value: len(db.CompositeTypes)},
-		{Name: "range_types", Help: "Range types", Value: len(db.Ranges)},
 		{Name: "views", Help: "Views", Value: len(db.Views)},
 		{Name: "materialized_views", Help: "Materialized views", Value: len(db.MaterializedViews)},
 		{Name: "triggers", Help: "Triggers", Value: len(db.Triggers)},

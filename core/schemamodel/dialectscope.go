@@ -40,7 +40,6 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	scoped.Sequences = keepScoped(db.Sequences, target, func(v Sequence) []string { return v.Dialects })
 	scoped.Domains = keepScoped(db.Domains, target, func(v Domain) []string { return v.Dialects })
 	scoped.CompositeTypes = keepScoped(db.CompositeTypes, target, func(v CompositeType) []string { return v.Dialects })
-	scoped.Ranges = keepScoped(db.Ranges, target, func(v Range) []string { return v.Dialects })
 	scoped.Views = keepScoped(db.Views, target, func(v View) []string { return v.Dialects })
 	scoped.MaterializedViews = keepScoped(db.MaterializedViews, target, func(v MaterializedView) []string { return v.Dialects })
 	scoped.Triggers = keepScoped(db.Triggers, target, func(v Trigger) []string { return v.Dialects })
@@ -162,9 +161,6 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 	for _, v := range db.CompositeTypes {
 		collect("composite", v.QualifiedName(), v.Dialects)
 	}
-	for _, v := range db.Ranges {
-		collect("range", v.QualifiedName(), v.Dialects)
-	}
 	for _, v := range db.Views {
 		collect("view", v.Name, v.Dialects)
 	}
@@ -205,7 +201,6 @@ func hasDialectScope(db *Database) bool {
 		anyScoped(db.Sequences, func(v Sequence) []string { return v.Dialects }) ||
 		anyScoped(db.Domains, func(v Domain) []string { return v.Dialects }) ||
 		anyScoped(db.CompositeTypes, func(v CompositeType) []string { return v.Dialects }) ||
-		anyScoped(db.Ranges, func(v Range) []string { return v.Dialects }) ||
 		anyScoped(db.Views, func(v View) []string { return v.Dialects }) ||
 		anyScoped(db.MaterializedViews, func(v MaterializedView) []string { return v.Dialects }) ||
 		anyScoped(db.Triggers, func(v Trigger) []string { return v.Dialects }) ||

@@ -79,7 +79,7 @@ func TestOperations_FailurePath(t *testing.T) {
 			want: `.*the operation is about a domain, not "ptah.run/pgtype/range"`},
 		{name: "a domain creation without a base type", operation: &pgtype.CreateDomain{Target: target(pgtype.DomainKind, "", "x")},
 			want: `.*a domain creation names a base type`},
-		{name: "a target without a name", operation: &pgtype.Drop{Target: target(pgtype.DomainKind, "app", " ")},
+		{name: "a target without a name", operation: &pgtype.Drop{Target: target(pgtype.DomainKind, "app", "")},
 			want: `.*a domain requires a schema-scoped identity with a name`},
 		{name: "a target of another owner", operation: &pgtype.Drop{Target: target("example.org/type", "", "x")},
 			want: `.*"example.org/type" is not a PostgreSQL user type kind`},

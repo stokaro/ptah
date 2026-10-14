@@ -8,8 +8,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -192,21 +194,11 @@ func TestUserTypeRecreationPairsAcrossSchemaSpellings(t *testing.T) {
 		},
 		{
 			name: "a range type qualified in the change and bare in the operand",
-			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
-				RangeName:      "public.span",
-				Changes:        map[string]string{"subtype": "int4 -> int8"},
-				CurrentSubtype: "int4",
-				Desired:        schemamodel.Range{Name: "span", Subtype: "int8"},
-			}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "public", "span"), Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"}, After: &pgtype.DesiredRange{Subtype: "int8"}, Differs: []string{pgtype.DiffSubtype}}}}},
 		},
 		{
 			name: "a range type bare in the change and qualified in the operand",
-			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
-				RangeName:      "span",
-				Changes:        map[string]string{"subtype": "int4 -> int8"},
-				CurrentSubtype: "int4",
-				Desired:        schemamodel.Range{Name: "span", Schema: "public", Subtype: "int8"},
-			}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "int4"}, After: &pgtype.DesiredRange{Subtype: "int8"}, Differs: []string{pgtype.DiffSubtype}}}}},
 		},
 	}
 

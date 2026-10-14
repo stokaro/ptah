@@ -731,6 +731,12 @@ refuses such a change, each with `ErrInvalidValue`. A migration plan and a whole
 render create a routine whose signature names such a type after the type, as
 they do for an enum.
 
+`schemaext.TypeObserver` supplies the current definition
+for drop ordering. `schemaext.TypeRebuilder` identifies a surviving change
+without an in-place form. Changed dependents share that replacement requirement
+across owners. `featureplan.TypeContext` carries current and desired type
+identities and references, including unchanged types used to resolve a path.
+
 `schemaext.ConstraintDefiner` exposes a local `DefinedConstraint` projection
 of an owned table constraint. The projection retains its feature identity and
 parent and states whether it owns an index of the same name. `Expressions`
@@ -2963,17 +2969,18 @@ byte as the common path renders the same statements. A change that creates a
 type places it in the schema its identity names (`schemaext.SchemaPlacement`),
 and a declaration that a server spelled predicts its observation in that
 spelling. The bundled runtime selects the owner on every PostgreSQL-family
-target, with its reports; nothing produces the owner's objects yet. A metric
-counts its objects whoever owns them: the schema statistics add the owner's
-`domains`, `composite_types` and `range_types` to the common metrics of those
-names and that help text, and refuse a type both models hold rather than
-counting it twice. Any other metric name an owner shares with a common metric
-is refused.
+target, with its reports. Go annotations, HCL range blocks, PostgreSQL SQL,
+and the catalog reader produce owned range objects. The common schema and AST
+models carry no range payload. Schema statistics count `range_types` through
+the owner. Domain and composite metrics also accept common models and refuse
+a type both representations hold.
 
-The HCL writer writes a declared type as the `domain`, `composite` or `range`
-block it writes for the common type, byte for byte, among the types
-(`hclext.UserTypes`), and refuses a type it cannot write rather than leaving
-it out.
+The HCL writer places declared `domain`, `composite` and `range` blocks among
+the types (`hclext.UserTypes`). Go and HCL exports retain unknown range
+coverage with a `notdescribed` annotation or `ptah:not-described` header.
+Reading an export does not grant authority to remove types it did not inspect.
+Quoted type, collation, operator class and function references retain their
+case and schema.
 
 `Selections` names the three kinds to a command's scope with the selector
 types of the common types: `domain`, `composite_type` and `range`. The
@@ -4639,17 +4646,17 @@ name takes the connection's default schema. An explicit schema and the overload
 signature stay attached to the claim. Claims that collide after binding are
 refused, and coverage for an excluded routine is excluded with its owner.
 
-`migration/schemadiff/difftypes.DomainDiff`, `CompositeTypeDiff` and
-`RangeDiff` each carry a `Desired` field, off the wire, holding the definition
-the change is reconciled to. PostgreSQL has no in-place ALTER for a domain's
-base type, a composite's field list or a range's subtype, so those changes are
-planned as DROP TYPE followed by CREATE TYPE, and the create renders from this
-field. An empty one withholds BOTH halves and emits a warning comment naming
+`migration/schemadiff/difftypes.DomainDiff` and `CompositeTypeDiff` carry a
+`Desired` field, off the wire, holding the definition the change reconciles to.
+A domain base-type change and a composite change without an in-place attribute
+delta use a non-CASCADE drop followed by creation from this field. An empty one withholds BOTH halves and emits a warning comment naming
 the object: a type Ptah cannot rebuild is a type Ptah must not drop. An
 embedder that builds one of these entries by hand and leaves `Desired` empty
 therefore gets the warning rather than a plan. A reversal resolves the field
 against the pre-change database, so a rolled-back modification rebuilds the
-definition that database held.
+definition that database held. Range changes use `pgtype.RangeChange`, whose
+captured `Before` and `After` operands supply both plan directions. A range
+replacement without a valid operand is refused before scheduling.
 
 `migration/schemadiff/difftypes.RoleDiff` carries the object it renders rather
 than a reference to it: a `Desired` field, off the wire, holding the declaration

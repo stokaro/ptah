@@ -1834,7 +1834,7 @@
               "type": "string"
             },
             "dialects": {
-              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "description": "Comma-separated target dialects for this declaration.",
               "type": "string"
             },
             "name": {
@@ -3070,9 +3070,6 @@
       "$ref": "#/$defs/ptah.schema.composite"
     },
     {
-      "$ref": "#/$defs/ptah.schema.range"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.view"
     },
     {
@@ -3137,6 +3134,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.hypertable"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.range"
     },
     {
       "$ref": "#/$defs/ptah.schema.resourcepool"

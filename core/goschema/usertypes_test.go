@@ -4,9 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgtype"
+	"ptah.run/internal/pgtypesource"
 )
 
 func TestParseDomainAnnotation(t *testing.T) {
@@ -94,10 +99,9 @@ func TestParseRangeAnnotation(t *testing.T) {
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
-	c.Assert(db.Ranges, qt.HasLen, 1)
-	r := db.Ranges[0]
-	c.Assert(r.Name, qt.Equals, "floatrange")
+	db := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations())), "fixture.go", src))
+	r := parsedRange(c, db)
+	c.Assert(must.Must(db.FeatureObjects.All())[0].Ref.Name.Source, qt.Equals, "floatrange")
 	c.Assert(r.Subtype, qt.Equals, "float8")
 	c.Assert(r.SubtypeDiff, qt.Equals, "float8mi")
 }
@@ -118,9 +122,8 @@ func TestParseRangeAnnotation_AnEmptyAttributeIsToldFromAnAbsentOne(t *testing.T
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
-	c.Assert(db.Ranges, qt.HasLen, 1)
-	r := db.Ranges[0]
+	db := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations())), "fixture.go", src))
+	r := parsedRange(c, db)
 
 	// Written empty: cleared.
 	c.Assert(r.SubtypeDiff, qt.Equals, "")
@@ -134,7 +137,7 @@ type FloatRange struct{}
 	// be confused with the first.
 	c.Assert(r.Collation, qt.Equals, "")
 	c.Assert(r.Clears("collation"), qt.IsFalse)
-	c.Assert(r.ClearedAttributes, qt.DeepEquals, []string{"subtype_diff"})
+	c.Assert(r.Cleared, qt.DeepEquals, []string{"subtype_diff"})
 }
 
 func TestParseRangeAnnotation_MissingSubtypeRejected(t *testing.T) {
@@ -144,8 +147,17 @@ func TestParseRangeAnnotation_MissingSubtypeRejected(t *testing.T) {
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
+	_, err := goschema.ParseSource(must.Must(annotation.NewSet(pgtypesource.Annotations())), "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:range")
+}
+
+func parsedRange(c *qt.C, db schemamodel.Database) *pgtype.DesiredRange {
+	c.Helper()
+	objects := must.Must(db.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	value, ok := objects[0].Value.(*pgtype.DesiredRange)
+	c.Assert(ok, qt.IsTrue)
+	return value
 }

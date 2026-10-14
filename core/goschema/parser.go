@@ -720,7 +720,6 @@ type schemaParseState struct {
 	sequences             []schemamodel.Sequence
 	domains               []schemamodel.Domain
 	compositeTypes        []schemamodel.CompositeType
-	ranges                []schemamodel.Range
 	views                 []schemamodel.View
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
@@ -847,7 +846,6 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:sequence":     (*schemaParseState).parseSequenceComment,
 	"ptah:schema:domain":       (*schemaParseState).parseDomainComment,
 	"ptah:schema:composite":    (*schemaParseState).parseCompositeComment,
-	"ptah:schema:range":        (*schemaParseState).parseRangeComment,
 	"ptah:schema:view":         (*schemaParseState).parseViewComment,
 	"ptah:schema:matview":      (*schemaParseState).parseMaterializedViewComment,
 	"ptah:schema:trigger":      (*schemaParseState).parseTriggerComment,
@@ -1073,7 +1071,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 		Sequences:         state.sequences,
 		Domains:           state.domains,
 		CompositeTypes:    state.compositeTypes,
-		Ranges:            state.ranges,
 		Views:             state.views,
 		MaterializedViews: state.materializedViews,
 		Triggers:          state.triggers,
@@ -1576,65 +1573,6 @@ func splitTopLevelCommaList(value string) []string {
 		parts = append(parts, trimmed)
 	}
 	return parts
-}
-
-func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:range", kv["name"])
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-
-	scope, err := parseDialectScope(kv, ctx)
-	if err != nil {
-		return err
-	}
-
-	rangeType := schemamodel.Range{
-		StructName:     structName,
-		Name:           kv["name"],
-		Schema:         kv["schema"],
-		Subtype:        kv["subtype"],
-		SubtypeOpClass: kv["subtype_opclass"],
-		Collation:      kv["collation"],
-		Canonical:      kv["canonical"],
-		SubtypeDiff:    kv["subtype_diff"],
-		Comment:        kv["comment"],
-		Dialects:       scope,
-
-		ClearedAttributes: clearedAttributes(kv, rangeClearableAttributes),
-	}
-	rangeType.Canonicalize()
-	s.ranges = append(s.ranges, rangeType)
-	return nil
-}
-
-// rangeClearableAttributes are the range attributes a declaration may write
-// empty to say the type has none of them.
-//
-// The subtype is not one: a range without one is not a range, and an empty one
-// is a declaration the server refuses rather than a request to remove anything.
-var rangeClearableAttributes = []string{"subtype_opclass", "collation", "canonical", "subtype_diff"}
-
-// clearedAttributes lists the given attributes the annotation wrote with an
-// empty value, in the order they are listed rather than the map's.
-//
-// An omitted attribute and one written `key=""` reach the same empty string in
-// the parsed struct, and only the key's presence separates them: omission says
-// nothing about the attribute, while an empty value says the object has none
-// (stokaro/ptah#2223).
-func clearedAttributes(kv map[string]string, clearable []string) []string {
-	var cleared []string
-	for _, attribute := range clearable {
-		value, present := kv[attribute]
-		if present && strings.TrimSpace(value) == "" {
-			cleared = append(cleared, attribute)
-		}
-	}
-	return cleared
 }
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {

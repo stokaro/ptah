@@ -296,7 +296,7 @@ var (
 		ranges, err := r.readRanges(ctx)
 		names := make([]string, 0, len(ranges))
 		for _, rangeType := range ranges {
-			names = append(names, rangeType.Name)
+			names = append(names, rangeType.Ref.Name.Source)
 		}
 		return names, err
 	}

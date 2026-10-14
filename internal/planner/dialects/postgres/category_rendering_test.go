@@ -340,21 +340,6 @@ func diffCategoryFixtures() []categoryFixture {
 			}},
 		},
 		{
-			"RangesAdded",
-			&difftypes.SchemaDiff{RangesAdded: difftypes.RangeChanges{{Name: "r"}}},
-			&schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "int4"}}},
-		},
-		{"RangesRemoved", &difftypes.SchemaDiff{RangesRemoved: difftypes.RangeChanges{{Name: "r"}}}, &schemamodel.Database{}},
-		{
-			"RangesModified",
-			&difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
-				RangeName:      "r",
-				Changes:        map[string]string{"subtype": "timestamptz -> int8"},
-				CurrentSubtype: "timestamptz",
-			}}},
-			&schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "int8"}}},
-		},
-		{
 			"ViewsAdded",
 			&difftypes.SchemaDiff{
 				ViewsAdded: difftypes.ViewChanges{{Name: "v"}},

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/schema"
@@ -192,7 +193,9 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Domains, qt.HasLen, 1)
 	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
-	c.Assert(parsed.Ranges, qt.HasLen, 1)
+	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgtype.RangeKind)
+	}).Len(), qt.Equals, 1)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Views, qt.HasLen, 1)
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)

@@ -54,7 +54,6 @@ func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedO
 	filtered.Sequences = keepUnscoped(current.Sequences, names["sequence"], func(v catalog.Sequence) (string, string) { return v.Schema, v.Name })
 	filtered.Domains = keepUnscoped(current.Domains, names["domain"], func(v catalog.Domain) (string, string) { return v.Schema, v.Name })
 	filtered.Composites = keepUnscoped(current.Composites, names["composite"], func(v catalog.CompositeType) (string, string) { return v.Schema, v.Name })
-	filtered.Ranges = keepUnscoped(current.Ranges, names["range"], func(v catalog.Range) (string, string) { return v.Schema, v.Name })
 	filtered.Views = keepUnscoped(current.Views, names["view"], func(v catalog.View) (string, string) { return v.Schema, v.Name })
 	filtered.MatViews = keepUnscoped(current.MatViews, names["matview"], func(v catalog.MaterializedView) (string, string) { return v.Schema, v.Name })
 	filtered.Triggers = keepUnscoped(current.Triggers, names["trigger"], func(v catalog.Trigger) (string, string) { return v.Schema, v.Name })

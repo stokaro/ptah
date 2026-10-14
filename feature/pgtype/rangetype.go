@@ -230,3 +230,25 @@ func ValidateObservedRange(v *ObservedRange) error {
 	}
 	return nil
 }
+
+// ComposeDeclaration combines identical range declarations from independent
+// sources. Source struct names do not change the type. Different definitions
+// wrap schemaext.ErrDuplicate; neither operand is mutated.
+func (v *DesiredRange) ComposeDeclaration(other schemaext.Value) (schemaext.Value, error) {
+	if err := ValidateDesiredRange(v); err != nil {
+		return nil, err
+	}
+	right, ok := other.(*DesiredRange)
+	if !ok {
+		return nil, fmt.Errorf("%w: incompatible range declaration", schemaext.ErrInvalidValue)
+	}
+	if err := ValidateDesiredRange(right); err != nil {
+		return nil, err
+	}
+	compared := right.Copy()
+	compared.StructName = v.StructName
+	if !v.Equal(compared) {
+		return nil, fmt.Errorf("%w: conflicting range definitions", schemaext.ErrDuplicate)
+	}
+	return v.Copy(), nil
+}

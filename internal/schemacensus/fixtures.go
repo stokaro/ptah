@@ -196,7 +196,6 @@ func corpus() []Fixture {
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
-		{Name: "range", Schema: rangeFixture()},
 		{Name: "sequence", Schema: sequenceFixture()},
 		{Name: "view", Schema: viewFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
@@ -1377,17 +1376,6 @@ func compositeFixture() schemamodel.Database {
 	db.CompositeTypes = []schemamodel.CompositeType{{
 		StructName: "C", Name: "address", Schema: "public", Comment: "postal",
 		Fields:   []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}},
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
-	}}
-	return db
-}
-
-func rangeFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Ranges = []schemamodel.Range{{
-		StructName: "R", Name: "floatrange", Schema: "public", Subtype: "float8",
-		SubtypeOpClass: "float8_ops", Collation: "C", Canonical: "float8range_canonical",
-		SubtypeDiff: "float8mi", Comment: "float range", ClearedAttributes: []string{"collation"},
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db

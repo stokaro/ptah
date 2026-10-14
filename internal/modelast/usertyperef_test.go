@@ -8,8 +8,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
+	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/schemaprep"
 )
@@ -32,7 +36,7 @@ func userTypeDocument(columnType string) *schemamodel.Database {
 			Schema: "app",
 			Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
 		}},
-		Ranges: []schemamodel.Range{{Name: "numrng", Schema: "app", Subtype: "numeric"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "numrng"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
 	}
 }
 
@@ -285,7 +289,7 @@ func TestQualifyDeclaredUserTypesDoesNotMutateItsInput(t *testing.T) {
 func TestCollectDatabaseQualifiesDeclaredUserTypes(t *testing.T) {
 	c := qt.New(t)
 
-	statements := must.Must(modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres, modelast.Lowering{Context: context.Background()}))
+	statements := must.Must(modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres, builtinlowering.ForTarget(context.Background(), must.Must(builtin.New()), "postgres", capability.ForDialect("postgres"))))
 
 	c.Assert(statements, qt.IsNotNil)
 

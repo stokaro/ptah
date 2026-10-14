@@ -1173,16 +1173,12 @@ func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(
 		diff.DomainsAdded.Names(), diff.DomainsRemoved.Names(),
 		diff.CompositeTypesAdded.Names(), diff.CompositeTypesRemoved.Names(),
-		diff.RangesAdded.Names(), diff.RangesRemoved.Names(),
 	)
 	for _, domain := range diff.DomainsModified {
 		names = append(names, domain.DomainName)
 	}
 	for _, composite := range diff.CompositeTypesModified {
 		names = append(names, composite.TypeName)
-	}
-	for _, rangeType := range diff.RangesModified {
-		names = append(names, rangeType.RangeName)
 	}
 	slices.Sort(names)
 	return slices.Compact(names)

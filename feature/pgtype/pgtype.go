@@ -19,7 +19,6 @@ package pgtype
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
@@ -72,9 +71,12 @@ func Ref(kind schemaext.Kind, schema, name string) objectidentity.ID {
 
 // RefWith builds the identity under explicit identifier rules, which is how
 // a comparison pairs a declaration and an observation that spelled the same
-// schema differently.
+// schema differently. Components are decoded names; their spaces and quote
+// characters are significant and remain intact.
 func RefWith(semantics identifier.Semantics, kind schemaext.Kind, schema, name string) objectidentity.ID {
-	return objectidentity.NewBuilder(semantics).SchemaScopedParts(objectidentity.Kind(kind), schema, name)
+	ref := objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, name)
+	ref.Kind = objectidentity.Kind(kind)
+	return ref
 }
 
 // ValidateRef requires a schema-scoped identity of one of the three kinds,
@@ -84,7 +86,7 @@ func ValidateRef(ref objectidentity.ID) error {
 	if !owned {
 		return fmt.Errorf("%w: %q is not a PostgreSQL user type kind", schemaext.ErrInvalidValue, ref.Kind)
 	}
-	if strings.TrimSpace(ref.Name.Source) == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Catalog.Empty() ||
+	if ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Catalog.Empty() ||
 		ref.Signature != "" {
 		return fmt.Errorf("%w: a %s requires a schema-scoped identity with a name", schemaext.ErrInvalidValue, label)
 	}
@@ -105,15 +107,14 @@ func AuthoredSchema(ref objectidentity.ID) string { return ref.Schema.Authored()
 
 // QualifiedName renders a reference the way the source spelled it: schema.name
 // when the schema was written, and the bare name when it was defaulted. A
-// part that holds a dot is written in double quotes, as a table's qualified
-// name is.
+// part that requires quoting is written in double quotes.
 func QualifiedName(ref objectidentity.ID) string {
 	return qualified(AuthoredSchema(ref), ref.Name.Source)
 }
 
 // qualified is schema.name, or name where schema is empty, quoting a part
-// that holds a dot.
-func qualified(schema, name string) string { return tableref.Canonical(schema, name) }
+// that requires quoting.
+func qualified(schema, name string) string { return tableref.CanonicalExact(schema, name) }
 
 // definedType is the type the object ref identifies defines, naming
 // references.

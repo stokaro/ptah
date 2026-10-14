@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -31,9 +34,9 @@ func scopeDatabaseTypesFixture() *catalog.Database {
 			Name:    "audit",
 			Columns: []catalog.Column{{Name: "z", DataType: "text", UDTName: "text", DomainName: "zip", DomainSchema: "public"}},
 		}},
-		Domains:    []catalog.Domain{{Name: "email", BaseType: "text"}, {Name: "zip", BaseType: "text"}},
-		Composites: []catalog.CompositeType{{Name: "addr", Fields: []catalog.CompositeField{{Name: "city", Type: "text"}}}},
-		Ranges:     []catalog.Range{{Name: "fr", Subtype: "double precision"}},
+		Domains:        []catalog.Domain{{Name: "email", BaseType: "text"}, {Name: "zip", BaseType: "text"}},
+		Composites:     []catalog.CompositeType{{Name: "addr", Fields: []catalog.CompositeField{{Name: "city", Type: "text"}}}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "fr"), Value: &pgtype.ObservedRange{Subtype: "double precision"}})),
 	}
 }
 
@@ -51,7 +54,7 @@ func TestScopeDatabase_TypeReferences_HappyPath(t *testing.T) {
 	// do; the domain only the unselected audit table names goes.
 	c.Assert(got.Domains, qt.DeepEquals, []catalog.Domain{{Name: "email", BaseType: "text"}})
 	c.Assert(got.Composites, qt.HasLen, 1)
-	c.Assert(got.Ranges, qt.HasLen, 1)
+	c.Assert(rangeNames(got.FeatureObjects), qt.DeepEquals, []string{"fr"})
 }
 
 func TestScopeDatabase_TypeReferences_FailurePath(t *testing.T) {

@@ -195,7 +195,10 @@ func TestNormalizeTypeReference_ReducesASpellingToItsTypeName(t *testing.T) {
 	}{
 		{name: "a bare name is lowercased", reference: "Addr", want: "addr"},
 		{name: "surrounding space is dropped", reference: "  addr  ", want: "addr"},
-		{name: "quotes are removed part by part", reference: `"app"."Addr"`, want: "app.addr"},
+		{name: "quoted case remains distinct", reference: `"app"."Addr"`, want: `app."Addr"`},
+		{name: "quoted punctuation belongs to the name", reference: `"a.b"."x(y)[z]"[2]`, want: `"a.b"."x(y)[z]"`},
+		{name: "quoted whitespace remains part of the name", reference: `" a "." b "[]`, want: `" a "." b "`},
+		{name: "literal quotes remain escaped", reference: `"a""b"(10)`, want: `"a""b"`},
 		{name: "one array marker is dropped", reference: "addr[]", want: "addr"},
 		{name: "nested array markers are dropped", reference: "addr[][]", want: "addr"},
 		{name: "a length modifier is dropped", reference: "character varying(255)", want: "character varying"},

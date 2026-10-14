@@ -7,11 +7,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -369,8 +372,9 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(parsed.Domains[0].Name, qt.Equals, "fixture_email")
 	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
 	c.Assert(parsed.CompositeTypes[0].Name, qt.Equals, "fixture_address")
-	c.Assert(parsed.Ranges, qt.HasLen, 1)
-	c.Assert(parsed.Ranges[0].Name, qt.Equals, "fixture_floatrange")
+	ranges := must.Must(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgtype.RangeKind) }).All())
+	c.Assert(ranges, qt.HasLen, 1)
+	c.Assert(ranges[0].Ref.Name.Source, qt.Equals, "fixture_floatrange")
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Functions[0].Name, qt.Equals, "get_fixture_tenant_id")
 	c.Assert(parsed.Functions[0].Returns, qt.Equals, "text")

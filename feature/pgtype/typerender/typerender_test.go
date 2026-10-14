@@ -86,14 +86,6 @@ func TestRender_MatchesTheCommonRenderer(t *testing.T) {
 				Attributes: []pgtype.Attribute{{Name: "City", Type: "text"}, {Name: "amount", Type: "numeric(10,2)"}}},
 			common: modelast.FromCompositeType(schemamodel.CompositeType{Name: "addr", Schema: "geo",
 				Fields: []schemamodel.CompositeField{{Name: "City", Type: "text"}, {Name: "amount", Type: "numeric(10,2)"}}})},
-		{name: "a range over its subtype",
-			payload: &pgtype.CreateRange{Target: on(pgtype.RangeKind, "", "fr"), Subtype: "float8"},
-			common:  modelast.FromRange(schemamodel.Range{Name: "fr", Subtype: "float8"})},
-		{name: "a range with every option",
-			payload: &pgtype.CreateRange{Target: on(pgtype.RangeKind, "app", "tr"), Subtype: "text", SubtypeOpClass: "text_ops",
-				Collation: `"C"`, Canonical: "app.tr_canon", SubtypeDiff: "app.tr_diff"},
-			common: modelast.FromRange(schemamodel.Range{Name: "tr", Schema: "app", Subtype: "text", SubtypeOpClass: "text_ops",
-				Collation: `"C"`, Canonical: "app.tr_canon", SubtypeDiff: "app.tr_diff"})},
 		{name: "a removed domain",
 			payload: &pgtype.Drop{Target: on(pgtype.DomainKind, "app", "qty"), Cascade: true},
 			common:  ast.NewDropType("app.qty").SetDomain().SetIfExists().SetCascade()},
@@ -152,4 +144,22 @@ func TestRender_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `.*a domain alteration changes something`)
 		c.Assert(statements, qt.IsNil)
 	})
+}
+
+func TestRenderRangeOptions(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		payload *pgtype.CreateRange
+		want    []string
+	}{
+		{name: "subtype", payload: &pgtype.CreateRange{Target: on(pgtype.RangeKind, "", "fr"), Subtype: "float8"}, want: []string{`CREATE TYPE "fr" AS RANGE (SUBTYPE = float8);`}},
+		{name: "all options", payload: &pgtype.CreateRange{Target: on(pgtype.RangeKind, "app", "tr"), Subtype: "text", SubtypeOpClass: "text_ops", Collation: `"C"`, Canonical: "app.tr_canon", SubtypeDiff: "app.tr_diff"}, want: []string{`CREATE TYPE "app"."tr" AS RANGE (SUBTYPE = text, SUBTYPE_OPCLASS = text_ops, COLLATION = "C", CANONICAL = app.tr_canon, SUBTYPE_DIFF = app.tr_diff);`}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := render("postgres", test.payload)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
 }

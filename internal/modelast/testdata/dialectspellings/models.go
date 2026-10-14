@@ -21,12 +21,9 @@
 //   - orders.user_id pins isSQLiteTarget (inline vs ALTER TABLE foreign keys)
 //     and isMySQLFamilyTarget (index emission order around ADD CONSTRAINT).
 //
-// The object block below -- role, sequence, domain, composite, range, function,
-// view, matview, trigger, RLS and grant -- does not separate one dialect from
-// another here: CollectDatabase lowers every one of them for every target, and
-// the renderer decides what each means (stokaro/ptah#929 item 5). It stays
-// because it is what makes this fixture discriminate engines by their rendered
-// answers, which TestFromDatabase_FixtureDiscriminatesEngines asserts.
+// Common declarations reach every target's renderer, whose support and
+// spelling distinguish the engines. Owner declarations select their target
+// explicitly; the range declaration targets PostgreSQL.
 //
 // The app-qualified audit table exercises renderTableName, but it does not pin
 // sqlident.Quote's quote style: the dialect renderer re-quotes the table name,
@@ -52,7 +49,7 @@ type EmailDomainMarker struct{}
 //ptah:schema:composite name="addr_type" fields="street:TEXT,city:TEXT"
 type AddressCompositeMarker struct{}
 
-//ptah:schema:range name="float_range" subtype="float8"
+//ptah:schema:range name="float_range" subtype="float8" dialects="postgres"
 type FloatRangeMarker struct{}
 
 //ptah:schema:table name="users"

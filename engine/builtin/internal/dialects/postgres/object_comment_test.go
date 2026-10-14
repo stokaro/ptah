@@ -222,12 +222,6 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 			want: "CREATE TYPE \"c\" AS (\"n\" integer);\nCOMMENT ON TYPE \"c\" IS 'note';\n",
 		},
 		{
-			name: "a range type",
-			caps: capability.Postgres18(),
-			node: ast.NewCreateType("r", &ast.RangeTypeDef{Subtype: "integer"}).SetComment("note"),
-			want: "CREATE TYPE \"r\" AS RANGE (SUBTYPE = integer);\nCOMMENT ON TYPE \"r\" IS 'note';\n",
-		},
-		{
 			name: "an enum",
 			caps: capability.Postgres18(),
 			node: ast.NewCreateType("e", &ast.EnumTypeDef{Values: []string{"a"}}).SetComment("note"),

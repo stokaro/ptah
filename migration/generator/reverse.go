@@ -152,9 +152,6 @@ func reverseSchemaDiffWithPrior(
 		CompositeTypesAdded:    diff.CompositeTypesRemoved,
 		CompositeTypesRemoved:  diff.CompositeTypesAdded,
 		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior, semantics),
-		RangesAdded:            diff.RangesRemoved,
-		RangesRemoved:          diff.RangesAdded,
-		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema, prior, semantics),
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove

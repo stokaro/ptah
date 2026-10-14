@@ -125,51 +125,6 @@ func priorDomain(
 	return schemamodel.Domain{}
 }
 
-// reverseRangeDiffs mirrors reverseDomainDiffs for range types.
-func reverseRangeDiffs(
-	rangeDiffs []difftypes.RangeDiff,
-	schema, prior *schemamodel.Database,
-	semantics identifier.Semantics,
-) []difftypes.RangeDiff {
-	reversed := make([]difftypes.RangeDiff, len(rangeDiffs))
-	for i, rangeDiff := range rangeDiffs {
-		reversed[i] = difftypes.RangeDiff{
-			RangeName:      rangeDiff.RangeName,
-			Changes:        reverseChangeMap(rangeDiff.Changes),
-			CurrentSubtype: targetRangeSubtype(schema, rangeDiff.RangeName),
-			Desired:        priorRange(prior, rangeDiff.RangeName, semantics),
-		}
-	}
-	return reversed
-}
-
-// priorRange mirrors [priorDomain] for range types.
-func priorRange(
-	prior *schemamodel.Database,
-	name string,
-	semantics identifier.Semantics,
-) schemamodel.Range {
-	if prior == nil {
-		return schemamodel.Range{}
-	}
-	if rangeType := objectlookup.Qualified(prior.Ranges, name, semantics); rangeType != nil {
-		return *rangeType
-	}
-	return schemamodel.Range{}
-}
-
-func targetRangeSubtype(schema *schemamodel.Database, name string) string {
-	if schema == nil {
-		return ""
-	}
-	for _, rangeType := range schema.Ranges {
-		if rangeType.QualifiedName() == name {
-			return rangeType.Subtype
-		}
-	}
-	return ""
-}
-
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
 func reverseCompositeTypeDiffs(
 	compositeDiffs []difftypes.CompositeTypeDiff,

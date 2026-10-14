@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -947,11 +948,11 @@ func inspectedRichDatabase() *schemamodel.Database {
 			Name:   "pair",
 			Fields: []schemamodel.CompositeField{{Name: "a", Type: "integer"}},
 		}},
-		Ranges: []schemamodel.Range{{Name: "intrange", Subtype: "integer"}},
-		Enums:  []schemamodel.Enum{{Name: "status", Values: []string{"active", "inactive"}}},
-		Roles:  []schemamodel.Role{{Name: "app_reader", Inherit: true}},
-		Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
-		Fields: []schemamodel.Field{{StructName: "Account", Name: "id", Type: "bigint"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "intrange"), Value: &pgtype.DesiredRange{Subtype: "integer"}})),
+		Enums:          []schemamodel.Enum{{Name: "status", Values: []string{"active", "inactive"}}},
+		Roles:          []schemamodel.Role{{Name: "app_reader", Inherit: true}},
+		Tables:         []schemamodel.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
+		Fields:         []schemamodel.Field{{StructName: "Account", Name: "id", Type: "bigint"}},
 		Functions: []schemamodel.Function{{
 			Name:     "touch_accounts",
 			Language: "plpgsql",

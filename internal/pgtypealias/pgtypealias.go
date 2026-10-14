@@ -36,9 +36,14 @@ var aliases = map[string]string{
 // one type answer the same; `VARCHAR(20)` and `character varying (20)` both
 // answer `character varying(20)`.
 func Canonical(spelling string) string {
+	if strings.ContainsAny(spelling, `."`) {
+		if canonical, ok := referenceType(spelling); ok {
+			return canonical
+		}
+	}
 	spelling = strings.ToLower(strings.TrimSpace(spelling))
 	base, params := spelling, ""
-	if i := strings.IndexByte(spelling, '('); i >= 0 {
+	if i := strings.IndexAny(spelling, "(["); i >= 0 {
 		base = strings.TrimSpace(spelling[:i])
 		params = strings.ReplaceAll(spelling[i:], " ", "")
 	}

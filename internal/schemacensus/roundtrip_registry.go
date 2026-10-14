@@ -371,12 +371,7 @@ var roundTripGaps = []Unreached{
 		Reason:     gapToCatalog,
 	},
 	{Field: "schemamodel.PrimaryKeyPart.Prefix", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
-	{
-		Field:      "schemamodel.Range.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite", "sqlserver", "ydb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     gapComparison,
-	},
+
 	{
 		Field:      "schemamodel.Schema.Name",
 		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "postgres", "spanner", "sqlserver", "yugabytedb"},
@@ -483,7 +478,6 @@ var roundTripExemptions = []Unreached{
 	},
 	{Field: "schemamodel.RLSEnabledTable.Forced", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{Field: "schemamodel.RLSPolicy.Comment", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
-	{Field: "schemamodel.Range.ClearedAttributes", Dialects: nil, Directions: nil, Reason: exemptClearedAttributes},
 	{
 		Field:      "schemamodel.Role.Dialects",
 		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},

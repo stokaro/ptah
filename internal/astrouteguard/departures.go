@@ -195,6 +195,7 @@ var recordedDepartures = []Departure{
 	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},
 	{Node: "ExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation"), payload(extensionOwner, "CommentOperation")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterTTL")}},
+	{Node: "RangeTypeDef", Successors: []ExtensionKind{payload("ptah.run/feature/pgtype", "CreateRange")}},
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "RevokeDefaultPrivilegeNode", Successors: []ExtensionKind{payload("ptah.run/feature/pgdefaultprivilege", "Operation")}},
 	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},

@@ -5,14 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"ptah.run/internal/atlashcl"
 )
 
 func TestParseCompositeType(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 composite "address" {
   field "street" {
     type = text
@@ -37,7 +35,7 @@ composite "address" {
 func TestParseCompositeTypeWithSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 composite "app" "point" {
   field "x" {
     type = float8
@@ -59,7 +57,7 @@ func TestParseCompositeQuotedMultiWordFieldType(t *testing.T) {
 	// A multi-word type has no bare HCL spelling, so it must be quoted; the
 	// quotes must be stripped from the stored type or the rendered DDL becomes a
 	// quoted identifier for a nonexistent type.
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 composite "measurement" {
   field "value" {
     type = "double precision"
@@ -77,7 +75,7 @@ composite "measurement" {
 func TestParseCompositeRequiresField(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 composite "empty" {}
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*composite "empty" requires at least one field.*`)
@@ -86,7 +84,7 @@ composite "empty" {}
 func TestParseCompositeFieldRequiresType(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 composite "address" {
   field "street" {}
 }
@@ -97,7 +95,7 @@ composite "address" {
 func TestParseCompositeRejectsUnknownBlock(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 composite "address" {
   column "street" {
     type = text
@@ -110,17 +108,17 @@ composite "address" {
 func TestParseRangeType(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 range "floatrange" {
   subtype      = float8
   subtype_diff = float8mi
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Ranges, qt.HasLen, 1)
-	c.Assert(db.Ranges[0].Name, qt.Equals, "floatrange")
-	c.Assert(db.Ranges[0].Subtype, qt.Equals, "float8")
-	c.Assert(db.Ranges[0].SubtypeDiff, qt.Equals, "float8mi")
+	c.Assert(rangeObjects(db), qt.HasLen, 1)
+	c.Assert(rangeObjects(db)[0].Ref.Name.Source, qt.Equals, "floatrange")
+	c.Assert(rangeValues(db)[0].Subtype, qt.Equals, "float8")
+	c.Assert(rangeValues(db)[0].SubtypeDiff, qt.Equals, "float8mi")
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TYPE floatrange AS RANGE (SUBTYPE = float8, SUBTYPE_DIFF = float8mi);`)
@@ -129,7 +127,7 @@ range "floatrange" {
 func TestParseRangeTypeAllOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := parseTypeHCL([]byte(`
 range "app" "textrange" {
   subtype         = text
   subtype_opclass = text_ops
@@ -140,18 +138,18 @@ range "app" "textrange" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Ranges, qt.HasLen, 1)
-	c.Assert(db.Ranges[0].Schema, qt.Equals, "app")
-	c.Assert(db.Ranges[0].SubtypeOpClass, qt.Equals, "text_ops")
-	c.Assert(db.Ranges[0].Collation, qt.Equals, "en_US")
-	c.Assert(db.Ranges[0].Canonical, qt.Equals, "textrange_canonical")
-	c.Assert(db.Ranges[0].Comment, qt.Equals, "text range")
+	c.Assert(rangeObjects(db), qt.HasLen, 1)
+	c.Assert(rangeObjects(db)[0].Ref.Schema.Authored(), qt.Equals, "app")
+	c.Assert(rangeValues(db)[0].SubtypeOpClass, qt.Equals, "text_ops")
+	c.Assert(rangeValues(db)[0].Collation, qt.Equals, "en_US")
+	c.Assert(rangeValues(db)[0].Canonical, qt.Equals, "textrange_canonical")
+	c.Assert(rangeValues(db)[0].Comment, qt.Equals, "text range")
 }
 
 func TestParseRangeRequiresSubtype(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 range "floatrange" {}
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*range "floatrange" requires subtype.*`)
@@ -160,7 +158,7 @@ range "floatrange" {}
 func TestParseRangeRejectsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := parseTypeHCL([]byte(`
 range "floatrange" {
   subtype  = float8
   nonsense = true

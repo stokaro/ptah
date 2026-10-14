@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -37,9 +40,7 @@ func readableFamiliesDatabase() *schemamodel.Database {
 				{Name: "city", Type: "text"},
 			},
 		}},
-		Ranges: []schemamodel.Range{{
-			Name: "tsrange_local", Subtype: "timestamp",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "tsrange_local"), Value: &pgtype.DesiredRange{Subtype: "timestamp"}})),
 		Sequences: []schemamodel.Sequence{{
 			Name: "order_seq", Start: &start,
 		}},
@@ -83,8 +84,9 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 		{Name: "city", Type: "text"},
 	})
 
-	c.Assert(parsed.Ranges, qt.HasLen, 1)
-	c.Assert(parsed.Ranges[0].Subtype, qt.Equals, "timestamp")
+	objects := must.Must(parsed.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value.(*pgtype.DesiredRange).Subtype, qt.Equals, "timestamp")
 
 	c.Assert(parsed.Sequences, qt.HasLen, 1)
 	c.Assert(parsed.Sequences[0].Name, qt.Equals, "order_seq")
@@ -167,7 +169,7 @@ func TestRender_AUserTypeAloneStillGetsTheStructItHangsOff(t *testing.T) {
 			}}}
 		}},
 		{name: "a range alone", build: func() *schemamodel.Database {
-			return &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "integer"}}}
+			return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.DesiredRange{Subtype: "integer"}}))}
 		}},
 		{name: "a sequence alone", build: func() *schemamodel.Database {
 			return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s"}}}
@@ -187,7 +189,7 @@ func TestRender_AUserTypeAloneStillGetsTheStructItHangsOff(t *testing.T) {
 			parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 			c.Assert(err, qt.IsNil)
 
-			total := len(parsed.Domains) + len(parsed.CompositeTypes) + len(parsed.Ranges) + len(parsed.Sequences)
+			total := len(parsed.Domains) + len(parsed.CompositeTypes) + parsed.FeatureObjects.Len() + len(parsed.Sequences)
 			c.Assert(total, qt.Equals, 1,
 				qt.Commentf("the annotation hangs off no struct, so nothing read it back:\n%s", source.String()))
 		})

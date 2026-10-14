@@ -176,8 +176,6 @@ func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
 		return r.refuses(capability.CompositeTypes, "composite type", node.Name)
 	case *ast.DomainTypeDef:
 		return r.refuses(capability.DomainTypes, "domain", node.Name)
-	case *ast.RangeTypeDef:
-		return r.refuses(capability.RangeTypes, "range type", node.Name)
 	default:
 		return false
 	}
@@ -247,25 +245,6 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 
 		r.w.WriteLinef("%s;", sql)
 		r.writeCreatedObjectComment(ast.CommentedDomain, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
-
-	case *ast.RangeTypeDef:
-		// CREATE TYPE name AS RANGE (SUBTYPE = ..., [SUBTYPE_OPCLASS = ...], ...)
-		options := []string{fmt.Sprintf("SUBTYPE = %s", typeDef.Subtype)}
-		if typeDef.SubtypeOpClass != "" {
-			options = append(options, fmt.Sprintf("SUBTYPE_OPCLASS = %s", typeDef.SubtypeOpClass))
-		}
-		if typeDef.Collation != "" {
-			options = append(options, fmt.Sprintf("COLLATION = %s", typeDef.Collation))
-		}
-		if typeDef.Canonical != "" {
-			options = append(options, fmt.Sprintf("CANONICAL = %s", typeDef.Canonical))
-		}
-		if typeDef.SubtypeDiff != "" {
-			options = append(options, fmt.Sprintf("SUBTYPE_DIFF = %s", typeDef.SubtypeDiff))
-		}
-		target := r.escapeQualifiedIdentifier(node.Name)
-		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", target, strings.Join(options, ", "))
-		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 
 	default:
 		return fmt.Errorf("unsupported type definition: %T", typeDef)
@@ -610,7 +589,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.DropConstraintOperation,
 		*ast.EnumTypeDef,
 		*ast.ModifyColumnOperation,
-		*ast.RangeTypeDef,
 		*ast.RenameColumnOperation,
 		*ast.RenameConstraintOperation,
 		*ast.RenameIndexOperation,

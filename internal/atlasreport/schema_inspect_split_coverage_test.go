@@ -24,6 +24,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasreport"
@@ -92,6 +93,7 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 				c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{
 					"// ptah:not-described extension reason=suppressed provenance=defaulted",
 					"// ptah:not-described policy reason=suppressed provenance=defaulted",
+					"// ptah:not-described range",
 					"// ptah:not-described sequence reason=suppressed provenance=defaulted",
 				}, qt.Commentf("member %s", path))
 			}
@@ -167,7 +169,7 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	for path, data := range txtarMembers(output.Text) {
-		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
+		c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{"// ptah:not-described range"}, qt.Commentf("member %s", path))
 		parsed, err := atlashcl.ParseWithOptions([]byte(data), path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 		c.Assert(err, qt.IsNil)
 		c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, schemaext.Coverage{})), qt.IsTrue)
@@ -214,6 +216,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(must.Must(chsource.RefreshCoverage()))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(chsource.RowPolicyCoverage()))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves these range types unmanaged"}, nil)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

@@ -47,7 +47,10 @@ func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, "nulls_last = true")
 	c.Assert(hcl, qt.Contains, "nulls_first = true")
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
@@ -85,7 +88,10 @@ func TestRenderIndexPartNullsOrderKeepsOnBlocks(t *testing.T) {
 	c.Assert(hcl, qt.Contains, "on {")
 	c.Assert(hcl, qt.Contains, "nulls_first = true")
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "a", NullsOrder: schemamodel.NullsOrderFirst},

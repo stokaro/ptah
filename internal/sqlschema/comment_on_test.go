@@ -1,12 +1,16 @@
 package sqlschema_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -73,9 +77,6 @@ func commentsOf(database schemamodel.Database) map[string]string {
 	for _, composite := range database.CompositeTypes {
 		comments["composite "+composite.QualifiedName()] = composite.Comment
 	}
-	for _, rangeType := range database.Ranges {
-		comments["range "+rangeType.QualifiedName()] = rangeType.Comment
-	}
 	for _, enum := range database.Enums {
 		comments["enum "+enum.QualifiedName()] = enum.Comment
 	}
@@ -99,6 +100,9 @@ func commentsOf(database schemamodel.Database) map[string]string {
 	// owner, which keeps the comment on the policy.
 	objects, _ := database.FeatureObjects.All()
 	for _, object := range objects {
+		if rangeType, ok := object.Value.(*pgtype.DesiredRange); ok {
+			comments["range "+pgtype.QualifiedName(object.Ref)] = rangeType.Comment
+		}
 		if policy, ok := object.Value.(*pgpolicy.DesiredPolicy); ok {
 			comments["policy "+object.Ref.Name.Source+" on "+schemamodel.QualifyTableName(object.Ref.Schema.Authored(), object.Ref.Parent.Source)] = policy.Comment
 		}
@@ -188,7 +192,7 @@ func TestRead_CommentOn_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := readWithPolicyOwners([]byte(commentFixture+test.statement), "postgres")
+			database, _, err := readWithCommentOwners([]byte(commentFixture+test.statement), "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(commentsOf(database)[test.wantKey], qt.Equals, test.want)
@@ -287,7 +291,7 @@ func TestRead_CommentOn_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, statements, err := readWithPolicyOwners([]byte(commentFixture+test.statement), "postgres")
+			database, statements, err := readWithCommentOwners([]byte(commentFixture+test.statement), "postgres")
 
 			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -307,7 +311,7 @@ func TestRead_CommentOn_FoldsAnUnquotedNameAsTheCreateDid(t *testing.T) {
 		"COMMENT ON TABLE app.DOCS IS 'the table';\nCOMMENT ON COLUMN APP.docs.TITLE IS 'the column';\n" +
 		"COMMENT ON INDEX app.DOCS_TITLE_IDX IS 'the index';\nCOMMENT ON SCHEMA APP IS 'the schema';"
 
-	database, _, err := sqlschema.Read([]byte(file), "postgres")
+	database, _, err := readWithCommentOwners([]byte(file), "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)
@@ -331,7 +335,7 @@ func TestRead_CommentOn_FoldsTheNameOfEveryObjectKind(t *testing.T) {
 		"COMMENT ON DOMAIN app.D IS 'the domain';\nCOMMENT ON TYPE APP.c IS 'the composite';\n" +
 		"COMMENT ON TYPE app.R IS 'the range';"
 
-	database, _, err := sqlschema.Read([]byte(file), "postgres")
+	database, _, err := readWithCommentOwners([]byte(file), "postgres")
 
 	c.Assert(err, qt.IsNil)
 	comments := commentsOf(database)
@@ -428,7 +432,7 @@ func TestReadOnto_CommentOnAnAmbiguousOverload(t *testing.T) {
 // A later file of a directory may comment on what an earlier file declared.
 func TestReadOnto_CommentsOnAnEarlierTable(t *testing.T) {
 	c := qt.New(t)
-	earlier, _, err := readWithPolicyOwners([]byte(commentFixture), "postgres")
+	earlier, _, err := readWithCommentOwners([]byte(commentFixture), "postgres")
 	c.Assert(err, qt.IsNil)
 
 	later, _, err := sqlschema.ReadOnto([]byte("COMMENT ON TABLE app.t IS 'later';\nCOMMENT ON COLUMN app.t.a IS 'a';"), "postgres", sqlschema.NewDocument(&earlier))
@@ -437,4 +441,9 @@ func TestReadOnto_CommentsOnAnEarlierTable(t *testing.T) {
 	c.Assert(later.Tables, qt.HasLen, 0)
 	c.Assert(commentsOf(earlier)["table app.t"], qt.Equals, "later")
 	c.Assert(commentsOf(earlier)["column "+appTStructName+".a"], qt.Equals, "a")
+}
+
+// readWithCommentOwners selects the owners whose declarations carry comments.
+func readWithCommentOwners(data []byte, dialect string) (schemamodel.Database, *ast.StatementList, error) {
+	return sqlschema.ReadWith(context.Background(), data, dialect, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 }

@@ -1574,7 +1574,6 @@ func (r *renderer) enumTypeRef(typeName string) (string, bool) {
 	}
 	if slices.ContainsFunc(r.db.Domains, func(d schemamodel.Domain) bool { return d.Name == enum.Name }) ||
 		slices.ContainsFunc(r.db.CompositeTypes, func(ct schemamodel.CompositeType) bool { return ct.Name == enum.Name }) ||
-		slices.ContainsFunc(r.db.Ranges, func(rg schemamodel.Range) bool { return rg.Name == enum.Name }) ||
 		slices.ContainsFunc(schemaext.DefinedTypes(r.db.FeatureObjects), func(defined schemaext.DefinedType) bool {
 			return defined.ID.Name.Source == enum.Name
 		}) {

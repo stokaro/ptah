@@ -12,8 +12,10 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgtype"
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationcleanup"
+	"ptah.run/internal/goannotationsource"
 )
 
 // typesPlan plans the cleanup of a source declaring the domain app.email
@@ -27,7 +29,9 @@ func typesPlan(c *qt.C) *goannotationcleanup.Plan {
 		"//ptah:schema:range name=\"span\" subtype=\"int4\"\n" +
 		"type Types struct{}\n"
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(source), 0o600), qt.IsNil)
-	return must.Must(planDir(dir))
+	snapshot := must.Must(goannotationsource.Capture(dir))
+	catalog := must.Must(annotationmeta.NewCatalog(builtintest.Annotations()))
+	return must.Must(goannotationcleanup.NewPlan(catalog, snapshot))
 }
 
 // ownerTypes is the export holding the three types as the PostgreSQL type

@@ -85,7 +85,6 @@ func TestReverseSchemaDiff_UserTypeOperandComesFromThePriorSchema(t *testing.T) 
 		CompositeTypes: []schemamodel.CompositeType{{
 			Name: "addr", Fields: []schemamodel.CompositeField{{Name: "line1", Type: "text"}},
 		}},
-		Ranges: []schemamodel.Range{{Name: "span", Subtype: "int4"}},
 	}
 	forward := &difftypes.SchemaDiff{
 		CompositeTypesModified: []difftypes.CompositeTypeDiff{{
@@ -95,11 +94,6 @@ func TestReverseSchemaDiff_UserTypeOperandComesFromThePriorSchema(t *testing.T) 
 				{Name: "line1", Type: "text"}, {Name: "line2", Type: "text"},
 			}},
 		}},
-		RangesModified: []difftypes.RangeDiff{{
-			RangeName: "span",
-			Changes:   map[string]string{"subtype": "int4 -> int8"},
-			Desired:   schemamodel.Range{Name: "span", Subtype: "int8"},
-		}},
 	}
 
 	composites := reverseCompositeTypeDiffs(
@@ -107,9 +101,4 @@ func TestReverseSchemaDiff_UserTypeOperandComesFromThePriorSchema(t *testing.T) 
 	c.Assert(composites, qt.HasLen, 1)
 	c.Assert(composites[0].Desired.Fields, qt.HasLen, 1,
 		qt.Commentf("the rollback rebuilds the one-field composite the database held"))
-
-	ranges := reverseRangeDiffs(forward.RangesModified, &schemamodel.Database{}, prior, semantics)
-	c.Assert(ranges, qt.HasLen, 1)
-	c.Assert(ranges[0].Desired.Subtype, qt.Equals, "int4",
-		qt.Commentf("the rollback rebuilds the subtype the database held"))
 }

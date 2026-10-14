@@ -1363,11 +1363,15 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and `ADD CHECK`,
   and a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`. A declaration
   that leaves either out does not remove the one the database holds.
-- A domain base-type or nullability change has no in-place `ALTER`, so it is
-  emitted as a non-`CASCADE` drop and recreate; if a column still uses the
-  domain, the drop fails loudly instead of dropping the column.
-- Range types are matched by name only; a changed range is dropped and
-  recreated.
+- A domain nullability change uses `ALTER DOMAIN ... SET NOT NULL` or
+  `DROP NOT NULL`. A base-type change uses a non-`CASCADE` drop and recreation.
+  PostgreSQL refuses the drop while a column uses the domain.
+- Range types match by schema and name. Ptah compares the subtype, comment,
+  and optional attributes that the declaration states or explicitly clears.
+  A comment-only change uses `COMMENT ON TYPE`. Other changes recreate the range.
+  SQL, HCL and Go annotations preserve quoted references and their schemas.
+- Go and HCL exports mark unknown range coverage as unmanaged. Reading an
+  export does not authorize removal of ranges the source did not inspect.
 - Within the group the three kinds are ordered by what their definitions name,
   not by kind: `CREATE TYPE addr AS (...)` precedes `CREATE DOMAIN d AS addr`,
   and `CREATE DOMAIN qty AS integer` precedes a composite with a `qty` field.
@@ -1378,13 +1382,11 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   carries can block it; when the change is what moves the reference, the create
   order and the drop order are not mirror images. Both orders come out of the
   same plan.
-- A domain, composite or range type that an **extension** owns is not
-  described. `CREATE EXTENSION` creates those types, so they cannot be created
-  or dropped independently, and describing one as a user type made the
-  description declare something the extension already makes — replaying it
-  failed with `type "lo" already exists`. Ownership is read from `pg_depend`,
-  so a type of your own named close to an extension's is unaffected. The same
-  rule has always applied to extension-owned functions.
+- Extension-owned domains, composites and ranges are omitted from the schema.
+  `CREATE EXTENSION` creates them. Declaring them independently causes a
+  duplicate-object error. Ptah reads ownership from `pg_depend`; a similar name
+  does not make a user type part of an extension. Extension-owned functions
+  follow the same rule.
 
 ## Concurrent index creation
 

@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 )
@@ -22,7 +23,7 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 		Schemas:         []schemamodel.Schema{{Name: "app", Comment: "Application"}},
 		Tables:          []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
 		Fields:          []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "app"})))),
+		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "app"})), schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "price_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Sequences: []schemamodel.Sequence{{
 			Name:      "order_seq",
@@ -40,11 +41,6 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 			Name:   "address",
 			Schema: "app",
 			Fields: []schemamodel.CompositeField{{Name: "city", Type: "text"}},
-		}},
-		Ranges: []schemamodel.Range{{
-			Name:    "price_range",
-			Schema:  "app",
-			Subtype: "numeric",
 		}},
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
 			StructName: "User",
@@ -76,7 +72,10 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 		Name: "city",
 		Type: "text",
 	}})
-	c.Assert(got.Ranges, qt.HasLen, 1)
+	rangeType, found, err := got.FeatureObjects.Get(pgtype.Ref(pgtype.RangeKind, "app", "price_range"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(rangeType.Value, qt.DeepEquals, &pgtype.ObservedRange{Subtype: "numeric"})
 	c.Assert(got.Grants, qt.HasLen, 1)
 	c.Assert(got.Grants[0].ObjectType, qt.Equals, "SEQUENCE")
 	c.Assert(got.Grants[0].Schema, qt.Equals, "app")

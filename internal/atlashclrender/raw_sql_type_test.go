@@ -81,7 +81,10 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			parsed, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			parsed, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 			c.Assert(err, qt.IsNil)
 
 			rendered, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
@@ -91,7 +94,10 @@ table "t" {
 
 			// Re-parsing has to land on the same IR, or the round trip is
 			// stable in text and lossy in meaning.
-			reparsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+			reparsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+				Runtime().HCL(),
+			},
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(reparsed.Fields, qt.HasLen, 1)
 			c.Assert(reparsed.Fields[0].Type, qt.Equals, parsed.Fields[0].Type)
@@ -112,14 +118,17 @@ table "t" {
 func TestSQLRawExpressionColumnTypeRendersReducedInDDL(t *testing.T) {
 	c := qt.New(t)
 
-	parsed, err := atlashcl.Parse([]byte(`
+	parsed, err := atlashcl.ParseWithOptions([]byte(`
 table "t" {
   column "c" {
     null = true
     type = sql("USER_DEFINED")
   }
 }
-`), "schema.hcl")
+`), "schema.hcl", atlashcl.Options{HCL: builtintest.
+		Runtime().HCL(),
+	},
+	)
 	c.Assert(err, qt.IsNil)
 
 	sql, err := builtin.RenderSQL(platform.SQLite, must.Must(modelast.CollectDatabase(*parsed, platform.SQLite, modelast.Lowering{Context: context.Background()})))

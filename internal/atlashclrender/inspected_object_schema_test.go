@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -76,7 +77,7 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 		{
 			name: "a range type",
 			declare: func(db *schemamodel.Database) {
-				db.Ranges = []schemamodel.Range{{Name: "numrng", Subtype: "numeric"}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "numrng"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))
 			},
 			want: "range \"numrng\" {\n  schema = schema.public\n",
 		},
@@ -196,9 +197,7 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		{
 			name: "a range type",
 			declare: func(db *schemamodel.Database) {
-				db.Ranges = []schemamodel.Range{{
-					Name: "numrng", Schema: "reporting", Subtype: "numeric",
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "reporting", "numrng"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))
 			},
 			want: "range \"numrng\" {\n  schema = schema.reporting\n",
 		},

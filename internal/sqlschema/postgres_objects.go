@@ -155,8 +155,6 @@ func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode, 
 		})
 	case *ast.CompositeTypeDef:
 		database.CompositeTypes = append(database.CompositeTypes, toCompositeType(schema, name, node, definition, sourcePlatform))
-	case *ast.RangeTypeDef:
-		database.Ranges = append(database.Ranges, toRange(schema, name, node, definition))
 	case *ast.DomainTypeDef:
 		database.Domains = append(database.Domains, toDomain(schema, name, node, definition, sourcePlatform))
 	}
@@ -178,21 +176,6 @@ func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *
 	}
 	composite.Canonicalize()
 	return composite
-}
-
-func toRange(schema, name string, node *ast.CreateTypeNode, definition *ast.RangeTypeDef) schemamodel.Range {
-	rangeType := schemamodel.Range{
-		Name:           name,
-		Schema:         schema,
-		Subtype:        definition.Subtype,
-		SubtypeOpClass: definition.SubtypeOpClass,
-		Collation:      definition.Collation,
-		Canonical:      definition.Canonical,
-		SubtypeDiff:    definition.SubtypeDiff,
-		Comment:        node.Comment,
-	}
-	rangeType.Canonicalize()
-	return rangeType
 }
 
 func toDomain(

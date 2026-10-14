@@ -1,0 +1,65 @@
+package pgtypesource
+
+import (
+	"fmt"
+
+	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgtype"
+)
+
+func rangeCoverage(limits []coverage.Object) (schemaext.Coverage, error) {
+	knowledge := schemaext.Knowledge{State: schemaext.Complete}
+	var subjects []schemaext.SubjectCoverage
+	for _, limit := range limits {
+		if limit.Kind != coverage.Range {
+			return schemaext.Coverage{}, fmt.Errorf("%w: unrelated range coverage limit", schemaext.ErrInvalidValue)
+		}
+		unknown := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves these range types unmanaged"}
+		if limit.Name == "" {
+			knowledge = unknown
+			continue
+		}
+		schema, name := annotation.QualifiedName("", limit.Name)
+		subjects = append(subjects, schemaext.SubjectCoverage{Kind: pgtype.RangeKind, Subject: pgtype.Ref(pgtype.RangeKind, schema, name), Knowledge: unknown})
+	}
+	return pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, knowledge, subjects)
+}
+
+func rangeLimits(known schemaext.Coverage) ([]annotation.EncodedLimit, error) {
+	var limits []annotation.EncodedLimit
+	wholeUnknown := true
+	for _, record := range known.KindRecords() {
+		if record.Model.Kind != pgtype.RangeKind {
+			return nil, fmt.Errorf("%w: unrelated range coverage model", schemaext.ErrInvalidValue)
+		}
+		wholeUnknown = record.Knowledge.State != schemaext.Complete
+	}
+	if wholeUnknown {
+		limits = append(limits, annotation.EncodedLimit{Kind: string(coverage.Range)})
+	}
+	for _, record := range known.SubjectRecords() {
+		if record.Kind != pgtype.RangeKind {
+			return nil, fmt.Errorf("%w: unrelated range subject", schemaext.ErrInvalidValue)
+		}
+		if err := pgtype.ValidateRef(record.Subject); err != nil {
+			return nil, err
+		}
+		if len(record.Targets) > 0 {
+			return nil, fmt.Errorf("%w: a range coverage limit cannot preserve a target scope", ptaherr.ErrUnsupportedFeature)
+		}
+		switch record.Knowledge.State {
+		case schemaext.Complete:
+			if wholeUnknown {
+				return nil, fmt.Errorf("%w: a range source cannot preserve a complete subject inside an unknown namespace", ptaherr.ErrUnsupportedFeature)
+			}
+		case schemaext.Uninspected, schemaext.Unrepresentable:
+			limits = append(limits, annotation.EncodedLimit{Kind: string(coverage.Range), Name: pgtype.QualifiedName(record.Subject)})
+		default:
+			return nil, fmt.Errorf("%w: a range source cannot preserve an explicit %s claim", ptaherr.ErrUnsupportedFeature, record.Knowledge.State)
+		}
+	}
+	return limits, nil
+}

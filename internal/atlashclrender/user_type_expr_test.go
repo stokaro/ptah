@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -53,7 +56,7 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 		},
 		{
 			name: "a range's subtype",
-			db:   &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "int4"}}},
+			db:   &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.DesiredRange{Subtype: "int4"}}))},
 			want: `  subtype = sql("int4")` + "\n",
 		},
 		{
@@ -90,13 +93,13 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 		Schemas:        []schemamodel.Schema{{Name: "public"}},
 		Domains:        []schemamodel.Domain{{Name: "d", Schema: "public", BaseType: "text"}},
 		CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "public", Fields: []schemamodel.CompositeField{{Name: "f", Type: "text"}}}},
-		Ranges:         []schemamodel.Range{{Name: "r", Schema: "public", Subtype: "int4"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r"), Value: &pgtype.DesiredRange{Subtype: "int4"}})),
 	}
 
 	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Domains, qt.HasLen, 1)
@@ -104,8 +107,9 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
 	c.Assert(parsed.CompositeTypes[0].Fields, qt.HasLen, 1)
 	c.Assert(parsed.CompositeTypes[0].Fields[0].Type, qt.Equals, "text")
-	c.Assert(parsed.Ranges, qt.HasLen, 1)
-	c.Assert(parsed.Ranges[0].Subtype, qt.Equals, "int4")
+	objects := must.Must(parsed.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Value.(*pgtype.DesiredRange).Subtype, qt.Equals, "int4")
 }
 
 // TestRenderKeepsAnEmptyUserTypeBaseUnwrapped pins the one value that must not

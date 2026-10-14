@@ -174,8 +174,8 @@ func TestMarkedKinds_HappyPath(t *testing.T) {
 		},
 		{
 			marker:  astrouteguard.TypeDefinitionMarker,
-			present: []string{"EnumTypeDef", "DomainTypeDef", "CompositeTypeDef", "RangeTypeDef"},
-			absent:  []string{"AddEnumValueOperation", "AddColumnOperation", "CreateTypeNode"},
+			present: []string{"EnumTypeDef", "DomainTypeDef", "CompositeTypeDef"},
+			absent:  []string{"AddEnumValueOperation", "AddColumnOperation", "CreateTypeNode", "RangeTypeDef"},
 		},
 		{
 			marker:  astrouteguard.TypeOperationMarker,
