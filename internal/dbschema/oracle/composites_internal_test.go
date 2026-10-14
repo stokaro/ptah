@@ -6,6 +6,7 @@ package oracle
 // catalog query.
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"slices"
@@ -68,9 +69,9 @@ func TestReadComposites_RecordsWhatTheModelCannotCarry(t *testing.T) {
 			{"ORA_METHOD", "OBJECT", int64(1), nil, "NO"},
 			{"ORA_SHELL", "OBJECT", int64(0), nil, "YES"},
 		}, [][]driver.Value{
-			{"ORA_CHILD", "B", "NUMBER", nil, nil, nil},
-			{"ORA_KEPT", "A", "NUMBER", nil, nil, nil},
-			{"ORA_METHOD", "A", "NUMBER", nil, nil, nil},
+			{"ORA_CHILD", "B", "NUMBER", nil, nil, nil, "B"},
+			{"ORA_KEPT", "A", "NUMBER", nil, nil, nil, "B"},
+			{"ORA_METHOD", "A", "NUMBER", nil, nil, nil, "B"},
 		})
 	})
 	reader := NewOracleReader(db.SQL, "APP")
@@ -169,7 +170,7 @@ func compositeCatalog(query string, types, attributes [][]driver.Value) (dbtest.
 		}, nil
 	case strings.Contains(folded, "from all_type_attrs"):
 		return dbtest.QueryResult{
-			Columns: []string{"type_name", "attr_name", "attr_type_name", "length", "precision", "scale"},
+			Columns: []string{"type_name", "attr_name", "attr_type_name", "length", "precision", "scale", "char_used"},
 			Rows:    attributes,
 		}, nil
 	}
@@ -180,8 +181,8 @@ func compositeCatalog(query string, types, attributes [][]driver.Value) (dbtest.
 // ATTR_NO order.
 func compositeAttributeRows() [][]driver.Value {
 	return [][]driver.Value{
-		{"ORA_POINT", "X", "NUMBER", nil, int64(10), int64(2)},
-		{"ORA_POINT", "Y", "NUMBER", nil, int64(10), int64(2)},
+		{"ORA_POINT", "X", "NUMBER", nil, int64(10), int64(2), "B"},
+		{"ORA_POINT", "Y", "NUMBER", nil, int64(10), int64(2), "B"},
 	}
 }
 
@@ -226,4 +227,40 @@ func claimedKinds(read *catalog.Database) []schemaext.Kind {
 		return slices.Index(oratype.Kinds(), a) - slices.Index(oratype.Kinds(), b)
 	})
 	return kinds
+}
+
+// TestFormatAttributeType_SpellsWhatTheCatalogMeans pins the facts of
+// ALL_TYPE_ATTRS that a bare type name drops, with the rows 23.26.3.0.0
+// answered for each declared spelling.
+func TestFormatAttributeType_SpellsWhatTheCatalogMeans(t *testing.T) {
+	tests := []struct {
+		name                     string
+		dataType                 string
+		length, precision, scale sql.NullInt64
+		charUsed                 string
+		want                     string
+	}{
+		{name: "TIMESTAMP", dataType: "TIMESTAMP", scale: valid(6), charUsed: "B", want: "TIMESTAMP(6)"},
+		{name: "TIMESTAMP(3)", dataType: "TIMESTAMP", scale: valid(3), charUsed: "B", want: "TIMESTAMP(3)"},
+		{name: "TIMESTAMP WITH TIME ZONE", dataType: "TIMESTAMP WITH TZ", scale: valid(6), charUsed: "B",
+			want: "TIMESTAMP(6) WITH TIME ZONE"},
+		{name: "TIMESTAMP WITH LOCAL TIME ZONE", dataType: "TIMESTAMP WITH LOCAL TZ", scale: valid(6), charUsed: "B",
+			want: "TIMESTAMP(6) WITH LOCAL TIME ZONE"},
+		{name: "INTERVAL DAY TO SECOND", dataType: "INTERVAL DAY TO SECOND", precision: valid(2), scale: valid(6), charUsed: "B",
+			want: "INTERVAL DAY(2) TO SECOND(6)"},
+		{name: "INTERVAL YEAR TO MONTH", dataType: "INTERVAL YEAR TO MONTH", precision: valid(2), charUsed: "B",
+			want: "INTERVAL YEAR(2) TO MONTH"},
+		{name: "VARCHAR2(10 CHAR)", dataType: "VARCHAR2", length: valid(10), charUsed: "C", want: "VARCHAR2(10 CHAR)"},
+		{name: "VARCHAR2(10 BYTE)", dataType: "VARCHAR2", length: valid(10), charUsed: "B", want: "VARCHAR2(10)"},
+		{name: "CHAR(3 CHAR)", dataType: "CHAR", length: valid(3), charUsed: "C", want: "CHAR(3 CHAR)"},
+		{name: "NCHAR(3)", dataType: "NCHAR", length: valid(3), charUsed: "C", want: "NCHAR(3)"},
+		{name: "DECIMAL(10,2)", dataType: "DECIMAL", precision: valid(10), scale: valid(2), charUsed: "B", want: "DECIMAL(10,2)"},
+		{name: "INTEGER", dataType: "INTEGER", charUsed: "B", want: "INTEGER"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(formatAttributeType(test.dataType, test.length, test.precision, test.scale, test.charUsed), qt.Equals, test.want)
+		})
+	}
 }

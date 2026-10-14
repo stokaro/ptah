@@ -40,8 +40,8 @@ func checkTarget(ctx context.Context, target, stage string) error {
 // and never compared: the catalog stores its own spelling of both, and no
 // probe here asks the server how it would spell a declaration. An object
 // type is compared by its attribute list, in order, names without regard to
-// case and types canonicalized. A comment is never compared, since Oracle
-// stores none for either kind.
+// case and types in the spelling the catalog reports, see [SameAttributes]. A
+// comment is never compared, since Oracle stores none for either kind.
 //
 // The comparison does not create a type whose presence the read could not
 // establish, and reports it undecided instead: CREATE DOMAIN has no

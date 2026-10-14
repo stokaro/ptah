@@ -82,16 +82,16 @@ func nativeDatatypeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryRes
 		)
 	case strings.Contains(folded, "from all_type_attrs"):
 		return projectedTypeRows(query,
-			[]string{"type_name", "attr_name", "attr_type_name", "length", "precision", "scale"},
+			[]string{"type_name", "attr_name", "attr_type_name", "length", "precision", "scale", "char_used"},
 			[][]driver.Value{
-				{"RECORD_T", "DECIMAL_N", "DECIMAL", nil, int64(5), int64(2)},
-				{"RECORD_T", "DECIMAL_NEGATIVE", "DECIMAL", nil, int64(5), int64(-2)},
-				{"RECORD_T", "DECIMAL_ZERO", "DECIMAL", nil, int64(5), int64(0)},
-				{"RECORD_T", "DECIMAL_DEFAULT", "DECIMAL", nil, nil, int64(0)},
-				{"RECORD_T", "FLOAT_N", "FLOAT", nil, nil, nil},
-				{"RECORD_T", "FLOAT_SIZED", "FLOAT", nil, int64(10), nil},
-				{"RECORD_T", "TEXT_N", "NVARCHAR2", int64(10), nil, nil},
-				{"RECORD_T", "TEXT_B", "VARCHAR2", int64(20), nil, nil},
+				{"RECORD_T", "DECIMAL_N", "DECIMAL", nil, int64(5), int64(2), "B"},
+				{"RECORD_T", "DECIMAL_NEGATIVE", "DECIMAL", nil, int64(5), int64(-2), "B"},
+				{"RECORD_T", "DECIMAL_ZERO", "DECIMAL", nil, int64(5), int64(0), "B"},
+				{"RECORD_T", "DECIMAL_DEFAULT", "DECIMAL", nil, nil, int64(0), "B"},
+				{"RECORD_T", "FLOAT_N", "FLOAT", nil, nil, nil, "B"},
+				{"RECORD_T", "FLOAT_SIZED", "FLOAT", nil, int64(10), nil, "B"},
+				{"RECORD_T", "TEXT_N", "NVARCHAR2", int64(10), nil, nil, "C"},
+				{"RECORD_T", "TEXT_B", "VARCHAR2", int64(20), nil, nil, "B"},
 			},
 		)
 	case strings.Contains(folded, "from all_types"):

@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/internal/pgtypealias"
 )
 
 // DesiredObjectType declares an object type: an ordered list of named, typed
@@ -129,10 +128,12 @@ func (v *DesiredObjectType) Observed() *ObservedObjectType {
 
 // SameAttributes reports whether two attribute lists describe one type: the
 // same names in the same order without regard to case, each with the same
-// type once both spellings are canonicalized.
+// Oracle type once an alias is reduced to the spelling the catalog reports,
+// so INTEGER and NUMBER(*,0), DECIMAL(10,2) and NUMBER(10,2), or TIMESTAMP and
+// TIMESTAMP(6) agree. A length in characters and one in bytes differ.
 func SameAttributes(declared, held []Attribute) bool {
 	return slices.EqualFunc(declared, held, func(a, b Attribute) bool {
-		return strings.EqualFold(a.Name, b.Name) && pgtypealias.Canonical(a.Type) == pgtypealias.Canonical(b.Type)
+		return strings.EqualFold(a.Name, b.Name) && sameAttributeType(a.Type, b.Type)
 	})
 }
 

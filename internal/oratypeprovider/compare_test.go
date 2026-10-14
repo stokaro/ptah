@@ -130,6 +130,78 @@ func TestCompareTypes_FindsABaseTypeChange(t *testing.T) {
 	}
 }
 
+// TestCompareTypes_ReducesAnAttributeTypeToTheCatalogSpelling pins each
+// declared attribute spelling against the one the read composes from
+// ALL_TYPE_ATTRS on 23.26.3.0.0. A spelling compared as written plans CREATE
+// OR REPLACE TYPE on every run, which Oracle refuses while a column uses the
+// type.
+func TestCompareTypes_ReducesAnAttributeTypeToTheCatalogSpelling(t *testing.T) {
+	tests := []struct {
+		declared, held string
+	}{
+		{declared: "INT", held: "INTEGER"},
+		{declared: "NUMERIC", held: "DECIMAL"},
+		{declared: "NUMERIC(5,2)", held: "DECIMAL(5,2)"},
+		{declared: "NUMBER(10,2)", held: "NUMBER(10,2)"},
+		{declared: "NUMBER(10,0)", held: "NUMBER(10)"},
+		{declared: "DECIMAL(5)", held: "DECIMAL(5)"},
+		{declared: "DOUBLE PRECISION", held: "DOUBLE PRECISION"},
+		{declared: "TIMESTAMP", held: "TIMESTAMP(6)"},
+		{declared: "TIMESTAMP(3)", held: "TIMESTAMP(3)"},
+		{declared: "TIMESTAMP WITH TIME ZONE", held: "TIMESTAMP(6) WITH TIME ZONE"},
+		{declared: "TIMESTAMP WITH LOCAL TIME ZONE", held: "TIMESTAMP(6) WITH LOCAL TIME ZONE"},
+		{declared: "INTERVAL DAY TO SECOND", held: "INTERVAL DAY(2) TO SECOND(6)"},
+		{declared: "INTERVAL YEAR TO MONTH", held: "INTERVAL YEAR(2) TO MONTH"},
+		{declared: "VARCHAR(10)", held: "VARCHAR2(10)"},
+		{declared: "VARCHAR2(10 BYTE)", held: "VARCHAR2(10)"},
+		{declared: "varchar2(10 char)", held: "VARCHAR2(10 CHAR)"},
+		{declared: "CHAR", held: "CHAR(1)"},
+		{declared: "BOOLEAN", held: "BOOLEAN"},
+	}
+	for _, test := range tests {
+		t.Run(test.declared, func(t *testing.T) {
+			c := qt.New(t)
+			declaration := &oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "a", Type: test.declared}}}
+			observation := &oratype.ObservedObjectType{Attributes: []oratype.Attribute{{Name: "A", Type: test.held}}}
+
+			result, err := newRuntime(c).CompareObjects(t.Context(),
+				comparison(objects(declared("p", declaration)), objects(held("P", observation))))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCompareTypes_FindsAnAttributeTypeChange is the control: an attribute
+// spelling that names another type still differs, and ALL_TYPE_ATTRS reports
+// the length unit, so a length in characters and one in bytes differ too.
+func TestCompareTypes_FindsAnAttributeTypeChange(t *testing.T) {
+	tests := []struct {
+		declared, held string
+	}{
+		{declared: "VARCHAR2(10 CHAR)", held: "VARCHAR2(10)"},
+		{declared: "VARCHAR2(10)", held: "VARCHAR2(10 CHAR)"},
+		{declared: "TIMESTAMP", held: "TIMESTAMP(3)"},
+		{declared: "INTEGER", held: "NUMBER(10)"},
+		{declared: "TIMESTAMP WITH TIME ZONE", held: "TIMESTAMP(6) WITH LOCAL TIME ZONE"},
+	}
+	for _, test := range tests {
+		t.Run(test.declared+" against "+test.held, func(t *testing.T) {
+			c := qt.New(t)
+			declaration := &oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "a", Type: test.declared}}}
+			observation := &oratype.ObservedObjectType{Attributes: []oratype.Attribute{{Name: "A", Type: test.held}}}
+
+			result, err := newRuntime(c).CompareObjects(t.Context(),
+				comparison(objects(declared("p", declaration)), objects(held("P", observation))))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.DeepEquals, []schemaext.ChangeRecord{change(oratype.ObjectTypeKind, "p",
+				&oratype.ObjectTypeChange{Before: observation, After: declaration, Differs: []string{oratype.DiffAttributes}})})
+		})
+	}
+}
+
 // TestCompareTypes_FindsChanges pins each difference, a creation and a drop.
 // A surviving type's change names the declaration's identity, which is how a
 // statement spells the type; a drop names the catalog's.
