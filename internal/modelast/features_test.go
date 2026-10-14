@@ -342,6 +342,32 @@ func TestCollectDatabase_RefusesUnresolvedFeatureKnowledge(t *testing.T) {
 	}
 }
 
+// A reader that meets an object it cannot describe leaves it undeclared and
+// says so in its coverage, as the CockroachDB reader does for a default
+// privilege set FOR ALL ROLES. There is nothing to lower, so the render goes
+// on and a note says no statement creates it. The declared object beside it
+// is still lowered. TestCollectDatabase_RefusesUnresolvedFeatureKnowledge is
+// the control: the same knowledge about a declared object is refused.
+func TestCollectDatabase_NotesAnUndescribedObject(t *testing.T) {
+	c := qt.New(t)
+	database := loweringFeatureFixture("postgres")
+	undescribed := objectidentity.NewBuilder(identifier.ForDialect("postgres")).ColumnParts("", "table.with.dot", "undescribed")
+	undescribed.Kind = objectidentity.Kind(loweringKind)
+	database.FeatureCoverage = loweringCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+		Kind: loweringKind, Subject: undescribed, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "no declaration can name it"},
+	}})
+
+	list, err := modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(list.Statements, qt.HasLen, 2)
+	c.Assert(list.Statements[0], qt.DeepEquals, ast.Node(ast.NewComment(undescribed.String()+
+		" was not described (no declaration can name it), and no statement creates it")))
+	table, ok := list.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.OwnedObjects, qt.DeepEquals, database.FeatureObjects)
+}
+
 func TestCollectDatabase_RefusesPresentObjectClaimedAbsent(t *testing.T) {
 	c := qt.New(t)
 	database := loweringFeatureFixture("postgres")

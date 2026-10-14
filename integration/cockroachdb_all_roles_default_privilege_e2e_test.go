@@ -44,10 +44,10 @@ func TestCockroachDBAllRolesDefaultPrivilegeE2E_HappyPath(t *testing.T) {
 		"ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteE2EIdent(fixture.owner) +
 			` IN SCHEMA "public" GRANT INSERT ON TABLES TO ` + quoteE2EIdent(fixture.reader) + ";",
 	})
-	c.Assert(readErr, qt.Contains, "note: 3 default privileges are not described, because no schema"+
-		" source can declare one set FOR ALL ROLES; a description applied to another database does"+
-		" not carry them: SEQUENCES in app for all roles, TABLES in public for all roles, TYPES in"+
-		" every schema for all roles.\n")
+	for _, scope := range []string{"TYPES globally", "SEQUENCES in schema app", "TABLES in schema public"} {
+		c.Assert(readErr, qt.Contains, "note: default privileges for ALL ROLES on "+scope+
+			" are not fully described: FOR ALL ROLES has no named grantor in a schema declaration.\n")
+	}
 
 	rendered := filepath.Join(c.TempDir(), "rendered.sql")
 	c.Assert(os.WriteFile(rendered, []byte(read), 0o600), qt.IsNil)

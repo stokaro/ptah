@@ -28,9 +28,12 @@ import (
 // A setting attached to a table, index or materialized view that the source
 // could not capture, such as a refresh schedule whose stored clause a reader
 // could not read, does not stop the lowering: the object is still lowered, and
-// the returned notes say what its statement does not carry.
+// the returned notes say what its statement does not carry. An object the
+// source could not describe and so does not declare, such as a CockroachDB
+// default privilege set FOR ALL ROLES, does not stop it either: there is no
+// object to lower, and a note says no statement creates it.
 func validateFeatureLowering(database schemamodel.Database, dialect string) ([]ast.Node, error) {
-	notes, err := validateLoweringCoverage(database.FeatureCoverage)
+	notes, err := validateLoweringCoverage(database.FeatureCoverage, database.FeatureObjects)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +126,7 @@ func addKeyOwners(owners map[*schemaext.Facets]objectidentity.ID, database *sche
 	}
 }
 
-func validateLoweringCoverage(coverage schemaext.Coverage) ([]ast.Node, error) {
+func validateLoweringCoverage(coverage schemaext.Coverage, objects schemaext.Objects) ([]ast.Node, error) {
 	if !coverage.IsZero() && coverage.Representation() != schemaext.Desired {
 		return nil, fmt.Errorf("%w: schema-to-AST requires desired feature coverage", schemaext.ErrInvalidValue)
 	}
@@ -137,9 +140,17 @@ func validateLoweringCoverage(coverage schemaext.Coverage) ([]ast.Node, error) {
 			return nil, err
 		}
 	}
+	declared := make(map[objectidentity.Key]bool, objects.Len())
+	for _, ref := range objects.Refs() {
+		declared[ref.Key()] = true
+	}
 	var notes []ast.Node
 	for _, record := range coverage.SubjectRecords() {
 		if note := uncapturedSetting(record); note != nil {
+			notes = append(notes, note)
+			continue
+		}
+		if note := undescribedObject(record, declared); note != nil {
 			notes = append(notes, note)
 			continue
 		}
@@ -168,6 +179,16 @@ func uncapturedSetting(record schemaext.SubjectCoverage) ast.Node {
 	}
 	return ast.NewComment(fmt.Sprintf("%s %s: %s was not captured (%s), and its statement does not carry it",
 		record.Subject.Kind, name, record.Kind, record.Knowledge.Reason))
+}
+
+// undescribedObject is the note for an object the source met and could not
+// describe, which it therefore does not declare, or nil for any other record.
+// A declared object with that knowledge still needs its owner's lowering.
+func undescribedObject(record schemaext.SubjectCoverage, declared map[objectidentity.Key]bool) ast.Node {
+	if record.Knowledge.State != schemaext.Unrepresentable || declared[record.Subject.Key()] {
+		return nil
+	}
+	return ast.NewComment(fmt.Sprintf("%s was not described (%s), and no statement creates it", record.Subject, record.Knowledge.Reason))
 }
 
 func validateLoweringKnowledge(kind schemaext.Kind, knowledge schemaext.Knowledge) error {
