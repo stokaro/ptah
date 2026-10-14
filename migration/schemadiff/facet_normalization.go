@@ -13,6 +13,12 @@ import (
 
 // normalizeFeatureFacets binds common subjects to the connection before asking
 // their owners for target facts. Pure comparison never receives the session.
+//
+// Only facet values change. The bound feature objects and coverage are a
+// working copy: the comparison binds the caller's own again, and a lowering
+// that reads the result checks a policy's parent table without the
+// connection's default schema. A policy bound to it here has no declared
+// parent table there.
 func normalizeFeatureFacets(ctx context.Context, conn Connection, desired *schemamodel.Database, current *catalog.Database, info catalog.ServerInfo, runtime schemaext.FacetNormalizationService) (*schemamodel.Database, error) {
 	if info.Dialect == "" || !slices.ContainsFunc(desired.FacetSlots(), func(facets *schemaext.Facets) bool { return !facets.IsZero() }) {
 		return desired, nil
@@ -45,5 +51,10 @@ func normalizeFeatureFacets(ctx context.Context, conn Connection, desired *schem
 		return nil, fmt.Errorf("%w: facet normalization changed source coverage", schemaext.ErrInvalidValue)
 	}
 	declared.Facets = result.Desired.Records
-	return effectiveFeatureState(identity.desired, declared, info.Dialect, identity.semantics)
+	effective, err := effectiveFeatureState(identity.desired, declared, info.Dialect, identity.semantics)
+	if err != nil {
+		return nil, err
+	}
+	effective.FeatureObjects, effective.FeatureCoverage = desired.FeatureObjects, desired.FeatureCoverage
+	return effective, nil
 }

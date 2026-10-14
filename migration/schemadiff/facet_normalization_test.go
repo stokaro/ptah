@@ -89,6 +89,34 @@ func TestLiveComparisonNormalizesFacetsBeforeValidation(t *testing.T) {
 	c.Assert(original.Enabled, qt.IsFalse)
 }
 
+// TestLiveComparisonKeepsFeatureObjectsUnbound pins that facet normalization
+// hands back the caller's feature objects and coverage. A policy written without a schema
+// is bound to the connection's default schema for the owners' request, and
+// the bound copy reached the comparison: the reverse migration then lowered a
+// policy in app.items beside a table declared without a schema, and refused it
+// as having no declared parent table.
+func TestLiveComparisonKeepsFeatureObjectsUnbound(t *testing.T) {
+	c := qt.New(t)
+	desired := facetProbeSchema()
+	desired.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+		pgpolicy.PolicyRef("", "items", "tenant"), pgpolicy.DesiredPolicy{Command: pgpolicy.CommandAll}))))
+	limited := must.Must(pgpolicy.Coverage(pgpolicy.PolicyKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+		Kind: pgpolicy.PolicyKind, Subject: pgpolicy.PolicyRef("", "items", "legacy"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "left unmanaged"},
+	}}))
+	desired.FeatureCoverage = must.Must(limited.Combine(must.Must(pgpolicy.Coverage(pgpolicy.TableStateKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
+	current := &catalog.Database{Tables: []catalog.Table{{Name: "items", Schema: "app"}}}
+	stop := errors.New("stop at validation")
+	runtime := &facetProbeRuntime{SchemaRuntime: must.Must(builtin.New()), stop: stop, normalize: func(_ context.Context, request schemaext.FacetNormalizationRequest) (schemaext.FacetNormalizationResult, error) {
+		return schemaext.FacetNormalizationResult{Complete: true, Desired: request.Desired}, nil
+	}}
+	diff, err := schemadiff.CompareWithDatabase(t.Context(), facetProbeConnection{schema: "app"}, desired, current, nil, runtime)
+	c.Assert(err, qt.ErrorIs, stop)
+	c.Assert(diff, qt.IsNil)
+	c.Assert(runtime.validated, qt.IsNotNil)
+	c.Assert(runtime.validated.FeatureObjects.Refs(), qt.DeepEquals, desired.FeatureObjects.Refs())
+	c.Assert(runtime.validated.FeatureCoverage.Equal(desired.FeatureCoverage), qt.IsTrue)
+}
+
 func TestLiveComparisonRejectsIncompleteFacetNormalization(t *testing.T) {
 	c := qt.New(t)
 	runtime := &facetProbeRuntime{SchemaRuntime: must.Must(builtin.New()), normalize: func(_ context.Context, request schemaext.FacetNormalizationRequest) (schemaext.FacetNormalizationResult, error) {
