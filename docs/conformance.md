@@ -780,8 +780,9 @@ database, with the same verbs:
 | ClickHouse 26.9: a dictionary | `unknown driver` | `migrate validate` 0, dropped | **1**, names it, kept |
 
 No verb reaches the Oracle reset, because the dev lock refuses Oracle first. Its
-`DropAllTables` drops a view, a sequence, a synonym and a type and keeps a
-function, a procedure and a package, and the check counts the first four.
+`DropAllTables` drops a view, a sequence, a synonym, a type and, on Oracle 23,
+a domain, and keeps a function, a procedure and a package. The check counts
+every object it drops.
 
 Stricter, deliberately (stokaro/ptah#3808, stokaro/ptah#3851). Atlas CE keeps
 most of those objects because it does not model them, and drops the rest in

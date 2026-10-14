@@ -127,6 +127,13 @@ apart from the domain's, since Oracle refuses a different one (`ORA-11501`),
 so it reads as the domain's. A column typed by a domain of another schema, or
 by one the read cannot describe, keeps its base type.
 
+`ptah db drop-all` drops the account's domains after its tables and object
+types. A domain made by `CREATE FLEXIBLE DOMAIN` names the domains it chooses
+from, and `DROP DOMAIN` answers `ORA-11502` for one of those while it exists,
+so each domain is dropped after the domains that reference it. The cleanup
+writes `DROP DOMAIN` without `FORCE`, which would take the domain off any
+column still using it.
+
 ## Object types
 
 **A composite type is Oracle's object type**, and the spelling is the whole
