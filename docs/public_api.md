@@ -438,9 +438,13 @@ feature coverage. `Clone` isolates mutable common definitions; feature container
 retain immutable ownership. The zero value means no table was captured. Neither
 an empty child list nor a projected observation proves absence or execution.
 These data contracts import no migration pipeline or concrete provider package.
+
 `schemacapture.DeclareTable` assembles declarations for comparison and document
 projection. `ConstraintsFor` and `EnumsFor` select independent child definitions;
-`Owns` is the rule `ConstraintsFor` selects by.
+`Owns` is the rule `ConstraintsFor` and `DeclareTable` select constraints and
+indexes by. A bare table reference reaches a table in a schema only when the
+child names no struct or that table's struct, so same-named tables in two
+schemas keep their own children.
 `difftypes.TableObservationFor` assembles comparison-time observations.
 
 `schemacapture.PrimaryKeyFacets` and `DatabasePrimaryKeyFacets` address the
