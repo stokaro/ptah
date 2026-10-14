@@ -66,14 +66,18 @@ func TestDescriptors_EachCallReturnsNewValues(t *testing.T) {
 }
 
 // TestPackage_ImportsOnlyTheContract pins what lets core/platform import the
-// seed: it is data that links the descriptor contract and nothing else, so no
-// shared package reaches an engine's code through it.
+// seed: it is data that links the descriptor contract and the release-line
+// names of internal/capabilityline, which imports nothing, so no shared
+// package reaches an engine's code through it.
 func TestPackage_ImportsOnlyTheContract(t *testing.T) {
 	c := qt.New(t)
 
 	pkg, err := build.ImportDir(".", 0)
-
 	c.Assert(err, qt.IsNil)
+	lines, err := build.ImportDir("../capabilityline", 0)
+	c.Assert(err, qt.IsNil)
+
 	c.Assert(len(pkg.GoFiles) >= 12, qt.IsTrue, qt.Commentf("files %q", pkg.GoFiles))
-	c.Assert(pkg.Imports, qt.DeepEquals, []string{"ptah.run/core/platform/descriptor"})
+	c.Assert(pkg.Imports, qt.DeepEquals, []string{"ptah.run/core/platform/descriptor", "ptah.run/internal/capabilityline"})
+	c.Assert(lines.Imports, qt.HasLen, 0)
 }

@@ -3,8 +3,6 @@ package capability
 import (
 	"fmt"
 	"unicode/utf8"
-
-	"ptah.run/core/platform"
 )
 
 // Traits are the capability values that are not yes-or-no.
@@ -18,10 +16,10 @@ import (
 // The two sources are deliberately different, and the difference is visible in
 // how each field is resolved:
 //
-//   - [Traits.Identifiers] is static engine knowledge keyed on the dialect. No
-//     measured release line changes it, so no version is consulted. When one
-//     does, the version arrives here rather than in a new switch somewhere
-//     else — that centralization is the point.
+//   - [Traits.Identifiers] is static engine knowledge the dialect's descriptor
+//     states. No measured release line changes it, so no version is
+//     consulted. When one does, the version arrives here rather than in a new
+//     switch somewhere else — that centralization is the point.
 //   - [Traits.EnumModeling] and [Traits.ForeignKeyReference] are READ OFF the
 //     boolean set. Both already existed there as mutually exclusive flag groups
 //     [Capabilities.Validate] polices — the enum pair under an "at most one"
@@ -159,30 +157,12 @@ const (
 	ReferenceUnsupported ReferencePolicy = "unsupported"
 )
 
-// identifierLimits is static engine knowledge, keyed on the normalized dialect.
-//
-// The numbers were already in this repository, inline in
-// engine/builtin's foreign-key name validation, as a dialect switch three arms
-// wide. Moving them here is what lets a second caller ask the same question
-// without copying the switch, which is how the answers drift apart.
-//
-// ClickHouse and SQLite are absent on purpose rather than by oversight: Ptah
-// models no identifier limit for either, and the zero value says exactly that.
-var identifierLimits = map[string]IdentifierLimit{
-	platform.Postgres:    {Max: 63, Unit: IdentifierBytes},
-	platform.CockroachDB: {Max: 63, Unit: IdentifierBytes},
-	platform.YugabyteDB:  {Max: 63, Unit: IdentifierBytes},
-	platform.MySQL:       {Max: 64, Unit: IdentifierCharacters},
-	platform.MariaDB:     {Max: 64, Unit: IdentifierCharacters},
-	platform.SQLServer:   {Max: 128, Unit: IdentifierCharacters},
-	platform.Spanner:     {Max: 128, Unit: IdentifierCharacters},
-}
-
 // Identifiers returns the identifier limit Ptah models for a dialect name
-// (normalized via platform.NormalizeDialect). A dialect with no modeled limit,
-// and an unknown one, both return the zero value, which reports Unlimited.
+// (normalized via platform.NormalizeDialect), as its descriptor states it. A
+// dialect with no modeled limit, and an unknown one, both return the zero
+// value, which reports Unlimited.
 func Identifiers(dialect string) IdentifierLimit {
-	return identifierLimits[platform.NormalizeDialect(dialect)]
+	return process().Identifiers(dialect)
 }
 
 // TraitsFor resolves the non-boolean capability values for a target: the

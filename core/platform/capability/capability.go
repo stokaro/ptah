@@ -37,6 +37,16 @@
 // ForDialect resolves the default preset for a normalized dialect name;
 // ForServerVersion refines that using a live server version string (e.g. the
 // result of SELECT version()).
+//
+// # Dialects
+//
+// Which preset a dialect selects, which ladder a server version climbs, which
+// product a version string names and how long an identifier may be are stated
+// by the dialect's descriptor (core/platform/descriptor), not by this package,
+// which names no engine. A [Resolver] reads them, and the package-level
+// functions answer from the resolver over the process registry. An engine Ptah
+// does not ship is described the same way: its descriptor names presets this
+// package ships, or declares capability sets of its own as data.
 package capability
 
 import (
@@ -45,12 +55,8 @@ import (
 	"iter"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-
-	"ptah.run/core/platform"
-	"ptah.run/internal/capabilityline"
 )
 
 // Capability is a single named feature flag from the curated registry below.
@@ -5491,24 +5497,11 @@ func buildYDB251() Capabilities {
 		With(Transfers, false)
 }
 
-var defaultDialectPresets = map[string]func() Capabilities{
-	platform.ClickHouse:  ClickHouse24,
-	platform.CockroachDB: CockroachDB26,
-	platform.MariaDB:     MariaDB1011,
-	platform.MySQL:       MySQL84,
-	platform.Postgres:    Postgres17,
-	platform.Spanner:     SpannerPostgres,
-	platform.SQLite:      SQLite3,
-	platform.SQLServer:   SQLServer2022,
-	platform.YugabyteDB:  YugabyteDB25,
-	platform.Oracle:      Oracle23,
-	platform.YDB:         YDB262,
-}
-
-// DefaultDialects returns the normalized dialect names for which [ForDialect]
-// has a default capability preset.
+// DefaultDialects returns the normalized names of the dialects for which
+// [ForDialect] has a default capability preset: every dialect of the process
+// registry whose descriptor names one. The names are sorted.
 func DefaultDialects() []string {
-	return slices.Sorted(maps.Keys(defaultDialectPresets))
+	return process().Dialects()
 }
 
 // NamedPreset pairs a preset with the name its constructor carries, so a
@@ -5606,40 +5599,12 @@ const timescaleExtension = "timescaledb"
 
 // ForDialect returns the default preset for a dialect name (normalized via
 // platform.NormalizeDialect): the current supported version line of that
-// dialect. Unknown dialects get the zero set, the conservative empty one.
+// dialect, as its descriptor names it. Unknown dialects get the zero set, the
+// conservative empty one, and so does a dialect whose descriptor states
+// capability rules [NewResolver] refuses.
 func ForDialect(dialect string) Capabilities {
-	preset := defaultDialectPresets[platform.NormalizeDialect(dialect)]
-	if preset == nil {
-		return Capabilities{}
-	}
-	return preset()
+	return process().ForDialect(dialect)
 }
-
-// Newest measured version boundary per refined dialect.
-//
-// Each ladder in this file ends in an open-topped arm: MySQL sends everything
-// above 8.4 to MySQL84, MariaDB everything above 10.2 to MariaDB1011, and
-// PostgreSQL everything at or above 17 to Postgres17. That arm is a stand-in,
-// not a measurement — a server newer than the exact line below was never
-// observed behaving like the preset it receives. VersionResolution.Saturated
-// is true exactly past that line, so a caller can tell "inside a measured
-// line" from "past the newest line this package knows". A sibling minor below
-// the measured line is conservative fallback too, but not saturation.
-//
-// Above these boundaries the preset that comes back is byte-identical to
-// ForDialect's, so VersionSpecific is false there too. MySQL, MariaDB and
-// CockroachDB distinguish exact measured major/minor lines from conservative
-// fallbacks between them.
-//
-// Raising one of these numbers is the deliberate act of claiming a newer
-// server line behaves like the preset it lands on. Do it in the change that
-// measures that line, together with the preset it deserves — never as a side
-// effect of bumping a container tag.
-const (
-	// Postgres17 also covers PostgreSQL 18, measured on PostgreSQL 18.4 by the
-	// capability matrix.
-	newestMeasuredPostgresMajor = 18
-)
 
 // VersionResolution reports how a server version string was mapped onto a
 // capability preset.
@@ -5655,7 +5620,7 @@ const (
 // the top of the ladder.
 //
 // Saturation is defined where a dialect's ladder names a newest measured line.
-// SQLite's ladder is one step that names none, and Spanner is resolved from
+// SQLite's ladder names none, and Spanner has no ladder and is resolved from
 // the banner without consulting a version at all; both report Saturated=false
 // and an empty NewestMeasured.
 type VersionResolution struct {
@@ -5757,72 +5722,21 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 // from, and the two deliberately disagree for a PostgreSQL banner on a
 // PostgreSQL-family dialect — see ResolveServerVersion.
 //
-// It is also the only ordered table of product tokens in the tree.
-// dbschema's wire-dialect detection reads it rather than repeating the
+// The product tokens are the banner tokens of each dialect's descriptor, and
+// [Resolver.BannerPlatform] says in which order they are tried. dbschema's
+// wire-dialect detection reads this function rather than repeating the
 // substrings, because a second copy is how a live connection and an offline
 // resolution come to disagree about which server a banner describes.
 //
-// The order is load-bearing inside the PostgreSQL wire family: three of those
-// products announce the PostgreSQL engine in their own banner — CockroachDB
-// speaks the PostgreSQL wire protocol, YugabyteDB reports
-// "PostgreSQL 11.2-YB-…" and Spanner "Cloud Spanner PostgreSQL" — so
-// PostgreSQL is claimed after every token that is more specific than it. The
-// products below it announce no engine but their own, so their order among
-// themselves is free.
-//
-// Membership rule: a product belongs here when the SERVER's own version
-// surface names it. That is the string this function is handed, live or typed,
-// and it is the only evidence a mismatch guard can act on. Measured across the
-// dialects platform names:
-//
-//   - postgres, mariadb, cockroachdb, yugabytedb and spanner put the product in
-//     the version string itself, and are claimed above.
-//   - sqlserver puts it in @@VERSION: "Microsoft SQL Server 2025 (RTM-CU7) … -
-//     17.0.4065.4 …", the banner capability_internal_test.go pins verbatim from
-//     a live container. It is the one that had teeth: the generic parser reads
-//     the marketing year 2025 out of it, so before this token existed
-//     `schema render --dialect postgres --server-version '<that banner>'`
-//     exited 0 planning it as a PostgreSQL 2025 that does not exist.
-//   - clickhouse has no product token in SELECT version(), which answers a bare
-//     "26.7.3.19" — but system.build_options reports VERSION_FULL
-//     "ClickHouse 26.7.3.19" and VERSION_NAME "ClickHouse" (measured on
-//     clickhouse/clickhouse-server:26.7), and that is the server naming itself.
-//   - mysql and sqlite are deliberately absent. Measured, SELECT VERSION() on a
-//     live mysql:9.7 answers "9.7.2" and sqlite_version() answers a bare dotted
-//     version ("3.51.0" on the SQLite this was run against); neither server has
-//     a version surface that names its product, so the empty answer is the
-//     correct one and any token would have to come from a client banner
-//     instead — and the MySQL client's is shared with MariaDB's
-//     ("mysql  Ver 15.1 Distrib 10.11.6-MariaDB"), so it names no server.
-//   - ydb is absent for the same reason. `SELECT Version()` answers a bare
-//     "26.2.1.14" on local-ydb 26.2.1.14 and the build branch "stable-25-4-1"
-//     on 25.4.1.15, and neither names the product. The dialect comes from the
-//     `ydb://` URL scheme or from --dialect, and ResolveServerVersion reads the
-//     YDB ladder from that declared dialect.
+// Membership rule: a product carries banner tokens when the SERVER's own
+// version surface names it. That is the string this function is handed, live
+// or typed, and it is the only evidence a mismatch guard can act on. A product
+// whose server never names itself carries none, and the empty answer is the
+// correct one for its version string: a token would have to come from a client
+// banner instead, and the MySQL client's is shared with MariaDB's ("mysql  Ver
+// 15.1 Distrib 10.11.6-MariaDB"), so it names no server.
 func BannerPlatform(version string) string {
-	versionLower := strings.ToLower(version)
-	switch {
-	case strings.Contains(versionLower, "cockroachdb"):
-		return platform.CockroachDB
-	case strings.Contains(versionLower, "yugabytedb"),
-		strings.Contains(versionLower, "yugabyte"),
-		strings.Contains(versionLower, "-yb-"):
-		return platform.YugabyteDB
-	case strings.Contains(versionLower, "spanner"):
-		return platform.Spanner
-	case strings.Contains(versionLower, "postgres"):
-		return platform.Postgres
-	case strings.Contains(versionLower, "mariadb"):
-		return platform.MariaDB
-	case strings.Contains(versionLower, "sql server"):
-		return platform.SQLServer
-	case strings.Contains(versionLower, "clickhouse"):
-		return platform.ClickHouse
-	case strings.Contains(versionLower, "oracle"):
-		return platform.Oracle
-	default:
-		return ""
-	}
+	return process().BannerPlatform(version)
 }
 
 // ResolveServerVersion is ForServerVersionResult with the saturation answer
@@ -5831,594 +5745,16 @@ func BannerPlatform(version string) string {
 // version is not version-specific and which line it was planned as, and
 // Recognized says whether the string was read at all. See VersionResolution
 // for what saturation means and which dialects can report it.
+//
+// The ladders are the dialect descriptors' (see core/platform/descriptor), and
+// [Resolver.ResolveServerVersion] says how a string is matched against them.
+// In short: a product the string names outranks the declared dialect, because
+// on a live connection MariaDB announces itself over the MySQL protocol and
+// CockroachDB over the PostgreSQL one; a string naming only the head of the
+// declared dialect's family keeps the declared ladder; and a string naming no
+// product climbs the declared dialect's ladder.
 func ResolveServerVersion(dialect, version string) VersionResolution {
-	normalized := platform.NormalizeDialect(dialect)
-
-	switch banner := BannerPlatform(version); banner {
-	case platform.CockroachDB:
-		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
-	case platform.YugabyteDB:
-		// YugabyteDB DOES have a ladder, of exactly one step, and it was in
-		// this arm returning YugabyteDB25 unconditionally until
-		// stokaro/ptah#916 measured the 2024 LTS line: advisory locks are "not
-		// yet implemented" there and CREATE OR REPLACE TRIGGER is a syntax
-		// error, both because the engine underneath is still PostgreSQL 11.
-		return resolvedAs(yugabyteResolution(version), platform.YugabyteDB)
-	case platform.Spanner:
-		return VersionResolution{
-			Capabilities:    SpannerPostgres(),
-			VersionSpecific: true,
-			Recognized:      true,
-			ResolvedDialect: platform.Spanner,
-		}
-	case platform.Postgres:
-		// "PostgreSQL" names the FAMILY, and only the family. CockroachDB,
-		// YugabyteDB and Spanner are all reached over the PostgreSQL wire
-		// protocol, and each may report a banner carrying no token of its own
-		// — which is exactly the case dbschema's detectPostgresWireDialect
-		// answers by keeping the dialect the operator connected with. Claiming
-		// the banner as PostgreSQL there would overrule that decision and hand
-		// a live distributed server the PostgreSQL preset: measured, it turned
-		// SpannerPostgres into Postgres14 across 19 keys, among them
-		// materialized_views, functions and triggers, which are the keys that
-		// exist to stop Ptah emitting DDL Spanner refuses.
-		//
-		// So the banner is claimed only for a dialect outside that family,
-		// where it is a genuine contradiction rather than a less specific
-		// spelling of the same server: without it, "PostgreSQL 16.3 (Debian)"
-		// on --dialect mysql reads as MySQL 16.3 and answers MySQL84.
-		// A version a person typed is refused before it gets this far by
-		// internal/servertarget, which asks BannerPlatform directly and so
-		// still refuses a PostgreSQL banner paired with --dialect cockroachdb.
-		if !platform.IsPostgresFamily(normalized) {
-			return resolvedAs(postgresBannerResolution(version), platform.Postgres)
-		}
-	case platform.SQLServer:
-		return resolvedAs(sqlServerResolution(version), platform.SQLServer)
-	case platform.Oracle:
-		return resolvedAs(oracleResolution(version), platform.Oracle)
-	case platform.ClickHouse:
-		// ClickHouse DOES have a ladder, of exactly one step. The two declared
-		// lines furthest apart differ on one key: CHECK GRANT is a statement on
-		// 26.7.3.19 and a syntax error on 24.10.4.191. That one measured
-		// difference is what keeps ClickHouse out of the unladdered arm at the
-		// bottom of this function.
-		//
-		// The banner is the version here -- ClickHouse answers `SELECT
-		// version()` with 24.10.4.191 and nothing else -- so unlike SQL Server
-		// there is no marketing year to keep out of a ladder.
-		return resolvedAs(clickHouseResolution(version), platform.ClickHouse)
-	case platform.MariaDB:
-		// MariaDB announces itself in the version string even when connected
-		// via the mysql dialect/driver; trust the string over the declared
-		// dialect.
-		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
-	}
-
-	if normalized == platform.YDB {
-		// YDB names no product in its version string, so BannerPlatform
-		// cannot recognize it and the dialect comes from the caller: the URL
-		// scheme on a live connection, --dialect offline. The arm sits ahead
-		// of the shared parse because one of the two shapes YDB reports is a
-		// branch name the shared parse misreads; see ydbServerVersion.
-		return resolvedAs(ydbResolution(version), platform.YDB)
-	}
-
-	v, ok := parseVersion(version)
-	if !ok {
-		// Recognized stays false: the preset below is ForDialect's, picked
-		// without reading anything out of the string.
-		return VersionResolution{Capabilities: ForDialect(dialect), ResolvedDialect: normalized}
-	}
-	return parsedResolution(dialect, normalized, version, v)
-}
-
-// parsedResolution climbs the ladder of the declared dialect for a version
-// string that named no product, so the banner switch in ResolveServerVersion
-// had nothing to read.
-func parsedResolution(dialect, normalized, version string, v serverVersion) VersionResolution {
-	switch normalized {
-	case platform.MySQL:
-		return resolvedAs(mysqlResolution(v), platform.MySQL)
-	case platform.MariaDB:
-		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
-	case platform.Postgres:
-		return resolvedAs(postgresResolution(v), platform.Postgres)
-	case platform.CockroachDB:
-		// The banner branch above is not the only way to reach this ladder.
-		// A dotted "25.4.5" is the documented shape on every other dialect, and
-		// before this arm existed it fell through to the default below and
-		// received ForDialect's CockroachDB26 — which differs from the measured
-		// CockroachDB25 preset on create_or_replace_trigger,
-		// drop_constraint_generic and drop_constraint_if_exists, and reported
-		// itself as a dialect with no ladder at all.
-		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
-	case platform.SQLite:
-		// SQLite's ladder is one step, at 3.25, and it exists for an offline
-		// render rather than for a live connection: the engine Ptah links is
-		// pinned far above the step, so only a user pinning an older target
-		// with --server-version can reach the lower arm (stokaro/ptah#916).
-		return resolvedAs(sqliteResolution(version), platform.SQLite)
-	case platform.ClickHouse:
-		// Reached the same way the CockroachDB arm above is: a bare dotted
-		// "26.7.3.19" carries no product token, so BannerPlatform names nothing
-		// and the banner switch never sees it. Without this arm the ladder
-		// existed and only a banner spelling the word "ClickHouse" could climb
-		// it, which is not the shape `SELECT version()` returns.
-		return resolvedAs(clickHouseResolution(version), platform.ClickHouse)
-	case platform.YugabyteDB:
-		// Same reason: a typed "2026.1.0.0" carries no "-YB-" marker, so the
-		// banner switch never sees it and the ladder would be reachable only
-		// from a live connection.
-		return resolvedAs(yugabyteResolution(version), platform.YugabyteDB)
-	case platform.Oracle:
-		// Same reason again: product_component_version.version_full answers a
-		// bare "23.26.2.0.0" with no product token in it, so the banner switch
-		// never sees it. Without this arm the live path -- which reads exactly
-		// that column -- would climb no ladder and take Oracle23 for a 21
-		// server, promising it four IF [NOT] EXISTS guards it refuses.
-		return resolvedAs(oracleResolution(version), platform.Oracle)
-	case platform.SQLServer:
-		// And again: SERVERPROPERTY('ProductVersion') answers a bare
-		// "17.0.4075.5" with no product token in it, which is the value
-		// capabilityprobe.ProductVersion reads and the shape an operator types
-		// after --server-version. The banner switch never sees it, so without
-		// this arm the ladder would be reachable only from @@VERSION.
-		return resolvedAs(sqlServerResolution(version), platform.SQLServer)
-	default:
-		// The version parsed; this dialect simply has no ladder to spend it
-		// on. That is not the operator's mistake, so it is recognized.
-		return VersionResolution{Capabilities: ForDialect(dialect), Recognized: true, ResolvedDialect: normalized}
-	}
-}
-
-// resolvedAs stamps the platform a per-dialect resolution answered from.
-//
-// It is applied at the dispatch rather than inside each resolver because the
-// dispatch is the only place that knows a banner outranked the declared
-// dialect, and that overriding is the whole reason the field exists.
-func resolvedAs(resolution VersionResolution, dialect string) VersionResolution {
-	resolution.ResolvedDialect = dialect
-	return resolution
-}
-
-// measuredLine renders a major version number as the version line label
-// reported in VersionResolution.NewestMeasured.
-func measuredLine(major int) string {
-	return strconv.Itoa(major) + ".x"
-}
-
-// ladderResolution assembles the answer for a dialect that has a version
-// ladder. saturated is the single place VersionSpecific and Saturated are tied
-// together: a version past the top of the ladder receives ForDialect's preset,
-// so it is a fallback and not a version-specific selection.
-func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool) VersionResolution {
-	return VersionResolution{
-		Capabilities:    caps,
-		VersionSpecific: !saturated,
-		Saturated:       saturated,
-		NewestMeasured:  measuredLine(newestMeasuredMajor),
-		// Only reached with a parsed version in hand.
-		Recognized: true,
-	}
-}
-
-// clickHouseResolution refines a ClickHouse banner onto its one ladder step.
-//
-// A version this function cannot read takes the lower arm, and that direction is
-// the safe one: ClickHouse2411 differs only by claiming CHECK GRANT, and the
-// refusal that key guards -- a database-realm cleanup that drops every object --
-// is one Ptah would rather decline on an unreadable banner than run on a
-// privilege answer it could not obtain (stokaro/ptah#916).
-// sqliteResolution refines a SQLite version onto its one ladder step.
-//
-// An unreadable version takes the LOWER arm, which is the conservative
-// direction here: the upper arm only adds a clause, and emitting a clause an
-// older consumer cannot parse is worse than rebuilding a table that did not
-// need rebuilding.
-func sqliteResolution(version string) VersionResolution {
-	v, ok := parseVersion(version)
-	if !ok {
-		return VersionResolution{Capabilities: SQLite324()}
-	}
-	return VersionResolution{
-		Capabilities:    sqliteForVersion(v),
-		VersionSpecific: true,
-		Recognized:      true,
-	}
-}
-
-// sqliteForVersion picks the arm. RENAME COLUMN arrived in 3.25.
-func sqliteForVersion(v serverVersion) Capabilities {
-	switch {
-	case v.major > 3 || (v.major == 3 && v.minor >= 53):
-		return SQLite3()
-	case v.major == 3 && v.minor >= 25:
-		return SQLite352()
-	default:
-		return SQLite324()
-	}
-}
-
-// oracleResolution answers an Oracle version string or banner.
-//
-// It does not reach parseVersion directly, and the reason is the trap the SQL
-// Server arm of ResolveServerVersion describes: an Oracle banner carries two
-// numbers, and the first one is not the version. Measured on the two servers
-// this ladder was built against:
-//
-//	Oracle AI Database 26ai Free Release 23.26.2.0.0 - Develop, Learn, ...
-//	Oracle Database 21c Express Edition Release 21.0.0.0.0 - Production
-//
-// parseVersion takes the first digits it finds, so the first banner reads as
-// major 26 -- a release line that does not exist -- and would resolve past the
-// top of this ladder as a newer server than anything measured. The second one
-// happens to read as 21 and be right, which is exactly the kind of accident
-// that keeps a defect invisible: a fixture carrying only the 21 banner passes
-// on a resolver that is wrong about every 23 server.
-//
-// What follows "Release " is the real version on both, so that is what is read
-// when the word is present. A bare version_full string like "23.26.2.0.0" has
-// no such word and is parsed whole.
-func oracleResolution(version string) VersionResolution {
-	v, ok := parseVersion(oracleVersionField(version))
-	if !ok {
-		return VersionResolution{Capabilities: Oracle23()}
-	}
-	return measuredMinorLineResolution(
-		oracleForVersion(v), v, capabilityline.OracleMeasured(), capabilityline.Oracle23)
-}
-
-// oracleVersionField returns the substring a version can be read from.
-func oracleVersionField(version string) string {
-	const marker = "release "
-	lower := strings.ToLower(version)
-	if index := strings.Index(lower, marker); index >= 0 {
-		return version[index+len(marker):]
-	}
-	return version
-}
-
-// oracleForVersion picks the arm. The IF [NOT] EXISTS guards arrived in the 23
-// line: measured, 21.3 refuses every one of them and 23.26 accepts every one.
-//
-// The comparison is on the major alone, for the reason the CockroachDB 25 arm
-// gives. What separates the lines is a grammar step that the whole major
-// carries, and 23.0 through 23.25 were never measured; sending them to the 21
-// preset would promise them less than they have, which is what a conservative
-// fallback is for, while sending them to the 23 preset on a minor comparison
-// they do not match would promise them a guard nobody watched them accept.
-func oracleForVersion(v serverVersion) Capabilities {
-	line23, _ := parseVersion(capabilityline.Oracle23)
-	if v.major >= line23.major {
-		return Oracle23()
-	}
-	return Oracle21()
-}
-
-// ydbResolution refines a YDB version onto its ladder.
-//
-// A string this function cannot read selects no line, and the preset is the
-// dialect default with Recognized false, the shape every other ladder uses for
-// an unreadable version. A version below the oldest measured line takes that
-// line's preset: 24.4.4.12 starts and has no SHOW CREATE and no 2026 patch,
-// and nothing older was measured, so the oldest measured answer is the
-// conservative one. VersionSpecific stays false there, because no measured
-// line selected it.
-func ydbResolution(version string) VersionResolution {
-	v, ok := ydbServerVersion(version)
-	if !ok {
-		return VersionResolution{Capabilities: ForDialect(platform.YDB)}
-	}
-	return measuredMinorLineResolution(
-		ydbForVersion(v), v, capabilityline.YDBMeasured(), capabilityline.YDB262)
-}
-
-// ydbServerVersion reads the release out of what `SELECT Version()` returns.
-//
-// YDB reports two shapes, measured: the dotted release, `26.2.1.14` on
-// local-ydb 26.2.1.14 and likewise on 25.1, 25.2, 25.3 and 26.1, and the name of
-// the branch the build came from, `stable-25-4-1` on local-ydb 25.4.1.15. The
-// shared parse reads the second as 25.0 and would hand a 25.4 server the 25.1
-// preset, so the branch shape is read here first: `stable-<major>-<minor>`
-// with an optional patch.
-func ydbServerVersion(version string) (serverVersion, bool) {
-	trimmed := strings.TrimSpace(version)
-	if rest, ok := strings.CutPrefix(strings.ToLower(trimmed), "stable-"); ok {
-		parts := strings.Split(rest, "-")
-		if len(parts) < 2 || len(parts) > 3 {
-			return serverVersion{}, false
-		}
-		numbers := make([]int, 3)
-		for i, part := range parts {
-			number, err := strconv.Atoi(part)
-			if err != nil || number < 0 {
-				return serverVersion{}, false
-			}
-			numbers[i] = number
-		}
-		return serverVersion{major: numbers[0], minor: numbers[1], patch: numbers[2]}, true
-	}
-	if trimmed == "" || trimmed[0] < '0' || trimmed[0] > '9' {
-		// A string that does not open with the release names no YDB release:
-		// `trunk`, `main` and the other floating builds carry no number.
-		return serverVersion{}, false
-	}
-	return parseVersion(trimmed)
-}
-
-// ydbForVersion picks the arm. Each step is a line the measurement separated
-// from the one below it.
-func ydbForVersion(v serverVersion) Capabilities {
-	switch {
-	case atLeastLine(v, capabilityline.YDB262):
-		return YDB262()
-	case atLeastLine(v, capabilityline.YDB261):
-		return YDB261()
-	case atLeastLine(v, capabilityline.YDB254):
-		return YDB254()
-	case atLeastLine(v, capabilityline.YDB253):
-		return YDB253()
-	case atLeastLine(v, capabilityline.YDB252):
-		return YDB252()
-	default:
-		return YDB251()
-	}
-}
-
-// atLeastLine reports whether v is on line or a newer one, comparing major and
-// minor as the ladders do.
-func atLeastLine(v serverVersion, line string) bool {
-	measured, _ := parseVersion(line)
-	return compareServerVersion(v, measured) >= 0
-}
-
-// sqlServerResolution answers a SQL Server banner.
-//
-// The number to read is not the first one in the string. A banner opens with
-// the marketing year -- `Microsoft SQL Server 2025 (RTM-CU8) (KB5104822) -
-// 17.0.4075.5 (X64)` -- so the shared parse reads major 2025, and on
-// --dialect postgres that number selects Postgres17 and reports itself
-// saturated past release line 18. The product version is what follows the
-// dash, and it is the number the matrix lines are written in.
-//
-// Every declared line resolves to the same preset, and that is a measurement
-// rather than an assumption: the probe's statement table ran against
-// 17.0.4075.5, 16.0.4275.2 and 15.0.4490.9, and the three servers answered
-// every statement identically. The ladder is what lets an observation be
-// credited to the line it was taken on; MySQL 8.4, 9.7 and 26.7 share MySQL84
-// the same way (stokaro/ptah#3190).
-func sqlServerResolution(version string) VersionResolution {
-	v, ok := parseVersion(sqlServerProductVersion(version))
-	if !ok {
-		// A string that named the product and carried no number selects no
-		// release line. Recognized is true for the reason the YugabyteDB and
-		// Spanner arms give: the string named a server, even though nothing in
-		// it was read as a number.
-		return VersionResolution{Capabilities: ForDialect(platform.SQLServer), Recognized: true}
-	}
-	return measuredMinorLineResolution(
-		sqlServerForVersion(v), v, capabilityline.SQLServerMeasured(), capabilityline.SQLServer2025)
-}
-
-// sqlServerProductVersion returns the substring the product version can be read
-// from.
-//
-// The dash is what separates the marketing year from the version:
-// `Microsoft SQL Server 2019 (RTM-CU32-GDR) (KB5122772) - 15.0.4490.9`. A
-// string with no dash is returned whole, so a caller that passes the product
-// version on its own is read the same way.
-func sqlServerProductVersion(version string) string {
-	if _, after, found := strings.Cut(version, " - "); found {
-		return after
-	}
-	return version
-}
-
-// sqlServerForVersion picks the arm. The ladder has one, because the three
-// declared lines answered the probe identically; a future line that does not
-// is what would give this function a comparison to make.
-func sqlServerForVersion(_ serverVersion) Capabilities {
-	return SQLServer2022()
-}
-
-func clickHouseResolution(version string) VersionResolution {
-	v, ok := parseVersion(version)
-	if !ok {
-		return VersionResolution{Capabilities: ClickHouse24()}
-	}
-	return measuredMinorLineResolution(
-		clickHouseForVersion(v), v, capabilityline.ClickHouseMeasured(), capabilityline.ClickHouse269)
-}
-
-// clickHouseForVersion picks the arm. CHECK GRANT arrived in 24.11.
-func clickHouseForVersion(v serverVersion) Capabilities {
-	if v.major > 24 || (v.major == 24 && v.minor >= 11) {
-		return ClickHouse2411()
-	}
-	return ClickHouse24()
-}
-
-// yugabyteResolution answers a YugabyteDB version or banner.
-//
-// The cut at "-YB-" is the whole reason this is not the shared parse. A
-// YugabyteDB banner opens with the PostgreSQL compatibility version --
-// "PostgreSQL 11.2-YB-2024.2.4.0-b0" -- so parseVersion reads 11.2, and a
-// ladder given 11.2 would put a 2024 server below every declared line and
-// report it saturated by nothing. The product version is what follows the
-// marker (stokaro/ptah#916).
-func yugabyteResolution(version string) VersionResolution {
-	v, ok := parseVersion(yugabyteProductVersion(version))
-	if !ok || !isYugabyteReleaseYear(v) {
-		// Either nothing parsed, or what parsed is not a YugabyteDB product
-		// version: a banner with no "-YB-" marker yields the PostgreSQL
-		// compatibility number, and answering "11.2 is not a measured release
-		// line" would report a number the product does not have.
-		//
-		// The string named a server, so it is recognized, but no line was
-		// selected -- and the arm taken is the LOWER one. A plan that avoids
-		// pg_advisory_lock and CREATE OR REPLACE TRIGGER runs on both engines;
-		// the reverse is a syntax error on the older one, and degrading to
-		// DROP + CREATE for a trigger costs a statement rather than a plan.
-		return VersionResolution{Capabilities: YugabyteDB24(), Recognized: true}
-	}
-	return measuredMinorLineResolution(
-		yugabyteForVersion(v), v, capabilityline.YugabyteDBMeasured(), capabilityline.YugabyteDB2026)
-}
-
-// isYugabyteReleaseYear reports whether a parsed major looks like a YugabyteDB
-// release line rather than a PostgreSQL major. YugabyteDB has numbered its
-// releases by year since 2024.1; every number below that floor is the
-// compatibility version of the engine underneath.
-func isYugabyteReleaseYear(v serverVersion) bool {
-	return v.major >= 2024
-}
-
-// yugabyteProductVersion strips the PostgreSQL compatibility version a
-// YugabyteDB banner opens with. A bare "2026.1.0.0" carries no marker and is
-// returned unchanged, which is the shape a typed --server-version has.
-func yugabyteProductVersion(version string) string {
-	if _, after, found := strings.Cut(strings.ToUpper(version), "-YB-"); found {
-		return after
-	}
-	return version
-}
-
-// yugabyteForVersion picks the arm. The PostgreSQL 11 to 15 engine swap landed
-// in the 2025 line.
-func yugabyteForVersion(v serverVersion) Capabilities {
-	if v.major >= 2025 {
-		return YugabyteDB25()
-	}
-	return YugabyteDB24()
-}
-
-func mysqlResolution(v serverVersion) VersionResolution {
-	return measuredMinorLineResolution(
-		mysqlForVersion(v), v, capabilityline.MySQLMeasured(), capabilityline.MySQL26)
-}
-
-func mariaDBResolution(version string) VersionResolution {
-	v, ok := parseVersion(strings.TrimPrefix(version, mariaDBReplicationPrefix))
-	if !ok {
-		// The banner said MariaDB but carried no version, so the ladder was
-		// not consulted and mariaDBForVersion returned its own fallback.
-		// Recognized stays false for the same reason it does on any other
-		// laddered dialect: no version was read.
-		return VersionResolution{
-			Capabilities:   mariaDBForVersion(version),
-			NewestMeasured: capabilityline.MariaDB12,
-		}
-	}
-	return measuredMinorLineResolution(
-		mariaDBForVersion(version), v, capabilityline.MariaDBMeasured(), capabilityline.MariaDB12)
-}
-
-// measuredMinorLineResolution recognizes only the major/minor pairs backed by
-// direct matrix evidence. A gap below the newest line is a conservative
-// fallback but not saturation; a line above the newest measurement is both
-// unattributed and saturated.
-func measuredMinorLineResolution(
-	caps Capabilities,
-	v serverVersion,
-	measuredLines []string,
-	newestLine string,
-) VersionResolution {
-	newest, _ := parseVersion(newestLine)
-	return VersionResolution{
-		Capabilities: caps,
-		VersionSpecific: slices.ContainsFunc(measuredLines, func(line string) bool {
-			measured, _ := parseVersion(line)
-			return sameMajorMinor(v, measured)
-		}),
-		Saturated:      compareServerVersion(v, newest) > 0,
-		NewestMeasured: newestLine,
-		// Only reached with a parsed version in hand.
-		Recognized: true,
-	}
-}
-
-// postgresBannerResolution answers a string that named PostgreSQL.
-//
-// A banner carrying no readable version selects no release line, so the preset
-// is PostgreSQL's own default and Recognized stays false — the same shape
-// mariaDBResolution uses for "MariaDB something" and cockroachDBResolution for
-// a CockroachDB banner with no number in it.
-//
-// It deliberately does not take the declared dialect. This branch is reached
-// only for a dialect OUTSIDE the PostgreSQL family, and the dispatch stamps
-// ResolvedDialect as postgres on whatever comes back; falling back to the
-// declared dialect's default there returned MySQL84() under a postgres stamp,
-// so ResolveServerVersion("mysql", "PostgreSQL server") handed a caller that
-// trusts the field a preset from a different engine. Every other product-banner
-// arm answers from the product the banner named, and this one now does too.
-func postgresBannerResolution(version string) VersionResolution {
-	v, ok := parseVersion(version)
-	if !ok {
-		return VersionResolution{Capabilities: ForDialect(platform.Postgres)}
-	}
-	return postgresResolution(v)
-}
-
-func postgresResolution(v serverVersion) VersionResolution {
-	return ladderResolution(postgresForVersion(v), newestMeasuredPostgresMajor, v.major > newestMeasuredPostgresMajor)
-}
-
-func cockroachDBResolution(version string) VersionResolution {
-	v, ok := parseVersion(version)
-	if !ok {
-		// A CockroachDB banner with no version in it. The ladder was not
-		// consulted, so Recognized stays false.
-		//
-		// This stays on the 26.2 line rather than following the newest one:
-		// an unreadable banner is not evidence of a release, and CockroachDB263
-		// carries a capability only 26.3 has (stokaro/ptah#1735).
-		return VersionResolution{Capabilities: CockroachDB26()}
-	}
-	newest, _ := parseVersion(capabilityline.CockroachDB263)
-	saturated := compareServerVersion(v, newest) > 0
-	return VersionResolution{
-		Capabilities:    cockroachDBForVersion(v),
-		VersionSpecific: cockroachDBMeasuredLine(v),
-		Saturated:       saturated,
-		NewestMeasured:  capabilityline.CockroachDB263,
-		Recognized:      true,
-	}
-}
-
-func cockroachDBForVersion(v serverVersion) Capabilities {
-	line25, _ := parseVersion(capabilityline.CockroachDB25)
-	line26, _ := parseVersion(capabilityline.CockroachDB26)
-	line263, _ := parseVersion(capabilityline.CockroachDB263)
-	switch {
-	case compareServerVersion(v, line263) >= 0:
-		return CockroachDB263()
-	case compareServerVersion(v, line26) >= 0:
-		return CockroachDB26()
-	case v.major >= line25.major:
-		// The whole 25 line reaches this arm, not only the measured 25.4
-		// minor. What separates the line from the one below it is
-		// autocommit_before_ddl defaulting on, and that is a major-line fact:
-		// measured through Ptah's driver on v25.1.10, v25.2.22, v25.3.7 and
-		// v25.4.5, a rolled-back CREATE TABLE leaves the table behind on every
-		// one. Comparing the minor as well sent 25.0 through 25.3 to
-		// CockroachDB23, which still promises the rollback they do not do.
-		//
-		// Routing them here also only ever declares less -- CockroachDB25 is
-		// CockroachDB23 minus four capabilities -- which is what a
-		// conservative fallback is for. They stay outside the measured lines,
-		// so VersionSpecific is still false for them (stokaro/ptah#1849).
-		return CockroachDB25()
-	default:
-		return CockroachDB23()
-	}
-}
-
-func cockroachDBMeasuredLine(v serverVersion) bool {
-	return slices.ContainsFunc(capabilityline.CockroachDBMeasured(), func(line string) bool {
-		measured, _ := parseVersion(line)
-		return sameMajorMinor(v, measured)
-	})
+	return process().ResolveServerVersion(dialect, version)
 }
 
 func sameMajorMinor(left, right serverVersion) bool {
@@ -6430,61 +5766,6 @@ func compareServerVersion(left, right serverVersion) int {
 		return left.major - right.major
 	}
 	return left.minor - right.minor
-}
-
-func mysqlForVersion(v serverVersion) Capabilities {
-	switch {
-	case v.major > 8 || (v.major == 8 && v.minor >= 4):
-		return MySQL84()
-	case v.major == 8 && (v.minor > 0 || v.patch >= 20):
-		return MySQL8020()
-	case v.major == 8 && v.patch >= 19:
-		return MySQL8019()
-	case v.major == 8 && v.patch >= 16:
-		return MySQL8016()
-	case v.major == 8 && v.patch >= 13:
-		return MySQL8013()
-	default:
-		return MySQLLegacy()
-	}
-}
-
-func postgresForVersion(v serverVersion) Capabilities {
-	switch {
-	case v.major >= 18:
-		return Postgres18()
-	case v.major >= 17:
-		return Postgres17()
-	case v.major >= 15:
-		return Postgres16()
-	case v.major >= 14:
-		return Postgres14()
-	default:
-		return Postgres13()
-	}
-}
-
-// mariaDBReplicationPrefix is the fake version prefix MariaDB servers prepend
-// when speaking the MySQL protocol ("5.5.5-10.11.6-MariaDB").
-const mariaDBReplicationPrefix = "5.5.5-"
-
-// mariaDBForVersion picks the MariaDB preset for a server version string.
-// MariaDB servers speaking the MySQL protocol prepend a fake "5.5.5-"
-// replication-compatibility prefix ("5.5.5-10.11.6-MariaDB"); that prefix is
-// stripped before parsing so the REAL version decides. 10.2+ gets the modern
-// preset (generic DROP CONSTRAINT, enforced CHECKs, IF EXISTS guards);
-// anything older — or an unparseable string — degrades to MariaDBLegacy /
-// the modern preset respectively.
-func mariaDBForVersion(version string) Capabilities {
-	trimmed := strings.TrimPrefix(version, mariaDBReplicationPrefix)
-	v, ok := parseVersion(trimmed)
-	if !ok {
-		return MariaDB1011()
-	}
-	if v.major > 10 || (v.major == 10 && v.minor >= 2) {
-		return MariaDB1011()
-	}
-	return MariaDBLegacy()
 }
 
 // serverVersion is a parsed dotted server version.

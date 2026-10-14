@@ -1,6 +1,9 @@
 package builtindialects
 
-import "ptah.run/core/platform/descriptor"
+import (
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/capabilityline"
+)
 
 // mysql is MySQL, the head of the family MariaDB belongs to. mysql+unix is
 // the socket transport the pinned community binary opens (#3755); it selects
@@ -23,5 +26,31 @@ func mysql() descriptor.Dialect {
 			ColumnNames:    "ascii_folded_non_ascii_unknown",
 		},
 		Placeholder: descriptor.PlaceholderQuestion,
+
+		// MySQL's version string names no product: SELECT VERSION() answers a
+		// bare "9.7.2", so the ladder is reached only through the declared
+		// dialect. The 8.0 steps are patch releases, each the threshold of the
+		// gate it replaced: VIEW_TABLE_USAGE at 8.0.13, enforced CHECK at
+		// 8.0.16, DROP CONSTRAINT at 8.0.19 and SHOW_ROUTINE at 8.0.20
+		// (stokaro/ptah#916).
+		Capabilities: descriptor.Capabilities{
+			DefaultPreset: "MySQL84",
+			Versions: descriptor.Versions{
+				Scheme: "dotted",
+				Floor:  "MySQLLegacy",
+				Steps: []descriptor.VersionStep{
+					{Min: "8.0.13", Preset: "MySQL8013"},
+					{Min: "8.0.16", Preset: "MySQL8016"},
+					{Min: "8.0.19", Preset: "MySQL8019"},
+					{Min: "8.0.20", Preset: "MySQL8020"},
+					{Min: "8.4", Preset: "MySQL84"},
+				},
+				Attribution: "measured-lines",
+				Measured:    capabilityline.MySQLMeasured(),
+				Newest:      capabilityline.MySQL26,
+			},
+		},
+		IdentifierLimit:      descriptor.IdentifierLimit{Max: 64, Unit: "characters"},
+		GrantOptionPerObject: true,
 	}
 }

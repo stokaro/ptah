@@ -461,7 +461,7 @@ var Cells = []Cell{
 			"is what the level asserts. Measured on 26.9.1.1629: 58 rows, 35 agreements, 0 " +
 			"disagreements, " +
 			"and this cell's floor of 35 met, which is what says ClickHouse2411 -- the arm " +
-			"clickHouseForVersion returns for every line above 24.11 -- is right for 26.9 rather " +
+			"the ClickHouse ladder gives every line above 24.11 -- is right for 26.9 rather " +
 			"than assumed. capabilityline names 26.9 as the newest measured line on the strength " +
 			"of that measurement",
 	},
@@ -471,7 +471,7 @@ var Cells = []Cell{
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.8",
 		Note: "certified because the probe fan-out runs this line. Measured on 26.8.2.7: 54 rows, " +
 			"34 agreements, 0 disagreements, and this cell's floor of 34 met, which is what says " +
-			"ClickHouse2411 -- the arm clickHouseForVersion returns for every line above 24.11 -- is " +
+			"ClickHouse2411 -- the arm the ClickHouse ladder gives every line above 24.11 -- is " +
 			"right for 26.8 rather than assumed. capabilityline names 26.8 as the newest measured " +
 			"line on the strength of that measurement (stokaro/ptah#2802)",
 	},

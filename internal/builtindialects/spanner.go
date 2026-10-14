@@ -17,5 +17,13 @@ func spanner() descriptor.Dialect {
 			ColumnNames:    "exact",
 		},
 		Placeholder: descriptor.PlaceholderDollar,
+
+		// Spanner has one preset and no ladder: a banner naming it selects
+		// that preset without reading a version.
+		Capabilities: descriptor.Capabilities{
+			DefaultPreset: "SpannerPostgres",
+			BannerTokens:  []string{"spanner"},
+		},
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "characters"},
 	}
 }

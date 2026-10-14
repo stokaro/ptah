@@ -1,6 +1,9 @@
 package builtindialects
 
-import "ptah.run/core/platform/descriptor"
+import (
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/capabilityline"
+)
 
 // ydb is YDB, read and written in its own query language, YQL, over gRPC. It
 // is not in the PostgreSQL family: YDB serves no PostgreSQL wire protocol or
@@ -26,5 +29,28 @@ func ydb() descriptor.Dialect {
 			ColumnNames:    "exact",
 		},
 		Placeholder: descriptor.PlaceholderDollarNamed,
+
+		// SELECT Version() names no product: it answers the dotted release,
+		// "26.2.1.14", or the build branch, "stable-25-4-1" on 25.4.1.15. The
+		// dialect comes from the ydb:// URL scheme or from --dialect. A
+		// version below the oldest measured line takes that line's preset:
+		// nothing older was measured. Ptah models no identifier limit for YDB.
+		Capabilities: descriptor.Capabilities{
+			DefaultPreset: "YDB262",
+			Versions: descriptor.Versions{
+				Scheme: "release-branch",
+				Floor:  "YDB251",
+				Steps: []descriptor.VersionStep{
+					{Min: capabilityline.YDB252, Preset: "YDB252"},
+					{Min: capabilityline.YDB253, Preset: "YDB253"},
+					{Min: capabilityline.YDB254, Preset: "YDB254"},
+					{Min: capabilityline.YDB261, Preset: "YDB261"},
+					{Min: capabilityline.YDB262, Preset: "YDB262"},
+				},
+				Attribution: "measured-lines",
+				Measured:    capabilityline.YDBMeasured(),
+				Newest:      capabilityline.YDB262,
+			},
+		},
 	}
 }

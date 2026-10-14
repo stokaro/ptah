@@ -476,6 +476,13 @@ conservative floor `ForServerVersion` assigns to pre-10.2 servers.
 `Postgres13()` covers 12–13 (no
 `CREATE OR REPLACE TRIGGER` and no `SPGIST` indexes with `INCLUDE` columns).
 
+Every ladder is data. A dialect's descriptor, in
+`internal/builtindialects/<engine>.go` for a built-in engine, names its default
+preset, the scheme its version string is read with, the steps of its ladder
+and its measured lines, and `capability.Resolver` reads them without naming an
+engine. Moving a line onto a different preset is an edit to that descriptor,
+beside the preset the line deserves.
+
 A preset that covers a newer line than the one it is named after is making a
 claim about a server, so the evidence for those claims is kept in the tree
 rather than in a commit message.
@@ -699,19 +706,21 @@ answers which product a string names, which is what makes the contradiction
 observable at all; `internal/servertarget` reads it and refuses. A banner naming
 the dialect it was given with still resolves.
 
-`BannerPlatform` is the only ordered table of product tokens in the tree —
+`BannerPlatform` is the only reader of product tokens in the tree —
 `ResolveServerVersion` dispatches on it and `dbschema`'s wire-dialect detection
 reads it, because a second copy is how a live connection and an offline
-resolution come to disagree about which server a banner describes. Within the
-PostgreSQL wire family the order is load-bearing: PostgreSQL is detected after
-CockroachDB, YugabyteDB and Spanner, because all three contain the word —
-CockroachDB speaks the PostgreSQL wire protocol, YugabyteDB reports
-`PostgreSQL 11.2-YB-…` and Spanner `Cloud Spanner PostgreSQL`. Checking
-PostgreSQL first would plan every one of those engines as PostgreSQL.
+resolution come to disagree about which server a banner describes. The tokens
+themselves are data: each dialect's descriptor lists its `BannerTokens`, in
+`internal/builtindialects/<engine>.go` for a built-in engine. Within the
+PostgreSQL wire family the order is load-bearing: YugabyteDB reports
+`PostgreSQL 11.2-YB-…` and Spanner `Cloud Spanner PostgreSQL`, so the members
+of a family are tried before its head, and families in the registry order of
+their heads. Checking PostgreSQL first would plan every one of those engines as
+PostgreSQL.
 
-A product belongs in the table when the **server's own version surface names
-it**, because that string is the only evidence the refusal can act on. Seven of
-the nine dialects qualify:
+A product carries tokens when the **server's own version surface names it**,
+because that string is the only evidence the refusal can act on. Eight of the
+eleven built-in dialects qualify:
 
 | dialect | surface that names the product |
 | --- | --- |
@@ -722,8 +731,11 @@ the nine dialects qualify:
 | `spanner` | `SELECT version()` — `Cloud Spanner PostgreSQL …` |
 | `sqlserver` | `@@VERSION` — `Microsoft SQL Server 2025 (RTM-CU7) … - 17.0.4065.4 …` |
 | `clickhouse` | `system.build_options` `VERSION_FULL` — `ClickHouse 26.7.3.19` |
+| `oracle` | the `v$version` banner — `Oracle AI Database 26ai Free Release 23.26.2.0.0 …` |
 
-`mysql` and `sqlite` are deliberately absent. Measured, a live `mysql:9.7`
+`mysql`, `sqlite` and `ydb` are deliberately absent. YDB's `SELECT Version()`
+answers a bare `26.2.1.14` or a build branch such as `stable-25-4-1`, so its
+dialect comes from the `ydb://` URL scheme or `--dialect`. Measured, a live `mysql:9.7`
 answers `SELECT VERSION()` with `9.7.2`, and `sqlite_version()` answers a bare
 dotted version. Neither server names its own product anywhere a version string
 is read, so `BannerPlatform` correctly returns `""` for both. A token would have

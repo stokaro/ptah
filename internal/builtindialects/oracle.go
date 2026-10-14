@@ -1,6 +1,9 @@
 package builtindialects
 
-import "ptah.run/core/platform/descriptor"
+import (
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/capabilityline"
+)
 
 // oracle is Oracle Database.
 //
@@ -28,5 +31,26 @@ func oracle() descriptor.Dialect {
 			ColumnNames:    "ascii_case_insensitive",
 		},
 		Placeholder: descriptor.PlaceholderColon,
+
+		// An Oracle banner carries two numbers, and the first is not the
+		// version: "Oracle AI Database 26ai Free Release 23.26.2.0.0". The
+		// version is read after "Release". The IF [NOT] EXISTS guards arrived
+		// with the 23 line, and the step is the whole major: 23.0 through
+		// 23.25 were never measured. Ptah models no identifier limit for
+		// Oracle.
+		Capabilities: descriptor.Capabilities{
+			DefaultPreset: "Oracle23",
+			BannerTokens:  []string{"oracle"},
+			Versions: descriptor.Versions{
+				Scheme: "after-release",
+				Floor:  "Oracle21",
+				Steps: []descriptor.VersionStep{
+					{Min: "23", Preset: "Oracle23"},
+				},
+				Attribution: "measured-lines",
+				Measured:    capabilityline.OracleMeasured(),
+				Newest:      capabilityline.Oracle23,
+			},
+		},
 	}
 }
