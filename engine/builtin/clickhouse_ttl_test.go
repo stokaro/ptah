@@ -31,7 +31,7 @@ func TestClickHouseTTLRenderingRetainsOwnerRisk(t *testing.T) {
 			before := &chschema.ObservedTable{Engine: "MergeTree", TTL: "created_at + INTERVAL 7 DAY"}
 			after := before.Desired()
 			after.TTL.Value = test.after
-			op := &chast.AlterTTL{Change: chdiff.Table{Before: before, After: after}}
+			op := &chast.AlterStorage{Change: chdiff.Table{Before: before, After: after}}
 			fragment := &ast.ExtensionAlterOperation{Payload: op}
 			parent := &ast.AlterTableNode{Name: "events", Operations: []ast.AlterOperation{fragment}}
 			for _, visitor := range []renderer.RenderVisitor{clickhouse.New(), must.Must(builtin.NewRenderer("clickhouse"))} {
@@ -55,7 +55,7 @@ func TestClickHouseTTLRefusesMalformedPayloadWithoutPartialSQL(t *testing.T) {
 	before := &chschema.ObservedTable{Engine: "MergeTree", TTL: "created_at + INTERVAL 7 DAY"}
 	blank := before.Desired()
 	blank.TTL.Value = " \t\n"
-	for _, payload := range []*chast.AlterTTL{
+	for _, payload := range []*chast.AlterStorage{
 		nil, {}, {Change: chdiff.Table{Before: before, After: blank}},
 	} {
 		c := qt.New(t)

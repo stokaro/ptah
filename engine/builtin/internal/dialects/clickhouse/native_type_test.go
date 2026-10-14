@@ -13,7 +13,7 @@ import (
 // A type named for ClickHouse itself is written as it stands, and a portable
 // one is still mapped -- stokaro/ptah#2142.
 //
-// mapColumnType exists for a portable declaration: DATETIME is the spelling a
+// The type mapping exists for a portable declaration: DATETIME is the spelling a
 // schema written for several engines uses, ClickHouse has no such type, and
 // DateTime64(3) preserves a timestamp with subsecond precision. Applied to a
 // type somebody named for ClickHouse itself it produces a different column --

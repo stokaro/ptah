@@ -40,8 +40,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
-	"ptah.run/internal/chtype"
-	"ptah.run/internal/defaultlit"
+	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 )
@@ -154,131 +153,12 @@ func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	return nil
 }
 
-// escapeStringLiteral doubles single quotes for safe embedding in a SQL
-// string literal.
-func escapeStringLiteral(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-}
-
-// typeMapping is the result of mapping a generic SQL column type to its
-// ClickHouse equivalent. `notice`, when non-empty, is a one-line warning the
-// caller should emit as a leading `-- CLICKHOUSE: ...` comment so users are
-// not surprised by silent conversions.
-//
-// `jsonMapped` is set when the original SQL type was JSON/JSONB and was
-// rewritten to a String-based type; the notice for this case is finalized
-// in renderColumnType so it reflects the post-Nullable-wrap final type.
-type typeMapping struct {
-	mapped     string
-	notice     string
-	jsonMapped bool
-}
-
-// mapColumnType translates a generic SQL column type spelling into the
-// ClickHouse equivalent through [chtype.Map], which the schema comparison asks
-// too, so the type it compares a live column with is the type written here.
-func mapColumnType(t string) (typeMapping, error) {
-	mapping, err := chtype.Map(t)
-	if err != nil {
-		return typeMapping{}, err
-	}
-	// The JSON notice is finalized in renderColumnType, so it names the type
-	// after the Nullable wrap (e.g. Nullable(String)).
-	result := typeMapping{mapped: mapping.Type, jsonMapped: mapping.JSON}
-	if mapping.Unrecognized {
-		result.notice = fmt.Sprintf("unrecognized SQL type %q passed through verbatim; verify it is a native ClickHouse type", t)
-	}
-	return result, nil
-}
-
-// columnTypeOptions controls renderColumnType's behavior.
-type columnTypeOptions struct {
-	// forceNotNull disables Nullable(...) wrapping regardless of the
-	// column's declared nullability — used for columns that participate in
-	// the sorting key / PRIMARY KEY where ClickHouse rejects Nullable(...).
-	forceNotNull bool
-}
-
-// columnTypeFor writes a type the caller named for ClickHouse itself as it
-// stands, and maps everything else.
-//
-// mapColumnType exists for a PORTABLE declaration: `DATETIME` is the spelling a
-// schema written for several engines uses, ClickHouse has no such type, and
-// DateTime64(3) is what preserves a timestamp with subsecond precision. The
-// same conversion applied to a type somebody named for ClickHouse ITSELF is a
-// different column: DateTime is second precision and four bytes wide,
-// DateTime64(3) is millisecond precision and eight.
-//
-// Measured on ClickHouse 26.7, sql() came back widened:
-//
-//	column "created_at" { type = sql("DateTime") }   ->   DateTime64(3)
-//
-// which is the one form whose whole purpose is to be written as it stands
-// (stokaro/ptah#2142).
-//
-// The SQL Server renderer answers the same question the same way and for the
-// same reason (stokaro/ptah#2147), as does SQLite for the types its catalog
-// keeps verbatim (stokaro/ptah#2040): canonicalizing is right for a declaration
-// a person wrote and wrong for a description of a database that already has
-// one.
-//
-// A bare DATETIME is untouched by this and still becomes DateTime64(3). That is
-// the portable case, and it stays portable. What #2142 still asks for beyond
-// this is the other half -- `schema inspect` marking the types that came from
-// ClickHouse's own catalog, so a replay carries the fact this honors.
-func columnTypeFor(col *ast.ColumnNode) (typeMapping, error) {
-	if (col.TypeIsDeclaredText || col.TypeRawSQL) && strings.TrimSpace(col.Type) != "" {
-		return typeMapping{mapped: strings.TrimSpace(col.Type)}, nil
-	}
-	mapping, err := mapColumnType(col.Type)
-	if err != nil {
-		return typeMapping{}, fmt.Errorf("column %q: %w", col.Name, err)
-	}
-	return mapping, nil
-}
-
-// renderColumnType produces the final type expression for a column,
-// applying Nullable() wrapping for nullable columns subject to opts.
-//
-// If the underlying type mapping was a JSON/JSONB → String rewrite, the
-// advisory notice is finalized here so it mentions the *final* rendered type
-// (e.g. `Nullable(String)` when the column ends up nullable) rather than the
-// pre-wrap form.
-func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping, error) {
-	mapping, err := columnTypeFor(col)
-	if err != nil {
-		return typeMapping{}, err
-	}
-	if rendersNullable(col) && !opts.forceNotNull {
-		// A type that already admits NULL is not wrapped again: ClickHouse
-		// refuses a Nullable around LowCardinality(Nullable(T)).
-		if !chtype.AdmitsNull(mapping.mapped) {
-			mapping.mapped = "Nullable(" + mapping.mapped + ")"
-		}
-	}
-	if mapping.jsonMapped {
-		mapping.notice = fmt.Sprintf("mapped JSON → %s; override via platform.clickhouse.type=JSON if you want experimental native JSON", mapping.mapped)
-	}
-	return mapping, nil
-}
-
-// rendersNullable reports whether a column's type is wrapped in Nullable(): it
-// is declared nullable and is not a key column.
-func rendersNullable(col *ast.ColumnNode) bool {
-	return col.Nullable && !col.Primary
-}
-
 // defaultClause is the DEFAULT clause of a column that declares a default, or
 // empty. A computed column has none: MATERIALIZED or ALIAS stands where DEFAULT
 // would, and ClickHouse refuses a column that carries both.
 func defaultClause(col *ast.ColumnNode) string {
-	switch {
-	case col.GeneratedExpression != "":
-		return ""
-	case col.Default != nil && col.Default.Expression != "":
-		return "DEFAULT " + col.Default.Expression
-	case col.Default != nil && col.Default.HasLiteral():
-		return "DEFAULT " + defaultlit.Render(col.Default.Value, escapeStringLiteral)
+	if keyword, expression := chcolumn.Value(col); keyword == "DEFAULT" {
+		return keyword + " " + expression
 	}
 	return ""
 }
@@ -298,71 +178,19 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 		return "", fmt.Errorf("clickhouse: column %q is part of the sorting/primary key and must be NOT NULL (add not_null=\"true\" or remove it from order_by/primary_key)", col.Name)
 	}
 
-	mapping, err := renderColumnType(col, columnTypeOptions{forceNotNull: forceNotNull})
+	typeOf := chcolumn.Type
+	if forceNotNull {
+		typeOf = chcolumn.KeyType
+	}
+	mapping, err := typeOf(col)
 	if err != nil {
 		return "", err
 	}
-	if mapping.notice != "" {
-		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", col.Name, mapping.notice)
+	if mapping.Notice != "" {
+		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", col.Name, mapping.Notice)
 	}
-
-	parts := []string{fmt.Sprintf("  %s %s", col.Name, mapping.mapped)}
-
-	switch clause := defaultClause(col); {
-	case col.GeneratedExpression != "":
-		parts = append(parts, computedColumnClause(col))
-	case clause != "":
-		parts = append(parts, clause)
-	}
-
-	if col.Comment != "" {
-		parts = append(parts, "COMMENT "+escapeStringLiteral(col.Comment))
-	}
-
-	return strings.Join(parts, " "), nil
-}
-
-// computedColumnClause spells a computed column the way ClickHouse does.
-//
-// There is no GENERATED ALWAYS AS here. A column computed from others is
-// written MATERIALIZED -- computed and stored when a row is inserted -- or
-// ALIAS, computed on read and never stored. The keyword takes the PLACE of
-// DEFAULT rather than standing beside it, which is why this is one switch with
-// the default arms and not a clause appended after them: ClickHouse refuses a
-// column that carries both.
-//
-// Nothing wrote either before, so the expression was dropped and the replayed
-// column was a plain one that holds the empty string forever where the source
-// computes it per row. Measured on clickhouse/clickhouse-server:26.7, source
-// against replay in system.columns:
-//
-//	src   full_name  String  MATERIALIZED  concat(email, ' ')
-//	rep   full_name  String
-//
-// with `schema apply --dry-run` reporting `Schema is synced` throughout
-// (stokaro/ptah#2142).
-func computedColumnClause(col *ast.ColumnNode) string {
-	return computedColumnKeyword(col.GeneratedKind) + " " + col.GeneratedExpression
-}
-
-// computedColumnKeyword maps the kinds a declaration may carry onto the two
-// ClickHouse has.
-//
-// A column read back from ClickHouse already carries the native keyword and
-// passes through. A DECLARED one carries the SQL-standard spelling instead, and
-// the two lines up: STORED means the value is written, which is MATERIALIZED;
-// VIRTUAL means it is computed on read, which is ALIAS.
-//
-// An unnamed kind takes MATERIALIZED rather than ALIAS, because the two differ
-// in whether the data EXISTS. A column guessed into ALIAS is absent from every
-// part on disk, and finding that out means noticing a query got cheaper.
-func computedColumnKeyword(kind string) string {
-	switch strings.ToUpper(strings.TrimSpace(kind)) {
-	case "ALIAS", "VIRTUAL":
-		return "ALIAS"
-	default:
-		return "MATERIALIZED"
-	}
+	keyword, expression := chcolumn.Value(col)
+	return "  " + chcolumn.Definition(col.Name, mapping.Type, keyword, expression, col.Comment), nil
 }
 
 // tableEngineSpec captures the parsed engine + family modifiers for a CH
@@ -682,7 +510,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.writeEngineClause(spec)
 	if node.Comment != "" {
-		r.w.Writef(" COMMENT %s", escapeStringLiteral(node.Comment))
+		r.w.Writef(" COMMENT %s", chcolumn.StringLiteral(node.Comment))
 	}
 	// The author's own raw tail follows the engine clause and the comment, and
 	// precedes any SELECT the table is populated from (stokaro/ptah#2590).
@@ -1005,12 +833,12 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 // An ALIAS column stores nothing, and MODIFY COLUMN changes its type on every
 // line measured.
 func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperation) error {
-	mapping, err := renderColumnType(op.Column, columnTypeOptions{})
+	mapping, err := chcolumn.Type(op.Column)
 	if err != nil {
 		return fmt.Errorf("clickhouse: modify column on %q: %w", table, err)
 	}
 	clause := defaultClause(op.Column)
-	setsNotNull := op.HasPreviousNullable && op.PreviousNullable && !rendersNullable(op.Column)
+	setsNotNull := op.HasPreviousNullable && op.PreviousNullable && !chcolumn.Nullable(op.Column)
 	computed := op.Column.GeneratedExpression != ""
 	if setsNotNull && !computed && clause == "" {
 		return &ptaherr.CapabilityError{
@@ -1022,14 +850,14 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 					" MODIFY COLUMN to %s unless it names a DEFAULT, and 24.10 and 25.8 accept it and then"+
 					" fail on a row holding NULL, which leaves the table unreadable; give the column a"+
 					" default for its NULL rows to take",
-				table, op.Column.Name, mapping.mapped),
+				table, op.Column.Name, mapping.Type),
 		}
 	}
-	if setsNotNull && computed && computedColumnKeyword(op.Column.GeneratedKind) == "MATERIALIZED" {
+	if setsNotNull && computed && chcolumn.ComputedKeyword(op.Column.GeneratedKind) == "MATERIALIZED" {
 		return r.replaceMaterialized(table, op.Column)
 	}
-	if mapping.notice != "" {
-		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.notice)
+	if mapping.Notice != "" {
+		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.Notice)
 	}
 	if removesDefault(op, clause) {
 		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", table, op.Column.Name)
@@ -1038,7 +866,7 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 		r.w.WriteLinef("ALTER TABLE %s UPDATE %s = %s WHERE %s IS NULL SETTINGS mutations_sync = 2;",
 			table, op.Column.Name, strings.TrimPrefix(clause, "DEFAULT "), op.Column.Name)
 	}
-	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.mapped)
+	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.Type)
 	if clause != "" {
 		statement += " " + clause
 	}

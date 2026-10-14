@@ -69,7 +69,7 @@ func registerClickHouseServices(provider *engine.Provider, name string) {
 	provider.Planning = []engine.Planning{
 		{
 			Target: name, Kinds: []schemaext.Kind{chdiff.TableKind}, ParentKinds: []schemaext.Kind{chschema.TableKind},
-			OperationKinds: []schemaext.Kind{chast.AlterTTLKind}, Service: chplan.Service{},
+			OperationKinds: []schemaext.Kind{chast.AlterStorageKind}, Service: chplan.Service{},
 		},
 		{
 			Target: name, Kinds: []schemaext.Kind{chdiff.IndexKind}, ParentKinds: []schemaext.Kind{chschema.IndexKind},

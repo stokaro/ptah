@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -75,4 +76,69 @@ func TestTTLColumnReplacementPlansBothDirections(t *testing.T) {
 	c.Assert(reverse, qt.Contains, "cannot recover rows or values")
 	c.Assert(plan.Reverse.Recovery, qt.HasLen, 1)
 	c.Assert(current.Tables[0].Facets, qt.DeepEquals, must.Must(schemaext.NewFacets(before)))
+}
+
+// sortingKeyFixture is a live table sorted by a, with columns a and u, and a
+// declaration that keeps every other storage clause.
+func sortingKeyFixture(orderBy string, fields ...schemamodel.Field) (*schemamodel.Database, *catalog.Database) {
+	before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "a, u", PrimaryKey: "a", Settings: "index_granularity = 8192"}
+	after := before.Desired()
+	after.OrderBy.Value = orderBy
+	source := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "events", StructName: "Event", Facets: must.Must(schemaext.NewFacets(after))}},
+		Fields: append([]schemamodel.Field{{Name: "a", StructName: "Event", Type: "Int32"}}, fields...),
+	}
+	current := &catalog.Database{FeatureCoverage: observedStorageCoverage(), Tables: []catalog.Table{{
+		Name: "events", Facets: must.Must(schemaext.NewFacets(before)),
+		Columns: []catalog.Column{{Name: "a", DataType: "Int32", ColumnType: "Int32", IsNullable: "NO", IsPrimaryKey: true}, {Name: "u", DataType: "UInt64", ColumnType: "UInt64", IsNullable: "NO"}},
+	}}}
+	return source, current
+}
+
+// A sorting key that gains a column adds every new column of the table in the
+// ALTER TABLE that changes the key, and the reverse drops the expression from
+// the key before it drops the columns.
+func TestSortingKeyColumnPlansBothDirections(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	source, current := sortingKeyFixture("a, u, k",
+		schemamodel.Field{Name: "u", StructName: "Event", Type: "UInt64"},
+		schemamodel.Field{Name: "k", StructName: "Event", Type: "Int32"},
+		schemamodel.Field{Name: "note", StructName: "Event", Type: "String", Nullable: true, Default: "n"},
+	)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"ALTER TABLE events ADD COLUMN k Int32, ADD COLUMN note Nullable(String) DEFAULT 'n', MODIFY ORDER BY (a, u, k)",
+	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
+	})
+	c.Assert(err, qt.IsNil)
+	reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes...)
+	c.Assert(err, qt.IsNil)
+	key, dropK, dropNote := strings.Index(reverse, "MODIFY ORDER BY (a, u);"), strings.Index(reverse, "DROP COLUMN k;"), strings.Index(reverse, "DROP COLUMN note;")
+	c.Assert(key >= 0 && key < dropK && key < dropNote, qt.IsTrue, qt.Commentf("%s", reverse))
+}
+
+// Dropping the last key expression while its column stays plans forward, and
+// its reverse would add an existing column to the key, which ClickHouse
+// refuses, so a migration with a down direction is refused.
+func TestSortingKeyDropWithoutItsColumnHasNoReverse(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	source, current := sortingKeyFixture("a", schemamodel.Field{Name: "u", StructName: "Event", Type: "UInt64"})
+	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{"ALTER TABLE events MODIFY ORDER BY a"})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
+	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*column "u" is already in the table.*`)
+	c.Assert(plan, qt.IsNil)
 }

@@ -1411,21 +1411,37 @@ Other targets and non-table
 attachment points refuse active ClickHouse table facets.
 
 Existing-table comparison needs complete captured typed settings. The bundled
-reader supplies them with subject-level coverage. `chplan.Service` plans TTL
-changes on MergeTree tables and assesses storage dependencies before common
-column changes. Required column additions precede the TTL change; removal of a
-column used by the prior rule follows it. Removing or modifying a column used
-by retained storage rules is refused. Missing observations and coverage remain
-unknown and prevent planning.
+reader supplies them with subject-level coverage. Keys compare without their
+outer grouping, and table settings compare as a set of `name = value` entries
+in which `index_granularity` that only the current table names is no
+difference.
 
-`chast.AlterTTL` carries both complete storage operands. Its codec and
-`chrender` handlers refuse changes to other settings inside a TTL operation.
-Use it inside `ast.ExtensionAlterOperation` with an `ast.AlterTableNode` parent.
-An empty desired TTL removes the rule; whitespace-only rules are invalid.
-Non-owning targets refuse the payload without returning partial SQL.
-The planner contributes explicit object effects and requires execution outside
-a transaction. Its result must join the host's complete graph before execution.
-Engine, key, partitioning, sampling, and table-setting changes remain refused.
+`chplan.Service` plans changes to the sorting key, sampling key, TTL rules and
+settings of a MergeTree table in place and assesses storage dependencies before
+common column changes. Column additions the new clauses need precede the
+change; removal of a column only the prior clauses use follows it. Removing or
+modifying a column the table's storage uses after the change is refused.
+
+When the sorting key gains an expression, the result claims every common column
+addition of the table through `featureplan.Result.Rewrites`, because ClickHouse
+adds to the key only columns the same `ALTER TABLE` adds; the claim needs each
+addition's `CommonStep.AddedColumn`. A change to the engine, `PARTITION BY` or
+`PRIMARY KEY`, a sorting key that is not reachable in place, a sampling key
+outside the primary key, and a change to a setting ClickHouse fixes at creation
+are refused by name with `ptaherr.ErrUnsupportedFeature`. Missing observations
+and coverage remain unknown and prevent planning.
+
+`chast.AlterStorage` carries both complete storage operands and the columns it
+adds with a new sorting key, as `chast.Column` values. Its codec and `chrender`
+handler refuse a transition the planner would refuse and render every changed
+clause, so the operation cannot acknowledge a change it does not make. Use it
+inside `ast.ExtensionAlterOperation` with an `ast.AlterTableNode` parent. An
+empty desired TTL removes the rule; whitespace-only rules are invalid.
+Non-owning targets refuse the payload without returning partial SQL. `Effect`
+reports a behavioral change, or a destructive one when an engine that merges
+rows by its sorting key loses a key expression. The planner contributes explicit
+object effects and requires execution outside a transaction. Its result must
+join the host's complete graph before execution.
 
 `chast.AddSkippingIndex` carries the index name, SQL expression, type, and
 unsigned 64-bit index granularity. Its explicit codec and `chrender` handler
@@ -1448,10 +1464,13 @@ Payloads without a valid single-action report retain a parent-level modification
 The former `ast.AddSkippingIndexOperation` is removed without an alias. This
 changes behavior; pre-v1, so no compatibility is owed.
 
-`chreverse.Service` reconstructs the prior TTL definition and projects the
+`chreverse.Service` reconstructs the prior storage clauses and projects the
 forward state for reverse planning. This projection establishes no inspection
-evidence. Its recovery limitations report that restoring TTL rules cannot
-recover expired or aggregated rows and values, or undo TTL data movement.
+evidence. Its recovery limitations report what each restored clause cannot
+recover: rows and values TTL expired or aggregated and its data movement, work
+done under changed settings, and rows an engine merged while its sorting key
+lacked a dropped expression. Whether ClickHouse can run the reverse in place is
+decided when the reverse is planned, against the columns it adds and removes.
 
 `chcompare.Service` compares resolved table settings through a selected
 provider's `FacetComparisons` registration. Each `chdiff.Table` captures the
@@ -2101,9 +2120,6 @@ exists and unknown otherwise. A server whose catalog table has no `type_full`
 column fails the read with an error that names the column.
 `chreport.Service` supplies the storage-settings count and omission label for
 formats that cannot retain facets.
-Planning changes to storage settings other than TTL is not supported; the
-owner refuses them. [stokaro/ptah#4355](https://github.com/stokaro/ptah/issues/4355)
-tracks that capability.
 
 A refreshable materialized view carries a `chschema.ObservedRefresh` read from
 its CREATE statement, for the views `system.view_refreshes` lists. Refresh

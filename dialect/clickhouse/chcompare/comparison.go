@@ -103,7 +103,7 @@ func compareTable(request schemaext.FacetComparisonRequest, owner schemaext.Pare
 	if err != nil {
 		return err
 	}
-	if chsql.SameTable(projected, current) {
+	if chsql.SameTable(current, projected) {
 		return nil
 	}
 	result.Changes = append(result.Changes, schemaext.FacetChange{

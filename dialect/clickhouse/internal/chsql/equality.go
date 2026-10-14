@@ -1,6 +1,7 @@
-// Package chsql shares ClickHouse storage expression comparisons between the
-// owning comparator, planner, and renderer. It does not assert general SQL
-// equivalence; only token spacing and outer key-list grouping are normalized.
+// Package chsql shares ClickHouse storage expression comparisons and the rules
+// of in-place storage changes between the owning comparator, planner, renderer
+// and reversal. It does not assert general SQL equivalence; only token spacing,
+// outer key-list grouping and the order of table settings are normalized.
 package chsql
 
 import (
@@ -13,12 +14,11 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// SameTable compares all captured storage properties using their clause rules.
-func SameTable(a, b *chschema.ObservedTable) bool {
-	return SameExpression(a.Engine, b.Engine) && SameKey(a.OrderBy, b.OrderBy) && SameKey(a.PrimaryKey, b.PrimaryKey) &&
-		SameKey(a.PartitionBy, b.PartitionBy) && SameExpression(a.SampleBy, b.SampleBy) &&
-		SameExpression(a.TTL, b.TTL) && SameExpression(a.Settings, b.Settings)
-}
+// SameTable compares current storage a with declared storage b, clause by
+// clause: keys without their outer grouping, settings as a set of entries in
+// which index_granularity that only a names does not count, and everything
+// else by tokens. Two observations compare the same way.
+func SameTable(a, b *chschema.ObservedTable) bool { return len(Changed(a, b)) == 0 }
 
 // SameIndex compares type tokens and the exact unsigned granularity. Type
 // parameters retain their token boundaries, quoted values, and order.

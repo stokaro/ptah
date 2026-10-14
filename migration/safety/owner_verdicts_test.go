@@ -185,6 +185,9 @@ func TestOwnerVerdicts_RaiseFeatureOwnerStatementsTheirTextReadsAsSafe(t *testin
 	ttl := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tuple()", TTL: "created_at + INTERVAL 1 DAY"}
 	noTTL := ttl.Desired()
 	noTTL.TTL.Value = ""
+	replacing := &chschema.ObservedTable{Engine: "ReplacingMergeTree(version)", OrderBy: "id, at", PrimaryKey: "id"}
+	shorterKey := replacing.Desired()
+	shorterKey.OrderBy.Value = "id"
 	alter := func(table string, payload ast.ExtensionPayload) ast.Node {
 		return &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: payload}}}
 	}
@@ -205,10 +208,18 @@ func TestOwnerVerdicts_RaiseFeatureOwnerStatementsTheirTextReadsAsSafe(t *testin
 		},
 		{
 			name: "a ClickHouse TTL removed", dialect: platform.ClickHouse,
-			node:         alter("items", &chast.AlterTTL{Change: chdiff.Table{Before: ttl, After: noTTL}}),
+			node:         alter("items", &chast.AlterStorage{Change: chdiff.Table{Before: ttl, After: noTTL}}),
 			wantSQL:      "ALTER TABLE items REMOVE TTL",
 			wantSeverity: safety.Warning,
 			wantReason:   "TTL changes can expire, move, or aggregate existing data; restoring the rule cannot recover that data",
+		},
+		{
+			name: "a ClickHouse merging engine's sorting key shortened", dialect: platform.ClickHouse,
+			node:         alter("items", &chast.AlterStorage{Change: chdiff.Table{Before: replacing, After: shorterKey}}),
+			wantSQL:      "ALTER TABLE items MODIFY ORDER BY id",
+			wantSeverity: safety.Destructive,
+			wantReason: "a new sorting key changes how parts written from now on are sorted and which rows the engine merges together; " +
+				"rows that differ only in a dropped sorting-key expression can merge into one, which restoring the key cannot undo",
 		},
 		{
 			name: "a ClickHouse skipping index added", dialect: platform.ClickHouse,

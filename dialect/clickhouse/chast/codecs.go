@@ -6,7 +6,6 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chdiff"
-	"ptah.run/dialect/clickhouse/internal/chsql"
 )
 
 // Codecs returns fresh version-one operation descriptors. The wire shape is an
@@ -15,17 +14,19 @@ import (
 func Codecs() []schemaext.Codec {
 	change := chdiff.Codecs()[0]
 	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
-		value, err := ttlValue(payload)
+		value, err := storageValue(payload)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(value)
 	}
 	return []schemaext.Codec{{
-		Prototype: &AlterTTL{}, Representation: schemaext.Operation, Version: 1,
-		Definition: json.RawMessage(fmt.Sprintf(`{"change":%s}`, change.Definition)),
+		Prototype: &AlterStorage{}, Representation: schemaext.Operation, Version: 1,
+		Definition: json.RawMessage(fmt.Sprintf(`{"change":%s,"columns":{"type":"array","items":{"type":"object","required":["name","type"],`+
+			`"additionalProperties":false,"properties":{"name":{"type":"string","minLength":1},"type":{"type":"string","minLength":1},`+
+			`"value":{"enum":["DEFAULT","MATERIALIZED","ALIAS"]},"expression":{"type":"string"},"comment":{"type":"string"}}}}}`, change.Definition)),
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			value, err := ttlValue(payload)
+			value, err := storageValue(payload)
 			if err != nil {
 				return nil, err
 			}
@@ -37,15 +38,24 @@ func Codecs() []schemaext.Codec {
 			if err != nil {
 				return nil, err
 			}
-			if len(fields) != 1 || fields["change"] == nil {
-				return nil, fmt.Errorf("%w: ClickHouse TTL operation requires exactly change", schemaext.ErrInvalidValue)
+			_, columns := fields["columns"]
+			if fields["change"] == nil || len(fields) != 1 && (len(fields) != 2 || !columns) {
+				return nil, fmt.Errorf("%w: ClickHouse storage operation requires change and allows only columns beside it", schemaext.ErrInvalidValue)
 			}
 			decoded, err := change.Decode(fields["change"])
 			if err != nil {
 				return nil, err
 			}
-			value, err := ttlValue(&AlterTTL{Change: *decoded.(*chdiff.Table)})
-			if err != nil {
+			value := &AlterStorage{Change: *decoded.(*chdiff.Table)}
+			if columns {
+				if value.Columns, err = schemaext.DecodeJSON[[]Column](fields["columns"]); err != nil {
+					return nil, err
+				}
+				if len(value.Columns) == 0 {
+					return nil, fmt.Errorf("%w: ClickHouse storage operation names an empty column list", schemaext.ErrInvalidValue)
+				}
+			}
+			if _, err := storageValue(value); err != nil {
 				return nil, err
 			}
 			return value, nil
@@ -53,12 +63,12 @@ func Codecs() []schemaext.Codec {
 	}, indexCodec(), dropIndexCodec(), refreshCodec(), rowPolicyCodec(), rowPolicyCommandCodec()}
 }
 
-func ttlValue(payload schemaext.Payload) (*AlterTTL, error) {
-	v, ok := payload.(*AlterTTL)
+func storageValue(payload schemaext.Payload) (*AlterStorage, error) {
+	v, ok := payload.(*AlterStorage)
 	if !ok || v == nil {
-		return nil, fmt.Errorf("%w: expected ClickHouse TTL operation", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: expected ClickHouse storage operation", schemaext.ErrInvalidValue)
 	}
-	if err := chsql.ValidateTTLChange(&v.Change); err != nil {
+	if err := v.Validate(); err != nil {
 		return nil, err
 	}
 	return v, nil
