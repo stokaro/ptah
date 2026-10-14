@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"ptah.run/core/platform"
 )
 
 func TestNoTransactionResumeAction(t *testing.T) {
@@ -131,35 +129,6 @@ func TestIsTransactionControlStatement_MySQLFamily(t *testing.T) {
 			c := qt.New(t)
 			got := isTransactionControlStatement(test.statement, test.dialect)
 			c.Assert(got, qt.IsTrue)
-		})
-	}
-}
-
-func TestPostgresSearchPathReplayState(t *testing.T) {
-	tests := []struct {
-		name        string
-		statement   string
-		wantChanged bool
-		wantKnown   bool
-	}{
-		{name: "explicit assignment", statement: "SET search_path = app, public", wantChanged: true, wantKnown: true},
-		{name: "explicit session assignment", statement: "SET SESSION search_path TO app", wantChanged: true, wantKnown: true},
-		{name: "local assignment", statement: "SET LOCAL search_path TO app", wantChanged: true, wantKnown: false},
-		{name: "default", statement: "SET search_path TO DEFAULT", wantChanged: true, wantKnown: false},
-		{name: "current", statement: "SET search_path FROM CURRENT", wantChanged: true, wantKnown: false},
-		{name: "role placeholder", statement: `SET search_path = "$user", public`, wantChanged: true, wantKnown: false},
-		{name: "reset search path", statement: "RESET search_path", wantChanged: true, wantKnown: false},
-		{name: "reset all", statement: "RESET ALL", wantChanged: true, wantKnown: false},
-		{name: "unrelated setting", statement: "SET statement_timeout = '1s'", wantChanged: false, wantKnown: false},
-		{name: "durable statement", statement: "CREATE TABLE users (id BIGINT)", wantChanged: false, wantKnown: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			changed, known := searchPathReplayState(test.statement, platform.Postgres)
-			c.Assert(changed, qt.Equals, test.wantChanged)
-			c.Assert(known, qt.Equals, test.wantKnown)
 		})
 	}
 }

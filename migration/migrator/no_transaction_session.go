@@ -117,7 +117,7 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 					err,
 				)
 			}
-			if changed, known := searchPathReplayState(statement, m.connectionDialect()); changed {
+			if changed, known := searchPathChange(m.services().Indexes, statement); changed {
 				searchPathKnowledge = postgresSearchPathUnknown
 				if known {
 					searchPathKnowledge = postgresSearchPathKnown
@@ -137,40 +137,14 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 	return nil
 }
 
-// searchPathReplayState reports whether a replayed statement changes
-// search_path, and whether the value it leaves is known. Only the PostgreSQL
-// index observation reads the answer.
-func searchPathReplayState(statement, dialect string) (changed, known bool) {
-	tokens := significantSQLTokens(statement, dialect)
-	if len(tokens) < 2 {
+// searchPathChange reports whether a replayed statement changes how an
+// unqualified name resolves, and whether the value it leaves is known. Only
+// the index guard reads the answer, so an engine without one has none.
+func searchPathChange(guard migratorext.IndexGuard, statement string) (changed, known bool) {
+	if guard == nil {
 		return false, false
 	}
-	if tokens[0].MatchIdentifierValue("RESET") {
-		if tokens[1].MatchIdentifierValue("ALL") || tokens[1].MatchIdentifierValue("SEARCH_PATH") {
-			return true, false
-		}
-		return false, false
-	}
-	if !tokens[0].MatchIdentifierValue("SET") {
-		return false, false
-	}
-	setting := 1
-	local := tokens[setting].MatchIdentifierValue("LOCAL")
-	if local || tokens[setting].MatchIdentifierValue("SESSION") {
-		setting++
-	}
-	if setting >= len(tokens) || !tokens[setting].MatchIdentifierValue("SEARCH_PATH") {
-		return false, false
-	}
-	if local {
-		return true, false
-	}
-	for _, token := range tokens[setting+1:] {
-		if matchesAnyKeyword(token, "DEFAULT", "CURRENT") || strings.Contains(strings.ToLower(token.Value), "$user") {
-			return true, false
-		}
-	}
-	return true, true
+	return guard.SearchPath(statement)
 }
 
 func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {

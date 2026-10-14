@@ -15,12 +15,21 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-// Services returns the PostgreSQL family's services. Spanner is in the
-// family and is not served here: its PostgreSQL interface has no
-// current_schema() a query can call.
-func Services() migratorext.Services {
+// Postgres returns PostgreSQL's services: the family's, and the guard
+// against an index a failed concurrent build left unusable.
+func Postgres() migratorext.Services {
+	services := Family()
+	services.Dialects = []string{platform.Postgres}
+	services.Indexes = indexGuard{}
+	return services
+}
+
+// Family returns the services CockroachDB and YugabyteDB share with
+// PostgreSQL. Spanner is in the family and is not served here: its
+// PostgreSQL interface has no current_schema() a query can call.
+func Family() migratorext.Services {
 	return migratorext.Services{
-		Dialects:       []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB},
+		Dialects:       []string{platform.CockroachDB, platform.YugabyteDB},
 		Catalog:        catalog{},
 		VersionColumn:  catalog{},
 		Owners:         catalog{},

@@ -186,6 +186,9 @@ type Services struct {
 	// AutocommitControl reports that SET autocommit controls the
 	// transaction.
 	AutocommitControl bool
+	// Indexes guards the revision table against an index a failed build
+	// left unusable. Nil means the engine leaves none.
+	Indexes IndexGuard
 	// TriggerGrant reports that the catalog shows a table's triggers only to
 	// an account holding the TRIGGER privilege, so a run that must prove a
 	// table has no hidden writer proves the privilege first.

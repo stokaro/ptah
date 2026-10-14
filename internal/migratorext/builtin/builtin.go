@@ -19,7 +19,8 @@ import (
 // services maps each dialect a built-in service serves to it. It is built
 // once from the list below and never written again.
 var services = index(
-	postgres.Services(),
+	postgres.Postgres(),
+	postgres.Family(),
 	mysql.MySQL(),
 	mysql.MariaDB(),
 	clickhouse.Services(),

@@ -2,118 +2,29 @@ package migrator
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
-	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/sqlident"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 )
 
-// postgresIndexRef is one index a migration's up SQL creates, spelled the way
-// the PostgreSQL catalog stores it. Schema comes from the target table because
-// PostgreSQL always creates an index in its table's schema. It is empty when
-// the statement left the table unqualified, which means PostgreSQL resolved it
-// through the search path.
-type postgresIndexRef struct {
-	Schema      string
-	Table       string
-	Name        string
-	IfNotExists bool
-}
-
-type postgresIndexName struct {
-	Schema string
-	Name   string
-}
-
-type createIndexPrefix struct {
-	tokens      []lexer.Token
-	ifNotExists bool
-}
-
-func (r postgresIndexRef) indexName() postgresIndexName {
-	return postgresIndexName{Schema: r.Schema, Name: r.Name}
-}
-
-// postgresUnusableIndex is a catalog row for an index PostgreSQL will not use:
-// indisvalid or indisready is false. A failed CREATE INDEX CONCURRENTLY leaves
-// exactly that state behind, and the leftover keeps the name occupied, so a
-// re-run of the same IF NOT EXISTS statement is skipped rather than retried.
-type postgresUnusableIndex struct {
-	Schema string
-	Name   string
-	Valid  bool
-	Ready  bool
-}
-
-type postgresIndexQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
-// postgresIndexState is the catalog identity behind one CREATE INDEX target.
-// PostgreSQL shares one relation-name namespace between tables, views,
-// sequences, and indexes. Checking only pg_index is therefore insufficient:
-// IF NOT EXISTS also skips when the name belongs to a different table's index
-// or to a non-index relation.
-type postgresIndexState struct {
-	TargetFound        bool
-	TargetSchema       string
-	TargetTable        string
-	TargetKind         string
-	Name               string
-	RelationExists     bool
-	RelationKind       string
-	IndexedTableSchema string
-	IndexedTable       string
-	Valid              bool
-	Ready              bool
-}
+// The guard against an index a failed build left unusable is an engine
+// service (see internal/migratorext.IndexGuard): the engine reads what a
+// migration's conditional creates name and what its catalog holds, and words
+// the refusal. This file runs it at the points a revision row could record a
+// migration over such an index: before an up run, when the body completes,
+// before a repair, and before a rollback completes.
 
 type postgresIndexObservation struct {
-	identities []postgresIndexState
-}
-
-func (s postgresIndexState) indexName() postgresIndexName {
-	return postgresIndexName{Schema: s.TargetSchema, Name: s.Name}
-}
-
-func (s postgresIndexState) quotedName() string {
-	return sqlident.Qualified(platform.Postgres, s.TargetSchema, s.Name)
-}
-
-func (s postgresIndexState) quotedTarget() string {
-	return sqlident.Qualified(platform.Postgres, s.TargetSchema, s.TargetTable)
-}
-
-func (s postgresIndexState) isIndex() bool {
-	return s.RelationKind == "i" || s.RelationKind == "I"
-}
-
-func (s postgresIndexState) isAttachedToTarget() bool {
-	return s.IndexedTableSchema == s.TargetSchema && s.IndexedTable == s.TargetTable
-}
-
-func (s postgresIndexState) isExpectedPartitionedIndex() bool {
-	return s.TargetKind == "p" && s.RelationKind == "I" && s.Ready
-}
-
-func (s postgresIndexState) isUsableForTarget() bool {
-	return s.TargetFound && s.RelationExists && s.isIndex() && s.isAttachedToTarget() &&
-		((s.Valid && s.Ready) || s.isExpectedPartitionedIndex())
-}
-
-func (s postgresIndexState) isUnusableTargetIndex() bool {
-	return s.TargetFound && s.RelationExists && s.isIndex() && s.isAttachedToTarget() &&
-		!s.isUsableForTarget()
+	identities []migratorext.IndexState
 }
 
 func (m *Migrator) startPostgresIndexObservation() {
-	if platform.NormalizeDialect(m.connectionDialect()) != platform.Postgres || m.postgresIndexObservation != nil {
+	if m.services().Indexes == nil || m.postgresIndexObservation != nil {
 		return
 	}
 	m.postgresIndexObservation = &postgresIndexObservation{}
@@ -140,8 +51,9 @@ func (m *Migrator) observePostgresIndexStatement(
 	if m.postgresIndexObservation == nil {
 		return nil
 	}
-	for _, ref := range postgresConditionalCreatedIndexNames(statement) {
-		state, err := m.postgresIndexStateOn(ctx, conn, ref)
+	guard := m.services().Indexes
+	for _, ref := range guard.ConditionalCreates(statement) {
+		state, err := guard.State(ctx, indexQueryer(conn), ref)
 		if err != nil {
 			return err
 		}
@@ -159,21 +71,22 @@ func (m *Migrator) observePostgresIndexStatementForReplay(
 	if m.postgresIndexObservation == nil {
 		return nil
 	}
-	for _, ref := range postgresConditionalCreatedIndexNames(statement) {
+	guard := m.services().Indexes
+	for _, ref := range guard.ConditionalCreates(statement) {
 		if ref.Schema != "" || searchPathKnowledge == postgresSearchPathKnown {
-			state, err := m.postgresIndexStateOn(ctx, conn, ref)
+			state, err := guard.State(ctx, indexQueryer(conn), ref)
 			if err != nil {
 				return err
 			}
 			m.appendPostgresIndexIdentity(postgresIndexIdentityState(state, ref))
 			continue
 		}
-		identities, err := m.postgresIndexIdentitiesAcrossUserSchemas(ctx, conn, ref)
+		identities, err := guard.TargetsAcrossSchemas(ctx, indexQueryer(conn), ref)
 		if err != nil {
 			return err
 		}
 		if len(identities) == 0 {
-			m.appendPostgresIndexIdentity(postgresIndexIdentityState(postgresIndexState{}, ref))
+			m.appendPostgresIndexIdentity(postgresIndexIdentityState(migratorext.IndexState{}, ref))
 			continue
 		}
 		for _, identity := range identities {
@@ -183,8 +96,8 @@ func (m *Migrator) observePostgresIndexStatementForReplay(
 	return m.observePostgresIndexConstraintAttachments(ctx, conn, statement, searchPathKnowledge)
 }
 
-func (m *Migrator) appendPostgresIndexIdentity(identity postgresIndexState) {
-	if slices.ContainsFunc(m.postgresIndexObservation.identities, func(existing postgresIndexState) bool {
+func (m *Migrator) appendPostgresIndexIdentity(identity migratorext.IndexState) {
+	if slices.ContainsFunc(m.postgresIndexObservation.identities, func(existing migratorext.IndexState) bool {
 		return samePostgresIndexIdentity(existing, identity)
 	}) {
 		return
@@ -192,48 +105,15 @@ func (m *Migrator) appendPostgresIndexIdentity(identity postgresIndexState) {
 	m.postgresIndexObservation.identities = append(m.postgresIndexObservation.identities, identity)
 }
 
-func (m *Migrator) postgresIndexIdentitiesAcrossUserSchemas(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	ref postgresIndexRef,
-) ([]postgresIndexState, error) {
-	query := sqlutil.Rebind(conn.Info().Dialect, `
-		SELECT n.nspname, t.relname, t.relkind::text
-		FROM pg_class t
-		JOIN pg_namespace n ON n.oid = t.relnamespace
-		WHERE t.relkind IN ('r', 'p', 'm')
-		  AND t.relname = ?
-		  AND n.nspname !~ '^pg_'
-		  AND n.nspname <> 'information_schema'
-		ORDER BY n.nspname`)
-	rows, err := queryPostgresIndexes(ctx, conn, query, ref.Table)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve unqualified index targets across PostgreSQL schemas: %w", err)
-	}
-	defer rows.Close()
-	var identities []postgresIndexState
-	for rows.Next() {
-		identity := postgresIndexState{TargetFound: true, Name: ref.Name}
-		if err := rows.Scan(&identity.TargetSchema, &identity.TargetTable, &identity.TargetKind); err != nil {
-			return nil, fmt.Errorf("failed to scan unqualified PostgreSQL index target: %w", err)
-		}
-		identities = append(identities, identity)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read unqualified PostgreSQL index targets: %w", err)
-	}
-	return identities, nil
-}
-
-func postgresIndexIdentityState(state postgresIndexState, ref postgresIndexRef) postgresIndexState {
+func postgresIndexIdentityState(state migratorext.IndexState, ref migratorext.IndexRef) migratorext.IndexState {
 	if !state.TargetFound {
-		return postgresIndexState{
+		return migratorext.IndexState{
 			TargetSchema: ref.Schema,
 			TargetTable:  ref.Table,
 			Name:         ref.Name,
 		}
 	}
-	return postgresIndexState{
+	return migratorext.IndexState{
 		TargetFound:  true,
 		TargetSchema: state.TargetSchema,
 		TargetTable:  state.TargetTable,
@@ -242,15 +122,11 @@ func postgresIndexIdentityState(state postgresIndexState, ref postgresIndexRef) 
 	}
 }
 
-func samePostgresIndexIdentity(left, right postgresIndexState) bool {
+func samePostgresIndexIdentity(left, right migratorext.IndexState) bool {
 	return left.TargetFound == right.TargetFound &&
 		left.TargetSchema == right.TargetSchema &&
 		left.TargetTable == right.TargetTable &&
 		left.Name == right.Name
-}
-
-func (i postgresUnusableIndex) quotedName() string {
-	return sqlident.Qualified(platform.Postgres, i.Schema, i.Name)
 }
 
 // refuseRepairOverUnsafeIndex refuses to record a migration applied while
@@ -282,8 +158,11 @@ func (m *Migrator) refuseRepairOverUnsafeIndex(ctx context.Context, migration *M
 			scoped.noTransactionConnection(),
 			migration,
 			migration.UpSQL,
-			unusableIndexRepairError,
-			"recording the migration applied would report an index state the database does not provide",
+			migratorext.IndexRefusal{
+				UnusableOutcome: "recording the migration applied would report a constraint that is not enforced",
+				RetryAction:     "rerun the migration",
+				UnsafeOutcome:   "recording the migration applied would report an index state the database does not provide",
+			},
 		)
 	}
 	if m.postgresIndexObservation != nil || !m.needsPostgresIndexPostcheck(migration, MigrationDirectionUp) {
@@ -304,8 +183,8 @@ func (m *Migrator) refuseRepairOverUnsafeIndex(ctx context.Context, migration *M
 }
 
 func (m *Migrator) needsPostgresIndexPostcheck(migration *Migration, direction MigrationDirection) bool {
-	return platform.NormalizeDialect(m.connectionDialect()) == platform.Postgres &&
-		len(postgresConditionalCreatedIndexNames(migrationSQLForDirection(migration, direction))) > 0
+	guard := m.services().Indexes
+	return guard != nil && len(guard.ConditionalCreates(migrationSQLForDirection(migration, direction))) > 0
 }
 
 func (m *Migrator) refuseRollbackCompletionOverUnsafeIndex(ctx context.Context, migration *Migration) error {
@@ -322,8 +201,11 @@ func (m *Migrator) refuseRollbackCompletionOverUnsafeIndexOn(
 		conn,
 		migration,
 		migration.DownSQL,
-		unusableIndexRollbackError,
-		"completing the rollback would hide an index state the database does not provide behind a deleted revision",
+		migratorext.IndexRefusal{
+			UnusableOutcome: "completing the rollback would hide an unusable index behind a deleted revision",
+			RetryAction:     "resume the rollback",
+			UnsafeOutcome:   "completing the rollback would hide an index state the database does not provide behind a deleted revision",
+		},
 	)
 }
 
@@ -332,22 +214,17 @@ func (m *Migrator) refuseRepairOverUnsafeIndexSQL(
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	sqlText string,
-	buildUnusableError func(int64, []postgresUnusableIndex) error,
-	unsafeOutcome string,
+	refusal migratorext.IndexRefusal,
 ) error {
 	states, err := m.postgresIndexStatesCreatedBySQLOn(ctx, conn, sqlText)
 	if err != nil {
 		return err
 	}
-	unsafe := postgresUnsafeCompletionStates(states)
+	unsafe := postgresUnsafeCompletionStates(m.services().Indexes, states)
 	if len(unsafe) == 0 {
 		return nil
 	}
-	unusable := postgresUnusableIndexes(unsafe)
-	if len(unusable) == len(unsafe) {
-		return buildUnusableError(migration.Version, unusable)
-	}
-	return postgresIndexRepairError(migration.Version, unsafe, unsafeOutcome)
+	return m.services().Indexes.RepairError(migration.Version, unsafe, refusal)
 }
 
 // refuseUpOverUnsafeIndex refuses to run a migration while PostgreSQL already
@@ -392,7 +269,7 @@ func (m *Migrator) refuseUpOverUnsafeIndex(
 	if m.conn == nil || m.conn.Writer().IsDryRun() {
 		return nil
 	}
-	if platform.NormalizeDialect(m.connectionDialect()) != platform.Postgres {
+	if m.services().Indexes == nil {
 		return nil
 	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
@@ -419,7 +296,7 @@ func (m *Migrator) refuseUpOverUnsafeIndexOn(
 	if err != nil || len(unsafe) == 0 {
 		return err
 	}
-	return postgresIndexApplyError(migration.Version, unsafe)
+	return m.services().Indexes.ApplyError(migration.Version, unsafe)
 }
 
 // refuseUpCompletionOverUnsafeIndex is the post-execution half of the up guard.
@@ -438,11 +315,11 @@ func (m *Migrator) refuseUpCompletionOverUnsafeIndex(
 	if err != nil {
 		return err
 	}
-	unsafe := postgresUnsafeCompletionStates(states)
+	unsafe := postgresUnsafeCompletionStates(m.services().Indexes, states)
 	if len(unsafe) == 0 {
 		return nil
 	}
-	return postgresIndexApplyError(migration.Version, unsafe)
+	return m.services().Indexes.ApplyError(migration.Version, unsafe)
 }
 
 func completedMigrationIndexObservationError(
@@ -472,32 +349,36 @@ func (m *Migrator) postgresIndexStatesCreatedBySQLOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	sqlText string,
-) ([]postgresIndexState, error) {
-	if conn == nil || platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
+) ([]migratorext.IndexState, error) {
+	if conn == nil {
+		return nil, nil
+	}
+	guard := builtin.Lookup(conn.Info().Dialect).Indexes
+	if guard == nil {
 		return nil, nil
 	}
 	if m.postgresIndexObservation != nil {
-		if len(postgresConditionalCreatedIndexNames(sqlText)) > 0 && len(m.postgresIndexObservation.identities) == 0 {
+		if len(guard.ConditionalCreates(sqlText)) > 0 && len(m.postgresIndexObservation.identities) == 0 {
 			return nil, fmt.Errorf(
 				"cannot verify conditional PostgreSQL index creates because their statement-local target identities were not observed",
 			)
 		}
 		return m.refreshPostgresIndexObservations(ctx, conn)
 	}
-	return m.postgresIndexStatesOn(ctx, conn, postgresConditionalCreatedIndexNames(sqlText))
+	return m.postgresIndexStatesOn(ctx, conn, guard.ConditionalCreates(sqlText))
 }
 
 func (m *Migrator) refreshPostgresIndexObservations(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-) ([]postgresIndexState, error) {
-	states := make([]postgresIndexState, 0, len(m.postgresIndexObservation.identities))
+) ([]migratorext.IndexState, error) {
+	states := make([]migratorext.IndexState, 0, len(m.postgresIndexObservation.identities))
 	for _, identity := range m.postgresIndexObservation.identities {
 		if !identity.TargetFound {
 			states = append(states, identity)
 			continue
 		}
-		state, err := m.postgresIndexStateOn(ctx, conn, postgresIndexRef{
+		state, err := m.services().Indexes.State(ctx, indexQueryer(conn), migratorext.IndexRef{
 			Schema: identity.TargetSchema,
 			Table:  identity.TargetTable,
 			Name:   identity.Name,
@@ -510,198 +391,28 @@ func (m *Migrator) refreshPostgresIndexObservations(
 	return states, nil
 }
 
-// unusableIndexRepairError renders the repair refusal. It names every index that
-// is unusable together with the catalog flags that say so, and points at the
-// PostgreSQL command that rebuilds one without holding writes.
-func unusableIndexRepairError(version int64, unusable []postgresUnusableIndex) error {
-	return unusableIndexStateError(
-		version,
-		unusable,
-		"recording the migration applied would report a constraint that is not enforced",
-		"rerun the migration",
-	)
-}
-
-func unusableIndexRollbackError(version int64, unusable []postgresUnusableIndex) error {
-	return unusableIndexStateError(
-		version,
-		unusable,
-		"completing the rollback would hide an unusable index behind a deleted revision",
-		"resume the rollback",
-	)
-}
-
-func unusableIndexStateError(
-	version int64,
-	unusable []postgresUnusableIndex,
-	unsafeOutcome,
-	retryAction string,
-) error {
-	details, rebuild, noun := unusableIndexPhrases(unusable)
-	return fmt.Errorf(
-		"migration %d cannot be repaired: PostgreSQL reports %s %s unusable, "+
-			"so %s; run %s, or drop the %s and %s, then repair again",
-		version,
-		noun,
-		details,
-		unsafeOutcome,
-		rebuild,
-		noun,
-		retryAction,
-	)
-}
-
-// unusableIndexApplyError renders the up-path refusal. It says why running the
-// body is not itself the fix, which is what separates this refusal from an
-// ordinary migration failure the operator could simply run again -- and running
-// it again is exactly what an operator holding --allow-dirty has already chosen
-// to do.
-func unusableIndexApplyError(version int64, unusable []postgresUnusableIndex) error {
-	details, rebuild, noun := unusableIndexPhrases(unusable)
-	return fmt.Errorf(
-		"migration %d cannot be applied: PostgreSQL reports %s %s unusable, "+
-			"and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, "+
-			"so this run would record the migration applied over a constraint that is not enforced; "+
-			"run %s, or drop the %s, then run the migration again",
-		version,
-		noun,
-		details,
-		rebuild,
-		noun,
-	)
-}
-
-func postgresIndexApplyError(version int64, unsafe []postgresIndexState) error {
-	unusable := make([]postgresUnusableIndex, 0, len(unsafe))
-	for _, state := range unsafe {
-		if state.isUnusableTargetIndex() {
-			unusable = append(unusable, postgresUnusableIndex{
-				Schema: state.TargetSchema,
-				Name:   state.Name,
-				Valid:  state.Valid,
-				Ready:  state.Ready,
-			})
-		}
-	}
-	if len(unusable) == len(unsafe) {
-		return unusableIndexApplyError(version, unusable)
-	}
-
-	details := make([]string, 0, len(unsafe))
-	for _, state := range unsafe {
-		details = append(details, postgresIndexStateProblem(state))
-	}
-	return fmt.Errorf(
-		"migration %d cannot be applied: PostgreSQL cannot provide the intended index state: %s; "+
-			"CREATE INDEX ... IF NOT EXISTS can skip when any relation owns the name, so resolve the conflicting or missing relation and run the migration again",
-		version,
-		strings.Join(details, "; "),
-	)
-}
-
-func postgresIndexRepairError(version int64, unsafe []postgresIndexState, unsafeOutcome string) error {
-	details := make([]string, 0, len(unsafe))
-	for _, state := range unsafe {
-		details = append(details, postgresIndexStateProblem(state))
-	}
-	return fmt.Errorf(
-		"migration %d cannot be repaired: PostgreSQL cannot provide the intended index state: %s; "+
-			"%s; resolve the conflicting or missing relation, then repair again",
-		version,
-		strings.Join(details, "; "),
-		unsafeOutcome,
-	)
-}
-
-func postgresIndexStateProblem(state postgresIndexState) string {
-	if !state.TargetFound {
-		return fmt.Sprintf("target table %s cannot be resolved", state.quotedTarget())
-	}
-	if !state.RelationExists {
-		return fmt.Sprintf("index %s is missing from target table %s", state.quotedName(), state.quotedTarget())
-	}
-	if !state.isIndex() {
-		return fmt.Sprintf(
-			"relation %s has relkind=%q instead of being an index on target table %s",
-			state.quotedName(),
-			state.RelationKind,
-			state.quotedTarget(),
-		)
-	}
-	if !state.isAttachedToTarget() {
-		actual := sqlident.Qualified(platform.Postgres, state.IndexedTableSchema, state.IndexedTable)
-		return fmt.Sprintf(
-			"relation %s is an index on %s instead of target table %s",
-			state.quotedName(),
-			actual,
-			state.quotedTarget(),
-		)
-	}
-	return fmt.Sprintf(
-		"index %s on target table %s has indisvalid=%t and indisready=%t",
-		state.quotedName(),
-		state.quotedTarget(),
-		state.Valid,
-		state.Ready,
-	)
-}
-
-func postgresUnsafeCompletionStates(states []postgresIndexState) []postgresIndexState {
-	unsafe := make([]postgresIndexState, 0, len(states))
+func postgresUnsafeCompletionStates(guard migratorext.IndexGuard, states []migratorext.IndexState) []migratorext.IndexState {
+	unsafe := make([]migratorext.IndexState, 0, len(states))
 	for _, state := range states {
-		if !state.isUsableForTarget() {
+		if !guard.Usable(state) {
 			unsafe = append(unsafe, state)
 		}
 	}
 	return unsafe
 }
 
-// unusableIndexPhrases renders the three parts both refusals share: the named
-// indexes with the catalog flags that condemn them, the REINDEX commands that
-// rebuild them, and the noun that agrees with how many there are.
-func unusableIndexPhrases(unusable []postgresUnusableIndex) (details, rebuild, noun string) {
-	detailParts := make([]string, 0, len(unusable))
-	rebuildParts := make([]string, 0, len(unusable))
-	for _, index := range unusable {
-		detailParts = append(detailParts, fmt.Sprintf(
-			"%s (indisvalid=%t, indisready=%t)",
-			index.quotedName(), index.Valid, index.Ready,
-		))
-		rebuildParts = append(rebuildParts, "REINDEX INDEX CONCURRENTLY "+index.quotedName())
-	}
-	noun = "index"
-	if len(unusable) > 1 {
-		noun = "indexes"
-	}
-	return strings.Join(detailParts, ", "), strings.Join(rebuildParts, "; "), noun
-}
-
-func postgresUnusableIndexes(states []postgresIndexState) []postgresUnusableIndex {
-	unusable := make([]postgresUnusableIndex, 0, len(states))
-	for _, state := range states {
-		if state.isUnusableTargetIndex() {
-			unusable = append(unusable, postgresUnusableIndex{
-				Schema: state.TargetSchema,
-				Name:   state.Name,
-				Valid:  state.Valid,
-				Ready:  state.Ready,
-			})
-		}
-	}
-	return unusable
-}
-
 func (m *Migrator) postgresIndexStatesOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	refs []postgresIndexRef,
-) ([]postgresIndexState, error) {
-	if len(refs) == 0 || platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
+	refs []migratorext.IndexRef,
+) ([]migratorext.IndexState, error) {
+	guard := builtin.Lookup(conn.Info().Dialect).Indexes
+	if len(refs) == 0 || guard == nil {
 		return nil, nil
 	}
-	states := make([]postgresIndexState, 0, len(refs))
+	states := make([]migratorext.IndexState, 0, len(refs))
 	for _, ref := range refs {
-		state, err := m.postgresIndexStateOn(ctx, conn, ref)
+		state, err := guard.State(ctx, indexQueryer(conn), ref)
 		if err != nil {
 			return nil, err
 		}
@@ -710,126 +421,14 @@ func (m *Migrator) postgresIndexStatesOn(
 	return states, nil
 }
 
-func (m *Migrator) postgresIndexStateOn(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	ref postgresIndexRef,
-) (postgresIndexState, error) {
-	state := postgresIndexState{
-		TargetSchema: ref.Schema,
-		TargetTable:  ref.Table,
-		Name:         ref.Name,
+// indexQueryer is what an index guard reads the catalog through: the
+// connection's writer when it can query, so a read inside the migration's
+// transaction sees what the transaction did, and the connection otherwise.
+func indexQueryer(conn *dbschema.DatabaseConnection) migratorext.RowsQueryer {
+	if queryer, ok := conn.Writer().(migratorext.RowsQueryer); ok {
+		return queryer
 	}
-	if err := m.resolvePostgresIndexTarget(ctx, conn, ref, &state); err != nil {
-		return postgresIndexState{}, err
-	}
-	if state.TargetSchema == "" {
-		return state, nil
-	}
-	if err := m.resolvePostgresNamedRelation(ctx, conn, &state); err != nil {
-		return postgresIndexState{}, err
-	}
-	return state, nil
-}
-
-func (m *Migrator) resolvePostgresIndexTarget(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	ref postgresIndexRef,
-	state *postgresIndexState,
-) error {
-	predicate := "t.relname = ? AND pg_catalog.pg_table_is_visible(t.oid)"
-	args := []any{ref.Table}
-	if ref.Schema != "" {
-		predicate = "t.relname = ? AND n.nspname = ?"
-		args = append(args, ref.Schema)
-	}
-	query := sqlutil.Rebind(conn.Info().Dialect, fmt.Sprintf(`
-		SELECT n.nspname, t.relname, t.relkind::text
-		FROM pg_class t
-		JOIN pg_namespace n ON n.oid = t.relnamespace
-		WHERE t.relkind IN ('r', 'p', 'm') AND %s
-		LIMIT 1`, predicate))
-	rows, err := queryPostgresIndexes(ctx, conn, query, args...)
-	if err != nil {
-		return fmt.Errorf("failed to resolve index target table: %w", err)
-	}
-	if !rows.Next() {
-		readErr := rows.Err()
-		_ = rows.Close()
-		if readErr != nil {
-			return fmt.Errorf("failed to read index target table: %w", readErr)
-		}
-		return nil
-	}
-	if err := rows.Scan(&state.TargetSchema, &state.TargetTable, &state.TargetKind); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("failed to scan index target table: %w", err)
-	}
-	state.TargetFound = true
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("failed to close index target query: %w", err)
-	}
-	return nil
-}
-
-func (m *Migrator) resolvePostgresNamedRelation(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	state *postgresIndexState,
-) error {
-	query := sqlutil.Rebind(conn.Info().Dialect, `
-		SELECT c.relkind::text,
-		       COALESCE(tn.nspname, ''),
-		       COALESCE(t.relname, ''),
-		       COALESCE(ix.indisvalid, false),
-		       COALESCE(ix.indisready, false)
-		FROM pg_class c
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		LEFT JOIN pg_index ix ON ix.indexrelid = c.oid
-		LEFT JOIN pg_class t ON t.oid = ix.indrelid
-		LEFT JOIN pg_namespace tn ON tn.oid = t.relnamespace
-		WHERE n.nspname = ? AND c.relname = ?
-		LIMIT 1`)
-	rows, err := queryPostgresIndexes(ctx, conn, query, state.TargetSchema, state.Name)
-	if err != nil {
-		return fmt.Errorf("failed to inspect index relation: %w", err)
-	}
-	if !rows.Next() {
-		readErr := rows.Err()
-		_ = rows.Close()
-		if readErr != nil {
-			return fmt.Errorf("failed to read index relation: %w", readErr)
-		}
-		return nil
-	}
-	if err := rows.Scan(
-		&state.RelationKind,
-		&state.IndexedTableSchema,
-		&state.IndexedTable,
-		&state.Valid,
-		&state.Ready,
-	); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("failed to scan index relation: %w", err)
-	}
-	state.RelationExists = true
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("failed to close index relation query: %w", err)
-	}
-	return nil
-}
-
-func queryPostgresIndexes(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	query string,
-	args ...any,
-) (*sql.Rows, error) {
-	if queryer, ok := conn.Writer().(postgresIndexQueryer); ok {
-		return queryer.QueryContext(ctx, query, args...)
-	}
-	return conn.QueryContext(ctx, query, args...)
+	return conn
 }
 
 // postgresIndexStatesBlockingAttempt returns existing relations that would keep
@@ -842,16 +441,16 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 	conn *dbschema.DatabaseConnection,
 	sqlText string,
 	resumeFrom int,
-) ([]postgresIndexState, error) {
-	if platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
+) ([]migratorext.IndexState, error) {
+	if builtin.Lookup(conn.Info().Dialect).Indexes == nil {
 		return nil, nil
 	}
-	statements := splitSQLStatementsForDialect(sqlText, platform.Postgres)
-	dropped := make(map[postgresIndexName]struct{})
-	seen := make(map[postgresIndexName]struct{})
-	var unsafe []postgresIndexState
+	statements := splitSQLStatementsForDialect(sqlText, conn.Info().Dialect)
+	dropped := make(map[migratorext.IndexName]struct{})
+	seen := make(map[migratorext.IndexName]struct{})
+	var unsafe []migratorext.IndexState
 	for i, statement := range statements {
-		if noTransactionResumeAction(statement, platform.Postgres) == noTransactionPrefixReplay {
+		if noTransactionResumeAction(statement, conn.Info().Dialect) == noTransactionPrefixReplay {
 			if err := executeSQLOutsideTransaction(ctx, conn, statement); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)
 			}
@@ -876,10 +475,11 @@ func (m *Migrator) collectPostgresDroppedIndexNames(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	statement string,
-	dropped map[postgresIndexName]struct{},
+	dropped map[migratorext.IndexName]struct{},
 ) error {
-	for _, ref := range postgresDroppedIndexNames(statement) {
-		name, found, err := m.resolvePostgresDroppedIndexName(ctx, conn, ref)
+	guard := m.services().Indexes
+	for _, ref := range guard.Drops(statement) {
+		name, found, err := guard.ResolveDropped(ctx, indexQueryer(conn), ref)
 		if err != nil {
 			return err
 		}
@@ -895,22 +495,23 @@ func (m *Migrator) postgresUnsafeCreateStates(
 	conn *dbschema.DatabaseConnection,
 	statement string,
 	dropped,
-	seen map[postgresIndexName]struct{},
-) ([]postgresIndexState, error) {
-	var unsafe []postgresIndexState
-	for _, ref := range postgresConditionalCreatedIndexNames(statement) {
-		state, err := m.postgresIndexStateOn(ctx, conn, ref)
+	seen map[migratorext.IndexName]struct{},
+) ([]migratorext.IndexState, error) {
+	guard := m.services().Indexes
+	var unsafe []migratorext.IndexState
+	for _, ref := range guard.ConditionalCreates(statement) {
+		state, err := guard.State(ctx, indexQueryer(conn), ref)
 		if err != nil {
 			return nil, err
 		}
 		if !state.TargetFound && !state.RelationExists {
 			continue
 		}
-		name := state.indexName()
+		name := state.IndexName()
 		if _, cleaned := dropped[name]; cleaned {
 			continue
 		}
-		if !state.RelationExists || state.isUsableForTarget() {
+		if !state.RelationExists || guard.Usable(state) {
 			continue
 		}
 		if _, duplicate := seen[name]; duplicate {
@@ -920,258 +521,6 @@ func (m *Migrator) postgresUnsafeCreateStates(
 		unsafe = append(unsafe, state)
 	}
 	return unsafe, nil
-}
-
-func (m *Migrator) resolvePostgresDroppedIndexName(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	ref postgresIndexRef,
-) (postgresIndexName, bool, error) {
-	if ref.Schema != "" {
-		return ref.indexName(), true, nil
-	}
-	query := sqlutil.Rebind(conn.Info().Dialect, `
-		SELECT n.nspname, c.relname
-		FROM pg_class c
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE c.relname = ? AND pg_catalog.pg_table_is_visible(c.oid)
-		LIMIT 1`)
-	rows, err := queryPostgresIndexes(ctx, conn, query, ref.Name)
-	if err != nil {
-		return postgresIndexName{}, false, fmt.Errorf("failed to resolve dropped index: %w", err)
-	}
-	if !rows.Next() {
-		readErr := rows.Err()
-		_ = rows.Close()
-		if readErr != nil {
-			return postgresIndexName{}, false, fmt.Errorf("failed to read dropped index: %w", readErr)
-		}
-		return postgresIndexName{}, false, nil
-	}
-	var name postgresIndexName
-	if err := rows.Scan(&name.Schema, &name.Name); err != nil {
-		_ = rows.Close()
-		return postgresIndexName{}, false, fmt.Errorf("failed to scan dropped index: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return postgresIndexName{}, false, fmt.Errorf("failed to close dropped index query: %w", err)
-	}
-	return name, true, nil
-}
-
-// postgresDroppedIndexNames returns the explicitly named indexes removed by
-// DROP INDEX statements. PostgreSQL permits several comma-separated names;
-// each is retained so a cleanup suppresses only its matching create.
-func postgresDroppedIndexNames(sqlText string) []postgresIndexRef {
-	tokens := significantSQLTokens(sqlText, platform.Postgres)
-	var refs []postgresIndexRef
-	for i, token := range tokens {
-		if i > 0 && tokens[i-1].Type != lexer.TokenSemicolon {
-			continue
-		}
-		if !token.MatchIdentifierValue("DROP") {
-			continue
-		}
-		refs = append(refs, parseDropIndexNames(tokens[i+1:])...)
-	}
-	return refs
-}
-
-func parseDropIndexNames(tokens []lexer.Token) []postgresIndexRef {
-	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("INDEX") {
-		return nil
-	}
-	tokens = skipKeywordToken(tokens[1:], "CONCURRENTLY")
-	if len(tokens) > 0 && tokens[0].MatchIdentifierValue("IF") {
-		if len(tokens) < 2 || !tokens[1].MatchIdentifierValue("EXISTS") {
-			return nil
-		}
-		tokens = tokens[2:]
-	}
-
-	var refs []postgresIndexRef
-	for len(tokens) > 0 {
-		ref, consumed, ok := parseQualifiedIndexName(tokens)
-		if !ok {
-			return refs
-		}
-		refs = append(refs, ref)
-		tokens = tokens[consumed:]
-		if len(tokens) == 0 || !tokens[0].MatchOperatorValue(",") {
-			return refs
-		}
-		tokens = tokens[1:]
-	}
-	return refs
-}
-
-func parseQualifiedIndexName(tokens []lexer.Token) (postgresIndexRef, int, bool) {
-	name, ok := postgresIdentifierValue(tokens[0])
-	if !ok {
-		return postgresIndexRef{}, 0, false
-	}
-	if len(tokens) < 3 || !tokens[1].MatchOperatorValue(".") {
-		return postgresIndexRef{Name: name}, 1, true
-	}
-	qualifiedName, ok := postgresIdentifierValue(tokens[2])
-	if !ok {
-		return postgresIndexRef{}, 0, false
-	}
-	return postgresIndexRef{Schema: name, Name: qualifiedName}, 3, true
-}
-
-// postgresCreatedIndexNames returns every index name created by a statement in
-// sqlText, in order and without duplicates.
-//
-// The scan is token-based rather than textual: names are read as whole
-// identifier tokens, so idx_members can never be recognized in a statement that
-// creates idx_members_email, and a name that appears in a comment or inside a
-// string literal is not a name at all. Both spellings this repository generates
-// are handled -- the quoted "idx_members_email" keeps its bytes, and a bare
-// idx_members_email folds to lower case exactly as PostgreSQL folds it when
-// storing the catalog entry.
-func postgresCreatedIndexNames(sqlText string) []postgresIndexRef {
-	tokens := significantSQLTokens(sqlText, platform.Postgres)
-	var (
-		refs []postgresIndexRef
-		seen = make(map[postgresIndexRef]struct{})
-	)
-	for i, token := range tokens {
-		// CREATE must open a statement. Anywhere else the word is part of some
-		// larger construct, not a DDL verb whose object name follows.
-		if i > 0 && tokens[i-1].Type != lexer.TokenSemicolon {
-			continue
-		}
-		if !token.MatchIdentifierValue("CREATE") {
-			continue
-		}
-		ref, ok := parseCreateIndexName(tokens[i+1:])
-		if !ok {
-			continue
-		}
-		if _, duplicate := seen[ref]; duplicate {
-			continue
-		}
-		seen[ref] = struct{}{}
-		refs = append(refs, ref)
-	}
-	return refs
-}
-
-func postgresConditionalCreatedIndexNames(sqlText string) []postgresIndexRef {
-	refs := postgresCreatedIndexNames(sqlText)
-	conditional := make([]postgresIndexRef, 0, len(refs))
-	for _, ref := range refs {
-		if ref.IfNotExists {
-			conditional = append(conditional, ref)
-		}
-	}
-	return conditional
-}
-
-// parseCreateIndexName reads the index name and target-table schema out of the
-// tail of a CREATE statement, given the tokens that follow the CREATE keyword.
-// It follows the
-// PostgreSQL grammar
-//
-//	CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] name ON [ONLY] table ...
-//
-// and reports false for any other CREATE, including the name-less
-// CREATE INDEX ON table (...) form where PostgreSQL derives the name itself.
-func parseCreateIndexName(tokens []lexer.Token) (postgresIndexRef, bool) {
-	prefix, ok := consumeCreateIndexPrefix(tokens)
-	if !ok {
-		return postgresIndexRef{}, false
-	}
-	ref, ok := parseIndexNameTokens(prefix.tokens)
-	ref.IfNotExists = prefix.ifNotExists
-	return ref, ok
-}
-
-// consumeCreateIndexPrefix consumes the keywords that stand between CREATE and
-// an index name -- [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] -- and returns
-// the tokens that follow them. It reports false for a CREATE that is not a
-// CREATE INDEX, and for a CREATE INDEX that runs out of tokens before naming
-// anything.
-func consumeCreateIndexPrefix(tokens []lexer.Token) (createIndexPrefix, bool) {
-	tokens = skipKeywordToken(tokens, "UNIQUE")
-	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("INDEX") {
-		return createIndexPrefix{}, false
-	}
-	tokens = skipKeywordToken(tokens[1:], "CONCURRENTLY")
-	ifNotExists := false
-	if len(tokens) > 0 && tokens[0].MatchIdentifierValue("IF") {
-		if len(tokens) < 3 || !tokens[1].MatchIdentifierValue("NOT") || !tokens[2].MatchIdentifierValue("EXISTS") {
-			return createIndexPrefix{}, false
-		}
-		tokens = tokens[3:]
-		ifNotExists = true
-	}
-	return createIndexPrefix{tokens: tokens, ifNotExists: ifNotExists}, len(tokens) > 0
-}
-
-// skipKeywordToken drops a leading optional keyword when it is present.
-func skipKeywordToken(tokens []lexer.Token, keyword string) []lexer.Token {
-	if len(tokens) > 0 && tokens[0].MatchIdentifierValue(keyword) {
-		return tokens[1:]
-	}
-	return tokens
-}
-
-// parseIndexNameTokens reads the index name and the schema of its target table.
-// PostgreSQL does not allow the index name itself to carry a schema: the index
-// is created in the table's schema. Binding the catalog probe to the table is
-// therefore what keeps a schema-qualified target visible even when that schema
-// is not on search_path.
-func parseIndexNameTokens(tokens []lexer.Token) (postgresIndexRef, bool) {
-	// CREATE INDEX ON t (c) names nothing; ON here is the clause, not a name.
-	if tokens[0].MatchIdentifierValue("ON") {
-		return postgresIndexRef{}, false
-	}
-	name, ok := postgresIdentifierValue(tokens[0])
-	if !ok {
-		return postgresIndexRef{}, false
-	}
-	tokens = tokens[1:]
-	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("ON") {
-		return postgresIndexRef{}, false
-	}
-	tokens = skipKeywordToken(tokens[1:], "ONLY")
-	if len(tokens) == 0 {
-		return postgresIndexRef{}, false
-	}
-	firstTablePart, ok := postgresIdentifierValue(tokens[0])
-	if !ok {
-		return postgresIndexRef{}, false
-	}
-	if len(tokens) < 3 || !tokens[1].MatchOperatorValue(".") {
-		return postgresIndexRef{Table: firstTablePart, Name: name}, true
-	}
-	table, ok := postgresIdentifierValue(tokens[2])
-	if !ok {
-		return postgresIndexRef{}, false
-	}
-	return postgresIndexRef{Schema: firstTablePart, Table: table, Name: name}, true
-}
-
-// postgresIdentifierValue returns the catalog spelling of one identifier token.
-// A double-quoted identifier keeps its bytes with "" collapsed to a single
-// quote; an unquoted one folds to lower case, matching how PostgreSQL stores
-// it. The lexer emits a double-quoted identifier as a string token, so both
-// token types are accepted here.
-func postgresIdentifierValue(token lexer.Token) (string, bool) {
-	switch token.Type {
-	case lexer.TokenIdentifier:
-		return strings.ToLower(token.Value), true
-	case lexer.TokenString:
-		value := token.Value
-		if len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
-			return "", false
-		}
-		return strings.ReplaceAll(value[1:len(value)-1], `""`, `"`), true
-	default:
-		return "", false
-	}
 }
 
 // significantSQLTokens tokenizes sqlText for dialect and drops whitespace and
@@ -1188,6 +537,42 @@ func significantSQLTokens(sqlText, dialect string) []lexer.Token {
 			continue
 		default:
 			tokens = append(tokens, token)
+		}
+	}
+}
+
+// PostgreSQL renames an index to the explicit constraint name when attaching
+// it with ADD CONSTRAINT ... USING INDEX. Both execution and committed-prefix
+// reconstruction must follow that name before checking the catalog.
+func (m *Migrator) observePostgresIndexConstraintAttachments(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	statement string,
+	searchPathKnowledge postgresSearchPathKnowledge,
+) error {
+	guard := m.services().Indexes
+	for _, attachment := range guard.Attachments(statement) {
+		if attachment.Index.Schema == "" && searchPathKnowledge == postgresSearchPathKnown {
+			target, err := guard.ResolveTarget(ctx, indexQueryer(conn), attachment.Index)
+			if err != nil {
+				return err
+			}
+			if !target.TargetFound {
+				continue
+			}
+			attachment.Index.Schema = target.TargetSchema
+		}
+		m.postgresIndexObservation.attachConstraint(attachment)
+	}
+	return nil
+}
+
+func (o *postgresIndexObservation) attachConstraint(attachment migratorext.IndexAttachment) {
+	for i := range o.identities {
+		identity := &o.identities[i]
+		if identity.TargetTable == attachment.Index.Table && identity.Name == attachment.Index.Name &&
+			(attachment.Index.Schema == "" || identity.TargetSchema == attachment.Index.Schema) {
+			identity.Name = attachment.Name
 		}
 	}
 }
