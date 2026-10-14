@@ -38,8 +38,6 @@ func TestDomainCompositeSourcesKeepDefinitions(t *testing.T) {
 			runtime := builtintest.Runtime()
 			original, _, err := sqlschema.ReadWith(c.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: runtime.SQL()})
 			c.Assert(err, qt.IsNil)
-			c.Assert(original.Domains, qt.HasLen, 0)
-			c.Assert(original.CompositeTypes, qt.HasLen, 0)
 			objects := must.Must(original.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 1)
 			ref := pgtype.Ref(test.want.Kind(), test.schema, test.typeName)
@@ -57,8 +55,6 @@ func TestDomainCompositeSourcesKeepDefinitions(t *testing.T) {
 			composer, ok := test.want.(schemaext.ComposableDeclaration)
 			c.Assert(ok, qt.IsTrue)
 			for _, read := range []*schemamodel.Database{&fromGo, fromHCL} {
-				c.Assert(read.Domains, qt.HasLen, 0)
-				c.Assert(read.CompositeTypes, qt.HasLen, 0)
 				actual, found, err := read.FeatureObjects.Get(ref)
 				c.Assert(err, qt.IsNil)
 				c.Assert(found, qt.IsTrue)

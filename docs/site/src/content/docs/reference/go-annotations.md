@@ -204,7 +204,8 @@ type OracleEmail struct{}
 
 A scope that names a PostgreSQL-family target or `oracle` beside another target
 is a parse error, because it declares two different types. Declare each on its
-own struct.
+own struct. A scope that names only targets without these types, such as
+`mysql`, is a parse error too: no model holds the declaration.
 
 ## Tables and columns
 

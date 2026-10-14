@@ -2,6 +2,7 @@ package schemadiff_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,8 +11,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -24,10 +27,13 @@ import (
 // Built as PostgreSQL 17.10 reports it: information_schema records a domain
 // column under its BASE type with domain_name/domain_schema naming the domain,
 // and the reader blanks a domain's own schema for the schema it is reading, so
-// the current side's domain carries no schema of its own.
+// the current side's domain carries no schema of its own. The PostgreSQL type
+// owner holds both domains.
 func crossSchemaDomainColumn() (*schemamodel.Database, *catalog.Database) {
 	database := &catalog.Database{
-		Domains: []catalog.Domain{{Name: "status", BaseType: "text", Check: "VALUE IN ('open','closed')"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "status"),
+			Value: &pgtype.ObservedDomain{BaseType: "text", Check: "VALUE IN ('open','closed')"}})),
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
 		Tables: []catalog.Table{{
 			Name: "t",
 			Type: "TABLE",
@@ -47,10 +53,9 @@ func crossSchemaDomainColumn() (*schemamodel.Database, *catalog.Database) {
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "T", Name: "s", Type: "other.status"},
 		},
-		Domains: []schemamodel.Domain{{
-			StructName: "Status", Name: "status", Schema: "other",
-			BaseType: "TEXT", Check: "VALUE IN ('open','closed')",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "other", "status"),
+			Value: &pgtype.DesiredDomain{BaseType: "TEXT", Check: "VALUE IN ('open','closed')", StructName: "Status"}})),
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Desired)),
 	}
 	return desired, database
 }
@@ -83,8 +88,12 @@ func TestGenerateSchemaDiffSQL_DomainColumnIsConvertedBeforeTheOldDomainIsDroppe
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 
-	c.Assert(diff.DomainsRemoved.Names(), qt.DeepEquals, []string{"status"},
+	removals := slices.DeleteFunc(typeChangesOf(diff, pgtype.DomainChangeKind), func(change schemaext.ChangeRecord) bool {
+		return change.Value.(*pgtype.DomainChange).After != nil
+	})
+	c.Assert(removals, qt.HasLen, 1,
 		qt.Commentf("the desired schema no longer declares public.status, so the plan drops it"))
+	c.Assert(removals[0].Subject.Name.Source, qt.Equals, "status")
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		context.Background(), must.Must(builtin.New()),

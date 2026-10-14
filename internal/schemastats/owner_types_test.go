@@ -20,19 +20,18 @@ func ownerType(kind schemaext.Kind, schema, name string, value schemaext.Value) 
 	return must.Must(pgtype.DesiredObject(pgtype.Ref(kind, schema, name), value))
 }
 
-// TestCollect_CountsATypeWhoeverOwnsIt adds the type owner's count to the
-// common metric of the same name: a metric counts its objects whoever owns
-// them, and the scrape holds each type metric once. Two types of one name and
-// different kinds, the common domain app.a and the owner's range type app.a,
-// are two objects.
-func TestCollect_CountsATypeWhoeverOwnsIt(t *testing.T) {
+// TestCollect_CountsTheOwnersTypes adds the type owner's count to the type
+// metric of the same name, which the scrape holds once. Two types of one name
+// and different kinds, the domain app.a and the range type app.a, are two
+// objects.
+func TestCollect_CountsTheOwnersTypes(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Domains:        []schemamodel.Domain{{Schema: "app", Name: "a", BaseType: "int4"}},
-		CompositeTypes: []schemamodel.CompositeType{{Name: "c", Fields: []schemamodel.CompositeField{{Name: "f", Type: "int4"}}}},
 		FeatureObjects: must.Must(schemaext.NewObjects(
+			ownerType(pgtype.DomainKind, "app", "a", &pgtype.DesiredDomain{BaseType: "int4"}),
 			ownerType(pgtype.DomainKind, "app", "b", &pgtype.DesiredDomain{BaseType: "int4"}),
 			ownerType(pgtype.DomainKind, "", "c", &pgtype.DesiredDomain{BaseType: "int4"}),
+			ownerType(pgtype.CompositeKind, "", "c", &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "f", Type: "int4"}}}),
 			ownerType(pgtype.RangeKind, "app", "a", &pgtype.DesiredRange{Subtype: "int4"}),
 		)),
 	}
@@ -46,18 +45,21 @@ func TestCollect_CountsATypeWhoeverOwnsIt(t *testing.T) {
 	c.Assert(strings.Count(body, "# TYPE ptah_schema_range_types "), qt.Equals, 1)
 }
 
-// TestCollect_RefusesATypeCountedTwice refuses a type the common model holds
-// and the type owner declares too, rather than counting it twice.
-func TestCollect_RefusesATypeCountedTwice(t *testing.T) {
+// TestCollect_KeepsTheTypeMetricsAmongTheCommonOnes pins that the type
+// metrics keep their place among the common metrics, between the sequences
+// and the views, though the type owners count them.
+func TestCollect_KeepsTheTypeMetricsAmongTheCommonOnes(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{
-		Domains:        []schemamodel.Domain{{Schema: "app", Name: "d", BaseType: "int4"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(ownerType(pgtype.DomainKind, "app", "d", &pgtype.DesiredDomain{BaseType: "int4"}))),
+
+	stats, err := schemastats.Collect(c.Context(), &schemamodel.Database{}, "postgres", must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(stats.Metrics))
+	for _, metric := range stats.Metrics {
+		names = append(names, metric.Name)
 	}
-
-	stats, err := schemastats.Collect(c.Context(), db, "postgres", must.Must(builtin.New()))
-
-	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
-	c.Assert(err, qt.ErrorMatches, `.*: domain "app.d" is counted both in the common model and as an owner's object`)
-	c.Assert(stats, qt.DeepEquals, schemastats.Stats{})
+	c.Assert(names[:12], qt.DeepEquals, []string{
+		"schemas", "tables", "columns", "indexes", "constraints", "enums", "functions", "sequences",
+		"domains", "composite_types", "views", "materialized_views",
+	})
 }

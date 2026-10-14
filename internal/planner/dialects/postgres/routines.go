@@ -63,14 +63,6 @@ func routineCreation(diff *difftypes.SchemaDiff) (deporder.RoutineCreation, erro
 		created.Types = append(created.Types, schemamodel.QualifyTableName(defined.ID.Schema.Authored(), defined.ID.Name.Source))
 	}
 	created.Types = append(created.Types, diff.EnumsAdded.Names()...)
-	created.Types = append(created.Types, diff.DomainsAdded.Names()...)
-	created.Types = append(created.Types, diff.CompositeTypesAdded.Names()...)
-	for _, domainDiff := range diff.DomainsModified {
-		created.Types = append(created.Types, domainDiff.DomainName)
-	}
-	for _, compositeDiff := range diff.CompositeTypesModified {
-		created.Types = append(created.Types, compositeDiff.TypeName)
-	}
 	created.Relations = append(created.Relations, diff.TablesAdded.Names()...)
 	created.Relations = append(created.Relations, diff.ViewsAdded.Names()...)
 	created.Relations = append(created.Relations, diff.MaterializedViewsAdded.Names()...)

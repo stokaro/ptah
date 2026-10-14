@@ -10,8 +10,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -138,10 +140,10 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 			schema := &schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "advm"}},
 				Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: test.columnType}},
-				Domains: []schemamodel.Domain{
-					{Name: "money", Schema: "advm", BaseType: "numeric(12,2)"},
-					{Name: "positive_int", Schema: "advm", BaseType: "integer"},
-				},
+				FeatureObjects: must.Must(schemaext.NewObjects(
+					schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "money"), Value: &pgtype.DesiredDomain{BaseType: "numeric(12,2)"}},
+					schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}},
+				)),
 			}
 			diff := &difftypes.SchemaDiff{
 				TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "t"),
@@ -168,9 +170,9 @@ func plannerUserTypeSchema(columnType string) *schemamodel.Database {
 		Enums: []schemamodel.Enum{{
 			Name: "mood", Schema: "app", Values: []string{"sad", "ok"},
 		}},
-		Domains: []schemamodel.Domain{{
-			Name: "positive_int", Schema: "app", BaseType: "integer",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtype.Ref(pgtype.DomainKind, "app", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"},
+		})),
 	}
 }
 
@@ -190,14 +192,17 @@ func TestCompare_ACreatedColumnIsTypedByTheComparisonsVocabulary(t *testing.T) {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "app"}},
 		Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: "positive_int"}},
-		Domains: []schemamodel.Domain{{
-			Name: "positive_int", Schema: "app", BaseType: "integer",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtype.Ref(pgtype.DomainKind, "app", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"},
+		})),
 	}
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
+	// The read describes the type owner's kinds, and holds none of them.
+	current := &catalog.Database{FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed))}
 
-	c.Assert(diff.DeclaredUserTypes.Domains, qt.HasLen, 1,
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.Postgres, must.Must(builtin.New())))
+
+	c.Assert(diff.DeclaredUserTypes.Defined, qt.HasLen, 1,
 		qt.Commentf("the comparison carries the declaration's type vocabulary"))
 
 	sql, err := planner.GenerateSchemaDiffSQL(

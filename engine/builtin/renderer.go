@@ -88,7 +88,6 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/usertypescope"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 )
@@ -1918,13 +1917,6 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredRoleNames(dialect, caps, database); err != nil {
-		return err
-	}
-	// A domain, composite or range type the target cannot create is refused
-	// here rather than skipped, because skipping it leaves the declaration's
-	// own columns naming a type the server has no definition of
-	// (stokaro/ptah#1717).
-	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredSchemePaths(dialect, caps, database); err != nil {

@@ -83,8 +83,6 @@ func facetedSchema(c *qt.C) *schemamodel.Database {
 		Indexes:           []schemamodel.Index{{Name: "items_id", StructName: "Item", Fields: []string{"id"}}},
 		Constraints:       []schemamodel.Constraint{{Name: "positive", StructName: "Item", Type: "CHECK", CheckExpression: "id > 0"}},
 		Enums:             []schemamodel.Enum{{Name: "mood", Values: []string{"happy"}}},
-		Domains:           []schemamodel.Domain{{Name: "positive_id", BaseType: "bigint"}},
-		CompositeTypes:    []schemamodel.CompositeType{{Name: "pair"}},
 		Functions:         []schemamodel.Function{{Name: "identity_id", Returns: "bigint", Body: "SELECT 1"}},
 		Sequences:         []schemamodel.Sequence{{Name: "counter"}},
 		Views:             []schemamodel.View{{Name: "ids_view", Body: "SELECT id FROM items"}},
@@ -105,14 +103,14 @@ func TestSchemaConversion_AllFacetScopesUseOneBatch(t *testing.T) {
 	service := &facetService{}
 	runtime := facetRuntime(c, service)
 	desired := facetedSchema(c)
-	c.Assert(desired.FacetSlots(), qt.HasLen, 16)
+	c.Assert(desired.FacetSlots(), qt.HasLen, 14)
 	observed, err := goschematodb.ToDBSchema(t.Context(), desired, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(service.calls, qt.Equals, 1)
-	c.Assert(observed.FacetSlots(), qt.HasLen, 16)
+	c.Assert(observed.FacetSlots(), qt.HasLen, 14)
 	// A catalog holds the table's primary key among its constraints, so its
 	// slots come in another order: each value is still converted once.
-	numbers := make([]int, 0, 16)
+	numbers := make([]int, 0, 14)
 	for _, facets := range observed.FacetSlots() {
 		value, found, err := schemaext.FacetAs[*facetValue](*facets, facetKind)
 		c.Assert(err, qt.IsNil)
@@ -121,7 +119,7 @@ func TestSchemaConversion_AllFacetScopesUseOneBatch(t *testing.T) {
 		numbers = append(numbers, value.Number)
 	}
 	slices.Sort(numbers)
-	c.Assert(numbers, qt.DeepEquals, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})
+	c.Assert(numbers, qt.DeepEquals, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14})
 	restored, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observed, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(service.calls, qt.Equals, 2)

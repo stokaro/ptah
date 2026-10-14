@@ -41,17 +41,12 @@ func shadowingDocument(columnType string, declare func(*schemamodel.Database)) *
 }
 
 func declareShadowingDomain(database *schemamodel.Database) {
-	database.Domains = []schemamodel.Domain{{
-		Name: "money", Schema: "advm", BaseType: "numeric(12,2)",
-	}}
+	database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "money"), Value: &pgtype.DesiredDomain{BaseType: "numeric(12,2)"}}))
 }
 
 func declareShadowingComposite(database *schemamodel.Database) {
-	database.CompositeTypes = []schemamodel.CompositeType{{
-		Name:   "point",
-		Schema: "advp",
-		Fields: []schemamodel.CompositeField{{Name: "x", Type: "numeric"}},
-	}}
+	database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "advp", "point"),
+		Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "x", Type: "numeric"}}}}))
 }
 
 func declareShadowingRange(database *schemamodel.Database) {
@@ -78,9 +73,9 @@ func declareShadowingEnum(database *schemamodel.Database) {
 //	with it           builtin_col | money      | pg_catalog | b
 //
 // The kinds are enumerated rather than sampled because the map that does the
-// rewriting is built from Domains, CompositeTypes, Ranges and Enums in one
-// loop each, and a guard added to one loop looks exactly like a guard added to
-// all four until a row says otherwise. Both spellings are enumerated for the
+// rewriting is built from the owners' types and the enums in one loop each,
+// and a guard added to one loop looks exactly like a guard added to every
+// loop until a row says otherwise. Both spellings are enumerated for the
 // same reason: the scalar and the array spelling read two different maps.
 func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 	tests := []struct {
@@ -133,9 +128,7 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 			name:       "a built-in name the column spells in upper case",
 			columnType: "MONEY",
 			declare: func(database *schemamodel.Database) {
-				database.Domains = []schemamodel.Domain{{
-					Name: "MONEY", Schema: "advm", BaseType: "numeric(12,2)",
-				}}
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "MONEY"), Value: &pgtype.DesiredDomain{BaseType: "numeric(12,2)"}}))
 			},
 		},
 		{
@@ -144,9 +137,7 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 			name:       "a grammar spelling pg_catalog does not store",
 			columnType: "serial",
 			declare: func(database *schemamodel.Database) {
-				database.Domains = []schemamodel.Domain{{
-					Name: "serial", Schema: "advm", BaseType: "integer",
-				}}
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "serial"), Value: &pgtype.DesiredDomain{BaseType: "integer"}}))
 			},
 		},
 	}
@@ -185,9 +176,7 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 			name:       "a domain, scalar",
 			columnType: "positive_int",
 			declare: func(database *schemamodel.Database) {
-				database.Domains = []schemamodel.Domain{{
-					Name: "positive_int", Schema: "advm", BaseType: "integer",
-				}}
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}}))
 			},
 			want: "advm.positive_int",
 		},
@@ -195,9 +184,7 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 			name:       "a domain, array",
 			columnType: "positive_int[]",
 			declare: func(database *schemamodel.Database) {
-				database.Domains = []schemamodel.Domain{{
-					Name: "positive_int", Schema: "advm", BaseType: "integer",
-				}}
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "advm", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}}))
 			},
 			want: "advm.positive_int[]",
 		},
@@ -205,11 +192,8 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 			name:       "a composite, array",
 			columnType: "addr[]",
 			declare: func(database *schemamodel.Database) {
-				database.CompositeTypes = []schemamodel.CompositeType{{
-					Name:   "addr",
-					Schema: "advp",
-					Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
-				}}
+				database.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "advp", "addr"),
+					Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}}))
 			},
 			want: "advp.addr[]",
 		},

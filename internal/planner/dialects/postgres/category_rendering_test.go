@@ -314,32 +314,6 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{},
 		},
 		{
-			"DomainsAdded",
-			&difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "d"}}},
-			&schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "TEXT"}}},
-		},
-		{"DomainsRemoved", &difftypes.SchemaDiff{DomainsRemoved: difftypes.DomainChanges{{Name: "d"}}}, &schemamodel.Database{}},
-		{
-			"DomainsModified",
-			&difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{DomainName: "d", Changes: map[string]string{"base_type": "TEXT -> VARCHAR"}}}},
-			&schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "VARCHAR"}}},
-		},
-		{
-			"CompositeTypesAdded",
-			&difftypes.SchemaDiff{CompositeTypesAdded: difftypes.CompositeTypeChanges{{Name: "ct"}}},
-			&schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
-				{Name: "ct", Fields: []schemamodel.CompositeField{{Name: "a", Type: "TEXT"}}},
-			}},
-		},
-		{"CompositeTypesRemoved", &difftypes.SchemaDiff{CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "ct"}}}, &schemamodel.Database{}},
-		{
-			"CompositeTypesModified",
-			&difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{TypeName: "ct", Changes: map[string]string{"fields": "a -> b"}}}},
-			&schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
-				{Name: "ct", Fields: []schemamodel.CompositeField{{Name: "b", Type: "TEXT"}}},
-			}},
-		},
-		{
 			"ViewsAdded",
 			&difftypes.SchemaDiff{
 				ViewsAdded: difftypes.ViewChanges{{Name: "v"}},

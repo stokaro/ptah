@@ -23,7 +23,6 @@ import (
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/planner/dialects/sqlite"
 	"ptah.run/internal/txrequire"
-	"ptah.run/internal/usertypescope"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -509,32 +508,6 @@ func GenerateSchemaDiffASTWithOptions(
 				ptaherr.ErrInvalidSchemaDiff,
 			),
 		)
-	}
-	// A user type this plan CREATES on a target that cannot host one is refused
-	// here, from the change set rather than from a document.
-	//
-	// The renderer answers an ungated type with a named skip, not an error, so
-	// without this the plan emits `CREATE DOMAIN`, the renderer writes
-	// `-- domain email is not supported by this target; skipped.`, and the
-	// declaration's own columns are left naming something the server has no
-	// definition of. That is the outcome stokaro/ptah#1717 refused, and the
-	// comparison's own scan of the whole declaration cannot reach a diff built
-	// by hand or produced by a comparator that returns no error
-	// (stokaro/ptah#2561).
-	//
-	// The nil guard is the one the block above uses: a nil diff is refused
-	// below, by the planner that would have read it, and reaching a category
-	// off it here would panic before that refusal is reached.
-	if diff != nil {
-		if err := usertypescope.ValidateCreations(
-			dialect,
-			opts.CapabilitiesFor(dialect),
-			diff.DomainsAdded.Names(),
-			diff.CompositeTypesAdded.Names(),
-			nil,
-		); err != nil {
-			return nil, wrapPlanError(dialect, err)
-		}
 	}
 	planner, err := GetPlannerWithOptions(dialect, opts)
 	if err != nil {

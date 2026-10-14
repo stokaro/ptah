@@ -259,39 +259,6 @@ func (f FunctionChanges) Removals() []RoutineRemoval {
 	return removals
 }
 
-// DomainChanges is a set of domain types one change applies to, carrying each
-// one's definition and not only its name.
-//
-// Carrying a domain needs a rule rather than a transcription: a catalog reports
-// one `Default` string for what the model splits into a literal value and an
-// expression. [sqlutil.DefaultLooksLikeExpression] is that rule, and the column
-// path reaches the same one, so the two cannot answer it differently.
-//
-// See [ColumnChanges] for why both sides carry the operand and why the wire
-// shape does not change.
-type DomainChanges []schemamodel.Domain
-
-// MarshalJSON writes the names alone, the shape `domains_added` and
-// `domains_removed` have always had.
-func (d DomainChanges) MarshalJSON() ([]byte, error) {
-	if d == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(d.Names())
-}
-
-// Names is the domain names this change applies to.
-func (d DomainChanges) Names() []string {
-	if d == nil {
-		return nil
-	}
-	names := make([]string, 0, len(d))
-	for _, domain := range d {
-		names = append(names, domain.QualifiedName())
-	}
-	return names
-}
-
 // EnumChanges is a set of enum types one change applies to, carrying each one's
 // values and not only its name.
 //
@@ -346,34 +313,6 @@ func (s SequenceChanges) Names() []string {
 	names := make([]string, 0, len(s))
 	for _, sequence := range s {
 		names = append(names, sequence.QualifiedName())
-	}
-	return names
-}
-
-// CompositeTypeChanges is a set of composite types one change applies to,
-// carrying each one's fields and not only its name.
-//
-// See [ColumnChanges] for why both sides carry the operand and why the wire
-// shape is a list of names.
-type CompositeTypeChanges []schemamodel.CompositeType
-
-// MarshalJSON writes the names alone, the shape `composite_types_added` and
-// `composite_types_removed` have always had.
-func (c CompositeTypeChanges) MarshalJSON() ([]byte, error) {
-	if c == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(c.Names())
-}
-
-// Names is the composite-type names this change applies to.
-func (c CompositeTypeChanges) Names() []string {
-	if c == nil {
-		return nil
-	}
-	names := make([]string, 0, len(c))
-	for _, composite := range c {
-		names = append(names, composite.QualifiedName())
 	}
 	return names
 }
@@ -938,21 +877,6 @@ type SchemaDiff struct {
 	// schemas but have different options (increment, cache, cycle, ownership, etc.).
 	SequencesModified []SequenceDiff `json:"sequences_modified"`
 
-	// DomainsAdded/Removed/Modified track PostgreSQL domain types.
-	//
-	// Both lists carry the domain itself, for the reason [ColumnChanges] gives.
-	DomainsAdded    DomainChanges `json:"domains_added"`
-	DomainsRemoved  DomainChanges `json:"domains_removed"`
-	DomainsModified []DomainDiff  `json:"domains_modified"`
-
-	// CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
-	//
-	// Both lists carry the composite type itself, for the reason [ColumnChanges]
-	// gives.
-	CompositeTypesAdded    CompositeTypeChanges `json:"composite_types_added"`
-	CompositeTypesRemoved  CompositeTypeChanges `json:"composite_types_removed"`
-	CompositeTypesModified []CompositeTypeDiff  `json:"composite_types_modified"`
-
 	// ViewsAdded is the views that exist in the target schema and not in the
 	// current database, each carrying its body; see [ViewChanges].
 	ViewsAdded ViewChanges `json:"views_added"`
@@ -1006,17 +930,16 @@ type SchemaDiff struct {
 	RLSPoliciesModified []RLSPolicyDiff `json:"rls_policies_modified"`
 
 	// ObjectCommentsChanged holds the comment transitions of views,
-	// materialized views, sequences, domains, composite, range and enum types,
-	// extensions, functions, procedures, triggers, policies, schemas and roles
-	// whose comment is all that differs, or whose comment differs beside a
-	// change the lists above carry.
+	// materialized views, sequences, enum types, extensions, functions,
+	// procedures, triggers, policies, schemas and roles whose comment is all
+	// that differs, or whose comment differs beside a change the lists above
+	// carry.
 	//
 	// It is a list of its own rather than a field on each kind's diff because
-	// a comment is the one change these objects take in place: a domain whose
-	// only difference is its comment must not be dropped and created again,
-	// and entering one in DomainsModified is what would do that. A comparison
-	// records a transition only where the target stores the comment and reads
-	// it back, so a planner never meets one it cannot apply
+	// a comment is the one change these objects take in place: an object whose
+	// only difference is its comment must not be dropped and created again. A
+	// comparison records a transition only where the target stores the comment
+	// and reads it back, so a planner never meets one it cannot apply
 	// (stokaro/ptah#3627).
 	ObjectCommentsChanged []ObjectCommentChange `json:"object_comments_changed"`
 
@@ -1353,7 +1276,7 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //   - views and materialized views
 //   - functions, procedures, and sequences
 //   - triggers
-//   - domains, composite types, and range types
+//   - the objects a feature owner holds, such as domains and composite types
 //   - synonyms
 //   - extensions
 //   - roles, grants, and grant options
@@ -1388,7 +1311,6 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasIndexChanges() ||
 		d.hasFunctionChanges() ||
 		d.hasSequenceChanges() ||
-		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
@@ -1611,12 +1533,6 @@ func (d *SchemaDiff) hasSequenceChanges() bool {
 	return len(d.SequencesAdded) > 0 ||
 		len(d.SequencesRemoved) > 0 ||
 		len(d.SequencesModified) > 0
-}
-
-// hasUserTypeChanges returns true if there are any domain or composite type changes.
-func (d *SchemaDiff) hasUserTypeChanges() bool {
-	return len(d.DomainsAdded) > 0 || len(d.DomainsRemoved) > 0 || len(d.DomainsModified) > 0 ||
-		len(d.CompositeTypesAdded) > 0 || len(d.CompositeTypesRemoved) > 0 || len(d.CompositeTypesModified) > 0
 }
 
 func (d *SchemaDiff) hasViewChanges() bool {
@@ -1900,19 +1816,16 @@ type CommentedObjectKind string
 
 // The kinds whose comment an [ObjectCommentChange] carries.
 const (
-	CommentedView          CommentedObjectKind = "view"
-	CommentedSequence      CommentedObjectKind = "sequence"
-	CommentedDomain        CommentedObjectKind = "domain"
-	CommentedCompositeType CommentedObjectKind = "composite_type"
-	CommentedRangeType     CommentedObjectKind = "range_type"
-	CommentedEnumType      CommentedObjectKind = "enum_type"
-	CommentedFunction      CommentedObjectKind = "function"
-	CommentedProcedure     CommentedObjectKind = "procedure"
-	CommentedMatView       CommentedObjectKind = "materialized_view"
-	CommentedTrigger       CommentedObjectKind = "trigger"
-	CommentedPolicy        CommentedObjectKind = "policy"
-	CommentedSchema        CommentedObjectKind = "schema"
-	CommentedRole          CommentedObjectKind = "role"
+	CommentedView      CommentedObjectKind = "view"
+	CommentedSequence  CommentedObjectKind = "sequence"
+	CommentedEnumType  CommentedObjectKind = "enum_type"
+	CommentedFunction  CommentedObjectKind = "function"
+	CommentedProcedure CommentedObjectKind = "procedure"
+	CommentedMatView   CommentedObjectKind = "materialized_view"
+	CommentedTrigger   CommentedObjectKind = "trigger"
+	CommentedPolicy    CommentedObjectKind = "policy"
+	CommentedSchema    CommentedObjectKind = "schema"
+	CommentedRole      CommentedObjectKind = "role"
 )
 
 // ObjectCommentChange is the comment transition of one object that is neither
@@ -2068,7 +1981,7 @@ type FunctionDiff struct {
 	// PostgreSQL refuses some changes through CREATE OR REPLACE: a different
 	// return type is answered with `cannot change return type of existing
 	// function` (SQLSTATE 42P13). A planner reconciles such a change as a DROP
-	// followed by a CREATE, the way a rebuilt [DomainDiff] is, and the DROP runs
+	// followed by a CREATE, and the DROP runs
 	// against the routine as it stands. When the name is overloaded only the
 	// argument list selects it; a bare name is refused as not unique
 	// (stokaro/ptah#3288).
@@ -2082,107 +1995,6 @@ type FunctionDiff struct {
 	//
 	// It stays off the wire, like Desired.
 	CurrentSignature *string `json:"-"`
-}
-
-// DomainDiff represents changes to a PostgreSQL domain type.
-//
-// Changes is the human-readable "old -> new" payload. CurrentBaseType is the
-// from-side of the same comparison kept as a type spelling rather than prose,
-// because a plan that drops this domain has to be ordered by the shape the
-// database holds now. See the comment on CurrentBaseType.
-type DomainDiff struct {
-	DomainName string            `json:"domain_name"`
-	Changes    map[string]string `json:"changes"`
-
-	// CurrentBaseType is the base type the domain has in the database being
-	// compared against, in that catalog's own spelling -- the from-side of the
-	// "type" entry in Changes, structurally rather than as prose.
-	//
-	// A modification is reconciled as a non-CASCADE DROP followed by a CREATE.
-	// The CREATE belongs to the desired definitions, but the DROP executes
-	// against the database as it stands, so only the references it holds now
-	// can block it, and those are the ones recorded here. The two sides
-	// disagree exactly when the modification is what moved a reference.
-	//
-	// Empty when the caller built the diff by hand or the domain's from-side is
-	// unknown; the drop ordering then falls back to declaration order.
-	CurrentBaseType string `json:"current_base_type,omitempty"`
-
-	// CurrentCheckConstraints names the CHECK constraints the database holds
-	// for this domain, in catalog order.
-	//
-	// ALTER DOMAIN removes a constraint by name, and a name is the one thing
-	// the declaration cannot supply: the author wrote an expression, and the
-	// server chose what to call the constraint enforcing it. Without these a
-	// changed CHECK has only the drop-and-recreate route, which fails on any
-	// domain a column uses -- that is, on every domain worth changing.
-	//
-	// Empty when nothing needs replacing, and empty as well when the reader
-	// could not enumerate them; the planner then leaves the CHECK alone rather
-	// than guessing a name (stokaro/ptah#1717).
-	CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
-
-	// Desired is the domain this change asks the database to hold.
-	//
-	// A change with no in-place ALTER is a drop and a recreate, and the
-	// recreate renders from this. Carrying it is what lets the planner write
-	// the pair without being handed the schema the domain came out of
-	// (stokaro/ptah#2315), and an empty one is what withholds the drop: a type
-	// Ptah cannot rebuild is a type Ptah must not drop.
-	//
-	// It stays off the wire. The change map is the change; this is the operand.
-	Desired schemamodel.Domain `json:"-"`
-}
-
-// CompositeTypeDiff represents changes to a PostgreSQL composite type.
-//
-// Changes is the human-readable "old -> new" payload. CurrentFieldTypes is the
-// from-side of the same comparison kept as type spellings, for the reason given
-// on DomainDiff.CurrentBaseType.
-type CompositeTypeDiff struct {
-	TypeName string            `json:"type_name"`
-	Changes  map[string]string `json:"changes"`
-
-	// CurrentFieldTypes are the field types the composite has in the database
-	// being compared against, in that catalog's own spellings and in field
-	// order. They order the non-CASCADE DROP the recreate path emits, which
-	// runs against the current shape rather than the desired one.
-	//
-	// Empty when the caller built the diff by hand or the type's from-side is
-	// unknown; the drop ordering then falls back to declaration order.
-	CurrentFieldTypes []string `json:"current_field_types,omitempty"`
-
-	// AttributesAdded and AttributesRemoved carry the field-level delta, and
-	// they are set only when applying it reaches the declared shape exactly.
-	//
-	// PostgreSQL appends a new attribute at the end, so a declaration that puts
-	// a new field in the middle cannot be reached by ALTER TYPE at all: the
-	// catalog order would differ from the declared order and the next
-	// comparison would ask for the same change again, forever. The comparator
-	// therefore simulates the drops and appends and sets these two only when
-	// the result equals the declaration. A field whose TYPE changed also leaves
-	// them unset, because ALTER TYPE ... ALTER ATTRIBUTE is refused outright on
-	// a composite a column uses -- measured on PostgreSQL 18.4, with CASCADE and
-	// without: `cannot alter type "addr" because column "uses_addr.a" uses it`.
-	//
-	// Both unset means the modification takes the drop-and-recreate path
-	// (stokaro/ptah#1717).
-	AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
-	// AttributesRemoved names the fields to remove. See AttributesAdded.
-	AttributesRemoved []string `json:"attributes_removed,omitempty"`
-
-	// Desired is the composite type this change asks the database to hold.
-	//
-	// It plays the part [DomainDiff.Desired] plays, for the same reason and
-	// with the same empty-means-withhold-the-drop rule.
-	Desired schemamodel.CompositeType `json:"-"`
-}
-
-// CompositeAttribute is one field of a composite type, as a declaration spells
-// it.
-type CompositeAttribute struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
 }
 
 // SequenceDiff represents changes to a standalone sequence definition.
@@ -2566,10 +2378,8 @@ type TableCreation struct {
 // what a caller must supply is exactly what the qualification consults.
 // Defined holds the types feature owners' objects define.
 type UserTypeVocabulary struct {
-	Domains        []schemamodel.Domain
-	CompositeTypes []schemamodel.CompositeType
-	Enums          []schemamodel.Enum
-	Defined        []schemaext.DefinedType
+	Enums   []schemamodel.Enum
+	Defined []schemaext.DefinedType
 }
 
 // UserTypeVocabularyOf reads the vocabulary off a declaration.
@@ -2588,10 +2398,8 @@ func UserTypeVocabularyOf(desired *schemamodel.Database) UserTypeVocabulary {
 	// difference would make two diffs of one schema compare unequal for a
 	// reason neither document states.
 	return UserTypeVocabulary{
-		Domains:        nilWhenEmpty(desired.Domains),
-		CompositeTypes: nilWhenEmpty(desired.CompositeTypes),
-		Enums:          nilWhenEmpty(desired.Enums),
-		Defined:        schemaext.DefinedTypes(desired.FeatureObjects),
+		Enums:   nilWhenEmpty(desired.Enums),
+		Defined: schemaext.DefinedTypes(desired.FeatureObjects),
 	}
 }
 
@@ -3022,10 +2830,8 @@ func nilWhenEmpty[T any](values []T) []T {
 // around them.
 func (v UserTypeVocabulary) declared() schemaprep.DeclaredUserTypes {
 	return schemaprep.DeclaredUserTypes{
-		Domains:        v.Domains,
-		CompositeTypes: v.CompositeTypes,
-		Enums:          v.Enums,
-		Defined:        v.Defined,
+		Enums:   v.Enums,
+		Defined: v.Defined,
 	}
 }
 

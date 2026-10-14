@@ -331,8 +331,8 @@ func TestPlaceCompositePart_HappyPath(t *testing.T) {
 		{
 			name: "unqualified objects when the label is the run's default schema",
 			part: &schemamodel.Database{
-				Tables:  []schemamodel.Table{{StructName: "Posts", Name: "posts"}},
-				Domains: []schemamodel.Domain{{Name: "email"}},
+				Tables: []schemamodel.Table{{StructName: "Posts", Name: "posts"}},
+				Enums:  []schemamodel.Enum{{Name: "mood"}},
 			},
 			schema:        "public",
 			defaultSchema: "public",
@@ -415,12 +415,12 @@ func TestPlaceCompositePart_FailurePath(t *testing.T) {
 		},
 		{
 			name:    "a domain",
-			part:    &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "money", Schema: "billing"}}},
+			part:    &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "billing", "money"), Value: &pgtype.DesiredDomain{BaseType: "numeric"}}))},
 			wantErr: `domain "money" is in schema "billing", outside schema "auth"`,
 		},
 		{
 			name:    "a composite type",
-			part:    &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{Name: "addr", Schema: "billing"}}},
+			part:    &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "billing", "addr"), Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "city", Type: "text"}}}}))},
 			wantErr: `composite type "addr" is in schema "billing", outside schema "auth"`,
 		},
 		{

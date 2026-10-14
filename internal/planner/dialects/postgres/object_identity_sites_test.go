@@ -165,32 +165,17 @@ func TestUserTypeRecreationPairsAcrossSchemaSpellings(t *testing.T) {
 	}{
 		{
 			name: "a composite type qualified in the change and bare in the operand",
-			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
-				TypeName: "public.addr",
-				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
-				Desired: schemamodel.CompositeType{
-					Name: "addr",
-					Fields: []schemamodel.CompositeField{
-						{Name: "line1", Type: "text"},
-						{Name: "line2", Type: "text"},
-					},
-				},
-			}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.CompositeKind, "public", "addr"),
+				Value: &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "line1", Type: "text"}}},
+					After:   &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "line2", Type: "text"}, {Name: "line1", Type: "text"}}},
+					Differs: []string{pgtype.DiffAttributes}}}}},
 		},
 		{
 			name: "a composite type bare in the change and qualified in the operand",
-			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
-				TypeName: "addr",
-				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
-				Desired: schemamodel.CompositeType{
-					Name:   "addr",
-					Schema: "public",
-					Fields: []schemamodel.CompositeField{
-						{Name: "line1", Type: "text"},
-						{Name: "line2", Type: "text"},
-					},
-				},
-			}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+				Value: &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "line1", Type: "text"}}},
+					After:   &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "line2", Type: "text"}, {Name: "line1", Type: "text"}}},
+					Differs: []string{pgtype.DiffAttributes}}}}},
 		},
 		{
 			name: "a range type qualified in the change and bare in the operand",
@@ -265,18 +250,6 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 				}},
 			}}},
 			unwantedSQL: "ALTER COLUMN",
-		},
-		{
-			name: "a domain modification on a type declared in another schema",
-			desired: &schemamodel.Database{
-				Domains: []schemamodel.Domain{{Name: "zip", Schema: "reporting", BaseType: "VARCHAR(10)"}},
-			},
-			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
-				DomainName:      "app.zip",
-				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
-				CurrentBaseType: "character varying(5)",
-			}}},
-			unwantedSQL: "DROP DOMAIN",
 		},
 	}
 

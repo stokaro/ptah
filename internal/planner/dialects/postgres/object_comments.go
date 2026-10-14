@@ -9,21 +9,18 @@ import (
 )
 
 // objectCommentStatements maps the kind a comparison reports to the kind
-// COMMENT ON spells. A composite and a range are both a TYPE to the statement.
+// COMMENT ON spells.
 var objectCommentStatements = map[difftypes.CommentedObjectKind]ast.CommentedObject{
-	difftypes.CommentedView:          ast.CommentedView,
-	difftypes.CommentedSequence:      ast.CommentedSequence,
-	difftypes.CommentedDomain:        ast.CommentedDomain,
-	difftypes.CommentedCompositeType: ast.CommentedType,
-	difftypes.CommentedRangeType:     ast.CommentedType,
-	difftypes.CommentedEnumType:      ast.CommentedType,
-	difftypes.CommentedFunction:      ast.CommentedFunction,
-	difftypes.CommentedProcedure:     ast.CommentedProcedure,
-	difftypes.CommentedMatView:       ast.CommentedMaterializedView,
-	difftypes.CommentedTrigger:       ast.CommentedTrigger,
-	difftypes.CommentedPolicy:        ast.CommentedPolicy,
-	difftypes.CommentedSchema:        ast.CommentedSchema,
-	difftypes.CommentedRole:          ast.CommentedRole,
+	difftypes.CommentedView:      ast.CommentedView,
+	difftypes.CommentedSequence:  ast.CommentedSequence,
+	difftypes.CommentedEnumType:  ast.CommentedType,
+	difftypes.CommentedFunction:  ast.CommentedFunction,
+	difftypes.CommentedProcedure: ast.CommentedProcedure,
+	difftypes.CommentedMatView:   ast.CommentedMaterializedView,
+	difftypes.CommentedTrigger:   ast.CommentedTrigger,
+	difftypes.CommentedPolicy:    ast.CommentedPolicy,
+	difftypes.CommentedSchema:    ast.CommentedSchema,
+	difftypes.CommentedRole:      ast.CommentedRole,
 }
 
 // refuseIndexChangesInPlace refuses an index rename, which this planner never
@@ -161,9 +158,7 @@ func createdComments(nodes []ast.Node) map[createdObject]createdComment {
 // createdTypeObject answers the COMMENT ON kind of a created user type.
 func createdTypeObject(definition ast.TypeDefinition) (ast.CommentedObject, bool) {
 	switch definition.(type) {
-	case *ast.DomainTypeDef:
-		return ast.CommentedDomain, true
-	case *ast.CompositeTypeDef, *ast.EnumTypeDef:
+	case *ast.EnumTypeDef:
 		return ast.CommentedType, true
 	default:
 		return "", false

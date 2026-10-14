@@ -432,9 +432,6 @@ func rejectUnsupportedSchemaObjects(diff *difftypes.SchemaDiff) error {
 	if names := changedNames(diff.SequencesAdded.Names(), diff.SequencesRemoved.Names(), sequenceNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("sequences are not supported: %s", strings.Join(names, ", "))
 	}
-	if names := userDefinedTypeNames(diff); len(names) > 0 {
-		return unsupportedFeaturef("user-defined types are not supported: %s", strings.Join(names, ", "))
-	}
 	return nil
 }
 
@@ -1164,24 +1161,6 @@ func sequenceNames(diff *difftypes.SchemaDiff) []string {
 		names = append(names, sequence.SequenceName)
 	}
 	return names
-}
-
-// userDefinedTypeNames lists every domain, composite type and range the diff
-// touches. hasUserDefinedTypeChanges answered the same question as a bool; this
-// answers it with the names the refusal prints.
-func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
-	names := slices.Concat(
-		diff.DomainsAdded.Names(), diff.DomainsRemoved.Names(),
-		diff.CompositeTypesAdded.Names(), diff.CompositeTypesRemoved.Names(),
-	)
-	for _, domain := range diff.DomainsModified {
-		names = append(names, domain.DomainName)
-	}
-	for _, composite := range diff.CompositeTypesModified {
-		names = append(names, composite.TypeName)
-	}
-	slices.Sort(names)
-	return slices.Compact(names)
 }
 
 // declarationForRebuild answers with the declaration a rebuild renders from.

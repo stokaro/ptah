@@ -44,7 +44,6 @@ import (
 // about an object `render` names is the same disagreement between the two
 // surfaces that #929 is about, pointing the other way.
 func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	result = p.reportRemovedUserTypes(result, diff)
 	result = p.reportUnsupportedSequences(result, diff)
 	return p.reportUnsupportedRoutinesAndRoles(result, diff)
 }

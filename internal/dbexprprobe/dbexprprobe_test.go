@@ -36,9 +36,6 @@ func TestResolversRefuseANilConnection(t *testing.T) {
 	_, err := dbexprprobe.ResolveCheckExpressions(ctx, nil, []dbexprprobe.CheckExpressionProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve check expressions: database connection is nil`)
 
-	_, err = dbexprprobe.ResolveDomainExpressions(ctx, nil, []dbexprprobe.DomainExpressionProbe{{Key: "k"}})
-	c.Assert(err, qt.ErrorMatches, `resolve domain expressions: database connection is nil`)
-
 	_, err = dbexprprobe.ResolveIndexExpressions(ctx, nil, []dbexprprobe.IndexExpressionProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve index expressions: database connection is nil`)
 
@@ -57,10 +54,6 @@ func TestResolversAnswerNilForAnEmptyProbeList(t *testing.T) {
 	checks, err := dbexprprobe.ResolveCheckExpressions(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(checks, qt.IsNil)
-
-	domains, err := dbexprprobe.ResolveDomainExpressions(ctx, conn, nil)
-	c.Assert(err, qt.IsNil)
-	c.Assert(domains, qt.IsNil)
 
 	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
@@ -81,11 +74,6 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 			Columns: []dbexprprobe.CheckProbeColumn{{Name: "price", Type: "numeric"}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(checks, qt.IsNil)
-
-	domains, err := dbexprprobe.ResolveDomainExpressions(ctx, conn,
-		[]dbexprprobe.DomainExpressionProbe{{Key: "d", BaseType: "text", Check: "VALUE <> ''"}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(domains, qt.IsNil)
 
 	indexes, err := dbexprprobe.ResolveIndexExpressions(ctx, conn,
 		[]dbexprprobe.IndexExpressionProbe{{Key: "t_idx", Expression: "lower(code)",

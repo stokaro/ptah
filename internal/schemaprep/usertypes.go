@@ -12,11 +12,9 @@ import (
 // DeclaredUserTypes is the vocabulary used to qualify column references to
 // schema-scoped user types.
 type DeclaredUserTypes struct {
-	Domains        []schemamodel.Domain
-	CompositeTypes []schemamodel.CompositeType
-	Enums          []schemamodel.Enum
-	// Defined are the types feature owners' objects define, which a column
-	// names as it names a common domain, composite type or range type.
+	Enums []schemamodel.Enum
+	// Defined are the types feature owners' objects define, such as a
+	// domain or a composite type, which a column names by its name.
 	Defined []schemaext.DefinedType
 }
 
@@ -34,10 +32,8 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 	}
 	clone := *database
 	clone.Fields = QualifyFieldUserTypes(database.Fields, DeclaredUserTypes{
-		Domains:        database.Domains,
-		CompositeTypes: database.CompositeTypes,
-		Enums:          database.Enums,
-		Defined:        schemaext.DefinedTypes(database.FeatureObjects),
+		Enums:   database.Enums,
+		Defined: schemaext.DefinedTypes(database.FeatureObjects),
 	}, targetPlatform)
 	return &clone
 }
@@ -82,12 +78,6 @@ func declaredUserTypeQualifiers(
 		into[name] = qualified
 	}
 	base := make(map[string]string)
-	for _, domain := range declared.Domains {
-		declare(base, domain.Name, domain.Schema, domain.QualifiedName())
-	}
-	for _, composite := range declared.CompositeTypes {
-		declare(base, composite.Name, composite.Schema, composite.QualifiedName())
-	}
 	for _, defined := range declared.Defined {
 		schema, name := defined.ID.Schema.Authored(), defined.ID.Name.Source
 		declare(base, name, schema, schemamodel.QualifyTableName(schema, name))

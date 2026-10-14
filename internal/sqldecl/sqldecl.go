@@ -189,21 +189,13 @@ func definesType(objects schemaext.Objects, ref objectidentity.ID) bool {
 
 // declaredTypes lists the object kinds that share one type namespace, so a
 // domain and an enum spelled the same collide the way the engine collides them.
-// A type a feature owner's object defines is one of them.
 func declaredTypes(db *schemamodel.Database) []sqlext.Declaration {
-	listed := make([]sqlext.Declaration, 0,
-		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes))
+	listed := make([]sqlext.Declaration, 0, len(db.Enums))
 	for _, enum := range db.Enums {
 		listed = append(listed, declaration(Type, enum.Name))
 	}
-	for _, domain := range db.Domains {
-		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(domain.Schema, domain.Name)))
-	}
-	for _, composite := range db.CompositeTypes {
-		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(composite.Schema, composite.Name)))
-	}
-	// A type a feature owner's object defines takes a name in the same
-	// namespace, and collides with an enum or a common type the same way.
+	// A type a feature owner's object defines, such as a domain, takes a name
+	// in the same namespace, and collides with an enum the same way.
 	for _, defined := range schemaext.DefinedTypes(db.FeatureObjects) {
 		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(defined.ID.Schema.Authored(), defined.ID.Name.Source)))
 	}

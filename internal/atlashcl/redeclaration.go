@@ -200,8 +200,6 @@ const (
 	kindForeignKey       = "foreign key"
 	kindUnique           = "unique constraint"
 	kindEnum             = "enum"
-	kindDomain           = "domain"
-	kindCompositeType    = "composite type"
 	kindRange            = "range"
 	kindSequence         = "sequence"
 	kindExtension        = "extension"
@@ -476,10 +474,9 @@ func (p *parser) recordForeignKey(table schemamodel.Table, name string) {
 	)
 }
 
-// declaredTypes lists the four block types that create a PostgreSQL type.
-//
-// Domains, composite types and ranges are keyed by their qualified name, because
-// that is what the composite finalization folds them by.
+// declaredTypes lists the enum blocks, the types this package reads itself.
+// The owner of a domain, a composite type or a range refuses a second
+// declaration of one when it declares the object.
 //
 // The enum key is the one that moves. By default it is the BARE name, matching
 // both goschema's deduplication pass and the pinned Atlas community binary v1.3.0,
@@ -490,16 +487,9 @@ func (p *parser) recordForeignKey(table schemamodel.Table, name string) {
 // the qualified name, which is what the two objects actually are and what makes
 // Ptah's own two-schema inspect output readable again.
 func declaredTypes(db *schemamodel.Database, policy redeclarationPolicy) []declaration {
-	objects := make([]declaration, 0,
-		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes))
+	objects := make([]declaration, 0, len(db.Enums))
 	for _, enum := range db.Enums {
 		objects = append(objects, declaredEnum(enum, policy))
-	}
-	for _, domain := range db.Domains {
-		objects = append(objects, declare(kindDomain, domain.QualifiedName()))
-	}
-	for _, composite := range db.CompositeTypes {
-		objects = append(objects, declare(kindCompositeType, composite.QualifiedName()))
 	}
 	return objects
 }

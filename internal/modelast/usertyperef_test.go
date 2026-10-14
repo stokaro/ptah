@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -28,16 +29,19 @@ func userTypeDocument(columnType string) *schemamodel.Database {
 		Enums: []schemamodel.Enum{{
 			Name: "mood", Schema: "app", Values: []string{"sad", "ok"},
 		}},
-		Domains: []schemamodel.Domain{{
-			Name: "positive_int", Schema: "app", BaseType: "integer",
-		}},
-		CompositeTypes: []schemamodel.CompositeType{{
-			Name:   "addr",
-			Schema: "app",
-			Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
-		}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "numrng"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "app", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "app", "addr"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "numrng"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
 	}
+}
+
+// declareDomain adds the integer domain schema.name to a document.
+func declareDomain(db *schemamodel.Database, schema, name string) {
+	db.FeatureObjects = must.Must(db.FeatureObjects.With(schemaext.Object{
+		Ref: pgtype.Ref(pgtype.DomainKind, schema, name), Value: &pgtype.DesiredDomain{BaseType: "integer"},
+	}))
 }
 
 // TestQualifyDeclaredUserTypesNamesTheDeclarationsSchema pins the whole
@@ -167,9 +171,7 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 			name:       "a name two schemas both declare",
 			columnType: "positive_int",
 			amend: func(db *schemamodel.Database) {
-				db.Domains = append(db.Domains, schemamodel.Domain{
-					Name: "positive_int", Schema: "other", BaseType: "integer",
-				})
+				declareDomain(db, "other", "positive_int")
 			},
 			want: "positive_int",
 		},
@@ -177,9 +179,7 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 			name:       "an array of a name two schemas both declare",
 			columnType: "positive_int[]",
 			amend: func(db *schemamodel.Database) {
-				db.Domains = append(db.Domains, schemamodel.Domain{
-					Name: "positive_int", Schema: "other", BaseType: "integer",
-				})
+				declareDomain(db, "other", "positive_int")
 			},
 			want: "positive_int[]",
 		},
@@ -197,7 +197,10 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 			name:       "a declaration that carries no schema, as an author writes it",
 			columnType: "positive_int",
 			amend: func(db *schemamodel.Database) {
-				db.Domains = []schemamodel.Domain{{Name: "positive_int", BaseType: "integer"}}
+				db.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+					return ref.Kind != objectidentity.Kind(pgtype.DomainKind)
+				})
+				declareDomain(db, "", "positive_int")
 			},
 			want: "positive_int",
 		},

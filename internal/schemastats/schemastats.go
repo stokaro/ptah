@@ -71,17 +71,14 @@ func Collect(ctx context.Context, db *schemamodel.Database, target string, runti
 		{Name: "enums", Help: "Enum types", Value: len(db.Enums)},
 		{Name: "functions", Help: "Functions and procedures", Value: len(db.Functions)},
 		{Name: "sequences", Help: "Standalone sequences", Value: len(db.Sequences)},
-		{Name: "domains", Help: "Domain types", Value: len(db.Domains)},
-		{Name: "composite_types", Help: "Composite types", Value: len(db.CompositeTypes)},
+		{Name: "domains", Help: "Domain types"},
+		{Name: "composite_types", Help: "Composite types"},
 		{Name: "views", Help: "Views", Value: len(db.Views)},
 		{Name: "materialized_views", Help: "Materialized views", Value: len(db.MaterializedViews)},
 		{Name: "triggers", Help: "Triggers", Value: len(db.Triggers)},
 		{Name: "rls_policies", Help: "Row-level security policies", Value: len(db.RLSPolicies)},
 		{Name: "roles", Help: "Roles", Value: len(db.Roles)},
 		{Name: "grants", Help: "Privilege grants", Value: len(db.Grants)},
-	}
-	if err := refuseTypesCountedTwice(db); err != nil {
-		return Stats{}, err
 	}
 	metrics, err := appendFeatureMetrics(ctx, db, target, runtime, metrics)
 	if err != nil {

@@ -308,11 +308,7 @@ func alterOperationFixtures() map[string]func() ast.Node {
 // TYPE reads.
 func typeDefinitionFixtures() map[string]func() ast.Node {
 	return map[string]func() ast.Node{
-		"CompositeTypeDef": func() ast.Node {
-			return ast.NewCompositeTypeDef(&ast.CompositeField{Name: "street", Type: "TEXT"})
-		},
-		"DomainTypeDef": func() ast.Node { return ast.NewDomainTypeDef("INTEGER") },
-		"EnumTypeDef":   func() ast.Node { return ast.NewEnumTypeDef("active", "inactive") },
+		"EnumTypeDef": func() ast.Node { return ast.NewEnumTypeDef("active", "inactive") },
 	}
 }
 
@@ -321,12 +317,6 @@ func typeDefinitionFixtures() map[string]func() ast.Node {
 func typeOperationFixtures() map[string]func() ast.Node {
 	return map[string]func() ast.Node{
 		"AddEnumValueOperation": func() ast.Node { return ast.NewAddEnumValueOperation("archived") },
-		"CompositeAttributeOperation": func() ast.Node {
-			return ast.NewAddCompositeAttributeOperation("city", "TEXT")
-		},
-		"DomainConstraintOperation": func() ast.Node { return ast.NewAddDomainConstraintOperation("VALUE > 0") },
-		"DomainDefaultOperation":    func() ast.Node { return ast.NewSetDomainDefaultOperation("0") },
-		"DomainNotNullOperation":    func() ast.Node { return ast.NewDomainNotNullOperation(true) },
 		"RenameEnumValueOperation": func() ast.Node {
 			return ast.NewRenameEnumValueOperation("inactive", "dormant")
 		},

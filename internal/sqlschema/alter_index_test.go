@@ -273,7 +273,7 @@ func TestRead_AlterIndex_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(database.Tables, qt.HasLen, 0)

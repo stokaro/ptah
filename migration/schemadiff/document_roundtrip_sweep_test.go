@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // roundTripRow is one object family of [schemamodel.Database], and what has to be
@@ -76,25 +77,6 @@ func roundTripRows() []roundTripRow {
 				d.Sequences = append(d.Sequences, schemamodel.Sequence{StructName: "S", Name: "s1"})
 			},
 			count: func(d *schemamodel.Database) int { return len(d.Sequences) },
-		},
-		{
-			field: "Domains",
-			seed: func(d *schemamodel.Database) {
-				d.Domains = append(d.Domains, schemamodel.Domain{StructName: "D", Name: "d1", BaseType: "text"})
-			},
-			// The shared declaration reads back as the type owner's in a
-			// PostgreSQL document.
-			count: func(d *schemamodel.Database) int { return ownedTypes(d, pgtype.DomainKind) },
-		},
-		{
-			field: "CompositeTypes",
-			seed: func(d *schemamodel.Database) {
-				d.CompositeTypes = append(d.CompositeTypes, schemamodel.CompositeType{
-					StructName: "C", Name: "c1",
-					Fields: []schemamodel.CompositeField{{Name: "a", Type: "integer"}},
-				})
-			},
-			count: func(d *schemamodel.Database) int { return ownedTypes(d, pgtype.CompositeKind) },
 		},
 		{
 			field: "Views",
@@ -194,12 +176,11 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 		Schemas:   []catalog.Schema{{Name: "public"}},
 		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
 		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
-		Domains:   []catalog.Domain{{Schema: "public", Name: "d1", BaseType: "text"}},
-		Composites: []catalog.CompositeType{{
-			Schema: "public", Name: "c1",
-			Fields: []catalog.CompositeField{{Name: "a", Type: "integer"}},
-		}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r1"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "public", "d1"), Value: &pgtype.ObservedDomain{BaseType: "text"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "public", "c1"),
+				Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r1"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
 		// A read that asked the catalog about row-level security, as the
 		// PostgreSQL reader does, so the fixture's policies compare.
 		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
@@ -216,8 +197,8 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
-	c.Assert(diff.DomainsRemoved.Names(), qt.HasLen, 1)
-	c.Assert(diff.CompositeTypesRemoved.Names(), qt.HasLen, 1)
+	c.Assert(typeChangesOf(diff, pgtype.DomainChangeKind), qt.HasLen, 1)
+	c.Assert(typeChangesOf(diff, pgtype.CompositeChangeKind), qt.HasLen, 1)
 	c.Assert(rangeChangesOf(diff), qt.HasLen, 1)
 }
 
@@ -236,9 +217,7 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 // nothing recorded that the document could not have named them
 // (stokaro/ptah#1031).
 var yamlUnwritableFields = map[string]coverage.Kind{
-	"Sequences":      coverage.Sequence,
-	"Domains":        coverage.Domain,
-	"CompositeTypes": coverage.Composite,
+	"Sequences": coverage.Sequence,
 }
 
 // The YAML surface has a topics key, so a YAML document that leaves a topic
@@ -301,6 +280,14 @@ func loadYAMLDocument(c *qt.C) *schemamodel.Database {
 	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
+}
+
+// typeChangesOf lists the changes of the type owner's change kind a diff
+// carries.
+func typeChangesOf(diff *difftypes.SchemaDiff, kind schemaext.Kind) []schemaext.ChangeRecord {
+	return slices.DeleteFunc(slices.Clone(diff.FeatureChanges), func(change schemaext.ChangeRecord) bool {
+		return change.Value.Kind() != kind
+	})
 }
 
 // ownedTypes counts the PostgreSQL type owner's objects of kind.
@@ -402,6 +389,28 @@ func TestRoundTrip_SynonymsSurvive(t *testing.T) {
 	c.Assert(parsedSynonym.Value, qt.DeepEquals, declared.Value)
 	c.Assert(parsed.FeatureCoverage.Lookup(synonym.Kind, declared.Ref).State, qt.Equals, schemaext.Complete)
 	c.Assert(loadYAMLDocument(c).FeatureCoverage.Lookup(synonym.Kind, declared.Ref).State, qt.Equals, schemaext.Uninspected)
+}
+
+// TestRoundTrip_TypesSurvive is the sweep's row for domains and composite
+// types, which the PostgreSQL type owner holds as feature objects: HCL has a
+// block for each, so the document Ptah writes carries them back. A YAML
+// document has no key for either, and records that it does not describe them.
+func TestRoundTrip_TypesSurvive(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	db.FeatureObjects = must.Must(schemaext.NewObjects(
+		schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d1"), Value: &pgtype.DesiredDomain{BaseType: "text", StructName: "D"}},
+		schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "c1"),
+			Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}, StructName: "C"}},
+	))
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+
+	c.Assert(ownedTypes(parsed, pgtype.DomainKind), qt.Equals, 1)
+	c.Assert(ownedTypes(parsed, pgtype.CompositeKind), qt.Equals, 1)
+	yaml := loadYAMLDocument(c)
+	c.Assert(yamlRecordsKind(yaml, coverage.Domain), qt.IsTrue)
+	c.Assert(yamlRecordsKind(yaml, coverage.Composite), qt.IsTrue)
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of

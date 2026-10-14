@@ -1,17 +1,15 @@
 package generator
 
-// Reversing the user-type families -- enums, domains, composite types and
-// ranges -- and recovering each one's prior definition.
+// Reversing enum changes, and recovering the columns the prior database typed
+// by each enum. A domain, a composite type and a range belong to their owners,
+// which reverse them.
 
 import (
-	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// reverseEnumDiffs reverses enum modifications for down migrations
 // reverseEnumDiffs reverses enum modifications for down migrations.
 //
 // The columns a value removal has to convert are resolved against the
@@ -76,167 +74,4 @@ func priorEnumColumnUsages(
 		return nil
 	}
 	return usages
-}
-
-// reverseDomainDiffs turns each modified domain around for the down direction.
-//
-// CurrentBaseType has to be re-derived rather than carried over: it names the
-// shape the DROP will run against, and a down migration runs against the shape
-// the up migration created. schema is the up direction's target, so that is
-// where the down direction's from-side lives. A nil schema leaves it empty and
-// the drop ordering falls back to declaration order.
-func reverseDomainDiffs(
-	domainDiffs []difftypes.DomainDiff,
-	schema, prior *schemamodel.Database,
-	semantics identifier.Semantics,
-) []difftypes.DomainDiff {
-	reversed := make([]difftypes.DomainDiff, len(domainDiffs))
-	for i, domainDiff := range domainDiffs {
-		reversed[i] = difftypes.DomainDiff{
-			DomainName: domainDiff.DomainName,
-			Changes:    reverseChangeMap(domainDiff.Changes),
-			// The current-side base type is re-derived from the schema the UP
-			// migration leaves behind, which is what the DOWN direction is
-			// changing away from. CurrentCheckConstraints cannot be: see
-			// nestedCoverageExempt.
-			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
-			// The recreate half renders from the operand, so reversing the
-			// change map without reversing the operand would rebuild the very
-			// definition the rollback is undoing (stokaro/ptah#2315).
-			Desired: priorDomain(prior, domainDiff.DomainName, semantics),
-		}
-	}
-	return reversed
-}
-
-// priorDomain is the domain the pre-change database held, or a zero one when it
-// held none -- which is what withholds the drop.
-func priorDomain(
-	prior *schemamodel.Database,
-	name string,
-	semantics identifier.Semantics,
-) schemamodel.Domain {
-	if prior == nil {
-		return schemamodel.Domain{}
-	}
-	if domain := objectlookup.Qualified(prior.Domains, name, semantics); domain != nil {
-		return *domain
-	}
-	return schemamodel.Domain{}
-}
-
-// reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
-func reverseCompositeTypeDiffs(
-	compositeDiffs []difftypes.CompositeTypeDiff,
-	schema, prior *schemamodel.Database,
-	semantics identifier.Semantics,
-) []difftypes.CompositeTypeDiff {
-	reversed := make([]difftypes.CompositeTypeDiff, len(compositeDiffs))
-	for i, compositeDiff := range compositeDiffs {
-		reversed[i] = difftypes.CompositeTypeDiff{
-			TypeName:          compositeDiff.TypeName,
-			Changes:           reverseChangeMap(compositeDiff.Changes),
-			CurrentFieldTypes: targetCompositeFieldTypes(schema, compositeDiff.TypeName),
-			// An added attribute is a removed one coming back, and the pair is
-			// what lets the planner ALTER instead of rebuilding. Dropping both
-			// sent every reversed composite down the drop-and-recreate path
-			// (stokaro/ptah#2418).
-			AttributesAdded:   restoredCompositeAttributes(prior, compositeDiff.TypeName, compositeDiff.AttributesRemoved),
-			AttributesRemoved: compositeAttributeNames(compositeDiff.AttributesAdded),
-			Desired:           priorCompositeType(prior, compositeDiff.TypeName, semantics),
-		}
-	}
-	return reversed
-}
-
-// priorCompositeType mirrors [priorDomain] for composite types.
-func priorCompositeType(
-	prior *schemamodel.Database,
-	name string,
-	semantics identifier.Semantics,
-) schemamodel.CompositeType {
-	if prior == nil {
-		return schemamodel.CompositeType{}
-	}
-	if composite := objectlookup.Qualified(prior.CompositeTypes, name, semantics); composite != nil {
-		return *composite
-	}
-	return schemamodel.CompositeType{}
-}
-
-func targetDomainBaseType(schema *schemamodel.Database, name string) string {
-	if schema == nil {
-		return ""
-	}
-	for _, domain := range schema.Domains {
-		if domain.QualifiedName() == name {
-			return domain.BaseType
-		}
-	}
-	return ""
-}
-
-func targetCompositeFieldTypes(schema *schemamodel.Database, name string) []string {
-	if schema == nil {
-		return nil
-	}
-	for _, composite := range schema.CompositeTypes {
-		if composite.QualifiedName() != name {
-			continue
-		}
-		fieldTypes := make([]string, len(composite.Fields))
-		for i, field := range composite.Fields {
-			fieldTypes[i] = field.Type
-		}
-		return fieldTypes
-	}
-	return nil
-}
-
-// compositeAttributeNames is the removal shape of a set of added attributes: a
-// DROP ATTRIBUTE takes a name, and nothing else of the attribute survives it.
-func compositeAttributeNames(added []difftypes.CompositeAttribute) []string {
-	if len(added) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(added))
-	for _, attribute := range added {
-		names = append(names, attribute.Name)
-	}
-	return names
-}
-
-// restoredCompositeAttributes gives a removed attribute back its type, which a
-// removal does not carry and an ADD ATTRIBUTE needs.
-//
-// The type comes from the PRE-CHANGE schema, because that is the composite the
-// rollback is restoring. An attribute the prior schema does not describe is
-// left out rather than added with an empty type, which would render
-// `ADD ATTRIBUTE "x" ` and be refused.
-func restoredCompositeAttributes(
-	prior *schemamodel.Database,
-	typeName string,
-	removed []string,
-) []difftypes.CompositeAttribute {
-	if prior == nil || len(removed) == 0 {
-		return nil
-	}
-	types := make(map[string]string)
-	for _, composite := range prior.CompositeTypes {
-		if composite.QualifiedName() != typeName {
-			continue
-		}
-		for _, field := range composite.Fields {
-			types[field.Name] = field.Type
-		}
-	}
-	restored := make([]difftypes.CompositeAttribute, 0, len(removed))
-	for _, name := range removed {
-		fieldType, known := types[name]
-		if !known {
-			continue
-		}
-		restored = append(restored, difftypes.CompositeAttribute{Name: name, Type: fieldType})
-	}
-	return restored
 }

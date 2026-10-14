@@ -87,7 +87,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 				Table: creation.Table, Fields: creation.Fields, Enums: creation.Enums, Constraints: creation.Constraints}})
 		names[subject.Key()] = creation.Name
 	}
-	graph, err := featurehost.NewGraph(commonOwner, nodes, pgeffects.TypeSequence(builder, nodes, slices.Concat(request.Types.Current, request.Types.Desired)), windows)
+	graph, err := featurehost.NewGraph(commonOwner, nodes, pgeffects.Sequence(builder, nodes), windows)
 	if err != nil {
 		return nil, err
 	}

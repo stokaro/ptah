@@ -95,8 +95,6 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		Constraints: toDBConstraints(db, tableByStruct, dialect),
 		Functions:   toDBFunctions(db.Functions),
 		Sequences:   toDBSequences(db.Sequences),
-		Domains:     toDBDomains(db.Domains),
-		Composites:  toDBCompositeTypes(db.CompositeTypes),
 		Views:       toDBViews(db.Views),
 		MatViews:    toDBMaterializedViews(db.MaterializedViews),
 		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
@@ -707,48 +705,6 @@ func toDBSequences(sequences []schemamodel.Sequence) []catalog.Sequence {
 			Cycle:     sequence.Cycle,
 			OwnedBy:   sequence.OwnedBy,
 			Comment:   sequence.Comment,
-		})
-	}
-	return out
-}
-
-func toDBDomains(domains []schemamodel.Domain) []catalog.Domain {
-	out := make([]catalog.Domain, 0, len(domains))
-	for _, domain := range domains {
-		defaultValue := domain.Default
-		if domain.DefaultExpr != "" {
-			defaultValue = domain.DefaultExpr
-		}
-		out = append(out, catalog.Domain{
-			Facets:   domain.Facets,
-			Name:     domain.Name,
-			Schema:   domain.Schema,
-			BaseType: domain.BaseType,
-			NotNull:  domain.NotNull,
-			Default:  defaultValue,
-			Check:    domain.Check,
-			Comment:  domain.Comment,
-		})
-	}
-	return out
-}
-
-func toDBCompositeTypes(composites []schemamodel.CompositeType) []catalog.CompositeType {
-	out := make([]catalog.CompositeType, 0, len(composites))
-	for _, composite := range composites {
-		fields := make([]catalog.CompositeField, 0, len(composite.Fields))
-		for _, field := range composite.Fields {
-			fields = append(fields, catalog.CompositeField{
-				Name: field.Name,
-				Type: field.Type,
-			})
-		}
-		out = append(out, catalog.CompositeType{
-			Facets:  composite.Facets,
-			Name:    composite.Name,
-			Schema:  composite.Schema,
-			Fields:  fields,
-			Comment: composite.Comment,
 		})
 	}
 	return out

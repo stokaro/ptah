@@ -110,19 +110,16 @@ func viewComments(diff *difftypes.SchemaDiff) []ast.Node {
 // needs. YDB keeps a view's comment; every other kind is an object YDB does
 // not have, and its key is false on every YDB line.
 var commentKinds = map[difftypes.CommentedObjectKind]capability.Capability{
-	difftypes.CommentedView:          capability.ViewComments,
-	difftypes.CommentedSequence:      capability.SequenceComments,
-	difftypes.CommentedDomain:        capability.DomainComments,
-	difftypes.CommentedCompositeType: capability.TypeComments,
-	difftypes.CommentedRangeType:     capability.TypeComments,
-	difftypes.CommentedEnumType:      capability.TypeComments,
-	difftypes.CommentedFunction:      capability.FunctionComments,
-	difftypes.CommentedProcedure:     capability.ProcedureComments,
-	difftypes.CommentedMatView:       capability.MaterializedViewComments,
-	difftypes.CommentedTrigger:       capability.TriggerComments,
-	difftypes.CommentedPolicy:        capability.PolicyComments,
-	difftypes.CommentedSchema:        capability.SchemaComments,
-	difftypes.CommentedRole:          capability.RoleComments,
+	difftypes.CommentedView:      capability.ViewComments,
+	difftypes.CommentedSequence:  capability.SequenceComments,
+	difftypes.CommentedEnumType:  capability.TypeComments,
+	difftypes.CommentedFunction:  capability.FunctionComments,
+	difftypes.CommentedProcedure: capability.ProcedureComments,
+	difftypes.CommentedMatView:   capability.MaterializedViewComments,
+	difftypes.CommentedTrigger:   capability.TriggerComments,
+	difftypes.CommentedPolicy:    capability.PolicyComments,
+	difftypes.CommentedSchema:    capability.SchemaComments,
+	difftypes.CommentedRole:      capability.RoleComments,
 }
 
 // refuseComments refuses, before anything is planned, a comment change the

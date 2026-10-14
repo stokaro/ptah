@@ -59,60 +59,12 @@ func (r *renderer) renderSequences() {
 	}
 }
 
-// renderUserTypes writes the domains, composite types and ranges of the
-// common model and the type blocks owners place among them, ordered together
-// as every placement is: by type, schema and name; see [renderer.renderSlot].
-// Atlas writes none of these blocks, so no Atlas output fixes their order.
+// renderUserTypes writes the type blocks owners place among the user types,
+// such as a domain, ordered as every placement is: by type, schema and name;
+// see [renderer.renderSlot]. Atlas writes none of these blocks, so no Atlas
+// output fixes their order.
 func (r *renderer) renderUserTypes() {
-	entries := make([]slotEntry, 0, len(r.db.Domains)+len(r.db.CompositeTypes))
-	for _, domain := range r.db.Domains {
-		entries = append(entries, slotEntry{blockType: blockDomain, schema: r.schemaFor(domain.Schema), name: domain.Name,
-			write: func() { r.renderDomain(domain) }})
-	}
-	for _, composite := range r.db.CompositeTypes {
-		entries = append(entries, slotEntry{blockType: blockComposite, schema: r.schemaFor(composite.Schema), name: composite.Name,
-			write: func() { r.renderComposite(composite) }})
-	}
-	r.renderSlot(hclext.UserTypes, nil, entries...)
-}
-
-func (r *renderer) renderDomain(domain schemamodel.Domain) {
-	domain.Canonicalize()
-	r.linef(`%s %s {`, blockDomain, quote(domain.Name))
-	if schema := r.schemaFor(domain.Schema); schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(schema))
-	}
-	r.rawAttr(1, "type", userTypeExpr(domain.BaseType))
-	if domain.NotNull {
-		r.rawAttr(1, "null", "false")
-	}
-	if domain.DefaultExpr != "" {
-		r.rawAttr(1, "default", sqlCall(domain.DefaultExpr))
-	} else {
-		r.stringAttr(1, "default", domain.Default)
-	}
-	if domain.Check != "" {
-		r.rawAttr(1, "check", sqlCall(domain.Check))
-	}
-	r.stringAttr(1, "comment", domain.Comment)
-	r.line("}")
-	r.line("")
-}
-
-func (r *renderer) renderComposite(composite schemamodel.CompositeType) {
-	composite.Canonicalize()
-	r.linef(`%s %s {`, blockComposite, quote(composite.Name))
-	if schema := r.schemaFor(composite.Schema); schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(schema))
-	}
-	r.stringAttr(1, "comment", composite.Comment)
-	for _, field := range composite.Fields {
-		r.linef(`  field %s {`, quote(field.Name))
-		r.rawAttr(2, "type", userTypeExpr(field.Type))
-		r.line("  }")
-	}
-	r.line("}")
-	r.line("")
+	r.renderSlot(hclext.UserTypes, nil)
 }
 
 func (r *renderer) renderManagedData() {

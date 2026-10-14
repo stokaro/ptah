@@ -143,6 +143,8 @@ const (
 	cockroachAST   = "ptah.run/dialect/cockroachdb/crdbast"
 	extensionOwner = "ptah.run/feature/pgextension"
 	mssqlProperty  = "ptah.run/dialect/mssql/mssqlproperty"
+	oraTypeOwner   = "ptah.run/feature/oratype"
+	pgTypeOwner    = "ptah.run/feature/pgtype"
 	spannerAST     = "ptah.run/dialect/spanner/spannerast"
 	synonymOwner   = "ptah.run/feature/synonym"
 	timescaleAST   = "ptah.run/dialect/timescaledb/tsast"
@@ -165,6 +167,8 @@ var recordedDepartures = []Departure{
 	{Node: "AlterSecretNode", Successors: []ExtensionKind{payload(ydbAST, "Secret")}},
 	{Node: "AlterTopicNode", Successors: []ExtensionKind{payload(ydbAST, "Topic")}},
 	{Node: "AlterTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
+	{Node: "CompositeAttributeOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterComposite")}},
+	{Node: "CompositeTypeDef", Successors: []ExtensionKind{payload(oraTypeOwner, "ReplaceObjectType"), payload(pgTypeOwner, "CreateComposite")}},
 	{Node: "CreateAsyncReplicationNode", Successors: []ExtensionKind{payload(ydbAST, "AsyncReplication")}},
 	{Node: "CreateContinuousAggregateNode", Successors: []ExtensionKind{payload(timescaleAST, "ContinuousAggregate")}},
 	{Node: "CreateCoordinationNodeNode", Successors: []ExtensionKind{payload(ydbAST, "CoordinationNode")}},
@@ -178,6 +182,10 @@ var recordedDepartures = []Departure{
 	{Node: "CreateTopicNode", Successors: []ExtensionKind{payload(ydbAST, "Topic")}},
 	{Node: "CreateTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
 	{Node: "DefaultPrivilegeNode", Successors: []ExtensionKind{payload("ptah.run/feature/pgdefaultprivilege", "Operation")}},
+	{Node: "DomainConstraintOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterDomain")}},
+	{Node: "DomainDefaultOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterDomain")}},
+	{Node: "DomainNotNullOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterDomain")}},
+	{Node: "DomainTypeDef", Successors: []ExtensionKind{payload(oraTypeOwner, "CreateDomain"), payload(pgTypeOwner, "CreateDomain")}},
 	{Node: "DropAsyncReplicationNode", Successors: []ExtensionKind{payload(ydbAST, "AsyncReplication")}},
 	{Node: "DropChangefeedOperation", Successors: []ExtensionKind{payload(ydbAST, "DropChangefeed")}},
 	{Node: "DropContinuousAggregateNode", Successors: []ExtensionKind{payload(timescaleAST, "ContinuousAggregate")}},
@@ -195,7 +203,7 @@ var recordedDepartures = []Departure{
 	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},
 	{Node: "ExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation"), payload(extensionOwner, "CommentOperation")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterTTL")}},
-	{Node: "RangeTypeDef", Successors: []ExtensionKind{payload("ptah.run/feature/pgtype", "CreateRange")}},
+	{Node: "RangeTypeDef", Successors: []ExtensionKind{payload(pgTypeOwner, "CreateRange")}},
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "RevokeDefaultPrivilegeNode", Successors: []ExtensionKind{payload("ptah.run/feature/pgdefaultprivilege", "Operation")}},
 	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},

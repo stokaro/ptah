@@ -21,8 +21,9 @@ import (
 // recorded.
 // SetUnloggedOperation is accounted for by pgtable.AlterPersistence in the
 // extraction departure ledger rather than by a common node.
-// Default privileges and range types use owner operations through ExtensionNode.
-const nodeKindFloor = 78
+// Default privileges, domains, composite types and range types use owner
+// operations through ExtensionNode.
+const nodeKindFloor = 72
 
 // censusRow is one node kind the census accepts.
 //
@@ -127,12 +128,6 @@ var nodeCensus = []censusRow{
 	// The type definitions and the ALTER TYPE operations. Each is rendered
 	// inside the CREATE TYPE or ALTER TYPE statement that carries it.
 	{node: &ast.AddEnumValueOperation{}},
-	{node: &ast.CompositeAttributeOperation{}},
-	{node: &ast.CompositeTypeDef{}},
-	{node: &ast.DomainConstraintOperation{}},
-	{node: &ast.DomainDefaultOperation{}},
-	{node: &ast.DomainNotNullOperation{}},
-	{node: &ast.DomainTypeDef{}},
 	{node: &ast.EnumTypeDef{}},
 	{node: &ast.RenameEnumValueOperation{}},
 	{node: &ast.RenameTypeOperation{}},

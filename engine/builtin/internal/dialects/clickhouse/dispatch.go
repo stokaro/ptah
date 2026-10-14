@@ -179,13 +179,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddEnumValueOperation,
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTypeOperation,
-		*ast.CompositeAttributeOperation,
-		*ast.DomainConstraintOperation,
-		*ast.DomainDefaultOperation,
-		*ast.DomainNotNullOperation,
-		*ast.EnumTypeDef,
-		*ast.DomainTypeDef,
-		*ast.CompositeTypeDef:
+		*ast.EnumTypeDef:
 		return r.nodeNeedsParent(node)
 
 	default:

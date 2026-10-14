@@ -25,8 +25,7 @@ func userTypeSource(scope string) string {
 
 // TestParse_UserTypesReachTheTypeOwnerWithoutAnotherTarget pins the routing of
 // the domain and composite directives: a declaration that names no target, or
-// only PostgreSQL-family targets, is the PostgreSQL type owner's, and none of
-// it stays on the common model.
+// only PostgreSQL-family targets, is the PostgreSQL type owner's.
 func TestParse_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 	for _, test := range []struct {
 		name, scope string
@@ -42,8 +41,6 @@ func TestParse_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 			db, err := goschema.ParseSource(builtintest.Annotations(), "fixture.go", userTypeSource(test.scope))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Domains, qt.HasLen, 0)
-			c.Assert(db.CompositeTypes, qt.HasLen, 0)
 			objects := must.Must(db.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 2)
 			c.Assert(objects[0].Ref, qt.DeepEquals, pgtype.Ref(pgtype.CompositeKind, "", "address"))
@@ -59,15 +56,13 @@ func TestParse_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 
 // TestParse_AnOracleUserTypeReachesTheOracleTypeOwner is the other half: a
 // declaration scoped to Oracle is Oracle's domain or object type, which the
-// Oracle type owner reads, and none of it stays on the common model.
+// Oracle type owner reads.
 func TestParse_AnOracleUserTypeReachesTheOracleTypeOwner(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := goschema.ParseSource(builtintest.Annotations(), "fixture.go", userTypeSource(` dialects="oracle"`))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Domains, qt.HasLen, 0)
-	c.Assert(db.CompositeTypes, qt.HasLen, 0)
 	objects := must.Must(db.FeatureObjects.All())
 	c.Assert(objects, qt.HasLen, 2)
 	c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))
@@ -89,5 +84,5 @@ func TestParse_AUserTypeScopedToBothModelsIsRefused(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*ptah:schema:domain.*`)
-	c.Assert(db.Domains, qt.HasLen, 0)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 }

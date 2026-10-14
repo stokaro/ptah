@@ -127,8 +127,6 @@ func excludeDatabase(
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
-	filtered.Domains = state.filterDomains(filtered.Domains)
-	filtered.Composites = state.filterComposites(filtered.Composites)
 	filtered.Indexes = state.filterIndexes(filtered.Indexes)
 	filtered.Constraints = state.filterConstraints(filtered.Constraints)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
@@ -251,8 +249,6 @@ func excludeGenerated(
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
 	filtered.Enums = state.filterGeneratedEnums(filtered.Enums)
 	filtered.Sequences = state.filterGeneratedSequences(filtered.Sequences)
-	filtered.Domains = state.filterGeneratedDomains(filtered.Domains)
-	filtered.CompositeTypes = state.filterGeneratedCompositeTypes(filtered.CompositeTypes)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
 		return nil, ExcludeReport{}, err
@@ -966,20 +962,17 @@ func (s *exclusionState) filterEnums(enums []catalog.Enum) []catalog.Enum {
 	})
 }
 
-// filterSequences, filterDomains, filterComposites and filterRanges subtract
-// the four top-level kinds an exclusion has to ask about rather than clone.
+// filterSequences subtracts the sequences an exclusion has to ask about
+// rather than clone. The owners' selections subtract a domain, a composite
+// type and a range in the same way; see [exclusionState.filterOwnerFeatures].
 //
-// The include projection already selects all four by name
+// The include projection already selects a sequence by name
 // ([scopeSelection.projectDatabaseTopLevel] and projectDatabaseSupport), so
-// `--include positive_int` picks the domain while an unasked
-// `--exclude positive_int` is a silent no-op that still plans DROP DOMAIN for
-// the object the user wrote the selector to protect -- the same destructive
-// miss this file answers for
-// enums and functions. It is also what makes the unmatched-selector report
-// truthful: a selector can only be called empty by a filter that asked it.
-//
-// The resource-type names match the include side exactly: sequence, domain,
-// composite_type, range.
+// an unasked `--exclude order_seq` would be a silent no-op that still plans
+// DROP SEQUENCE for the object the user wrote the selector to protect -- the
+// same destructive miss this file answers for enums and functions. It is also
+// what makes the unmatched-selector report truthful: a selector can only be
+// called empty by a filter that asked it.
 func (s *exclusionState) filterSequences(sequences []catalog.Sequence) []catalog.Sequence {
 	return keep(sequences, func(sequence catalog.Sequence) bool {
 		excluded := s.matches("sequence", s.nameCandidates(sequence.Schema, sequence.Name)...) ||
@@ -988,20 +981,6 @@ func (s *exclusionState) filterSequences(sequences []catalog.Sequence) []catalog
 			s.excludeSequence(sequence.Schema, sequence.Name)
 		}
 		return !excluded
-	})
-}
-
-func (s *exclusionState) filterDomains(domains []catalog.Domain) []catalog.Domain {
-	return keep(domains, func(domain catalog.Domain) bool {
-		named := s.matches("domain", s.nameCandidates(domain.Schema, domain.Name)...)
-		return !named && !s.schemaExcluded(domain.Schema)
-	})
-}
-
-func (s *exclusionState) filterComposites(composites []catalog.CompositeType) []catalog.CompositeType {
-	return keep(composites, func(composite catalog.CompositeType) bool {
-		named := s.matches("composite_type", s.nameCandidates(composite.Schema, composite.Name)...)
-		return !named && !s.schemaExcluded(composite.Schema)
 	})
 }
 
@@ -1347,14 +1326,14 @@ func (s *exclusionState) filterGeneratedEnums(enums []schemamodel.Enum) []schema
 	})
 }
 
-// filterGeneratedSequences, filterGeneratedDomains,
-// filterGeneratedCompositeTypes and filterGeneratedRanges are the desired-side
-// mirrors of the four kinds added to the database side. Both sides of a
-// comparison must subtract the same objects: a selector that removed a domain
-// from the introspected side alone would turn a protected object into a CREATE.
+// filterGeneratedSequences is the desired-side mirror of filterSequences.
+// Both sides of a comparison must subtract the same objects: a selector that
+// removed a sequence from the introspected side alone would turn a protected
+// object into a CREATE.
 //
-// These carry a Schema field of their own, exactly as generated tables do, so
-// the candidates come from nameCandidates rather than from a "schema." prefix.
+// A sequence carries a Schema field of its own, exactly as a generated table
+// does, so the candidates come from nameCandidates rather than from a
+// "schema." prefix.
 func (s *exclusionState) filterGeneratedSequences(sequences []schemamodel.Sequence) []schemamodel.Sequence {
 	return keep(sequences, func(sequence schemamodel.Sequence) bool {
 		excluded := s.matches("sequence", s.nameCandidates(sequence.Schema, sequence.Name)...) ||
@@ -1363,20 +1342,6 @@ func (s *exclusionState) filterGeneratedSequences(sequences []schemamodel.Sequen
 			s.excludeSequence(sequence.Schema, sequence.Name)
 		}
 		return !excluded
-	})
-}
-
-func (s *exclusionState) filterGeneratedDomains(domains []schemamodel.Domain) []schemamodel.Domain {
-	return keep(domains, func(domain schemamodel.Domain) bool {
-		named := s.matches("domain", s.nameCandidates(domain.Schema, domain.Name)...)
-		return !named && !s.schemaExcluded(domain.Schema)
-	})
-}
-
-func (s *exclusionState) filterGeneratedCompositeTypes(types []schemamodel.CompositeType) []schemamodel.CompositeType {
-	return keep(types, func(composite schemamodel.CompositeType) bool {
-		named := s.matches("composite_type", s.nameCandidates(composite.Schema, composite.Name)...)
-		return !named && !s.schemaExcluded(composite.Schema)
 	})
 }
 
@@ -1685,8 +1650,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Constraints:     slices.Clone(schema.Constraints),
 		Functions:       slices.Clone(schema.Functions),
 		Sequences:       slices.Clone(schema.Sequences),
-		Domains:         slices.Clone(schema.Domains),
-		Composites:      slices.Clone(schema.Composites),
 		Views:           slices.Clone(schema.Views),
 		MatViews:        slices.Clone(schema.MatViews),
 		Triggers:        slices.Clone(schema.Triggers),
@@ -1733,8 +1696,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.EmbeddedFields = slices.Clone(schema.EmbeddedFields)
 	filtered.Functions = slices.Clone(schema.Functions)
 	filtered.Sequences = slices.Clone(schema.Sequences)
-	filtered.Domains = slices.Clone(schema.Domains)
-	filtered.CompositeTypes = slices.Clone(schema.CompositeTypes)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

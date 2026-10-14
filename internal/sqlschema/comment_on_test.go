@@ -71,12 +71,6 @@ func commentsOf(database schemamodel.Database) map[string]string {
 	for _, sequence := range database.Sequences {
 		comments["sequence "+sequence.QualifiedName()] = sequence.Comment
 	}
-	for _, domain := range database.Domains {
-		comments["domain "+domain.QualifiedName()] = domain.Comment
-	}
-	for _, composite := range database.CompositeTypes {
-		comments["composite "+composite.QualifiedName()] = composite.Comment
-	}
 	for _, enum := range database.Enums {
 		comments["enum "+enum.QualifiedName()] = enum.Comment
 	}

@@ -57,10 +57,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 	return []objectChange{
 		{len(diff.EnumsAdded)+len(diff.EnumsRemoved)+len(diff.EnumsModified) > 0,
 			keyed(capability.EnumCustomType, "enum type", "the plan changes an enum type")},
-		{len(diff.DomainsAdded)+len(diff.DomainsRemoved)+len(diff.DomainsModified) > 0,
-			keyed(capability.DomainTypes, "domain", "the plan changes a domain")},
-		{len(diff.CompositeTypesAdded)+len(diff.CompositeTypesRemoved)+len(diff.CompositeTypesModified) > 0,
-			keyed(capability.CompositeTypes, "composite type", "the plan changes a composite type")},
 		{len(diff.FunctionsAdded)+len(diff.FunctionsRemoved)+len(diff.ProceduresRemoved)+len(diff.FunctionsModified) > 0,
 			keyed(capability.Functions, "routine", "the plan changes a function or a procedure")},
 		{len(diff.SequencesAdded)+len(diff.SequencesRemoved)+len(diff.SequencesModified) > 0,

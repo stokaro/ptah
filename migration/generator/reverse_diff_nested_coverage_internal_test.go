@@ -23,19 +23,6 @@ var nestedCoverageExempt = map[string]string{
 	"TableDiff.ConstraintsAdded":   "no producer writes it",
 	"TableDiff.ConstraintsRemoved": "no producer writes it",
 
-	// The names are the SERVER's. compare.usertypes fills this from
-	// catalog.Domain's constraint rows, and a declaration carries a CHECK
-	// EXPRESSION with no name at all -- schemamodel.Domain has `Check` and
-	// nothing to hold what PostgreSQL called it. The pre-change schema is
-	// reached through the same conversion and loses them the same way, so
-	// there is nowhere for a reversal to read them from.
-	//
-	// The consequence is real and is not this gate's to fix: a reversed CHECK
-	// change emits the ADD with no DROP CONSTRAINT beside it. Carrying the
-	// names would need the reversal to be handed the catalog rather than a
-	// schema converted from it.
-	"DomainDiff.CurrentCheckConstraints": "the constraint names are server-chosen and no schema carries them",
-
 	// Filling it would ADD a copy rather than restore a missing one. A
 	// self-reference declared as a table-level constraint is already emitted
 	// twice on the FORWARD path -- once from the table's constraints and once

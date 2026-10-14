@@ -223,15 +223,9 @@ func checkCompositePlacement(ctx context.Context, selections selectext.Set, part
 // scope does not filter.
 func checkTypePlacement(part *schemamodel.Database, schema, defaultSchema string) error {
 	type declared struct{ kind, name, schema string }
-	objects := make([]declared, 0, len(part.Enums)+len(part.Domains)+len(part.Sequences))
+	objects := make([]declared, 0, len(part.Enums)+len(part.Sequences))
 	for _, enum := range part.Enums {
 		objects = append(objects, declared{"enum", enum.Name, enum.Schema})
-	}
-	for _, domain := range part.Domains {
-		objects = append(objects, declared{"domain", domain.Name, domain.Schema})
-	}
-	for _, composite := range part.CompositeTypes {
-		objects = append(objects, declared{"composite type", composite.Name, composite.Schema})
 	}
 	for _, sequence := range part.Sequences {
 		objects = append(objects, declared{"sequence", sequence.Name, sequence.Schema})

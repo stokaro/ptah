@@ -63,10 +63,6 @@ func WithoutKeptState(ctx context.Context, current, env, declared *catalog.Datab
 		func(v catalog.Function) string { return q(v.Schema, v.Name) })
 	filtered.Enums = subtract(current.Enums, env.Enums, declared.Enums,
 		func(v catalog.Enum) string { return q(v.Schema, v.Name) })
-	filtered.Domains = subtract(current.Domains, env.Domains, declared.Domains,
-		func(v catalog.Domain) string { return q(v.Schema, v.Name) })
-	filtered.Composites = subtract(current.Composites, env.Composites, declared.Composites,
-		func(v catalog.CompositeType) string { return q(v.Schema, v.Name) })
 	filtered.Indexes = subtract(current.Indexes, env.Indexes, declared.Indexes,
 		func(v catalog.Index) string { return q(v.Schema, v.TableName) + "\x00" + v.Name })
 	filtered.Constraints = subtract(current.Constraints, env.Constraints, declared.Constraints,

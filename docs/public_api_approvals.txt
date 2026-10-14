@@ -776,3 +776,19 @@ v0.13.0 ptah.run/core/schemamodel
 v0.13.0 ptah.run/catalog
 v0.13.0 ptah.run/core/ast
 v0.13.0 ptah.run/migration/schemadiff/difftypes
+
+# #4140 removes the common domain and composite type models. The PostgreSQL
+# type owner, feature/pgtype, and the Oracle type owner, feature/oratype, hold
+# domains, composite types and object types as feature objects, and every
+# source reads them into those owners. Domain, CompositeType and CompositeField,
+# the Database lists that held them, the diff lists, the comment kinds of these
+# types, the domain and composite type definitions and ALTER operations of the
+# AST, DropTypeNode's domain flag, and CompareOptions.DomainExpressions are
+# absent from the common API. A declaration no selected owner reads is refused.
+# This changes the Go API under the authorized #4140/#4204 clean-break policy.
+# Pre-v1, so compatibility with older Ptah is not owed.
+v0.13.0 ptah.run/core/schemamodel
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/core/ast
+v0.13.0 ptah.run/migration/schemadiff/difftypes
+v0.13.0 ptah.run/config

@@ -17,7 +17,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/featureops"
-	"ptah.run/internal/schemaprep"
 )
 
 // Lowering supplies the selected owner runtime and target facts. CommonMetadata
@@ -102,7 +101,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	}
 	semantics := identifier.ForDialect(target)
 	request := featureplan.DeclarationRequest{Target: target, Identifiers: semantics, Capabilities: lowering.Capabilities,
-		Objects: objects, CommonSteps: metadata, Types: slices.Concat(schemaprep.TypeDefinitions(objectidentity.NewBuilder(semantics), database.Domains, database.CompositeTypes), schemaext.DefinedTypes(database.FeatureObjects))}
+		Objects: objects, CommonSteps: metadata, Types: schemaext.DefinedTypes(database.FeatureObjects)}
 	names := make(map[objectidentity.Key]string, len(database.Tables))
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range database.Tables {

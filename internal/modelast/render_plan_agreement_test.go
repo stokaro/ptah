@@ -13,9 +13,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
-	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
@@ -101,10 +98,6 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 var ownedSharedKinds = []string{"AlterTableEnableRLSNode", "CreatePolicyNode"}
 
 // assertRenderAndPlanAgree is the per-dialect body.
-//
-// It lives here rather than inline because a target that cannot create a
-// domain takes the other of two paths, and the choice belongs beside the two
-// rather than as a branch inside the test.
 func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	c.Helper()
 	desired := routingFixture()
@@ -113,16 +106,6 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// for the other targets.
 	desired.RLSPolicies, desired.RLSEnabledTables = nil, nil
 
-	// A target that cannot create a domain refuses the whole schema before
-	// SQL, on BOTH surfaces, because they share one validation -- the render
-	// call makes it directly and the plan pipeline makes it in the comparison
-	// that feeds the planner. That is agreement too, and asserting it is
-	// stronger than adapting the fixture until the question goes away: the
-	// census below could not tell a shared refusal from a shared emission
-	// (stokaro/ptah#1717).
-	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
-		return
-	}
 	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect, modelast.Lowering{Context: context.Background()})).Statements)
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
@@ -193,27 +176,4 @@ func surfaceCensus(c *qt.C, dialect string, nodes []ast.Node) []string {
 	}
 	slices.Sort(lines)
 	return lines
-}
-
-// assertBothSurfacesRefuseTheDomain checks the shared refusal and reports
-// whether it applied, so the caller has one branch rather than a nest of them.
-func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemamodel.Database) bool {
-	c.Helper()
-	if capability.ForDialect(dialect).Has(capability.DomainTypes) {
-		return false
-	}
-	// The plan surface refuses at the comparison that feeds it. A plan reads
-	// only the diff, so the validation that has to see the whole target runs
-	// where the whole target is supplied, and the pipeline still refuses
-	// before it plans (stokaro/ptah#2315).
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-
-	renderErr := builtin.ValidateSchema(desired, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
-	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
-	return true
 }

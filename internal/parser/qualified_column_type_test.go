@@ -40,14 +40,13 @@ func TestParse_QualifiedColumnType_HappyPath(t *testing.T) {
 	}
 }
 
-// The same type is read where a column is added later and where a domain is
-// based on it.
-func TestParse_QualifiedTypeInAlterAndDomain(t *testing.T) {
+// The same type is read where a column is added later.
+func TestParse_QualifiedTypeInAlter(t *testing.T) {
 	c := qt.New(t)
 
-	statements := parsePostgres(c, "ALTER TABLE t ADD COLUMN m app.mood; CREATE DOMAIN app.d AS app.mood;")
+	statements := parsePostgres(c, "ALTER TABLE t ADD COLUMN m app.mood;")
 
-	c.Assert(statements.Statements, qt.HasLen, 2)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 	alter, ok := statements.Statements[0].(*ast.AlterTableNode)
 	c.Assert(ok, qt.IsTrue)
 	add, ok := alter.Operations[0].(*ast.AddColumnOperation)

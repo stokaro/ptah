@@ -22,16 +22,16 @@ import (
 // direction wrong whichever kind it puts first.
 func userTypeOrderDatabase() schemamodel.Database {
 	return schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{Name: "d_comp", BaseType: "addr"},
-			{Name: "d_range", BaseType: "myrange"},
-			{Name: "d_int", BaseType: "integer", Check: "VALUE > 0"},
-		},
-		CompositeTypes: []schemamodel.CompositeType{
-			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}}},
-			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
-		},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "myrange"), Value: &pgtype.DesiredRange{Subtype: "integer"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "posrange"), Value: &pgtype.DesiredRange{Subtype: "d_int"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d_comp"), Value: &pgtype.DesiredDomain{BaseType: "addr"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d_range"), Value: &pgtype.DesiredDomain{BaseType: "myrange"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d_int"), Value: &pgtype.DesiredDomain{BaseType: "integer", Check: "VALUE > 0"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "measure"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "qty", Type: "d_int"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "myrange"), Value: &pgtype.DesiredRange{Subtype: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "posrange"), Value: &pgtype.DesiredRange{Subtype: "d_int"}})),
 	}
 }
 

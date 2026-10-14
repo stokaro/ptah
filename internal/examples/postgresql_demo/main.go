@@ -25,9 +25,6 @@ func run(w io.Writer) error {
 	sql := `
 		CREATE TYPE status_enum AS ENUM ('pending', 'active', 'archived');
 
-		CREATE DOMAIN email_domain AS TEXT
-			CHECK (VALUE ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
-
 		CREATE TABLE public.full_demo (
 			serial_id SERIAL PRIMARY KEY,
 			big_id BIGSERIAL UNIQUE,
@@ -46,7 +43,7 @@ func run(w io.Writer) error {
 			json_field JSON,
 			jsonb_field JSONB NOT NULL DEFAULT '{}'::jsonb,
 			data BYTEA,
-			email_address email_domain,
+			email_address TEXT,
 			full_name TEXT GENERATED ALWAYS AS (char_fixed || ' ' || varchar_var) STORED,
 			case_insensitive TEXT COLLATE "C",
 			user_id INTEGER REFERENCES users(id) ON DELETE CASCADE ON UPDATE SET NULL,
@@ -84,7 +81,7 @@ func run(w io.Writer) error {
 			fmt.Fprintf(w, "  Values: %v\n", s.Values)
 
 		case *ast.CommentNode:
-			fmt.Fprintf(w, "  Type: COMMENT/DOMAIN\n")
+			fmt.Fprintf(w, "  Type: COMMENT\n")
 			fmt.Fprintf(w, "  Content: %s\n", s.Text)
 
 		case *ast.CreateTableNode:
@@ -160,7 +157,6 @@ func run(w io.Writer) error {
 	fmt.Fprintln(w, "PostgreSQL parser demo completed successfully!")
 	fmt.Fprintln(w, "\nKey PostgreSQL features demonstrated:")
 	fmt.Fprintln(w, "- ENUM types with CREATE TYPE")
-	fmt.Fprintln(w, "- DOMAIN types with CHECK constraints")
 	fmt.Fprintln(w, "- Schema-qualified table names (public.table_name)")
 	fmt.Fprintln(w, "- SERIAL and BIGSERIAL auto-increment types")
 	fmt.Fprintln(w, "- UUID with gen_random_uuid() function")

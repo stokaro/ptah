@@ -11,26 +11,49 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgtype"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/pgtypeprovider"
 	"ptah.run/internal/pgtypesource"
 )
 
-func TestParseDomainAnnotation(t *testing.T) {
-	const src = `package fixture
+// TestParseUserTypeAnnotation_NoOwnerReadsIt_FailurePath pins that a domain
+// or composite type declaration no selected owner reads is refused: no model
+// holds it, so keeping it would drop it in silence. A target with no type
+// owner, such as MySQL, is refused the same way as a parse with no owner.
+func TestParseUserTypeAnnotation_NoOwnerReadsIt_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name, src, wantErr string
+		owners             annotation.Set
+	}{
+		{
+			name:    "a domain without owners",
+			src:     "package fixture\n\n//ptah:schema:domain name=\"email\" type=\"TEXT\"\ntype EmailDomain struct{}\n",
+			owners:  noOwners,
+			wantErr: `(?s).*no selected owner reads a domain scoped to no target.*`,
+		},
+		{
+			name:    "a composite type without owners",
+			src:     "package fixture\n\n//ptah:schema:composite name=\"address\" fields=\"street:TEXT\"\ntype AddressType struct{}\n",
+			owners:  noOwners,
+			wantErr: `(?s).*no selected owner reads a composite type scoped to no target.*`,
+		},
+		{
+			name:    "a domain scoped to MySQL",
+			src:     "package fixture\n\n//ptah:schema:domain name=\"email\" type=\"TEXT\" dialects=\"mysql\"\ntype EmailDomain struct{}\n",
+			owners:  builtintest.Annotations(),
+			wantErr: `(?s).*no selected owner reads a domain scoped to mysql.*`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-//ptah:schema:domain name="email" schema="app" type="TEXT" not_null="true" check="VALUE ~ '@'" comment="Email"
-type EmailDomain struct{}
-`
-	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
-	c.Assert(db.Domains, qt.HasLen, 1)
-	d := db.Domains[0]
-	c.Assert(d.Name, qt.Equals, "email")
-	c.Assert(d.Schema, qt.Equals, "app")
-	c.Assert(d.BaseType, qt.Equals, "TEXT")
-	c.Assert(d.NotNull, qt.IsTrue)
-	c.Assert(d.Check, qt.Equals, "VALUE ~ '@'")
-	c.Assert(d.QualifiedName(), qt.Equals, "app.email")
+			db, err := goschema.ParseSource(test.owners, "fixture.go", test.src)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+		})
+	}
 }
 
 func TestParseDomainAnnotation_MissingTypeRejected(t *testing.T) {
@@ -40,44 +63,10 @@ func TestParseDomainAnnotation_MissingTypeRejected(t *testing.T) {
 type EmailDomain struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
+	_, err := goschema.ParseSource(builtintest.Annotations(), "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:domain")
-}
-
-func TestParseCompositeAnnotation(t *testing.T) {
-	const src = `package fixture
-
-//ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
-type AddressType struct{}
-`
-	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
-	c.Assert(db.CompositeTypes, qt.HasLen, 1)
-	comp := db.CompositeTypes[0]
-	c.Assert(comp.Name, qt.Equals, "address")
-	c.Assert(comp.Fields, qt.HasLen, 3)
-	c.Assert(comp.Fields[0].Name, qt.Equals, "street")
-	c.Assert(comp.Fields[0].Type, qt.Equals, "TEXT")
-	c.Assert(comp.Fields[2].Name, qt.Equals, "zip")
-	c.Assert(comp.Fields[2].Type, qt.Equals, "VARCHAR(10)")
-}
-
-func TestParseCompositeAnnotation_ParameterizedTypesWithCommas(t *testing.T) {
-	const src = `package fixture
-
-//ptah:schema:composite name="money" fields="amount:NUMERIC(10,2),cur:VARCHAR(3)"
-type MoneyType struct{}
-`
-	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
-	c.Assert(db.CompositeTypes, qt.HasLen, 1)
-	comp := db.CompositeTypes[0]
-	c.Assert(comp.Fields, qt.HasLen, 2)
-	c.Assert(comp.Fields[0].Name, qt.Equals, "amount")
-	c.Assert(comp.Fields[0].Type, qt.Equals, "NUMERIC(10,2)")
-	c.Assert(comp.Fields[1].Type, qt.Equals, "VARCHAR(3)")
 }
 
 func TestParseCompositeAnnotation_InvalidFieldsRejected(t *testing.T) {
@@ -87,10 +76,11 @@ func TestParseCompositeAnnotation_InvalidFieldsRejected(t *testing.T) {
 type AddressType struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
+	_, err := goschema.ParseSource(builtintest.Annotations(), "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
-	c.Assert(parseErr.Attribute, qt.Equals, "fields")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:composite")
+	c.Assert(err, qt.ErrorMatches, `expected ":" at position 6 on //ptah:schema:composite at AddressType`)
 }
 
 func TestParseRangeAnnotation(t *testing.T) {

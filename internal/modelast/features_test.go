@@ -241,7 +241,7 @@ func TestCollectDatabase_RefusesUnloweredFacetsBeforeVisiting(t *testing.T) {
 	c := qt.New(t)
 	database := unloweredFacetsFixture()
 	slots := loweringFacetSlots(reflect.ValueOf(&database).Elem())
-	c.Assert(len(slots) >= 16, qt.IsTrue)
+	c.Assert(len(slots) >= 14, qt.IsTrue)
 	lowered := append([]uintptr{reflect.ValueOf(&database.Tables[0].Facets).Pointer(), reflect.ValueOf(&database.MaterializedViews[0].Facets).Pointer(),
 		reflect.ValueOf(&database.Functions[0].Facets).Pointer()},
 		tableFieldFacets(&database)...)

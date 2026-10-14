@@ -372,16 +372,14 @@ func TestEnumTypedColumnKeepsANameThatIsAlsoAnotherDeclaration(t *testing.T) {
 		{
 			name: "a domain",
 			declare: func(db *schemamodel.Database) {
-				db.Domains = []schemamodel.Domain{{Name: "status", BaseType: "text"}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "status"), Value: &pgtype.DesiredDomain{BaseType: "text"}}))
 			},
 		},
 		{
 			name: "a composite type",
 			declare: func(db *schemamodel.Database) {
-				db.CompositeTypes = []schemamodel.CompositeType{{
-					Name:   "status",
-					Fields: []schemamodel.CompositeField{{Name: "a", Type: "text"}},
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "status"),
+					Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "text"}}}}))
 			},
 		},
 		{

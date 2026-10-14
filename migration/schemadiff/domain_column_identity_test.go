@@ -9,8 +9,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgtype"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -19,17 +21,27 @@ import (
 // desired schema declaring the same column with desiredType, and returns the
 // table diffs the comparator reported. It builds fixtures and asserts nothing,
 // so both halves of this file read the same two sides.
-func domainColumnTableDiffs(column catalog.Column, desiredType string, desiredDomains []schemamodel.Domain) []difftypes.TableDiff {
+func domainColumnTableDiffs(column catalog.Column, desiredType string, desiredDomains []domainDecl) []difftypes.TableDiff {
 	database := &catalog.Database{
-		Tables: []catalog.Table{{Name: "t", Type: "TABLE", Columns: []catalog.Column{column}}},
+		Tables:          []catalog.Table{{Name: "t", Type: "TABLE", Columns: []catalog.Column{column}}},
+		FeatureCoverage: must.Must(pgtype.CompleteCoverage(schemaext.Observed)),
+	}
+	objects := make([]schemaext.Object, 0, len(desiredDomains))
+	for _, domain := range desiredDomains {
+		objects = append(objects, schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, domain.Schema, domain.Name),
+			Value: &pgtype.DesiredDomain{BaseType: domain.BaseType, Check: domain.Check}})
 	}
 	desired := &schemamodel.Database{
-		Tables:  []schemamodel.Table{{StructName: "T", Name: "t"}},
-		Fields:  []schemamodel.Field{{StructName: "T", Name: column.Name, Type: desiredType}},
-		Domains: desiredDomains,
+		Tables:         []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields:         []schemamodel.Field{{StructName: "T", Name: column.Name, Type: desiredType}},
+		FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
 	}
 	return must.Must(schemadiff.CompareWithDialect(context.Background(), desired, database, platform.Postgres, must.Must(builtin.New()))).TablesModified
 }
+
+// domainDecl is a domain the desired schema declares, which the PostgreSQL
+// type owner holds.
+type domainDecl struct{ Name, Schema, BaseType, Check string }
 
 // TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange pins how a
 // column typed by a PostgreSQL domain is compared: by the domain's IDENTITY,
@@ -63,7 +75,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 		// only thing that can tell the comparator a desired type name belongs
 		// to a domain, since a goschema field carries a type string and nothing
 		// else.
-		desiredDomains []schemamodel.Domain
+		desiredDomains []domainDecl
 		// wantChange is the type row the sole reported column change carries.
 		wantChange string
 	}{
@@ -114,7 +126,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			name:           "a column from another schema against the declared one is a change",
 			column:         catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
 			desiredType:    "status",
-			desiredDomains: []schemamodel.Domain{{Name: "status", BaseType: "TEXT"}},
+			desiredDomains: []domainDecl{{Name: "status", BaseType: "TEXT"}},
 			wantChange:     "other.status -> status",
 		},
 		{
@@ -124,7 +136,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			name:           "an unqualified reference means the domain that is declared",
 			column:         catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
 			desiredType:    "status",
-			desiredDomains: []schemamodel.Domain{{Name: "status", Schema: "other", BaseType: "TEXT"}},
+			desiredDomains: []domainDecl{{Name: "status", Schema: "other", BaseType: "TEXT"}},
 			wantChange:     "status -> status",
 		},
 		{
@@ -178,7 +190,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			name:           "a plain column against a desired domain is a change",
 			column:         catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
 			desiredType:    "waypoint",
-			desiredDomains: []schemamodel.Domain{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
+			desiredDomains: []domainDecl{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
 			wantChange:     "int4 -> waypoint",
 		},
 	}
@@ -207,7 +219,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 		name           string
 		column         catalog.Column
 		desiredType    string
-		desiredDomains []schemamodel.Domain
+		desiredDomains []domainDecl
 	}{
 		{
 			name:        "the same domain is not a change",
@@ -230,7 +242,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			name:           "a domain declared without a schema is the one in the default schema",
 			column:         catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
 			desiredType:    "status",
-			desiredDomains: []schemamodel.Domain{{Name: "status", BaseType: "TEXT"}},
+			desiredDomains: []domainDecl{{Name: "status", BaseType: "TEXT"}},
 		},
 		{
 			// The residual gap, pinned so it is visible rather than assumed
@@ -245,7 +257,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			name:           "two same-named domains leave an unqualified reference undecided",
 			column:         catalog.Column{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
 			desiredType:    "status",
-			desiredDomains: []schemamodel.Domain{{Name: "status", BaseType: "TEXT"}, {Name: "status", Schema: "other", BaseType: "INTEGER"}},
+			desiredDomains: []domainDecl{{Name: "status", BaseType: "TEXT"}, {Name: "status", Schema: "other", BaseType: "INTEGER"}},
 		},
 		{
 			// A domain off the search path: format_type qualifies it, while
@@ -283,7 +295,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			name:           "a domain declared on both sides is not a change",
 			column:         catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
 			desiredType:    "waypoint",
-			desiredDomains: []schemamodel.Domain{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
+			desiredDomains: []domainDecl{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
 		},
 	}
 

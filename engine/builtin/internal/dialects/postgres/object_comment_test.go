@@ -209,19 +209,6 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 			want: "CREATE SEQUENCE \"s\";\nCOMMENT ON SEQUENCE \"s\" IS 'note';\n",
 		},
 		{
-			name: "a domain",
-			caps: capability.Postgres18(),
-			node: ast.NewCreateType("d", &ast.DomainTypeDef{BaseType: "integer", Nullable: true}).SetComment("note"),
-			want: "CREATE DOMAIN \"d\" AS integer;\nCOMMENT ON DOMAIN \"d\" IS 'note';\n",
-		},
-		{
-			name: "a composite type",
-			caps: capability.Postgres18(),
-			node: ast.NewCreateType("c", &ast.CompositeTypeDef{Fields: []*ast.CompositeField{{Name: "n", Type: "integer"}}}).
-				SetComment("note"),
-			want: "CREATE TYPE \"c\" AS (\"n\" integer);\nCOMMENT ON TYPE \"c\" IS 'note';\n",
-		},
-		{
 			name: "an enum",
 			caps: capability.Postgres18(),
 			node: ast.NewCreateType("e", &ast.EnumTypeDef{Values: []string{"a"}}).SetComment("note"),
@@ -301,9 +288,8 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 		{
 			name: "a target that does not store the kind's comment",
 			caps: capability.CockroachDB263(),
-			node: ast.NewCreateType("c", &ast.CompositeTypeDef{Fields: []*ast.CompositeField{{Name: "n", Type: "integer"}}}).
-				SetComment("note"),
-			want: "CREATE TYPE \"c\" AS (\"n\" integer);\n-- POSTGRES: type comment c is not supported by this target; skipped.\n",
+			node: ast.NewCreateType("e", &ast.EnumTypeDef{Values: []string{"a"}}).SetComment("note"),
+			want: "CREATE TYPE \"e\" AS ENUM ('a');\n-- POSTGRES: type comment e is not supported by this target; skipped.\n",
 		},
 		{
 			name: "no comment",

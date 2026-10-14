@@ -60,17 +60,15 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 		{
 			name: "a domain",
 			declare: func(db *schemamodel.Database) {
-				db.Domains = []schemamodel.Domain{{Name: "positive_int", BaseType: "integer"}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}}))
 			},
 			want: "domain \"positive_int\" {\n  schema = schema.public\n",
 		},
 		{
 			name: "a composite type",
 			declare: func(db *schemamodel.Database) {
-				db.CompositeTypes = []schemamodel.CompositeType{{
-					Name:   "addr",
-					Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+					Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}}))
 			},
 			want: "composite \"addr\" {\n  schema = schema.public\n",
 		},
@@ -177,20 +175,15 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		{
 			name: "a domain",
 			declare: func(db *schemamodel.Database) {
-				db.Domains = []schemamodel.Domain{{
-					Name: "positive_int", Schema: "reporting", BaseType: "integer",
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "reporting", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}}))
 			},
 			want: "domain \"positive_int\" {\n  schema = schema.reporting\n",
 		},
 		{
 			name: "a composite type",
 			declare: func(db *schemamodel.Database) {
-				db.CompositeTypes = []schemamodel.CompositeType{{
-					Name:   "addr",
-					Schema: "reporting",
-					Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "reporting", "addr"),
+					Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "text"}}}}))
 			},
 			want: "composite \"addr\" {\n  schema = schema.reporting\n",
 		},

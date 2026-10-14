@@ -771,10 +771,10 @@ provider's batch. `DefinedType.Validate` checks the common kind and name;
 `DefinedType.Clone` copies references without changing their order.
 
 `difftypes.UserTypeVocabulary.Defined` carries the types the declaration's
-owner objects define, and `UserTypeVocabularyOf` fills it, so a created
-table's column that names one is qualified with its schema as a column naming
-a common domain is. A comparison reads an owner's domain as a domain when it
-compares a column typed by one.
+owner objects define, such as a domain or a composite type, and
+`UserTypeVocabularyOf` fills it, so a created table's column that names one is
+qualified with the schema the type is declared in. A comparison reads an
+owner's domain as a domain when it compares a column typed by one.
 
 `schemaext.SchemaPlacement` is a value or a change that puts its object into a
 named schema; a host that creates the schemas a plan or a render puts objects
@@ -2970,9 +2970,9 @@ DOMAIN, ALTER DOMAIN, CREATE TYPE ... AS, ALTER TYPE ... ATTRIBUTE, CREATE TYPE
 ... AS RANGE, DROP DOMAIN or DROP TYPE, and COMMENT ON DOMAIN or COMMENT ON
 TYPE. Each creation, alteration and comment names the capability key it needs.
 
-`feature/pgtype/typerender` renders them for the PostgreSQL family, byte for
-byte as the common path renders the same statements, except that an in-place
-CHECK change names the constraint it adds. A change that creates a
+`feature/pgtype/typerender` renders them for the PostgreSQL family. An
+in-place CHECK change names the constraint it adds, so a rollback can drop it.
+A change that creates a
 type places it in the schema its identity names (`schemaext.SchemaPlacement`),
 and a declaration that a server spelled predicts its observation in that
 spelling. The bundled runtime selects the owner on every PostgreSQL-family
@@ -2981,12 +2981,13 @@ target, with its reports.
 Go annotations, HCL, PostgreSQL SQL and the catalog reader produce owned
 domain, composite and range objects. A source that names no target is read as
 PostgreSQL's. A domain or composite type declared for Oracle is the Oracle type
-owner's, `feature/oratype`. The common not-described kinds `domain` and
-`composite` stay common, and the runtime folds them into each owner's coverage
-before it compares. The common schema and AST models carry no range
-payload. Schema statistics count `range_types` through the owner. Domain and
-composite metrics also accept common models and refuse a type both
-representations hold.
+owner's, `feature/oratype`. A declaration no selected owner reads, such as a
+domain scoped to MySQL or a CREATE DOMAIN of a read that selected no type
+owner, is refused with `ptaherr.ErrUnsupportedFeature`. The common
+not-described kinds `domain` and `composite` stay common, and the runtime
+folds them into each owner's coverage before it compares. The common schema
+and AST models carry no domain, composite or range payload. Schema statistics
+count `domains`, `composite_types` and `range_types` through the owners.
 
 The HCL writer places declared `domain`, `composite` and `range` blocks among
 the types (`hclext.UserTypes`). Go and HCL exports retain unknown range
@@ -4704,17 +4705,12 @@ name takes the connection's default schema. An explicit schema and the overload
 signature stay attached to the claim. Claims that collide after binding are
 refused, and coverage for an excluded routine is excluded with its owner.
 
-`migration/schemadiff/difftypes.DomainDiff` and `CompositeTypeDiff` carry a
-`Desired` field, off the wire, holding the definition the change reconciles to.
-A domain base-type change and a composite change without an in-place attribute
-delta use a non-CASCADE drop followed by creation from this field. An empty one withholds BOTH halves and emits a warning comment naming
-the object: a type Ptah cannot rebuild is a type Ptah must not drop. An
-embedder that builds one of these entries by hand and leaves `Desired` empty
-therefore gets the warning rather than a plan. A reversal resolves the field
-against the pre-change database, so a rolled-back modification rebuilds the
-definition that database held. Range changes use `pgtype.RangeChange`, whose
-captured `Before` and `After` operands supply both plan directions. A range
-replacement without a valid operand is refused before scheduling.
+Domain, composite and range changes are the type owners' changes:
+`pgtype.DomainChange`, `pgtype.CompositeChange` and `pgtype.RangeChange` for
+the PostgreSQL family, and `oratype.DomainChange` and `oratype.ObjectTypeChange`
+for Oracle. Each carries its captured `Before` and `After` operands, which
+supply both plan directions. A range replacement without a valid operand is
+refused before scheduling.
 
 `migration/schemadiff/difftypes.RoleDiff` carries the object it renders rather
 than a reference to it: a `Desired` field, off the wire, holding the declaration

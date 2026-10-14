@@ -172,10 +172,6 @@ func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
 	switch node.TypeDef.(type) {
 	case *ast.EnumTypeDef:
 		return r.refuses(capability.EnumCustomType, "enum type", node.Name)
-	case *ast.CompositeTypeDef:
-		return r.refuses(capability.CompositeTypes, "composite type", node.Name)
-	case *ast.DomainTypeDef:
-		return r.refuses(capability.DomainTypes, "domain", node.Name)
 	default:
 		return false
 	}
@@ -185,14 +181,9 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	// The node's comment is the type's own, written after the statement that
 	// creates it.
 
-	// Every branch below decides against the key for its own kind. The four
-	// user-type kinds do not travel together -- CockroachDB takes a composite
-	// and refuses a domain and a range -- so one key for "user types" would
-	// tell a target it cannot do something it does (stokaro/ptah#1717).
-	//
-	// Without this the visitor emitted the same DDL for every dialect, and a
-	// CockroachDB target learned it would not be taken when the server said
-	// so, mid-apply. Every other object kind names the omission before SQL.
+	// The enum decides against its own key: a target that cannot hold the kind
+	// names the omission before SQL, as every other object kind does, rather
+	// than learning it from the server mid-apply (stokaro/ptah#1717).
 	if r.refusesUserType(node) {
 		return nil
 	}
@@ -208,43 +199,6 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		target := r.escapeQualifiedIdentifier(node.Name)
 		r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", target, strings.Join(values, ", "))
 		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
-
-	case *ast.CompositeTypeDef:
-		// CREATE TYPE name AS (field1 type1, field2 type2, ...)
-		fields := make([]string, len(typeDef.Fields))
-		for i, field := range typeDef.Fields {
-			fields[i] = fmt.Sprintf("%s %s", r.escapeIdentifier(field.Name), field.Type)
-		}
-		target := r.escapeQualifiedIdentifier(node.Name)
-		r.w.WriteLinef("CREATE TYPE %s AS (%s);", target, strings.Join(fields, ", "))
-		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
-
-	case *ast.DomainTypeDef:
-		// CREATE DOMAIN name AS base_type [NOT NULL] [DEFAULT value] [CHECK (constraint)]
-		sql := fmt.Sprintf("CREATE DOMAIN %s AS %s", r.escapeQualifiedIdentifier(node.Name), typeDef.BaseType)
-
-		// Add NOT NULL if specified
-		if !typeDef.Nullable {
-			sql += " NOT NULL"
-		}
-
-		// Add DEFAULT if specified
-		if typeDef.Default != nil {
-			if typeDef.Default.HasLiteral() {
-				sql += fmt.Sprintf(" DEFAULT %s",
-					r.renderTypedDefaultLiteral(typeDef.BaseType, typeDef.Default.Value))
-			} else if typeDef.Default.Expression != "" {
-				sql += fmt.Sprintf(" DEFAULT %s", typeDef.Default.Expression)
-			}
-		}
-
-		// Add CHECK constraint if specified
-		if typeDef.Check != "" {
-			sql += fmt.Sprintf(" CHECK (%s)", typeDef.Check)
-		}
-
-		r.w.WriteLinef("%s;", sql)
-		r.writeCreatedObjectComment(ast.CommentedDomain, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
 
 	default:
 		return fmt.Errorf("unsupported type definition: %T", typeDef)
@@ -278,87 +232,12 @@ func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 			// ALTER TYPE name RENAME TO new_name
 			r.w.WriteLinef("ALTER TYPE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
 
-		// The three domain operations below share ALTER DOMAIN rather than
-		// ALTER TYPE. PostgreSQL accepts a domain under either spelling, but
-		// only ALTER DOMAIN carries the constraint, default and NOT NULL
-		// clauses, and it is the spelling the documentation gives for a domain.
-		//
-		// They exist because the alternative was drop and recreate, which
-		// PostgreSQL refuses for any domain a column uses -- so a changed
-		// CHECK was unreachable, not merely awkward (stokaro/ptah#1717).
-		case *ast.DomainConstraintOperation, *ast.DomainDefaultOperation, *ast.DomainNotNullOperation:
-			r.writeAlterDomain(node.Name, operation)
-
-		case *ast.CompositeAttributeOperation:
-			r.writeAlterCompositeAttribute(node.Name, op)
-
 		default:
 			return fmt.Errorf("unsupported alter type operation: %T", operation)
 		}
 	}
 
 	return nil
-}
-
-// writeAlterDomain renders one in-place ALTER DOMAIN operation.
-//
-// It decides against capability.DomainTypes, the same key the CREATE is behind:
-// a target that never took the domain must not be handed an ALTER for it
-// either, and the omission is named before SQL the way every other object kind
-// decides it (stokaro/ptah#1738).
-func (r *Renderer) writeAlterDomain(name string, operation ast.TypeOperation) {
-	if r.refuses(capability.DomainTypes, "domain", name) {
-		return
-	}
-	domain := r.escapeQualifiedIdentifier(name)
-	switch op := operation.(type) {
-	case *ast.DomainConstraintOperation:
-		// A replacement is both halves of one operation. Emitting only the drop
-		// leaves the domain unconstrained; only the add leaves it constrained
-		// twice, and the second of those fails on the next apply while the
-		// first fails silently.
-		if op.DropName != "" {
-			r.w.WriteLinef("ALTER DOMAIN %s DROP CONSTRAINT %s;", domain, r.escapeIdentifier(op.DropName))
-		}
-		if op.AddExpression != "" {
-			constraint := ""
-			if op.AddName != "" {
-				constraint = fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(op.AddName))
-			}
-			r.w.WriteLinef("ALTER DOMAIN %s ADD %sCHECK (%s);", domain, constraint, op.AddExpression)
-		}
-	case *ast.DomainDefaultOperation:
-		if op.Expression == "" {
-			r.w.WriteLinef("ALTER DOMAIN %s DROP DEFAULT;", domain)
-			return
-		}
-		r.w.WriteLinef("ALTER DOMAIN %s SET DEFAULT %s;", domain, op.Expression)
-	case *ast.DomainNotNullOperation:
-		if op.NotNull {
-			r.w.WriteLinef("ALTER DOMAIN %s SET NOT NULL;", domain)
-			return
-		}
-		r.w.WriteLinef("ALTER DOMAIN %s DROP NOT NULL;", domain)
-	}
-}
-
-// writeAlterCompositeAttribute renders one ALTER TYPE ... ATTRIBUTE operation.
-//
-// It decides against capability.CompositeTypes, the key the CREATE is behind,
-// so a target that never took the composite is not handed an ALTER for it
-// either (stokaro/ptah#1738).
-func (r *Renderer) writeAlterCompositeAttribute(name string, op *ast.CompositeAttributeOperation) {
-	if r.refuses(capability.CompositeTypes, "composite type", name) {
-		return
-	}
-	typeName := r.escapeQualifiedIdentifier(name)
-	if op.DropName != "" {
-		r.w.WriteLinef("ALTER TYPE %s DROP ATTRIBUTE %s;", typeName, r.escapeIdentifier(op.DropName))
-	}
-	if op.AddName != "" {
-		r.w.WriteLinef("ALTER TYPE %s ADD ATTRIBUTE %s %s;",
-			typeName, r.escapeIdentifier(op.AddName), op.AddType)
-	}
 }
 
 // New creates a new PostgreSQL renderer
@@ -579,12 +458,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddIndexOperation,
 		*ast.AlterGeneratedColumnExpressionOperation,
 		*ast.AlterColumnOperation,
-		*ast.CompositeAttributeOperation,
-		*ast.CompositeTypeDef,
-		*ast.DomainConstraintOperation,
-		*ast.DomainDefaultOperation,
-		*ast.DomainNotNullOperation,
-		*ast.DomainTypeDef,
 		*ast.DropColumnOperation,
 		*ast.DropConstraintOperation,
 		*ast.EnumTypeDef,
@@ -1552,13 +1425,7 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 
 // renderDropType renders PostgreSQL-specific DROP TYPE statements
 func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
-	// Build DROP TYPE / DROP DOMAIN statement (PostgreSQL-specific)
-	var parts []string
-	if node.Domain {
-		parts = append(parts, "DROP DOMAIN")
-	} else {
-		parts = append(parts, "DROP TYPE")
-	}
+	parts := []string{"DROP TYPE"}
 
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")

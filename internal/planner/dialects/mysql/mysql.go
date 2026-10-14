@@ -1410,13 +1410,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// grant names a role that has to exist.
 	result = p.planRoles(result, diff)
 
-	// 0a3. Plan the domains this target does host, before tables: a column may
-	// be declared with the domain as its type. An owner's types join the same
-	// span, after the roles and before the routines that may name them.
-	typeCreation := featurehost.Span{Start: len(result)}
-	result = p.planDomains(result, diff)
-	result = p.planCompositeTypes(result, diff)
-	typeCreation.End = len(result)
+	// 0a3. An owner's types are created here, before tables: a column may be
+	// declared with a domain as its type. The span sits after the roles and
+	// before the routines that may name a type.
+	typeCreation := featurehost.Span{Start: len(result), End: len(result)}
 
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
@@ -1531,13 +1528,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 7a. Remove sequences after the tables whose defaults drew from them.
 	result = p.removeSequences(result, diff)
 
-	// 7a2. Remove domains after the tables whose columns were typed by them:
-	// Oracle answers ORA-11502 to a domain that still has dependents. An
-	// owner's type drops join the same span.
-	typeRemoval := featurehost.Span{Start: len(result)}
-	result = p.removeDomains(result, diff)
-	result = p.removeCompositeTypes(result, diff)
-	typeRemoval.End = len(result)
+	// 7a2. An owner's types are dropped here, after the tables whose columns
+	// were typed by them: Oracle answers ORA-11502 to a domain that still has
+	// dependents.
+	typeRemoval := featurehost.Span{Start: len(result), End: len(result)}
 	if p.hostsTypes() {
 		windows.Types = &featurehost.TypeWindows{Creation: typeCreation, Removal: typeRemoval}
 	}

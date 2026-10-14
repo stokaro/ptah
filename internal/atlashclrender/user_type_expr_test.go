@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -44,27 +43,25 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 	}{
 		{
 			name: "a domain's base type",
-			db:   &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "text"}}},
+			db:   typeDatabase(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d"), Value: &pgtype.DesiredDomain{BaseType: "text"}}),
 			want: `  type = sql("text")` + "\n",
 		},
 		{
 			name: "a composite field's type",
-			db: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{
-				Name:   "c",
-				Fields: []schemamodel.CompositeField{{Name: "f", Type: "text"}},
-			}}},
+			db: typeDatabase(schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "c"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "f", Type: "text"}}}}),
 			want: `    type = sql("text")` + "\n",
 		},
 		{
 			name: "a range's subtype",
-			db:   &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.DesiredRange{Subtype: "int4"}}))},
+			db:   typeDatabase(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "r"), Value: &pgtype.DesiredRange{Subtype: "int4"}}),
 			want: `  subtype = sql("int4")` + "\n",
 		},
 		{
 			// A type carrying a size or a space would be a syntax error bare and
 			// a refused string quoted; the call takes it verbatim.
 			name: "a sized type survives verbatim",
-			db:   &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "character varying(100)"}}},
+			db:   typeDatabase(schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "d"), Value: &pgtype.DesiredDomain{BaseType: "character varying(100)"}}),
 			want: `  type = sql("character varying(100)")` + "\n",
 		},
 	}
@@ -87,50 +84,38 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 //
 // Without this the change would be measured only against the other binary, and
 // a rendering Ptah itself could no longer read would still look like progress.
-// The domain and composite type are written from the common model; read back
-// for Oracle, they reach the Oracle type owner.
 func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
-	db := &schemamodel.Database{
-		Schemas:        []schemamodel.Schema{{Name: "public"}},
-		Domains:        []schemamodel.Domain{{Name: "d", Schema: "public", BaseType: "text"}},
-		CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "public", Fields: []schemamodel.CompositeField{{Name: "f", Type: "text"}}}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r"), Value: &pgtype.DesiredRange{Subtype: "int4"}})),
-	}
+	db := typeDatabase(
+		schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "public", "d"), Value: &pgtype.DesiredDomain{BaseType: "text"}},
+		schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "public", "c"),
+			Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "f", Type: "text"}}}},
+		schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r"), Value: &pgtype.DesiredRange{Subtype: "int4"}},
+	)
+	db.Schemas = []schemamodel.Schema{{Name: "public"}}
 
 	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: "oracle"})
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.Domains, qt.HasLen, 0)
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
-	domain, found, err := parsed.FeatureObjects.Get(oratype.Ref(oratype.DomainKind, "public", "d"))
+	domain, found, err := parsed.FeatureObjects.Get(pgtype.Ref(pgtype.DomainKind, "public", "d"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
-	c.Assert(domain.Value.(*oratype.DesiredDomain).BaseType, qt.Equals, "text")
-	objectType, found, err := parsed.FeatureObjects.Get(oratype.Ref(oratype.ObjectTypeKind, "public", "c"))
+	c.Assert(domain.Value.(*pgtype.DesiredDomain).BaseType, qt.Equals, "text")
+	composite, found, err := parsed.FeatureObjects.Get(pgtype.Ref(pgtype.CompositeKind, "public", "c"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
-	c.Assert(objectType.Value.(*oratype.DesiredObjectType).Attributes, qt.DeepEquals, []oratype.Attribute{{Name: "f", Type: "text"}})
+	c.Assert(composite.Value.(*pgtype.DesiredComposite).Attributes, qt.DeepEquals, []pgtype.Attribute{{Name: "f", Type: "text"}})
 	rangeType, found, err := parsed.FeatureObjects.Get(pgtype.Ref(pgtype.RangeKind, "public", "r"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
 	c.Assert(rangeType.Value.(*pgtype.DesiredRange).Subtype, qt.Equals, "int4")
 }
 
-// TestRenderKeepsAnEmptyUserTypeBaseUnwrapped pins the one value that must not
-// become a call: sql("") would round trip as a type named nothing, where the
-// existing fallback renders something readable.
-func TestRenderKeepsAnEmptyUserTypeBaseUnwrapped(t *testing.T) {
-	c := qt.New(t)
-
-	result, err := atlashclrender.Render(&schemamodel.Database{
-		Domains: []schemamodel.Domain{{Name: "d", BaseType: ""}},
-	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(result.Data), qt.Not(qt.Contains), `sql("")`)
+// typeDatabase is a description that declares only the type objects given.
+func typeDatabase(objects ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...))}
 }

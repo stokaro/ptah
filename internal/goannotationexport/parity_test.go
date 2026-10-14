@@ -98,8 +98,6 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(declaredExtensions(after), qt.DeepEquals, declaredExtensions(before))
 	c.Assert(declaredExtensions(before), qt.Not(qt.HasLen), 0)
 	c.Assert(after.Sequences, qt.DeepEquals, withoutSequenceProvenance(before.Sequences))
-	c.Assert(after.Domains, qt.DeepEquals, withoutDomainProvenance(before.Domains))
-	c.Assert(after.CompositeTypes, qt.DeepEquals, withoutCompositeProvenance(before.CompositeTypes))
 	c.Assert(declaredRanges(after), qt.DeepEquals, declaredRanges(before))
 	c.Assert(declaredRanges(before), qt.HasLen, 1)
 	c.Assert(after.Roles, qt.HasLen, 1)
@@ -199,22 +197,6 @@ func declaredExtensions(db *schemamodel.Database) map[string]pgextension.Desired
 
 func withoutSequenceProvenance(values []schemamodel.Sequence) []schemamodel.Sequence {
 	result := append([]schemamodel.Sequence(nil), values...)
-	for i := range result {
-		result[i].StructName = ""
-	}
-	return result
-}
-
-func withoutDomainProvenance(values []schemamodel.Domain) []schemamodel.Domain {
-	result := append([]schemamodel.Domain(nil), values...)
-	for i := range result {
-		result[i].StructName = ""
-	}
-	return result
-}
-
-func withoutCompositeProvenance(values []schemamodel.CompositeType) []schemamodel.CompositeType {
-	result := append([]schemamodel.CompositeType(nil), values...)
 	for i := range result {
 		result[i].StructName = ""
 	}

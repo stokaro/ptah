@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -20,27 +19,20 @@ import (
 func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Schemas:         []schemamodel.Schema{{Name: "app", Comment: "Application"}},
-		Tables:          []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
-		Fields:          []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-		FeatureObjects:  must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "app"})), schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "price_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
+		Schemas: []schemamodel.Schema{{Name: "app", Comment: "Application"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pgcrypto"), pgextension.DesiredExtension{Schema: "app"})),
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "app", "email"), Value: &pgtype.DesiredDomain{BaseType: "text", NotNull: true}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "app", "address"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "city", Type: "text"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "price_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
 		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
 		Sequences: []schemamodel.Sequence{{
 			Name:      "order_seq",
 			Schema:    "app",
 			AsType:    "bigint",
 			Increment: new(int64(2)),
-		}},
-		Domains: []schemamodel.Domain{{
-			Name:     "email",
-			Schema:   "app",
-			BaseType: "text",
-			NotNull:  true,
-		}},
-		CompositeTypes: []schemamodel.CompositeType{{
-			Name:   "address",
-			Schema: "app",
-			Fields: []schemamodel.CompositeField{{Name: "city", Type: "text"}},
 		}},
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
 			StructName: "User",
@@ -65,13 +57,14 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(extension.Value.(*pgextension.ObservedExtension).Schema, qt.Equals, "app")
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Sequences[0].Increment, qt.DeepEquals, new(int64(2)))
-	c.Assert(got.Domains, qt.HasLen, 1)
-	c.Assert(got.Domains[0].NotNull, qt.IsTrue)
-	c.Assert(got.Composites, qt.HasLen, 1)
-	c.Assert(got.Composites[0].Fields, qt.DeepEquals, []catalog.CompositeField{{
-		Name: "city",
-		Type: "text",
-	}})
+	domain, found, err := got.FeatureObjects.Get(pgtype.Ref(pgtype.DomainKind, "app", "email"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(domain.Value.(*pgtype.ObservedDomain).NotNull, qt.IsTrue)
+	composite, found, err := got.FeatureObjects.Get(pgtype.Ref(pgtype.CompositeKind, "app", "address"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(composite.Value.(*pgtype.ObservedComposite).Attributes, qt.DeepEquals, []pgtype.Attribute{{Name: "city", Type: "text"}})
 	rangeType, found, err := got.FeatureObjects.Get(pgtype.Ref(pgtype.RangeKind, "app", "price_range"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)

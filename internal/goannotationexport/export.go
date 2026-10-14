@@ -304,8 +304,6 @@ func databaseHasSchemaObjects(db *schemamodel.Database) bool {
 		len(db.EmbeddedFields) +
 		len(db.Functions) +
 		len(db.Sequences) +
-		len(db.Domains) +
-		len(db.CompositeTypes) +
 		len(db.Views) +
 		len(db.MaterializedViews) +
 		len(db.Triggers) +

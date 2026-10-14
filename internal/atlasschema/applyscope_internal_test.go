@@ -120,10 +120,12 @@ func TestApplyReadScope(t *testing.T) {
 			info: postgresPinned,
 			base: []string{"public"},
 			desired: &schemamodel.Database{
-				Sequences:      []schemamodel.Sequence{{Name: "s", Schema: "seqs"}},
-				Domains:        []schemamodel.Domain{{Name: "d", Schema: "doms"}},
-				CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "comps"}},
-				FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "rngs", "r"), Value: &pgtype.DesiredRange{}})),
+				Sequences: []schemamodel.Sequence{{Name: "s", Schema: "seqs"}},
+				FeatureObjects: must.Must(schemaext.NewObjects(
+					schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "doms", "d"), Value: &pgtype.DesiredDomain{BaseType: "text"}},
+					schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "comps", "c"),
+						Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+					schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "rngs", "r"), Value: &pgtype.DesiredRange{}})),
 			},
 			want: []string{"comps", "doms", "public", "rngs", "seqs"},
 		},

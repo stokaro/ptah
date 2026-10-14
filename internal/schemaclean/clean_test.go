@@ -28,13 +28,15 @@ func schemaWithEveryReportableKind() *catalog.Database {
 			{Name: "fk_posts_users", Schema: "public", TableName: "posts", Type: "FOREIGN KEY"},
 			{Name: "pk_posts", Schema: "public", TableName: "posts", Type: "PRIMARY KEY"},
 		},
-		Enums:          []catalog.Enum{{Name: "mood"}},
-		Views:          []catalog.View{{Name: "v_users", Schema: "public"}},
-		MatViews:       []catalog.MaterializedView{{Name: "mv_users", Schema: "public"}},
-		Functions:      []catalog.Function{{Name: "f_touch"}},
-		Domains:        []catalog.Domain{{Name: "d_email", Schema: "public"}},
-		Composites:     []catalog.CompositeType{{Name: "c_addr", Schema: "public"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r_int"), Value: &pgtype.ObservedRange{}})),
+		Enums:     []catalog.Enum{{Name: "mood"}},
+		Views:     []catalog.View{{Name: "v_users", Schema: "public"}},
+		MatViews:  []catalog.MaterializedView{{Name: "mv_users", Schema: "public"}},
+		Functions: []catalog.Function{{Name: "f_touch"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "public", "d_email"), Value: &pgtype.ObservedDomain{BaseType: "text"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "public", "c_addr"),
+				Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "public", "r_int"), Value: &pgtype.ObservedRange{}})),
 	}
 }
 

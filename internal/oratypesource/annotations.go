@@ -50,7 +50,7 @@ func Annotations() annotation.Extension {
 
 // sourceCoverage is what a source that can declare both kinds knows: every
 // type it holds, so one it leaves out is absent. A not-described record of the
-// common domain or composite kind narrows it before the owner compares.
+// domain or composite coverage kind narrows it before the owner compares.
 func sourceCoverage([]coverage.Object) (schemaext.Coverage, error) {
 	return oratype.CompleteCoverage(schemaext.Desired)
 }

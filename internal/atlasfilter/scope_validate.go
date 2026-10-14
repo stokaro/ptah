@@ -201,38 +201,12 @@ func validateGeneratedTypes(
 			report("enum", schema, name)
 		}
 	}
-	for _, domain := range original.Domains {
-		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d schemamodel.Domain) (string, string) {
-			return d.Schema, d.Name
-		}) {
-			report("domain", domain.Schema, domain.Name)
-		}
-	}
-	for _, composite := range original.CompositeTypes {
-		if !typeObjectKept(final.CompositeTypes, composite.Schema, composite.Name, func(c schemamodel.CompositeType) (string, string) {
-			return c.Schema, c.Name
-		}) {
-			report("composite type", composite.Schema, composite.Name)
-		}
-	}
 	reportDroppedOwnerTypes(original.FeatureObjects, final.FeatureObjects, report)
 }
 
 func generatedEnumKept(enums []schemamodel.Enum, schema, name string) bool {
 	for _, enum := range enums {
 		keptSchema, keptName := enumIdentity(enum.Schema, enum.Name)
-		if keptSchema == schema && keptName == name {
-			return true
-		}
-	}
-	return false
-}
-
-// typeObjectKept reports whether a type object identified by schema and name
-// is still present in the kept slice.
-func typeObjectKept[T any](kept []T, schema, name string, key func(T) (schema, name string)) bool {
-	for _, item := range kept {
-		keptSchema, keptName := key(item)
 		if keptSchema == schema && keptName == name {
 			return true
 		}
@@ -296,23 +270,9 @@ func validateDatabaseTypes(
 			report("enum", enum.Schema, enum.Name)
 		}
 	}
-	for _, domain := range original.Domains {
-		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d catalog.Domain) (string, string) {
-			return d.Schema, d.Name
-		}) {
-			report("domain", domain.Schema, domain.Name)
-		}
-	}
-	// The same four kinds validateGeneratedTypes asks about. A composite or a
-	// range the selection dropped while a kept column still uses it described
-	// a table the description cannot create.
-	for _, composite := range original.Composites {
-		if !typeObjectKept(final.Composites, composite.Schema, composite.Name, func(c catalog.CompositeType) (string, string) {
-			return c.Schema, c.Name
-		}) {
-			report("composite type", composite.Schema, composite.Name)
-		}
-	}
+	// The kinds validateGeneratedTypes asks about. A type the selection
+	// dropped while a kept column still uses it described a table the
+	// description cannot create.
 	reportDroppedOwnerTypes(original.FeatureObjects, final.FeatureObjects, report)
 }
 

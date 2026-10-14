@@ -234,12 +234,6 @@ var roundTripGaps = []Unreached{
 	{Field: "mysqlschema.DesiredTable.AutoIncrement", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "mysqlschema.DesiredTable.Charset", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "mysqlschema.DesiredTable.Engine", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
-	{
-		Field:      "schemamodel.CompositeType.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite", "sqlserver", "ydb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     gapComparison,
-	},
 	{Field: "schemamodel.Constraint.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	// MySQL access-method comparison needs the storage engine (#2834), as
 	// the table-level PrimaryKeyMethod entry records for the same key.
@@ -248,12 +242,6 @@ var roundTripGaps = []Unreached{
 		Field:      "schemamodel.Database.Schemas",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "spanner", "sqlserver"},
 		Directions: nil,
-		Reason:     gapComparison,
-	},
-	{
-		Field:      "schemamodel.Domain.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite", "sqlserver", "ydb"},
-		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
@@ -459,14 +447,6 @@ var roundTripExemptions = []Unreached{
 	{Field: "oratype.DesiredDomain.DefaultExpr", Dialects: []string{"oracle"}, Directions: nil, Reason: exemptOracleDomainSpelling},
 	{Field: "schemamodel.Database.FeatureCoverage", Dialects: nil, Directions: nil, Reason: exemptFeatureCoverage},
 	{Field: "schemamodel.Database.NotDescribed", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
-	{Field: "schemamodel.Domain.Check", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
-	{Field: "schemamodel.Domain.Default", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: exemptDomainNormalized},
-	{
-		Field:      "schemamodel.Domain.DefaultExpr",
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: nil,
-		Reason:     exemptDomainNormalized,
-	},
 	{Field: "schemamodel.Field.Primary", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptClickHouseKey},
 	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
 	{

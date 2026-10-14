@@ -121,22 +121,6 @@ func TestMerge_RejectsEveryConflictingNamedObject(t *testing.T) {
 			wantErr: `conflicting sequence "order_seq" definitions`,
 		},
 		{
-			name:    "domain",
-			first:   &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "email", BaseType: "TEXT"}}},
-			second:  &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "email", BaseType: "VARCHAR(255)"}}},
-			wantErr: `conflicting domain "email" definitions`,
-		},
-		{
-			name: "composite type",
-			first: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{
-				Name: "address", Fields: []schemamodel.CompositeField{{Name: "city", Type: "TEXT"}},
-			}}},
-			second: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{
-				Name: "address", Fields: []schemamodel.CompositeField{{Name: "city", Type: "VARCHAR(255)"}},
-			}}},
-			wantErr: `conflicting composite type "address" definitions`,
-		},
-		{
 			name:    "range",
 			first:   &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "amount_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}}))},
 			second:  &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "amount_range"), Value: &pgtype.DesiredRange{Subtype: "bigint"}}))},
@@ -227,8 +211,6 @@ func TestMerge_DeduplicatesEveryIdenticalNamedObject(t *testing.T) {
 		EmbeddedFields:    []schemamodel.EmbeddedField{{StructName: "User", EmbeddedTypeName: "Metadata", Mode: "skip"}},
 		Functions:         []schemamodel.Function{{Name: "active_user", Returns: "BOOLEAN", Body: "SELECT true"}},
 		Sequences:         []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
-		Domains:           []schemamodel.Domain{{Name: "email", BaseType: "TEXT"}},
-		CompositeTypes:    []schemamodel.CompositeType{{Name: "address", Fields: []schemamodel.CompositeField{{Name: "city", Type: "TEXT"}}}},
 		FeatureObjects:    must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "amount_range"), Value: &pgtype.DesiredRange{Subtype: "numeric"}})),
 		Views:             []schemamodel.View{{Name: "active_users", Body: "SELECT id FROM users"}},
 		MaterializedViews: []schemamodel.MaterializedView{{Name: "user_stats", Body: "SELECT count(*) FROM users"}},
@@ -254,8 +236,6 @@ func TestMerge_DeduplicatesEveryIdenticalNamedObject(t *testing.T) {
 	c.Assert(merged.EmbeddedFields, qt.HasLen, 1)
 	c.Assert(merged.Functions, qt.HasLen, 1)
 	c.Assert(merged.Sequences, qt.HasLen, 1)
-	c.Assert(merged.Domains, qt.HasLen, 1)
-	c.Assert(merged.CompositeTypes, qt.HasLen, 1)
 	c.Assert(merged.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(merged.Views, qt.HasLen, 1)
 	c.Assert(merged.MaterializedViews, qt.HasLen, 1)

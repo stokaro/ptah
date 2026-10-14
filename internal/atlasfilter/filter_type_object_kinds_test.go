@@ -29,37 +29,25 @@ func typeObjectKindsFixture() *catalog.Database {
 			{Name: "order_seq"},
 			{Schema: "app", Name: "app_seq"},
 		},
-		Domains: []catalog.Domain{
-			{Name: "positive_int", BaseType: "integer"},
-			{Schema: "app", Name: "app_int", BaseType: "integer"},
-		},
-		Composites: []catalog.CompositeType{
-			{Name: "addr"},
-			{Schema: "app", Name: "app_addr"},
-		},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "intrange"), Value: &pgtype.ObservedRange{Subtype: "integer"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "app_range"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "positive_int"), Value: &pgtype.ObservedDomain{BaseType: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "app", "app_int"), Value: &pgtype.ObservedDomain{BaseType: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "addr"), Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "app", "app_addr"), Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "intrange"), Value: &pgtype.ObservedRange{Subtype: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "app_range"), Value: &pgtype.ObservedRange{Subtype: "integer"}})),
 	}
-}
-
-func databaseDomainNames(domains []catalog.Domain) []string {
-	names := make([]string, 0, len(domains))
-	for _, domain := range domains {
-		names = append(names, domain.QualifiedName())
-	}
-	return names
-}
-
-func databaseCompositeNames(composites []catalog.CompositeType) []string {
-	names := make([]string, 0, len(composites))
-	for _, composite := range composites {
-		names = append(names, composite.QualifiedName())
-	}
-	return names
 }
 
 // rangeNames projects the range owner's identities on either side of a comparison.
 func rangeNames(objects schemaext.Objects) []string {
-	refs := objects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(pgtype.RangeKind) }).Refs()
+	return kindNames(objects, pgtype.RangeKind)
+}
+
+// kindNames projects the PostgreSQL type owner's identities of kind on either
+// side of a comparison.
+func kindNames(objects schemaext.Objects, kind schemaext.Kind) []string {
+	refs := objects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(kind) }).Refs()
 	names := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		names = append(names, pgtype.QualifiedName(ref))
@@ -84,8 +72,8 @@ func typeObjectSurvivorsOf(schema *catalog.Database) typeObjectSurvivors {
 	return typeObjectSurvivors{
 		Tables:     tableNames(schema.Tables),
 		Sequences:  databaseSequenceNames(schema.Sequences),
-		Domains:    databaseDomainNames(schema.Domains),
-		Composites: databaseCompositeNames(schema.Composites),
+		Domains:    kindNames(schema.FeatureObjects, pgtype.DomainKind),
+		Composites: kindNames(schema.FeatureObjects, pgtype.CompositeKind),
 		Ranges:     rangeNames(schema.FeatureObjects),
 	}
 }
@@ -116,8 +104,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -127,8 +115,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -138,8 +126,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -150,7 +138,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
 				Domains:    []string{"app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -161,7 +149,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
 				Domains:    []string{"app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -172,7 +160,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
 				Domains:    []string{"positive_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -182,7 +170,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
+				Domains:    []string{"app.app_int", "positive_int"},
 				Composites: []string{"app.app_addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
@@ -193,7 +181,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
+				Domains:    []string{"app.app_int", "positive_int"},
 				Composites: []string{"addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
@@ -204,8 +192,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range"},
 			},
 		},
@@ -215,8 +203,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"intrange"},
 			},
 		},
@@ -228,8 +216,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     []string{"users"},
 				Sequences:  []string{"order_seq", "app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -241,8 +229,8 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			want: typeObjectSurvivors{
 				Tables:     make([]string, 0),
 				Sequences:  []string{"order_seq", "app.app_seq"},
-				Domains:    []string{"positive_int", "app.app_int"},
-				Composites: []string{"addr", "app.app_addr"},
+				Domains:    []string{"app.app_int", "positive_int"},
+				Composites: []string{"app.app_addr", "addr"},
 				Ranges:     []string{"app.app_range", "intrange"},
 			},
 		},
@@ -314,10 +302,16 @@ func TestExcludeDatabaseReport_StillNamesASelectorThatMatchedNoTypeObject(t *tes
 func TestExcludeGenerated_SubtractsTheSameTypeObjectKinds(t *testing.T) {
 	c := qt.New(t)
 	schema := &schemamodel.Database{
-		Sequences:      []schemamodel.Sequence{{Name: "order_seq"}, {Schema: "app", Name: "app_seq"}},
-		Domains:        []schemamodel.Domain{{Name: "positive_int", BaseType: "integer"}, {Schema: "app", Name: "app_int", BaseType: "integer"}},
-		CompositeTypes: []schemamodel.CompositeType{{Name: "addr"}, {Schema: "app", Name: "app_addr"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "intrange"), Value: &pgtype.DesiredRange{Subtype: "integer"}}, schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "app_range"), Value: &pgtype.DesiredRange{Subtype: "integer"}})),
+		Sequences: []schemamodel.Sequence{{Name: "order_seq"}, {Schema: "app", Name: "app_seq"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "", "positive_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.DomainKind, "app", "app_int"), Value: &pgtype.DesiredDomain{BaseType: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "", "addr"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.CompositeKind, "app", "app_addr"),
+				Value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}}}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "", "intrange"), Value: &pgtype.DesiredRange{Subtype: "integer"}},
+			schemaext.Object{Ref: pgtype.Ref(pgtype.RangeKind, "app", "app_range"), Value: &pgtype.DesiredRange{Subtype: "integer"}})),
 	}
 
 	got, report, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(),
@@ -328,25 +322,9 @@ func TestExcludeGenerated_SubtractsTheSameTypeObjectKinds(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Unmatched, qt.IsNil)
 	c.Assert(generatedSequenceNames(got.Sequences), qt.DeepEquals, []string{"app.app_seq"})
-	c.Assert(generatedDomainNames(got.Domains), qt.DeepEquals, []string{"app.app_int"})
-	c.Assert(generatedCompositeNames(got.CompositeTypes), qt.DeepEquals, []string{"addr"})
+	c.Assert(kindNames(got.FeatureObjects, pgtype.DomainKind), qt.DeepEquals, []string{"app.app_int"})
+	c.Assert(kindNames(got.FeatureObjects, pgtype.CompositeKind), qt.DeepEquals, []string{"addr"})
 	c.Assert(rangeNames(got.FeatureObjects), qt.DeepEquals, []string{"app.app_range"})
-}
-
-func generatedDomainNames(domains []schemamodel.Domain) []string {
-	names := make([]string, 0, len(domains))
-	for _, domain := range domains {
-		names = append(names, catalog.QualifyTableName(domain.Schema, domain.Name))
-	}
-	return names
-}
-
-func generatedCompositeNames(types []schemamodel.CompositeType) []string {
-	names := make([]string, 0, len(types))
-	for _, composite := range types {
-		names = append(names, catalog.QualifyTableName(composite.Schema, composite.Name))
-	}
-	return names
 }
 
 // TestExcludeDatabaseReport_ColumnSelectorUnderAnExcludedTableIsNotEmpty is the
