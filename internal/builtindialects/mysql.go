@@ -74,6 +74,9 @@ func mysql() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "implicit_commit",
 		RevisionTable:   mysqlFamilyRevisionTable(),
+
+		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionDatabase},
+		Lock:    descriptor.Lock{Protocol: descriptor.LockGetLock},
 	}
 }
 

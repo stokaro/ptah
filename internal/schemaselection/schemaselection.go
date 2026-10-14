@@ -28,6 +28,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/systemschema"
 )
@@ -77,15 +78,15 @@ type Selection struct {
 }
 
 // FromURL reads the selection a database URL carries. An unparseable URL, or
-// one of a dialect whose scoping boundary has not been measured, selects
-// nothing — which puts everything under review rather than less.
+// one of a dialect whose schemas a URL does not select through search_path,
+// selects nothing — which puts everything under review rather than less.
 func FromURL(rawURL string) Selection {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return Selection{}
 	}
 	dialect, err := atlasurl.DialectFromURL(rawURL)
-	if err != nil || !platform.IsPostgresFamily(dialect) {
+	if err != nil || schemasOf(dialect).Selection != descriptor.SchemaSelectionSearchPath {
 		return Selection{}
 	}
 	parsed, err := atlasurl.Parse(rawURL)
@@ -142,13 +143,13 @@ func fromQuery(query url.Values) Selection {
 // collapsed the two scopes into the connection's own schema and so described
 // only one schema of a multi-schema database.
 func Realm(dialect, rawURL, connectedSchema string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLite:
-		// SQLite has one namespace, so there is no wider scope to select.
+	switch schemasOf(dialect).Selection {
+	case descriptor.SchemaSelectionSingle:
+		// One namespace, so there is no wider scope to select.
 		return false
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case descriptor.SchemaSelectionSearchPath:
 		return FromURL(rawURL).Scope == ""
-	case platform.MySQL, platform.MariaDB:
+	case descriptor.SchemaSelectionDatabase:
 		return strings.TrimSpace(connectedSchema) == ""
 	default:
 		// A dialect whose realm boundary nobody has measured stays at schema
@@ -156,13 +157,6 @@ func Realm(dialect, rawURL, connectedSchema string) bool {
 		return false
 	}
 }
-
-// sqliteDefaultSchema is the only schema a SQLite connection has. It is spelled
-// here rather than imported from the identifier semantics because this package
-// needs the NAME a diagnostic prints, not the comparison rules that type
-// carries, and importing those would pull the identifier layer under every
-// caller of a URL question.
-const sqliteDefaultSchema = "main"
 
 // URLScope reports the one schema a database URL limits a run to, and whether it
 // limits it at all.
@@ -192,14 +186,17 @@ func URLScope(rawURL string) (scope string, limited bool) {
 	if err != nil {
 		return "", false
 	}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLite:
-		// SQLite has one namespace, so every SQLite URL is limited to it.
-		return sqliteDefaultSchema, true
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	described, _ := platform.Lookup(dialect)
+	switch described.Schemas.Selection {
+	case descriptor.SchemaSelectionSingle:
+		// One namespace, the default schema, so every URL is limited to it:
+		// "main" on SQLite. The descriptor carries the name a diagnostic
+		// prints, without the comparison rules the identifier layer adds.
+		return described.DefaultSchema, true
+	case descriptor.SchemaSelectionSearchPath:
 		selected := FromURL(rawURL).Scope
 		return selected, selected != ""
-	case platform.MySQL, platform.MariaDB:
+	case descriptor.SchemaSelectionDatabase:
 		// The database is read by atlasurl.ParseMySQLURL, the one reader of
 		// every MySQL-family URL form. A socket URL keeps its database in the
 		// `database` parameter and its socket in the path, so a reader of the
@@ -247,13 +244,13 @@ func RealmSchemas(
 	q RowsQuerier,
 ) ([]string, error) {
 	var query string
-	switch {
-	case platform.IsPostgresFamily(dialect):
+	switch schemasOf(dialect).Selection {
+	case descriptor.SchemaSelectionSearchPath:
 		query = `
 		SELECT n.nspname
 		FROM pg_namespace n
 		WHERE ` + systemschema.PostgresDescribedSchemasPredicate(dialect, caps)
-	case isMySQLFamily(dialect):
+	case descriptor.SchemaSelectionDatabase:
 		query = `
 		SELECT SCHEMA_NAME
 		FROM information_schema.SCHEMATA
@@ -375,28 +372,23 @@ type TxBeginner interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
-// isMySQLFamily reports whether dialect is MySQL or MariaDB, whose realm is a
-// server's databases.
-func isMySQLFamily(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
+// schemasOf is what dialect's descriptor states about its schemas. A dialect
+// the registry does not know states nothing, which scopes nothing.
+func schemasOf(dialect string) descriptor.Schemas {
+	described, _ := platform.Lookup(dialect)
+	return described.Schemas
 }
 
 // DialectDefault is the schema that owns an unqualified object when no URL
-// pins one: "public" on the PostgreSQL family and "main" on SQLite. It is
-// empty for the MySQL family, whose schemas are databases, so only a URL can
-// name the default there.
+// pins one: the descriptor's default schema where it is implicit, "public" on
+// PostgreSQL, CockroachDB and YugabyteDB and "main" on SQLite. It is empty for
+// the MySQL family, whose schemas are databases, so only a URL can name the
+// default there, and for every dialect whose descriptor does not make its
+// default implicit.
 func DialectDefault(dialect string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return "public"
-	case platform.SQLite:
-		return "main"
-	default:
+	described, _ := platform.Lookup(dialect)
+	if !described.Schemas.Implicit {
 		return ""
 	}
+	return described.DefaultSchema
 }

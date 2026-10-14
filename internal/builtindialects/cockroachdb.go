@@ -68,5 +68,8 @@ func cockroachDB() descriptor.Dialect {
 		// revision-completion test drives it yet.
 		DDLTransactions: "transactional",
 		RevisionTable:   postgresFamilyRevisionTable(),
+
+		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSearchPath, Implicit: true},
+		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced, Widenable: true},
 	}
 }
