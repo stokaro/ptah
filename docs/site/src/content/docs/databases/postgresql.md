@@ -926,7 +926,8 @@ another database therefore does not carry it, and `ptah db read` and
 note: default privileges for ALL ROLES on TABLES in schema public are not fully described: FOR ALL ROLES has no named grantor in a schema declaration.
 ```
 
-Go and HCL exports preserve unread ACL scopes as `notdescribed` directives.
+The SQL that `ptah db read` prints has a comment in place of each one. Go and
+HCL exports preserve unread ACL scopes as `notdescribed` directives.
 Reading an exported source keeps those scopes unmanaged. A known named role's
 ACL remains independent of an unread `FOR ALL ROLES` ACL. Unknown catalog
 object classes retain their names in the diagnostic and the source limit.
