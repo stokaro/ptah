@@ -49,6 +49,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgtype"
@@ -218,7 +219,7 @@ func mysqlReplaceIndexFixture() extensionFixture {
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), exclusionFixture(), extensionFixture{payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, extensionFixture{payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
-		pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
+		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture())
 }
 
@@ -896,4 +897,9 @@ func TestRowSecurityPolicyTransitionsRender(t *testing.T) {
 
 func exclusionFixture() extensionFixture {
 	return extensionFixture{payload: &pgtable.AlterExclusion{Name: "no_overlap", Change: pgtable.ExclusionChange{After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "btree", Elements: "room WITH ="}}}}}
+}
+
+func defaultPrivilegeFixture() extensionFixture {
+	return extensionFixture{payload: &pgdefaultprivilege.Operation{Identity: pgdefaultprivilege.Identity{Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "reader"}, Action: pgdefaultprivilege.GrantRights, Privileges: []string{"SELECT"}},
+		wantSQL: "ALTER DEFAULT PRIVILEGES FOR ROLE \"owner\" IN SCHEMA \"app\" GRANT SELECT ON TABLES TO \"reader\";\n"}
 }

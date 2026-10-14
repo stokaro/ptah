@@ -22,9 +22,11 @@ import (
 // Grants are not walked here. A grant is written against a target object, which
 // a document usually declares in its own right, so the schema is already on
 // this list by the time the grant is read.
-func DeclaredSchemaNames(desired *schemamodel.Database) []string {
+// Feature values contribute their declared SchemaPlacement without SQL quoting
+// or name trimming. Invalid text or an unreadable captured value returns no names.
+func DeclaredSchemaNames(desired *schemamodel.Database) ([]string, error) {
 	if desired == nil {
-		return nil
+		return nil, nil
 	}
 	var names []string
 	add := func(name string) {
@@ -55,9 +57,23 @@ func DeclaredSchemaNames(desired *schemamodel.Database) []string {
 	for _, defined := range schemaext.DefinedTypes(desired.FeatureObjects) {
 		add(defined.ID.Schema.Authored())
 	}
-	for _, privilege := range desired.DefaultPrivileges {
-		add(privilege.Schema)
+	objects, err := desired.FeatureObjects.All()
+	if err != nil {
+		return nil, err
+	}
+	for _, object := range objects {
+		placement, ok := object.Value.(schemaext.SchemaPlacement)
+		if !ok {
+			continue
+		}
+		name := placement.PlacementSchema(object.Ref)
+		if err := schemaext.ValidText("declared schema", name); err != nil {
+			return nil, err
+		}
+		if name != "" {
+			names = append(names, name)
+		}
 	}
 	slices.Sort(names)
-	return slices.Compact(names)
+	return slices.Compact(names), nil
 }

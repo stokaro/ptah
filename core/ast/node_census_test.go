@@ -21,7 +21,8 @@ import (
 // recorded.
 // SetUnloggedOperation is accounted for by pgtable.AlterPersistence in the
 // extraction departure ledger rather than by a common node.
-const nodeKindFloor = 81
+// Default privileges use owner operations through ExtensionNode.
+const nodeKindFloor = 79
 
 // censusRow is one node kind the census accepts.
 //
@@ -66,7 +67,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.CreateTriggerNode{}},
 	{node: &ast.CreateTypeNode{}},
 	{node: &ast.CreateViewNode{}},
-	{node: &ast.DefaultPrivilegeNode{}},
 	{node: &ast.DropFunctionNode{}},
 	{node: &ast.DropIndexNode{}},
 	{node: &ast.DropMaterializedViewNode{}},
@@ -84,7 +84,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.ObjectCommentNode{}},
 	{node: &ast.RawSQLNode{}},
 	{node: &ast.RefreshMaterializedViewNode{}},
-	{node: &ast.RevokeDefaultPrivilegeNode{}},
 	{node: &ast.RevokePrivilegeNode{}},
 	{node: &ast.RevokeRoleMembershipNode{}},
 	{node: &ast.UpsertNode{}},

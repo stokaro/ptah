@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // keyed builds a one-column table whose single column is col, keyed on id.
@@ -293,8 +294,8 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 			wantErr: `WITH SCHEMABINDING on view v: a YDB view takes the security_invoker option alone, .*`},
 		{name: "a dropped view with CASCADE", node: &ast.DropViewNode{Name: "v", Cascade: true},
 			wantErr: `DROP VIEW v CASCADE: YDB's DROP VIEW has no CASCADE`},
-		{name: "a default privilege", node: ast.NewDefaultPrivilege("owner", "app", "TABLES", "reader", nil),
-			wantErr: `default privileges for owner: YDB has no default privileges; .*`},
+		{name: "a default privilege", node: &ast.ExtensionStatement{Payload: &pgdefaultprivilege.Operation{Identity: pgdefaultprivilege.Identity{Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "reader"}, Action: pgdefaultprivilege.GrantRights, Privileges: []string{"SELECT"}}},
+			wantErr: `(?s).*ptah.run/pgdefaultprivilege/default-privilege-operation.*`},
 		{name: "an upsert", node: ast.NewUpsert("t"),
 			wantErr: `upsert into t: YDB's UPSERT INTO matches on the primary key .*; build the statement with core/query's UpsertInto`},
 		{name: "a database", node: &ast.CreateDatabaseNode{Name: "d"},

@@ -21,6 +21,7 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
@@ -193,6 +194,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(pgextension.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	// Every table block can state the SQLite options, strict and
 	// without_rowid.

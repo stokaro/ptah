@@ -1,11 +1,11 @@
 package devclean
 
 import (
+	"context"
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/objectidentity"
-	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 )
 
 // WithoutStartingPoint returns current, a read of a dev database the caller
@@ -23,20 +23,21 @@ import (
 // is compared like any other, though its table is not. An object declared
 // holds too stays and matches.
 //
-// Objects are matched by identity, not by definition: one the run changed
-// inside the starting point is left out with it. defaultSchema names the
-// schema an object with none is in, on either side.
-func (b Baseline) WithoutStartingPoint(current, declared *catalog.Database, defaultSchema string) *catalog.Database {
-	return WithoutKeptState(current, b.environment, declared, defaultSchema)
+// Common objects are matched by identity, not by definition. Selected feature
+// owners may subtract individual members, such as rights in one ACL. The default
+// schema resolves unqualified common objects and table children; global owner
+// state stays global. Selection failures return an error and no partial catalog.
+func (b Baseline) WithoutStartingPoint(ctx context.Context, current, declared *catalog.Database, defaultSchema string, selections selectext.Set) (*catalog.Database, error) {
+	return WithoutKeptState(ctx, current, b.environment, declared, defaultSchema, selections)
 }
 
 // WithoutKeptState is [Baseline.WithoutStartingPoint] for a caller that holds
 // the starting point as a read: it returns current without the objects env
 // holds that declared does not hold too. A nil env returns current as it is,
 // and a nil declared declares nothing. current is not changed.
-func WithoutKeptState(current, env, declared *catalog.Database, defaultSchema string) *catalog.Database {
+func WithoutKeptState(ctx context.Context, current, env, declared *catalog.Database, defaultSchema string, selections selectext.Set) (*catalog.Database, error) {
 	if current == nil || env == nil {
-		return current
+		return current, nil
 	}
 	if declared == nil {
 		declared = &catalog.Database{}
@@ -85,43 +86,18 @@ func WithoutKeptState(current, env, declared *catalog.Database, defaultSchema st
 		})
 	filtered.ObjectOwners = subtract(current.ObjectOwners, env.ObjectOwners, declared.ObjectOwners,
 		func(v catalog.ObjectOwner) string { return v.Kind + "\x00" + q(v.Schema, v.Name) })
-	filtered.DefaultPrivileges = subtract(current.DefaultPrivileges, env.DefaultPrivileges, declared.DefaultPrivileges,
-		func(v catalog.DefaultPrivilege) string {
-			return strings.Join([]string{v.Grantor, v.Schema, strings.ToUpper(v.ObjectType), v.Grantee,
-				strings.ToUpper(v.Privilege)}, "\x00")
-		})
 	filtered.Roles = subtract(current.Roles, env.Roles, declared.Roles,
 		func(v catalog.Role) string { return v.Name })
 	filtered.RoleMemberships = subtract(current.RoleMemberships, env.RoleMemberships, declared.RoleMemberships,
 		func(v catalog.RoleMembership) string { return v.Role + "\x00" + v.Member })
-	// Named feature objects, such as TimescaleDB continuous aggregates, are
-	// matched by their structured identity; settings attached to a table
-	// leave with the table above.
-	filtered.FeatureObjects = subtractObjects(current.FeatureObjects, env.FeatureObjects, declared.FeatureObjects, func(ref objectidentity.ID) string {
-		return strings.Join([]string{string(ref.Kind), ref.Catalog.Normalized, q(ref.Schema.Authored(), ref.Parent.Normalized),
-			ref.Name.Normalized, ref.Signature}, "\x00")
+	var err error
+	filtered.FeatureObjects, err = selections.SubtractBaseline(ctx, selectext.BaselineRequest{
+		Current: current.FeatureObjects, StartingPoint: env.FeatureObjects, Declared: declared.FeatureObjects, DefaultSchema: defaultSchema,
 	})
-	return &filtered
-}
-
-// subtractObjects returns the feature objects of current whose identity env
-// does not hold, or declared holds too. key resolves an unqualified identity
-// under the caller's default schema, as every other family here does: the
-// identity a reader builds fills in its own default, which need not be the
-// schema the dev database uses.
-func subtractObjects(current, env, declared schemaext.Objects, key func(objectidentity.ID) string) schemaext.Objects {
-	if env.Len() == 0 || current.Len() == 0 {
-		return current
+	if err != nil {
+		return nil, err
 	}
-	inEnv := make(map[string]bool, env.Len())
-	for _, ref := range env.Refs() {
-		inEnv[key(ref)] = true
-	}
-	inDeclared := make(map[string]bool, declared.Len())
-	for _, ref := range declared.Refs() {
-		inDeclared[key(ref)] = true
-	}
-	return current.Select(func(ref objectidentity.ID) bool { return !inEnv[key(ref)] || inDeclared[key(ref)] })
+	return &filtered, nil
 }
 
 // subtract returns the values of current whose key env does not hold, or

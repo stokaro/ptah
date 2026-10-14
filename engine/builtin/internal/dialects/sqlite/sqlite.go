@@ -575,24 +575,6 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return nil
 }
 
-// ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
-// pg_default_acl, the privileges an object gets when a named role creates one.
-// No other engine here has a catalog for that, and the nearest thing on each --
-// granting on the schema, or on every object in it -- applies to what exists
-// rather than to what is created next. So the declaration is named and skipped
-// rather than approximated with a statement that means something else.
-func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
-	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
-	return nil
-}
-
-// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
-// [Renderer.renderDefaultPrivilege] carries.
-func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
-	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
-	return nil
-}
-
 func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(strings.TrimSpace(node.SQL))
 	return nil

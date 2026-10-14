@@ -652,45 +652,45 @@
     },
     "ptah.schema.defaultprivilege": {
       "additionalProperties": false,
-      "description": "Declares a PostgreSQL default privilege: what a grantee receives on objects a named role creates, in a named schema or, without one, in every schema of the database.",
+      "description": "Declares privileges on a named role's future objects.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
           "properties": {
             "comment": {
-              "description": "Default privilege comment.",
+              "description": "Documentation for this declaration.",
               "type": "string"
             },
             "dialects": {
-              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "description": "Comma-separated target dialects for this declaration.",
               "type": "string"
             },
             "for_role": {
-              "description": "Role whose newly created objects the privileges apply to. PostgreSQL refuses the statement from a non-member of this role, so it is part of the object's identity rather than a decoration.",
+              "description": "Role creating the objects.",
               "type": "string"
             },
             "grantable": {
-              "description": "The subset of privileges carrying WITH GRANT OPTION. A name outside privileges is refused.",
+              "description": "Subset of privileges carrying WITH GRANT OPTION.",
               "type": "string"
             },
             "grantee": {
-              "description": "Role receiving the privileges; PUBLIC names every role.",
+              "description": "Role receiving privileges; PUBLIC selects every role.",
               "type": "string"
             },
             "object_type": {
-              "description": "TABLES, SEQUENCES, FUNCTIONS or TYPES; without a schema also SCHEMAS or LARGE OBJECTS.",
+              "description": "TABLES, SEQUENCES, FUNCTIONS or TYPES; globally also SCHEMAS or LARGE OBJECTS.",
               "type": "string"
             },
             "privileges": {
-              "description": "Comma-separated privileges, such as SELECT,INSERT. Required unless revoked is set.",
+              "description": "Comma-separated granted privileges. Required unless revoked is set.",
               "type": "string"
             },
             "revoked": {
-              "description": "Comma-separated privileges the grantee must not hold by default, such as INSERT,UPDATE; ALL names every privilege of the object type. A name also in privileges is refused.",
+              "description": "Comma-separated revoked privileges; ALL selects every privilege of the object class.",
               "type": "string"
             },
             "schema": {
-              "description": "Schema the default applies in. Left out, the declaration is the global default, ALTER DEFAULT PRIVILEGES without IN SCHEMA, which starts from the built-in default: revoked can take a built-in privilege away, such as EXECUTE from PUBLIC.",
+              "description": "Schema of the objects; omitted for global defaults.",
               "type": "string"
             }
           },
@@ -3097,9 +3097,6 @@
       "$ref": "#/$defs/ptah.schema.revoke"
     },
     {
-      "$ref": "#/$defs/ptah.schema.defaultprivilege"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.data"
     },
     {
@@ -3122,6 +3119,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.coordinationnode"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.defaultprivilege"
     },
     {
       "$ref": "#/$defs/ptah.schema.exclude"

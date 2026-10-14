@@ -1319,26 +1319,6 @@ type SchemaDiff struct {
 	// flag exists in the database but not in the target schema.
 	GrantOptionsRevoked []GrantRef `json:"grant_options_revoked"`
 
-	// DefaultPrivilegesAdded is every PostgreSQL default privilege the target
-	// schema declares and the current database does not hold.
-	DefaultPrivilegesAdded []DefaultPrivilegeRef `json:"default_privileges_added"`
-
-	// DefaultPrivilegesRemoved is every PostgreSQL default privilege the
-	// current database holds and the target schema does not declare. See
-	// [DefaultPrivilegeRef] for which of those the comparison plans.
-	DefaultPrivilegesRemoved []DefaultPrivilegeRef `json:"default_privileges_removed"`
-
-	// DefaultPrivilegeOptionsAdded is every PostgreSQL default privilege the
-	// target schema marks WITH GRANT OPTION and the current database holds
-	// without it.
-	DefaultPrivilegeOptionsAdded []DefaultPrivilegeRef `json:"default_privilege_options_added"`
-
-	// DefaultPrivilegeOptionsRevoked is every PostgreSQL default privilege the
-	// current database holds WITH GRANT OPTION and the target schema declares
-	// without it. The entry carries the database's spelling, because it is the
-	// grant option being taken away.
-	DefaultPrivilegeOptionsRevoked []DefaultPrivilegeRef `json:"default_privilege_options_revoked"`
-
 	// ConstraintsAdded is the table-qualified definition of every constraint
 	// this diff creates.
 	//
@@ -1752,11 +1732,7 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.GrantsAdded) > 0 ||
 		len(d.GrantsRemoved) > 0 ||
 		len(d.GrantOptionsAdded) > 0 ||
-		len(d.GrantOptionsRevoked) > 0 ||
-		len(d.DefaultPrivilegesAdded) > 0 ||
-		len(d.DefaultPrivilegesRemoved) > 0 ||
-		len(d.DefaultPrivilegeOptionsAdded) > 0 ||
-		len(d.DefaultPrivilegeOptionsRevoked) > 0
+		len(d.GrantOptionsRevoked) > 0
 }
 
 // hasConstraintChanges returns true if there are any constraint-related changes.
@@ -3483,62 +3459,4 @@ type GrantRef struct {
 
 	// WithOption records whether the grant has WITH GRANT OPTION.
 	WithOption bool `json:"with_option"`
-}
-
-// DefaultPrivilegeRef identifies one PostgreSQL default privilege: the
-// privileges an object gets when a named role creates one, in a named schema
-// or, with an empty Schema, in every schema of the database.
-//
-// The object's identity is Grantor, Schema, ObjectType and Grantee together;
-// Privilege and WithOption are what the object holds. Two refs differing only
-// in Grantor describe two objects, because PostgreSQL keys pg_default_acl on
-// the grantor and refuses the statement from a non-member of that role.
-//
-// The grain is one privilege per ref, matching [catalog.DefaultPrivilege] and
-// matching what aclexplode answers: the catalog records grantability per
-// privilege, so one identity can hold a grantable privilege beside a plain one.
-//
-// Grantee may be PUBLIC, which is aclexplode's grantee 0 and not a role any
-// declaration creates.
-type DefaultPrivilegeRef struct {
-	// Grantor is the role whose newly created objects the privilege applies
-	// to, the FOR ROLE clause.
-	Grantor string `json:"grantor"`
-
-	// Schema is the schema the default applies in, the IN SCHEMA clause. It is
-	// empty for the global default, the statement without the clause.
-	Schema string `json:"schema"`
-
-	// ObjectType is the object class as the keyword a statement writes:
-	// TABLES, SEQUENCES, FUNCTIONS or TYPES, and for the global default also
-	// SCHEMAS and LARGE OBJECTS.
-	ObjectType string `json:"object_type"`
-
-	// Grantee is the role receiving the privilege, the TO clause. PUBLIC names
-	// every role.
-	Grantee string `json:"grantee"`
-
-	// Privilege is the individual privilege, e.g. SELECT, INSERT or USAGE.
-	// A revoke of the whole built-in default of a global grantee is ALL.
-	Privilege string `json:"privilege"`
-
-	// WithOption records whether this privilege alone carries WITH GRANT
-	// OPTION.
-	WithOption bool `json:"with_option"`
-}
-
-// String names the privilege and the four components that identify the object
-// it belongs to.
-//
-// A report that describes an element by its string fields stops after four of
-// them, and this type has five. Without this method the fifth is dropped from
-// the printed name, so two default privileges differing only in grantee -- or
-// only in grantor -- print as one identical line and an operator reading
-// `ptah schema compare` cannot tell which object changed.
-func (r DefaultPrivilegeRef) String() string {
-	where := "in " + r.Schema
-	if r.Schema == "" {
-		where = "in every schema"
-	}
-	return r.Privilege + " on " + r.ObjectType + " " + where + " for " + r.Grantor + " to " + r.Grantee
 }

@@ -7,8 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 )
@@ -69,9 +70,11 @@ func TestReadSchemaContext_RecordsARefusedDefaultACLHappyPath(t *testing.T) {
 	schema, err := reader.ReadSchemaContext(c.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(schema.DefaultPrivileges, qt.IsNil)
-	c.Assert(schema.UndescribedDefaultPrivileges, qt.IsNil)
-	c.Assert(schema.NotDescribed, qt.DeepEquals, coverage.Set{}.With(coverage.Refused(coverage.DefaultPrivilege)))
+	c.Assert(capturedDefaultPrivileges(c, schema), qt.HasLen, 0)
+	known := schema.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})
+	c.Assert(known.KindRecords(), qt.HasLen, 1)
+	c.Assert(known.KindRecords()[0].Knowledge, qt.DeepEquals, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the server refused to read pg_default_acl"})
+	c.Assert(known.SubjectRecords(), qt.HasLen, 0)
 	c.Assert(defaultACLStatements(asked), qt.DeepEquals, []string{"SELECT 1 FROM pg_default_acl"})
 }
 

@@ -48,7 +48,6 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	scoped.RLSEnabledTables = keepScoped(db.RLSEnabledTables, target, func(v RLSEnabledTable) []string { return v.Dialects })
 	scoped.Roles = keepScoped(db.Roles, target, func(v Role) []string { return v.Dialects })
 	scoped.Grants = keepScoped(db.Grants, target, func(v Grant) []string { return v.Dialects })
-	scoped.DefaultPrivileges = keepScoped(db.DefaultPrivileges, target, func(v DefaultPrivilege) []string { return v.Dialects })
 	scoped.RevokedGrants = keepScoped(db.RevokedGrants, target, func(v Grant) []string { return v.Dialects })
 	objects, err := db.FeatureObjects.ForTarget(target)
 	if err != nil {
@@ -190,12 +189,6 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 	for _, v := range db.RevokedGrants {
 		collect("revoked grant", v.Role, v.Dialects)
 	}
-	for _, v := range db.DefaultPrivileges {
-		// The collected name has to separate two declarations that differ only
-		// in grantor or object type, because the suppression that consumes it
-		// keeps an object by name alone.
-		collect("default privilege", defaultPrivilegeScopeName(v), v.Dialects)
-	}
 	found = append(found, scopedFeatureObjects(db.FeatureObjects, want)...)
 	sort.SliceStable(found, func(i, j int) bool {
 		if found[i].Kind != found[j].Kind {
@@ -220,7 +213,6 @@ func hasDialectScope(db *Database) bool {
 		anyScoped(db.RLSEnabledTables, func(v RLSEnabledTable) []string { return v.Dialects }) ||
 		anyScoped(db.Roles, func(v Role) []string { return v.Dialects }) ||
 		anyScoped(db.Grants, func(v Grant) []string { return v.Dialects }) ||
-		anyScoped(db.DefaultPrivileges, func(v DefaultPrivilege) []string { return v.Dialects }) ||
 		anyScoped(db.RevokedGrants, func(v Grant) []string { return v.Dialects })
 }
 
@@ -272,14 +264,4 @@ func featureObjectScopeName(ref objectidentity.ID) string {
 		name += "(" + ref.Signature + ")"
 	}
 	return name
-}
-
-// defaultPrivilegeScopeName names one default privilege for the scope report.
-//
-// The four components are the object's identity. A bare grantee would make two
-// declarations differing only in object type one name, and the suppression that
-// reads this report keeps an object by name alone -- so one of them would be
-// suppressed on behalf of the other.
-func defaultPrivilegeScopeName(d DefaultPrivilege) string {
-	return d.ObjectType + " in " + d.Schema + " for " + d.Grantor + " to " + d.Grantee
 }

@@ -40,11 +40,6 @@ func ValidateDeclared(dialect string, database *schemamodel.Database) error {
 	for _, revoked := range database.RevokedGrants {
 		problems = append(problems, grantProblems("revoke", revoked, views)...)
 	}
-	for _, defaultPrivilege := range database.DefaultPrivileges {
-		problems = append(problems, fmt.Errorf("default privilege for %q in %q: YDB has no default privileges; "+
-			"a permission granted on a directory is inherited by every object created in it, "+
-			"so grant it on the directory instead", defaultPrivilege.Grantor, defaultPrivilege.Schema))
-	}
 	return errors.Join(problems...)
 }
 

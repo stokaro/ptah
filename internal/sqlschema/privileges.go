@@ -65,17 +65,6 @@ func normalizeGrantee(sourcePlatform, role string) string {
 	return normalized
 }
 
-// roleTarget reads a role in a position that also takes the PUBLIC keyword: a
-// policy's TO list and the grantee of a default privilege. On the PostgreSQL
-// family it is [normalizeGrantee], so the keyword keeps the catalog's spelling
-// while a role name is folded; elsewhere the name is kept as written.
-func roleTarget(sourcePlatform, value string) string {
-	if platform.IsPostgresFamily(sourcePlatform) {
-		return normalizeGrantee(sourcePlatform, value)
-	}
-	return normalizeSQLIdentifier(sourcePlatform, strings.TrimSpace(value))
-}
-
 // setGrantTarget sets the target of a grant from a statement's object type and
 // name, which GRANT and REVOKE share.
 func setGrantTarget(grant *schemamodel.Grant, objectType, objectName, arguments, sourcePlatform string) {
@@ -186,81 +175,6 @@ func revokeGrantOption(database *schemamodel.Database, role, target string, priv
 		database.Grants = append(database.Grants, plain)
 	}
 	return nil
-}
-
-// appendDefaultPrivilegeRevoke records an ALTER DEFAULT PRIVILEGES ... REVOKE.
-//
-// Like a REVOKE on an object, it composes with the statements before it: each
-// privilege it names leaves an earlier ALTER DEFAULT PRIVILEGES ... GRANT of
-// the same identity and joins that identity's revoked set, and a revoke with
-// no grant before it is kept as a statement that the privilege is absent. A
-// schema-scoped default privilege is only ever added to the global ones, so on
-// the server the revoke takes back what a schema-scoped grant gave, which is
-// what a comparison plans it for. ALL names every privilege of the object
-// class.
-//
-// REVOKE GRANT OPTION FOR keeps the privilege and takes the right to pass it
-// on, which the model can say only about a grant this file made; with no such
-// grant it is refused, as it is for an object privilege.
-//
-// The grantor and the grantee are read with the functions [toDefaultPrivilege]
-// uses, so a revoke names the same identity as the grant it takes back whatever
-// case the file writes the role in.
-func appendDefaultPrivilegeRevoke(
-	database *schemamodel.Database, node *ast.RevokeDefaultPrivilegeNode, sourcePlatform string,
-) error {
-	revoked := schemamodel.DefaultPrivilege{
-		Grantor:    roleName(sourcePlatform, node.Grantor),
-		Schema:     normalizeSQLIdentifier(sourcePlatform, node.Schema),
-		ObjectType: node.ObjectType,
-		Grantee:    roleTarget(sourcePlatform, node.Grantee),
-		Revoked:    expandAll(node.Privileges, node.ObjectType),
-		Comment:    node.Comment,
-	}
-	revoked.Canonicalize()
-	if !node.GrantOptionFor {
-		database.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(
-			database.DefaultPrivileges, []schemamodel.DefaultPrivilege{revoked},
-		)
-		return nil
-	}
-	return revokeDefaultPrivilegeOption(database, revoked)
-}
-
-// revokeDefaultPrivilegeOption clears the grant option of privileges an
-// earlier ALTER DEFAULT PRIVILEGES ... GRANT of the same identity carries.
-func revokeDefaultPrivilegeOption(database *schemamodel.Database, revoked schemamodel.DefaultPrivilege) error {
-	index := slices.IndexFunc(database.DefaultPrivileges, func(existing schemamodel.DefaultPrivilege) bool {
-		existing.Canonicalize()
-		return existing.Grantor == revoked.Grantor && existing.Schema == revoked.Schema &&
-			existing.ObjectType == revoked.ObjectType && existing.Grantee == revoked.Grantee
-	})
-	for _, privilege := range revoked.Revoked {
-		held := -1
-		if index >= 0 {
-			held = slices.IndexFunc(database.DefaultPrivileges[index].Privileges, func(grant schemamodel.PrivilegeGrant) bool {
-				return grant.Privilege == privilege
-			})
-		}
-		if held < 0 {
-			return fmt.Errorf(
-				"ALTER DEFAULT PRIVILEGES FOR ROLE %s%s REVOKE GRANT OPTION FOR %s ON %s FROM %s names a "+
-					"default privilege this schema does not grant: the schema can say a privilege is held or not held, "+
-					"not that it is held without the option; declare the GRANT without WITH GRANT OPTION instead",
-				revoked.Grantor, inSchemaClause(revoked.Schema), privilege, revoked.ObjectType, revoked.Grantee)
-		}
-		database.DefaultPrivileges[index].Privileges[held].WithOption = false
-	}
-	return nil
-}
-
-// inSchemaClause is the IN SCHEMA clause a message quotes, and nothing for the
-// global default, which has none.
-func inSchemaClause(schema string) string {
-	if schema == "" {
-		return ""
-	}
-	return " IN SCHEMA " + schema
 }
 
 // refuseColumnRevokeUnderTableGrant refuses a revoke on columns of a privilege

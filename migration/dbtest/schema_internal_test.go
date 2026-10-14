@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -45,7 +46,7 @@ func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {
 		},
 	}
 
-	preserveUnmanagedObjects(diff, "sqlite")
+	c.Assert(preserveUnmanagedObjects(t.Context(), diff, "sqlite", must.Must(builtin.New()).Selections()), qt.IsNil)
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{{
 		Name:      "idx_users_name",
@@ -62,33 +63,19 @@ func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {
 	}})
 }
 
-// TestPreserveUnmanagedObjects_KeepsTheDefaultPrivilegesTheDatabaseHolds pins
-// this step as additive for the default-privilege family.
-//
-// A migration test runs against a database that may already carry default
-// privileges no Go declaration describes -- another suite's, or the DBA's. They
-// are outside this step's ownership, so applying a desired schema must not plan
-// a REVOKE against them. The additions stay, because bringing the declared
-// state up is exactly what this step is for.
+// Additive schema tests retain grants and grant-option additions, and leave
+// revocations out of the plan that runs against shared security state.
 func TestPreserveUnmanagedObjects_KeepsTheDefaultPrivilegesTheDatabaseHolds(t *testing.T) {
 	c := qt.New(t)
-	ref := difftypes.DefaultPrivilegeRef{
-		Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
-		Grantee: "app_reader", Privilege: "SELECT",
-	}
-	diff := &difftypes.SchemaDiff{
-		DefaultPrivilegesAdded:         []difftypes.DefaultPrivilegeRef{ref},
-		DefaultPrivilegesRemoved:       []difftypes.DefaultPrivilegeRef{ref},
-		DefaultPrivilegeOptionsAdded:   []difftypes.DefaultPrivilegeRef{ref},
-		DefaultPrivilegeOptionsRevoked: []difftypes.DefaultPrivilegeRef{ref},
-	}
-
-	preserveUnmanagedObjects(diff, "postgres")
-
-	c.Assert(diff.DefaultPrivilegesRemoved, qt.IsNil)
-	c.Assert(diff.DefaultPrivilegeOptionsRevoked, qt.IsNil)
-	c.Assert(diff.DefaultPrivilegesAdded, qt.DeepEquals, []difftypes.DefaultPrivilegeRef{ref})
-	c.Assert(diff.DefaultPrivilegeOptionsAdded, qt.DeepEquals, []difftypes.DefaultPrivilegeRef{ref})
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, identifier.ForDialect("postgres")))
+	granted := schemaext.ChangeRecord{Subject: ref, Value: &pgdefaultprivilege.Change{Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}}
+	option := schemaext.ChangeRecord{Subject: ref, Value: &pgdefaultprivilege.Change{GrantOptionsAdded: []string{"UPDATE"}}}
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+		granted, {Subject: ref, Value: &pgdefaultprivilege.Change{Revoked: []pgdefaultprivilege.Grant{{Privilege: "INSERT"}}}},
+		option, {Subject: ref, Value: &pgdefaultprivilege.Change{GrantOptionsRevoked: []string{"DELETE"}}},
+	}}
+	c.Assert(preserveUnmanagedObjects(t.Context(), diff, "postgres", must.Must(builtin.New()).Selections()), qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{granted, option})
 }
 
 func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) {
@@ -109,7 +96,7 @@ func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) 
 		}},
 	}
 
-	preserveUnmanagedObjects(diff, "postgres")
+	c.Assert(preserveUnmanagedObjects(t.Context(), diff, "postgres", must.Must(builtin.New()).Selections()), qt.IsNil)
 	sql, err := planner.GenerateSchemaDiffSQL(
 		context.Background(), must.Must(builtin.New()),
 		diff, "postgres",
@@ -137,27 +124,44 @@ func TestPreserveUnmanagedObjects_KeepsFeatureChangesThatAddState(t *testing.T) 
 		return schemaext.ChangeRecord{Subject: pgpolicy.PolicyRef("", "orders", name),
 			Value: &pgpolicy.PolicyChange{Before: before, After: after, Access: pgpolicy.PolicyAccess(before, after, pgpolicy.ExpressionsSame)}}
 	}
-	switches := func(before, after bool) schemaext.ChangeRecord {
-		return schemaext.ChangeRecord{Subject: pgpolicy.Table(pgpolicy.PolicyRef("", "orders", "x")), Value: &pgpolicy.TableStateChange{
+	switches := func(table string, before, after bool) schemaext.ChangeRecord {
+		return schemaext.ChangeRecord{Subject: pgpolicy.Table(pgpolicy.PolicyRef("", table, "x")), Value: &pgpolicy.TableStateChange{
 			Before: &pgpolicy.ObservedTableState{Enabled: before}, After: &pgpolicy.DesiredTableState{Enabled: after},
 			Access: pgpolicy.TableStateAccess(&pgpolicy.ObservedTableState{Enabled: before}, &pgpolicy.DesiredTableState{Enabled: after})}}
 	}
 	held := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Composition: pgpolicy.Permissive}
-	created, enabled := policy("created", nil, &pgpolicy.DesiredPolicy{}), switches(false, true)
+	created, enabled := policy("created", nil, &pgpolicy.DesiredPolicy{}), switches("orders", false, true)
 	opaque := schemaext.ChangeRecord{Subject: pgpolicy.Table(pgpolicy.PolicyRef("", "audit", "x")), Value: &opaqueChange{}}
 	diff := &difftypes.SchemaDiff{
 		FeatureChanges: []schemaext.ChangeRecord{policy("dropped_at_the_top", held, nil)},
 		TablesModified: []difftypes.TableDiff{
 			{TableName: "orders", FeatureChanges: []schemaext.ChangeRecord{created, policy("dropped", held, nil), enabled}},
-			{TableName: "invoices", FeatureChanges: []schemaext.ChangeRecord{switches(true, false)}},
+			{TableName: "invoices", FeatureChanges: []schemaext.ChangeRecord{switches("invoices", true, false)}},
 			{TableName: "audit", FeatureChanges: []schemaext.ChangeRecord{opaque}},
 		},
 	}
 
-	preserveUnmanagedObjects(diff, "postgres")
+	c.Assert(preserveUnmanagedObjects(t.Context(), diff, "postgres", must.Must(builtin.New()).Selections()), qt.IsNil)
 
 	c.Assert(diff.FeatureChanges, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].TableName, qt.Equals, "orders")
 	c.Assert(diff.TablesModified[0].FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{created, enabled})
+}
+
+func TestPreserveUnmanagedObjects_KeepsAdditionsFromMixedDefaultPrivileges(t *testing.T) {
+	c := qt.New(t)
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "reader"}, identifier.ForDialect("postgres")))
+	mixed := &pgdefaultprivilege.Change{
+		Before:  &pgdefaultprivilege.Observed{Privileges: []pgdefaultprivilege.Grant{{Privilege: "INSERT"}, {Privilege: "UPDATE"}, {Privilege: "DELETE", WithOption: true}}},
+		Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}, Revoked: []pgdefaultprivilege.Grant{{Privilege: "INSERT"}},
+		GrantOptionsAdded: []string{"UPDATE"}, GrantOptionsRevoked: []string{"DELETE"},
+	}
+	snapshot := mixed.Copy()
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ref, Value: mixed}}}
+	c.Assert(preserveUnmanagedObjects(t.Context(), diff, "postgres", must.Must(builtin.New()).Selections()), qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ref, Value: &pgdefaultprivilege.Change{
+		Before: snapshot.Before, Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}, GrantOptionsAdded: []string{"UPDATE"},
+	}}})
+	c.Assert(mixed, qt.DeepEquals, snapshot)
 }

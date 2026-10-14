@@ -38,6 +38,7 @@ import (
 	"ptah.run/internal/mssqlroutineprep"
 	mysqlrules "ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
+	"ptah.run/internal/pgdefaultprivilegeprovider"
 	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbcomparison"
@@ -200,7 +201,10 @@ func New() (*engine.Runtime, error) {
 		}
 		providers = append(providers, provider)
 	}
-	providers = append(providers, timescaleProvider(), postgresRoutineProvider(), postgresTableProvider(), pgpolicyProvider(), pgextensionProvider(), pgtypeProvider(), mssqlProvider(), mssqlPropertyProvider(), synonymProvider())
+	providers = append(providers,
+		pgdefaultprivilegeprovider.Provider(), timescaleProvider(), postgresRoutineProvider(), postgresTableProvider(),
+		pgpolicyProvider(), pgextensionProvider(), pgtypeProvider(), mssqlProvider(), mssqlPropertyProvider(), synonymProvider(),
+	)
 	return assembleSchemaServices(providers)
 }
 

@@ -22,7 +22,9 @@ type vocabulary struct {
 func (v vocabulary) includeSelectable() map[string]struct{} {
 	selectable := maps.Clone(includeSelectableTypes)
 	for _, selection := range v.selections.Selections() {
-		selectable[selection.Type] = struct{}{}
+		if selection.Type != "" {
+			selectable[selection.Type] = struct{}{}
+		}
 	}
 	return selectable
 }
@@ -39,10 +41,9 @@ func (v vocabulary) fields(resourceType string) []string {
 	return nil
 }
 
-// namedKinds are the owners' kinds a scope selects by their own type and
-// name. The tables one of them binds decide only whether a scope splits it;
+// independentKinds are the owners' kinds selected by their own descriptors. The tables one of them binds decide only whether a scope splits it;
 // see [featureselect.Bindings.Select].
-func (v vocabulary) namedKinds() []schemaext.Kind {
+func (v vocabulary) independentKinds() []schemaext.Kind {
 	selections := v.selections.Selections()
 	kinds := make([]schemaext.Kind, 0, len(selections))
 	for _, selection := range selections {
@@ -62,8 +63,11 @@ func ownerContext() context.Context {
 // of a comparison. An object whose name is a relation's excludes a table of
 // its name with it. A database-wide name is matched alone, and no schema
 // exclusion reaches it.
-func (s *exclusionState) filterOwnerFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage) {
+func (s *exclusionState) filterOwnerFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage, error) {
 	for _, selection := range s.vocabulary.selections.Selections() {
+		if selection.Naming == selectext.SchemaWide {
+			continue
+		}
 		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(_ objectidentity.ID, schema, name string) bool {
 			if selection.ByNameAlone(schema) {
 				return !s.matches(selection.Type, name)
@@ -77,7 +81,7 @@ func (s *exclusionState) filterOwnerFeatures(objects schemaext.Objects, coverage
 			return true
 		})
 	}
-	return objects, coverage
+	return s.excludeSchemaWideFeatures(objects, coverage)
 }
 
 // clearOwnerFields subtracts the fields an exclusion's field selectors name
@@ -127,10 +131,18 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 // holds it, with its knowledge.
 func (s *scopeSelection) selectOwnerFeatures(
 	objects schemaext.Objects, coverage schemaext.Coverage, referenced map[string]struct{},
-) (schemaext.Objects, schemaext.Coverage, error) {
+) (featureSelection, error) {
+	projection, err := s.selectSchemaWideFeatures(objects, coverage)
+	if err != nil {
+		return featureSelection{}, err
+	}
+	objects, coverage = projection.objects, projection.coverage
 	originalObjects, originalCoverage := objects, coverage
 	selections := s.vocabulary.selections.Selections()
 	for _, selection := range selections {
+		if selection.Naming == selectext.SchemaWide {
+			continue
+		}
 		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(ref objectidentity.ID, schema, name string) bool {
 			switch {
 			case s.bindings.Attached(ref):
@@ -145,21 +157,21 @@ func (s *scopeSelection) selectOwnerFeatures(
 		})
 	}
 	if len(selections) == 0 {
-		return objects, coverage, nil
+		return featureSelection{objects: objects, coverage: coverage, roles: projection.roles, schemas: projection.schemas}, nil
 	}
 	result, err := s.vocabulary.selections.SelectObjects(ownerContext(), selectext.Request{Kept: objects})
 	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
+		return featureSelection{}, err
 	}
 	required, err := referencedTypes(originalObjects, referenced)
 	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
+		return featureSelection{}, err
 	}
 	for _, ref := range result.Requires {
 		required[ref.Key()] = true
 	}
 	if len(required) == 0 {
-		return objects, coverage, nil
+		return featureSelection{objects: objects, coverage: coverage, roles: projection.roles, schemas: projection.schemas}, nil
 	}
 	kept := make(map[objectidentity.Key]bool)
 	for _, ref := range objects.Refs() {
@@ -175,7 +187,7 @@ func (s *scopeSelection) selectOwnerFeatures(
 	keep := func(ref objectidentity.ID) bool {
 		return !owned[ref.Kind] || kept[ref.Key()] || required[ref.Key()]
 	}
-	return originalObjects.Select(keep), originalCoverage.SelectSubjects(keep), nil
+	return featureSelection{objects: originalObjects.Select(keep), coverage: originalCoverage.SelectSubjects(keep), roles: projection.roles, schemas: projection.schemas}, nil
 }
 
 // selectNamedFeatures keeps the objects of kind keepNode keeps, with their

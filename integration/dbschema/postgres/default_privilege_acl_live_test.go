@@ -10,11 +10,16 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/dbtarget"
 )
@@ -53,24 +58,24 @@ func TestDefaultPrivilegeACL_LivePostgresFamilyReadsAndRevokes(t *testing.T) {
 			live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{fixture.schema})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(live.DefaultPrivileges, qt.DeepEquals, []catalog.DefaultPrivilege{
-				{
-					Grantor: fixture.owner, Schema: fixture.schema, ObjectType: "SEQUENCES",
-					Grantee: fixture.reader, Privilege: "USAGE", WithOption: true,
-				},
-				{
-					Grantor: fixture.owner, Schema: fixture.schema, ObjectType: "TABLES",
-					Grantee: "PUBLIC", Privilege: "SELECT",
-				},
-				{
-					Grantor: fixture.owner, Schema: fixture.schema, ObjectType: "TABLES",
-					Grantee: fixture.reader, Privilege: "INSERT",
-				},
-				{
-					Grantor: fixture.owner, Schema: fixture.schema, ObjectType: "TABLES",
-					Grantee: fixture.reader, Privilege: "SELECT",
-				},
-			})
+			var expected []schemaext.Object
+			for _, acl := range []struct {
+				class, grantee string
+				grants         []pgdefaultprivilege.Grant
+			}{
+				{"SEQUENCES", fixture.reader, []pgdefaultprivilege.Grant{{Privilege: "USAGE", WithOption: true}}},
+				{"TABLES", "PUBLIC", []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}},
+				{"TABLES", fixture.reader, []pgdefaultprivilege.Grant{{Privilege: "INSERT"}, {Privilege: "SELECT"}}},
+			} {
+				ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: fixture.owner, Schema: fixture.schema, ObjectType: acl.class, Grantee: acl.grantee}, identifier.ForDialect(conn.Info().Dialect)))
+				expected = append(expected, must.Must(pgdefaultprivilege.ObservedObject(ref, pgdefaultprivilege.Observed{Privileges: acl.grants})))
+				c.Assert(live.FeatureCoverage.Lookup(pgdefaultprivilege.DefaultPrivilegeKind, ref).State, qt.Equals, schemaext.Complete)
+			}
+			actual, err := live.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+				return schemaext.Kind(ref.Kind) == pgdefaultprivilege.DefaultPrivilegeKind
+			}).All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(actual, qt.DeepEquals, must.Must(must.Must(schemaext.NewObjects(expected...)).All()))
 			c.Assert(defaultACLRoleNames(live.Roles), qt.DeepEquals, []string{fixture.owner, fixture.reader})
 
 			err = postgres.NewPostgreSQLWriter(fixture.db, fixture.schema).DropAllTables(ctx)

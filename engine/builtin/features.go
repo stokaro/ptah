@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
@@ -140,39 +141,50 @@ func validatePostgresFamilyObjects(dialect string, objects schemaext.Objects) er
 		return err
 	}
 	for _, object := range all {
-		switch value := object.Value.(type) {
-		case *tsschema.DesiredContinuousAggregate:
-			if err := tsschema.ValidateContinuousAggregateRef(object.Ref); err != nil {
-				return err
-			}
-			if err := tsschema.ValidateDesiredContinuousAggregate(value); err != nil {
-				return err
-			}
-		case *pgtable.DesiredExclusion:
-			if err := validateExclusionObject(dialect, object, value); err != nil {
-				return err
-			}
-		case *pgpolicy.DesiredPolicy:
-			if !slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
-				return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
-			}
-			if _, err := pgpolicy.DesiredPolicyObject(object.Ref, *value); err != nil {
-				return err
-			}
-		case *pgextension.DesiredExtension:
-			if err := pgextension.ValidateRef(object.Ref); err != nil {
-				return err
-			}
-			if err := pgextension.ValidateDesired(value); err != nil {
-				return err
-			}
-		case *pgtype.DesiredDomain, *pgtype.DesiredComposite, *pgtype.DesiredRange:
-			if _, err := pgtype.DesiredObject(object.Ref, value); err != nil {
-				return err
-			}
-		default:
+		if err := validatePostgresFamilyObject(dialect, object); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePostgresFamilyObject(dialect string, object schemaext.Object) error {
+	switch value := object.Value.(type) {
+	case *tsschema.DesiredContinuousAggregate:
+		if err := tsschema.ValidateContinuousAggregateRef(object.Ref); err != nil {
+			return err
+		}
+		if err := tsschema.ValidateDesiredContinuousAggregate(value); err != nil {
+			return err
+		}
+	case *pgtable.DesiredExclusion:
+		if err := validateExclusionObject(dialect, object, value); err != nil {
+			return err
+		}
+	case *pgpolicy.DesiredPolicy:
+		if !slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
 			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
 		}
+		if _, err := pgpolicy.DesiredPolicyObject(object.Ref, *value); err != nil {
+			return err
+		}
+	case *pgdefaultprivilege.Desired:
+		if _, err := pgdefaultprivilege.DesiredObject(object.Ref, *value); err != nil {
+			return err
+		}
+	case *pgextension.DesiredExtension:
+		if err := pgextension.ValidateRef(object.Ref); err != nil {
+			return err
+		}
+		if err := pgextension.ValidateDesired(value); err != nil {
+			return err
+		}
+	case *pgtype.DesiredDomain, *pgtype.DesiredComposite, *pgtype.DesiredRange:
+		if _, err := pgtype.DesiredObject(object.Ref, value); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
 	}
 	return nil
 }

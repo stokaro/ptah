@@ -168,6 +168,14 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `feature/pgextension/extensionrender` | Rendering of the PostgreSQL extension operations. |
 | `feature/pgextension/extensionreport` | Inventory counts of PostgreSQL extensions. |
 | `feature/pgextension/extensionreverse` | Reversal of PostgreSQL extension changes. |
+| `feature/pgdefaultprivilege` | Desired and observed default ACLs, identities, changes, operations, and codecs. |
+| `feature/pgdefaultprivilege/privilegecompare` | Default ACL comparison with global built-in rights and knowledge limits. |
+| `feature/pgdefaultprivilege/privilegeconvert` | Default ACL conversion with coverage preservation. |
+| `feature/pgdefaultprivilege/privilegeplan` | Default ACL planning with role and schema dependencies. |
+| `feature/pgdefaultprivilege/privilegerender` | Rendering of default ACL grants, revocations, and grant options. |
+| `feature/pgdefaultprivilege/privilegereport` | Default ACL statistics and omission labels. |
+| `feature/pgdefaultprivilege/privilegereverse` | Captured ACL restoration and unknown-state refusal. |
+| `feature/pgdefaultprivilege/privilegeselect` | Default ACL scope, baseline subtraction, and additive selection. |
 | `feature/pgpolicy` | PostgreSQL row-security policy and table-state models and codecs. |
 | `feature/pgpolicy/policycompare` | Comparison of PostgreSQL row-security policies and table switches. |
 | `feature/pgpolicy/policyconvert` | Projection of PostgreSQL row-security values between representations. |
@@ -309,6 +317,12 @@ service once, and preserves order. Missing handlers and malformed replies fail.
 Reporting needs no target; an optional target supplies source context only.
 Models may share a metric name when its help text agrees. Schema statistics sum
 the contributions into one metric. A conflicting definition is refused.
+
+Scope owners also provide batched state projections. `Extension.Baseline`
+subtracts a dev database's starting-point state, including individual rights
+within an ACL. `Extension.Additive` retains additions inside mixed changes for
+schema tests. Each reply accounts for every input; errors and cancellation
+return no partial result. The host imports the contracts, not concrete ACL types.
 
 Scope selections may share a selector type when their naming, relation behavior,
 and fields agree. `selectext.Set.ForType` returns every matching model, ordered
@@ -541,6 +555,12 @@ annotations, HCL, SQL, and DBML also produce. Parsing refuses an unknown key
 and refuses a second YAML document in the same stream, so a misspelled
 attribute cannot pass as an intentional setting. Use `core/schemasource` when
 the YAML is written by an external program rather than held in a file.
+
+HCL owners use `hclext.Unlabeled` for blocks whose attributes carry their
+identity. The matching encoder sets `EncodedBlock.Unlabeled` and leaves `Name`
+empty. `hclext.TextList` carries evaluated string lists in `Value.Texts`, with
+order and duplicates preserved. The frontend evaluates expressions and the
+writer quotes each element; the owner receives no HCL syntax.
 
 For HCL extensions, `Block.Dialects` lets owners share a top-level block name
 across distinct dialects. `Set.ForDialect` selects the default reader; a

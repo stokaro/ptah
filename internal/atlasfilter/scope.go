@@ -669,40 +669,6 @@ func (s *scopeSelection) extensionMatches(schema, name string) bool {
 	return false
 }
 
-// defaultPrivilegeSelected keeps a default privilege for as long as its schema
-// is in the projection.
-//
-// It is the schema-grant rule of [scopeSelection.databaseGrantSelected], for the
-// schema-grant reason: a default privilege names no object -- it describes
-// objects that do not exist yet -- so the schema it applies in is the whole of
-// what a selection can decide about it. Where include selectors narrow the
-// projection, naming an object says nothing about a schema-wide default, so one
-// is kept only for a schema --schema named.
-//
-// Both projections call this, which is what makes the two sides of a comparison
-// agree. A rule that kept a default privilege on the live side and dropped it
-// on the desired side reports a revoke nobody asked for, and the other way round
-// a grant.
-//
-// A blank schema is the global default, which applies in every schema of the
-// database. It is kept whatever --schema names, and dropped where include
-// selectors narrow the projection to named objects, because no selector names
-// it. The blank is not the connected schema here: for this family it has a
-// meaning of its own.
-func (s *scopeSelection) defaultPrivilegeSelected(schema string) bool {
-	if strings.TrimSpace(schema) == "" {
-		return len(s.selectors) == 0
-	}
-	if !s.schemaAllowed(schema) {
-		return false
-	}
-	if len(s.selectors) == 0 {
-		return true
-	}
-	_, named := s.allowed[strings.TrimSpace(schema)]
-	return named
-}
-
 // selectedQualifiedName applies the schema universe and include selectors to
 // an object whose only schema qualification is an optional "schema." prefix
 // on its name (generated views, materialized views, functions, and enums).

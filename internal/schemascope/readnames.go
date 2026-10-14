@@ -3,7 +3,6 @@ package schemascope
 import (
 	"context"
 	"slices"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/internal/schemaselection"
@@ -77,8 +76,9 @@ func connectedSchemaNames(info catalog.ServerInfo) []string {
 	return nil
 }
 
-// Union is every name either list carries, blank names dropped, sorted and
-// de-duplicated. It is nil when nothing is left, which leaves a dialect reader
+// Union combines decoded schema names, dropping empty names, sorted and
+// de-duplicated. Whitespace and commas remain identifier data. It is nil when
+// nothing is left, which leaves a dialect reader
 // on its own default rather than on an allow-list naming nothing.
 //
 // The order is part of the answer. Two reads that cover the same schemas have to
@@ -87,8 +87,8 @@ func connectedSchemaNames(info catalog.ServerInfo) []string {
 func Union(base, more []string) []string {
 	names := make([]string, 0, len(base)+len(more))
 	for _, name := range slices.Concat(base, more) {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			names = append(names, trimmed)
+		if name != "" {
+			names = append(names, name)
 		}
 	}
 	slices.Sort(names)

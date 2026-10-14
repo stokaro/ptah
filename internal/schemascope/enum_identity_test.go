@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/schemascope"
 )
 
@@ -50,7 +51,8 @@ func TestFilterGeneratedWithDefaultSchema_KeepsAnEnumWhateverItIsCalled(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := schemascope.FilterGeneratedWithDefaultSchema(scopedEnumSchema(test.enum), []string{"public"}, "public")
+			got, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), scopedEnumSchema(test.enum), []string{"public"}, "public")
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(got.Enums, qt.HasLen, 1)
 			c.Assert(got.Enums[0].Name, qt.Equals, test.enum)
@@ -67,7 +69,8 @@ func TestFilterGeneratedWithDefaultSchema_DropsAnUnreferencedEnum(t *testing.T) 
 	db := scopedEnumSchema("status_kind")
 	db.Enums = append(db.Enums, schemamodel.Enum{Name: "unused_kind", Values: []string{"a"}})
 
-	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"public"}, "public")
+	got, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), db, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got.Enums, qt.HasLen, 1)
 	c.Assert(got.Enums[0].Name, qt.Equals, "status_kind")

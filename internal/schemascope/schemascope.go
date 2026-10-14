@@ -2,11 +2,13 @@
 package schemascope
 
 import (
+	"context"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/tableref"
 )
 
@@ -31,25 +33,31 @@ func SplitNames(values []string) []string {
 }
 
 // FilterGenerated returns a shallow copy of db containing only objects in the
-// selected schemas. Empty schema filters leave db unchanged.
-func FilterGenerated(db *schemamodel.Database, schemas []string) *schemamodel.Database {
-	return FilterGeneratedWithDefaultSchema(db, schemas, "")
+// selected schemas. Empty schema filters leave db unchanged. A context and a
+// selected owner set are required; owner failures return no projection.
+func FilterGenerated(ctx context.Context, selections selectext.Set, db *schemamodel.Database, schemas []string) (*schemamodel.Database, error) {
+	return FilterGeneratedWithDefaultSchema(ctx, selections, db, schemas, "")
 }
 
 // FilterGeneratedWithDefaultSchema returns a shallow copy of db containing only
 // objects in the selected schemas, treating unqualified objects as belonging to
-// defaultSchema when it is set.
+// defaultSchema when it is set. Owner-described schema-wide state uses its
+// explicit schema; an empty schema is global. Unknown coverage stays diagnostic.
 func FilterGeneratedWithDefaultSchema(
+	ctx context.Context, selections selectext.Set,
 	db *schemamodel.Database,
 	schemas []string,
 	defaultSchema string,
-) *schemamodel.Database {
+) (*schemamodel.Database, error) {
+	if err := validateFilter(ctx, selections); err != nil {
+		return nil, err
+	}
 	if db == nil {
-		return nil
+		return nil, nil
 	}
 	allowed := schemaSet(schemas)
 	if len(allowed) == 0 {
-		return db
+		return db, nil
 	}
 
 	filtered := *db
@@ -109,47 +117,53 @@ func FilterGeneratedWithDefaultSchema(
 	// database-wide identity whose schema is installation placement, not
 	// ownership, and a selected table may depend on one installed in another
 	// schema.
-	filtered.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+	var err error
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = filterFeatureScopes(ctx, selections, db.FeatureObjects, db.FeatureCoverage, schemas, func(ref objectidentity.ID) bool {
 		return ref.Parent.Empty() || tableReferenceAllowed(keptTables, childTable(ref))
 	})
+	if err != nil {
+		return nil, err
+	}
 	filtered.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
 	filtered.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
-	filtered.DefaultPrivileges = keep(db.DefaultPrivileges,
-		func(privilege schemamodel.DefaultPrivilege) bool {
-			return defaultPrivilegeAllowed(allowed, privilege.Schema, defaultSchema)
-		})
 	filtered.Enums = keepReferencedGeneratedEnums(db.Enums, filtered.Fields)
 	filtered.Dependencies = filterDependencies(db.Dependencies, keptTables)
 	filtered.FunctionDependencies = filterNamedDependencies(db.FunctionDependencies, allowed, defaultSchema)
 	filtered.SelfReferencingForeignKeys = filterSelfReferencingForeignKeys(db.SelfReferencingForeignKeys, keptTables)
 
-	return &filtered
+	return &filtered, nil
 }
 
 // FilterDatabase returns a shallow copy of db containing only objects in the
-// selected schemas. Empty schema filters leave db unchanged.
-func FilterDatabase(db *catalog.Database, schemas []string) *catalog.Database {
-	return FilterDatabaseWithDefaultSchema(db, schemas, "")
+// selected schemas. Empty schema filters leave db unchanged. A context and a
+// selected owner set are required; owner failures return no projection.
+func FilterDatabase(ctx context.Context, selections selectext.Set, db *catalog.Database, schemas []string) (*catalog.Database, error) {
+	return FilterDatabaseWithDefaultSchema(ctx, selections, db, schemas, "")
 }
 
 // FilterDatabaseWithDefaultSchema returns a shallow copy of db containing only
 // objects in the selected schemas, treating unqualified objects as belonging to
-// defaultSchema when it is set.
+// defaultSchema when it is set. Owner-described schema-wide state uses its
+// explicit schema; an empty schema is global. Unknown coverage stays diagnostic.
 func FilterDatabaseWithDefaultSchema(
+	ctx context.Context, selections selectext.Set,
 	db *catalog.Database,
 	schemas []string,
 	defaultSchema string,
-) *catalog.Database {
+) (*catalog.Database, error) {
+	if err := validateFilter(ctx, selections); err != nil {
+		return nil, err
+	}
 	if db == nil {
-		return nil
+		return nil, nil
 	}
 	allowed := schemaSet(schemas)
 	if len(allowed) == 0 {
-		return db
+		return db, nil
 	}
 
 	filtered := *db
@@ -187,19 +201,19 @@ func FilterDatabaseWithDefaultSchema(
 	// Every extension stays, for the database-wide identity reason the
 	// declared projection gives. Filtering only one side invents additions or
 	// removals when a selected object uses an extension placed elsewhere.
-	filtered.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+	var err error
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = filterFeatureScopes(ctx, selections, db.FeatureObjects, db.FeatureCoverage, schemas, func(ref objectidentity.ID) bool {
 		return ref.Parent.Empty() || dbTableReferenceAllowed(keptTables, childTable(ref))
 	})
+	if err != nil {
+		return nil, err
+	}
 	filtered.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return dbGrantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
-	filtered.DefaultPrivileges = keep(db.DefaultPrivileges,
-		func(privilege catalog.DefaultPrivilege) bool {
-			return defaultPrivilegeAllowed(allowed, privilege.Schema, defaultSchema)
-		})
 	filtered.Enums = keepReferencedDatabaseEnums(db.Enums, filtered.Tables)
 
-	return &filtered
+	return &filtered, nil
 }
 
 func schemaSet(values []string) map[string]struct{} {
@@ -353,26 +367,6 @@ func grantAllowed(
 		return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnSequence), defaultSchema))
 	}
 	return false
-}
-
-// defaultPrivilegeAllowed answers both projections, because they are the two
-// sides of one comparison and a disagreement between them invents work: a
-// default privilege kept on the live side and dropped on the desired side reads
-// as an object to revoke, and the other way round as one to grant.
-//
-// A default privilege belongs to its own schema and to nothing else. It rides on
-// no table -- it describes objects that do not exist yet -- so there is no
-// second reason to keep one. A blank schema is the global default, which
-// applies in every schema of the database, the scoped ones included, so it is
-// kept whatever the scope is. It is not the connected schema: for this family
-// the blank has a meaning of its own, and resolving it as the connected schema
-// would drop the global default from every scope that does not name that
-// schema.
-func defaultPrivilegeAllowed(allowed map[string]struct{}, schema, defaultSchema string) bool {
-	if strings.TrimSpace(schema) == "" {
-		return true
-	}
-	return schemaAllowed(allowed, effectiveSchema(schema, defaultSchema))
 }
 
 func dbGrantAllowed(

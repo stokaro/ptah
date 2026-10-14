@@ -1,13 +1,19 @@
 package sqlschema_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/modelast"
+	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/internal/builtintest"
+	"ptah.run/internal/sqlschema"
 )
 
 // TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration drives the
@@ -27,24 +33,24 @@ import (
 func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared schemamodel.DefaultPrivilege
-		want     schemamodel.DefaultPrivilege
+		declared defaultPrivilegeDeclaration
+		want     defaultPrivilegeDeclaration
 	}{
 		{
 			name: "one privilege",
-			declared: schemamodel.DefaultPrivilege{
+			declared: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "TABLES",
 				Grantee:    "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}},
 			},
-			want: schemamodel.DefaultPrivilege{
+			want: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "TABLES",
 				Grantee:    "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}},
 			},
 		},
 		{
@@ -52,28 +58,27 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 			// so a declaration mixing the two renders as two statements, and
 			// the read has to fold them back into one object -- two objects
 			// here would be compared against the one merged catalog row
-			// forever. The plain privileges come back first because that is the
-			// order the two statements are written in.
+			// forever. The owner returns privileges in canonical order.
 			name: "mixed grantability folds back into one object",
-			declared: schemamodel.DefaultPrivilege{
+			declared: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "TABLES",
 				Grantee:    "app_writer",
-				Privileges: []schemamodel.PrivilegeGrant{
+				Privileges: []pgdefaultprivilege.Grant{
 					{Privilege: "INSERT", WithOption: true},
 					{Privilege: "SELECT"},
 					{Privilege: "UPDATE", WithOption: true},
 				},
 			},
-			want: schemamodel.DefaultPrivilege{
+			want: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "TABLES",
 				Grantee:    "app_writer",
-				Privileges: []schemamodel.PrivilegeGrant{
-					{Privilege: "SELECT"},
+				Privileges: []pgdefaultprivilege.Grant{
 					{Privilege: "INSERT", WithOption: true},
+					{Privilege: "SELECT"},
 					{Privilege: "UPDATE", WithOption: true},
 				},
 			},
@@ -83,19 +88,19 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 			// leaves it unquoted and the read must not turn it into a role
 			// nobody created.
 			name: "granted to public",
-			declared: schemamodel.DefaultPrivilege{
+			declared: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "TYPES",
 				Grantee:    "PUBLIC",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}},
 			},
-			want: schemamodel.DefaultPrivilege{
+			want: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "TYPES",
 				Grantee:    "PUBLIC",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}},
 			},
 		},
 		{
@@ -103,36 +108,36 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 			// quotes still on, the declaration would match no catalog row and
 			// the statement would be re-issued on every run.
 			name: "an identity that has to be quoted",
-			declared: schemamodel.DefaultPrivilege{
+			declared: defaultPrivilegeDeclaration{
 				Grantor:    "App Owner",
 				Schema:     "App Schema",
 				ObjectType: "SEQUENCES",
 				Grantee:    "App Reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}},
 			},
-			want: schemamodel.DefaultPrivilege{
+			want: defaultPrivilegeDeclaration{
 				Grantor:    "App Owner",
 				Schema:     "App Schema",
 				ObjectType: "SEQUENCES",
 				Grantee:    "App Reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}},
 			},
 		},
 		{
 			// No schema is the global default, and the statement leaves IN
 			// SCHEMA out rather than writing an empty one.
 			name: "the global default",
-			declared: schemamodel.DefaultPrivilege{
+			declared: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				ObjectType: "SCHEMAS",
 				Grantee:    "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE", WithOption: true}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE", WithOption: true}},
 			},
-			want: schemamodel.DefaultPrivilege{
+			want: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				ObjectType: "SCHEMAS",
 				Grantee:    "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE", WithOption: true}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE", WithOption: true}},
 			},
 		},
 		{
@@ -140,19 +145,19 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 			// it at both ends: the render upper-cases what the author wrote and
 			// the read reports what PostgreSQL would.
 			name: "a lower-case declaration",
-			declared: schemamodel.DefaultPrivilege{
+			declared: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "functions",
 				Grantee:    "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "execute"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "execute"}},
 			},
-			want: schemamodel.DefaultPrivilege{
+			want: defaultPrivilegeDeclaration{
 				Grantor:    "app_owner",
 				Schema:     "app",
 				ObjectType: "FUNCTIONS",
 				Grantee:    "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "EXECUTE"}},
+				Privileges: []pgdefaultprivilege.Grant{{Privilege: "EXECUTE"}},
 			},
 		},
 	}
@@ -161,13 +166,16 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			rendered, err := builtin.RenderSQL("postgres", modelast.FromDefaultPrivilege(test.declared))
+			identity := pgdefaultprivilege.Identity{Grantor: test.declared.Grantor, Schema: test.declared.Schema, ObjectType: test.declared.ObjectType, Grantee: test.declared.Grantee}
+			ref := must.Must(pgdefaultprivilege.Ref(identity, identifier.ForDialect("postgres")))
+			object := must.Must(pgdefaultprivilege.DesiredObject(ref, pgdefaultprivilege.Desired{Privileges: test.declared.Privileges, Revoked: test.declared.Revoked}))
+			rendered, err := builtin.GetOrderedCreateStatements(&schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(object))}, "postgres")
 			c.Assert(err, qt.IsNil)
 
-			read := parseToDatabase(c, rendered)
+			read := readDefaultPrivilegeSQL(c, strings.Join(rendered, "\n"))
 			schemamodel.Finalize(&read)
 
-			c.Assert(read.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{test.want})
+			c.Assert(recordedDefaultPrivileges(c, read), qt.DeepEquals, []defaultPrivilegeDeclaration{test.want})
 		})
 	}
 }
@@ -183,17 +191,17 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 func TestDefaultPrivilege_ReadKeepsTheObjectsDeclaredBesideIt(t *testing.T) {
 	c := qt.New(t)
 
-	database := parseToDatabase(c, `CREATE TABLE app.orders (id BIGINT PRIMARY KEY);
+	database := readDefaultPrivilegeSQL(c, `CREATE TABLE app.orders (id BIGINT PRIMARY KEY);
 ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO app_reader;`)
 
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Name, qt.Equals, "orders")
-	c.Assert(database.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{{
+	c.Assert(recordedDefaultPrivileges(c, database), qt.ContentEquals, []defaultPrivilegeDeclaration{{
 		Grantor:    "app_owner",
 		Schema:     "app",
 		ObjectType: "TABLES",
 		Grantee:    "app_reader",
-		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+		Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}},
 	}})
 }
 
@@ -204,18 +212,18 @@ ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES
 func TestDefaultPrivilege_GlobalFormReachesTheModel(t *testing.T) {
 	c := qt.New(t)
 
-	database := parseToDatabase(c, `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;
+	database := readDefaultPrivilegeSQL(c, `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;
 ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;`)
 	schemamodel.Finalize(&database)
 
-	c.Assert(database.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{
+	c.Assert(recordedDefaultPrivileges(c, database), qt.ContentEquals, []defaultPrivilegeDeclaration{
 		{
 			Grantor: "app_owner", ObjectType: "TABLES", Grantee: "app_reader",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+			Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}},
 		},
 		{
 			Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC",
-			Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"EXECUTE"},
+			Privileges: nil, Revoked: []string{"EXECUTE"},
 		},
 	})
 }
@@ -226,9 +234,40 @@ ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUB
 func TestDefaultPrivilege_SchemaScopedFormReachesTheModel(t *testing.T) {
 	c := qt.New(t)
 
-	database := parseToDatabase(c,
+	database := readDefaultPrivilegeSQL(c,
 		"ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO app_reader;")
 
-	c.Assert(database.DefaultPrivileges, qt.HasLen, 1)
-	c.Assert(database.DefaultPrivileges[0].Schema, qt.Equals, "app")
+	objects := recordedDefaultPrivileges(c, database)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Schema, qt.Equals, "app")
+}
+
+// defaultPrivilegeDeclaration is the complete identity and ACL the SQL reader
+// exposes through the owner boundary.
+type defaultPrivilegeDeclaration struct {
+	Grantor, Schema, ObjectType, Grantee string
+	Privileges                           []pgdefaultprivilege.Grant
+	Revoked                              []string
+}
+
+func readDefaultPrivilegeSQL(c *qt.C, text string) schemamodel.Database {
+	c.Helper()
+	database, _, err := sqlschema.ReadWith(c.Context(), []byte(text), "postgres", nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
+	c.Assert(err, qt.IsNil)
+	return database
+}
+
+func recordedDefaultPrivileges(c *qt.C, database schemamodel.Database) []defaultPrivilegeDeclaration {
+	c.Helper()
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	var result []defaultPrivilegeDeclaration
+	for _, object := range objects {
+		identity, err := pgdefaultprivilege.IdentityOf(object.Ref)
+		c.Assert(err, qt.IsNil)
+		value, ok := object.Value.(*pgdefaultprivilege.Desired)
+		c.Assert(ok, qt.IsTrue)
+		result = append(result, defaultPrivilegeDeclaration{Grantor: identity.Grantor, Schema: identity.Schema, ObjectType: identity.ObjectType, Grantee: identity.Grantee, Privileges: value.Privileges, Revoked: value.Revoked})
+	}
+	return result
 }

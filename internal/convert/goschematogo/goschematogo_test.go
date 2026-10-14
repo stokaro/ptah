@@ -11,8 +11,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
@@ -258,11 +260,11 @@ func TestRenderDefaultPrivilegesRoundTripThroughParser(t *testing.T) {
 			)
 			before, err := goschema.ParseDir(builtintest.Annotations(), sourceDir)
 			c.Assert(err, qt.IsNil)
-			c.Assert(before.DefaultPrivileges, qt.HasLen, 1)
+			c.Assert(before.FeatureObjects.Len(), qt.Equals, 1)
 
-			after := renderAndParseDefaultPrivileges(c, t.TempDir(), before.DefaultPrivileges)
+			after := renderAndParseDefaultPrivileges(c, t.TempDir(), before.FeatureObjects)
 
-			c.Assert(after, qt.DeepEquals, before.DefaultPrivileges)
+			c.Assert(must.Must(after.All()), qt.DeepEquals, must.Must(before.FeatureObjects.All()))
 		})
 	}
 }
@@ -294,53 +296,23 @@ func TestRenderOrdersGrantsByTarget(t *testing.T) {
 // TestRenderOrdersDefaultPrivilegesDeterministically feeds the same
 // declarations in both orders and asserts one output.
 //
-// Two elements are the minimum that can measure an order: over one declaration
-// every comparator agrees. The first two share an identity and differ only in
-// their privileges, which is the pair a key built from the identity alone
-// cannot separate -- and sort.Slice is not stable, so the export would stop
-// being byte-identical over the same input. The third has an identity of its
-// own, so the test also fails when nothing sorts at all.
-//
-// The rendered source is compared rather than a reparse: two declarations
-// sharing an identity are folded into one by the parser's finalize pass, so a
-// round trip could not see this pair.
+// The exporter orders owner identities and combines their privilege lists.
 func TestRenderOrdersDefaultPrivilegesDeterministically(t *testing.T) {
 	c := qt.New(t)
-	sameIdentityInsert := schemamodel.DefaultPrivilege{
-		Grantor:    "app_owner",
-		Schema:     "app",
-		ObjectType: "TABLES",
-		Grantee:    "app_reader",
-		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "INSERT"}},
-	}
-	sameIdentitySelect := schemamodel.DefaultPrivilege{
-		Grantor:    "app_owner",
-		Schema:     "app",
-		ObjectType: "TABLES",
-		Grantee:    "app_reader",
-		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-	}
-	otherIdentity := schemamodel.DefaultPrivilege{
-		Grantor:    "app_owner",
-		Schema:     "app",
-		ObjectType: "SEQUENCES",
-		Grantee:    "app_reader",
-		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-	}
-
-	forward := renderDefaultPrivilegeSource(c, []schemamodel.DefaultPrivilege{
-		sameIdentityInsert, sameIdentitySelect, otherIdentity,
-	})
-	reverse := renderDefaultPrivilegeSource(c, []schemamodel.DefaultPrivilege{
-		otherIdentity, sameIdentitySelect, sameIdentityInsert,
-	})
-
+	tables := defaultPrivilegeExportObject("TABLES", []pgdefaultprivilege.Grant{{Privilege: "SELECT"}, {Privilege: "INSERT"}})
+	sequences := defaultPrivilegeExportObject("SEQUENCES", []pgdefaultprivilege.Grant{{Privilege: "USAGE"}})
+	forward := renderDefaultPrivilegeSource(c, must.Must(schemaext.NewObjects(tables, sequences)))
+	reverse := renderDefaultPrivilegeSource(c, must.Must(schemaext.NewObjects(sequences, tables)))
 	c.Assert(forward, qt.Equals, reverse)
 	c.Assert(defaultPrivilegeAnnotationLines(forward), qt.DeepEquals, []string{
-		`//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="SEQUENCES" grantee="app_reader" privileges="USAGE"`,
-		`//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="INSERT"`,
-		`//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT"`,
+		`//ptah:schema:defaultprivilege for_role="app_owner" object_type="SEQUENCES" grantee="app_reader" schema="app" privileges="USAGE"`,
+		`//ptah:schema:defaultprivilege for_role="app_owner" object_type="TABLES" grantee="app_reader" schema="app" privileges="INSERT,SELECT"`,
 	})
+}
+
+func defaultPrivilegeExportObject(class string, grants []pgdefaultprivilege.Grant) schemaext.Object {
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: class, Grantee: "app_reader"}, identifier.ForDialect("postgres")))
+	return must.Must(pgdefaultprivilege.DesiredObject(ref, pgdefaultprivilege.Desired{Privileges: grants}))
 }
 
 func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
@@ -487,24 +459,24 @@ func renderAndParseGrants(c *qt.C, dir string, grants []schemamodel.Grant) []sch
 func renderAndParseDefaultPrivileges(
 	c *qt.C,
 	dir string,
-	privileges []schemamodel.DefaultPrivilege,
-) []schemamodel.DefaultPrivilege {
+	privileges schemaext.Objects,
+) schemaext.Objects {
 	c.Helper()
 	files, err := goschematogo.Render(c.Context(),
-		&schemamodel.Database{DefaultPrivileges: privileges},
+		&schemamodel.Database{FeatureObjects: privileges},
 		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
 	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
-	return parsed.DefaultPrivileges
+	return parsed.FeatureObjects
 }
 
-func renderDefaultPrivilegeSource(c *qt.C, privileges []schemamodel.DefaultPrivilege) string {
+func renderDefaultPrivilegeSource(c *qt.C, privileges schemaext.Objects) string {
 	c.Helper()
 	files, err := goschematogo.Render(c.Context(),
-		&schemamodel.Database{DefaultPrivileges: privileges},
+		&schemamodel.Database{FeatureObjects: privileges},
 		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
 	)
 	c.Assert(err, qt.IsNil)

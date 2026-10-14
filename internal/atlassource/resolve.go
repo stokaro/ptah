@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
@@ -54,6 +55,7 @@ type Runtime interface {
 	sqlext.Runtime
 	hclext.Runtime
 	coverage.Runtime
+	selectext.Runtime
 }
 
 // ResolveOptions configures resolution of one classified desired-state set.
@@ -218,6 +220,7 @@ func (s State) ExtensionNames() map[string]bool {
 // a declaration into a catalog, and the filtered catalog back into a
 // declaration with its target's comparison rules.
 type StateRuntime interface {
+	selectext.Runtime
 	goschematodb.Runtime
 	schemacomparison.Runtime
 }
@@ -243,7 +246,10 @@ func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect st
 		}
 	}
 	defaultSchema := cmp.Or(s.DefaultSchema, schemaselection.DialectDefault(dialect))
-	filtered := devclean.WithoutKeptState(s.DB, s.EnvironmentState, declared, defaultSchema)
+	filtered, err := devclean.WithoutKeptState(ctx, s.DB, s.EnvironmentState, declared, defaultSchema, runtime.Selections())
+	if err != nil {
+		return State{}, err
+	}
 	s.DB = filtered
 	if s.Schema != nil {
 		notDescribed := s.Schema.NotDescribed

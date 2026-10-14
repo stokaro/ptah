@@ -92,31 +92,29 @@ func readSliceFields() []string {
 
 // convertedFamilies maps each read family to the IR field it becomes.
 var convertedFamilies = map[string]string{
-	"Schemas":           "Schemas",
-	"Tables":            "Tables",
-	"Enums":             "Enums",
-	"Indexes":           "Indexes",
-	"Constraints":       "Constraints",
-	"Functions":         "Functions",
-	"Sequences":         "Sequences",
-	"Domains":           "Domains",
-	"Composites":        "CompositeTypes",
-	"Ranges":            "Ranges",
-	"Views":             "Views",
-	"MatViews":          "MaterializedViews",
-	"Triggers":          "Triggers",
-	"RLSPolicies":       "RLSPolicies",
-	"Roles":             "Roles",
-	"Grants":            "Grants",
-	"DefaultPrivileges": "DefaultPrivileges",
+	"Schemas":     "Schemas",
+	"Tables":      "Tables",
+	"Enums":       "Enums",
+	"Indexes":     "Indexes",
+	"Constraints": "Constraints",
+	"Functions":   "Functions",
+	"Sequences":   "Sequences",
+	"Domains":     "Domains",
+	"Composites":  "CompositeTypes",
+	"Ranges":      "Ranges",
+	"Views":       "Views",
+	"MatViews":    "MaterializedViews",
+	"Triggers":    "Triggers",
+	"RLSPolicies": "RLSPolicies",
+	"Roles":       "Roles",
+	"Grants":      "Grants",
 }
 
 // unconvertedFamilies are the read families that deliberately do not become
 // declarations, with the reason each one does not.
 var unconvertedFamilies = map[string]string{
-	"ObjectOwners":                 "ownership is read for diagnostics; no declaration carries it",
-	"RoleMemberships":              "read for the role graph rather than as a declarable object",
-	"RolesOutOfScope":              "a report about what the read did not cover, not an object",
-	"UnregisteredVirtualTables":    "a report about SQLite virtual tables no module registered",
-	"UndescribedDefaultPrivileges": "a report about default privileges no declaration can carry: without IN SCHEMA, or FOR ALL ROLES",
+	"ObjectOwners":              "ownership is read for diagnostics; no declaration carries it",
+	"RoleMemberships":           "read for the role graph rather than as a declarable object",
+	"RolesOutOfScope":           "a report about what the read did not cover, not an object",
+	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
 }

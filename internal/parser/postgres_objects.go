@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemamodel"
 	"ptah.run/internal/lexer"
 )
 
@@ -458,39 +457,12 @@ func (p *Parser) parseRevokeSuffix() error {
 	return nil
 }
 
-func (p *Parser) parseGrantPrivileges() ([]string, error) {
-	var privileges []string
-	for {
-		p.skipWhitespace()
-		privilege, err := p.expectIdentifier()
-		if err != nil {
-			return nil, fmt.Errorf("expected privilege name: %w", err)
-		}
-		privileges = append(privileges, strings.ToUpper(privilege))
-		p.skipWhitespace()
-		if p.current.MatchOperatorValue(",") {
-			p.advance()
-			continue
-		}
-		if p.current.MatchIdentifierValue("ON") {
-			p.advance()
-			return privileges, nil
-		}
-		return nil, fmt.Errorf("expected ',' or ON in GRANT privileges at position %d", p.current.Start)
-	}
-}
-
 // parseObjectPrivileges reads the privilege list of a GRANT or REVOKE on an
 // object, with ON consumed, and the column list its privileges are limited to.
 //
-// It differs from [Parser.parseGrantPrivileges], which ALTER DEFAULT
-// PRIVILEGES also uses, in two places. ALL PRIVILEGES is read as the ALL it
-// spells, so the noise word does not fail the statement. And a privilege may
-// name columns -- UPDATE (a, b) -- which limits it to them. PostgreSQL lets
-// each privilege of one statement name its own list; the model keeps one list
-// per statement, so a statement whose privileges name different lists, or
-// where some name columns and others do not, is refused rather than read as
-// one of them.
+// ALL PRIVILEGES names ALL. A privilege may name columns, such as UPDATE
+// (a, b). Each privilege must name the same column list because the common
+// operation carries one list; a different list is refused.
 func (p *Parser) parseObjectPrivileges(statement string) (privileges, columns []string, err error) {
 	for {
 		p.skipWhitespace()
@@ -654,188 +626,6 @@ func (p *Parser) parseGrantOptionSuffix() (bool, error) {
 	return true, nil
 }
 
-// defaultPrivilegeObjectClasses are the object classes an ALTER DEFAULT
-// PRIVILEGES statement may name here. The keyword is what the node stores, so
-// the accepted set is also the stored spelling. Which of them only the global
-// form names is [schemamodel.GlobalOnlyDefaultPrivilegeObjectType]'s to say.
-//
-// PostgreSQL also accepts ROUTINES, which it records as FUNCTIONS. It is
-// refused by name rather than folded, because a description would read it
-// back as FUNCTIONS and the source would say a word nothing reads back.
-var defaultPrivilegeObjectClasses = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES", "SCHEMAS", "LARGE OBJECTS"}
-
-// parseAlterDefaultPrivileges parses
-// ALTER DEFAULT PRIVILEGES FOR ROLE r IN SCHEMA s GRANT privs ON class TO
-// grantee [WITH GRANT OPTION], and the REVOKE form with its optional
-// GRANT OPTION FOR prefix and FROM grantee.
-//
-// ALTER is consumed and DEFAULT is the current token; see
-// [Parser.parseAlterStatement].
-//
-// Both scope clauses are optional in PostgreSQL. FOR ROLE is required here:
-// absent, it means the role running the statement, and the grantor is part of
-// the object's identity, which a schema file cannot leave to whoever applies
-// it. IN SCHEMA absent means the global default, every schema in the database,
-// and the node records it as an empty Schema.
-func (p *Parser) parseAlterDefaultPrivileges() (ast.Node, error) {
-	if err := p.expect(lexer.TokenIdentifier, "DEFAULT"); err != nil {
-		return nil, err
-	}
-	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "PRIVILEGES"); err != nil {
-		return nil, fmt.Errorf("expected PRIVILEGES after ALTER DEFAULT: %w", err)
-	}
-
-	grantor, schema, err := p.parseDefaultPrivilegeScope()
-	if err != nil {
-		return nil, err
-	}
-
-	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("GRANT") {
-		p.advance()
-		return p.parseDefaultPrivilegeGrant(grantor, schema)
-	}
-	if p.current.MatchIdentifierValue("REVOKE") {
-		p.advance()
-		return p.parseDefaultPrivilegeRevoke(grantor, schema)
-	}
-	return nil, fmt.Errorf(
-		"expected GRANT or REVOKE in ALTER DEFAULT PRIVILEGES at position %d", p.current.Start)
-}
-
-// parseDefaultPrivilegeScope reads the FOR ROLE and IN SCHEMA clauses that name
-// which default the statement changes. FOR USER is PostgreSQL's own synonym for
-// FOR ROLE and names the same catalog entry, so it is accepted and stored as
-// the role it is.
-func (p *Parser) parseDefaultPrivilegeScope() (grantor, schema string, err error) {
-	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("FOR") {
-		p.advance()
-		p.skipWhitespace()
-		if !p.current.MatchIdentifierValue("ROLE") && !p.current.MatchIdentifierValue("USER") {
-			return "", "", fmt.Errorf(
-				"expected ROLE or USER after FOR in ALTER DEFAULT PRIVILEGES at position %d", p.current.Start)
-		}
-		p.advance()
-		p.skipWhitespace()
-		grantor, err = p.expectIdentifier()
-		if err != nil {
-			return "", "", fmt.Errorf("expected grantor role after FOR: %w", err)
-		}
-		if err := p.refuseDefaultPrivilegeList("grantor role"); err != nil {
-			return "", "", err
-		}
-	}
-
-	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("IN") {
-		p.advance()
-		p.skipWhitespace()
-		if err := p.expect(lexer.TokenIdentifier, "SCHEMA"); err != nil {
-			return "", "", fmt.Errorf("expected SCHEMA after IN: %w", err)
-		}
-		p.skipWhitespace()
-		schema, err = p.expectIdentifier()
-		if err != nil {
-			return "", "", fmt.Errorf("expected schema name after IN SCHEMA: %w", err)
-		}
-		if err := p.refuseDefaultPrivilegeList("schema"); err != nil {
-			return "", "", err
-		}
-	}
-
-	if grantor == "" {
-		return "", "", fmt.Errorf(
-			"ALTER DEFAULT PRIVILEGES requires FOR ROLE: the grantor is part of the default's identity")
-	}
-	return grantor, schema, nil
-}
-
-// refuseDefaultPrivilegeList refuses the comma-separated list PostgreSQL allows
-// where the node holds one name. Accepting it would keep the first name and
-// drop the rest, so a schema would declare a default for one role where the
-// document declared it for three.
-func (p *Parser) refuseDefaultPrivilegeList(clause string) error {
-	p.skipWhitespace()
-	if !p.current.MatchOperatorValue(",") {
-		return nil
-	}
-	return fmt.Errorf(
-		"ALTER DEFAULT PRIVILEGES names one %s here, not a list, at position %d", clause, p.current.Start)
-}
-
-// parseDefaultPrivilegeGrant parses the GRANT tail, with GRANT consumed.
-//
-// WITH GRANT OPTION covers every privilege the statement names, which is how
-// the grantability reaches each privilege in the node. A declaration mixing
-// grantable and plain privileges renders as two statements for that reason, and
-// reading them back gives two nodes the model folds into one object.
-func (p *Parser) parseDefaultPrivilegeGrant(grantor, schema string) (*ast.DefaultPrivilegeNode, error) {
-	privileges, err := p.parseGrantPrivileges()
-	if err != nil {
-		return nil, err
-	}
-	objectClass, err := p.parseDefaultPrivilegeObjectClass(schema)
-	if err != nil {
-		return nil, err
-	}
-
-	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
-		return nil, fmt.Errorf("expected TO after ALTER DEFAULT PRIVILEGES GRANT target: %w", err)
-	}
-	p.skipWhitespace()
-	grantee, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected grantee role: %w", err)
-	}
-	if err := p.refuseDefaultPrivilegeList("grantee"); err != nil {
-		return nil, err
-	}
-
-	withOption, err := p.parseGrantOptionSuffix()
-	if err != nil {
-		return nil, err
-	}
-	granted := make([]ast.DefaultPrivilege, 0, len(privileges))
-	for _, privilege := range privileges {
-		granted = append(granted, ast.DefaultPrivilege{Privilege: privilege, WithOption: withOption})
-	}
-	return ast.NewDefaultPrivilege(grantor, schema, objectClass, grantee, granted), nil
-}
-
-// parseDefaultPrivilegeRevoke parses the REVOKE tail, with REVOKE consumed.
-func (p *Parser) parseDefaultPrivilegeRevoke(grantor, schema string) (*ast.RevokeDefaultPrivilegeNode, error) {
-	grantOptionFor, err := p.parseRevokeGrantOptionForPrefix()
-	if err != nil {
-		return nil, err
-	}
-	privileges, err := p.parseGrantPrivileges()
-	if err != nil {
-		return nil, err
-	}
-	objectClass, err := p.parseDefaultPrivilegeObjectClass(schema)
-	if err != nil {
-		return nil, err
-	}
-
-	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "FROM"); err != nil {
-		return nil, fmt.Errorf("expected FROM after ALTER DEFAULT PRIVILEGES REVOKE target: %w", err)
-	}
-	p.skipWhitespace()
-	grantee, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected grantee role: %w", err)
-	}
-	if err := p.refuseDefaultPrivilegeList("grantee"); err != nil {
-		return nil, err
-	}
-	revoke := ast.NewRevokeDefaultPrivilege(grantor, schema, objectClass, grantee, privileges)
-	return revoke.SetGrantOptionFor(grantOptionFor), nil
-}
-
 // parseRevokeGrantOptionForPrefix reads the optional GRANT OPTION FOR prefix,
 // which leaves the privilege and takes away the right to pass it on. No
 // PostgreSQL privilege is spelled GRANT, so the keyword at this position can
@@ -855,39 +645,6 @@ func (p *Parser) parseRevokeGrantOptionForPrefix() (bool, error) {
 		return false, fmt.Errorf("expected FOR after REVOKE GRANT OPTION: %w", err)
 	}
 	return true, nil
-}
-
-// parseDefaultPrivilegeObjectClass reads the plural object class after ON. It
-// is a keyword rather than a name, which is why [Parser.parseGrantTarget] does
-// not serve here. schema is the statement's IN SCHEMA, empty for the global
-// form, which a global-only class requires.
-func (p *Parser) parseDefaultPrivilegeObjectClass(schema string) (string, error) {
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenIdentifier {
-		return "", fmt.Errorf(
-			"expected object class after ON, got %s at position %d", p.current.Type, p.current.Start)
-	}
-	start := p.current.Start
-	keyword := strings.ToUpper(p.current.Value)
-	p.advance()
-	if keyword == "LARGE" {
-		p.skipWhitespace()
-		if !p.current.MatchIdentifierValue("OBJECTS") {
-			return "", fmt.Errorf("expected OBJECTS after LARGE at position %d", p.current.Start)
-		}
-		p.advance()
-		keyword = "LARGE OBJECTS"
-	}
-	if !slices.Contains(defaultPrivilegeObjectClasses, keyword) {
-		return "", fmt.Errorf(
-			"unsupported ALTER DEFAULT PRIVILEGES object class: %s at position %d", keyword, start)
-	}
-	if schemamodel.GlobalOnlyDefaultPrivilegeObjectType(keyword) && schema != "" {
-		return "", fmt.Errorf(
-			"ALTER DEFAULT PRIVILEGES ON %s cannot name IN SCHEMA, at position %d: PostgreSQL sets it for "+
-				"the whole database only", keyword, start)
-	}
-	return keyword, nil
 }
 
 // parseCreateMaterializedView parses

@@ -145,7 +145,11 @@ func (r *renderer) writeOwnerBlock(block hclext.EncodedBlock, schema string) {
 	if r.omitOwnerBlock(block) {
 		return
 	}
-	r.linef(`%s %s {`, block.Type, quote(block.Name))
+	if block.Unlabeled {
+		r.linef("%s {", block.Type)
+	} else {
+		r.linef(`%s %s {`, block.Type, quote(block.Name))
+	}
 	r.writeOwnerSchema(block, schema)
 	if block.Dialect != "" {
 		r.stringAttr(1, "dialect", block.Dialect)
@@ -193,6 +197,12 @@ func (r *renderer) writeOwnerSchema(block hclext.EncodedBlock, schema string) {
 // as a string. Set.Encode admits no other value.
 func (r *renderer) ownerValue(value hclext.Value) string {
 	switch value.Kind {
+	case hclext.TextList:
+		elements := make([]string, 0, len(value.Texts))
+		for _, element := range value.Texts {
+			elements = append(elements, quote(element))
+		}
+		return "[" + strings.Join(elements, ", ") + "]"
 	case hclext.Bool:
 		return strconv.FormatBool(value.Bool)
 	case hclext.Number:
@@ -200,6 +210,9 @@ func (r *renderer) ownerValue(value hclext.Value) string {
 	case hclext.SQL:
 		return sqlCall(value.Text)
 	case hclext.Ref:
+		if value.Reference.Kind == "role" {
+			return r.roleTarget(value.Reference.Name)
+		}
 		if value.Reference.Kind == "column" {
 			return columnRef(value.Reference.Name)
 		}

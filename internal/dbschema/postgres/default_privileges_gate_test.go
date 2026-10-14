@@ -9,6 +9,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 )
@@ -101,60 +103,66 @@ func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.Que
 // not cover is dropped, as a described row there would be.
 func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testing.T) {
 	tests := []struct {
-		name            string
-		caps            capability.Capabilities
-		want            []catalog.DefaultPrivilege
-		wantUndescribed []catalog.UndescribedDefaultPrivilege
+		name     string
+		caps     capability.Capabilities
+		complete bool
+		want     []capturedDefaultPrivilege
+		limits   []pgdefaultprivilege.Class
 	}{
-		{
-			name: "role management and the catalog relation",
-			caps: capability.Postgres16(),
-			want: []catalog.DefaultPrivilege{
-				{
-					Grantor:    "app_owner",
-					ObjectType: "FUNCTIONS",
-					Grantee:    "PUBLIC",
-					Privilege:  "EXECUTE",
-					Revoked:    true,
-				},
-				{
-					Grantor:    "app_owner",
-					Schema:     "public",
-					ObjectType: "TABLES",
-					Grantee:    "app_reader",
-					Privilege:  "SELECT",
-				},
+		{name: "role management and the catalog relation", caps: capability.Postgres16(), complete: true,
+			want: []capturedDefaultPrivilege{
+				{Identity: pgdefaultprivilege.Identity{Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC"}, Value: pgdefaultprivilege.Observed{Revoked: []string{"EXECUTE"}}},
+				{Identity: pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "public", ObjectType: "TABLES", Grantee: "app_reader"}, Value: pgdefaultprivilege.Observed{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}},
 			},
-			wantUndescribed: []catalog.UndescribedDefaultPrivilege{
-				{ObjectType: "TYPES"},
-				{Schema: "public", ObjectType: "TABLES"},
-			},
+			limits: []pgdefaultprivilege.Class{{ObjectType: "TYPES"}, {Schema: "public", ObjectType: "TABLES"}},
 		},
-		{
-			name: "role management without the catalog relation",
-			caps: capability.Postgres16().With(capability.CatalogDefaultPrivileges, false),
-			want: nil,
-		},
-		{
-			name: "the catalog relation without role management",
-			caps: capability.Postgres16().With(capability.RoleManagement, false),
-			want: nil,
-		},
+		{name: "role management without the catalog relation", caps: capability.Postgres16().With(capability.CatalogDefaultPrivileges, false)},
+		{name: "the catalog relation without role management", caps: capability.Postgres16().With(capability.RoleManagement, false)},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var asked []string
 			db := dbtest.Open(c, answersOneDefaultPrivilege(&asked))
 			reader := postgres.NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
-
-			schema, err := reader.ReadSchemaContext(c.Context())
-
+			schema, err := reader.ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema, qt.IsNotNil)
-			c.Assert(schema.DefaultPrivileges, qt.DeepEquals, test.want)
-			c.Assert(schema.UndescribedDefaultPrivileges, qt.DeepEquals, test.wantUndescribed)
+			c.Assert(capturedDefaultPrivileges(c, schema), qt.DeepEquals, test.want)
+			known := schema.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})
+			c.Assert(known.KindRecords(), qt.HasLen, 1)
+			c.Assert(known.KindRecords()[0].Knowledge.State == schemaext.Complete, qt.Equals, test.complete)
+			var classes []pgdefaultprivilege.Class
+			for _, claim := range known.SubjectRecords() {
+				class, err := pgdefaultprivilege.ClassOf(claim.Subject)
+				c.Assert(err, qt.IsNil)
+				c.Assert(claim.Knowledge.State, qt.Equals, schemaext.Unrepresentable)
+				classes = append(classes, class)
+			}
+			c.Assert(classes, qt.DeepEquals, test.limits)
 		})
 	}
+}
+
+type capturedDefaultPrivilege struct {
+	Identity pgdefaultprivilege.Identity
+	Value    pgdefaultprivilege.Observed
+}
+
+func capturedDefaultPrivileges(c *qt.C, database *catalog.Database) []capturedDefaultPrivilege {
+	c.Helper()
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	var result []capturedDefaultPrivilege
+	for _, object := range objects {
+		if object.Value.Kind() != pgdefaultprivilege.DefaultPrivilegeKind {
+			continue
+		}
+		identity, err := pgdefaultprivilege.IdentityOf(object.Ref)
+		c.Assert(err, qt.IsNil)
+		value, ok := object.Value.(*pgdefaultprivilege.Observed)
+		c.Assert(ok, qt.IsTrue)
+		result = append(result, capturedDefaultPrivilege{Identity: identity, Value: *value})
+	}
+	return result
 }

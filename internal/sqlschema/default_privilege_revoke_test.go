@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -17,11 +19,11 @@ const adp = "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app "
 type defaultPrivilege struct {
 	Grantee    string
 	ObjectType string
-	Privileges []schemamodel.PrivilegeGrant
+	Privileges []pgdefaultprivilege.Grant
 	Revoked    []string
 }
 
-func defaultPrivileges(declarations []schemamodel.DefaultPrivilege) []defaultPrivilege {
+func defaultPrivileges(declarations []defaultPrivilegeDeclaration) []defaultPrivilege {
 	out := make([]defaultPrivilege, 0, len(declarations))
 	for _, declaration := range declarations {
 		out = append(out, defaultPrivilege{
@@ -32,17 +34,17 @@ func defaultPrivileges(declarations []schemamodel.DefaultPrivilege) []defaultPri
 	return out
 }
 
-func granted(names ...string) []schemamodel.PrivilegeGrant {
-	grants := make([]schemamodel.PrivilegeGrant, 0, len(names))
+func granted(names ...string) []pgdefaultprivilege.Grant {
+	grants := make([]pgdefaultprivilege.Grant, 0, len(names))
 	for _, name := range names {
-		grants = append(grants, schemamodel.PrivilegeGrant{Privilege: name})
+		grants = append(grants, pgdefaultprivilege.Grant{Privilege: name})
 	}
 	return grants
 }
 
 // TestRead_DefaultPrivilegeRevoke_HappyPath pins how ALTER DEFAULT PRIVILEGES
-// ... REVOKE composes with the statements before it. It was read and dropped,
-// so a file that granted and then revoked kept the grant (stokaro/ptah#3580).
+// ... REVOKE composes with the statements before it. A revoke must remove the
+// grant while retaining the author's explicit revocation.
 func TestRead_DefaultPrivilegeRevoke_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -61,7 +63,7 @@ func TestRead_DefaultPrivilegeRevoke_HappyPath(t *testing.T) {
 			name: "a revoke with no grant before it is kept",
 			sql:  adp + "REVOKE EXECUTE ON FUNCTIONS FROM app_reader;",
 			want: []defaultPrivilege{{
-				Grantee: "app_reader", ObjectType: "FUNCTIONS", Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"EXECUTE"},
+				Grantee: "app_reader", ObjectType: "FUNCTIONS", Privileges: nil, Revoked: []string{"EXECUTE"},
 			}},
 		},
 		{
@@ -89,7 +91,7 @@ func TestRead_DefaultPrivilegeRevoke_HappyPath(t *testing.T) {
 			sql: adp + "GRANT USAGE ON TYPES TO public;\n" +
 				adp + "REVOKE USAGE ON TYPES FROM PUBLIC;",
 			want: []defaultPrivilege{{
-				Grantee: "PUBLIC", ObjectType: "TYPES", Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"USAGE"},
+				Grantee: "PUBLIC", ObjectType: "TYPES", Privileges: nil, Revoked: []string{"USAGE"},
 			}},
 		},
 	}
@@ -98,10 +100,10 @@ func TestRead_DefaultPrivilegeRevoke_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.sql), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(defaultPrivileges(database.DefaultPrivileges), qt.DeepEquals, test.want)
+			c.Assert(defaultPrivileges(recordedDefaultPrivileges(c, database)), qt.CmpEquals(cmpopts.EquateEmpty()), test.want)
 		})
 	}
 }
@@ -112,8 +114,9 @@ func TestRead_DefaultPrivilegeRevoke_HappyPath(t *testing.T) {
 func TestRead_DefaultPrivilegeRevoke_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(adp+"REVOKE GRANT OPTION FOR SELECT ON TABLES FROM app_reader;"), platform.Postgres)
+	database, _, err := sqlschema.ReadWith(t.Context(), []byte(adp+"REVOKE GRANT OPTION FOR SELECT ON TABLES FROM app_reader;"), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app REVOKE GRANT OPTION FOR SELECT ON TABLES FROM app_reader names a default privilege this schema does not grant: .*`)
-	c.Assert(database.DefaultPrivileges, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+	c.Assert(err, qt.ErrorMatches, `(?s).*this schema does not grant.*`)
+	c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 }

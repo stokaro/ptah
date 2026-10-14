@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -88,8 +89,8 @@ func TestPostgresGrantAll_MaintainIsReadBack(t *testing.T) {
 
 func grantAllSchema(c *qt.C, fixture routineGrantFixture, statement string) *schemamodel.Database {
 	c.Helper()
-	desired, _, err := sqlschema.Read([]byte(
-		"CREATE TABLE "+fixture.schema+".ledger (id bigint PRIMARY KEY);\n"+statement), platform.Postgres)
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte(
+		"CREATE TABLE "+fixture.schema+".ledger (id bigint PRIMARY KEY);\n"+statement), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 	c.Assert(err, qt.IsNil)
 	return &desired
 }
@@ -129,13 +130,12 @@ func TestPostgresGrantAll_DefaultPrivilegesConverge(t *testing.T) {
 	fixture := prepareRoutineGrantFixture(c, ctx)
 	var owner string
 	c.Assert(fixture.conn.QueryRowContext(ctx, "SELECT current_user").Scan(&owner), qt.IsNil)
-	desired, _, err := sqlschema.Read([]byte("ALTER DEFAULT PRIVILEGES FOR ROLE "+owner+" IN SCHEMA "+
-		fixture.schema+" GRANT ALL ON TABLES TO "+fixture.role+";"), platform.Postgres)
+	desired, _, err := sqlschema.ReadWith(c.Context(), []byte("ALTER DEFAULT PRIVILEGES FOR ROLE "+owner+" IN SCHEMA "+
+		fixture.schema+" GRANT ALL ON TABLES TO "+fixture.role+";"), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 	c.Assert(err, qt.IsNil)
 
 	fixture.apply(c, ctx, &desired)
 	settled := fixture.compare(c, ctx, &desired)
 
-	c.Assert(settled.DefaultPrivilegesAdded, qt.HasLen, 0, qt.Commentf("added: %v", settled.DefaultPrivilegesAdded))
-	c.Assert(settled.DefaultPrivilegesRemoved, qt.HasLen, 0, qt.Commentf("removed: %v", settled.DefaultPrivilegesRemoved))
+	c.Assert(settled.FeatureChanges, qt.HasLen, 0, qt.Commentf("changes: %v", settled.FeatureChanges))
 }

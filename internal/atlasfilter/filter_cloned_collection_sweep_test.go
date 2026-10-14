@@ -6,9 +6,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -181,20 +185,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			// A default privilege names no object: it describes objects that do
-			// not exist yet, so what a selector reaches are its two roles and
-			// the schema it applies in. Both role names are ones no other row
-			// uses, so this row's selector can only be answered here, and the
-			// grantee is the end a `--exclude <role>` naturally names.
-			field: "DefaultPrivileges", present: "defaults_reader", absent: "nosuch_default_privilege_role",
-			seed: func(s *catalog.Database) {
-				s.DefaultPrivileges = append(s.DefaultPrivileges, catalog.DefaultPrivilege{
-					Grantor: "defaults_owner", ObjectType: "TABLES",
-					Grantee: "defaults_reader", Privilege: "SELECT",
-				})
-			},
-		},
-		{
 			// Not filtered, and correctly so: these roles are outside the
 			// description, so there is nothing to subtract. They are still
 			// ASKED, because "this selector protected nothing" is false for an
@@ -217,18 +207,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			seed: func(s *catalog.Database) {
 				s.UnregisteredVirtualTables = append(s.UnregisteredVirtualTables,
 					catalog.VirtualTable{Name: "legacy_docs", Module: "fts4"})
-			},
-		},
-		{
-			// Not filtered, for the reason RolesOutOfScope is not: the read left
-			// these out of the description, and the note reporting that must not
-			// lose one to a selector. The grantor is what a selector reaches, and
-			// no other row uses this name.
-			field: "UndescribedDefaultPrivileges", present: "global_defaults_owner", absent: "nosuch_global_owner",
-			seed: func(s *catalog.Database) {
-				s.UndescribedDefaultPrivileges = append(s.UndescribedDefaultPrivileges,
-					catalog.UndescribedDefaultPrivilege{Grantor: "global_defaults_owner", ObjectType: "FUNCTIONS"},
-					catalog.UndescribedDefaultPrivilege{Schema: "public", ObjectType: "TABLES"})
 			},
 		},
 	}
@@ -500,9 +478,11 @@ func TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole(t *testing.T) {
 			c := qt.New(t)
 
 			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), &catalog.Database{
-				UndescribedDefaultPrivileges: []catalog.UndescribedDefaultPrivilege{
-					{Schema: "public", ObjectType: "TABLES"},
-				},
+				FeatureCoverage: must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+					Kind:      pgdefaultprivilege.DefaultPrivilegeKind,
+					Subject:   must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Schema: "public", ObjectType: "TABLES"}, identifier.ForDialect("postgres"))),
+					Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "all-role defaults are not described"},
+				}})),
 			}, []string{selector}, "public")
 
 			c.Assert(err, qt.IsNil)

@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
+	"ptah.run/feature/pgdefaultprivilege/privilegerender"
 	"ptah.run/feature/pgextension/extensionrender"
 	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/feature/pgtype/typerender"
@@ -41,10 +42,10 @@ var (
 )
 
 // postgresFamilyHandlers is the owners every PostgreSQL-family target
-// composes, TimescaleDB, row security, extensions and user types, followed by
+// composes, including access control, extensions and user types, followed by
 // the target's own.
 func postgresFamilyHandlers(own ...renderer.ExtensionHandler) []renderer.ExtensionHandler {
-	return slices.Concat(tsrender.Handlers(), policyrender.Handlers(), extensionrender.Handlers(), typerender.Handlers(), own)
+	return slices.Concat(tsrender.Handlers(), policyrender.Handlers(), extensionrender.Handlers(), typerender.Handlers(), privilegerender.Handlers(), own)
 }
 
 // lowerPostgresFamilyFacets lowers the table facets of the owners every

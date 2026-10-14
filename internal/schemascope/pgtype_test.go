@@ -26,5 +26,7 @@ func TestDeclaredSchemaNames_CountsAnOwnersType(t *testing.T) {
 		)),
 	}
 
-	c.Assert(schemascope.DeclaredSchemaNames(desired), qt.DeepEquals, []string{"app", "public"})
+	names, err := schemascope.DeclaredSchemaNames(desired)
+	c.Assert(err, qt.IsNil)
+	c.Assert(names, qt.DeepEquals, []string{"app", "public"})
 }

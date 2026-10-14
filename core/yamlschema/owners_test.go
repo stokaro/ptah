@@ -4,6 +4,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/yamlext"
+	"ptah.run/internal/pgdefaultprivilegesource"
 	"ptah.run/internal/pgextensionsource"
 	"ptah.run/internal/pgpolicysource"
 )
@@ -17,5 +18,5 @@ var noOwners = yamlext.None()
 // does.
 var rowSecurityOwners = must.Must(yamlext.NewSet(pgpolicysource.YAML()))
 
-// postgresOwners adds the extension owner, which reads the extensions key.
-var postgresOwners = must.Must(yamlext.NewSet(pgpolicysource.YAML(), pgextensionsource.YAML()))
+// postgresOwners selects the PostgreSQL object owners used by these fixtures.
+var postgresOwners = must.Must(yamlext.NewSet(pgpolicysource.YAML(), pgextensionsource.YAML(), pgdefaultprivilegesource.YAML()))

@@ -82,7 +82,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
 	database.RevokedGrants = revokedPublicExecute(dbSchema.Grants)
-	database.DefaultPrivileges = convertDefaultPrivileges(dbSchema.DefaultPrivileges)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
 	// What the read did not look at is part of what the read said. Dropping it
 	// here would turn the reader's silence back into desired absence one
@@ -154,7 +153,6 @@ func newDatabase() *schemamodel.Database {
 		Roles:             make([]schemamodel.Role, 0),
 		Grants:            make([]schemamodel.Grant, 0),
 		RevokedGrants:     make([]schemamodel.Grant, 0),
-		DefaultPrivileges: make([]schemamodel.DefaultPrivilege, 0),
 		Dependencies:      make(map[string][]string),
 	}
 }
@@ -1160,85 +1158,6 @@ func revokedPublicExecute(dbGrants []catalog.Grant) []schemamodel.Grant {
 		})
 	}
 	return revoked
-}
-
-// defaultPrivilegeIdentity is what convertDefaultPrivileges groups rows by:
-// the whole identity of a default-privilege object, since the catalog stores no
-// name for one.
-//
-// A struct rather than a joined string, because the components are role, schema
-// and object-type names and none of them is barred from holding whatever
-// separator a joined key would pick.
-type defaultPrivilegeIdentity struct {
-	grantor    string
-	schema     string
-	objectType string
-	grantee    string
-}
-
-// convertDefaultPrivileges folds catalog rows back into declarations, one per
-// identity.
-//
-// The read's grain is one privilege per row, which is what aclexplode answers,
-// and a declaration carries the whole privilege list of one identity. So this is
-// the inverse of the fan-out in
-// [ptah.run/internal/convert/goschematodb.ToDBSchema] and has to agree with it
-// on cardinality: describing each row as its own declaration would claim one
-// object per privilege where the server holds one per identity, and a
-// comparison against the read those rows came from would plan a change on every
-// run.
-//
-// Rows are grouped in the order they arrive, and the privileges of one identity
-// keep the order of their rows, so the description of one read is stable. A read
-// that found none gives an empty slice rather than nil, copying convertGrants
-// and the initializer in newDatabase.
-//
-// A row marked [catalog.DefaultPrivilege.Revoked] is a global default taking a
-// built-in privilege away, and becomes an entry of the declaration's Revoked:
-// a new database starts from the built-in default, so the description has to
-// say the revoke for the privilege to be gone there too.
-func convertDefaultPrivileges(dbPrivileges []catalog.DefaultPrivilege) []schemamodel.DefaultPrivilege {
-	position := make(map[defaultPrivilegeIdentity]int, len(dbPrivileges))
-	privileges := make([]schemamodel.DefaultPrivilege, 0, len(dbPrivileges))
-	for _, dbPrivilege := range dbPrivileges {
-		declaration := schemamodel.DefaultPrivilege{
-			Grantor:    dbPrivilege.Grantor,
-			Schema:     dbPrivilege.Schema,
-			ObjectType: dbPrivilege.ObjectType,
-			Grantee:    dbPrivilege.Grantee,
-			Privileges: []schemamodel.PrivilegeGrant{{
-				Privilege:  dbPrivilege.Privilege,
-				WithOption: dbPrivilege.WithOption,
-			}},
-		}
-		if dbPrivilege.Revoked {
-			declaration.Privileges = make([]schemamodel.PrivilegeGrant, 0)
-			declaration.Revoked = []string{dbPrivilege.Privilege}
-		}
-		// Canonicalize before keying, so two rows whose identity differs only in
-		// case or padding group together rather than becoming twin declarations
-		// the comparison can never resolve.
-		declaration.Canonicalize()
-		key := defaultPrivilegeIdentity{
-			grantor:    declaration.Grantor,
-			schema:     declaration.Schema,
-			objectType: declaration.ObjectType,
-			grantee:    declaration.Grantee,
-		}
-		index, seen := position[key]
-		if !seen {
-			position[key] = len(privileges)
-			privileges = append(privileges, declaration)
-			continue
-		}
-		privileges[index].Privileges = append(privileges[index].Privileges, declaration.Privileges...)
-		privileges[index].Revoked = append(privileges[index].Revoked, declaration.Revoked...)
-		// Canonicalize again on the merged list: one identity holding the same
-		// privilege name twice keeps the grantable spelling, the way PostgreSQL
-		// merges two such statements.
-		privileges[index].Canonicalize()
-	}
-	return privileges
 }
 
 // foreignKeyInfo holds the field-level pieces reconstructed from a database

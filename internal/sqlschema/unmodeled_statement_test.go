@@ -89,7 +89,7 @@ func TestToDatabase_AStatementThatNamesNoObjectIsNotRefused(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Tables, qt.HasLen, 0)
 			c.Assert(database.Indexes, qt.HasLen, 0)
-			c.Assert(database.DefaultPrivileges, qt.HasLen, 0)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
 }

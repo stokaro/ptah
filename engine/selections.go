@@ -10,7 +10,7 @@ import (
 // registerSelections freezes every provider's scope selections into one set,
 // under the same ownership rule as HCL: an extension names its provider as
 // the owner, and the provider owns the desired codec of every model it
-// selects.
+// selects. Additive selections also require ownership of their change codecs.
 func (r *Runtime) registerSelections(providers []Provider) error {
 	var extensions []selectext.Extension
 	for _, provider := range providers {
@@ -22,6 +22,11 @@ func (r *Runtime) registerSelections(providers []Provider) error {
 				if !r.ownsCodec(provider.ID, selection.Kind, schemaext.Desired) {
 					return fmt.Errorf("%w: provider %q selects model %q without owning its desired codec",
 						ErrInvalidRegistration, provider.ID, selection.Kind)
+				}
+			}
+			for _, kind := range extension.ChangeKinds {
+				if !r.ownsCodec(provider.ID, kind, schemaext.Change) {
+					return fmt.Errorf("%w: provider %q selects change %q without owning its codec", ErrInvalidRegistration, provider.ID, kind)
 				}
 			}
 			extensions = append(extensions, extension)

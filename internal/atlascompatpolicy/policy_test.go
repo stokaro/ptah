@@ -11,10 +11,12 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgtype"
@@ -223,7 +225,7 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 			Facets: must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{}))}}}},
 		{name: "roles", database: &schemamodel.Database{Roles: []schemamodel.Role{{}}}},
 		{name: "grants", database: &schemamodel.Database{Grants: []schemamodel.Grant{{}}}},
-		{name: "default privileges", database: &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{}}}},
+		{name: "default privileges", database: defaultPrivilegeSchema()},
 		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
 		{name: "API export metadata", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", APIName: "Account"}}}},
 		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{}))}}}},
@@ -496,13 +498,7 @@ func TestStrictCEValidatesUnlistedLiveSchemaCleanObjects(t *testing.T) {
 // strict mode says it does not model.
 func TestStrictCERefusesCleaningLiveDefaultPrivileges(t *testing.T) {
 	c := qt.New(t)
-	database := &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-		Grantor:    "app_owner",
-		Schema:     "app",
-		ObjectType: "TABLES",
-		Grantee:    "app_reader",
-		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-	}}}
+	database := defaultPrivilegeSchema()
 
 	err := atlascompatpolicy.StrictCE().ValidateSchemaCleanSnapshot(database)
 
@@ -907,4 +903,10 @@ func policyErrorText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func defaultPrivilegeSchema() *schemamodel.Database {
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, identifier.ForDialect("postgres")))
+	object := must.Must(pgdefaultprivilege.DesiredObject(ref, pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}))
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(object))}
 }

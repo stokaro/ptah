@@ -5,10 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // TestGetOrderedCreateStatements_RevokedDefaultPrivilegeRendersNothing pins
@@ -18,13 +22,10 @@ import (
 // list is a statement PostgreSQL refuses.
 func TestGetOrderedCreateStatements_RevokedDefaultPrivilegeRendersNothing(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{
-		{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader", Revoked: []string{"INSERT"}},
-		{
-			Grantor: "app_owner", Schema: "app", ObjectType: "SEQUENCES", Grantee: "app_reader",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}}, Revoked: []string{"UPDATE"},
-		},
-	}}
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		defaultPrivilegeDeclaration("app_owner", "app", "TABLES", "app_reader", nil, []string{"INSERT"}),
+		defaultPrivilegeDeclaration("app_owner", "app", "SEQUENCES", "app_reader", []pgdefaultprivilege.Grant{{Privilege: "USAGE"}}, []string{"UPDATE"}),
+	))}
 
 	statements, err := builtin.GetOrderedCreateStatements(db, platform.Postgres)
 
@@ -43,14 +44,11 @@ func TestGetOrderedCreateStatements_RevokedDefaultPrivilegeRendersNothing(t *tes
 // keeps the spelling it was written in.
 func TestGetOrderedCreateStatements_GlobalDefaultPrivilegeRendersItsRevokes(t *testing.T) {
 	c := qt.New(t)
-	db := &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{
-		{Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC", Revoked: []string{"EXECUTE"}},
-		{Grantor: "app_owner", ObjectType: "SEQUENCES", Grantee: "app_owner", Revoked: []string{"USAGE", "SELECT", "UPDATE"}},
-		{
-			Grantor: "app_owner", ObjectType: "SCHEMAS", Grantee: "app_reader",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-		},
-	}}
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		defaultPrivilegeDeclaration("app_owner", "", "FUNCTIONS", "PUBLIC", nil, []string{"EXECUTE"}),
+		defaultPrivilegeDeclaration("app_owner", "", "SEQUENCES", "app_owner", nil, []string{"USAGE", "SELECT", "UPDATE"}),
+		defaultPrivilegeDeclaration("app_owner", "", "SCHEMAS", "app_reader", []pgdefaultprivilege.Grant{{Privilege: "USAGE"}}, nil),
+	))}
 
 	statements, err := builtin.GetOrderedCreateStatements(db, platform.Postgres)
 
@@ -61,7 +59,12 @@ func TestGetOrderedCreateStatements_GlobalDefaultPrivilegeRendersItsRevokes(t *t
 	}
 	c.Assert(rendered, qt.DeepEquals, []string{
 		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;`,
-		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" REVOKE ALL ON SEQUENCES FROM "app_owner";`,
 		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" GRANT USAGE ON SCHEMAS TO "app_reader";`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" REVOKE ALL ON SEQUENCES FROM "app_owner";`,
 	})
+}
+
+func defaultPrivilegeDeclaration(grantor, schema, objectType, grantee string, grants []pgdefaultprivilege.Grant, revoked []string) schemaext.Object {
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: grantor, Schema: schema, ObjectType: objectType, Grantee: grantee}, identifier.ForDialect("postgres")))
+	return must.Must(pgdefaultprivilege.DesiredObject(ref, pgdefaultprivilege.Desired{Privileges: grants, Revoked: revoked}))
 }

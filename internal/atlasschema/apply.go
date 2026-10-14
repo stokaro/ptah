@@ -403,7 +403,10 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current = opts.baseline.WithoutStartingPoint(current, declared, defaultSchemaOf(conn.Info()))
+	current, err = opts.baseline.WithoutStartingPoint(ctx, current, declared, defaultSchemaOf(conn.Info()), opts.Runtime.Selections())
+	if err != nil {
+		return applyComputation{}, err
+	}
 	if err := validateCurrentApplyState(ctx, conn, current, read.readScope, opts); err != nil {
 		return applyComputation{}, err
 	}
@@ -657,7 +660,10 @@ func applyCurrentState(
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
-	readScope := applyReadScope(conn.Info(), requested, urlScope, desired)
+	readScope, err := applyReadScope(conn.Info(), requested, urlScope, desired)
+	if err != nil {
+		return applyRead{}, fmt.Errorf("read database schema: %w", err)
+	}
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
@@ -699,11 +705,15 @@ func applyCurrentState(
 // already every directory, and [schemascope.Widen] keeps it that way.
 //
 // An explicit `--schema` outranks both: it is the operator naming the scope.
-func applyReadScope(info catalog.ServerInfo, requested, base []string, desired *schemamodel.Database) []string {
+func applyReadScope(info catalog.ServerInfo, requested, base []string, desired *schemamodel.Database) ([]string, error) {
 	if names := SplitSchemaNames(requested); len(names) > 0 {
-		return names
+		return names, nil
 	}
-	return schemascope.Widen(info, base, schemascope.DeclaredSchemaNames(desired))
+	declared, err := schemascope.DeclaredSchemaNames(desired)
+	if err != nil {
+		return nil, err
+	}
+	return schemascope.Widen(info, base, declared), nil
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.

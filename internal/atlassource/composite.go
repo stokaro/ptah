@@ -9,6 +9,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -125,7 +126,7 @@ func (s Set) resolveCompositeSchema(ctx context.Context, opts ResolveOptions) (S
 			return State{}, fmt.Errorf("%s composite %s at %s: %w",
 				s.Flag, compositePartName(part.Schema), part.Location, err)
 		}
-		placed, err := PlaceCompositePart(loaded, part.Schema, defaultSchema)
+		placed, err := PlaceCompositePart(ctx, opts.Runtime.Selections(), loaded, part.Schema, defaultSchema)
 		if err != nil {
 			return State{}, fmt.Errorf("%s composite %s at %s: %w",
 				s.Flag, compositePartName(part.Schema), part.Location, err)
@@ -151,11 +152,11 @@ func (s Set) resolveCompositeSchema(ctx context.Context, opts ResolveOptions) (S
 // would leave every unqualified name inside a view, routine or trigger body
 // resolving through the target's search path, which is a different schema
 // from the one the object would then be in. part is not modified.
-func PlaceCompositePart(part *schemamodel.Database, schema, defaultSchema string) (*schemamodel.Database, error) {
+func PlaceCompositePart(ctx context.Context, selections selectext.Set, part *schemamodel.Database, schema, defaultSchema string) (*schemamodel.Database, error) {
 	if schema == "" || part == nil {
 		return part, nil
 	}
-	if err := checkCompositePlacement(part, schema, defaultSchema); err != nil {
+	if err := checkCompositePlacement(ctx, selections, part, schema, defaultSchema); err != nil {
 		return nil, err
 	}
 	placed := *part
@@ -172,8 +173,11 @@ func PlaceCompositePart(part *schemamodel.Database, schema, defaultSchema string
 // The families a schema scope filters are judged by that filter, so what lies
 // "in" a schema is decided in one place for both. The type families it keeps
 // whole are checked here by their own Schema field.
-func checkCompositePlacement(part *schemamodel.Database, schema, defaultSchema string) error {
-	inScope := schemascope.FilterGeneratedWithDefaultSchema(part, []string{schema}, defaultSchema)
+func checkCompositePlacement(ctx context.Context, selections selectext.Set, part *schemamodel.Database, schema, defaultSchema string) error {
+	inScope, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, part, []string{schema}, defaultSchema)
+	if err != nil {
+		return err
+	}
 	for _, table := range part.Tables {
 		if !slices.ContainsFunc(inScope.Tables, func(kept schemamodel.Table) bool {
 			return kept.QualifiedName() == table.QualifiedName()
@@ -203,6 +207,12 @@ func checkCompositePlacement(part *schemamodel.Database, schema, defaultSchema s
 			return kept.Name == function.Name
 		}) {
 			return outsideQualifiedPlacement("function", function.Name, schema)
+		}
+	}
+	kept := inScope.FeatureObjects.Refs()
+	for _, ref := range part.FeatureObjects.Refs() {
+		if !slices.Contains(kept, ref) {
+			return fmt.Errorf("feature object %s is outside schema %q", ref, schema)
 		}
 	}
 	return checkTypePlacement(part, schema, defaultSchema)

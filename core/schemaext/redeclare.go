@@ -24,6 +24,21 @@ type Redeclarable interface {
 	Redeclarable() bool
 }
 
+// ComposableDeclaration is an owner's rule for combining independently
+// authored parts of one object, such as the privileges granted to one role.
+// The operation combines local representations, as Clone and Equal do: it
+// performs no I/O, calls no remote provider, and leaves both operands unchanged. Conflicting intent returns an error. Statement-order
+// execution belongs to the source decoder, not to declaration composition.
+//
+// Objects invokes it only for the same identity and target scope. The returned
+// value must retain the model kind and is captured before joining the result.
+// A model that implements neither this contract nor Redeclarable keeps duplicate
+// declarations as errors.
+type ComposableDeclaration interface {
+	Value
+	ComposeDeclaration(Value) (Value, error)
+}
+
 // Guarded is an owner's statement that its object was declared under the
 // statement's "may already exist" clause, as CREATE EXTENSION IF NOT EXISTS
 // declares one. A SQL schema directory runs its files in order, so it admits
@@ -35,12 +50,13 @@ type Guarded interface {
 	Guarded() bool
 }
 
-// Declare returns a new collection containing object, as [Objects.With]
-// does, except for an identity declared again. A [Redeclarable] object equal
-// to the one the collection holds, value and target scope, leaves the
-// collection as it is; one that differs is refused, naming the identity.
-// Every other second declaration is refused as [Objects.With] refuses it.
-// Both refusals wrap [ErrDuplicate].
+// Declare returns a new collection containing object. A second declaration of
+// an identity follows its owner's representation contract: a
+// [ComposableDeclaration] combines both values, and a [Redeclarable] accepts
+// equal values. Composition takes precedence when a value implements both.
+// Different target scopes and duplicates without either permission wrap
+// [ErrDuplicate]. Composition errors propagate. Invalid results wrap
+// [ErrInvalidValue]. On any error the result is empty and o is unchanged.
 func (o Objects) Declare(object Object) (Objects, error) {
 	cloned, err := cloneObject(object)
 	if err != nil {
@@ -50,10 +66,14 @@ func (o Objects) Declare(object Object) (Objects, error) {
 	if !found {
 		return o.With(cloned)
 	}
-	if err := redeclare(held, cloned); err != nil {
+	combined, err := combineDeclaration(held, cloned)
+	if err != nil {
 		return Objects{}, err
 	}
-	return o, nil
+	result := Objects{values: make(map[objectidentity.Key]Object, len(o.values))}
+	maps.Copy(result.values, o.values)
+	result.values[cloned.Ref.Key()] = combined
+	return result, nil
 }
 
 // MergeDeclarations combines independently captured declarations, as
@@ -64,9 +84,11 @@ func (o Objects) MergeDeclarations(other Objects) (Objects, error) {
 	maps.Copy(result.values, o.values)
 	for key, value := range other.values {
 		if held, exists := result.values[key]; exists {
-			if err := redeclare(held, value); err != nil {
+			combined, err := combineDeclaration(held, value)
+			if err != nil {
 				return Objects{}, err
 			}
+			result.values[key] = combined
 			continue
 		}
 		result.values[key] = value
@@ -86,4 +108,43 @@ func redeclare(held, declared Object) error {
 		return fmt.Errorf("%w: conflicting definitions of %s", ErrDuplicate, declared.Ref)
 	}
 	return nil
+}
+
+func combineDeclaration(held, declared Object) (Object, error) {
+	_, ok := held.Value.(ComposableDeclaration)
+	if !ok {
+		if err := redeclare(held, declared); err != nil {
+			return Object{}, err
+		}
+		return held, nil
+	}
+	if !slices.Equal(held.Targets, declared.Targets) {
+		return Object{}, fmt.Errorf("%w: conflicting target scopes of %s", ErrDuplicate, declared.Ref)
+	}
+	// Capture operands even for implementations whose accidental mutation would
+	// otherwise leak into a source collection after a refusal.
+	left, err := cloneObject(held)
+	if err != nil {
+		return Object{}, err
+	}
+	right, err := cloneObject(declared)
+	if err != nil {
+		return Object{}, err
+	}
+	composer, ok := left.Value.(ComposableDeclaration)
+	if !ok {
+		return Object{}, fmt.Errorf("%w: declaration clone loses composition for %s", ErrInvalidValue, held.Ref)
+	}
+	combined, err := composer.ComposeDeclaration(right.Value)
+	if err != nil {
+		return Object{}, err
+	}
+	if err := ValidatePayload(combined); err != nil {
+		return Object{}, err
+	}
+	if combined.Kind() != held.Value.Kind() {
+		return Object{}, fmt.Errorf("%w: declaration composition changes model kind for %s", ErrInvalidValue, declared.Ref)
+	}
+	left.Value = combined
+	return cloneObject(left)
 }

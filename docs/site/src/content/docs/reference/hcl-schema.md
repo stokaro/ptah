@@ -145,6 +145,37 @@ and limit semantics.
 The header belongs to HCL sources. Renaming the document to `.sql` does not
 convert it; SQL source loading refuses this metadata instead of discarding it.
 
+## Default privileges
+
+A `default_privilege` block takes no labels. `for_role` names the role that
+creates objects, and `to` names the role that receives their default privileges.
+Each accepts a role reference or a string. A dot inside a quoted role name
+stays part of that name.
+
+`privileges`, `grantable`, and `revoked` accept lists of strings or bare privilege
+names. A scalar names one privilege. Variables, locals, and functions can supply
+strings or lists of strings. Null values and non-string list elements are
+refused. Every `grantable` entry must appear in `privileges`.
+
+Blocks with the same grantor, schema, object type, and grantee combine their
+privileges. A privilege with a grant option keeps that option when another
+block grants it without one. Conflicting comments and declarations that both
+grant and revoke a privilege are refused. An omitted `schema` means the global
+default, even when the export names a default schema.
+
+An export preserves an unread default ACL with a `ptah:notdescribed` header.
+An unnamed limit covers the whole default privilege namespace. A named limit
+uses a JSON tuple of grantor, schema, object type, and grantee. A tuple without
+the grantee covers one ACL class; an empty grantor in that tuple means
+CockroachDB's `FOR ALL ROLES`. An empty schema means global defaults.
+
+```hcl
+// ptah:notdescribed default_privilege "[\"owner\",\"app\",\"TABLES\",\"reader\"]"
+```
+
+Reading this source leaves that ACL unmanaged. The limit does not declare an
+empty privilege list or authorize a revoke.
+
 ## API export metadata attributes
 
 API export metadata is a Ptah HCL extension. All values are quoted strings:

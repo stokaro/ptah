@@ -33,7 +33,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
-	"ptah.run/internal/privilegefold"
 )
 
 // ToField converts an ast.ColumnNode to a schemamodel.Field with comprehensive attribute extraction.
@@ -827,12 +826,6 @@ func appendPrivilegeDeclaration(database *schemamodel.Database, document *Docume
 		appendGrant(database, node, sourcePlatform)
 	case *ast.RevokePrivilegeNode:
 		return true, appendRevoke(database, node, sourcePlatform)
-	case *ast.DefaultPrivilegeNode:
-		database.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(
-			database.DefaultPrivileges, []schemamodel.DefaultPrivilege{toDefaultPrivilege(node, sourcePlatform)},
-		)
-	case *ast.RevokeDefaultPrivilegeNode:
-		return true, appendDefaultPrivilegeRevoke(database, node, sourcePlatform)
 	default:
 		return false, nil
 	}

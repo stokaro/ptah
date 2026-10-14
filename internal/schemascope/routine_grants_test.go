@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/schemascope"
 )
 
@@ -31,8 +32,10 @@ func TestFilterScopesRoutineGrantsOnBothSidesTheSameWay(t *testing.T) {
 		{Role: "app", Privilege: "EXECUTE", ObjectType: "FUNCTION", Schema: "other", ObjectName: "purge", Arguments: "p uuid"},
 	}}
 
-	generated := schemascope.FilterGenerated(desired, []string{"app"})
-	read := schemascope.FilterDatabase(database, []string{"app"})
+	generated, err := schemascope.FilterGenerated(t.Context(), selectext.None(), desired, []string{"app"})
+	c.Assert(err, qt.IsNil)
+	read, err := schemascope.FilterDatabase(t.Context(), selectext.None(), database, []string{"app"})
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(generated.Grants, qt.DeepEquals, desired.Grants[:1])
 	c.Assert(generated.RevokedGrants, qt.DeepEquals, desired.RevokedGrants[:1])

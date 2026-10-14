@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasmigrateimport"
@@ -250,7 +251,7 @@ func GenerateDiff(
 	opts DiffOptions,
 ) (DiffResult, error) {
 	return generateDiff(ctx, conn, opts, diffRuntime{
-		readDevSchema:        readScopedDevSchema,
+		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 }
@@ -316,7 +317,10 @@ func generateDiff(
 	if desiredDefaultSchema == "" {
 		desiredDefaultSchema = devDefaultSchema
 	}
-	desired := schemascope.FilterGeneratedWithDefaultSchema(desiredState.Schema, schemas, desiredDefaultSchema)
+	desired, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, opts.Runtime.Selections(), desiredState.Schema, schemas, desiredDefaultSchema)
+	if err != nil {
+		return DiffResult{}, err
+	}
 	// The directory is replayed as native Atlas in every case, but a foreign
 	// layout is CONVERTED into that shape first rather than parsed as if it
 	// already were one. The conversion is the same one every reading verb runs
@@ -728,6 +732,7 @@ func compareReplayedState(
 	selected interface {
 		schemadiff.DatabaseRuntime
 		goschematodb.Runtime
+		selectext.Runtime
 	},
 ) (*catalog.Database, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
@@ -735,6 +740,10 @@ func compareReplayedState(
 		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
 	}
 	replayed, err := runtime.readDevSchema(ctx, replayConn, readNames, defaultSchema)
+	if err != nil {
+		return nil, nil, err
+	}
+	replayed, err = schemascope.FilterDatabaseWithDefaultSchema(ctx, selected.Selections(), replayed, readNames, defaultSchema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -748,9 +757,13 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, fmt.Errorf("convert desired schema: %w", err)
 	}
-	replayed = baseline.WithoutStartingPoint(replayed,
+	replayed, err = baseline.WithoutStartingPoint(ctx, replayed,
 		desiredCatalog,
-		cmp.Or(defaultSchema, schemaselection.DialectDefault(replayConn.Info().Dialect)))
+		cmp.Or(defaultSchema, schemaselection.DialectDefault(replayConn.Info().Dialect)), selected.Selections(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}
@@ -774,29 +787,25 @@ func compareReplayedState(
 	return replayed, diff, nil
 }
 
-// readScopedDevSchema reads the state the migration directory replayed, which
+// readReplayedSchema reads the state the migration directory replayed, which
 // is the CURRENT side of `migrate diff`.
 //
 // readNames is the resolved read scope, and it is also what the result is
-// filtered by. The two were separate when the filter carried an explicit
+// filtered by in compareReplayedState. The two were separate when the filter carried an explicit
 // `--schema` selection and the read carried nothing, and that gap is the
 // defect: filtering by the names actually read is a no-op for every object the
 // read could have returned, and it is exactly the selection when one was made
 // (stokaro/ptah#1276).
-func readScopedDevSchema(ctx context.Context,
+func readReplayedSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	readNames []string,
-	defaultSchema string,
+	_ string,
 ) (*catalog.Database, error) {
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readNames)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
-	return schemascope.FilterDatabaseWithDefaultSchema(
-		withoutRevisionTable(current),
-		readNames,
-		defaultSchema,
-	), nil
+	return withoutRevisionTable(current), nil
 }
 
 func renderMigrationDiffSQL(statements []string, format string) (string, error) {

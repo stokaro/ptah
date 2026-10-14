@@ -13,7 +13,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/dbschema/dbtest"
@@ -74,7 +73,7 @@ func TestReadDefaultPrivileges_ProjectsOneRowPerPrivilegeHappyPath(t *testing.T)
 	privileges, err := reader.readDefaultPrivileges(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
+	c.Assert(privileges, qt.DeepEquals, []defaultPrivilegeRow{
 		{Grantor: "app_owner", Schema: "public", ObjectType: "SEQUENCES", Grantee: "PUBLIC", Privilege: "USAGE"},
 		{
 			Grantor: "app_owner", Schema: "public", ObjectType: "TABLES", Grantee: "app_reader",
@@ -115,7 +114,7 @@ func TestReadDefaultPrivileges_ReadsEachLinesACLHappyPath(t *testing.T) {
 			privileges, err := reader.readDefaultPrivileges(t.Context())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
+			c.Assert(privileges, qt.DeepEquals, []defaultPrivilegeRow{
 				{Grantor: "ar_owner", Schema: "public", ObjectType: "TABLES", Grantee: "ar_reader", Privilege: "INSERT"},
 				{
 					Grantor: "ar_owner", Schema: "public", ObjectType: "TABLES", Grantee: "odd-role.x",
@@ -148,7 +147,7 @@ func TestReadDefaultPrivileges_ReadsEveryInspectedSchemaHappyPath(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(bound, qt.DeepEquals, []string{"public", "app"})
-	c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
+	c.Assert(privileges, qt.DeepEquals, []defaultPrivilegeRow{
 		{Grantor: "app_owner", Schema: "public", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
 		{
 			Grantor: "app_owner", Schema: "app", ObjectType: "FUNCTIONS",
@@ -177,7 +176,7 @@ func TestReadDefaultPrivileges_LeavesReservedGranteesOutHappyPath(t *testing.T) 
 	privileges, err := reader.readDefaultPrivileges(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
+	c.Assert(privileges, qt.DeepEquals, []defaultPrivilegeRow{
 		{Grantor: "postgres", Schema: "public", ObjectType: "TABLES", Grantee: "PUBLIC", Privilege: "SELECT"},
 		{Grantor: "postgres", Schema: "public", ObjectType: "TABLES", Grantee: "pgbouncer", Privilege: "SELECT"},
 	})
@@ -202,7 +201,7 @@ func TestReadDefaultPrivileges_OrdersRowsByteWiseHappyPath(t *testing.T) {
 	privileges, err := reader.readDefaultPrivileges(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
+	c.Assert(privileges, qt.DeepEquals, []defaultPrivilegeRow{
 		{Grantor: "a_owner", Schema: "public", ObjectType: "TABLES", Grantee: "PUBLIC", Privilege: "SELECT"},
 		{Grantor: "a_owner", Schema: "public", ObjectType: "TABLES", Grantee: "Upper", Privilege: "SELECT"},
 		{Grantor: "a_owner", Schema: "public", ObjectType: "TABLES", Grantee: "r_reader", Privilege: "SELECT"},

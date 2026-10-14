@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
@@ -179,22 +180,6 @@ func roundTripRows() []roundTripRow {
 				})
 			},
 			count: func(d *schemamodel.Database) int { return len(d.RevokedGrants) },
-		},
-		{
-			// The grantor is what forces the family its own block. It is part of
-			// a default privilege's identity, and the `permission` block reports
-			// a grantor as an export loss rather than writing one, so a family
-			// routed through that block would leave this round trip as a warning
-			// and nothing else.
-			field: "DefaultPrivileges",
-			seed: func(d *schemamodel.Database) {
-				d.DefaultPrivileges = append(d.DefaultPrivileges, schemamodel.DefaultPrivilege{
-					StructName: "D", Grantor: "app_owner", Schema: "public",
-					ObjectType: "TABLES", Grantee: "app_reader",
-					Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-				})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.DefaultPrivileges) },
 		},
 	}
 }
@@ -555,4 +540,19 @@ func loadPostgresDocument(c *qt.C, document []byte) *schemamodel.Database {
 	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
+}
+
+// The HCL default_privilege block retains the full owner identity and payload.
+func TestRoundTrip_DefaultPrivilegesSurvive(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	declared := declaredDefaultPrivilege("app_reader")
+	db.FeatureObjects = must.Must(schemaext.NewObjects(declared))
+	db.FeatureCoverage = must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired))
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+	object, found, err := parsed.FeatureObjects.Get(declared.Ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(object.Value, qt.DeepEquals, declared.Value)
+	c.Assert(parsed.FeatureCoverage.Lookup(pgdefaultprivilege.DefaultPrivilegeKind, declared.Ref).State, qt.Equals, schemaext.Complete)
 }

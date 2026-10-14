@@ -113,11 +113,14 @@ func excludeDatabase(
 	filtered.Tables = state.filterTables(filtered.Tables)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
-	}, state.vocabulary.namedKinds()...)
+	}, state.vocabulary.independentKinds()...)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	if filtered.FeatureObjects, err = state.clearOwnerFields(filtered.FeatureObjects); err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -142,10 +145,8 @@ func excludeDatabase(
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants)
-	filtered.DefaultPrivileges = state.filterDefaultPrivileges(filtered.DefaultPrivileges)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
-	state.noteUndescribedDefaultPrivileges(filtered.UndescribedDefaultPrivileges)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
 }
 
@@ -234,12 +235,15 @@ func excludeGenerated(
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
-	}, state.vocabulary.namedKinds()...)
+	}, state.vocabulary.independentKinds()...)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
 
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	if filtered.FeatureObjects, err = state.clearOwnerFields(filtered.FeatureObjects); err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -264,7 +268,6 @@ func excludeGenerated(
 	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
 	filtered.Grants = state.filterGeneratedGrants(filtered.Grants)
 	filtered.RevokedGrants = state.filterGeneratedGrants(filtered.RevokedGrants)
-	filtered.DefaultPrivileges = state.filterGeneratedDefaultPrivileges(filtered.DefaultPrivileges)
 	filtered.Dependencies = nil
 	filtered.FunctionDependencies = nil
 	filtered.SelfReferencingForeignKeys = nil
@@ -1046,24 +1049,6 @@ func (s *exclusionState) noteUnregisteredVirtualTables(tables []catalog.VirtualT
 	}
 }
 
-// noteUndescribedDefaultPrivileges asks the patterns about the grantors of the
-// default privileges the read left out.
-//
-// They are cloned but never filtered, for the reason [noteRolesOutOfScope]
-// gives: they are not part of the description, so there is nothing to
-// subtract, and what they feed is the note saying what the READ left out. A
-// selector cannot put one into the description, so it must not take one out of
-// that note either. A default privilege names no object, so what a selector
-// reaches is its grantor, which is asked the way [filterDefaultPrivileges] asks
-// a described one's. FOR ALL ROLES has no grantor to ask.
-func (s *exclusionState) noteUndescribedDefaultPrivileges(privileges []catalog.UndescribedDefaultPrivilege) {
-	for _, privilege := range privileges {
-		if privilege.Grantor != "" {
-			s.matches("role", privilege.Grantor)
-		}
-	}
-}
-
 // filterIndexes asks the patterns whether they name the index BEFORE the
 // parent short-circuits decide, so a selector that names an index inside an
 // already-excluded table still counts as having matched something. The keep
@@ -1189,50 +1174,6 @@ func (s *exclusionState) filterRoleMemberships(
 	return keep(memberships, func(membership catalog.RoleMembership) bool {
 		return !s.matches("role", membership.Role) && !s.matches("role", membership.Member)
 	})
-}
-
-// filterDefaultPrivileges drops a default privilege whose schema left, and one
-// whose grantor or grantee left.
-//
-// A default privilege names no object of its own: it describes objects that do
-// not exist yet, so what a selector can reach are its two roles and the schema
-// it applies in. Both ends are asked, and both are asked before the answer is
-// combined -- a selector naming the grantor and one naming the grantee are two
-// selectors, and reporting only the first as matched would call the second
-// empty against a description it did name something in.
-//
-// Keeping a row whose role left would leave the description rendering
-// ALTER DEFAULT PRIVILEGES for a role the filtered description does not define,
-// which is the defect filterRoleMemberships avoids on the other pair of role
-// ends.
-func (s *exclusionState) filterDefaultPrivileges(
-	privileges []catalog.DefaultPrivilege,
-) []catalog.DefaultPrivilege {
-	return keep(privileges, func(privilege catalog.DefaultPrivilege) bool {
-		grantorNamed := s.matches("role", privilege.Grantor)
-		granteeNamed := s.matches("role", privilege.Grantee)
-		return !grantorNamed && !granteeNamed && !s.defaultPrivilegeSchemaExcluded(privilege.Schema)
-	})
-}
-
-// filterGeneratedDefaultPrivileges is filterDefaultPrivileges for the desired
-// side. Both sides of a comparison subtract the same objects, so a default
-// privilege excluded from one alone would come back as a grant or as a revoke.
-func (s *exclusionState) filterGeneratedDefaultPrivileges(
-	privileges []schemamodel.DefaultPrivilege,
-) []schemamodel.DefaultPrivilege {
-	return keep(privileges, func(privilege schemamodel.DefaultPrivilege) bool {
-		grantorNamed := s.matches("role", privilege.Grantor)
-		granteeNamed := s.matches("role", privilege.Grantee)
-		return !grantorNamed && !granteeNamed && !s.defaultPrivilegeSchemaExcluded(privilege.Schema)
-	})
-}
-
-// defaultPrivilegeSchemaExcluded answers whether a default privilege's schema
-// is excluded. A blank schema is the global default, which no schema exclusion
-// reaches: it is not the connected schema.
-func (s *exclusionState) defaultPrivilegeSchemaExcluded(schema string) bool {
-	return strings.TrimSpace(schema) != "" && s.schemaExcluded(schema)
 }
 
 func (s *exclusionState) filterGrants(grants []catalog.Grant) []catalog.Grant {
@@ -1751,27 +1692,26 @@ func stripGeneratedFieldForeignKey(field schemamodel.Field) schemamodel.Field {
 
 func cloneDatabase(schema *catalog.Database) *catalog.Database {
 	return &catalog.Database{
-		FeatureObjects:    schema.FeatureObjects,
-		FeatureCoverage:   schema.FeatureCoverage,
-		Schemas:           slices.Clone(schema.Schemas),
-		Tables:            slices.Clone(schema.Tables),
-		Enums:             slices.Clone(schema.Enums),
-		Indexes:           slices.Clone(schema.Indexes),
-		Constraints:       slices.Clone(schema.Constraints),
-		Functions:         slices.Clone(schema.Functions),
-		Sequences:         slices.Clone(schema.Sequences),
-		Domains:           slices.Clone(schema.Domains),
-		Composites:        slices.Clone(schema.Composites),
-		Ranges:            slices.Clone(schema.Ranges),
-		Views:             slices.Clone(schema.Views),
-		MatViews:          slices.Clone(schema.MatViews),
-		Triggers:          slices.Clone(schema.Triggers),
-		RLSPolicies:       slices.Clone(schema.RLSPolicies),
-		Roles:             slices.Clone(schema.Roles),
-		Grants:            slices.Clone(schema.Grants),
-		DefaultPrivileges: slices.Clone(schema.DefaultPrivileges),
-		RoleMemberships:   slices.Clone(schema.RoleMemberships),
-		ObjectOwners:      slices.Clone(schema.ObjectOwners),
+		FeatureObjects:  schema.FeatureObjects,
+		FeatureCoverage: schema.FeatureCoverage,
+		Schemas:         slices.Clone(schema.Schemas),
+		Tables:          slices.Clone(schema.Tables),
+		Enums:           slices.Clone(schema.Enums),
+		Indexes:         slices.Clone(schema.Indexes),
+		Constraints:     slices.Clone(schema.Constraints),
+		Functions:       slices.Clone(schema.Functions),
+		Sequences:       slices.Clone(schema.Sequences),
+		Domains:         slices.Clone(schema.Domains),
+		Composites:      slices.Clone(schema.Composites),
+		Ranges:          slices.Clone(schema.Ranges),
+		Views:           slices.Clone(schema.Views),
+		MatViews:        slices.Clone(schema.MatViews),
+		Triggers:        slices.Clone(schema.Triggers),
+		RLSPolicies:     slices.Clone(schema.RLSPolicies),
+		Roles:           slices.Clone(schema.Roles),
+		Grants:          slices.Clone(schema.Grants),
+		RoleMemberships: slices.Clone(schema.RoleMemberships),
+		ObjectOwners:    slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
@@ -1793,7 +1733,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		UnregisteredVirtualTables: slices.Clone(schema.UnregisteredVirtualTables),
 		// What the read left out stays what it left out: a filter narrows the
 		// description, and these default privileges were never in it.
-		UndescribedDefaultPrivileges: slices.Clone(schema.UndescribedDefaultPrivileges),
 		// Where the database is does not change with what a filter keeps of
 		// it, and a YDB plan names a Serial column's sequence by that path.
 		DatabasePath: schema.DatabasePath,
@@ -1825,7 +1764,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	// A shallow struct copy carries a slice header, so a field left out here is
 	// not dropped -- it is ALIASED, and the filter below then writes through the
 	// caller's own state.
-	filtered.DefaultPrivileges = slices.Clone(schema.DefaultPrivileges)
 	return &filtered
 }
 

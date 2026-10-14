@@ -877,6 +877,13 @@ grantee. In Go the same declaration is the `revoked` attribute of
 `default_privilege` block, and in YAML the `revoked` key of a
 `default_privileges` entry.
 
+For `ptah-compat` schema commands, excluding a schema, grantor, or grantee
+also excludes its default privileges. With `--include`, schema-scoped defaults
+remain only when `--schema` explicitly selects their schema; global defaults
+leave the selection. A retained default privilege keeps its declared schema
+and both named roles, even when no table selector retains them. Diagnostics
+about unread ACLs remain visible and do not add role declarations.
+
 #### Global default privileges
 
 A default privilege set without `IN SCHEMA` is the global default. It applies
@@ -916,10 +923,13 @@ another database therefore does not carry it, and `ptah db read` and
 `schema inspect` name each one on stderr, by object class, schema and grantor:
 
 ```text
-note: 1 default privilege is not described, because no schema source can
-declare one set FOR ALL ROLES; a description applied to another database does
-not carry it: TABLES in public for all roles.
+note: default privileges for ALL ROLES on TABLES in schema public are not fully described: FOR ALL ROLES has no named grantor in a schema declaration.
 ```
+
+Go and HCL exports preserve unread ACL scopes as `notdescribed` directives.
+Reading an exported source keeps those scopes unmanaged. A known named role's
+ACL remains independent of an unread `FOR ALL ROLES` ACL. Unknown catalog
+object classes retain their names in the diagnostic and the source limit.
 
 `ptah db drop-all` revokes a CockroachDB `FOR ALL ROLES` default in the
 schemas it cleans, spelled `FOR ALL ROLES`.

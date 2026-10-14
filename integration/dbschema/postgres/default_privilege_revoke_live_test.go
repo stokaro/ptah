@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -50,15 +51,14 @@ func TestPostgresDefaultPrivilegeRevoke_ASchemaFileTakesBackADefault(t *testing.
 			fixture := prepareRoutineGrantFixture(c, ctx)
 			var owner string
 			c.Assert(fixture.conn.QueryRowContext(ctx, "SELECT current_user").Scan(&owner), qt.IsNil)
-			desired, _, err := sqlschema.Read([]byte(test.statements(owner, fixture.schema, fixture.role)), platform.Postgres)
+			desired, _, err := sqlschema.ReadWith(c.Context(), []byte(test.statements(owner, fixture.schema, fixture.role)), platform.Postgres, nil, sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 			c.Assert(err, qt.IsNil)
 
 			fixture.apply(c, ctx, &desired)
 			settled := fixture.compare(c, ctx, &desired)
 
 			c.Assert(fixture.defaultTablePrivileges(c, ctx), qt.Equals, "SELECT")
-			c.Assert(settled.DefaultPrivilegesAdded, qt.HasLen, 0, qt.Commentf("added: %v", settled.DefaultPrivilegesAdded))
-			c.Assert(settled.DefaultPrivilegesRemoved, qt.HasLen, 0, qt.Commentf("removed: %v", settled.DefaultPrivilegesRemoved))
+			c.Assert(settled.FeatureChanges, qt.HasLen, 0, qt.Commentf("changes: %v", settled.FeatureChanges))
 		})
 	}
 }

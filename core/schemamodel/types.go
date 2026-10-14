@@ -58,7 +58,6 @@ type Database struct {
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
 	Roles                      []Role                         // PostgreSQL roles
 	Grants                     []Grant                        // PostgreSQL privilege grants
-	DefaultPrivileges          []DefaultPrivilege             `json:",omitempty"` // PostgreSQL default privileges
 	ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
 	Dependencies               map[string][]string            // table -> list of tables it depends on
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
@@ -1688,119 +1687,6 @@ func (g Grant) ByColumn() []Grant {
 		split = append(split, one)
 	}
 	return split
-}
-
-// DefaultPrivilege is a PostgreSQL default privilege: the privileges an object
-// gets when a named role creates one, in a named schema or in any schema.
-//
-// It is an object rather than an attribute of a grant, and its identity is
-// (Grantor, Schema, ObjectType, Grantee) -- the key pg_default_acl uses, plus
-// the grantee the ACL explodes to. Two declarations differing only in Grantor
-// are two objects: PostgreSQL enforces the grantor, refusing the statement from
-// a non-member of that role with `permission denied to change default
-// privileges`, measured on 17.
-//
-// An empty Schema is the global default: ALTER DEFAULT PRIVILEGES without IN
-// SCHEMA, which applies in every schema of the database. It is a different
-// object from any schema-scoped one, not the same one spelled unqualified, so
-// no source fills in a default schema for it. The two forms also mean
-// different things:
-//
-//   - a schema-scoped default is added to the global ones, so Privileges are
-//     what it adds and Revoked are privileges it is declared not to hold;
-//   - a global default starts from the built-in one -- the owner holds every
-//     privilege, PUBLIC holds EXECUTE on functions and USAGE on types -- so
-//     Privileges are what it adds to that and Revoked are what it takes away.
-//     A revoke of a built-in privilege is a statement a new database needs,
-//     where a schema-scoped revoke on a new database takes back nothing.
-//
-// SCHEMAS and LARGE OBJECTS are object classes of the global form only;
-// PostgreSQL 18.6 refuses IN SCHEMA for both, and LARGE OBJECTS is PostgreSQL
-// 18's.
-//
-// Example:
-//
-//	//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT"
-//	//ptah:schema:defaultprivilege for_role="app_owner" object_type="FUNCTIONS" grantee="PUBLIC" revoked="EXECUTE"
-//	type AccessControl struct{}
-type DefaultPrivilege struct {
-	StructName string // Name of the Go struct this declaration is associated with
-	Grantor    string // Role whose newly created objects the privileges apply to
-	Schema     string // Schema the default applies in; empty for the global default
-	ObjectType string // TABLES, SEQUENCES, FUNCTIONS or TYPES; globally also SCHEMAS or LARGE OBJECTS
-	Grantee    string // Role receiving the privileges; PUBLIC names every role
-	// Privileges are the privileges granted, each carrying its own grant
-	// option.
-	//
-	// One list of pairs rather than a privilege list beside a grantable list:
-	// the catalog records grantability per privilege -- one identity granted
-	// SELECT plainly and INSERT WITH GRANT OPTION reads back as two rows with
-	// different is_grantable, measured on PostgreSQL 17 -- and two parallel
-	// lists can disagree about which privileges they cover.
-	Privileges []PrivilegeGrant
-	Comment    string // Optional comment for documentation
-
-	// Revoked are privileges this identity is declared not to hold: a SQL
-	// schema file's ALTER DEFAULT PRIVILEGES ... REVOKE. ALL names every
-	// privilege of the object class. A comparison revokes a revoked privilege
-	// wherever the database holds it, whether or not the grantor is a role the
-	// schema manages. A privilege is never both in Privileges and here: a SQL
-	// schema file composes the two in statement order, and a source with no
-	// statement order that lists one in both is refused, see
-	// [ValidateRevokedGrants].
-	Revoked []string `json:",omitempty"`
-
-	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToTarget].
-	Dialects []string `json:",omitempty"`
-}
-
-// PrivilegeGrant is one privilege and the grant option it carries.
-type PrivilegeGrant struct {
-	Privilege  string // Privilege name, e.g. SELECT, INSERT, USAGE
-	WithOption bool   // Whether this privilege alone carries WITH GRANT OPTION
-}
-
-// Canonicalize normalizes the identity and the privilege list used by renderers
-// and comparators.
-//
-// Privileges are upper-cased and deduplicated by name. Where one name appears
-// twice with different grant options the grantable spelling wins, because
-// PostgreSQL merges two such statements that way: granting SELECT and then
-// SELECT WITH GRANT OPTION leaves one grantable row, measured on 17.
-func (d *DefaultPrivilege) Canonicalize() {
-	position := make(map[string]int, len(d.Privileges))
-	privileges := make([]PrivilegeGrant, 0, len(d.Privileges))
-	for _, privilege := range d.Privileges {
-		trimmed := strings.TrimSpace(privilege.Privilege)
-		if trimmed == "" {
-			continue
-		}
-		normalized := strings.ToUpper(trimmed)
-		index, seen := position[normalized]
-		if !seen {
-			position[normalized] = len(privileges)
-			privileges = append(privileges, PrivilegeGrant{
-				Privilege:  normalized,
-				WithOption: privilege.WithOption,
-			})
-			continue
-		}
-		privileges[index].WithOption = privileges[index].WithOption || privilege.WithOption
-	}
-	d.Privileges = privileges
-	var revoked []string
-	for _, privilege := range d.Revoked {
-		normalized := strings.ToUpper(strings.TrimSpace(privilege))
-		if normalized != "" && !slices.Contains(revoked, normalized) {
-			revoked = append(revoked, normalized)
-		}
-	}
-	d.Revoked = revoked
-	d.Grantor = strings.TrimSpace(d.Grantor)
-	d.Schema = strings.TrimSpace(d.Schema)
-	d.Grantee = strings.TrimSpace(d.Grantee)
-	d.ObjectType = strings.ToUpper(strings.TrimSpace(d.ObjectType))
 }
 
 // ManagedData declares a set of reference/seed rows that Ptah manages as

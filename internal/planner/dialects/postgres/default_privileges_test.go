@@ -1,96 +1,69 @@
 package postgres_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// TestPlanner_GenerateMigrationAST_DefaultPrivileges pins the whole statement
-// list for one plan that touches every default-privilege category at once.
-//
-// The role removal is part of the fixture rather than a separate test. Both
-// spellings of the revoke have to reach the server before the DROP ROLE:
-// PostgreSQL refuses to drop a role that still holds a default ACL entry, and a
-// plan carrying the revoke below the drop renders, lints and passes an
-// assertion that only looks for the statements. The order is the claim here,
-// which is why this asserts the list rather than membership.
-//
-// The CREATE SCHEMA is the other claim. A default privilege names its schema in
-// the IN SCHEMA clause, not by qualifying an object name, so the plan reaches it
-// only if the precondition step reads that field; without it the ALTER below
-// runs against a schema nothing created.
+func defaultPrivilegeChange(grantor, class, grantee string, change pgdefaultprivilege.Change) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{
+		Grantor: grantor, Schema: "app", ObjectType: class, Grantee: grantee,
+	}, identifier.ForDialect("postgres"))), Value: &change}
+}
+
+// Every ACL operation follows schema creation, and the role's revoke precedes
+// its removal. The public planner schedules owner and common steps together.
 func TestPlanner_GenerateMigrationAST_DefaultPrivileges(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		DefaultPrivilegesAdded: []difftypes.DefaultPrivilegeRef{
-			{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
-			{Grantor: "app_owner", Schema: "app", ObjectType: "SEQUENCES", Grantee: "app_reader", Privilege: "USAGE", WithOption: true},
-		},
-		DefaultPrivilegeOptionsAdded: []difftypes.DefaultPrivilegeRef{
-			{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "PUBLIC", Privilege: "INSERT", WithOption: true},
-		},
-		DefaultPrivilegesRemoved: []difftypes.DefaultPrivilegeRef{
-			{Grantor: "legacy_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "DELETE"},
-		},
-		DefaultPrivilegeOptionsRevoked: []difftypes.DefaultPrivilegeRef{
-			{Grantor: "app_owner", Schema: "app", ObjectType: "FUNCTIONS", Grantee: "app_reader", Privilege: "EXECUTE", WithOption: true},
+		FeatureChanges: []schemaext.ChangeRecord{
+			defaultPrivilegeChange("app_owner", "TABLES", "app_reader", pgdefaultprivilege.Change{Granted: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}),
+			defaultPrivilegeChange("app_owner", "SEQUENCES", "app_reader", pgdefaultprivilege.Change{Granted: []pgdefaultprivilege.Grant{{Privilege: "USAGE", WithOption: true}}}),
+			defaultPrivilegeChange("app_owner", "TABLES", "PUBLIC", pgdefaultprivilege.Change{GrantOptionsAdded: []string{"INSERT"}}),
+			defaultPrivilegeChange("legacy_owner", "TABLES", "app_reader", pgdefaultprivilege.Change{Revoked: []pgdefaultprivilege.Grant{{Privilege: "DELETE"}}}),
+			defaultPrivilegeChange("app_owner", "FUNCTIONS", "app_reader", pgdefaultprivilege.Change{GrantOptionsRevoked: []string{"EXECUTE"}}),
 		},
 		RolesRemoved: difftypes.RoleChanges{{Name: "legacy_owner"}},
 	}
-
-	nodes, err := postgres.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
-		diff,
-	)
+	nodes, err := postgres.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
-	lines := strings.Split(strings.TrimSpace(sql), "\n")
-	c.Assert(lines, qt.DeepEquals, []string{
-		"CREATE SCHEMA IF NOT EXISTS app;",
+	acl := []string{
 		"ALTER DEFAULT PRIVILEGES FOR ROLE legacy_owner IN SCHEMA app REVOKE DELETE ON TABLES FROM app_reader;",
 		"ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app REVOKE GRANT OPTION FOR EXECUTE ON FUNCTIONS FROM app_reader;",
 		"ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO app_reader;",
 		"ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT USAGE ON SEQUENCES TO app_reader WITH GRANT OPTION;",
 		"ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT INSERT ON TABLES TO PUBLIC WITH GRANT OPTION;",
-		"-- WARNING: Ensure no other objects depend on this role",
-		"DROP ROLE IF EXISTS legacy_owner;",
-	})
+	}
+	c.Assert(strings.Split(strings.TrimSpace(sql), "\n"), qt.ContentEquals, append(acl,
+		"CREATE SCHEMA IF NOT EXISTS app;", "-- WARNING: Ensure no other objects depend on this role", "DROP ROLE IF EXISTS legacy_owner;",
+	))
+	for _, statement := range acl {
+		c.Assert(strings.Index(sql, "CREATE SCHEMA") < strings.Index(sql, statement), qt.IsTrue)
+	}
+	c.Assert(strings.Index(sql, acl[0]) < strings.Index(sql, "DROP ROLE"), qt.IsTrue)
 }
 
-// TestPlanner_GenerateMigrationAST_DefaultPrivilegeRemovalIsNeverADrop is the
-// control for the statement the removal must not become.
-//
-// pg_default_acl holds no object to drop: the row is the privilege list, and it
-// disappears when its last privilege goes. A removal planned as a DROP would
-// name something that does not exist, and a removal planned as nothing at all
-// would leave the privilege in place while the plan reported success.
 func TestPlanner_GenerateMigrationAST_DefaultPrivilegeRemovalIsNeverADrop(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		DefaultPrivilegesRemoved: []difftypes.DefaultPrivilegeRef{
-			{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
-		},
-	}
-
-	nodes, err := postgres.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
-		diff,
-	)
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+		defaultPrivilegeChange("app_owner", "TABLES", "app_reader", pgdefaultprivilege.Change{Revoked: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}),
+	}}
+	nodes, err := postgres.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
-
-	c.Assert(sql, qt.Contains, "ALTER DEFAULT PRIVILEGES")
-	c.Assert(sql, qt.Contains, "REVOKE SELECT ON TABLES FROM")
-	c.Assert(sql, qt.Not(qt.Contains), "DROP")
+	c.Assert(strings.TrimSpace(sql), qt.Equals, `ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "app" REVOKE SELECT ON TABLES FROM "app_reader";`)
 }

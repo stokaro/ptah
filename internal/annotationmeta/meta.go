@@ -767,33 +767,6 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name: "ptah:schema:defaultprivilege",
-		Description: "Declares a PostgreSQL default privilege: what a grantee receives on objects " +
-			"a named role creates, in a named schema or, without one, in every schema of the database.",
-		Scopes: []Scope{ScopeStruct},
-		Attributes: []Attribute{
-			attr("for_role", "Role whose newly created objects the privileges apply to. "+
-				"PostgreSQL refuses the statement from a non-member of this role, so it is "+
-				"part of the object's identity rather than a decoration.", valueString, true, false),
-			attr("schema", "Schema the default applies in. Left out, the declaration is the global "+
-				"default, ALTER DEFAULT PRIVILEGES without IN SCHEMA, which starts from the built-in "+
-				"default: revoked can take a built-in privilege away, such as EXECUTE from PUBLIC.",
-				valueString, false, false),
-			attr("object_type", "TABLES, SEQUENCES, FUNCTIONS or TYPES; without a schema also SCHEMAS "+
-				"or LARGE OBJECTS.", valueString, true, false),
-			attr("grantee", "Role receiving the privileges; PUBLIC names every role.", valueString, true, false),
-			attr("privileges", "Comma-separated privileges, such as SELECT,INSERT. Required unless revoked is set.",
-				valueList, false, false),
-			attr("grantable", "The subset of privileges carrying WITH GRANT OPTION. A name "+
-				"outside privileges is refused.", valueList, false, false),
-			attr("revoked", "Comma-separated privileges the grantee must not hold by default, such as "+
-				"INSERT,UPDATE; ALL names every privilege of the object type. A name also in privileges is refused.",
-				valueList, false, false),
-			attr("comment", "Default privilege comment.", valueString, false, false),
-			dialectsAttr(),
-		},
-	},
-	{
 		Name:        "ptah:schema:data",
 		Description: "Declares external reference/seed row data for a table.",
 		Scopes:      []Scope{ScopeStruct},

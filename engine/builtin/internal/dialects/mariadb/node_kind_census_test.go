@@ -154,11 +154,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			want: "CREATE VIEW `v1` AS\nSELECT 1\n;\n",
 		},
 		{
-			kind: "DefaultPrivilegeNode",
-			node: ast.NewDefaultPrivilege("owner", "app", "TABLE", "app_role", []ast.DefaultPrivilege{{Privilege: "SELECT"}}),
-			want: "-- MARIADB: default privilege app_role is not generated for this target; skipped.\n",
-		},
-		{
 			kind: "DropFunctionNode",
 			node: ast.NewDropFunction("touch"),
 			want: "DROP FUNCTION `touch`;\n",
@@ -224,11 +219,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			kind: "RawSQLNode",
 			node: ast.NewRawSQL("SELECT 1;"),
 			want: "SELECT 1;\n",
-		},
-		{
-			kind: "RevokeDefaultPrivilegeNode",
-			node: ast.NewRevokeDefaultPrivilege("owner", "app", "TABLE", "app_role", []string{"SELECT"}),
-			want: "-- MARIADB: default privilege app_role is not generated for this target; skipped.\n",
 		},
 		{
 			kind: "RevokePrivilegeNode",
@@ -346,7 +336,8 @@ func TestMariaDBDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 41
+// Default privileges use owner operations through ExtensionNode.
+const censusKindFloor = 39
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mariadbCensusRow {

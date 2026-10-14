@@ -65,7 +65,7 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	if err != nil {
 		return err
 	}
-	if err := p.rejectUnsupportedAttrs(block, ownerAttributeNames(shape, shape.Block.Naming != hclext.JoinedName), block.Type); err != nil {
+	if err := p.rejectUnsupportedAttrs(block, ownerAttributeNames(shape, readsSchema(shape.Block.Naming)), block.Type); err != nil {
 		return err
 	}
 	values, references, err := p.ownerValues(block, shape, name)
@@ -160,6 +160,12 @@ func (p *parser) childValues(nested *hclsyntax.Block, child hclext.Child, label 
 // [parser.schemaReference].
 func (p *parser) ownerName(block *hclsyntax.Block, shape hclext.Shape) (schema, name string, err error) {
 	naming := shape.Block.Naming
+	if naming == hclext.Unlabeled {
+		if len(block.Labels) != 0 {
+			return "", "", p.blockError(block, "%s block does not accept labels", block.Type)
+		}
+		return "", "", nil
+	}
 	if naming == hclext.JoinedName {
 		name, err = p.objectName(block, block.Type)
 		return "", name, err
@@ -337,8 +343,8 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 			values[attribute.Name] = hclext.Value{Kind: hclext.Ref, Reference: &hclext.Reference{Kind: attribute.Refers, Name: schema}}
 			continue
 		}
-		if attribute.Kind == hclext.Ref && attribute.Refers == "column" {
-			value, _, err := p.ownerColumnValue(block, attribute)
+		if directOwnerReference(attribute) {
+			value, _, err := p.ownerValue(block, block.Type, attribute)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -372,6 +378,11 @@ func (p *parser) ownerValues(block *hclsyntax.Block, shape hclext.Shape, name st
 	return values, references, nil
 }
 
+// directOwnerReference names references that need no document-wide lookup.
+func directOwnerReference(attribute hclext.Attribute) bool {
+	return attribute.Kind == hclext.Ref && (attribute.Refers == "column" || attribute.Refers == "role")
+}
+
 // ownerValue reads one attribute as its kind: a [hclext.String] through
 // stringAttr, a [hclext.Bool] through optionalBoolPtr, a [hclext.Refs]
 // through referenceList, a [hclext.TypeName] through typeAttrString, as a
@@ -383,10 +394,17 @@ func (p *parser) ownerValue(block *hclsyntax.Block, label string, attribute hcle
 	if (attribute.Kind == hclext.Ref || attribute.Kind == hclext.Refs) && attribute.Refers == "column" {
 		return p.ownerColumnValue(block, attribute)
 	}
+	if attribute.Kind == hclext.Ref && attribute.Refers == "role" {
+		value, err := p.ownerRoleReference(block, attr, attribute.Name)
+		return value, err == nil, err
+	}
 	switch attribute.Kind {
 	case hclext.String:
 		text, err := p.stringAttr(block, attribute.Name, label)
 		return hclext.Value{Kind: attribute.Kind, Text: text}, err == nil, err
+	case hclext.TextList:
+		values, err := p.ownerTextList(block, attr)
+		return hclext.Value{Kind: attribute.Kind, Texts: values}, err == nil, err
 	case hclext.Bool:
 		value, err := p.optionalBoolPtr(block, attribute.Name, label)
 		if err != nil || value == nil {

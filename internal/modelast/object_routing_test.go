@@ -43,7 +43,6 @@ var routedKinds = []routedKind{
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 	{name: "revoked grant", want: 1, count: countNodes[*ast.RevokePrivilegeNode]},
-	{name: "default privilege", want: 1, count: countNodes[*ast.DefaultPrivilegeNode]},
 }
 
 func countNodes[T ast.Node](statements []ast.Node) int {
@@ -94,14 +93,6 @@ func routingFixture() schemamodel.Database {
 		}},
 		RevokedGrants: []schemamodel.Grant{{
 			StructName: "RG", Role: "role_probe", Privileges: []string{"INSERT"}, OnTable: "table_probe",
-		}},
-		// The grantee is PUBLIC, which names every role. This grid counts nodes
-		// rather than reading names, so a complete declaration here needs no
-		// role of its own beside the one the role and grant rows use.
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-			StructName: "DP", Grantor: "role_probe", Schema: "public",
-			ObjectType: "TABLES", Grantee: "PUBLIC",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		}},
 	}
 }

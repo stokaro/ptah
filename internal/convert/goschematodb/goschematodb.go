@@ -25,8 +25,6 @@ import (
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/oracletype"
-	"ptah.run/internal/pgdefaultacl"
-	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -113,7 +111,6 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		// and the model still carries it, while this side of a file-to-file
 		// comparison reports none, so the diff plans the same ALTER DEFAULT
 		// PRIVILEGES on every run and never converges.
-		DefaultPrivileges: toDBDefaultPrivileges(db.DefaultPrivileges),
 		// A file-to-file comparison uses this side as the current state, and a
 		// document that declared its own limits declares them here too
 		// (stokaro/ptah#1276).
@@ -1030,82 +1027,6 @@ func sameRoutine(a, b schemamodel.Grant) bool {
 	bName, bSchema := splitTableIdentity(b.OnRoutine)
 	return aName == bName && (aSchema == "" || bSchema == "" || aSchema == bSchema) &&
 		routineargs.InputTypes(a.RoutineArguments) == routineargs.InputTypes(b.RoutineArguments)
-}
-
-// toDBDefaultPrivileges describes each declaration the way a catalog read
-// reports it: one row per privilege.
-//
-// The grain is what pg_default_acl answers through aclexplode, and it is also
-// where the grant option lives -- the catalog records is_grantable per
-// privilege, so a declaration granting SELECT plainly and INSERT WITH GRANT
-// OPTION becomes two rows differing in WithOption. Emitting one row per
-// declaration instead would force a single grant option onto the whole list and
-// make the comparison flip it forever.
-//
-// The fan-out is the inverse of the fold in
-// [ptah.run/internal/convert/dbschematogo.ConvertDBSchemaToGoSchema], which
-// groups the rows of one identity back into one declaration. The two have to
-// agree on cardinality. Where one side counts a declaration as one object and
-// the other counts one per privilege, the comparison finds a difference it can
-// never close, and each package's own tests drive one direction and cannot see
-// it. TestToDBSchema_DefaultPrivilegesSurviveTheRoundTrip drives both.
-//
-// A global declaration's Revoked becomes rows marked
-// [catalog.DefaultPrivilege.Revoked], one per privilege of the built-in
-// default it takes away, which is what a read of the global row reports. A
-// revoked privilege the built-in default does not hold is nothing the catalog
-// could report, and a schema-scoped revoke is only ever an absence, so neither
-// becomes a row. A revoked ALL stands for each built-in privilege the grantee
-// holds.
-//
-// The result is nil rather than an empty slice when nothing is declared, copying
-// toDBGrants, the sibling that fans out the same way.
-func toDBDefaultPrivileges(privileges []schemamodel.DefaultPrivilege) []catalog.DefaultPrivilege {
-	var out []catalog.DefaultPrivilege
-	for _, privilege := range privileges {
-		privilege.Canonicalize()
-		identity := catalog.DefaultPrivilege{
-			Grantor:    privilege.Grantor,
-			Schema:     privilege.Schema,
-			ObjectType: privilege.ObjectType,
-			Grantee:    privilege.Grantee,
-		}
-		for _, granted := range privilege.Privileges {
-			row := identity
-			row.Privilege = granted.Privilege
-			row.WithOption = granted.WithOption
-			out = append(out, row)
-		}
-		if privilege.Schema != "" {
-			continue
-		}
-		for _, revoked := range builtinRevokes(privilege) {
-			row := identity
-			row.Privilege = revoked
-			row.Revoked = true
-			out = append(out, row)
-		}
-	}
-	return out
-}
-
-// builtinRevokes lists the built-in privileges a global declaration's Revoked
-// takes away, with ALL spelled out.
-func builtinRevokes(privilege schemamodel.DefaultPrivilege) []string {
-	var revoked []string
-	for _, name := range privilege.Revoked {
-		candidates := []string{name}
-		if name == "ALL" {
-			candidates = pgprivilege.All(privilege.ObjectType)
-		}
-		for _, candidate := range candidates {
-			if pgdefaultacl.Builtin(privilege.ObjectType, privilege.Grantor, privilege.Grantee, candidate) &&
-				!slices.Contains(revoked, candidate) {
-				revoked = append(revoked, candidate)
-			}
-		}
-	}
-	return revoked
 }
 
 func clonePtr[T any](value *T) *T {

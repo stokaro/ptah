@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 )
 
 // ExampleParse reads a YAML document into the schema model and reports what the
@@ -101,20 +102,21 @@ default_privileges:
     grantable: [INSERT]
 `)
 
-	db := must.Must(yamlschema.Parse(noOwners, document))
+	db := must.Must(yamlschema.Parse(postgresOwners, document))
 
-	for _, privilege := range db.DefaultPrivileges {
+	for _, object := range must.Must(db.FeatureObjects.All()) {
+		identity := must.Must(pgdefaultprivilege.IdentityOf(object.Ref))
 		fmt.Printf("%s in %s for %s to %s\n",
-			privilege.ObjectType, privilege.Schema, privilege.Grantor, privilege.Grantee)
-		for _, granted := range privilege.Privileges {
+			identity.ObjectType, identity.Schema, identity.Grantor, identity.Grantee)
+		for _, granted := range object.Value.(*pgdefaultprivilege.Desired).Privileges {
 			fmt.Printf("  %s grantable=%t\n", granted.Privilege, granted.WithOption)
 		}
 	}
 
 	// Output:
 	// TABLES in public for app_owner to app_reader
-	//   SELECT grantable=false
 	//   INSERT grantable=true
+	//   SELECT grantable=false
 }
 
 // ExampleParseFile reads the same document from a path. A schema file is the

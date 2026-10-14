@@ -1426,6 +1426,54 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgdefaultprivilege",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegecompare",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegecompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegeconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegeconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegeplan",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegeplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegerender",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegerender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegereport",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegereport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegereverse",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegereverse",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgdefaultprivilege-privilegeselect",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgdefaultprivilege/privilegeselect",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgextension",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgextension",

@@ -5,12 +5,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
@@ -233,28 +237,15 @@ rls_policies:
 	c.Assert(db.Grants[0].Privileges, qt.DeepEquals, []string{"USAGE"})
 	c.Assert(db.Grants[1].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
 	c.Assert(db.Grants[1].OnTable, qt.Equals, "users")
-	// Sorted by entry key, not by document order: the document writes the
-	// TABLES entry first and "owner_sequences..." sorts before
-	// "owner_tables...", so a builder ranging over the map would land here
-	// roughly half the time.
-	c.Assert(db.DefaultPrivileges, qt.HasLen, 2)
-	c.Assert(db.DefaultPrivileges[0].ObjectType, qt.Equals, "SEQUENCES")
-	c.Assert(db.DefaultPrivileges[0].Grantor, qt.Equals, "app_owner")
-	c.Assert(db.DefaultPrivileges[0].Schema, qt.Equals, "public")
-	c.Assert(db.DefaultPrivileges[0].Grantee, qt.Equals, "app_user")
-	c.Assert(db.DefaultPrivileges[0].Privileges, qt.DeepEquals, []schemamodel.PrivilegeGrant{
-		{Privilege: "USAGE"},
-	})
-	c.Assert(db.DefaultPrivileges[0].Dialects, qt.IsNil)
-	c.Assert(db.DefaultPrivileges[1].ObjectType, qt.Equals, "TABLES")
-	c.Assert(db.DefaultPrivileges[1].Privileges, qt.DeepEquals, []schemamodel.PrivilegeGrant{
-		{Privilege: "SELECT"},
-		{Privilege: "INSERT", WithOption: true},
-	})
-	c.Assert(db.DefaultPrivileges[1].Dialects, qt.DeepEquals, []string{"postgres"})
+	sequences := defaultPrivilegeObject(c, db, "SEQUENCES")
+	c.Assert(sequences.Value, qt.DeepEquals, &pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "USAGE"}}})
+	c.Assert(sequences.Targets, qt.IsNil)
+	tables := defaultPrivilegeObject(c, db, "TABLES")
+	c.Assert(tables.Value, qt.DeepEquals, &pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "INSERT", WithOption: true}, {Privilege: "SELECT"}}})
+	c.Assert(tables.Targets, qt.DeepEquals, []string{"postgres"})
 	// Row-level security reaches the PostgreSQL row-security owner.
 	c.Assert(db.Tables[1].Facets.Kinds(), qt.Contains, pgpolicy.TableStateKind)
-	c.Assert(db.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{pgextension.Ref("pg_trgm"), pgpolicy.PolicyRef("", "users", "users_tenant_isolation")})
+	c.Assert(db.FeatureObjects.Refs(), qt.ContentEquals, []objectidentity.ID{pgextension.Ref("pg_trgm"), pgpolicy.PolicyRef("", "users", "users_tenant_isolation"), sequences.Ref, tables.Ref})
 	c.Assert(db.RLSEnabledTables, qt.HasLen, 0)
 	c.Assert(db.RLSPolicies, qt.HasLen, 0)
 	c.Assert(db.Constraints, qt.HasLen, 1)
@@ -474,7 +465,7 @@ default_privileges:
     privileges: [SELECT, INSERT]
     grantable: [UPDATE]
 `,
-			want: `default privilege "owner_tables" marks "UPDATE" grantable, which is not in privileges`,
+			want: `(?s).*grantable privilege "UPDATE" is not in privileges.*`,
 		},
 		{
 			name: "missing grantor",
@@ -486,7 +477,7 @@ default_privileges:
     grantee: app_user
     privileges: [SELECT]
 `,
-			want: `default privilege "owner_tables" requires for_role`,
+			want: `(?s).*default privilege requires grantor.*`,
 		},
 		{
 			name: "schemas beside a schema",
@@ -499,8 +490,7 @@ default_privileges:
     grantee: app_user
     privileges: [USAGE]
 `,
-			want: `parse YAML schema: default privilege on SCHEMAS for role app_owner names schema public: ` +
-				`PostgreSQL sets default privileges on SCHEMAS for the whole database only, so leave the schema out`,
+			want: `(?s).*default privileges on SCHEMAS cannot name a schema.*`,
 		},
 		{
 			name: "missing grantee",
@@ -512,7 +502,7 @@ default_privileges:
     object_type: TABLES
     privileges: [SELECT]
 `,
-			want: `default privilege "owner_tables" requires grantee`,
+			want: `(?s).*default privilege requires grantee.*`,
 		},
 		{
 			name: "missing privileges",
@@ -524,7 +514,7 @@ default_privileges:
     object_type: TABLES
     grantee: app_user
 `,
-			want: `default privilege "owner_tables" requires privileges or revoked`,
+			want: `(?s).*a default privilege requires privileges or revoked.*`,
 		},
 		{
 			name: "object type outside the four",
@@ -537,8 +527,7 @@ default_privileges:
     grantee: app_user
     privileges: [SELECT]
 `,
-			want: `default privilege "owner_tables" has unsupported object_type "TABLE", ` +
-				`expected one of TABLES, SEQUENCES, FUNCTIONS, TYPES, SCHEMAS, LARGE OBJECTS`,
+			want: `(?s).*unsupported default privilege object type "TABLE".*`,
 		},
 		{
 			name: "dialects written with nothing in it",
@@ -552,7 +541,7 @@ default_privileges:
     privileges: [SELECT]
     dialects: []
 `,
-			want: `default privilege "owner_tables" dialects: names no dialect`,
+			want: `(?s).*dialects: names no dialect.*`,
 		},
 		{
 			name: "dialects naming no supported dialect",
@@ -566,14 +555,14 @@ default_privileges:
     privileges: [SELECT]
     dialects: postgress
 `,
-			want: `default privilege "owner_tables" dialects: "postgress" names no supported dialect`,
+			want: `(?s).*dialects: "postgress" names no supported dialect.*`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(noOwners, []byte(tt.yaml))
+			db, err := yamlschema.Parse(postgresOwners, []byte(tt.yaml))
 			c.Assert(err, qt.ErrorMatches, tt.want)
 			c.Assert(db, qt.IsNil)
 		})
@@ -586,7 +575,7 @@ default_privileges:
 func TestParse_DefaultPrivilegeWithoutDialectsReachesEveryDialect(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(postgresOwners, []byte(`
 default_privileges:
   owner_tables:
     for_role: app_owner
@@ -596,8 +585,8 @@ default_privileges:
     privileges: [SELECT]
 `))
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.DefaultPrivileges, qt.HasLen, 1)
-	c.Assert(db.DefaultPrivileges[0].Dialects, qt.IsNil)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 1)
+	c.Assert(defaultPrivilegeObject(c, db, "TABLES").Targets, qt.IsNil)
 }
 
 func TestParse_RejectsUnknownColumnAttributes(t *testing.T) {
@@ -612,4 +601,15 @@ tables:
         primarry: true
 `))
 	c.Assert(err, qt.ErrorMatches, `(?s)parse YAML schema: .*field primarry not found.*`)
+}
+
+func defaultPrivilegeObject(c *qt.C, db *schemamodel.Database, class string) schemaext.Object {
+	c.Helper()
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{
+		Grantor: "app_owner", Schema: "public", ObjectType: class, Grantee: "app_user",
+	}, identifier.ForDialect("postgres")))
+	object, found, err := db.FeatureObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	return object
 }

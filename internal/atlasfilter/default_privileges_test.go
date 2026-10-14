@@ -1,326 +1,249 @@
 package atlasfilter_test
 
 import (
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/atlasfilter"
 )
 
-// The two fixtures hold the same three default privileges, one per side of a
-// comparison. A default privilege has no name of its own, so each row is told
-// apart by its object type, and the three differ in the axes a selector can
-// reach: the schema they apply in, the role they apply to, and the role they
-// grant to.
+// The same declarations populate both comparison sides. No common ACL field
+// participates, so the tests exercise owner registration and the public scope.
+func defaultPrivilegeFixture(representation schemaext.Representation) schemaext.Objects {
+	identities := []pgdefaultprivilege.Identity{
+		{Grantor: "defaults_owner", Schema: "public", ObjectType: "TABLES", Grantee: "defaults_reader"},
+		{Grantor: "defaults_owner", Schema: "app", ObjectType: "SEQUENCES", Grantee: "defaults_reader"},
+		{Grantor: "other_owner", Schema: "app", ObjectType: "FUNCTIONS", Grantee: "other_reader"},
+	}
+	var objects []schemaext.Object
+	for i, identity := range identities {
+		objects = append(objects, defaultPrivilegeObject(representation, identity, []string{"SELECT", "USAGE", "EXECUTE"}[i]))
+	}
+	return must.Must(schemaext.NewObjects(objects...))
+}
+
+func defaultPrivilegeObject(representation schemaext.Representation, identity pgdefaultprivilege.Identity, privilege string) schemaext.Object {
+	ref := must.Must(pgdefaultprivilege.Ref(identity, identifier.ForDialect("postgres")))
+	grants := []pgdefaultprivilege.Grant{{Privilege: privilege}}
+	if representation == schemaext.Observed {
+		return schemaext.Object{Ref: ref, Value: &pgdefaultprivilege.Observed{Privileges: grants}}
+	}
+	return schemaext.Object{Ref: ref, Value: &pgdefaultprivilege.Desired{Privileges: grants}}
+}
+
 func defaultPrivilegeDatabaseFixture() *catalog.Database {
 	return &catalog.Database{
-		Schemas: []catalog.Schema{{Name: "public"}, {Name: "app"}},
-		Tables: []catalog.Table{
-			{Name: "users", Columns: []catalog.Column{{Name: "id"}}},
-		},
-		Roles: []catalog.Role{
-			{Name: "defaults_owner"},
-			{Name: "defaults_reader"},
-			{Name: "other_owner"},
-			{Name: "other_reader"},
-		},
-		DefaultPrivileges: []catalog.DefaultPrivilege{
-			{
-				Grantor: "defaults_owner", Schema: "public", ObjectType: "TABLES",
-				Grantee: "defaults_reader", Privilege: "SELECT",
-			},
-			{
-				Grantor: "defaults_owner", Schema: "app", ObjectType: "SEQUENCES",
-				Grantee: "defaults_reader", Privilege: "USAGE",
-			},
-			{
-				Grantor: "other_owner", Schema: "app", ObjectType: "FUNCTIONS",
-				Grantee: "other_reader", Privilege: "EXECUTE",
-			},
-		},
+		Schemas:         []catalog.Schema{{Name: "public"}, {Name: "app"}},
+		Tables:          []catalog.Table{{Name: "users", Columns: []catalog.Column{{Name: "id"}}}},
+		Roles:           []catalog.Role{{Name: "defaults_owner"}, {Name: "defaults_reader"}, {Name: "other_owner"}, {Name: "other_reader"}},
+		FeatureObjects:  defaultPrivilegeFixture(schemaext.Observed),
+		FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed)),
 	}
 }
 
 func defaultPrivilegeGeneratedFixture() *schemamodel.Database {
 	return &schemamodel.Database{
-		Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "app"}},
-		Tables: []schemamodel.Table{
-			{StructName: "User", Name: "users"},
-		},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "id", Type: "BIGINT"},
-		},
-		Roles: []schemamodel.Role{
-			{Name: "defaults_owner"},
-			{Name: "defaults_reader"},
-			{Name: "other_owner"},
-			{Name: "other_reader"},
-		},
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{
-			{
-				StructName: "PublicDefaults", Grantor: "defaults_owner", Schema: "public",
-				ObjectType: "TABLES", Grantee: "defaults_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-			},
-			{
-				StructName: "AppSequenceDefaults", Grantor: "defaults_owner", Schema: "app",
-				ObjectType: "SEQUENCES", Grantee: "defaults_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-			},
-			{
-				StructName: "AppFunctionDefaults", Grantor: "other_owner", Schema: "app",
-				ObjectType: "FUNCTIONS", Grantee: "other_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "EXECUTE"}},
-			},
-		},
+		Schemas:         []schemamodel.Schema{{Name: "public"}, {Name: "app"}},
+		Tables:          []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields:          []schemamodel.Field{{StructName: "User", Name: "id", Type: "BIGINT"}},
+		Roles:           []schemamodel.Role{{Name: "defaults_owner"}, {Name: "defaults_reader"}, {Name: "other_owner"}, {Name: "other_reader"}},
+		FeatureObjects:  defaultPrivilegeFixture(schemaext.Desired),
+		FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Desired)),
 	}
 }
 
-func databaseDefaultPrivilegeTypes(privileges []catalog.DefaultPrivilege) []string {
-	types := make([]string, 0, len(privileges))
-	for _, privilege := range privileges {
-		types = append(types, privilege.ObjectType)
+func defaultPrivilegeTypes(objects schemaext.Objects) []string {
+	types := make([]string, 0, objects.Len())
+	for _, ref := range objects.Refs() {
+		types = append(types, must.Must(pgdefaultprivilege.IdentityOf(ref)).ObjectType)
 	}
 	return types
 }
 
-func generatedDefaultPrivilegeTypes(privileges []schemamodel.DefaultPrivilege) []string {
-	types := make([]string, 0, len(privileges))
-	for _, privilege := range privileges {
-		types = append(types, privilege.ObjectType)
-	}
-	return types
-}
-
-// TestExcludeSubtractsDefaultPrivilegesOnBothSidesTheSameWay drives both
-// exclusions from one row, because a selector that removed a default privilege
-// from the live side alone turns it into something to grant, and from the
-// desired side alone into something to revoke.
-//
-// The first row is the control that the family survives at all: the database
-// side is cloned field by field, which is the shape that drops a new collection
-// in silence, and a projection that lost the field would satisfy every row
-// below that expects something gone.
-//
-// The grantor rows and the grantee rows are separate because they are separate
-// reads. A filter that asked the grantee alone keeps the two defaults_owner
-// rows, which then render an ALTER DEFAULT PRIVILEGES FOR ROLE naming a role
-// the same description no longer defines.
+// An asymmetric filter creates an unintended grant or revoke. The control also
+// proves an unrelated exclusion keeps the owner objects on both sides.
 func TestExcludeSubtractsDefaultPrivilegesOnBothSidesTheSameWay(t *testing.T) {
 	tests := []struct {
-		name    string
-		pattern string
-		want    []string
+		name           string
+		patterns, want []string
+		unmatched      []string
 	}{
-		{
-			name:    "a selector naming none of them leaves every one",
-			pattern: "nosuch_object",
-			want:    []string{"TABLES", "SEQUENCES", "FUNCTIONS"},
-		},
-		{
-			name:    "an excluded schema takes its defaults with it",
-			pattern: "app",
-			want:    []string{"TABLES"},
-		},
-		{
-			name:    "an excluded grantee takes the defaults granted to it",
-			pattern: "defaults_reader[type=role]",
-			want:    []string{"FUNCTIONS"},
-		},
-		{
-			name:    "an excluded grantor takes the defaults that apply to it",
-			pattern: "defaults_owner[type=role]",
-			want:    []string{"FUNCTIONS"},
-		},
-		{
-			name:    "excluding one end of one row leaves the others",
-			pattern: "other_reader[type=role]",
-			want:    []string{"TABLES", "SEQUENCES"},
-		},
+		{name: "unrelated selector", patterns: []string{"nosuch_object"}, want: []string{"TABLES", "SEQUENCES", "FUNCTIONS"}, unmatched: []string{"nosuch_object"}},
+		{name: "schema", patterns: []string{"app"}, want: []string{"TABLES"}},
+		{name: "grantee", patterns: []string{"defaults_reader[type=role]"}, want: []string{"FUNCTIONS"}},
+		{name: "grantor", patterns: []string{"defaults_owner[type=role]"}, want: []string{"FUNCTIONS"}},
+		{name: "both roles match", patterns: []string{"defaults_owner[type=role]", "defaults_reader[type=role]"}, want: []string{"FUNCTIONS"}},
+		{name: "one row", patterns: []string{"other_reader[type=role]"}, want: []string{"TABLES", "SEQUENCES"}},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-
-			gotDatabase, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
-				defaultPrivilegeDatabaseFixture(), []string{test.pattern}, "public")
+			database, generated := defaultPrivilegeDatabaseFixture(), defaultPrivilegeGeneratedFixture()
+			// Matching must come from the ACL too, even when roles are not declared.
+			database.Roles, generated.Roles = nil, nil
+			gotDatabase, reportDatabase, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), database, test.patterns, "public")
 			c.Assert(err, qt.IsNil)
-
-			gotGenerated, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(),
-				defaultPrivilegeGeneratedFixture(), []string{test.pattern}, "public")
+			gotGenerated, reportGenerated, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(), generated, test.patterns, "public")
 			c.Assert(err, qt.IsNil)
-
-			c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges),
-				qt.DeepEquals, test.want)
-			c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges),
-				qt.DeepEquals, test.want)
+			c.Assert(defaultPrivilegeTypes(gotDatabase.FeatureObjects), qt.ContentEquals, test.want)
+			c.Assert(defaultPrivilegeTypes(gotGenerated.FeatureObjects), qt.ContentEquals, test.want)
+			c.Assert(reportDatabase.Unmatched, qt.ContentEquals, test.unmatched)
+			c.Assert(reportGenerated.Unmatched, qt.ContentEquals, test.unmatched)
 		})
 	}
 }
 
-// TestExcludeGeneratedLeavesTheCallersDefaultPrivilegesAlone pins that the
-// desired-side exclusion reads its argument and writes a projection.
-//
-// The generated clone is a shallow struct copy plus a clone per slice field, so
-// a field left out of it shares its backing array with the caller's state. The
-// exclusion then hands that array to [schemamodel.Finalize], which canonicalizes
-// every default privilege in place -- the caller's own rows, not a copy of them.
-// The lowercase privilege in the fixture is what makes that visible.
 func TestExcludeGeneratedLeavesTheCallersDefaultPrivilegesAlone(t *testing.T) {
 	c := qt.New(t)
 	schema := defaultPrivilegeGeneratedFixture()
-	schema.DefaultPrivileges[0].Privileges = []schemamodel.PrivilegeGrant{{Privilege: "select"}}
-	before := slices.Clone(schema.DefaultPrivileges)
-
-	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(),
-		schema, []string{"nosuch_object"}, "public")
-
+	before := must.Must(schema.FeatureObjects.All())
+	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), schema, []string{"nosuch_object"}, "public")
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.DefaultPrivileges, qt.HasLen, 3)
-	c.Assert(schema.DefaultPrivileges, qt.DeepEquals, before)
-	c.Assert(schema.DefaultPrivileges[0].Privileges[0].Privilege, qt.Equals, "select")
+	values := must.Must(got.FeatureObjects.All())
+	values[0].Value.(*pgdefaultprivilege.Desired).Privileges[0].Privilege = "DELETE"
+	c.Assert(must.Must(schema.FeatureObjects.All()), qt.DeepEquals, before)
+	c.Assert(must.Must(got.FeatureObjects.All()), qt.DeepEquals, before)
 }
 
-// TestScopeNarrowsDefaultPrivilegesToTheSchemaUniverse is the positive
-// projection's half of the agreement above. A schema universe is the operator
-// naming what the comparison covers, and a default privilege belongs to its
-// schema and to nothing else.
 func TestScopeNarrowsDefaultPrivilegesToTheSchemaUniverse(t *testing.T) {
 	tests := []struct {
-		name    string
-		schemas []string
-		want    []string
+		name                          string
+		schemas, include, want, roles []string
 	}{
-		{
-			name:    "the connected schema",
-			schemas: []string{"public"},
-			want:    []string{"TABLES"},
-		},
-		{
-			name:    "a named schema",
-			schemas: []string{"app"},
-			want:    []string{"SEQUENCES", "FUNCTIONS"},
-		},
-		{
-			name:    "both",
-			schemas: []string{"public", "app"},
-			want:    []string{"TABLES", "SEQUENCES", "FUNCTIONS"},
-		},
+		{name: "connected schema", schemas: []string{"public"}, want: []string{"TABLES"}, roles: []string{"defaults_owner", "defaults_reader", "other_owner", "other_reader"}},
+		{name: "named schema", schemas: []string{"app"}, want: []string{"SEQUENCES", "FUNCTIONS"}, roles: []string{"defaults_owner", "defaults_reader", "other_owner", "other_reader"}},
+		{name: "both schemas", schemas: []string{"public", "app"}, want: []string{"TABLES", "SEQUENCES", "FUNCTIONS"}, roles: []string{"defaults_owner", "defaults_reader", "other_owner", "other_reader"}},
+		{name: "include with explicit schema keeps both roles", schemas: []string{"public"}, include: []string{"users"}, want: []string{"TABLES"}, roles: []string{"defaults_owner", "defaults_reader"}},
+		{name: "include without explicit schema", include: []string{"users"}, want: make([]string, 0), roles: make([]string, 0)},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: test.schemas, DefaultSchema: "public"}
-
-			gotDatabase, err := atlasfilter.ScopeDatabase(defaultPrivilegeDatabaseFixture(), scope)
+			scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: test.schemas, Include: test.include, DefaultSchema: "public"}
+			database, err := atlasfilter.ScopeDatabase(defaultPrivilegeDatabaseFixture(), scope)
 			c.Assert(err, qt.IsNil)
-
-			gotGenerated, err := atlasfilter.ScopeGenerated(defaultPrivilegeGeneratedFixture(), scope)
+			generated, err := atlasfilter.ScopeGenerated(defaultPrivilegeGeneratedFixture(), scope)
 			c.Assert(err, qt.IsNil)
-
-			c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges),
-				qt.DeepEquals, test.want)
-			c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges),
-				qt.DeepEquals, test.want)
+			c.Assert(defaultPrivilegeTypes(database.FeatureObjects), qt.ContentEquals, test.want)
+			c.Assert(defaultPrivilegeTypes(generated.FeatureObjects), qt.ContentEquals, test.want)
+			c.Assert(databaseRoleNames(database.Roles), qt.ContentEquals, test.roles)
+			c.Assert(generatedRoleNames(generated.Roles), qt.ContentEquals, test.roles)
 		})
 	}
 }
 
-// TestScopeKeepsTheGlobalDefaultInEverySchemaUniverse holds the global
-// default, which has no schema, to the rule of its own: it applies in every
-// schema, so --schema keeps it whatever it names, and an include selection
-// drops it, because no selector names it (stokaro/ptah#3772). Read as the
-// connected schema's, it would be dropped from --schema app.
 func TestScopeKeepsTheGlobalDefaultInEverySchemaUniverse(t *testing.T) {
 	tests := []struct {
-		name  string
-		scope atlasfilter.Scope
-		want  []string
+		name    string
+		include []string
+		want    int
 	}{
-		{
-			name:  "a schema other than the connected one",
-			scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}, DefaultSchema: "public"},
-			want:  []string{"SCHEMAS"},
-		},
-		{
-			name:  "an include selection",
-			scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}, Include: []string{"users"}, DefaultSchema: "public"},
-			want:  make([]string, 0),
-		},
+		{name: "any schema", want: 1}, {name: "include narrows global state", include: []string{"users"}},
 	}
-	database := &catalog.Database{
-		Schemas: []catalog.Schema{{Name: "public"}, {Name: "app"}},
-		Tables:  []catalog.Table{{Name: "users", Columns: []catalog.Column{{Name: "id"}}}},
-		DefaultPrivileges: []catalog.DefaultPrivilege{{
-			Grantor: "defaults_owner", ObjectType: "SCHEMAS", Grantee: "defaults_reader", Privilege: "USAGE",
-		}},
-	}
-	generated := &schemamodel.Database{
-		Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "app"}},
-		Tables:  []schemamodel.Table{{StructName: "User", Name: "users"}},
-		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "BIGINT"}},
-		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
-			Grantor: "defaults_owner", ObjectType: "SCHEMAS", Grantee: "defaults_reader",
-			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
-		}},
-	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-
-			gotDatabase, err := atlasfilter.ScopeDatabase(database, test.scope)
+			scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}, Include: test.include, DefaultSchema: "app"}
+			identity := pgdefaultprivilege.Identity{Grantor: "defaults_owner", ObjectType: "SCHEMAS", Grantee: "defaults_reader"}
+			database, generated := defaultPrivilegeDatabaseFixture(), defaultPrivilegeGeneratedFixture()
+			database.FeatureObjects = must.Must(schemaext.NewObjects(defaultPrivilegeObject(schemaext.Observed, identity, "USAGE")))
+			generated.FeatureObjects = must.Must(schemaext.NewObjects(defaultPrivilegeObject(schemaext.Desired, identity, "USAGE")))
+			gotDatabase, err := atlasfilter.ScopeDatabase(database, scope)
 			c.Assert(err, qt.IsNil)
-			gotGenerated, err := atlasfilter.ScopeGenerated(generated, test.scope)
+			gotGenerated, err := atlasfilter.ScopeGenerated(generated, scope)
 			c.Assert(err, qt.IsNil)
-
-			c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges), qt.DeepEquals, test.want)
-			c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges), qt.DeepEquals, test.want)
+			c.Assert(gotDatabase.FeatureObjects.Len(), qt.Equals, test.want)
+			c.Assert(gotGenerated.FeatureObjects.Len(), qt.Equals, test.want)
 		})
 	}
 }
 
-// TestScopeKeepsTheRolesADefaultPrivilegeNames is the ordering the projection
-// depends on: the roles are kept for the statements that survived, so they are
-// decided after the default privileges rather than before.
-//
-// The selection here names a table and no role, and no grant survives it, so
-// the kept default privilege is the only statement naming defaults_owner and
-// defaults_reader. Without the retention both roles leave and the projection
-// describes an ALTER DEFAULT PRIVILEGES pointing at roles it says are absent;
-// with the projection ordered the other way round the retention reads an empty
-// list and does the same thing.
-//
-// The two roles the dropped rows named stay out, which is what keeps this a
-// retention rule rather than a rule that keeps every role.
-func TestScopeKeepsTheRolesADefaultPrivilegeNames(t *testing.T) {
+// Unknown class and object coverage remains visible even when the comparison
+// selects another schema. Neither creates a role declaration as a dependency.
+func TestDefaultPrivilegeCoverageSurvivesSelection(t *testing.T) {
 	c := qt.New(t)
-	scope := atlasfilter.Scope{
-		Selections:    ownerSelections(),
-		Schemas:       []string{"public"},
-		Include:       []string{"users"},
-		DefaultSchema: "public",
+	semantics := identifier.ForDialect("postgres")
+	refs := []objectidentity.ID{
+		must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Grantor: "defaults_owner", Schema: "app", ObjectType: "TABLES"}, semantics)),
+		must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Schema: "app", ObjectType: "TABLES"}, semantics)),
+		must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "defaults_owner", Schema: "app", ObjectType: "FUNCTIONS", Grantee: "defaults_reader"}, semantics)),
 	}
-
-	gotDatabase, err := atlasfilter.ScopeDatabase(defaultPrivilegeDatabaseFixture(), scope)
+	var subjects []schemaext.SubjectCoverage
+	for _, ref := range refs {
+		subjects = append(subjects, schemaext.SubjectCoverage{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "ACL contents are unknown"}})
+	}
+	database, generated := defaultPrivilegeDatabaseFixture(), defaultPrivilegeGeneratedFixture()
+	database.FeatureObjects, generated.FeatureObjects = schemaext.Objects{}, schemaext.Objects{}
+	database.FeatureCoverage = must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, subjects))
+	generated.FeatureCoverage = must.Must(pgdefaultprivilege.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, subjects))
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}, Include: []string{"users"}, DefaultSchema: "public"}
+	gotDatabase, err := atlasfilter.ScopeDatabase(database, scope)
 	c.Assert(err, qt.IsNil)
-
-	gotGenerated, err := atlasfilter.ScopeGenerated(defaultPrivilegeGeneratedFixture(), scope)
+	gotGenerated, err := atlasfilter.ScopeGenerated(generated, scope)
 	c.Assert(err, qt.IsNil)
+	c.Assert(gotDatabase.FeatureCoverage.SubjectRecords(), qt.DeepEquals, database.FeatureCoverage.SubjectRecords())
+	c.Assert(gotGenerated.FeatureCoverage.SubjectRecords(), qt.DeepEquals, generated.FeatureCoverage.SubjectRecords())
+	c.Assert(gotDatabase.Roles, qt.HasLen, 0)
+	c.Assert(gotGenerated.Roles, qt.HasLen, 0)
+	database.Roles, generated.Roles = nil, nil
+	patterns := []string{"defaults_owner[type=role]", "app"}
+	excludedDatabase, reportDatabase, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), database, patterns, "public")
+	c.Assert(err, qt.IsNil)
+	excludedGenerated, reportGenerated, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(), generated, patterns, "public")
+	c.Assert(err, qt.IsNil)
+	c.Assert(reportDatabase.Unmatched, qt.HasLen, 0)
+	c.Assert(reportGenerated.Unmatched, qt.HasLen, 0)
+	c.Assert(excludedDatabase.FeatureCoverage.SubjectRecords(), qt.DeepEquals, database.FeatureCoverage.SubjectRecords())
+	c.Assert(excludedGenerated.FeatureCoverage.SubjectRecords(), qt.DeepEquals, generated.FeatureCoverage.SubjectRecords())
+}
 
-	c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges),
-		qt.DeepEquals, []string{"TABLES"})
-	c.Assert(databaseRoleNames(gotDatabase.Roles),
-		qt.DeepEquals, []string{"defaults_owner", "defaults_reader"})
+// Subject knowledge leaves with its held object; namespace enrollment remains.
+func TestDefaultPrivilegeObjectCoverageLeavesWithItsObject(t *testing.T) {
+	c := qt.New(t)
+	database, generated := defaultPrivilegeDatabaseFixture(), defaultPrivilegeGeneratedFixture()
+	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "defaults_owner", Schema: "public", ObjectType: "TABLES", Grantee: "defaults_reader"}, identifier.ForDialect("postgres")))
+	subject := schemaext.SubjectCoverage{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}
+	database.FeatureCoverage = must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{subject}))
+	generated.FeatureCoverage = must.Must(pgdefaultprivilege.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{subject}))
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}, DefaultSchema: "public"}
+	selectedDatabase, err := atlasfilter.ScopeDatabase(database, scope)
+	c.Assert(err, qt.IsNil)
+	selectedGenerated, err := atlasfilter.ScopeGenerated(generated, scope)
+	c.Assert(err, qt.IsNil)
+	c.Assert(selectedDatabase.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
+	c.Assert(selectedGenerated.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
+	c.Assert(selectedDatabase.FeatureCoverage.KindRecords(), qt.DeepEquals, database.FeatureCoverage.KindRecords())
+	c.Assert(selectedGenerated.FeatureCoverage.KindRecords(), qt.DeepEquals, generated.FeatureCoverage.KindRecords())
+	excludedDatabase, err := atlasfilter.ExcludeDatabase(ownerSelections(), database, []string{"defaults_reader[type=role]"})
+	c.Assert(err, qt.IsNil)
+	excludedGenerated, err := atlasfilter.ExcludeGenerated(ownerSelections(), generated, []string{"defaults_reader[type=role]"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(excludedDatabase.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
+	c.Assert(excludedGenerated.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
+}
 
-	c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges),
-		qt.DeepEquals, []string{"TABLES"})
-	c.Assert(generatedRoleNames(gotGenerated.Roles),
-		qt.DeepEquals, []string{"defaults_owner", "defaults_reader"})
+// A role selection can retain schema-wide state without retaining a table in
+// that schema. Its CREATE SCHEMA declaration must still be present.
+func TestScopeKeepsTheSchemaADefaultPrivilegeNames(t *testing.T) {
+	c := qt.New(t)
+	database, generated := defaultPrivilegeDatabaseFixture(), defaultPrivilegeGeneratedFixture()
+	scope := atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}, Include: []string{"defaults_reader[type=role]"}, DefaultSchema: "public"}
+	gotDatabase, err := atlasfilter.ScopeDatabase(database, scope)
+	c.Assert(err, qt.IsNil)
+	gotGenerated, err := atlasfilter.ScopeGenerated(generated, scope)
+	c.Assert(err, qt.IsNil)
+	c.Assert(gotDatabase.Tables, qt.HasLen, 0)
+	c.Assert(gotGenerated.Tables, qt.HasLen, 0)
+	c.Assert(gotDatabase.Schemas, qt.DeepEquals, []catalog.Schema{{Name: "app"}})
+	c.Assert(gotGenerated.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "app"}})
+	c.Assert(defaultPrivilegeTypes(gotDatabase.FeatureObjects), qt.ContentEquals, []string{"FUNCTIONS", "SEQUENCES"})
+	c.Assert(defaultPrivilegeTypes(gotGenerated.FeatureObjects), qt.ContentEquals, []string{"FUNCTIONS", "SEQUENCES"})
 }

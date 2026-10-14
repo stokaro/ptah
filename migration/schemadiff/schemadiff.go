@@ -220,9 +220,6 @@ func compareReportingUndecidedAdditions(
 	// Compare role privilege grants (PostgreSQL-specific feature)
 	compare.GrantsWithSemantics(desired, database, diff, identifierSemantics)
 
-	// Compare default privileges (PostgreSQL-specific feature)
-	compare.DefaultPrivilegesWithSemantics(desired, database, diff, identifierSemantics, cov)
-
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
 	compare.ConstraintComments(desired, database, diff, opts, caps, identifierSemantics)

@@ -125,11 +125,6 @@ func (p *Planner) refuseAccessChanges(diff *difftypes.SchemaDiff) error {
 		return refuseFact("the plan changes a grant option", "YDB records WITH GRANT OPTION as the permission "+
 			ydbacl.GrantPermission+" beside the one it is written with, so a grant option is not a change YDB can make")
 	}
-	if len(diff.DefaultPrivilegesAdded)+len(diff.DefaultPrivilegesRemoved)+
-		len(diff.DefaultPrivilegeOptionsAdded)+len(diff.DefaultPrivilegeOptionsRevoked) > 0 {
-		return refuseFact("the plan changes a default privilege", "YDB has no default privileges; "+
-			"a permission granted on a directory is inherited by every object created in it")
-	}
 	for _, grant := range slices.Concat(diff.GrantsAdded, diff.GrantsRemoved) {
 		if strings.EqualFold(grant.ObjectType, ydbacl.ObjectDatabase) && !p.caps.Has(capability.DatabaseGrants) {
 			return refuseKey(capability.DatabaseGrants, "the plan changes a permission on the database")

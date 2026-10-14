@@ -182,7 +182,8 @@ func singleObjectFixture(gate objectKindGate) schemamodel.Database {
 		// privilege. A default privilege naming roles the schema does not
 		// declare is what one written for an externally managed owner looks
 		// like.
-		kept.DefaultPrivileges = full.DefaultPrivileges
+		kept.FeatureObjects = full.FeatureObjects
+		kept.FeatureCoverage = full.FeatureCoverage
 	case "row-level security":
 		kept.RLSEnabledTables = full.RLSEnabledTables
 	case "policy":

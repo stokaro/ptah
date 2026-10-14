@@ -78,7 +78,6 @@ func Append(dst, src *schemamodel.Database) error {
 	// Grants and revoked grants compose in file order: a later file's REVOKE
 	// takes back an earlier file's GRANT, as it would in one file.
 	privilegefold.Merge(dst, src)
-	dst.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(dst.DefaultPrivileges, src.DefaultPrivileges)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only
 	// what all of them together describe. Union, never intersection: a limit
