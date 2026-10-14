@@ -50,7 +50,7 @@ func Codecs() []schemaext.Codec {
 			}
 			return value, nil
 		},
-	}, indexCodec(), dropIndexCodec(), refreshCodec(), rowPolicyCodec()}
+	}, indexCodec(), dropIndexCodec(), refreshCodec(), rowPolicyCodec(), rowPolicyCommandCodec()}
 }
 
 func ttlValue(payload schemaext.Payload) (*AlterTTL, error) {

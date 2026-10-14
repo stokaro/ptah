@@ -139,6 +139,12 @@ func clickhouseRowPolicyFixture() extensionFixture {
 		wantSQL: "CREATE ROW POLICY `tenant` ON `app`.`orders` USING (tenant = 1) AS RESTRICTIVE TO ALL EXCEPT `admin`;\n"}
 }
 
+func clickhouseRowPolicyCommandFixture() extensionFixture {
+	return extensionFixture{payload: &chast.RowPolicyCommand{Action: "ALTER", Database: "app", Table: "orders", Name: "tenant",
+		Values: &chschema.DesiredRowPolicy{Roles: chschema.RoleSelection{Names: []string{"reader"}}}, RolesSet: true},
+		wantSQL: "ALTER ROW POLICY `tenant` ON `app`.`orders` TO `reader`;\n"}
+}
+
 func coordinationFixture() extensionFixture {
 	return extensionFixture{payload: &ydbast.CoordinationNode{Schema: "app", Name: "locks", Change: ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}}, wantSQL: "CREATE COORDINATION NODE `app/locks`;\n"}
 }
@@ -210,7 +216,7 @@ func mysqlReplaceIndexFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), exclusionFixture(), extensionFixture{payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, extensionFixture{payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
+	return append(extensionFixtures(), exclusionFixture(), extensionFixture{payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, extensionFixture{payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture())

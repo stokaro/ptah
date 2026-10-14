@@ -21,6 +21,7 @@ func Handlers() []renderer.ExtensionHandler {
 		renderer.TypedHandler(&chast.DropSkippingIndex{}, ast.AlterExtension, validateDropIndex, renderDropIndex),
 		renderer.TypedHandler(&chast.ModifyRefresh{}, ast.AlterExtension, validateRefresh, renderRefresh),
 		renderer.TypedHandler(&chast.RowPolicy{}, ast.StatementExtension, validateRowPolicy, renderRowPolicy),
+		renderer.TypedHandler(&chast.RowPolicyCommand{}, ast.StatementExtension, validateRowPolicyCommand, renderRowPolicyCommand),
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -40,7 +41,11 @@ const (
 // clause, which may be only the one the renderer writes, because a view's
 // storage is not modeled.
 //
-// Its claim is [RefreshCoverage]: a ClickHouse materialized view states its
+// It also reads CREATE, ALTER, and DROP ROW POLICY. ALTER amends an earlier
+// declaration without filling omitted clauses. DROP stays migration syntax.
+// Policy syntax belongs only to an explicitly selected ClickHouse target.
+//
+// Its claims are [RowPolicyCoverage] and [RefreshCoverage]: a ClickHouse materialized view states its
 // schedule in its CREATE statement, so a view without one declares a plain
 // view.
 func SQL() sqlext.Extension {
@@ -48,7 +53,11 @@ func SQL() sqlext.Extension {
 		Owner:   chschema.Owner,
 		Targets: []string{platform.ClickHouse},
 		Facets:  []schemaext.Kind{chschema.RefreshKind},
+		Kinds:   []schemaext.Kind{chschema.RowPolicyKind},
 		Patterns: []sqlext.Pattern{
+			{Name: sqlCreateRowPolicy, Site: sqlext.Statement, Words: []string{"CREATE", "ROW", "POLICY"}, Targeted: true},
+			{Name: sqlAlterRowPolicy, Site: sqlext.Statement, Words: []string{"ALTER", "ROW", "POLICY"}, Targeted: true},
+			{Name: sqlDropRowPolicy, Site: sqlext.Statement, Words: []string{"DROP", "ROW", "POLICY"}, Targeted: true},
 			{Name: sqlSkippingIndex, Site: sqlext.TableElement, Words: []string{"INDEX"}, Targeted: true},
 			{Name: sqlAddSkippingIndex, Site: sqlext.AlterOperation, Words: []string{"ADD", "INDEX"}},
 			{Name: sqlRefresh, Site: sqlext.ViewClause, Words: []string{"REFRESH"},
@@ -63,7 +72,7 @@ func SQL() sqlext.Extension {
 // sqlCoverage is the owner's claim for a ClickHouse document. The owner reads
 // no header entry, so it is handed none.
 func sqlCoverage(sqlext.CoverageRequest) (schemaext.Coverage, error) {
-	return RefreshCoverage()
+	return ownedCoverage()
 }
 
 // sqlParser reads the spans the owner's patterns claim.
@@ -71,12 +80,26 @@ type sqlParser struct{}
 
 // ParseSQL reads every claim of one document.
 func (sqlParser) ParseSQL(ctx context.Context, request sqlext.Request) (sqlext.Result, error) {
+	if ctx == nil {
+		return sqlext.Result{}, fmt.Errorf("%w: ClickHouse SQL requires a context", schemaext.ErrInvalidValue)
+	}
+	known := make(map[objectidentity.Key]schemaext.Object, len(request.Declared))
+	for _, object := range request.Declared {
+		known[object.Ref.Key()] = object
+	}
 	values := make([]sqlext.Value, 0, len(request.Claims))
 	for _, claim := range request.Claims {
 		if err := ctx.Err(); err != nil {
 			return sqlext.Result{}, err
 		}
-		value, err := readClaim(request.Target, claim)
+		var value sqlext.Value
+		var err error
+		switch claim.Pattern {
+		case sqlCreateRowPolicy, sqlAlterRowPolicy, sqlDropRowPolicy:
+			value, err = readRowPolicy(claim, known)
+		default:
+			value, err = readClaim(request.Target, claim)
+		}
 		if err != nil {
 			return sqlext.Result{}, err
 		}

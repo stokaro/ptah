@@ -140,7 +140,7 @@ The supported declarations differ by format:
 
 | Format | Engine overrides and index granularity | Views, roles, and grants | Refresh schedules | Row policies |
 | --- | --- | --- | --- | --- |
-| SQL | Yes | Yes | Yes | No |
+| SQL | Yes | Yes | Yes | Yes |
 | YAML | Yes | Yes | No | Yes |
 | HCL | Yes | Yes | No | No |
 | DBML | No | No | No | No |
@@ -820,9 +820,23 @@ is what gives its `ptah_user` that authority.
 ## Row policies
 
 A row policy filters the rows of one table that the users and roles it names
-may read. YAML and Go annotations can declare one:
+may read. SQL, YAML, and Go annotations can declare one:
 
 <Tabs syncKey="schema-source">
+<TabItem label="SQL">
+
+```sql title="schema.sql"
+CREATE TABLE orders (
+  id UInt64,
+  tenant_id UInt64
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE ROW POLICY tenant_rows ON orders
+FOR SELECT USING tenant_id = 1
+AS RESTRICTIVE TO ALL EXCEPT admin;
+```
+
+</TabItem>
 <TabItem label="YAML">
 
 ```yaml title="schema.yaml"
@@ -863,7 +877,24 @@ type Order struct {
 </TabItem>
 </Tabs>
 
-SQL schema files, HCL, and DBML cannot declare ClickHouse row policies.
+HCL and DBML cannot declare ClickHouse row policies.
+
+Render the SQL example:
+
+```console
+ptah schema render --schema-file schema.sql --dialect clickhouse
+```
+
+Policy and table names may be quoted; a table may name its database. `ALTER ROW POLICY` updates a policy declared earlier in the same
+file or an earlier file of the schema load. It changes only the clauses it
+states: `USING NONE` clears the filter, and `TO NONE` clears the recipients.
+`DROP ROW POLICY` is accepted as migration syntax and refused in a desired
+schema; omit the declaration to request removal during comparison.
+
+SQL sources refuse `IF NOT EXISTS`, replacement declarations, `ON CLUSTER`,
+access-storage clauses, renames, multiple policies or tables in one statement,
+and backslash escapes in names. Use doubled quotes for embedded quote
+characters. Unsupported clauses are reported before planning.
 
 - `using` is the filter. Without one, the policy admits every row to the
   users it names.
