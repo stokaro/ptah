@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/types/typeutil"
 
 	"ptah.run/core/platform"
 )
@@ -119,6 +120,54 @@ func deriveDialectIdentity(loaded []*packages.Package) (dialectIdentity, error) 
 		}
 	}
 	return identity, nil
+}
+
+// collectionFindings reports the dialect spellings a collection literal holds:
+// a key of a map literal, and an element of a slice or array literal. A
+// collection of names is what a membership test such as slices.Contains or a
+// map lookup reads, so the names are counted where the collection is written,
+// wherever it is searched.
+func collectionFindings(info *types.Info, literal *ast.CompositeLit,
+	spelling func(ast.Expr) (string, bool), report func(ast.Node, string),
+) {
+	switch underlying(info.TypeOf(literal)).(type) {
+	case *types.Map:
+		for _, element := range literal.Elts {
+			pair, ok := element.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			if text, ok := spelling(pair.Key); ok {
+				report(pair.Key, fmt.Sprintf("keys a map by %q", text))
+			}
+		}
+	case *types.Slice, *types.Array:
+		for _, element := range literal.Elts {
+			if pair, ok := element.(*ast.KeyValueExpr); ok {
+				element = pair.Value
+			}
+			if text, ok := spelling(element); ok {
+				report(element, fmt.Sprintf("lists %q", text))
+			}
+		}
+	}
+}
+
+// searchesSlice reports whether a call is slices.Contains or slices.Index,
+// whose second argument is the value searched for.
+func searchesSlice(info *types.Info, call *ast.CallExpr) bool {
+	function, ok := typeutil.Callee(info, call).(*types.Func)
+	if !ok || function.Pkg() == nil || function.Pkg().Path() != "slices" {
+		return false
+	}
+	return function.Name() == "Contains" || function.Name() == "Index"
+}
+
+func underlying(typ types.Type) types.Type {
+	if typ == nil {
+		return nil
+	}
+	return typ.Underlying()
 }
 
 func namesConstant(info *types.Info, node ast.Node, constants map[types.Object]bool) bool {
@@ -243,26 +292,31 @@ func sharedPackageSet(loaded []*packages.Package, tracked, spellings map[string]
 
 // dialectNameFindings reports each place a shared package names a dialect.
 //
-// Three shapes count, each resolved by the type checker:
+// These shapes count, each resolved by the type checker:
 //
 //   - a use of a canonical name constant, such as platform.Postgres, in any
 //     position: a comparison, a switch case, a map key or an argument;
-//   - an operand of == or != , or a case of an expression switch, whose
-//     constant value is a dialect spelling, such as "postgres" or a local
-//     constant equal to it. A use of a canonical constant there is counted
-//     once, as a use;
 //   - a call to a family predicate of the declaring package, such as
 //     platform.IsPostgresFamily, so that replacing a comparison with the
-//     predicate does not read as progress.
+//     predicate does not read as progress;
+//   - an expression whose constant value is a dialect spelling, such as
+//     "postgres" or a local constant equal to it, where a dialect branch reads
+//     it: an operand of == or !=, a case of an expression switch, a key of a
+//     map literal, an element of a slice or array literal, the key of a map
+//     lookup, and the value slices.Contains or slices.Index searches for.
 //
-// A spelling outside a comparison, such as a log message or a map key written
-// as a literal, is not counted, since nothing tells a name from a word there.
+// A use of a canonical constant in one of those positions is counted once, as
+// a use. A spelling anywhere else, such as a log message or a struct field, is
+// not counted, since nothing tells a name from a word there.
 //
-// One false positive is known and counted. A comparison of a role name with
-// "postgres", PostgreSQL's bootstrap superuser, is a dialect spelling in a
-// comparison, and the type checker cannot tell a role name from a dialect
-// name: both are strings. internal/reservedrole and internal/sqlschema make
-// that comparison. It is PostgreSQL knowledge in shared code all the same.
+// Some false positives are known and counted: a string that equals a dialect
+// spelling and names something else. PostgreSQL's bootstrap superuser is the
+// role "postgres" (internal/reservedrole, internal/sqlschema), MySQL keeps its
+// grant tables in the database "mysql" (internal/systemschema), and Liquibase
+// names its databases with short names that include several dialect
+// spellings (internal/liquibaserun). The type checker cannot tell a role,
+// database or tool name from a dialect name, since all are strings. Each is
+// engine knowledge in shared code all the same.
 func dialectNameFindings(pkg *packages.Package, self string, identity dialectIdentity) []finding {
 	info := pkg.TypesInfo
 	found := make([]finding, 0)
@@ -320,6 +374,22 @@ func dialectNameFindings(pkg *packages.Package, self string, identity dialectIde
 							report(expr, fmt.Sprintf("switches on %q", text))
 						}
 					}
+				}
+			case *ast.CompositeLit:
+				collectionFindings(info, n, spelling, report)
+			case *ast.IndexExpr:
+				if _, isMap := underlying(info.TypeOf(n.X)).(*types.Map); !isMap {
+					return true
+				}
+				if text, ok := spelling(n.Index); ok {
+					report(n.Index, fmt.Sprintf("looks up %q", text))
+				}
+			case *ast.CallExpr:
+				if !searchesSlice(info, n) || len(n.Args) != 2 {
+					return true
+				}
+				if text, ok := spelling(n.Args[1]); ok {
+					report(n.Args[1], fmt.Sprintf("searches for %q", text))
 				}
 			}
 			return true

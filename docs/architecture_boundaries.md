@@ -153,18 +153,30 @@ checker:
 - a call to a `core/platform` family predicate, such as
   `platform.IsPostgresFamily`, so that replacing a comparison with the predicate
   does not count as progress;
-- an operand of `==` or `!=`, or a case of an expression switch, whose constant
-  value is a spelling `NormalizeDialect` accepts, such as `"postgres"` or
-  `"libsql"`.
+- an expression whose constant value is a spelling `NormalizeDialect` accepts,
+  such as `"postgres"` or `"libsql"`, in a place a dialect branch reads it: an
+  operand of `==` or `!=`, a case of an expression switch, a key of a map
+  literal, an element of a slice or array literal, the key of a map lookup, and
+  the value `slices.Contains` or `slices.Index` searches for. A collection of
+  names is counted where it is written, wherever it is searched.
 
 The constants, the spellings and the predicates are read out of
-`core/platform`, not written into the rule. A spelling outside a comparison,
-such as a log message, is not a finding: nothing tells a name from a word
-there. One false positive is known and counted. PostgreSQL's bootstrap
-superuser is named `postgres`, and the type checker cannot tell a role name
-from a dialect name, so the comparisons in `internal/reservedrole` and
-`internal/sqlschema` are findings. They are PostgreSQL knowledge in shared
-code all the same.
+`core/platform`, not written into the rule. A spelling anywhere else, such as a
+log message or a struct field, is not a finding: nothing tells a name from a
+word there.
+
+Some false positives are known and counted: a string that equals a dialect
+spelling and names something else. The type checker cannot tell a role,
+database or tool name from a dialect name, since all are strings.
+
+- `internal/reservedrole` and `internal/sqlschema` compare a role name with
+  `postgres`, PostgreSQL's bootstrap superuser.
+- `internal/systemschema` lists `mysql`, the database MySQL keeps its grant
+  tables in.
+- `internal/liquibaserun` lists Liquibase's database short names, several of
+  which are dialect spellings.
+
+Each is engine knowledge in shared code all the same.
 
 The shared set starts at the neutral layer, the shared SQL reader, and `core`,
 `migration`, `dbschema` and `catalog`. It adds every package those link through
@@ -299,7 +311,7 @@ test and the control that make it evidence.
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 | Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
 | SQL reader isolation: the shared SQL reader links no owner | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
-| Dialect names: shared packages name no more dialects than recorded | `shared-packages-name-dialects` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a dialect constant, a dialect literal in a switch and a family predicate call in a shared package are refused; the same constant in an owner, a per-engine helper and the bundle is accepted; a doc comment and an uncompared string are accepted; a package baseline above the tree and debt recorded in the wrong package are refused |
+| Dialect names: shared packages name no more dialects than recorded | `shared-packages-name-dialects` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: each counted shape in a shared package is refused; the same name in an owner, a helper or the bundle, and words that are not dialect names, are accepted; a stale package baseline is refused |
 
 ## How target facts are held
 
