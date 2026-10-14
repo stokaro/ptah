@@ -13,13 +13,8 @@ import (
 	"ptah.run/internal/builtintest"
 )
 
-// TestRenderInspected_ReportsAClickHouseRowPolicyItCannotWrite reports a
-// ClickHouse row policy as left out of the document rather than writing it as
-// a policy block: Atlas HCL declares PostgreSQL's row-level security only, so
-// the block would read back as a permissive PostgreSQL policy, and a
-// restrictive row policy would come back admitting rows it withholds
-// (stokaro/ptah#4343).
-func TestRenderInspected_ReportsAClickHouseRowPolicyItCannotWrite(t *testing.T) {
+// TestRenderInspected_WritesClickHouseRowPolicy preserves the owner model in HCL.
+func TestRenderInspected_WritesClickHouseRowPolicy(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
@@ -32,11 +27,9 @@ func TestRenderInspected_ReportsAClickHouseRowPolicyItCannotWrite(t *testing.T) 
 	rendered, err := atlashclrender.RenderInspectedForAtlasCLI(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "clickhouse"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "policy")
-	c.Assert(rendered.Diagnostics, qt.HasLen, 1)
-	c.Assert(rendered.Diagnostics[0].Severity, qt.Equals, atlashclrender.SeverityWarning)
-	c.Assert(rendered.Diagnostics[0].Message, qt.Contains, "ptah.run/clickhouse/row-policy orders.tenant")
-	c.Assert(rendered.Diagnostics[0].Message, qt.Contains, "is not represented in HCL")
+	c.Assert(string(rendered.Data), qt.Contains, `row_policy "tenant"`)
+	c.Assert(string(rendered.Data), qt.Contains, `as = "RESTRICTIVE"`)
+	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 }
 
 // TestRender_SharedRowSecurityWritesRestrictiveAndEnforced writes a shared

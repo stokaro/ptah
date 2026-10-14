@@ -836,7 +836,7 @@ is what gives its `ptah_user` that authority.
 ## Row policies
 
 A row policy filters the rows of one table that the users and roles it names
-may read. SQL, YAML, and Go annotations can declare one:
+may read. SQL, HCL, YAML, and Go annotations can declare one:
 
 <Tabs syncKey="schema-source">
 <TabItem label="SQL">
@@ -850,6 +850,24 @@ CREATE TABLE orders (
 CREATE ROW POLICY tenant_rows ON orders
 FOR SELECT USING tenant_id = 1
 AS RESTRICTIVE TO ALL EXCEPT admin;
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl title="schema.hcl"
+table "orders" {
+  column "id" { type = UInt64 }
+  column "tenant_id" { type = UInt64 }
+  primary_key { columns = [column.id] }
+}
+
+row_policy "tenant_rows" {
+  on = table.orders
+  using = sql("tenant_id = 1")
+  to = "ALL EXCEPT admin"
+  as = "RESTRICTIVE"
+}
 ```
 
 </TabItem>
@@ -893,7 +911,7 @@ type Order struct {
 </TabItem>
 </Tabs>
 
-HCL and DBML cannot declare ClickHouse row policies.
+DBML cannot declare ClickHouse row policies.
 
 Render the SQL example:
 
@@ -919,7 +937,16 @@ characters. Unsupported clauses are reported before planning.
 - `as` is `PERMISSIVE`, the default, or `RESTRICTIVE`. A user reads the rows
   that pass at least one permissive policy and every restrictive one.
 
-The directive binds the policy to ClickHouse, so another target leaves it out.
+HCL uses a `row_policy` block with `on` pointing to its table. The `using`
+attribute accepts a string or `sql(...)`; `to` is a string with the same grammar
+as YAML. Quote a literal role named `ALL` with backticks inside that string.
+HCL export preserves the policy and refuses an incomplete read of policies.
+The PostgreSQL `policy` block does not declare a ClickHouse row policy.
+The compatibility CLI refuses `row_policy` in strict CE mode, even when the
+dev database uses another dialect.
+
+The directive and HCL block bind the policy to ClickHouse, so another target
+leaves it out.
 In YAML, an entry of the `row_policies` key declares the same policy with the
 same attributes, keyed by its name. Row-level security scoped to ClickHouse is
 refused in both formats, since it declares PostgreSQL's row-level security,
