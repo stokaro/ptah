@@ -51,7 +51,9 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
 - T-SQL rendering with bracket-quoted identifiers and schema-qualified names
   such as `dbo.users`.
 - `IDENTITY(start,increment)` for auto-increment columns and
-  `NVARCHAR`/`NVARCHAR(MAX)` string mapping.
+  `NVARCHAR`/`NVARCHAR(MAX)` string mapping. A column's identity is compared;
+  a change to it is refused by name, because `ALTER COLUMN` has no `IDENTITY`.
+  Create the column, or the table, again with the identity it should have.
 - Core table DDL: primary keys, unique constraints, foreign keys, `CHECK`
   constraints, and indexes with ordered ascending or descending key columns.
 - Filtered indexes (see below).

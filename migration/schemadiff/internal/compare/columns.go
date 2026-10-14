@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/autoincrement"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/cockroachtype"
@@ -519,8 +520,55 @@ func columnsWithDesiredDomains(
 	if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled, ctx.rules); change != "" {
 		colDiff.Changes[key] = change
 	}
+	maps.Copy(colDiff.Changes, autoIncrementChange(genCol, dbCol, dialect))
 
 	return colDiff
+}
+
+// autoIncrementChange returns the auto_increment change of a column whose
+// declared auto-increment differs from the one the server reports, written as
+// "<held> -> <declared>", or nil where the two agree or the target is not
+// compared; see [declaredAutoIncrement].
+func autoIncrementChange(genCol schemamodel.Field, dbCol catalog.Column, dialect string) map[string]string {
+	declared, compared := declaredAutoIncrement(genCol, dialect)
+	if !compared || declared == dbCol.IsAutoIncrement {
+		return nil
+	}
+	return map[string]string{"auto_increment": fmt.Sprintf("%t -> %t", dbCol.IsAutoIncrement, declared)}
+}
+
+// declaredAutoIncrement reports whether a declared column is built as the
+// column catalog.Column.IsAutoIncrement describes on the target, and whether
+// the target's two sides mean the same thing by it at all.
+//
+// The flag is compared only where both hold: the renderer writes
+// [autoincrement.Declared] as the one clause the reader then reports, and
+// nothing else writes that clause.
+//
+//   - MySQL and MariaDB: AUTO_INCREMENT, from information_schema.COLUMNS.EXTRA.
+//   - SQLite: AUTOINCREMENT on an INTEGER PRIMARY KEY, from the table's DDL.
+//   - SQL Server: IDENTITY, from sys.columns.is_identity.
+//
+// Every other target is left out. On the PostgreSQL family the reader means
+// a serial column's owned sequence, which the type and the default already
+// compare, and not an identity column; YDB's comparison rules read a Serial
+// column. ClickHouse and Spanner have no such column, and Oracle's identity
+// column is not decided here.
+func declaredAutoIncrement(field schemamodel.Field, dialect string) (declared, compared bool) {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
+		// A column declared with a serial type and no auto-increment is
+		// written as a plain integer on these targets, without the clause,
+		// so its declaration says nothing the flag could be held to. Holding
+		// it to one would remove AUTO_INCREMENT from a key column some other
+		// tool created as SERIAL.
+		if !autoincrement.Declared(field) && autoincrement.SerialType(field.Type) {
+			return false, false
+		}
+		return autoincrement.Declared(field), true
+	default:
+		return false, false
+	}
 }
 
 // columnDefaultChange compares a column's declared default with the live one

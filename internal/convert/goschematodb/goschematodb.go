@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/internal/autoincrement"
 	"ptah.run/internal/cockroachtype"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/columnsequence"
@@ -251,7 +252,7 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		// two descriptions sees it the way it sees one read from a catalog.
 		NotNullConstraintName: field.NotNullConstraintName,
 		OrdinalPosition:       ordinal,
-		IsAutoIncrement:       field.AutoInc || field.IdentityGeneration != "",
+		IsAutoIncrement:       autoincrement.Declared(field),
 		IsPrimaryKey:          field.Primary,
 		IsUnique:              field.Unique,
 		Collate:               field.Collate,

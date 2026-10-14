@@ -472,6 +472,16 @@ func (p *Planner) modifyExistingColumns(
 		if _, uniqueChanged := colDiff.Changes["unique"]; !uniqueChanged {
 			field.Unique = false
 		}
+		// PRIMARY KEY has the same shape and a louder failure: MySQL 26.7 and
+		// MariaDB 12.3 answer `MODIFY COLUMN id BIGINT PRIMARY KEY` on the key
+		// column with Error 1068, "Multiple primary key defined", so no change
+		// to a key column could be applied there. The statement says PRIMARY
+		// KEY only when this change makes the column the key, and a key column
+		// is restated NOT NULL, as the key keeps it.
+		if _, primaryChanged := colDiff.Changes["primary_key"]; !primaryChanged && field.Primary && p.isMySQLFamily() {
+			field.Primary = false
+			field.Nullable = false
+		}
 		columnNode := modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
 
 		// Add a comment showing what changes are being made, before the
@@ -596,6 +606,23 @@ func (p *Planner) validateColumnModification(tableName string, colDiff difftypes
 	if p.targetDialect() != platform.SQLServer {
 		return nil
 	}
+	// ALTER COLUMN has no IDENTITY: SQL Server 2025 (17.0.5005.3) answers
+	// `ALTER TABLE t ALTER COLUMN id INT IDENTITY(1,1) NOT NULL` with Msg 156,
+	// "Incorrect syntax near the keyword 'IDENTITY'". An identity column is made
+	// with the table or added as a new column, so the change is refused by
+	// name before any statement runs.
+	if change, ok := colDiff.Changes["auto_increment"]; ok {
+		return &ptaherr.CapabilityError{
+			Dialect: p.targetDialect(),
+			Feature: "column modification",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"SQL Server cannot add IDENTITY to an existing column or remove it from one: %s.%s changes identity %s; "+
+					"create the column as a new column, or the table again, with the identity it should have",
+				tableName, colDiff.ColumnName, change,
+			),
+		}
+	}
 	var unsupported []string
 	for changeType := range colDiff.Changes {
 		switch changeType {
@@ -687,6 +714,17 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDif
 // It is a question about the SQL these engines accept, not about Ptah: MySQL
 // and MariaDB have an inline COMMENT clause in a column definition and Oracle
 // does not, and the planners share this algorithm.
+// isMySQLFamily reports whether the target is MySQL or MariaDB, whose MODIFY
+// COLUMN restates the whole column.
+func (p *Planner) isMySQLFamily() bool {
+	switch p.targetDialect() {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Planner) columnCommentRidesWithTheColumn() bool {
 	switch p.targetDialect() {
 	case platform.MySQL, platform.MariaDB:
