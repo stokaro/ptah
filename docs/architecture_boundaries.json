@@ -8,16 +8,15 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 1132,
+    "shared-packages-name-dialects": 1065,
     "sql-reader-links-owners": 0
   },
   "packages": {
     "shared-packages-name-dialects": {
       "config/projectconfig": 1,
       "core/goschema": 1,
-      "core/platform/capability": 66,
       "core/query": 28,
-      "core/schemamodel": 3,
+      "core/schemamodel": 2,
       "core/sqlutil": 10,
       "core/yamlschema": 1,
       "dbschema": 64,

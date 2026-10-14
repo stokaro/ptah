@@ -28,7 +28,7 @@ type Capabilities struct {
 	BannerTokens []string `json:"banner_tokens,omitempty"`
 	// Versions is the ladder a server version climbs. The zero value is no
 	// ladder: every version receives DefaultPreset.
-	Versions Versions `json:"versions"`
+	Versions Versions `json:"versions,omitzero"`
 }
 
 // Versions is a version ladder: how a version is read out of the string a
@@ -61,7 +61,7 @@ type Versions struct {
 	Newest string `json:"newest,omitempty"`
 	// Unreadable is the answer for a string the scheme cannot read a version
 	// out of.
-	Unreadable UnreadableVersion `json:"unreadable"`
+	Unreadable UnreadableVersion `json:"unreadable,omitzero"`
 }
 
 // VersionStep is one step of a version ladder.
