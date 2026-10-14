@@ -421,9 +421,16 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 		return atlashclrender.Result{}, err
 	}
 	if r.omitAtlasRefusedBlocks {
-		return atlashclrender.RenderInspectedForAtlasCLI(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), CoverageVocabulary: r.coverageVocabulary(), Dialect: r.info.Dialect})
+		return atlashclrender.RenderInspectedForAtlasCLI(db, r.defaultSchemaName(), r.hclOptions())
 	}
-	return atlashclrender.RenderInspected(db, r.defaultSchemaName(), atlashclrender.Options{HCL: r.runtime.HCL(), CoverageVocabulary: r.coverageVocabulary(), Dialect: r.info.Dialect})
+	return atlashclrender.RenderInspected(db, r.defaultSchemaName(), r.hclOptions())
+}
+
+// hclOptions writes the document for the inspected target: its column types,
+// and the owners' blocks scoped to it without a dialect selector.
+func (r *SchemaInspectReport) hclOptions() atlashclrender.Options {
+	return atlashclrender.Options{HCL: r.runtime.HCL(), CoverageVocabulary: r.coverageVocabulary(), Dialect: r.info.Dialect,
+		Target: r.info.Dialect}
 }
 
 // hclSource exports typed table and index settings as the platform properties

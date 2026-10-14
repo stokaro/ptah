@@ -112,6 +112,12 @@ type Options struct {
 	// and some of them have to be written as a sql() call to be readable at
 	// all.
 	Dialect string
+	// Target is the one target the document is written for, empty for a
+	// document written for none. An owner's block scoped to exactly that
+	// target is written without a dialect attribute, since a reader of the
+	// document for that target selects the same shape; see
+	// [hclext.EncodeRequest.Target].
+	Target string
 }
 
 // Render renders a finalized Ptah schema IR as deterministic HCL schema text.
@@ -209,6 +215,7 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
 		carryStorageParams:     carryStorageParams,
 		owners:                 opts.HCL,
+		target:                 opts.Target,
 		layout:                 layTables(db),
 	}
 	// The owners write their objects as data, which this package writes
@@ -287,6 +294,9 @@ type renderer struct {
 	ownerRequirements map[objectidentity.Key][]objectidentity.ID
 	ownerHeader       []string
 	slots             map[hclext.Slot]ownerSlot
+	// target is the one target the document is written for; see
+	// [Options.Target].
+	target string
 	// layout is the tables this render writes, with their columns, indexes
 	// and constraints.
 	layout      tableLayout

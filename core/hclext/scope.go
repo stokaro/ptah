@@ -120,9 +120,12 @@ func (s Set) DeclaresType(block string) bool {
 // a caller with another default dialect. A block of the shape that reads
 // unscoped declarations is written without one, so the document stays plain
 // HCL: a caller that names no dialect, or one of the shape's, reads it with
-// the same shape. Encoders cannot select another owner's shape or put a
-// discriminator on an unscoped block.
-func (s Set) bindEncodedDialects(index int, blocks []EncodedBlock) error {
+// the same shape. A block whose dialect is target, the one target the
+// document is written for, is written without one too: a reader of the
+// document for that target selects the same shape. Encoders cannot select
+// another owner's shape or put a discriminator on an unscoped block.
+func (s Set) bindEncodedDialects(index int, blocks []EncodedBlock, target string) error {
+	target = targetscope.Normalize(target)
 	for i := range blocks {
 		block := &blocks[i]
 		if block.Unwritten {
@@ -154,6 +157,9 @@ func (s Set) bindEncodedDialects(index int, blocks []EncodedBlock) error {
 		reader, selected := routes.owner(block.Dialect)
 		if !selected || reader != index {
 			return fmt.Errorf("%w: HCL block %q of %s selects another reader with dialect %q", schemaext.ErrInvalidValue, block.Type, s.extensions[index].Owner, block.Dialect)
+		}
+		if block.Dialect == target {
+			block.Dialect = ""
 		}
 	}
 	return nil
