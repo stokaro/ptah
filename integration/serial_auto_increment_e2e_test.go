@@ -18,13 +18,17 @@ const serialSchema = "tables:\n  things:\n    fields:\n      id:\n        type: 
 	"      n:\n        type: INT\n        nullable: true\n"
 
 // serialDatabases creates an empty scratch database on each engine that writes
-// a serial type as its own auto-increment integer, and returns its URL.
+// a serial type as its own auto-increment integer, and returns its URL. On
+// MySQL and MariaDB it takes the account that may create databases; the
+// ordinary one is granted the test database alone.
 var serialDatabases = map[string]func(c *qt.C) string{
 	"mysql": func(c *qt.C) string {
-		return createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.MySQL), "DROP DATABASE IF EXISTS %s", renameInPath)
+		_, url := newMySQLFamilyScratch(c, dbtarget.MySQLAdmin).database(c, "serial")
+		return url
 	},
 	"mariadb": func(c *qt.C) string {
-		return createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.MariaDB), "DROP DATABASE IF EXISTS %s", renameInPath)
+		_, url := newMySQLFamilyScratch(c, dbtarget.MariaDBAdmin).database(c, "serial")
+		return url
 	},
 	"sqlserver": func(c *qt.C) string {
 		return createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.SQLServer),
