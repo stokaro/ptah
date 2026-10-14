@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
 )
@@ -56,28 +57,31 @@ func TestParse_UserTypesReachTheTypeOwnerWithoutAnotherTarget(t *testing.T) {
 	}
 }
 
-// TestParse_AnOracleUserTypeStaysOnTheCommonModel is the other half: a
-// declaration scoped to Oracle is Oracle's domain or composite type, which
-// the common model holds and the Oracle renderer reads.
-func TestParse_AnOracleUserTypeStaysOnTheCommonModel(t *testing.T) {
+// TestParse_AnOracleUserTypeReachesTheOracleTypeOwner is the other half: a
+// declaration scoped to Oracle is Oracle's domain or object type, which the
+// Oracle type owner reads, and none of it stays on the common model.
+func TestParse_AnOracleUserTypeReachesTheOracleTypeOwner(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := goschema.ParseSource(builtintest.Annotations(), "fixture.go", userTypeSource(` dialects="oracle"`))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(must.Must(db.FeatureObjects.All()), qt.HasLen, 0)
-	c.Assert(db.Domains, qt.HasLen, 1)
-	c.Assert(db.Domains[0].Name, qt.Equals, "email")
-	c.Assert(db.Domains[0].NotNull, qt.IsTrue)
-	c.Assert(db.Domains[0].Dialects, qt.DeepEquals, []string{"oracle"})
-	c.Assert(db.CompositeTypes, qt.HasLen, 1)
-	c.Assert(db.CompositeTypes[0].Name, qt.Equals, "address")
-	c.Assert(db.CompositeTypes[0].Dialects, qt.DeepEquals, []string{"oracle"})
+	c.Assert(db.Domains, qt.HasLen, 0)
+	c.Assert(db.CompositeTypes, qt.HasLen, 0)
+	objects := must.Must(db.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 2)
+	c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))
+	c.Assert(objects[0].Value, qt.DeepEquals, &oratype.DesiredDomain{BaseType: "TEXT", NotNull: true, StructName: "Email"})
+	c.Assert(objects[0].Targets, qt.DeepEquals, []string{"oracle"})
+	c.Assert(objects[1].Ref, qt.DeepEquals, oratype.Ref(oratype.ObjectTypeKind, "", "address"))
+	c.Assert(objects[1].Value, qt.DeepEquals, &oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "street", Type: "TEXT"}},
+		StructName: "Address"})
+	c.Assert(objects[1].Targets, qt.DeepEquals, []string{"oracle"})
 }
 
 // TestParse_AUserTypeScopedToBothModelsIsRefused pins that one declaration
-// cannot name a PostgreSQL target beside Oracle: the two are different
-// objects, and the refusal says how to split the declaration.
+// cannot name a PostgreSQL target beside Oracle: the two owners' objects are
+// different objects, and the refusal says how to split the declaration.
 func TestParse_AUserTypeScopedToBothModelsIsRefused(t *testing.T) {
 	c := qt.New(t)
 

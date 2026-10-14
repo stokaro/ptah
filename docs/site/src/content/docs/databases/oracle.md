@@ -70,7 +70,23 @@ A Go annotation declares an Oracle domain or object type with
 `dialects="oracle"`: a `domain` or `composite` declaration without a scope is
 a PostgreSQL type, and an Oracle plan refuses it. An SQL file or an HCL
 document read for an Oracle target keeps its `CREATE DOMAIN` statements and its
-`domain` and `composite` blocks as Oracle's.
+`domain` and `composite` blocks as Oracle's, and so does an HCL block whose
+`dialect` attribute names `oracle`. The SQL reader takes the statements Ptah
+writes, `CREATE DOMAIN IF NOT EXISTS` and `CREATE OR REPLACE TYPE ... AS
+OBJECT`, so a rendered schema reads back. `schema inspect` writes the blocks of
+an Oracle database without a `dialect` attribute, since the document is
+written for Oracle.
+
+A plan creates the domains, then the object types, each by name, with a type
+another one names first, before the tables, and drops them after the tables.
+A declared comment is written as a SQL comment line before the creation:
+Oracle stores no comment on a domain or an object type.
+
+A domain is compared by its base type and its `NOT NULL`. Its `CHECK` and
+default are written when the domain is created and never compared, since the
+catalog stores its own spelling of both. A domain whose base type or `NOT NULL`
+changed is kept as it is: Oracle's `ALTER DOMAIN` changes neither, so the plan
+writes no statement for it.
 
 Domain reads preserve numeric precision and scale, including `NUMBER(*,0)`.
 National character types use their character count, so `NVARCHAR2(10)` remains
@@ -95,6 +111,10 @@ creates nothing usable — `USER_TYPES` reports `ATTRIBUTES 0` with
 error at all. Ptah writes `CREATE OR REPLACE TYPE t AS OBJECT (...)`, which is
 the statement that creates one, and reads it back from `ALL_TYPES` and
 `ALL_TYPE_ATTRS`.
+
+An object type is compared by its attributes, in order, names without regard
+to case. One whose attributes changed is replaced with the same statement,
+which Oracle refuses with `ORA-02303` while a column uses the type.
 
 Object attribute reads preserve `DECIMAL` precision and scale, including a
 negative scale. An unconstrained `FLOAT` remains `FLOAT`.

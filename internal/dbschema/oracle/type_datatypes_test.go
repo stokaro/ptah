@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/feature/oratype"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/oracle"
 )
@@ -21,14 +22,15 @@ func TestReadSchema_PreservesNumericAndNationalTypeDimensions(t *testing.T) {
 	db := dbtest.Open(t, nativeDatatypeCatalog)
 	got, err := oracle.NewOracleReader(db.SQL, "APP").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Domains, qt.DeepEquals, []catalog.Domain{
-		{Name: "INTEGER_DOMAIN", BaseType: "NUMBER(*,0)"},
-		{Name: "ROUNDED_DOMAIN", BaseType: "NUMBER(*,-2)"},
-		{Name: "NATIONAL_DOMAIN", BaseType: "NVARCHAR2(10)"},
-		{Name: "NATIONAL_FIXED_DOMAIN", BaseType: "NCHAR(10)"},
-		{Name: "TEXT_DOMAIN", BaseType: "VARCHAR2(20)"},
+	domains, objectTypes := readTypes(c, got)
+	c.Assert(domains, qt.DeepEquals, map[string]string{
+		"INTEGER_DOMAIN":        "NUMBER(*,0)",
+		"ROUNDED_DOMAIN":        "NUMBER(*,-2)",
+		"NATIONAL_DOMAIN":       "NVARCHAR2(10)",
+		"NATIONAL_FIXED_DOMAIN": "NCHAR(10)",
+		"TEXT_DOMAIN":           "VARCHAR2(20)",
 	})
-	c.Assert(got.Composites, qt.DeepEquals, []catalog.CompositeType{{Name: "RECORD_T", Fields: []catalog.CompositeField{
+	c.Assert(objectTypes, qt.DeepEquals, map[string][]oratype.Attribute{"RECORD_T": {
 		{Name: "DECIMAL_N", Type: "DECIMAL(5,2)"},
 		{Name: "DECIMAL_NEGATIVE", Type: "DECIMAL(5,-2)"},
 		{Name: "DECIMAL_ZERO", Type: "DECIMAL(5)"},
@@ -37,7 +39,24 @@ func TestReadSchema_PreservesNumericAndNationalTypeDimensions(t *testing.T) {
 		{Name: "FLOAT_SIZED", Type: "FLOAT(10)"},
 		{Name: "TEXT_N", Type: "NVARCHAR2(10)"},
 		{Name: "TEXT_B", Type: "VARCHAR2(20)"},
-	}}})
+	}})
+}
+
+// readTypes returns the base type of each domain and the attributes of each
+// object type a read holds, by name.
+func readTypes(c *qt.C, read *catalog.Database) (map[string]string, map[string][]oratype.Attribute) {
+	objects, err := read.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	domains, objectTypes := make(map[string]string), make(map[string][]oratype.Attribute)
+	for _, object := range objects {
+		switch value := object.Value.(type) {
+		case *oratype.ObservedDomain:
+			domains[object.Ref.Name.Source] = value.BaseType
+		case *oratype.ObservedObjectType:
+			objectTypes[object.Ref.Name.Source] = value.Attributes
+		}
+	}
+	return domains, objectTypes
 }
 
 func nativeDatatypeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {

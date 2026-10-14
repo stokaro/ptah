@@ -15,9 +15,11 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/oratype"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -83,11 +85,10 @@ func assertOracleDomainBehavior(ctx context.Context, c *qt.C, conn *dbschema.Dat
 
 // assertOracleDomainsAreRefused is the Oracle 21 half.
 //
-// The refusal is usertypescope.ValidateDeclared's: a column declared with a type
-// the target cannot create would be left naming something the server has no
-// definition of. It fires when the desired schema is validated, which is the
-// comparison -- a plan reads only the diff, and whether this target can host a
-// domain at all is a question about the declaration (stokaro/ptah#2315).
+// The refusal is the Oracle type owner's: a column declared with a type the
+// target cannot create would be left naming something the server has no
+// definition of. It fires when the plan creates the domain, since a target
+// without domains holds none and the comparison asks for each declared one.
 //
 // The read is asserted empty as well, and that is the other half of the same
 // preset: ALL_DOMAINS does not exist on this line -- measured, ORA-00942 --
@@ -97,10 +98,15 @@ func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.
 	c.Helper()
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.Domains, qt.HasLen, 0)
+	c.Assert(oracleDomainSummary(c, live), qt.HasLen, 0)
 
-	declared := oracleDomainDeclaration()
-	_, err = schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil, must.Must(builtin.New()))
+	declared := oracleDomainDeclaration(c)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "CREATE DOMAIN")
 }
@@ -108,7 +114,7 @@ func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.
 // assertOracleDomainsConverge is the Oracle 23 half: the whole loop.
 func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
-	declared := oracleDomainDeclaration()
+	declared := oracleDomainDeclaration(c)
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
@@ -136,20 +142,18 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 
 	// What the catalog gives back, spelled out: the NOT NULL is a column fact
 	// rather than a CHECK, and the declared CHECK survives as itself.
-	c.Assert(oracleDomainSummary(after), qt.DeepEquals, []string{
+	c.Assert(oracleDomainSummary(c, after), qt.DeepEquals, []string{
 		"DOM_EMAIL VARCHAR2(255) NOT NULL",
 		"DOM_SCORE NUMBER(5,2) CHECK(VALUE BETWEEN 0 AND 100)",
 	})
 
 	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	c.Assert(settled.DomainsAdded.Names(), qt.HasLen, 0)
-	c.Assert(settled.DomainsRemoved.Names(), qt.HasLen, 0)
-	c.Assert(settled.DomainsModified, qt.HasLen, 0)
+	c.Assert(settled.FeatureChanges, qt.HasLen, 0)
 
 	// And the removal direction, which has an ordering constraint of its own:
 	// measured, dropping a domain a table still uses answers ORA-11502.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil, must.Must(builtin.New()))
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, oracleTypesDeclared(c), after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
@@ -164,25 +168,39 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 
 	empty, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(empty.Domains, qt.HasLen, 0)
+	c.Assert(oracleDomainSummary(c, empty), qt.HasLen, 0)
 }
 
 // oracleDomainDeclaration declares the two domains and the table one types.
-func oracleDomainDeclaration() *schemamodel.Database {
-	return &schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{StructName: "D", Name: "dom_email", BaseType: "VARCHAR2(255)", NotNull: true},
-			{
-				StructName: "D", Name: "dom_score", BaseType: "NUMBER(5,2)",
-				Check: "VALUE BETWEEN 0 AND 100",
-			},
-		},
-		Tables: []schemamodel.Table{{StructName: "T", Name: "dom_users"}},
-		Fields: []schemamodel.Field{
-			{StructName: "T", Name: "id", Type: "INT", Primary: true},
-			{StructName: "T", Name: "addr", Type: "dom_email"},
-		},
+func oracleDomainDeclaration(c *qt.C) *schemamodel.Database {
+	declared := oracleTypesDeclared(c,
+		oracleTypeObject(c, oratype.DomainKind, "dom_email", &oratype.DesiredDomain{BaseType: "VARCHAR2(255)", NotNull: true}),
+		oracleTypeObject(c, oratype.DomainKind, "dom_score", &oratype.DesiredDomain{BaseType: "NUMBER(5,2)", Check: "VALUE BETWEEN 0 AND 100"}),
+	)
+	declared.Tables = []schemamodel.Table{{StructName: "T", Name: "dom_users"}}
+	declared.Fields = []schemamodel.Field{
+		{StructName: "T", Name: "id", Type: "INT", Primary: true},
+		{StructName: "T", Name: "addr", Type: "dom_email"},
 	}
+	return declared
+}
+
+// oracleTypesDeclared is a desired schema holding objects, which describes
+// every Oracle domain and object type it wants, as a schema source does: a
+// type it leaves out is one to drop.
+func oracleTypesDeclared(c *qt.C, objects ...schemaext.Object) *schemamodel.Database {
+	c.Helper()
+	known, err := oratype.CompleteCoverage(schemaext.Desired)
+	c.Assert(err, qt.IsNil)
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...)), FeatureCoverage: known}
+}
+
+// oracleTypeObject declares one Oracle domain or object type.
+func oracleTypeObject(c *qt.C, kind schemaext.Kind, name string, value schemaext.Value) schemaext.Object {
+	c.Helper()
+	object, err := oratype.DesiredObject(oratype.Ref(kind, "", name), value)
+	c.Assert(err, qt.IsNil)
+	return object
 }
 
 // dropOracleDomains removes what this test creates, tolerating what is absent.
@@ -195,11 +213,18 @@ func dropOracleDomains(ctx context.Context, conn *dbschema.DatabaseConnection) {
 	}
 }
 
-// oracleDomainSummary renders each read domain in one line.
-func oracleDomainSummary(read *catalog.Database) []string {
-	summary := make([]string, 0, len(read.Domains))
-	for _, domain := range read.Domains {
-		line := domain.Name + " " + domain.BaseType
+// oracleDomainSummary renders each read domain in one line, by name.
+func oracleDomainSummary(c *qt.C, read *catalog.Database) []string {
+	c.Helper()
+	objects, err := read.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	var summary []string
+	for _, object := range objects {
+		domain, ok := object.Value.(*oratype.ObservedDomain)
+		if !ok {
+			continue
+		}
+		line := object.Ref.Name.Source + " " + domain.BaseType
 		if domain.NotNull {
 			line += " NOT NULL"
 		}

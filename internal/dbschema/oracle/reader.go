@@ -131,19 +131,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 
 	if r.caps.Has(capability.DomainTypes) {
-		domains, err := r.readDomains(ctx)
-		if err != nil {
+		if err := r.readDomains(ctx, schema); err != nil {
 			return nil, fmt.Errorf("oracle: read domains: %w", err)
 		}
-		schema.Domains = domains
 	}
 
 	if r.caps.Has(capability.CompositeTypes) {
-		composites, err := r.readComposites(ctx)
-		if err != nil {
+		if err := r.readComposites(ctx, schema); err != nil {
 			return nil, fmt.Errorf("oracle: read composite types: %w", err)
 		}
-		schema.Composites = composites
 	}
 
 	// One read serves both keys, because one catalog row serves both objects:

@@ -147,6 +147,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
+- `ptah.run/feature/oratype`
 - `ptah.run/feature/pgdefaultprivilege`
 - `ptah.run/feature/pgdefaultprivilege/privilegecompare`
 - `ptah.run/feature/pgdefaultprivilege/privilegeconvert`
@@ -2979,10 +2980,10 @@ target, with its reports.
 
 Go annotations, HCL, PostgreSQL SQL and the catalog reader produce owned
 domain, composite and range objects. A source that names no target is read as
-PostgreSQL's. A domain or composite type declared for another target, such as
-Oracle, stays on the common model. The common not-described kinds `domain` and
-`composite` stay common too, and the runtime folds them into the owner's
-coverage before it compares. The common schema and AST models carry no range
+PostgreSQL's. A domain or composite type declared for Oracle is the Oracle type
+owner's, `feature/oratype`. The common not-described kinds `domain` and
+`composite` stay common, and the runtime folds them into each owner's coverage
+before it compares. The common schema and AST models carry no range
 payload. Schema statistics count `range_types` through the owner. Domain and
 composite metrics also accept common models and refuse a type both
 representations hold.
@@ -3043,6 +3044,41 @@ absent schema read as the default schema. `DeclaredObject` binds a declaration t
 Server and Oracle. The package holds every stage's service: `CompareService`,
 `PlanService`, which joins the host's dependent window, `ReverseService`,
 `ConvertService`, `ReportService` and the render `Handlers` for both targets.
+
+`feature/oratype` owns Oracle's user-defined types: domains (`DomainKind`),
+which Oracle 23 creates with CREATE DOMAIN, and object types
+(`ObjectTypeKind`), created with CREATE TYPE ... AS OBJECT. An object type is
+the subset the model describes: ordered, typed attributes with no methods and
+no supertype. Each type is a feature object identified by its schema and name
+through `Ref`, under Oracle's identifier rules, which compare names without
+regard to ASCII case. Every value defines its type through
+`schemaext.TypeDefiner` under the common `objectidentity.KindDomain` or
+`KindComposite`.
+
+`DomainChange` and `ObjectTypeChange` hold both operands and what the
+comparison found different. The three operations write CREATE DOMAIN, CREATE
+OR REPLACE TYPE ... AS OBJECT, and DROP DOMAIN or DROP TYPE, without FORCE. A
+declared comment is written as a SQL comment line before the creation, since
+Oracle stores none on either kind.
+
+The package holds every stage's service for the Oracle target:
+
+- `CompareService` compares a domain by its base type, in a canonical
+  spelling, and its NOT NULL; a domain's CHECK and default are written at
+  creation and never compared. An object type is compared by its attributes,
+  in order, names without regard to case.
+- `PlanService` joins `featureplan.PhaseType`: creations before the routines
+  and tables that may name a type, and drops after the tables. An object type
+  whose attributes changed is replaced in place, and a domain whose base type
+  or NOT NULL changed is kept, since Oracle's ALTER DOMAIN changes neither. A
+  domain on a release line without CREATE DOMAIN is refused with the scope
+  advice the common refusal gives.
+- `ReverseService`, `ConvertService`, `ReportService`, which counts under
+  `domains` and `composite_types`, and the render `Handlers` complete it.
+
+Go annotations scoped to Oracle, the `domain` and `composite` HCL blocks of an
+Oracle document, Oracle SQL and the Oracle catalog reader produce its objects,
+and the selector types are `domain` and `composite_type`.
 
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its
@@ -3489,9 +3525,9 @@ original set unchanged. Built-in aliases are normalized; custom dialect names
 remain distinct. An explicit block `dialect` attribute overrides the default,
 and `Claim.Dialect` carries the selected dialect. A missing reader is refused,
 even when unknown names are tolerated, unless the frontend reads that block
-type itself: a domain or composite block of a dialect no owner scopes, such as
-Oracle, keeps the common model. The selector identifies the model; it does not
-narrow an object's target scope.
+type itself: a domain or composite block of a dialect no owner scopes keeps
+the common model. The selector identifies the model; it does not narrow an
+object's target scope.
 
 `EncodedBlock.Dialect` selects the reader of an exported scoped block.
 `Set.Encode` fills an omitted selector from the shape's first dialect and
@@ -3499,7 +3535,10 @@ refuses a selector that routes to another owner. The writer emits the selector
 so the block keeps its model under another caller's default dialect. A block
 of the `Unscoped` shape is written without a selector, so the document stays
 plain HCL; a caller that names no dialect, or one of the shape's, reads it
-with the same shape.
+with the same shape. `EncodeRequest.Target` names the one target a document is
+written for, and a block whose selector would be that target is written
+without one, since a reader of the document for that target selects the same
+shape. `schema inspect` writes its document for the inspected target.
 
 - The reader checks a block against its shape with the refusals it gives its
   own blocks, including the tolerance for unknown names.

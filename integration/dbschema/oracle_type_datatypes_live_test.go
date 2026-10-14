@@ -4,7 +4,6 @@ package dbschema_test
 
 import (
 	"context"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/feature/oratype"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -47,7 +47,7 @@ func TestOracleNativeTypeDimensionsLive(t *testing.T) {
 	original, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	fields := oracleDatatypeFields(c, original, "PTAH_DATATYPE_ORIGINAL")
-	c.Assert(fields, qt.DeepEquals, []catalog.CompositeField{
+	c.Assert(fields, qt.DeepEquals, []oratype.Attribute{
 		{Name: "D", Type: "DECIMAL(5,2)"}, {Name: "NEG", Type: "DECIMAL(5,-2)"},
 		{Name: "F", Type: "FLOAT"}, {Name: "SIZED", Type: "FLOAT(10)"},
 		{Name: "V", Type: "NVARCHAR2(10)"}, {Name: "TEXT_B", Type: "VARCHAR2(20)"},
@@ -79,16 +79,18 @@ func TestOracleNativeTypeDimensionsLive(t *testing.T) {
 	c.Assert(valid, qt.Equals, 2)
 }
 
-func oracleDatatypeFields(c *qt.C, schema *catalog.Database, name string) []catalog.CompositeField {
+func oracleDatatypeFields(c *qt.C, schema *catalog.Database, name string) []oratype.Attribute {
 	c.Helper()
-	index := slices.IndexFunc(schema.Composites, func(value catalog.CompositeType) bool { return value.Name == name })
-	c.Assert(index >= 0, qt.IsTrue, qt.Commentf("object type %s is present", name))
-	return schema.Composites[index].Fields
+	object, found, err := schema.FeatureObjects.Get(oratype.Ref(oratype.ObjectTypeKind, "", name))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue, qt.Commentf("object type %s is present", name))
+	return object.Value.(*oratype.ObservedObjectType).Attributes
 }
 
 func oracleDatatypeDomain(c *qt.C, schema *catalog.Database, name string) string {
 	c.Helper()
-	index := slices.IndexFunc(schema.Domains, func(value catalog.Domain) bool { return value.Name == name })
-	c.Assert(index >= 0, qt.IsTrue, qt.Commentf("domain %s is present", name))
-	return schema.Domains[index].BaseType
+	object, found, err := schema.FeatureObjects.Get(oratype.Ref(oratype.DomainKind, "", name))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue, qt.Commentf("domain %s is present", name))
+	return object.Value.(*oratype.ObservedDomain).BaseType
 }

@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -53,25 +54,31 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 		return validateSecurityPolicies(dialect, objects)
 	}
 	if platform.NormalizeDialect(dialect) == platform.Oracle {
-		return validateSynonyms(dialect, objects)
+		return validateOracleObjects(dialect, objects)
 	}
 	return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
 }
 
-// validateSynonyms accepts the synonyms the synonym owner plans, Oracle's
-// only owner, and refuses every other named object.
-func validateSynonyms(dialect string, objects schemaext.Objects) error {
+// validateOracleObjects accepts the synonyms the synonym owner plans and the
+// domains and object types the Oracle type owner plans, and refuses every
+// other named object.
+func validateOracleObjects(dialect string, objects schemaext.Objects) error {
 	all, err := objects.All()
 	if err != nil {
 		return err
 	}
 	for _, object := range all {
-		value, ok := object.Value.(*synonym.DesiredSynonym)
-		if !ok {
+		switch value := object.Value.(type) {
+		case *synonym.DesiredSynonym:
+			if err := synonym.ValidateDesired(value); err != nil {
+				return err
+			}
+		case *oratype.DesiredDomain, *oratype.DesiredObjectType:
+			if _, err := oratype.DesiredObject(object.Ref, value); err != nil {
+				return err
+			}
+		default:
 			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
-		}
-		if err := synonym.ValidateDesired(value); err != nil {
-			return err
 		}
 	}
 	return nil

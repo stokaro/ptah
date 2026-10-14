@@ -49,6 +49,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -220,7 +221,28 @@ func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), exclusionFixture(), extensionFixture{payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, extensionFixture{payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
-		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture())
+		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture(),
+		oraTypeCreateDomainFixture(), oraTypeReplaceObjectTypeFixture(), oraTypeDropFixture())
+}
+
+// oraTypeCreateDomainFixture creates an Oracle domain with every clause.
+func oraTypeCreateDomainFixture() extensionFixture {
+	return extensionFixture{payload: &oratype.CreateDomain{Target: oratype.Target{Kind: oratype.DomainKind, Name: "email_d"},
+		BaseType: "VARCHAR2(255)", NotNull: true, Default: "it's", Check: "VALUE <> 'x'", Comment: "mail"},
+		wantSQL: "-- mail\nCREATE DOMAIN IF NOT EXISTS email_d AS VARCHAR2(255) NOT NULL DEFAULT 'it''s' CHECK (VALUE <> 'x');\n"}
+}
+
+// oraTypeReplaceObjectTypeFixture replaces an Oracle object type.
+func oraTypeReplaceObjectTypeFixture() extensionFixture {
+	return extensionFixture{payload: &oratype.ReplaceObjectType{Target: oratype.Target{Kind: oratype.ObjectTypeKind, Schema: "app", Name: "addr_t"},
+		Attributes: []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}, {Name: "zip", Type: "NUMBER(10,2)"}}, Replaces: true},
+		wantSQL: "CREATE OR REPLACE TYPE app.addr_t AS OBJECT (street VARCHAR2(80), zip NUMBER(10,2));\n"}
+}
+
+// oraTypeDropFixture drops an Oracle domain.
+func oraTypeDropFixture() extensionFixture {
+	return extensionFixture{payload: &oratype.Drop{Target: oratype.Target{Kind: oratype.DomainKind, Name: "email_d"}},
+		wantSQL: "DROP DOMAIN email_d;\n"}
 }
 
 // synonymFixture creates a synonym for a table in another database.

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
@@ -86,32 +87,69 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 	c.Assert(*parsed.Sequences[0].Start, qt.Equals, int64(100))
 }
 
-// TestRender_AnOracleExportKeepsItsTypesOnTheCommonModel pins the scope an
-// Oracle export writes on its domains and composite types. An unscoped
-// declaration reads back as the PostgreSQL type owner's, which no Oracle plan
-// can create, so the export names Oracle, and reading the source back keeps
-// both types on the common model.
-func TestRender_AnOracleExportKeepsItsTypesOnTheCommonModel(t *testing.T) {
-	c := qt.New(t)
-	db := &schemamodel.Database{
+// TestRender_AnOracleExportScopesItsTypesToOracle pins the scope an Oracle
+// export writes on its domains and object types. An unscoped declaration reads
+// back as the PostgreSQL type owner's, which no Oracle plan can create, so the
+// export names Oracle, and reading the source back hands both types to the
+// Oracle type owner. The types an Oracle read reports are the owner's; a
+// common domain or composite type is written the same way.
+func TestRender_AnOracleExportScopesItsTypesToOracle(t *testing.T) {
+	owned := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		must.Must(oratype.DesiredObject(oratype.Ref(oratype.DomainKind, "", "email"), &oratype.DesiredDomain{BaseType: "VARCHAR2(320)", NotNull: true})),
+		must.Must(oratype.DesiredObject(oratype.Ref(oratype.ObjectTypeKind, "", "address"),
+			&oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}}})),
+	))}
+	common := &schemamodel.Database{
 		Domains: []schemamodel.Domain{{Name: "email", BaseType: "VARCHAR2(320)", NotNull: true}},
 		CompositeTypes: []schemamodel.CompositeType{{Name: "address",
 			Fields: []schemamodel.CompositeField{{Name: "street", Type: "VARCHAR2(80)"}}}},
 	}
+	for _, test := range []struct {
+		name string
+		db   *schemamodel.Database
+	}{
+		{name: "owned types", db: owned},
+		{name: "common types", db: common},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			files, err := goschematogo.Render(c.Context(), test.db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "oracle"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.HasLen, 1)
+			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Domains, qt.HasLen, 0)
+			c.Assert(parsed.CompositeTypes, qt.HasLen, 0)
+			objects := must.Must(parsed.FeatureObjects.All())
+			c.Assert(objects, qt.HasLen, 2)
+			c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))
+			c.Assert(objects[0].Value.(*oratype.DesiredDomain).BaseType, qt.Equals, "VARCHAR2(320)")
+			c.Assert(objects[0].Value.(*oratype.DesiredDomain).NotNull, qt.IsTrue)
+			c.Assert(objects[0].Targets, qt.DeepEquals, []string{"oracle"})
+			c.Assert(objects[1].Ref, qt.DeepEquals, oratype.Ref(oratype.ObjectTypeKind, "", "address"))
+			c.Assert(objects[1].Value.(*oratype.DesiredObjectType).Attributes, qt.DeepEquals, []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}})
+			c.Assert(objects[1].Targets, qt.DeepEquals, []string{"oracle"})
+		})
+	}
+}
+
+// TestRender_AnOracleExportWritesTheCatalogsSpelling pins that an Oracle type
+// is written as the catalog spells it: an upper-case name needs no quotes,
+// since Oracle folds an unquoted name to upper case on the server and in the
+// comparison alike.
+func TestRender_AnOracleExportWritesTheCatalogsSpelling(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		must.Must(oratype.DesiredObject(oratype.Ref(oratype.DomainKind, "", "DOM_EMAIL"), &oratype.DesiredDomain{BaseType: "VARCHAR2(320)"})),
+	))}
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "oracle"})
-	c.Assert(err, qt.IsNil)
-	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(must.Must(parsed.FeatureObjects.All()), qt.HasLen, 0)
-	c.Assert(parsed.Domains, qt.HasLen, 1)
-	c.Assert(parsed.Domains[0].Name, qt.Equals, "email")
-	c.Assert(parsed.Domains[0].Dialects, qt.DeepEquals, []string{"oracle"})
-	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
-	c.Assert(parsed.CompositeTypes[0].Name, qt.Equals, "address")
-	c.Assert(parsed.CompositeTypes[0].Dialects, qt.DeepEquals, []string{"oracle"})
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:domain name="DOM_EMAIL" type="VARCHAR2(320)" dialects="oracle"`)
 }
 
 // TestRender_AProcedureDoesNotComeBackAFunction covers the family that was

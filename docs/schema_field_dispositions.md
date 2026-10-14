@@ -79,16 +79,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-631 fields are reachable from the desired schema, and each one carries
+643 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 522 | reaches rendered SQL on at least one target |
+| `ddl` | 532 | reaches rendered SQL on at least one target |
 | `comparison` | 34 | read when two schemas are compared, and written into no statement |
 | `planning` | 10 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 31 | identifies the source text the declaration was read from |
+| `source` | 33 | identifies the source text the declaration was read from |
 | `export` | 13 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -188,7 +188,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-52 exemptions, each with the reason it is right.
+55 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -218,6 +218,9 @@ migration nobody asked for.
 | `pgtype.DesiredDomain.Default` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
 | `pgtype.DesiredDomain.DefaultExpr` | `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
 | `pgtype.DesiredRange.Cleared` | any | both | a cleared range attribute converts to the empty attribute an absent one converts to, so it differs only from a current range that holds the attribute; pgtypeprovider.TestCompareTypes_FindsChanges measures that |
+| `oratype.DesiredDomain.Check` | `oracle` | both | Oracle stores its own spelling of a domain's CHECK and DEFAULT and no probe asks the server how it spells a declaration's, so a comparison leaves both create-only |
+| `oratype.DesiredDomain.Default` | `oracle` | both | Oracle stores its own spelling of a domain's CHECK and DEFAULT and no probe asks the server how it spells a declaration's, so a comparison leaves both create-only |
+| `oratype.DesiredDomain.DefaultExpr` | `oracle` | both | Oracle stores its own spelling of a domain's CHECK and DEFAULT and no probe asks the server how it spells a declaration's, so a comparison leaves both create-only |
 | `schemamodel.Database.FeatureCoverage` | any | both | it is what a feature comparison may conclude from: without it the comparison refuses the objects as not inspected, which is the comparison reading it |
 | `schemamodel.Database.NotDescribed` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `schemamodel.Domain.Check` | `cockroachdb`, `postgres`, `yugabytedb` | both | an offline comparison leaves a domain's CHECK and DEFAULT create-only and compares them only once a server has normalized them |
@@ -353,6 +356,18 @@ migration nobody asked for.
 | `mysqlschema.DesiredTable.AutoIncrement` | `ddl` | — |
 | `mysqlschema.DesiredTable.Charset` | `ddl` | — |
 | `mysqlschema.DesiredTable.Engine` | `ddl` | — |
+| `oratype.Attribute.Name` | `ddl` | — |
+| `oratype.Attribute.Type` | `ddl` | — |
+| `oratype.DesiredDomain.BaseType` | `ddl` | — |
+| `oratype.DesiredDomain.Check` | `ddl` | — |
+| `oratype.DesiredDomain.Comment` | `ddl` | — |
+| `oratype.DesiredDomain.Default` | `ddl` | — |
+| `oratype.DesiredDomain.DefaultExpr` | `ddl` | — |
+| `oratype.DesiredDomain.NotNull` | `ddl` | — |
+| `oratype.DesiredDomain.StructName` | `source` | the Go struct the declaration was read from; the type's schema and name are its identity |
+| `oratype.DesiredObjectType.Attributes` | `ddl` | — |
+| `oratype.DesiredObjectType.Comment` | `ddl` | — |
+| `oratype.DesiredObjectType.StructName` | `source` | the Go struct the declaration was read from; the type's schema and name are its identity |
 | `pgdefaultprivilege.Desired.Comment` | `ddl` | — |
 | `pgdefaultprivilege.Desired.Privileges` | `ddl` | — |
 | `pgdefaultprivilege.Desired.Revoked` | `ddl` | — |

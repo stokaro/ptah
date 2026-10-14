@@ -33,6 +33,11 @@ func (p *Planner) hostsFeatures() bool {
 	}
 }
 
+// hostsTypes reports whether an owner plans data types on this planner's
+// target, in the type windows a plan records: Oracle's domains and object
+// types. No other dialect this planner serves has an owner of a type.
+func (p *Planner) hostsTypes() bool { return p.targetDialect() == platform.Oracle }
+
 // dropsRoutinesLate reports whether routines are dropped after the tables and
 // the feature objects that may call them rather than with the other routine
 // changes. SQL Server does, because its security policies call predicate
@@ -86,7 +91,11 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		return nil, nil, err
 	}
 	request.CommonSteps = graph.CommonSteps()
-	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent)
+	phases := []featureplan.Phase{featureplan.PhaseDependent}
+	if windows.Types != nil {
+		phases = append(phases, featureplan.PhaseType)
+	}
+	features, err := featurehost.Plan(ctx, runtime, request, names, phases...)
 	if err != nil {
 		return nil, nil, err
 	}

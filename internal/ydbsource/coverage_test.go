@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
@@ -238,6 +239,8 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(properties)
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(synonym.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(oratype.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	// It describes every index's MySQL block size, which it cannot spell.
 	combined, err = combined.Combine(must.Must(mysqlsource.BlockSizeCoverage()))

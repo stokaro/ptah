@@ -2,22 +2,24 @@ package oracle
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/synonym"
 )
 
 // renderExtensionNode renders an owner statement through the handlers of the
-// Oracle owners, which are the synonym owner's alone. A payload no Oracle
+// Oracle owners: synonyms, and domains and object types. A payload no Oracle
 // owner renders is refused.
 func (r *Renderer) renderExtensionNode(node ast.Node) error {
 	statement, ok := node.(*ast.ExtensionStatement)
 	if !ok {
 		return fmt.Errorf("%w: expected an extension statement, got %T", ptaherr.ErrInvalidSchemaDiff, node)
 	}
-	registry, err := renderer.NewExtensions(synonym.Handlers()...)
+	registry, err := renderer.NewExtensions(slices.Concat(synonym.Handlers(), oratype.Handlers())...)
 	if err != nil {
 		return err
 	}

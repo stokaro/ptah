@@ -1426,6 +1426,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-oratype",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/oratype",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgdefaultprivilege",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgdefaultprivilege",

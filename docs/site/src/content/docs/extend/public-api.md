@@ -161,6 +161,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
+| `feature/oratype` | Oracle domain and object type models, codecs and every stage's service. |
 | `feature/pgextension` | PostgreSQL extension models, changes, operations and codecs. |
 | `feature/pgextension/extensioncompare` | Comparison of PostgreSQL extensions. |
 | `feature/pgextension/extensionconvert` | Projection of PostgreSQL extensions between representations. |

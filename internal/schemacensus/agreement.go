@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlschema"
@@ -18,6 +19,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgtype"
@@ -114,6 +116,13 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		// A SQL Server read describes security policies; an empty database
 		// holds none.
 		known, err := mssqlschema.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return nil, err
+		}
+		current.FeatureCoverage = known
+	}
+	if cell.Dialect == platform.Oracle {
+		known, err := emptyOracleTypeCoverage(cell.Preset())
 		if err != nil {
 			return nil, err
 		}
@@ -223,6 +232,29 @@ func SurfaceDifferences() []SurfaceDifference {
 				"hands the planner the refs that survive (stokaro/ptah#3042)",
 		},
 	}
+}
+
+// emptyOracleTypeCoverage is what an Oracle read of an empty schema knows of
+// the type owner's models: every kind the release line holds, of which it
+// found none. A line without domains records nothing about them.
+func emptyOracleTypeCoverage(caps capability.Capabilities) (schemaext.Coverage, error) {
+	var known schemaext.Coverage
+	for _, kind := range []struct {
+		model schemaext.Kind
+		key   capability.Capability
+	}{{oratype.DomainKind, capability.DomainTypes}, {oratype.ObjectTypeKind, capability.CompositeTypes}} {
+		if !caps.Has(kind.key) {
+			continue
+		}
+		claim, err := oratype.Coverage(kind.model, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
+		if known, err = known.Combine(claim); err != nil {
+			return schemaext.Coverage{}, err
+		}
+	}
+	return known, nil
 }
 
 func emptyPostgresFeatureCoverage() (schemaext.Coverage, error) {

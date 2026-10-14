@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/schemamodel"
+	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/builtintest"
@@ -80,12 +80,11 @@ composite "measurement" {
 	c.Assert(sql, qt.Contains, `CREATE TYPE measurement AS (value double precision);`)
 }
 
-// TestParseUserTypes_AnOracleDocumentKeepsTheCommonModel pins the routing of
-// the blocks Oracle shares with PostgreSQL: a document read for Oracle, or a
-// block whose dialect names Oracle, keeps its domains and composite types on
-// the common model, which the Oracle renderer reads. The PostgreSQL type owner
-// takes neither.
-func TestParseUserTypes_AnOracleDocumentKeepsTheCommonModel(t *testing.T) {
+// TestParseUserTypes_AnOracleDocumentReachesTheOracleTypeOwner pins the
+// routing of the blocks Oracle shares with PostgreSQL: a document read for
+// Oracle, or a block whose dialect names Oracle, hands its domains and
+// composite types to the Oracle type owner, and the common model holds none.
+func TestParseUserTypes_AnOracleDocumentReachesTheOracleTypeOwner(t *testing.T) {
 	for _, test := range []struct{ name, dialect, selector string }{
 		{name: "an Oracle document", dialect: "oracle"},
 		{name: "a block selecting Oracle", dialect: "postgres", selector: `dialect = "oracle"`},
@@ -108,10 +107,14 @@ composite "address" {
 `
 			db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 			c.Assert(err, qt.IsNil)
-			c.Assert(must.Must(db.FeatureObjects.All()), qt.HasLen, 0)
-			c.Assert(db.Domains, qt.DeepEquals, []schemamodel.Domain{{Name: "email", BaseType: "varchar2(320)", NotNull: true}})
-			c.Assert(db.CompositeTypes, qt.DeepEquals, []schemamodel.CompositeType{{Name: "address",
-				Fields: []schemamodel.CompositeField{{Name: "street", Type: "VARCHAR2(80)"}}}})
+			c.Assert(db.Domains, qt.HasLen, 0)
+			c.Assert(db.CompositeTypes, qt.HasLen, 0)
+			objects := must.Must(db.FeatureObjects.All())
+			c.Assert(objects, qt.HasLen, 2)
+			c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.DomainKind, "", "email"))
+			c.Assert(objects[0].Value, qt.DeepEquals, &oratype.DesiredDomain{BaseType: "varchar2(320)", NotNull: true})
+			c.Assert(objects[1].Ref, qt.DeepEquals, oratype.Ref(oratype.ObjectTypeKind, "", "address"))
+			c.Assert(objects[1].Value, qt.DeepEquals, &oratype.DesiredObjectType{Attributes: []oratype.Attribute{{Name: "street", Type: "VARCHAR2(80)"}}})
 
 			c.Assert(renderStatements(c, db, "oracle"), qt.DeepEquals, []string{
 				"CREATE DOMAIN IF NOT EXISTS email AS varchar2(320) NOT NULL;\n",

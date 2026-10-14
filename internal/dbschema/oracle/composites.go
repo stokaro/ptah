@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/feature/oratype"
 )
 
 // compositeQuery reads the object types this schema owns that Ptah's composite
@@ -58,57 +59,67 @@ FROM all_type_attrs a
 WHERE a.owner = :1
 ORDER BY a.type_name, a.attr_no`
 
-// readComposites reads the schema's composite catalog.
+// readComposites reads the schema's object types into db as the Oracle type
+// owner's observations, with the knowledge that the read looked.
 //
 // A type whose attributes this read finds none of is left out rather than
 // described as empty: the query above already excludes the incomplete shells,
 // so an object type with no attribute row is one the attribute read could not
-// see, and describing it as a composite with no fields would plan a
+// see, and describing it as a type with no attributes would plan a
 // CREATE OR REPLACE that empties it.
-func (r *Reader) readComposites(ctx context.Context) ([]catalog.CompositeType, error) {
+func (r *Reader) readComposites(ctx context.Context, db *catalog.Database) error {
 	attributes, err := r.readCompositeAttributes(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	rows, err := r.db.QueryContext(ctx, compositeQuery, r.schema)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 
-	var composites []catalog.CompositeType
+	objects := db.FeatureObjects
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, err
+			return err
 		}
-		fields := attributes[name]
-		if len(fields) == 0 {
+		if len(attributes[name]) == 0 {
 			continue
 		}
-		composites = append(composites, catalog.CompositeType{Name: name, Fields: fields})
+		object, err := oratype.ObservedObject(oratype.Ref(oratype.ObjectTypeKind, "", name),
+			&oratype.ObservedObjectType{Attributes: attributes[name]})
+		if err != nil {
+			return err
+		}
+		if objects, err = objects.With(object); err != nil {
+			return err
+		}
 	}
-	return composites, rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return recordTypes(db, objects, oratype.ObjectTypeKind)
 }
 
 // readCompositeAttributes groups the attributes by type name, in declaration
 // order.
-func (r *Reader) readCompositeAttributes(ctx context.Context) (map[string][]catalog.CompositeField, error) {
+func (r *Reader) readCompositeAttributes(ctx context.Context) (map[string][]oratype.Attribute, error) {
 	rows, err := r.db.QueryContext(ctx, compositeAttributeQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	attributes := make(map[string][]catalog.CompositeField)
+	attributes := make(map[string][]oratype.Attribute)
 	for rows.Next() {
 		var typeName, attrName, dataType string
 		var length, precision, scale sql.NullInt64
 		if err := rows.Scan(&typeName, &attrName, &dataType, &length, &precision, &scale); err != nil {
 			return nil, err
 		}
-		attributes[typeName] = append(attributes[typeName], catalog.CompositeField{
+		attributes[typeName] = append(attributes[typeName], oratype.Attribute{
 			Name: attrName,
 			// The same composition the column read uses, and for the same
 			// reason: ATTR_TYPE_NAME alone answers VARCHAR2 for a

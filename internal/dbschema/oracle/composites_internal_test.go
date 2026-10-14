@@ -7,6 +7,7 @@ package oracle
 import (
 	"database/sql/driver"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,6 +15,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/oratype"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -29,15 +32,17 @@ func TestReadComposites_CarriesTheAttributesInDeclarationOrder(t *testing.T) {
 	db := dbtest.Open(t, answeringCompositeCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	composites, err := reader.readComposites(t.Context())
+	read := &catalog.Database{}
+	err := reader.readComposites(t.Context(), read)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(composites, qt.DeepEquals, []catalog.CompositeType{{
-		Name: "ORA_POINT",
-		Fields: []catalog.CompositeField{
-			{Name: "X", Type: "NUMBER(10,2)"},
-			{Name: "Y", Type: "NUMBER(10,2)"},
-		},
+	objects, err := read.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Ref, qt.DeepEquals, oratype.Ref(oratype.ObjectTypeKind, "", "ORA_POINT"))
+	c.Assert(objects[0].Value, qt.DeepEquals, &oratype.ObservedObjectType{Attributes: []oratype.Attribute{
+		{Name: "X", Type: "NUMBER(10,2)"},
+		{Name: "Y", Type: "NUMBER(10,2)"},
 	}})
 }
 
@@ -53,10 +58,11 @@ func TestReadComposites_LeavesOutATypeWithNoAttributesRead(t *testing.T) {
 	db := dbtest.Open(t, attributelessCompositeCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	composites, err := reader.readComposites(t.Context())
+	read := &catalog.Database{}
+	err := reader.readComposites(t.Context(), read)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(composites, qt.HasLen, 0)
+	c.Assert(read.FeatureObjects.Refs(), qt.HasLen, 0)
 }
 
 // TestCompositeQuery_DeclinesEveryShapeTheModelCannotCarry pins the four
@@ -174,4 +180,47 @@ func compositeAttributeRows() [][]driver.Value {
 		{"ORA_POINT", "X", "NUMBER", nil, int64(10), int64(2)},
 		{"ORA_POINT", "Y", "NUMBER", nil, int64(10), int64(2)},
 	}
+}
+
+// TestReadSchema_ClaimsOnlyTheTypeKindsThePresetHolds pins the coverage a read
+// records for the Oracle type owner: complete knowledge of each kind the
+// release line holds, and no claim at all about a kind it does not, so an
+// export writes no not-described line for domains a server cannot have.
+func TestReadSchema_ClaimsOnlyTheTypeKindsThePresetHolds(t *testing.T) {
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+		want []schemaext.Kind
+	}{
+		{name: "Oracle 23", caps: capability.Oracle23(), want: []schemaext.Kind{oratype.DomainKind, oratype.ObjectTypeKind}},
+		{name: "Oracle 21", caps: capability.Oracle21(), want: []schemaext.Kind{oratype.ObjectTypeKind}},
+		{name: "a line without object types", caps: capability.Oracle23().With(capability.CompositeTypes, false),
+			want: []schemaext.Kind{oratype.DomainKind}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, emptyOrCompositeCatalog)
+
+			read, err := NewOracleReaderWithCapabilities(db.SQL, "APP", test.caps).ReadSchemaContext(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(claimedKinds(read), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// claimedKinds lists the Oracle type models a read claims complete knowledge
+// of, in model order.
+func claimedKinds(read *catalog.Database) []schemaext.Kind {
+	var kinds []schemaext.Kind
+	for _, record := range read.FeatureCoverage.KindRecords() {
+		if record.Knowledge.State == schemaext.Complete && slices.Contains(oratype.Kinds(), record.Model.Kind) {
+			kinds = append(kinds, record.Model.Kind)
+		}
+	}
+	slices.SortFunc(kinds, func(a, b schemaext.Kind) int {
+		return slices.Index(oratype.Kinds(), a) - slices.Index(oratype.Kinds(), b)
+	})
+	return kinds
 }

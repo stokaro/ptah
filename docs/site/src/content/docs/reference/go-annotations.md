@@ -202,8 +202,9 @@ object type:
 type OracleEmail struct{}
 ```
 
-A scope that names a PostgreSQL-family target beside another target is a parse
-error, because it declares two different types. Declare each on its own struct.
+A scope that names a PostgreSQL-family target or `oracle` beside another target
+is a parse error, because it declares two different types. Declare each on its
+own struct.
 
 ## Tables and columns
 
