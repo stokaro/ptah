@@ -4,9 +4,9 @@ package descriptor
 // for a dialect: the one a dialect name selects offline, the product names a
 // server's version string carries, and the ladder a server version climbs.
 //
-// A preset is named, not spelled out here: every name is one of the presets
-// core/platform/capability ships, as capability.NamedPresets lists them. The
-// enumerated values are spelled as that package spells its VersionScheme and
+// A preset is named: a name is one of the presets core/platform/capability
+// ships, as capability.NamedPresets lists them, or one the descriptor declares
+// in Presets. The enumerated values are spelled as that package spells its VersionScheme and
 // VersionAttribution values. That package checks every value when it reads
 // a descriptor; see capability.NewResolver.
 //
@@ -16,6 +16,11 @@ type Capabilities struct {
 	// DefaultPreset names the preset a dialect name selects without a server
 	// to ask: the current supported release line, such as "Postgres17".
 	DefaultPreset string `json:"default_preset,omitempty"`
+	// Presets are capability sets the descriptor declares itself, for an
+	// engine whose sets core/platform/capability does not ship. Any preset
+	// name in the descriptor may name one of them. A built-in descriptor
+	// declares none: it names presets that package ships.
+	Presets []Preset `json:"presets,omitempty"`
 	// BannerTokens are lowercase texts whose presence in a server version
 	// string names this product, such as "cockroachdb" or "-yb-". A version
 	// string is compared with them ignoring case. A product whose version
@@ -29,6 +34,18 @@ type Capabilities struct {
 	// Versions is the ladder a server version climbs. The zero value is no
 	// ladder: every version receives DefaultPreset.
 	Versions Versions `json:"versions,omitzero"`
+}
+
+// Preset is a capability set a descriptor declares by name.
+type Preset struct {
+	// Name is how the rest of the descriptor names the set. It is not the
+	// name of a preset core/platform/capability ships, so one name means one
+	// set everywhere.
+	Name string `json:"name"`
+	// Flags maps a capability name, as core/platform/capability spells it, to
+	// whether the engine has it. A capability left out is not established,
+	// which reads as absent.
+	Flags map[string]bool `json:"flags,omitempty"`
 }
 
 // Versions is a version ladder: how a version is read out of the string a

@@ -104,13 +104,18 @@ type Resolver struct {
 	byName  map[string]*dialectRules
 }
 
-// NewResolver reads the capability rules of every descriptor in registry. It
-// refuses, with [descriptor.ErrInvalidDescriptor], a descriptor that names a
-// preset [NamedPresets] does not list, spells a scheme, attribution or
-// identifier unit this package does not declare, states a version that is not
-// one, orders its ladder steps other than strictly oldest first, or leaves a
-// banner token or ladder with no default preset. A nil registry answers like
-// an empty one: every dialect is unknown.
+// NewResolver reads the capability rules of every descriptor in registry and
+// checks them. It refuses a descriptor with [descriptor.ErrInvalidDescriptor]
+// when a preset name is neither declared nor in [NamedPresets], a declared
+// preset does not validate or reuses a name, a scheme, attribution or
+// identifier unit is not one this package declares, a version or measured
+// line does not parse, the ladder steps are not strictly oldest first, or
+// banner tokens or a ladder come without a default preset.
+//
+// The package-level functions read the process registry without refusing:
+// they answer a descriptor this refuses as one that states no rules. So a
+// program that registers descriptors with platform.Register checks them here
+// first. A nil registry answers like an empty one: every dialect is unknown.
 func NewResolver(registry *descriptor.Registry) (*Resolver, error) {
 	resolver := &Resolver{registry: registry, byName: make(map[string]*dialectRules)}
 	for _, described := range registry.Dialects() {
@@ -477,8 +482,12 @@ func readRules(described descriptor.Dialect) (*dialectRules, error) {
 	stated := described.Capabilities
 	rules := &dialectRules{name: described.Name, family: described.Family}
 
+	presets, err := readPresets(stated.Presets)
+	if err != nil {
+		return nil, invalid("%v", err)
+	}
 	if stated.DefaultPreset != "" {
-		preset, err := namedPreset(stated.DefaultPreset)
+		preset, err := presets.named(stated.DefaultPreset)
 		if err != nil {
 			return nil, invalid("default preset: %v", err)
 		}
@@ -494,7 +503,7 @@ func readRules(described descriptor.Dialect) (*dialectRules, error) {
 	}
 	rules.banner = slices.Clone(stated.BannerTokens)
 
-	ladder, err := readLadder(stated.Versions, rules.preset)
+	ladder, err := readLadder(stated.Versions, presets, rules.preset)
 	if err != nil {
 		return nil, invalid("versions: %v", err)
 	}
@@ -512,7 +521,7 @@ func readRules(described descriptor.Dialect) (*dialectRules, error) {
 }
 
 // readLadder reads a version ladder, or returns nil for none.
-func readLadder(stated descriptor.Versions, defaultPreset Capabilities) (*versionLadder, error) {
+func readLadder(stated descriptor.Versions, presets presetTable, defaultPreset Capabilities) (*versionLadder, error) {
 	if stated.Scheme == "" {
 		if stated.Floor != "" || len(stated.Steps) > 0 || stated.Attribution != "" || len(stated.Measured) > 0 ||
 			stated.Newest != "" || stated.Unreadable != (descriptor.UnreadableVersion{}) {
@@ -534,7 +543,7 @@ func readLadder(stated descriptor.Versions, defaultPreset Capabilities) (*versio
 	if !slices.Contains(VersionAttributions(), ladder.attribution) {
 		return nil, fmt.Errorf("attribution %q is not one of %q", stated.Attribution, VersionAttributions())
 	}
-	floor, err := namedPreset(stated.Floor)
+	floor, err := presets.named(stated.Floor)
 	if err != nil {
 		return nil, fmt.Errorf("floor: %w", err)
 	}
@@ -547,14 +556,14 @@ func readLadder(stated descriptor.Versions, defaultPreset Capabilities) (*versio
 		if i > 0 && compareFullVersion(minimum, ladder.steps[i-1].min) <= 0 {
 			return nil, fmt.Errorf("step %d: %q does not follow %q", i, step.Min, stated.Steps[i-1].Min)
 		}
-		preset, err := namedPreset(step.Preset)
+		preset, err := presets.named(step.Preset)
 		if err != nil {
 			return nil, fmt.Errorf("step %d: %w", i, err)
 		}
 		ladder.steps = append(ladder.steps, ladderStep{min: minimum, preset: preset})
 	}
 	if stated.Unreadable.Preset != "" {
-		unreadable, err := namedPreset(stated.Unreadable.Preset)
+		unreadable, err := presets.named(stated.Unreadable.Preset)
 		if err != nil {
 			return nil, fmt.Errorf("unreadable: %w", err)
 		}
@@ -610,11 +619,47 @@ func readIdentifierLimit(stated descriptor.IdentifierLimit) (IdentifierLimit, er
 	}
 }
 
-// namedPreset returns the shipped preset a descriptor names.
-func namedPreset(name string) (Capabilities, error) {
-	preset, found := shippedPresets()[name]
-	if !found {
-		return Capabilities{}, fmt.Errorf("preset %q is not one this package ships", name)
+// presetTable is the presets one descriptor declares, beside the shipped
+// ones every descriptor may name.
+type presetTable map[string]Capabilities
+
+// readPresets reads the presets a descriptor declares. A declared set must
+// validate, and its name must be new: neither a shipped preset's nor another
+// declared one's.
+func readPresets(declared []descriptor.Preset) (presetTable, error) {
+	presets := make(presetTable, len(declared))
+	for _, preset := range declared {
+		if preset.Name == "" {
+			return nil, errors.New("a declared preset has no name")
+		}
+		if _, shipped := shippedPresets()[preset.Name]; shipped {
+			return nil, fmt.Errorf("declared preset %q has the name of a preset this package ships", preset.Name)
+		}
+		if _, repeated := presets[preset.Name]; repeated {
+			return nil, fmt.Errorf("preset %q is declared twice", preset.Name)
+		}
+		flags := make(map[Capability]bool, len(preset.Flags))
+		for name, enabled := range preset.Flags {
+			flags[Capability(name)] = enabled
+		}
+		set := Of(flags)
+		if err := set.Validate(); err != nil {
+			return nil, fmt.Errorf("declared preset %q: %w", preset.Name, err)
+		}
+		presets[preset.Name] = set
+	}
+	return presets, nil
+}
+
+// named returns the preset a descriptor names: one it declares, or one this
+// package ships.
+func (t presetTable) named(name string) (Capabilities, error) {
+	if preset, declared := t[name]; declared {
+		return preset, nil
+	}
+	preset, shipped := shippedPresets()[name]
+	if !shipped {
+		return Capabilities{}, fmt.Errorf("preset %q is neither declared nor one this package ships", name)
 	}
 	return preset, nil
 }

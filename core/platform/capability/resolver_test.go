@@ -205,7 +205,7 @@ func TestNewResolver_FailurePath(t *testing.T) {
 		{
 			name:         "an unknown default preset",
 			capabilities: descriptor.Capabilities{DefaultPreset: "Postgres99"},
-			wantErr:      `.*dialect "acme": default preset: preset "Postgres99" is not one this package ships`,
+			wantErr:      `.*dialect "acme": default preset: preset "Postgres99" is neither declared nor one this package ships`,
 		},
 		{
 			name:         "a banner token in upper case",
@@ -242,7 +242,7 @@ func TestNewResolver_FailurePath(t *testing.T) {
 		{
 			name:         "no floor",
 			capabilities: ladder(descriptor.Versions{Scheme: "dotted", Attribution: "through-newest"}),
-			wantErr:      `.*versions: floor: preset "" is not one this package ships`,
+			wantErr:      `.*versions: floor: preset "" is neither declared nor one this package ships`,
 		},
 		{
 			name: "a step that is not a version",
@@ -282,7 +282,7 @@ func TestNewResolver_FailurePath(t *testing.T) {
 				Scheme: "dotted", Floor: "MySQL84", Attribution: "through-newest",
 				Steps: []descriptor.VersionStep{{Min: "3", Preset: "MySQL99"}},
 			}),
-			wantErr: `.*versions: step 0: preset "MySQL99" is not one this package ships`,
+			wantErr: `.*versions: step 0: preset "MySQL99" is neither declared nor one this package ships`,
 		},
 		{
 			name: "an unknown unreadable preset",
@@ -290,7 +290,7 @@ func TestNewResolver_FailurePath(t *testing.T) {
 				Scheme: "dotted", Floor: "MySQL84", Attribution: "through-newest",
 				Unreadable: descriptor.UnreadableVersion{Preset: "MySQL99"},
 			}),
-			wantErr: `.*versions: unreadable: preset "MySQL99" is not one this package ships`,
+			wantErr: `.*versions: unreadable: preset "MySQL99" is neither declared nor one this package ships`,
 		},
 		{
 			name: "a measured line of three numbers",
@@ -361,6 +361,97 @@ func TestNewResolver_FailurePath(t *testing.T) {
 			described := acme()
 			described.Capabilities = tt.capabilities
 			described.IdentifierLimit = tt.limit
+			registry, err := descriptor.NewRegistry(described)
+			c.Assert(err, qt.IsNil)
+
+			resolver, err := capability.NewResolver(registry)
+
+			c.Assert(err, qt.ErrorIs, descriptor.ErrInvalidDescriptor)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			c.Assert(resolver, qt.IsNil)
+		})
+	}
+}
+
+// acmeOwn is acme with a capability set of its own as its default and floor,
+// beside a shipped preset on the top step.
+func acmeOwn() descriptor.Dialect {
+	described := acme()
+	described.Capabilities.Presets = []descriptor.Preset{{
+		Name: "Acme1",
+		Flags: map[string]bool{
+			string(capability.ForeignKeys):                       true,
+			string(capability.ForeignKeysRequireUniqueReference): true,
+			string(capability.CheckConstraints):                  false,
+		},
+	}}
+	described.Capabilities.DefaultPreset = "Acme1"
+	described.Capabilities.Versions.Floor = "Acme1"
+	return described
+}
+
+// TestResolver_ReadsADeclaredPreset resolves a set no preset of this package
+// ships: the descriptor states its flags as data, which is how an engine
+// whose capabilities match no shipped line describes them.
+func TestResolver_ReadsADeclaredPreset(t *testing.T) {
+	c := qt.New(t)
+	registry, err := descriptor.NewRegistry(acmeOwn())
+	c.Assert(err, qt.IsNil)
+	resolver, err := capability.NewResolver(registry)
+	c.Assert(err, qt.IsNil)
+	want := capability.Of(map[capability.Capability]bool{
+		capability.ForeignKeys:                       true,
+		capability.ForeignKeysRequireUniqueReference: true,
+		capability.CheckConstraints:                  false,
+	})
+
+	c.Assert(resolver.ForDialect("acme"), qt.DeepEquals, want)
+	c.Assert(resolver.ResolveServerVersion("acme", "1.0").Capabilities, qt.DeepEquals, want)
+	c.Assert(resolver.ResolveServerVersion("acme", "no number").Capabilities, qt.DeepEquals, want)
+	c.Assert(resolver.ResolveServerVersion("acme", "3.1").Capabilities, qt.DeepEquals, capability.MySQL84())
+	c.Assert(resolver.ForDialect("acme").Established(capability.CheckConstraints), qt.IsTrue)
+	c.Assert(resolver.ForDialect("acme").Established(capability.Views), qt.IsFalse)
+}
+
+// TestNewResolver_FailurePath_DeclaredPresets refuses a declared set that
+// does not validate, and a name that would mean two sets.
+func TestNewResolver_FailurePath_DeclaredPresets(t *testing.T) {
+	tests := []struct {
+		name    string
+		presets []descriptor.Preset
+		wantErr string
+	}{
+		{
+			name:    "no name",
+			presets: []descriptor.Preset{{Flags: map[string]bool{"views": true}}},
+			wantErr: `.*dialect "acme": a declared preset has no name`,
+		},
+		{
+			name:    "the name of a shipped preset",
+			presets: []descriptor.Preset{{Name: "MySQL84", Flags: map[string]bool{"views": true}}},
+			wantErr: `.*declared preset "MySQL84" has the name of a preset this package ships`,
+		},
+		{
+			name:    "one name twice",
+			presets: []descriptor.Preset{{Name: "Acme1"}, {Name: "Acme1"}},
+			wantErr: `.*preset "Acme1" is declared twice`,
+		},
+		{
+			name:    "a flag the registry does not know",
+			presets: []descriptor.Preset{{Name: "Acme1", Flags: map[string]bool{"warp_drive": true}}},
+			wantErr: `.*declared preset "Acme1": unknown capability "warp_drive"`,
+		},
+		{
+			name:    "foreign keys with no reference policy",
+			presets: []descriptor.Preset{{Name: "Acme1", Flags: map[string]bool{"foreign_keys": true}}},
+			wantErr: `.*declared preset "Acme1": capability "foreign_keys" requires exactly one foreign-key reference policy`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := acme()
+			described.Capabilities.Presets = tt.presets
 			registry, err := descriptor.NewRegistry(described)
 			c.Assert(err, qt.IsNil)
 
