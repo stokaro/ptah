@@ -124,6 +124,10 @@ func TestDomainQuery_AsksTheCatalogThatHasTheAnswer(t *testing.T) {
 		{name: "the cols owner", query: domainColumnQuery, fragment: "c.owner = :1"},
 		{name: "the column count", query: domainQuery, fragment: "d.cols"},
 		{name: "the domain's type", query: domainQuery, fragment: "d.type"},
+		{name: "the DISPLAY expression", query: domainQuery, fragment: "d.data_display"},
+		{name: "the ORDER expression", query: domainQuery, fragment: "d.data_order"},
+		{name: "domain annotations", query: domainAnnotationQuery, fragment: "a.object_type = 'DOMAIN'"},
+		{name: "the annotated object's owner", query: domainAnnotationQuery, fragment: "a.annotation_owner = :1"},
 		{name: "the domains owner", query: domainQuery, fragment: "d.owner = :1"},
 		{name: "the constraint owner", query: domainConstraintQuery, fragment: "c.domain_owner = :1"},
 		{name: "checks only", query: domainConstraintQuery, fragment: "c.constraint_type = 'C'"},
@@ -161,10 +165,13 @@ func TestReadDomains_RecordsWhatTheModelCannotCarry(t *testing.T) {
 	c.Assert(objects, qt.DeepEquals, []schemaext.Object{{Ref: oratype.Ref(oratype.DomainKind, "", "D_SINGLE"),
 		Value: &oratype.ObservedDomain{BaseType: "VARCHAR2(10)", NotNull: true}}})
 	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{
+		undescribedDomainClaim("D_ANN", "the domain has annotations, which the domain model cannot describe"),
+		undescribedDomainClaim("D_DISP", "the domain has a DISPLAY expression, which the domain model cannot describe"),
 		undescribedDomainClaim("D_ENUM", "the domain is an enumeration domain, which the domain model cannot describe"),
 		undescribedDomainClaim("D_FLEX", "the domain is a flexible domain, which the domain model cannot describe"),
 		undescribedDomainClaim("D_LOST", "the read found 0 columns of a single-column domain"),
 		undescribedDomainClaim("D_MULTI", "the domain has 2 columns, and the domain model describes a single-column domain"),
+		undescribedDomainClaim("D_ORD", "the domain has an ORDER expression, which the domain model cannot describe"),
 	})
 }
 
@@ -176,7 +183,8 @@ func undescribedDomainClaim(name, reason string) schemaext.SubjectCoverage {
 }
 
 // domainShapeCatalog answers the domain read with one domain of each shape
-// ALL_DOMAINS reported on 23.26.3.0.0, and one whose column the read misses.
+// ALL_DOMAINS reported on 23.26.3.0.0, one with each clause the model has no
+// place for, and one whose column the read misses.
 func domainShapeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 	folded := strings.ToLower(query)
 	switch {
@@ -187,23 +195,31 @@ func domainShapeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult
 			Columns: []string{"domain_name", "column_name", "data_type", "data_length", "data_precision",
 				"data_scale", "char_length", "nullable", "data_default"},
 			Rows: [][]driver.Value{
+				{"D_ANN", "D_ANN", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_DISP", "D_DISP", "VARCHAR2", int64(10), nil, nil, int64(10), "Y", nil},
 				{"D_ENUM", "D_ENUM", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
 				{"D_FLEX", "A", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
 				{"D_FLEX", "K", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
 				{"D_MULTI", "LAT", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
 				{"D_MULTI", "LON", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_ORD", "D_ORD", "VARCHAR2", int64(10), nil, nil, int64(10), "Y", nil},
 				{"D_SINGLE", "D_SINGLE", "VARCHAR2", int64(10), nil, nil, int64(10), "N", nil},
 			},
 		}, nil
+	case strings.Contains(folded, "from all_annotations_usage"):
+		return dbtest.QueryResult{Columns: []string{"object_name"}, Rows: [][]driver.Value{{"D_ANN"}}}, nil
 	case strings.Contains(folded, "from all_domains"):
 		return dbtest.QueryResult{
-			Columns: []string{"name", "cols", "type"},
+			Columns: []string{"name", "cols", "type", "data_display", "data_order"},
 			Rows: [][]driver.Value{
-				{"D_ENUM", int64(1), "ENUMERATED"},
-				{"D_FLEX", int64(1), "FLEXIBLE"},
-				{"D_LOST", int64(1), "REGULAR"},
-				{"D_MULTI", int64(2), "REGULAR"},
-				{"D_SINGLE", int64(1), "REGULAR"},
+				{"D_ANN", int64(1), "REGULAR", nil, nil},
+				{"D_DISP", int64(1), "REGULAR", "UPPER(d_disp)", nil},
+				{"D_ENUM", int64(1), "ENUMERATED", nil, nil},
+				{"D_FLEX", int64(1), "FLEXIBLE", nil, nil},
+				{"D_LOST", int64(1), "REGULAR", nil, nil},
+				{"D_MULTI", int64(2), "REGULAR", nil, nil},
+				{"D_ORD", int64(1), "REGULAR", nil, "LOWER(d_ord)"},
+				{"D_SINGLE", int64(1), "REGULAR", nil, nil},
 			},
 		}, nil
 	}
@@ -268,8 +284,11 @@ func undecodedDomainCatalog(query string, _ []driver.NamedValue) (dbtest.QueryRe
 				"data_scale", "char_length", "nullable", "data_default"},
 			Rows: [][]driver.Value{{"D_ODD", "D_ODD", "UNDEFINED", int64(8), nil, nil, int64(0), "Y", nil}},
 		}, nil
+	case strings.Contains(folded, "from all_annotations_usage"):
+		return dbtest.QueryResult{Columns: []string{"object_name"}}, nil
 	case strings.Contains(folded, "from all_domains"):
-		return dbtest.QueryResult{Columns: []string{"name", "cols", "type"}, Rows: [][]driver.Value{{"D_ODD", int64(1), "REGULAR"}}}, nil
+		return dbtest.QueryResult{Columns: []string{"name", "cols", "type", "data_display", "data_order"},
+			Rows: [][]driver.Value{{"D_ODD", int64(1), "REGULAR", nil, nil}}}, nil
 	}
 	return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 }

@@ -62,12 +62,12 @@ func readTypes(c *qt.C, read *catalog.Database) (map[string]string, map[string][
 func nativeDatatypeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 	switch folded := strings.ToLower(query); {
 	case strings.Contains(folded, "from all_domains"):
-		return projectedTypeRows(query, []string{"name", "cols", "type"}, [][]driver.Value{
-			{"INTEGER_DOMAIN", int64(1), "REGULAR"},
-			{"ROUNDED_DOMAIN", int64(1), "REGULAR"},
-			{"NATIONAL_DOMAIN", int64(1), "REGULAR"},
-			{"NATIONAL_FIXED_DOMAIN", int64(1), "REGULAR"},
-			{"TEXT_DOMAIN", int64(1), "REGULAR"},
+		return projectedTypeRows(query, []string{"name", "cols", "type", "data_display", "data_order"}, [][]driver.Value{
+			{"INTEGER_DOMAIN", int64(1), "REGULAR", nil, nil},
+			{"ROUNDED_DOMAIN", int64(1), "REGULAR", nil, nil},
+			{"NATIONAL_DOMAIN", int64(1), "REGULAR", nil, nil},
+			{"NATIONAL_FIXED_DOMAIN", int64(1), "REGULAR", nil, nil},
+			{"TEXT_DOMAIN", int64(1), "REGULAR", nil, nil},
 		})
 	case strings.Contains(folded, "from all_domain_cols"):
 		return projectedTypeRows(query,

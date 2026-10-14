@@ -105,6 +105,12 @@ the unit cannot be told and the length reads bare. The view reports a
 another type the view reports as `UNDEFINED` is recorded as one the read
 cannot describe.
 
+A domain with a `DISPLAY` or `ORDER` expression or with annotations is
+recorded as found and not described, since the domain model has no place for
+them: described without them, it would read back and replay as a domain that
+has lost them. A declaration that names such a domain plans nothing for it,
+and the comparison reports it as undecided.
+
 Two of Oracle's catalog behaviors decide whether a domain converges. A domain declared `NOT NULL` grows a `CHECK` of its
 own, named by the server and numbered per database, and Ptah reads the
 nullability off the column instead so the plan does not carry that constraint
