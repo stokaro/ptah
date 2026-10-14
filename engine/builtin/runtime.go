@@ -46,6 +46,7 @@ import (
 	"ptah.run/internal/ydblowering"
 	"ptah.run/internal/ydbsource"
 	"ptah.run/internal/ydbsql"
+	"ptah.run/internal/yugabytecomparison"
 )
 
 // bundled is the runtime the package-level helpers (RenderSQL,
@@ -95,7 +96,7 @@ func New() (*engine.Runtime, error) {
 				// A routine body is the engine's own language, so its owner
 				// reads it, and a routine that declares no language is in it.
 				RoutineBodies: routineBodyReader(name),
-				Comparison:    schemacomparison.Rules{Routines: routineDefaults(name)},
+				Comparison:    schemacomparison.Rules{Routines: routineDefaults(name), Indexes: indexRules(name)},
 			}},
 		}
 		if name == platform.SQLServer {
@@ -326,4 +327,15 @@ func renderTarget(dialect string) string {
 		return normalized
 	}
 	return dialect
+}
+
+// indexRules returns the index rules a target registers before its owner's
+// services run, or nil. The shared comparison reads a YugabyteDB index's whole
+// definition through YugabyteDB's own rules; the owners of other targets
+// register theirs with their services.
+func indexRules(name string) schemacomparison.Indexes {
+	if name == platform.YugabyteDB {
+		return yugabytecomparison.Rules().Indexes
+	}
+	return nil
 }

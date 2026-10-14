@@ -1251,17 +1251,7 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// Add columns with optional operator class
 	var columnSpecs []string
 	for _, part := range node.EffectiveParts() {
-		columnSpec := r.renderIndexPart(part)
-		if part.Operator != "" {
-			columnSpec = fmt.Sprintf("%s %s", columnSpec, part.Operator)
-		} else if node.Operator != "" {
-			columnSpec = fmt.Sprintf("%s %s", columnSpec, node.Operator)
-		}
-		if part.Desc {
-			columnSpec += " DESC"
-		}
-		columnSpec += renderIndexPartNullsOrder(part)
-		columnSpecs = append(columnSpecs, columnSpec)
+		columnSpecs = append(columnSpecs, r.renderIndexKey(part, node.Operator))
 	}
 	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
 
@@ -1304,6 +1294,29 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	r.writeCreatedObjectComment(ast.CommentedIndex, r.qualifiedIndexTarget(node.Table, node.Name), node.Name, node.Comment)
 
 	return nil
+}
+
+// renderIndexKey renders one key of CREATE INDEX: what it indexes, its
+// operator class, or the index's where it has none, its direction and its
+// NULLS ordering.
+func (r *Renderer) renderIndexKey(part ast.IndexPart, indexOperator string) string {
+	key := r.renderIndexPart(part)
+	if part.Operator != "" {
+		key = fmt.Sprintf("%s %s", key, part.Operator)
+	} else if indexOperator != "" {
+		key = fmt.Sprintf("%s %s", key, indexOperator)
+	}
+	if part.Desc {
+		key += " DESC"
+	} else if r.dialect == platform.YugabyteDB && part.NullsOrder != "" {
+		// YugabyteDB builds a key that names no direction as a HASH key when
+		// it comes first, and a HASH key has no NULLS ordering: 2026.1.2
+		// answers `(b NULLS FIRST)` with "nulls sort ordering option is
+		// ignored" and builds `(b HASH)`. ASC makes it a range key, which
+		// keeps the ordering the key declares.
+		key += " ASC"
+	}
+	return key + renderIndexPartNullsOrder(part)
 }
 
 // renderIndexPartNullsOrder renders the NULLS clause for one index part.
