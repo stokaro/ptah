@@ -9,27 +9,27 @@ import (
 // catalog reports are one type.
 //
 // Oracle stores a domain's base type in its own spelling, and an alias the
-// declaration wrote does not come back. Measured on 23.26.3.0.0, ALL_DOMAIN_COLS
-// reports INTEGER, INT, SMALLINT, NUMERIC and DECIMAL as NUMBER(*,0),
-// DECIMAL(10,2) as NUMBER(10,2), NUMBER(10,0) as NUMBER(10), FLOAT and DOUBLE
-// PRECISION as FLOAT(126), REAL as FLOAT(63), TIMESTAMP as TIMESTAMP(6) with
-// or without a time zone, INTERVAL DAY TO SECOND as INTERVAL DAY(2) TO
-// SECOND(6), INTERVAL YEAR TO MONTH as INTERVAL YEAR(2) TO MONTH, VARCHAR(10)
-// and VARCHAR2(10 BYTE) as VARCHAR2(10), and CHAR as CHAR(1). Each spelling is
-// reduced to the catalog's before the two are compared, and case and spacing
-// do not count.
-//
-// A length the declaration gives in characters agrees with a bare length of
-// the same number: the catalog cannot always show the unit, for instance on a
-// single-byte database or at VARCHAR2(4000 CHAR). A catalog spelling that
-// names the unit is compared as it is.
+// declaration wrote does not come back; see [canonicalType] for the
+// spellings. A length the declaration gives in characters agrees with a bare
+// length of the same number: ALL_DOMAIN_COLS has no CHAR_USED, so the catalog
+// cannot always show the unit, for instance on a single-byte database or at
+// VARCHAR2(4000 CHAR). A catalog spelling that names the unit is compared as
+// it is.
 func sameBaseType(declared, held string) bool {
-	declared, held = canonicalBaseType(declared), canonicalBaseType(held)
+	declared, held = canonicalType(declared), canonicalType(held)
 	if declared == held {
 		return true
 	}
 	return !strings.HasSuffix(held, " CHAR)") && strings.HasSuffix(declared, " CHAR)") &&
 		strings.TrimSuffix(declared, " CHAR)")+")" == held
+}
+
+// sameAttributeType reports whether a declared object type attribute type and
+// the one the catalog reports are one type, once both are reduced by
+// [canonicalType]. ALL_TYPE_ATTRS reports the length unit in CHAR_USED, so a
+// length in characters and one in bytes always differ here.
+func sameAttributeType(declared, held string) bool {
+	return canonicalType(declared) == canonicalType(held)
 }
 
 var (
@@ -55,11 +55,22 @@ var fixedBaseTypes = map[string]string{
 	"REAL":             "FLOAT(63)",
 }
 
-// canonicalBaseType is a base type in the catalog's spelling: upper case, one
-// space between words and none around a parenthesis or a comma, and an alias
-// replaced by what the catalog reports for it. A spelling it does not know is
-// returned in that form, so it is compared as written.
-func canonicalBaseType(spelling string) string {
+// canonicalType is a type in one spelling for every alias Oracle accepts for
+// it: upper case, one space between words and none around a parenthesis or a
+// comma, and an alias replaced by the spelling ALL_DOMAIN_COLS reports for it.
+// A spelling it does not know is returned in that form, so it is compared as
+// written.
+//
+// Measured on 23.26.3.0.0, ALL_DOMAIN_COLS reports INTEGER, INT, SMALLINT,
+// NUMERIC and DECIMAL as NUMBER(*,0), DECIMAL(10,2) as NUMBER(10,2),
+// NUMBER(10,0) as NUMBER(10), FLOAT and DOUBLE PRECISION as FLOAT(126), REAL as
+// FLOAT(63), TIMESTAMP as TIMESTAMP(6) with or without a time zone, INTERVAL
+// DAY TO SECOND as INTERVAL DAY(2) TO SECOND(6), INTERVAL YEAR TO MONTH as
+// INTERVAL YEAR(2) TO MONTH, VARCHAR(10) and VARCHAR2(10 BYTE) as VARCHAR2(10),
+// and CHAR as CHAR(1). ALL_TYPE_ATTRS keeps some aliases instead -- INTEGER,
+// SMALLINT, DECIMAL, REAL, DOUBLE PRECISION and FLOAT come back by those names
+// -- and reduces to the same spelling here.
+func canonicalType(spelling string) string {
 	canonical := strings.ToUpper(strings.Join(strings.Fields(spelling), " "))
 	canonical = baseTypeSpace.ReplaceAllString(canonical, "$1$2")
 	if fixed, ok := fixedBaseTypes[canonical]; ok {

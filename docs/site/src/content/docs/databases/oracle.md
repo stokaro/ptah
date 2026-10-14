@@ -145,11 +145,19 @@ the statement that creates one, and reads it back from `ALL_TYPES` and
 `ALL_TYPE_ATTRS`.
 
 An object type is compared by its attributes, in order, names without regard
-to case. One whose attributes changed is replaced with the same statement,
+to case and types in the spelling the catalog reports, so `NUMERIC(5,2)` and
+`DECIMAL(5,2)`, `VARCHAR(10)` and `VARCHAR2(10)`, or `TIMESTAMP` and
+`TIMESTAMP(6)` agree. One whose attributes changed is replaced with the same statement,
 which Oracle refuses with `ORA-02303` while a column uses the type.
 
 Object attribute reads preserve `DECIMAL` precision and scale, including a
-negative scale. An unconstrained `FLOAT` remains `FLOAT`.
+negative scale. An unconstrained `FLOAT` remains `FLOAT`. A `TIMESTAMP` keeps
+its fractional precision, an `INTERVAL` its two precisions, and a `VARCHAR2` or
+`CHAR` length its unit, which `ALL_TYPE_ATTRS` reports in `CHAR_USED`. The
+catalog names the time zone forms `TIMESTAMP WITH TZ` and
+`TIMESTAMP WITH LOCAL TZ`, which no statement accepts, and the read writes
+them out as `TIMESTAMP(6) WITH TIME ZONE` and
+`TIMESTAMP(6) WITH LOCAL TIME ZONE`.
 
 The read describes the subset the model can carry, and records the rest as
 found and not described rather than flattening it: an object type with a
