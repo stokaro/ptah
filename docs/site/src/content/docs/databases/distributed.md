@@ -54,6 +54,11 @@ matching preset automatically.
   `CHECK (column IN (...))` constraint named `<table>_<column>_check`; a column
   added later takes that check as a separate `ADD CONSTRAINT`, because Spanner
   refuses a `CHECK` inside `ADD COLUMN`.
+  Spanner also refuses `ADD COLUMN` for a `NOT NULL` column without a default,
+  even on an empty table. Such a column is added nullable, and a separate
+  `ALTER COLUMN ... SET NOT NULL` follows. On a table that holds rows, that
+  second statement fails, because no row has a value for the new column; give
+  the column a default, which Spanner writes into every row, or fill it first.
   The preset excludes standalone sequences, row-level security, `XML`
   columns, advisory locks, and concurrent indexes. Foreign key actions are
   limited to `ON DELETE NO ACTION` or `CASCADE`; `ON UPDATE` fails before

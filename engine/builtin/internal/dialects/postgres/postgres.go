@@ -1612,6 +1612,12 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 // emulator behind PGAdapter v0.56.1) and accepts the same CHECK as a
 // constraint added next, so there the column is added without it and the
 // check follows under the name namedColumnCheck gives it.
+//
+// Spanner also refuses a NOT NULL column that declares no default ("Cannot
+// add NOT NULL column items.name to existing table items", measured on the
+// same emulator), whether or not the table holds a row. It accepts the column
+// added nullable and made NOT NULL next, so there the NOT NULL follows as its
+// own statement; see spannerDeferredNotNull.
 func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) error {
 	column := r.namedColumnCheck(table, op.Column)
 	var check *ast.ColumnNode
@@ -1621,6 +1627,12 @@ func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) erro
 		bare.Check, bare.CheckName, bare.CheckNotEnforced = "", "", false
 		column = &bare
 	}
+	notNull := r.spannerDeferredNotNull(column)
+	if notNull != nil {
+		nullable := *column
+		nullable.Nullable = true
+		column = &nullable
+	}
 	line, err := r.renderColumn(column)
 	if err != nil {
 		return fmt.Errorf("error rendering add column: %w", err)
@@ -1628,16 +1640,41 @@ func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) erro
 	// Remove the leading spaces from column rendering for ALTER
 	line = strings.TrimPrefix(line, "  ")
 	r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(table), addColumnClause(op), line)
-	if check == nil {
+	if check != nil {
+		clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
+			r.escapeQualifiedIdentifier(table), r.escapeIdentifier(check.CheckName), check.Check)
+		if check.CheckNotEnforced {
+			clause += " NOT ENFORCED"
+		}
+		r.w.WriteLinef("%s;", clause)
+	}
+	if notNull != nil {
+		r.writeColumnNullabilityChange(table, notNull)
+	}
+	return nil
+}
+
+// spannerDeferredNotNull is the SET NOT NULL a Spanner ADD COLUMN leaves for
+// the statement after it, or nil when the column can be added as declared.
+//
+// That is a NOT NULL column with no default, which Spanner refuses to add in
+// one statement. A default fills the rows that exist, and Spanner accepts
+// `ADD COLUMN c TEXT NOT NULL DEFAULT 'x'` on a table that holds rows, so a
+// column that declares one is added as declared. The SET NOT NULL is the one a
+// nullable column made NOT NULL gets: it carries the same comment, and it
+// fails the same way when a row holds NULL, which on a new column is any row.
+// A primary key column is not added this way, and a generated or identity
+// column computes its value.
+func (r *Renderer) spannerDeferredNotNull(column *ast.ColumnNode) *ast.ModifyColumnOperation {
+	if r.dialect != platform.Spanner || column == nil || column.Nullable || column.Primary ||
+		column.Default != nil || column.GeneratedExpression != "" || column.IdentityGeneration != "" {
 		return nil
 	}
-	clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
-		r.escapeQualifiedIdentifier(table), r.escapeIdentifier(check.CheckName), check.Check)
-	if check.CheckNotEnforced {
-		clause += " NOT ENFORCED"
+	return &ast.ModifyColumnOperation{
+		Column:     column,
+		Changed:    ast.ColumnProperties{Nullability: true},
+		HasChanged: true,
 	}
-	r.w.WriteLinef("%s;", clause)
-	return nil
 }
 
 // namedColumnCheck gives an unnamed column CHECK on Spanner the name the
