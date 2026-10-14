@@ -23,5 +23,5 @@ func ReadRehearsalSchemaContext(ctx context.Context, conn *DatabaseConnection) (
 	if err != nil {
 		return nil, err
 	}
-	return recordUnmodeledObjectKinds(schema, conn.Info().Dialect), nil
+	return conn.engine().MarkRead(schema, conn.Info()), nil
 }

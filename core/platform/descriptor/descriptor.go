@@ -79,6 +79,18 @@ type Dialect struct {
 	// the grantee at the whole object rather than to one privilege, so
 	// revoking the option from one privilege revokes it from all of them.
 	GrantOptionPerObject bool `json:"grant_option_per_object,omitempty"`
+
+	// Driver is the database/sql driver a connection to the dialect opens,
+	// such as "pgx". A connection may take another driver where the URL asks
+	// for another transport: a libsql:// URL selects SQLite and reaches its
+	// server through the libsql driver. Empty means Ptah does not connect to
+	// the dialect. It uses the alphabet of Name.
+	Driver string `json:"driver,omitempty"`
+	// WireScheme is the URL scheme the driver reads in place of the dialect's
+	// own, such as "postgres" for CockroachDB, whose server speaks the
+	// PostgreSQL protocol to a driver that does not know its name. Empty keeps
+	// the scheme the URL carries. It uses the alphabet of Name.
+	WireScheme string `json:"wire_scheme,omitempty"`
 }
 
 // Identifiers states how an engine compares identifiers offline. The values
@@ -163,6 +175,9 @@ func (d Dialect) validate() error {
 	}
 	if !slices.Contains(Placeholders(), d.Placeholder) {
 		return fmt.Errorf("%w: dialect %q: placeholder %q is not one of %q", ErrInvalidDescriptor, d.Name, d.Placeholder, Placeholders())
+	}
+	if err := d.validateConnection(); err != nil {
+		return err
 	}
 	return nil
 }

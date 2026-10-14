@@ -18,11 +18,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
@@ -478,402 +478,6 @@ func TestDatabaseConnectionWithSession_KeepsTheConnectionRefinement(t *testing.T
 	c.Assert(db.QueryCount(), qt.Equals, 0)
 }
 
-func TestRefineMySQLForeignKeyCapabilities_RestrictionEnabled(t *testing.T) {
-	c := qt.New(t)
-	probeCalls := 0
-
-	got, err := refineMySQLForeignKeyCapabilities(
-		"mysql",
-		capability.MySQL84(),
-		capability.MySQL84(),
-		func(destination ...any) error {
-			probeCalls++
-			value := destination[0].(*int64)
-			*value = 1
-			return nil
-		},
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(probeCalls, qt.Equals, 1)
-	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
-	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
-	c.Assert(got.Validate(), qt.IsNil)
-}
-
-func TestRefineMySQLForeignKeyCapabilities_RestrictionDisabled(t *testing.T) {
-	c := qt.New(t)
-
-	got, err := refineMySQLForeignKeyCapabilities(
-		"mysql",
-		capability.MySQL84(),
-		capability.MySQL84(),
-		func(destination ...any) error {
-			value := destination[0].(*int64)
-			*value = 0
-			return nil
-		},
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
-	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
-	c.Assert(got.Validate(), qt.IsNil)
-}
-
-func TestRefineMySQLForeignKeyCapabilities_LegacyPresetSkipsProbe(t *testing.T) {
-	c := qt.New(t)
-	probeCalls := 0
-
-	got, err := refineMySQLForeignKeyCapabilities(
-		"mysql",
-		capability.MySQL8019(),
-		capability.MySQL8019(),
-		func(...any) error {
-			probeCalls++
-			return nil
-		},
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(probeCalls, qt.Equals, 0)
-	c.Assert(got, qt.DeepEquals, capability.MySQL8019())
-}
-
-func TestRefineMySQLForeignKeyCapabilities_RestrictionEnabledRestoresStrictPolicy(t *testing.T) {
-	c := qt.New(t)
-
-	got, err := refineMySQLForeignKeyCapabilities(
-		"mysql",
-		capability.MySQL84().
-			With(capability.ForeignKeysRequireUniqueReference, false).
-			With(capability.ForeignKeysRequireIndexedReference, true),
-		capability.MySQL84(),
-		func(destination ...any) error {
-			value := destination[0].(*int64)
-			*value = 1
-			return nil
-		},
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
-	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
-	c.Assert(got.Validate(), qt.IsNil)
-}
-
-func TestRefineMySQLForeignKeyCapabilities_ProbeFailure(t *testing.T) {
-	c := qt.New(t)
-
-	got, err := refineMySQLForeignKeyCapabilities(
-		"mysql",
-		capability.MySQL84(),
-		capability.MySQL84(),
-		func(...any) error { return driver.ErrBadConn },
-	)
-
-	c.Assert(err, qt.ErrorMatches, `query restrict_fk_on_non_standard_key: driver: bad connection`)
-	c.Assert(got.Len(), qt.Equals, 0)
-}
-
-func TestConvertClickHouseURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "passthrough canonical URL",
-			input:    "clickhouse://default:secret@localhost:9000/analytics",
-			expected: "clickhouse://default:secret@localhost:9000/analytics",
-		},
-		{
-			name:     "rewrites uppercase scheme",
-			input:    "CLICKHOUSE://default@localhost:9000/db",
-			expected: "clickhouse://default@localhost:9000/db",
-		},
-		{
-			name:     "returns input on malformed URL",
-			input:    "::not-a-url::",
-			expected: "::not-a-url::",
-		},
-		{
-			name:     "native TLS port 9440 round-trips",
-			input:    "clickhouse://default@localhost:9440/analytics",
-			expected: "clickhouse://default@localhost:9440/analytics",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(convertClickHouseURL(tt.input), qt.Equals, tt.expected)
-		})
-	}
-}
-
-func TestConvertClickHouseURL_PreservesQueryParameters(t *testing.T) {
-	c := qt.New(t)
-
-	got := convertClickHouseURL("clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s")
-
-	c.Assert(got, qt.Contains, "clickhouse://default:secret@localhost:9000/analytics?")
-	for kv := range strings.SplitSeq("secure=true&dial_timeout=10s", "&") {
-		c.Assert(got, qt.Contains, kv)
-	}
-}
-
-func TestConvertClickHouseURL_ExactQueryRoundTrips(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "preserves secure=true on native port",
-			input:    "clickhouse://default@localhost:9000/analytics?secure=true",
-			expected: "clickhouse://default@localhost:9000/analytics?secure=true",
-		},
-		{
-			name:     "HTTP-SSL port 8443 with secure flag round-trips",
-			input:    "clickhouse://default@localhost:8443/db?secure=true",
-			expected: "clickhouse://default@localhost:8443/db?secure=true",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(convertClickHouseURL(tt.input), qt.Equals, tt.expected)
-		})
-	}
-}
-
-func TestConvertSQLiteURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "relative file host",
-			input:    "sqlite://test.db",
-			expected: "test.db?_pragma=foreign_keys%281%29",
-		},
-		{
-			name:     "relative nested file",
-			input:    "sqlite://data/app.db",
-			expected: "data/app.db?_pragma=foreign_keys%281%29",
-		},
-		{
-			name:     "absolute file path",
-			input:    "sqlite:///tmp/app.db",
-			expected: "/tmp/app.db?_pragma=foreign_keys%281%29",
-		},
-		{
-			name:     "memory database",
-			input:    "sqlite:///:memory:",
-			expected: ":memory:?_pragma=foreign_keys%281%29",
-		},
-		{
-			// The form this repository's own tests, help text and docs use.
-			// Without the file: prefix SQLite never reads the query at all and
-			// opens a FILE named `dev`, which then carries the previous run's
-			// state into the next plan (stokaro/ptah#1819).
-			name:     "named memory database becomes a uri",
-			input:    "sqlite://dev?mode=memory",
-			expected: "file:dev?_pragma=foreign_keys%281%29&mode=memory",
-		},
-		{
-			name:     "named memory database keeps a shared cache",
-			input:    "sqlite://dev?mode=memory&cache=shared",
-			expected: "file:dev?_pragma=foreign_keys%281%29&cache=shared&mode=memory",
-		},
-		{
-			// A plain path stays a plain path: file: there would change how a
-			// name containing ? or # is read.
-			name:     "a file database is not rewritten",
-			input:    "sqlite://dev.db",
-			expected: "dev.db?_pragma=foreign_keys%281%29",
-		},
-		{
-			name:     "uri memory database",
-			input:    "sqlite:file:memdb1?mode=memory&cache=shared",
-			expected: "file:memdb1?_pragma=foreign_keys%281%29&cache=shared&mode=memory",
-		},
-		{
-			name:     "preserves explicit foreign keys pragma",
-			input:    "sqlite:///:memory:?_pragma=foreign_keys(0)",
-			expected: ":memory:?_pragma=foreign_keys%280%29",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(convertSQLiteURL(tt.input), qt.Equals, tt.expected)
-		})
-	}
-}
-
-func TestIsSQLiteMemoryDSN(t *testing.T) {
-	tests := []struct {
-		name string
-		dsn  string
-		want bool
-	}{
-		{name: "default empty dsn", dsn: "", want: true},
-		{name: "memory path", dsn: ":memory:?_pragma=foreign_keys%281%29", want: true},
-		{name: "anonymous uri memory path", dsn: "file::memory:?_pragma=foreign_keys%281%29&cache=shared", want: true},
-		{name: "uri memory mode", dsn: "file:memdb1?_pragma=foreign_keys%281%29&cache=shared&mode=memory", want: true},
-		{name: "file path", dsn: "test.db?_pragma=foreign_keys%281%29", want: false},
-		{name: "absolute file path", dsn: "/tmp/app.db?_pragma=foreign_keys%281%29", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(isSQLiteMemoryDSN(tt.dsn), qt.Equals, tt.want)
-		})
-	}
-}
-
-func TestConvertSQLServerURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "canonical sqlserver URL passes through",
-			input:    "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable",
-			expected: "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable",
-		},
-		{
-			name:     "mssql alias rewrites to preferred driver scheme",
-			input:    "mssql://sa:pass@localhost:1433?database=ptah&encrypt=disable",
-			expected: "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable",
-		},
-		{
-			name:     "drops ptah-only schema parameter before driver sees URL",
-			input:    "mssql://sa:pass@localhost:1433?database=ptah&schema=custom&encrypt=disable",
-			expected: "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable",
-		},
-		{
-			name:     "malformed URL falls back",
-			input:    "::not-a-url::",
-			expected: "::not-a-url::",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(convertSQLServerURL(tt.input), qt.Equals, tt.expected)
-		})
-	}
-}
-
-func TestConvertPostgresWireURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "postgres passthrough with pool params removed",
-			input:    "postgres://user:pass@localhost:5432/app?pool_max_conns=10&sslmode=disable",
-			expected: "postgres://user:pass@localhost:5432/app?sslmode=disable",
-		},
-		{
-			name:     "cockroachdb scheme rewrites to postgres for pgx",
-			input:    "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable",
-			expected: "postgres://root@localhost:26257/defaultdb?sslmode=disable",
-		},
-		{
-			name:     "yugabytedb scheme rewrites to postgres for pgx",
-			input:    "yugabytedb://yugabyte@localhost:5433/yugabyte",
-			expected: "postgres://yugabyte@localhost:5433/yugabyte",
-		},
-		{
-			name:     "spanner scheme rewrites to postgres for pgx",
-			input:    "spanner://user@localhost:5432/db",
-			expected: "postgres://user@localhost:5432/db",
-		},
-		{
-			name:     "malformed URL falls back to cleaned input",
-			input:    "::not-a-url::",
-			expected: "::not-a-url::",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(convertPostgresWireURL(tt.input), qt.Equals, tt.expected)
-		})
-	}
-}
-
-func TestDetectPostgresWireDialect(t *testing.T) {
-	tests := []struct {
-		name     string
-		declared string
-		version  string
-		expected string
-	}{
-		{
-			name:     "plain postgres",
-			declared: "postgres",
-			version:  "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)",
-			expected: "postgres",
-		},
-		{
-			name:     "cockroach detected from postgres URL",
-			declared: "postgres",
-			version:  "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)",
-			expected: "cockroachdb",
-		},
-		{
-			name:     "yugabyte detected from postgres URL",
-			declared: "postgres",
-			version:  "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang, YugabyteDB",
-			expected: "yugabytedb",
-		},
-		{
-			name:     "spanner detected from postgres URL",
-			declared: "postgres",
-			version:  "Cloud Spanner PostgreSQL interface",
-			expected: "spanner",
-		},
-		{
-			name:     "explicit cockroach survives generic banner",
-			declared: "cockroachdb",
-			version:  "PostgreSQL-compatible server",
-			expected: "cockroachdb",
-		},
-		{
-			name:     "explicit spanner survives a plain PostgreSQL banner",
-			declared: "spanner",
-			version:  "PostgreSQL 14.1",
-			expected: "spanner",
-		},
-		{
-			name:     "explicit yugabyte survives a PostgreSQL engine banner",
-			declared: "yugabytedb",
-			version:  "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
-			expected: "yugabytedb",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(detectPostgresWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
-		})
-	}
-}
-
 // TestWireDialectDetectionAgreesWithTheCapabilityResolver holds the two readers
 // of a SELECT version() banner to one answer.
 //
@@ -893,97 +497,81 @@ func TestDetectPostgresWireDialect(t *testing.T) {
 func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 	tests := []struct {
 		name     string
-		detect   func(declared, version string) string
 		declared string
 		version  string
 	}{
 		{
 			name:     "postgres wire, plain PostgreSQL banner",
-			detect:   detectPostgresWireDialect,
 			declared: "postgres",
 			version:  "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)",
 		},
 		{
 			name:     "postgres wire, CockroachDB banner on a postgres URL",
-			detect:   detectPostgresWireDialect,
 			declared: "postgres",
 			version:  "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
 		},
 		{
 			name:     "postgres wire, YugabyteDB banner on a postgres URL",
-			detect:   detectPostgresWireDialect,
 			declared: "postgres",
 			version:  "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang, YugabyteDB",
 		},
 		{
 			name:     "postgres wire, Spanner banner on a postgres URL",
-			detect:   detectPostgresWireDialect,
 			declared: "postgres",
 			version:  "Cloud Spanner PostgreSQL interface",
 		},
 		{
 			name:     "postgres wire, explicit cockroachdb with a generic banner",
-			detect:   detectPostgresWireDialect,
 			declared: "cockroachdb",
 			version:  "PostgreSQL-compatible server 25.4",
 		},
 		{
 			name:     "postgres wire, explicit cockroachdb with an unversioned generic banner",
-			detect:   detectPostgresWireDialect,
 			declared: "cockroachdb",
 			version:  "PostgreSQL-compatible server",
 		},
 		{
 			name:     "postgres wire, explicit cockroachdb with its own banner",
-			detect:   detectPostgresWireDialect,
 			declared: "cockroachdb",
 			version:  "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
 		},
 		{
 			name:     "postgres wire, explicit yugabytedb with a PostgreSQL engine banner",
-			detect:   detectPostgresWireDialect,
 			declared: "yugabytedb",
 			version:  "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
 		},
 		{
 			name:     "postgres wire, explicit yugabytedb with its own banner",
-			detect:   detectPostgresWireDialect,
 			declared: "yugabytedb",
 			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
 		},
 		{
 			name:     "postgres wire, explicit spanner with a plain PostgreSQL banner",
-			detect:   detectPostgresWireDialect,
 			declared: "spanner",
 			version:  "PostgreSQL 14.1",
 		},
 		{
 			name:     "postgres wire, explicit spanner with its own banner",
-			detect:   detectPostgresWireDialect,
 			declared: "spanner",
 			version:  "Cloud Spanner PostgreSQL interface",
 		},
 		{
 			name:     "mysql wire, MySQL banner",
-			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mysql",
 			version:  "9.7.1",
 		},
 		{
 			name:     "mysql wire, MariaDB banner on a mysql URL",
-			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mysql",
 			version:  "10.11.15-MariaDB-ubu2204",
 		},
 		{
 			name:     "mysql wire, the replication prefix on a mysql URL",
-			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mysql",
 			version:  "5.5.5-10.11.15-MariaDB-ubu2204",
 		},
 		{
 			name:     "mysql wire, a mariadb URL naming a server that does not announce MariaDB",
-			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mariadb",
 			version:  "MySQL-compatible server 8.0",
 		},
@@ -992,8 +580,15 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+			db := bannerDB(c, tt.version)
 
-			detected := tt.detect(tt.declared, tt.version)
+			info, err := getDatabaseInfo(
+				c.Context(), serviceFor(tt.declared), &connector.Pool{DB: db.SQL},
+				requestFor(c, tt.declared+"://localhost/app"),
+			)
+
+			c.Assert(err, qt.IsNil)
+			detected := info.Dialect
 			resolution := capability.ResolveServerVersion(detected, tt.version)
 
 			c.Assert(detected, qt.Not(qt.Equals), "")
@@ -1003,38 +598,32 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 	}
 }
 
-// detectMySQLWireDialectIgnoringScheme gives detectMySQLWireDialect the shape
-// the agreement table above calls both wire detectors through. The scheme is
-// dropped because the MySQL wire does not read it.
-func detectMySQLWireDialectIgnoringScheme(_, version string) string {
-	return detectMySQLWireDialect(version)
+// bannerDB is a server that answers the questions a PostgreSQL-wire or
+// MySQL-wire connection asks when it is described: the version banner, the
+// session's schema and CockroachDB's integer width.
+func bannerDB(c *qt.C, version string) *dbtest.DB {
+	answers := map[string]dbtest.QueryResult{
+		"SELECT version()":        {Columns: []string{"version"}, Rows: [][]driver.Value{{version}}},
+		"SELECT VERSION()":        {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{version}}},
+		"SELECT current_schema()": {Columns: []string{"current_schema"}, Rows: [][]driver.Value{{"public"}}},
+		"SHOW default_int_size":   {Columns: []string{"default_int_size"}, Rows: [][]driver.Value{{"8"}}},
+	}
+	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		answer, known := answers[query]
+		c.Assert(known, qt.IsTrue, qt.Commentf("unexpected query %q", query))
+		return answer, nil
+	})
 }
 
-// TestDetectMySQLWireDialect reads the product from the banner alone. The
-// banners are the ones MySQL 8.4.11, MySQL 9.7.0, MariaDB 10.11.15 and MariaDB
-// 11.8.9 answer with; the generic one is a server announcing neither, which is
-// MySQL whatever scheme reached it, as it is to the pinned community binary
-// (stokaro/ptah#3756).
-func TestDetectMySQLWireDialect(t *testing.T) {
-	tests := []struct {
-		name     string
-		version  string
-		expected string
-	}{
-		{name: "MySQL 9.7", version: "9.7.0", expected: "mysql"},
-		{name: "MySQL 8.4", version: "8.4.11", expected: "mysql"},
-		{name: "MariaDB 10.11", version: "10.11.15-MariaDB-ubu2204", expected: "mariadb"},
-		{name: "MariaDB 11.8", version: "11.8.9-MariaDB-ubu2404", expected: "mariadb"},
-		{name: "MariaDB behind the replication prefix", version: "5.5.5-10.11.15-MariaDB-ubu2204", expected: "mariadb"},
-		{name: "a server that does not announce MariaDB", version: "MySQL-compatible server", expected: "mysql"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(detectMySQLWireDialect(tt.version), qt.Equals, tt.expected)
-		})
-	}
+// requestFor is the request a connection to dbURL is opened from.
+func requestFor(c *qt.C, dbURL string) connector.Request {
+	parsed, err := parseDatabaseURL(dbURL)
+	c.Assert(err, qt.IsNil)
+	dialect, err := connectionDialect(parsed)
+	c.Assert(err, qt.IsNil)
+	described, known := platform.Lookup(dialect)
+	c.Assert(known, qt.IsTrue)
+	return connector.Request{Dialect: described, URL: dbURL, Parsed: parsed}
 }
 
 func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
@@ -1053,183 +642,6 @@ func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
 	c.Assert(conn.Info().Capabilities.Has(capability.XMLType), qt.IsFalse)
 }
 
-func TestRemovePostgresPoolParams(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "URL with both pool params",
-			input:    "postgres://user:pass@localhost:5432/db?pool_max_conns=10&pool_min_conns=2&other=value",
-			expected: "postgres://user:pass@localhost:5432/db?other=value",
-		},
-		{
-			name:     "URL with only max_conns",
-			input:    "postgres://user:pass@localhost:5432/db?pool_max_conns=10&other=value",
-			expected: "postgres://user:pass@localhost:5432/db?other=value",
-		},
-		{
-			name:     "URL with only min_conns",
-			input:    "postgres://user:pass@localhost:5432/db?pool_min_conns=2&other=value",
-			expected: "postgres://user:pass@localhost:5432/db?other=value",
-		},
-		{
-			name:     "URL without pool params",
-			input:    "postgres://user:pass@localhost:5432/db?other=value",
-			expected: "postgres://user:pass@localhost:5432/db?other=value",
-		},
-		{
-			name:     "URL with no query params",
-			input:    "postgres://user:pass@localhost:5432/db",
-			expected: "postgres://user:pass@localhost:5432/db",
-		},
-		{
-			name:     "URL with pool params and multiple other params",
-			input:    "postgres://user:pass@localhost:5432/db?sslmode=disable&pool_max_conns=20&timeout=30&pool_min_conns=5&application_name=myapp",
-			expected: "postgres://user:pass@localhost:5432/db?sslmode=disable&timeout=30&application_name=myapp",
-		},
-		{
-			name:     "URL with pool params at different positions",
-			input:    "postgres://user:pass@localhost:5432/db?first=1&pool_max_conns=10&middle=2&pool_min_conns=3&last=4",
-			expected: "postgres://user:pass@localhost:5432/db?first=1&middle=2&last=4",
-		},
-		{
-			name:     "URL with only pool params (should result in no query string)",
-			input:    "postgres://user:pass@localhost:5432/db?pool_max_conns=10&pool_min_conns=2",
-			expected: "postgres://user:pass@localhost:5432/db",
-		},
-		{
-			name:     "Invalid URL fallback",
-			input:    "not-a-url",
-			expected: "not-a-url",
-		},
-		{
-			name:     "URL with special characters in pool params",
-			input:    "postgres://user:pass@localhost:5432/db?pool_max_conns=10&other=special%20value&pool_min_conns=2",
-			expected: "postgres://user:pass@localhost:5432/db?other=special%20value",
-		},
-		{
-			name:     "Empty URL",
-			input:    "",
-			expected: "",
-		},
-		{
-			name:     "URL with case variations (should not match)",
-			input:    "postgres://user:pass@localhost:5432/db?POOL_MAX_CONNS=10&Pool_Min_Conns=2&other=value",
-			expected: "postgres://user:pass@localhost:5432/db?POOL_MAX_CONNS=10&Pool_Min_Conns=2&other=value",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			result := removePostgresPoolParams(tt.input)
-			c.Assert(result, qt.Equals, tt.expected, qt.Commentf("removePostgresPoolParams(%q) = %q, want %q", tt.input, result, tt.expected))
-		})
-	}
-}
-
-func TestRemovePostgresPoolParams_ParameterOrdering(t *testing.T) {
-	c := qt.New(t)
-
-	// Test that the function produces consistent results regardless of input parameter order
-	input1 := "postgres://user:pass@localhost:5432/db?pool_max_conns=10&other=value&pool_min_conns=2"
-	input2 := "postgres://user:pass@localhost:5432/db?pool_min_conns=2&pool_max_conns=10&other=value"
-	input3 := "postgres://user:pass@localhost:5432/db?other=value&pool_max_conns=10&pool_min_conns=2"
-
-	result1 := removePostgresPoolParams(input1)
-	result2 := removePostgresPoolParams(input2)
-	result3 := removePostgresPoolParams(input3)
-
-	// All should result in the same cleaned URL
-	expected := "postgres://user:pass@localhost:5432/db?other=value"
-	c.Assert(result1, qt.Equals, expected)
-	c.Assert(result2, qt.Equals, expected)
-	c.Assert(result3, qt.Equals, expected)
-
-	// All results should be identical
-	c.Assert(result1, qt.Equals, result2)
-	c.Assert(result2, qt.Equals, result3)
-}
-
-func TestRemovePostgresPoolParams_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "URL with fragment",
-			input:    "postgres://user:pass@localhost:5432/db?pool_max_conns=10#fragment",
-			expected: "postgres://user:pass@localhost:5432/db#fragment",
-		},
-		{
-			name:     "URL with port and path",
-			input:    "postgres://user:pass@localhost:5432/path/to/db?pool_max_conns=10&pool_min_conns=2",
-			expected: "postgres://user:pass@localhost:5432/path/to/db",
-		},
-		{
-			name:     "URL with encoded characters",
-			input:    "postgres://user:pass%40word@localhost:5432/db?pool_max_conns=10&other=value%20with%20spaces",
-			expected: "postgres://user:pass%40word@localhost:5432/db?other=value%20with%20spaces",
-		},
-		{
-			name:     "URL with duplicate non-pool params (should preserve all)",
-			input:    "postgres://user:pass@localhost:5432/db?other=value1&pool_max_conns=10&other=value2",
-			expected: "postgres://user:pass@localhost:5432/db?other=value1&other=value2",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			result := removePostgresPoolParams(tt.input)
-			c.Assert(result, qt.Equals, tt.expected, qt.Commentf("removePostgresPoolParams(%q) = %q, want %q", tt.input, result, tt.expected))
-		})
-	}
-}
-
-// TestConvertMySQLURL_KeepsAUnixSocketTarget pins the network form the TCP
-// branch already had.
-//
-// go-sql-driver takes tcp(...) and unix(...) as two spellings of one thing: the
-// network and the address to reach it on. Only the first was recognized here
-// and in the scheme detection above it, so a valid socket address was parsed as
-// a host called "unix(" with the socket path folded into the database name.
-// Nothing about that failure named the socket.
-func TestConvertMySQLURL_KeepsAUnixSocketTarget(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{
-			name: "a socket target keeps its network",
-			url:  "mysql://user:pass@unix(/tmp/mysql.sock)/db",
-			want: "user:pass@unix(/tmp/mysql.sock)/db",
-		},
-		{
-			name: "a mariadb socket target too",
-			url:  "mariadb://user:pass@unix(/var/run/mysqld/mysqld.sock)/db",
-			want: "user:pass@unix(/var/run/mysqld/mysqld.sock)/db",
-		},
-		{
-			name: "the TCP spelling is unchanged",
-			url:  "mysql://user:pass@tcp(127.0.0.1:3306)/db",
-			want: "user:pass@tcp(127.0.0.1:3306)/db",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(convertMySQLURL(test.url), qt.Equals, test.want)
-		})
-	}
-}
-
 // TestConnectToDatabase_ReadsTheDialectOfASocketURL is the other half: the
 // scheme detection has to recognize the same shape, or the URL never reaches
 // the converter as MySQL at all.
@@ -1245,56 +657,6 @@ func TestConnectToDatabase_ReadsTheDialectOfASocketURL(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
-}
-
-// TestParseDatabaseURL_AcceptsAWindowsPath pins the shape that made ptah
-// unusable on Windows.
-//
-// A drive letter's colon is not a port separator, but net/url reads it as one
-// and refuses the whole URL, so every command that provisions a local database
-// failed: 1014 tests across more than thirty packages, 1382 of them reporting
-// "invalid database URL". The path is carried as opaque, which is the shape
-// convertSQLiteURL reads first, so what the driver receives is the path itself.
-//
-// The rows run on every operating system because this is string handling, not
-// a filesystem call -- which is the only reason the fix is testable from a
-// machine that is not the one it is for.
-func TestParseDatabaseURL_AcceptsAWindowsPath(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{
-			name: "a backslash path",
-			url:  `sqlite://C:\Users\runner\AppData\Local\Temp\shadow.db`,
-			want: `C:\Users\runner\AppData\Local\Temp\shadow.db`,
-		},
-		{
-			name: "a forward-slash path with a drive",
-			url:  "sqlite://D:/data/app.db",
-			want: "D:/data/app.db",
-		},
-		{
-			name: "a lowercase drive letter",
-			url:  `sqlite://c:\tmp\app.db`,
-			want: `c:\tmp\app.db`,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			parsed, err := parseDatabaseURL(test.url)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(parsed.Scheme, qt.Equals, "sqlite")
-			// The DSN carries the pragma this package appends to every SQLite
-			// address, so the path is matched as a prefix rather than whole.
-			c.Assert(convertSQLiteURL(test.url), qt.Matches, regexp.QuoteMeta(test.want)+`(\?.*)?`)
-		})
-	}
 }
 
 // TestParseDatabaseURL_StillRefusesAnAddressThatIsNotOne is the control that
@@ -1343,30 +705,6 @@ func TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 	}
 }
 
-// TestParseDatabaseURL_KeepsTheQueryOfAWindowsPath keeps the accommodation
-// from eating the options.
-//
-// Carrying the whole remainder as opaque put the query inside the path, so
-// convertSQLiteURL saw no query and appended its pragma with a second "?" --
-// C:\tmp\app.db?mode=ro?_pragma=... The mode was silently not applied, which on
-// a read-only target means the database opens with the wrong semantics rather
-// than failing.
-func TestParseDatabaseURL_KeepsTheQueryOfAWindowsPath(t *testing.T) {
-	c := qt.New(t)
-
-	parsed, err := parseDatabaseURL(`sqlite://C:\tmp\app.db?mode=ro`)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.Opaque, qt.Equals, `C:\tmp\app.db`)
-	c.Assert(parsed.RawQuery, qt.Equals, "mode=ro")
-	// One "?" and both parameters. Their order is the package's own and not
-	// what this pins; that the requested one survives at all is.
-	dsn := convertSQLiteURL(`sqlite://C:\tmp\app.db?mode=ro`)
-	c.Assert(strings.Count(dsn, "?"), qt.Equals, 1)
-	c.Assert(dsn, qt.Contains, `C:\tmp\app.db?`)
-	c.Assert(dsn, qt.Contains, "mode=ro")
-}
-
 // TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials covers the half of
 // the grammar the first recognizer missed.
 //
@@ -1397,42 +735,6 @@ func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
 	}
 }
 
-// TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials pins the other
-// half of stokaro/ptah#1540: the parser above accepted these two targets while
-// the converter did not recognize them, and ConnectToDatabase calls both in
-// sequence.
-//
-// What the caller saw was not a refusal. The TCP target reached the driver
-// with "mysql://" still attached, and the socket target reached it as
-// ":@tcp(unix()/tmp/mysql.sock)/shop" -- an address assembled out of a host
-// that was never a host. Both fail at the driver, naming a DSN the caller
-// never wrote.
-func TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{name: "a TCP target with no credentials", url: "mysql://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
-		{name: "a socket target with no credentials", url: "mysql://unix(/tmp/mysql.sock)/shop", want: "unix(/tmp/mysql.sock)/shop"},
-		{name: "the MariaDB scheme reads the same", url: "mariadb://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
-		{name: "the maria spelling reads the same", url: "maria://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
-		{name: "a scheme in upper case reads the same", url: "MARIA://unix(/tmp/mysql.sock)/shop", want: "unix(/tmp/mysql.sock)/shop"},
-		{name: "a socket URL becomes the driver's socket form", url: "mysql+unix://user:pass@/tmp/mysql.sock?database=shop", want: "user:pass@unix(/tmp/mysql.sock)/shop"},
-		{name: "a socket URL keeps its other parameters", url: "maria+unix://user@/tmp/mysql.sock?database=shop&parseTime=true", want: "user@unix(/tmp/mysql.sock)/shop?parseTime=true"},
-		{name: "credentials are still carried", url: "mysql://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
-		{name: "a driver DSN with no scheme is left alone", url: "tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(convertMySQLURL(test.url), qt.Equals, test.want)
-		})
-	}
-}
-
 // mysqlSessionAnswers is a MariaDB server, as far as getDatabaseInfo asks.
 var mysqlSessionAnswers = map[string]dbtest.QueryResult{
 	"SELECT VERSION()": {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
@@ -1448,54 +750,13 @@ func TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		return mysqlSessionAnswers[query], nil
 	})
-	parsedURL, err := parseDatabaseURL(socketURL)
-	c.Assert(err, qt.IsNil)
-
-	info, err := getDatabaseInfo(t.Context(), db.SQL, platform.MariaDB, parsedURL, socketURL, resolveSchemaFromSession)
+	info, err := getDatabaseInfo(
+		t.Context(), serviceFor(platform.MariaDB), &connector.Pool{DB: db.SQL}, requestFor(qt.New(t), socketURL),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Schema, qt.Equals, "shop")
 	c.Assert(info.Dialect, qt.Equals, platform.MariaDB)
-}
-
-// TestMySQLDatabaseAgreesBetweenParserAndConverter is the control that keeps
-// the two ends of [ConnectToDatabase] from drifting apart.
-//
-// parseDatabaseURL says which database getDatabaseInfo reports, and
-// convertMySQLURL says which database the driver connects to. The expected
-// side is the driver's own reading of the DSN, not the parser both functions
-// share: a control that asked that parser twice would agree with itself and
-// stay green while one end stopped calling it, which is the state
-// stokaro/ptah#1540 reported.
-func TestMySQLDatabaseAgreesBetweenParserAndConverter(t *testing.T) {
-	addresses := []string{
-		"mysql://tcp(localhost:3306)/shop",
-		"mysql://unix(/tmp/mysql.sock)/shop",
-		"mysql://user:pass@tcp(localhost:3306)/shop",
-		"mysql://user:pass@unix(/tmp/mysql.sock)/shop",
-		"mariadb://tcp(localhost:3306)/shop",
-		"maria://user:pass@tcp(localhost:3306)/shop",
-		"MARIA://unix(/tmp/mysql.sock)/shop",
-		"mysql://user:pass@localhost:3306/shop",
-		"maria://user:pass@localhost:3306/shop",
-		"mysql+unix://user:pass@/tmp/mysql.sock?database=shop",
-		"MARIA+UNIX://user@/run/mysqld/mysqld.sock?database=shop&parseTime=true",
-		"mariadb+unix://user:pass@/tmp/mysql.sock",
-		"mysql://user:pass@localhost:3306/my%2Fshop",
-	}
-
-	for _, address := range addresses {
-		t.Run(address, func(t *testing.T) {
-			c := qt.New(t)
-
-			parsed, err := parseDatabaseURL(address)
-			c.Assert(err, qt.IsNil)
-			driverConfig, err := mysqldriver.ParseDSN(convertMySQLURL(address))
-			c.Assert(err, qt.IsNil)
-
-			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, driverConfig.DBName)
-		})
-	}
 }
 
 // TestConnectToDatabase_ReachesTheDriverForACredentialFreeSocketTarget is the
@@ -1540,73 +801,6 @@ func TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "port")
 }
 
-// TestOracleDataSourceName_TurnsFastLoginOffUnlessTheCallerSpokeFirst pins the
-// one option Ptah adds to an Oracle URL, and the one case where it does not.
-//
-// go-ora v3 caches the server's negotiation in a package-level store and
-// replays it on the next connection to the same server. Oracle 23.26.2.0.0
-// closes the socket on the replay, so the second connection a process opens
-// answers EOF, and the driver clears the cached cookie only for
-// driver.ErrBadConn -- so every later connection in that process is refused
-// too. Measured: with the option the second handle opens, without it the
-// second handle is EOF (stokaro/ptah#1875).
-func TestOracleDataSourceName_TurnsFastLoginOffUnlessTheCallerSpokeFirst(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{
-			name: "a URL with no query gets one",
-			url:  "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1",
-			want: "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?FAST+LOGIN=FALSE",
-		},
-		{
-			// The space in the option name is escaped rather than passed
-			// through: go-ora reads the query with net/url, and an unescaped
-			// space ends the URL at the parser rather than at the driver.
-			name: "a URL with a query gets another parameter",
-			url:  "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?TIMEOUT=30",
-			want: "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?FAST+LOGIN=FALSE&TIMEOUT=30",
-		},
-		{
-			// The default is Ptah's, not a prohibition: a caller who wants the
-			// optimization back says so and keeps it.
-			name: "a caller who set it keeps their answer",
-			url:  "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?FAST+LOGIN=TRUE",
-			want: "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?FAST+LOGIN=TRUE",
-		},
-		{
-			name: "and the unescaped spelling counts as having spoken",
-			url:  "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?FAST LOGIN=ENABLE",
-			want: "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1?FAST LOGIN=ENABLE",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(oracleDataSourceName(test.url), qt.Equals, test.want)
-		})
-	}
-}
-
-// TestDatabaseDriverConfig_OracleCarriesTheOption is the wiring half.
-//
-// oracleDataSourceName passing its own table proves the helper works, not that
-// the driver config calls it, and the driver config is the only place a
-// connection reaches.
-func TestDatabaseDriverConfig_OracleCarriesTheOption(t *testing.T) {
-	c := qt.New(t)
-
-	driverName, dataSourceName := databaseDriverConfig(
-		platform.Oracle, "oracle://ptah:secret@127.0.0.1:1521/FREEPDB1")
-
-	c.Assert(driverName, qt.Equals, "oracle")
-	c.Assert(dataSourceName, qt.Contains, "FAST+LOGIN=FALSE")
-}
-
 // A read-only request a driver cannot carry has to go somewhere, and where it
 // goes is not observable through WithIsolatedQuerySession without an Oracle
 // server: every other dialect passes the options through and answers the same
@@ -1616,7 +810,7 @@ func TestIsolatedSessionReadOnly_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		asked := &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelReadCommitted}
 
-		carried, statement := isolatedSessionReadOnly(platform.Oracle, asked)
+		carried, statement := isolatedSessionReadOnly(serviceFor(platform.Oracle), asked)
 
 		c.Assert(statement, qt.Equals, "SET TRANSACTION READ ONLY")
 		c.Assert(carried.ReadOnly, qt.IsFalse)
@@ -1630,7 +824,7 @@ func TestIsolatedSessionReadOnly_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		asked := &sql.TxOptions{ReadOnly: true}
 
-		carried, statement := isolatedSessionReadOnly(platform.Postgres, asked)
+		carried, statement := isolatedSessionReadOnly(serviceFor(platform.Postgres), asked)
 
 		c.Assert(statement, qt.Equals, "")
 		c.Assert(carried, qt.Equals, asked)
@@ -1640,7 +834,7 @@ func TestIsolatedSessionReadOnly_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		asked := &sql.TxOptions{}
 
-		carried, statement := isolatedSessionReadOnly(platform.Oracle, asked)
+		carried, statement := isolatedSessionReadOnly(serviceFor(platform.Oracle), asked)
 
 		c.Assert(statement, qt.Equals, "")
 		c.Assert(carried, qt.Equals, asked)
@@ -1649,9 +843,27 @@ func TestIsolatedSessionReadOnly_HappyPath(t *testing.T) {
 	t.Run("no options at all", func(t *testing.T) {
 		c := qt.New(t)
 
-		carried, statement := isolatedSessionReadOnly(platform.Oracle, nil)
+		carried, statement := isolatedSessionReadOnly(serviceFor(platform.Oracle), nil)
 
 		c.Assert(statement, qt.Equals, "")
 		c.Assert(carried, qt.IsNil)
 	})
 }
+
+// TestServices_ServeEveryDialectWithADriver pins the registry against the
+// descriptors: a dialect that names a driver is one Ptah connects to, so a
+// connection to it must find its engine's connector, and one that names none
+// must not. The registry is unexported, which is why this is white-box: the
+// exported path to it opens a connection.
+func TestServices_ServeEveryDialectWithADriver(t *testing.T) {
+	for _, described := range platform.Dialects().Dialects() {
+		t.Run(described.Name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, found := services().Lookup(described.Name)
+
+			c.Assert(found, qt.Equals, described.Driver != "")
+		})
+	}
+}
+

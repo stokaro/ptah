@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/platform"
-	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/internal/connector"
 	"ptah.run/internal/sqlident"
 )
 
@@ -83,7 +82,7 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 	if len(columnTypes) != len(columns) {
 		return nil, fmt.Errorf("dbschema: table %q returned %d columns, want %d", table, len(columnTypes), len(columns))
 	}
-	values := newColumnValues(dialect, columnTypes)
+	values := newColumnValues(conn.engine(), columnTypes)
 
 	holders := make([]any, len(columns))
 	scanTargets := make([]any, len(columns))
@@ -116,21 +115,20 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 // columnValues turns what the driver scanned for each column into the value
 // ReadTableRows returns.
 type columnValues struct {
-	binary []bool
-	isYDB  bool
+	binary  []bool
+	service connector.Service
 }
 
-func newColumnValues(dialect string, columnTypes []*sql.ColumnType) columnValues {
+// newColumnValues asks the dialect's connector which columns hold binary
+// values: the driver names the column type, and only the engine knows which
+// of its names are binary.
+func newColumnValues(service connector.Service, columnTypes []*sql.ColumnType) columnValues {
 	values := columnValues{
-		binary: make([]bool, len(columnTypes)),
-		isYDB:  platform.NormalizeDialect(dialect) == platform.YDB,
+		binary:  make([]bool, len(columnTypes)),
+		service: service,
 	}
 	for i, columnType := range columnTypes {
-		if values.isYDB {
-			values.binary[i] = ydbschema.HoldsBytes(columnType.DatabaseTypeName())
-			continue
-		}
-		values.binary[i] = holdsBinary(columnType.DatabaseTypeName())
+		values.binary[i] = service.HoldsBytes(columnType.DatabaseTypeName())
 	}
 	return values
 }
@@ -146,28 +144,5 @@ func (v columnValues) value(i int, scanned any) (any, error) {
 	if raw, isBytes := scanned.([]byte); isBytes && !v.binary[i] {
 		scanned = string(raw)
 	}
-	if !v.isYDB {
-		return scanned, nil
-	}
-	return ydbschema.RowValue(scanned)
-}
-
-// holdsBinary reports whether a column the driver describes as databaseType
-// holds binary values.
-//
-// The name is what decides, because the Go type cannot. go-sql-driver/mysql
-// scans character, numeric, date and JSON columns as []byte, go-mssqldb does the
-// same for DECIMAL and MONEY, and pgx for JSON, JSONB and XML; each of them names
-// the column type. go-ora and modernc SQLite return []byte only for a binary
-// value, and go-ora names no column type at all, as SQLite does not for a column
-// declared without one, so a column with no name keeps its bytes. A length
-// suffix such as VARBINARY(16) is ignored.
-func holdsBinary(databaseType string) bool {
-	name, _, _ := strings.Cut(strings.ToUpper(strings.TrimSpace(databaseType)), "(")
-	switch strings.TrimSpace(name) {
-	case "", "BYTEA", "BINARY", "VARBINARY", "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB", "IMAGE":
-		return true
-	default:
-		return false
-	}
+	return v.service.RowValue(scanned)
 }

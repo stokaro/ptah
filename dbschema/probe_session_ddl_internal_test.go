@@ -16,6 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -37,17 +38,20 @@ import (
 func TestWithRolledBackTransaction_AsksOnlyTheServerThatWouldCommitTheDDL(t *testing.T) {
 	tests := []struct {
 		name    string
+		dialect string
 		version string
 		wants   bool
 	}{
 		{
 			name:    "a server that would commit the DDL",
+			dialect: platform.CockroachDB,
 			version: "CockroachDB CCL v25.4.0 (x86_64-pc-linux-gnu, built 2025/10/28)",
 			wants:   true,
 		},
 		{
 			// The control, and the one a too-wide rule breaks.
 			name:    "PostgreSQL, which has no such variable",
+			dialect: platform.Postgres,
 			version: "PostgreSQL 17.6 on x86_64-pc-linux-gnu, compiled by gcc",
 			wants:   false,
 		},
@@ -56,6 +60,7 @@ func TestWithRolledBackTransaction_AsksOnlyTheServerThatWouldCommitTheDDL(t *tes
 			// PostgreSQL: an unknown variable is an error, and an error inside
 			// the transaction is worse than the setting being wrong.
 			name:    "a version this does not recognize",
+			dialect: platform.Postgres,
 			version: "",
 			wants:   false,
 		},
@@ -75,7 +80,7 @@ func TestWithRolledBackTransaction_AsksOnlyTheServerThatWouldCommitTheDDL(t *tes
 					return driver.RowsAffected(0), nil
 				},
 			)
-			conn := &DatabaseConnection{db: db.SQL, info: catalog.ServerInfo{Version: test.version}}
+			conn := &DatabaseConnection{db: db.SQL, info: catalog.ServerInfo{Dialect: test.dialect, Version: test.version}}
 
 			ran, err := conn.WithRolledBackTransaction(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {
 				_, execErr := tx.ExecContext(ctx, "CREATE TEMPORARY TABLE probe (id int)")
@@ -110,7 +115,7 @@ func TestWithRolledBackTransaction_AsksBeforeTheBodyRuns(t *testing.T) {
 	)
 	conn := &DatabaseConnection{
 		db:   db.SQL,
-		info: catalog.ServerInfo{Version: "CockroachDB CCL v25.4.0"},
+		info: catalog.ServerInfo{Dialect: platform.CockroachDB, Version: "CockroachDB CCL v25.4.0"},
 	}
 
 	_, err := conn.WithRolledBackTransaction(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {

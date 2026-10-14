@@ -41,5 +41,8 @@ func clickHouse() descriptor.Dialect {
 				Newest:      capabilityline.ClickHouse269,
 			},
 		},
+
+		// How a connection reaches the server.
+		Driver: "clickhouse",
 	}
 }

@@ -48,5 +48,9 @@ func cockroachDB() descriptor.Dialect {
 			},
 		},
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes"},
+
+		// How a connection reaches the server.
+		Driver:     "pgx",
+		WireScheme: "postgres",
 	}
 }

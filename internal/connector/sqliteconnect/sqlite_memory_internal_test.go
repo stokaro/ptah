@@ -1,4 +1,4 @@
-package dbschema
+package sqliteconnect
 
 // White-box testing required: the DSN the driver receives is built by an
 // unexported converter, and the property under test — that no file appears —

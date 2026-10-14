@@ -6,38 +6,19 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/url"
-	"slices"
-	"strconv"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib"                   // PostgreSQL driver
-	_ "github.com/microsoft/go-mssqldb"                  // SQL Server driver
-	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
-
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/dialect/spanner/spannerschema"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/connectgate"
-	"ptah.run/internal/dbschema/clickhouse"
-	"ptah.run/internal/dbschema/mssql"
-	"ptah.run/internal/dbschema/mysql"
-	"ptah.run/internal/dbschema/oracle"
-	"ptah.run/internal/dbschema/postgres"
-	"ptah.run/internal/dbschema/sqlite"
-	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/internal/connector"
 	"ptah.run/internal/dburldisplay"
-	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
-	"ptah.run/internal/ydbflags"
-	"ptah.run/internal/ydburl"
 )
 
 // ConnectToDatabase creates a database connection from a URL.
@@ -64,7 +45,7 @@ import (
 // for one database would otherwise be handed a whole server. [ConnectToServer]
 // is the connector that accepts one.
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	return connect(ctx, dbURL, requireDatabase)
+	return connect(ctx, dbURL, false)
 }
 
 // ConnectToServer is [ConnectToDatabase] for a caller that also handles a
@@ -79,299 +60,111 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 // The pinned Atlas community binary v1.3.0 reads such a URL the same way
 // (stokaro/ptah#3789).
 func ConnectToServer(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	return connect(ctx, dbURL, acceptServer)
+	return connect(ctx, dbURL, true)
 }
 
-// scopeRule decides, from the URL alone, whether a connector opens a URL of
-// dialect: nil opens it, an error refuses it before anything is dialed.
-type scopeRule func(dialect string, parsedURL *url.URL) error
-
-// requireDatabase refuses a MySQL-family URL that names no database, whose
-// session would start with no default database, so what a caller written for
-// one database reads or changes would be decided by nothing the operator
-// wrote.
-func requireDatabase(dialect string, parsedURL *url.URL) error {
-	if isMySQLFamilyDialect(dialect) && strings.TrimPrefix(parsedURL.Path, "/") == "" {
-		return errMySQLURLNamesNoDatabase
-	}
-	return nil
-}
-
-// acceptServer opens every URL, a MySQL-family one naming no database as the
-// whole server.
-func acceptServer(string, *url.URL) error {
-	return nil
-}
-
-// admittedDialect is the dialect of parsedURL once the caller's context and
-// scope both accept a connection to it. A surface that refuses a dialect
-// refuses it through the context, for every path a URL can take to a
-// connection; see internal/connectgate.
-func admittedDialect(ctx context.Context, parsedURL *url.URL, scope scopeRule) (string, error) {
+// admitted is the request a URL connects with, and the service of its
+// dialect, once the caller's context and the dialect's scope both accept it.
+// A surface that refuses a dialect refuses it through the context, for every
+// path a URL can take to a connection; see internal/connectgate. wholeServer
+// is true for a caller that also handles a whole server.
+func admitted(
+	ctx context.Context,
+	dbURL string,
+	parsedURL *url.URL,
+	wholeServer bool,
+) (connector.Request, connector.Service, error) {
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
-		return "", err
+		return connector.Request{}, nil, err
 	}
 	if err := connectgate.Check(ctx, dialect); err != nil {
-		return "", err
+		return connector.Request{}, nil, err
 	}
-	if err := scope(dialect, parsedURL); err != nil {
-		return "", err
-	}
-	return dialect, nil
-}
-
-// connect opens dbURL once scope accepts it.
-func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConnection, error) {
-	parsedURL, err := parseDatabaseURL(dbURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid database URL: %w", err)
-	}
-
-	dialect, err := admittedDialect(ctx, parsedURL, scope)
-	if err != nil {
-		return nil, err
-	}
-
-	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
-	if dialectProtocol == "" {
+	described, _ := platform.Lookup(dialect)
+	service, connects := services().Lookup(described.Name)
+	if !connects || described.Driver == "" {
 		// A dialect Ptah renders and plans for, and does not connect to yet.
 		// Without this the empty driver name reaches sql.Open, which answers
 		// `sql: unknown driver "" (forgotten import?)` -- a message about this
 		// package's imports rather than about what the operator asked for.
 		// No dialect reaches this today; it is the arm the next one lands in.
-		return nil, fmt.Errorf(
+		return connector.Request{}, nil, fmt.Errorf(
 			"connecting to %s is not supported yet: Ptah renders and plans %s schemas, "+
 				"and reading a live %s catalog is not implemented", dialect, dialect, dialect)
 	}
+	if err := service.CheckScope(parsedURL, wholeServer); err != nil {
+		return connector.Request{}, nil, err
+	}
+	return connector.Request{Dialect: described, URL: dbURL, Parsed: parsedURL}, service, nil
+}
 
-	db, ydbConnection, err := openDatabase(ctx, dialectProtocol, connectionString)
+// connect opens dbURL once its dialect's scope accepts it for a caller that
+// does, or does not, handle a whole server.
+func connect(ctx context.Context, dbURL string, wholeServer bool) (*DatabaseConnection, error) {
+	parsedURL, err := parseDatabaseURL(dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid database URL: %w", err)
+	}
+
+	request, service, err := admitted(ctx, dbURL, parsedURL, wholeServer)
 	if err != nil {
 		return nil, err
 	}
-	inMemorySQLite := dialectProtocol == "sqlite" && isSQLiteMemoryDSN(connectionString)
-	if inMemorySQLite {
-		db.SetMaxOpenConns(1)
-	}
 
-	// Test the connection — honor the caller-supplied context so a stuck or
-	// slow host cannot block ConnectToDatabase indefinitely.
-	resolveSchema := resolveSchemaFromSession
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		retried, retryErr := reconnectCarryingSearchPath(ctx, dbURL, dialectProtocol, dialect, err)
-		if retryErr != nil {
-			return nil, retryErr
-		}
-		db, resolveSchema = retried, resolveSchemaFromCarriedSelection
-	}
-
-	// Get database info
-	var ticket ticketSource
-	if ydbConnection != nil {
-		ticket = ydbConnection.Ticket
-	}
-	info, resolution, err := getDatabaseInfoWithCapabilities(
-		ctx,
-		db,
-		dialect,
-		parsedURL,
-		dbURL,
-		resolveSchema,
-		ticket,
-	)
+	// The context governs the ping that verifies the pool, so a stuck or slow
+	// host cannot block ConnectToDatabase indefinitely.
+	pool, err := service.Open(ctx, request)
 	if err != nil {
-		_ = db.Close()
+		return nil, err
+	}
+
+	info, resolution, err := getDatabaseInfoWithCapabilities(ctx, service, pool, request)
+	if err != nil {
+		_ = pool.DB.Close()
 		return nil, fmt.Errorf("failed to get database info: %w", err)
 	}
 	reportCapabilityResolution(info, resolution)
 
-	var newReader schemaReaderFactory
-	var newWriter schemaWriterFactory
-	switch dialectProtocol {
-	case "pgx":
-		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			return postgres.NewPostgreSQLWireReaderWithCapabilities(
-				runner,
-				info.Schema,
-				info.Dialect,
-				info.Capabilities,
-			)
-		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
-			// The set decides whether cleanup may take a transaction: Spanner
-			// refuses DDL inside one, and the writer cannot ask the server
-			// without opening the transaction it is trying to avoid.
-			return postgres.NewPostgreSQLWriterForRunnerWithCapabilities(
-				runner, info.Schema, info.Capabilities)
-		}
-	case "mysql":
-		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			// The set decides which spelling of the CHECK_CONSTRAINTS read is
-			// asked first. MySQL's view has no TABLE_NAME -- that column is a
-			// MariaDB extension -- so without this every MySQL schema read
-			// spent a round trip being told error 1054 (stokaro/ptah#916).
-			return mysql.NewMySQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
-		}
-		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
-			if session != nil {
-				return mysql.NewMySQLWriterForPinnedRunner(
-					runner,
-					db,
-					session,
-					info.Schema,
-					info.Dialect,
-					info.Version,
-				)
-			}
-			return mysql.NewMySQLWriterForRunner(runner, db, info.Schema, info.Dialect, info.Version)
-		}
-	case "clickhouse":
-		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			// Capabilities and version travel with the reader so that roles
-			// and grants are read only where RoleManagement says they exist,
-			// and so the diagnostic can name the server it read. Without them
-			// a live ClickHouse would describe no RBAC at all and every
-			// declared role would be planned again on every run
-			// (stokaro/ptah#1025).
-			return clickhouse.NewClickHouseReaderWithCapabilities(
-				runner, info.Schema, info.Version, info.Capabilities,
-			)
-		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
-			// The capabilities travel with the writer for the same reason
-			// they travel with the reader above: the realm-cleanup gate is a
-			// capability question, and resolving it here means the banner is
-			// read once (stokaro/ptah#916).
-			return clickhouse.NewClickHouseWriterForRunnerWithCapabilities(
-				runner, info.Schema, info.Capabilities,
-			)
-		}
-	// libsql reaches a remote server, but the schema it serves is SQLite's, so
-	// it takes SQLite's reader, writer and executor unchanged.
-	case "sqlite", "libsql":
-		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			return sqlite.NewSQLiteReader(runner, info.Schema)
-		}
-		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
-			if session != nil {
-				return sqlite.NewSQLiteWriterForPinnedRunner(runner, session, info.Schema)
-			}
-			return sqlite.NewSQLiteWriterForRunner(runner, info.Schema)
-		}
-	case "sqlserver":
-		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			return mssql.NewSQLServerReader(runner, info.Schema)
-		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
-			return mssql.NewSQLServerWriterForRunner(runner, info.Schema)
-		}
-	case "oracle":
-		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			return oracle.NewOracleReaderWithCapabilities(runner, info.Schema, info.Capabilities)
-		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
-			return oracle.NewOracleWriterForRunner(runner, info.Schema)
-		}
-	case "ydb":
-		// The reader asks the scheme and table services rather than SQL, so it
-		// reads through the driver whatever runner a session hands it; YDB has
-		// no session state a schema read could see.
-		newReader = func(sqlrunner.Runner) catalog.SchemaReader {
-			return ydbschema.NewReader(ydbConnection, info.Capabilities)
-		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
-			return ydbschema.NewWriter(runner, ydbConnection.Driver, ydbConnection.Realm)
-		}
-	default:
-		_ = db.Close()
-		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
+	newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
+		return service.NewReader(pool, info, runner)
 	}
-
-	runner := sqlrunner.Runner(db)
+	newWriter := func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
+		return service.NewWriter(pool, info, runner, session)
+	}
+	runner := sqlrunner.Runner(pool.DB)
 	return &DatabaseConnection{
-		db:             db,
-		runner:         runner,
-		info:           info,
-		reader:         newReader(runner),
-		writer:         newWriter(runner, nil),
-		newReader:      newReader,
-		newWriter:      newWriter,
-		inMemorySQLite: inMemorySQLite,
-		remoteLibSQL:   dialectProtocol == "libsql",
+		db:            pool.DB,
+		runner:        runner,
+		info:          info,
+		reader:        newReader(runner),
+		writer:        newWriter(runner, nil),
+		newReader:     newReader,
+		newWriter:     newWriter,
+		service:       service,
+		singleSession: pool.SingleSession,
+		benignClose:   pool.BenignClose,
 	}, nil
 }
 
-// openDatabase opens the pool for a driver name and its data source. YDB is
-// opened through its SDK rather than sql.Open, because the connection binds
-// arguments itself and closes the SDK driver with the pool; see
-// internal/dbschema/ydb.
-func openDatabase(ctx context.Context, driverName, dataSourceName string) (*sql.DB, *ydbschema.Connection, error) {
-	if driverName == ydbDriverName {
-		connection, err := ydbschema.Open(ctx, dataSourceName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to open database connection: %w", err)
-		}
-		return connection.DB, connection, nil
-	}
-	db, err := sql.Open(driverName, dataSourceName)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open database connection: %w", err)
-	}
-	return db, nil, nil
-}
-
-// ydbDriverName is the driver name databaseDriverConfig gives a YDB URL.
-const ydbDriverName = "ydb"
-
 // parseDatabaseURL parses a database URL into the form the rest of the
-// connection path reads: the scheme names the dialect, and the path is where
-// getDatabaseInfo reads the database from.
-//
-// A MySQL-family URL is read by atlasurl.ParseMySQLURL, and only the scheme and
-// the database it found are carried on. Its forms put the database in
-// different places. The go-sql-driver form, user:pass@tcp(127.0.0.1:3306)/db or
-// user:pass@unix(/tmp/mysql.sock)/db, is not a URL at all. In the socket form,
-// mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=db, the path is the
-// socket. A reader of its own here would report a database called after the
-// socket while convertMySQLURL connects to db.
-//
-// A Windows absolute path is not an authority either. sqlite://C:\dir\app.db
-// makes net/url read the drive letter's colon as a port separator and refuse
-// the whole URL, which is why every command that provisions a local database
-// failed on Windows: 1014 tests across more than thirty packages, 1382 of them
-// reporting "invalid database URL". The path is carried as opaque instead,
-// which is the shape convertSQLiteURL already reads first.
+// connection path reads; see [connector.ParseURL].
 func parseDatabaseURL(dbURL string) (*url.URL, error) {
-	mysqlURL, err := atlasurl.ParseMySQLURL(dbURL)
-	switch {
-	case err == nil:
-		return &url.URL{Scheme: strings.ToLower(mysqlURL.Scheme()), Path: "/" + mysqlURL.Database()}, nil
-	case !errors.Is(err, atlasurl.ErrNotMySQLURL):
-		return nil, err
-	}
-
-	// The Windows rule lives in atlasurl, which is where the other database-URL
-	// parser already knew it.
-	return atlasurl.Parse(dbURL)
+	return connector.ParseURL(dbURL)
 }
 
 func getDatabaseInfoWithCapabilities(
 	ctx context.Context,
-	db *sql.DB,
-	dialect string,
-	parsedURL *url.URL,
-	dbURL string,
-	resolveSchema schemaResolver,
-	ticket ticketSource,
+	service connector.Service,
+	pool *connector.Pool,
+	request connector.Request,
 ) (catalog.ServerInfo, capability.VersionResolution, error) {
-	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL, resolveSchema)
+	info, err := getDatabaseInfo(ctx, service, pool, request)
 	if err != nil {
 		return catalog.ServerInfo{}, capability.VersionResolution{}, err
 	}
 	resolution := resolveDatabaseCapabilities(info)
-	info.Capabilities = refineExtensionCapabilities(ctx, db, info.Dialect, resolution.Capabilities)
-	info.Capabilities, err = refineFeatureFlagCapabilities(ctx, info.Dialect, dbURL, info.Capabilities, ticket)
+	info.Capabilities, err = service.Refine(ctx, pool, request, info, resolution.Capabilities)
 	if err != nil {
 		return catalog.ServerInfo{}, capability.VersionResolution{}, err
 	}
@@ -383,123 +176,22 @@ func getDatabaseInfoWithCapabilities(
 	return info, resolution, nil
 }
 
-// refineExtensionCapabilities decides the keys an EXTENSION carries rather than
-// a version line.
-//
-// TimescaleDB is the case: it is PostgreSQL with an extension installed, not a
-// dialect or a version of its own, and it puts no token in `version()` -- so
-// nothing the resolver reads can see it. What decides [capability.Hypertables]
-// and [capability.ContinuousAggregates] is `pg_extension`, on the connection
-// (stokaro/ptah#1026).
-//
-// It is asked only of PostgreSQL itself. CockroachDB, YugabyteDB and the
-// Spanner PostgreSQL interface share the wire and not the extension mechanism,
-// and asking a target that has no `pg_extension` would spend a round trip to
-// learn nothing.
-//
-// A failed query leaves the key alone rather than failing the connection. This
-// runs before any transaction the caller opens, so a refusal here cannot poison
-// one, and a server that will not answer has told us nothing about the
-// extension either way.
-func refineExtensionCapabilities(
+// getDatabaseInfo describes the server a pool reaches: the dialect, the URL in
+// both its forms and the dialect's offline identifier semantics, completed by
+// the dialect's connector with what the server reports.
+func getDatabaseInfo(
 	ctx context.Context,
-	db *sql.DB,
-	dialect string,
-	caps capability.Capabilities,
-) capability.Capabilities {
-	if platform.NormalizeDialect(dialect) != platform.Postgres {
-		return caps
+	service connector.Service,
+	pool *connector.Pool,
+	request connector.Request,
+) (catalog.ServerInfo, error) {
+	info := catalog.ServerInfo{
+		Dialect:             request.Dialect.Name,
+		URL:                 request.URL,
+		RedactedURL:         dburldisplay.Format(request.URL),
+		IdentifierSemantics: identifier.ForDialect(request.Dialect.Name),
 	}
-	var installed bool
-	if err := db.QueryRowContext(
-		ctx,
-		"SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb')",
-	).Scan(&installed); err != nil {
-		slog.Debug("could not read pg_extension for capability refinement", "error", err)
-		return caps
-	}
-	if !installed {
-		return caps
-	}
-	return caps.With(capability.Hypertables, true).With(capability.ContinuousAggregates, true)
-}
-
-// refineFeatureFlagCapabilities decides the keys a YDB cluster's feature flags
-// gate, when the URL names the cluster's monitoring endpoint.
-//
-// A preset describes a release line with its default flags, and a cluster an
-// operator configured can do more or less than that: measured on 26.2.1.14
-// started with enable_add_unique_index, a unique index is added to a table
-// holding rows, which the line's preset says is refused. The flags are read
-// once, here, because they belong to the cluster rather than to a session.
-//
-// Without the monitoring parameter the preset stands. A failed read fails the
-// connection rather than falling back to the preset: the operator asked for
-// the cluster's answer, and planning without it would be planning with an
-// answer nobody asked for.
-//
-// The page is read with the connection's own credential, which ticket hands
-// over, because a cluster that enforces authentication serves the page only
-// to a user it knows (measured on 26.2.1.14 and 25.1.4.7). A credential the
-// connection carries over TLS is not sent to a plain http:// endpoint.
-func refineFeatureFlagCapabilities(
-	ctx context.Context,
-	dialect, dbURL string,
-	caps capability.Capabilities,
-	ticket ticketSource,
-) (capability.Capabilities, error) {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
-		return caps, nil
-	}
-	parsed, err := ydburl.Parse(dbURL)
-	if err != nil {
-		return capability.Capabilities{}, fmt.Errorf("invalid YDB URL: %w", err)
-	}
-	if parsed.Monitoring == nil {
-		return caps, nil
-	}
-	credential, err := ticket.read(ctx)
-	if err != nil {
-		return capability.Capabilities{}, fmt.Errorf("read YDB feature flags: %w", err)
-	}
-	if credential != "" && parsed.Secure && parsed.Monitoring.Scheme == "http" {
-		return capability.Capabilities{}, fmt.Errorf("read YDB feature flags from %s: the connection's credential travels over TLS, "+
-			"and Ptah does not send it to a plain http:// endpoint; name the endpoint as https://%s",
-			parsed.Monitoring, parsed.Monitoring.Host)
-	}
-	flags, err := ydbflags.Read(ctx, parsed.Monitoring, parsed.Database, credential)
-	if err != nil {
-		return capability.Capabilities{}, err
-	}
-	refined := flags.Refine(caps)
-	if changed := deltaKeys(caps, refined); len(changed) > 0 {
-		slog.Debug("YDB feature flags changed the capability set", "keys", changed)
-	}
-	return refined, nil
-}
-
-// ticketSource returns the credential a connection presents to its server.
-// Nil stands for a connection that has none to present.
-type ticketSource func(context.Context) (string, error)
-
-// read asks the source for the credential; a nil source has none.
-func (src ticketSource) read(ctx context.Context) (string, error) {
-	if src == nil {
-		return "", nil
-	}
-	return src(ctx)
-}
-
-// deltaKeys names, sorted, the keys two capability sets disagree on.
-func deltaKeys(before, after capability.Capabilities) []capability.Capability {
-	var changed []capability.Capability
-	for _, key := range capability.All() {
-		if before.Has(key) != after.Has(key) {
-			changed = append(changed, key)
-		}
-	}
-	slices.Sort(changed)
-	return changed
+	return service.Describe(ctx, pool, request, info)
 }
 
 // reportCapabilityResolution says what a non-version-specific resolution
@@ -561,117 +253,29 @@ func resolveDatabaseCapabilities(info catalog.ServerInfo) capability.VersionReso
 	return capability.ResolveServerVersion(info.Dialect, info.Version)
 }
 
-// libSQLDriverConfig maps the two libsql spellings onto the transport the
-// pinned community binary v1.3.0 uses for each, measured against a live
-// libsql-server v0.24.32:
-//
-//	libsql://host     -> POST https://host/v2/pipeline
-//	libsql+ws://host  -> a WebSocket dial
-//
-// The client library spells the second `ws://`, and takes `libsql://` as it is.
-// Anything else is not a libsql URL and is left to the local SQLite driver.
-func libSQLDriverConfig(dbURL string) (driverName, dataSourceName string, remote bool) {
-	switch {
-	case strings.HasPrefix(strings.ToLower(dbURL), "libsql+ws://"):
-		return "libsql", "ws://" + dbURL[len("libsql+ws://"):], true
-	case strings.HasPrefix(strings.ToLower(dbURL), "libsql://"):
-		return "libsql", dbURL, true
-	}
-	return "", "", false
-}
-
-// oracleDataSourceName turns off go-ora's fast-login path, and with it the
-// connection cookie that path caches.
-//
-// go-ora v3 caches the server's negotiation in a PACKAGE-LEVEL store, keyed by
-// the server's UUID and service name, and replays it on the next connection to
-// the same server to skip a round trip. Oracle 23.26.2.0.0 closes the socket on
-// the replayed cookie, so the second connection a process opens answers EOF:
-//
-//	first handle ok, second handle -> EOF
-//
-// The store outlives the failure, and the driver's own recovery does not clear
-// it: it deletes a cookie only when the error is driver.ErrBadConn, and this
-// one is io.EOF. So one refused connection leaves every later one in the
-// process refused too, whether or not the first is still open.
-//
-// Two connections is not an exotic thing to want. The capability probe waits
-// for a server on one and measures it on the next; a comparison against a dev
-// database holds the target and the dev server together; a command resolving a
-// desired state from one URL and applying it to another does the same. All of
-// it reported a connection error against a server that was up.
-//
-// Oracle 21.3.0.0.0 does not advertise the fast-auth capability the path needs,
-// so it never cached a cookie and never failed -- which is why a check that ran
-// only there would agree with a build that cannot read a 23 catalog
-// (stokaro/ptah#1875).
-// A caller who spells the option themselves keeps their answer, including
-// switching it back on: the default is Ptah's, not a prohibition.
-func oracleDataSourceName(dbURL string) string {
-	parsed, err := url.Parse(dbURL)
-	if err != nil {
-		// ConnectToDatabase parsed this URL before reaching here, so a failure
-		// is unreachable rather than tolerated. Returning the input unchanged
-		// leaves the driver to report on it, which is a better message than
-		// anything this function could invent about a URL it cannot read.
-		return dbURL
-	}
-	query := parsed.Query()
-	for key := range query {
-		// Matched on the decoded key, so the caller may spell the space as a
-		// space, a plus or %20 and still be heard.
-		if strings.EqualFold(strings.TrimSpace(key), "FAST LOGIN") {
-			return dbURL
-		}
-	}
-	query.Set("FAST LOGIN", "FALSE")
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return "pgx", convertPostgresWireURL(dbURL)
-	case platform.MySQL, platform.MariaDB:
-		return "mysql", convertMySQLURL(dbURL)
-	case platform.ClickHouse:
-		return "clickhouse", convertClickHouseURL(dbURL)
-	case platform.SQLite:
-		// libsql shares SQLite's dialect but not its connection: it is a remote
-		// protocol, so the dialect alone cannot pick the driver.
-		if libSQLDriver, libSQLDSN, remote := libSQLDriverConfig(dbURL); remote {
-			return libSQLDriver, libSQLDSN
-		}
-		return "sqlite", convertSQLiteURL(dbURL)
-	case platform.SQLServer:
-		return "sqlserver", convertSQLServerURL(dbURL)
-	case platform.Oracle:
-		return "oracle", oracleDataSourceName(dbURL)
-	case platform.YDB:
-		// The ydb:// URL itself: internal/dbschema/ydb translates it to the
-		// SDK's grpc:// form and checks its parameters and credentials.
-		return ydbDriverName, dbURL
-	default:
-		return "", ""
-	}
-}
-
 // DatabaseConnection represents a database connection with metadata
 type DatabaseConnection struct {
-	db             *sql.DB
-	runner         sqlrunner.Runner
-	info           catalog.ServerInfo
-	reader         catalog.SchemaReader
-	writer         catalog.SchemaWriter
-	executor       catalog.SchemaExecutor
-	newReader      schemaReaderFactory
-	newWriter      schemaWriterFactory
-	pinned         bool
-	inMemorySQLite bool
-	// remoteLibSQL marks a connection reached over the libsql WebSocket
-	// transport, whose teardown reports an error that is not one.
-	remoteLibSQL bool
+	db        *sql.DB
+	runner    sqlrunner.Runner
+	info      catalog.ServerInfo
+	reader    catalog.SchemaReader
+	writer    catalog.SchemaWriter
+	executor  catalog.SchemaExecutor
+	newReader schemaReaderFactory
+	newWriter schemaWriterFactory
+	pinned    bool
+	// service is the connector of the connection's dialect, which answers
+	// every question whose answer differs between engines. A connection
+	// assembled without one asks the service registered for its dialect;
+	// see engine.
+	service connector.Service
+	// singleSession marks a database that has no existence apart from its
+	// one connection, such as an in-memory SQLite database: a session taken
+	// from it is returned to the pool rather than discarded.
+	singleSession bool
+	// benignClose reports an error closing the pool returns that is not a
+	// failure, such as the libsql WebSocket teardown. Nil means none is.
+	benignClose func(error) bool
 	// session is the pinned physical session set by WithSession. Connection
 	// state that only applies per physical connection — see
 	// WithUntrustedSQLSession — needs it.
@@ -745,7 +349,7 @@ func ReadSchemaWithSchemasContext(
 	if err != nil {
 		return nil, err
 	}
-	return recordUnmodeledObjectKinds(schema, conn.Info().Dialect), nil
+	return conn.engine().MarkRead(schema, conn.Info()), nil
 }
 
 // ReadSchemaWithSchemas is [ReadSchemaWithSchemasContext] under
@@ -788,36 +392,22 @@ func (dc *DatabaseConnection) readerScopedTo(schemas []string) (catalog.SchemaRe
 	return reader, func() { scoped.SetSchemas(nil) }
 }
 
-// recordUnmodeledObjectKinds marks the object kinds this target has and Ptah
-// does not model, so a description's silence about them is not read as their
-// absence.
-//
-// Spanner change streams are the case that made it necessary. A change stream
-// is a database object with its own lifecycle -- measured against the emulator
-// behind PGAdapter 0.55.2, `CREATE CHANGE STREAM ttl_a_stream FOR ttl_a` is
-// accepted and listed in information_schema.change_streams -- and nothing in
-// Ptah models one. Before this the reader met them and said nothing, which is
-// the failure stokaro/ptah#2236 is about: an unmodeled object dropped without a
-// diagnostic is one nobody learns about until it stops existing.
-//
-// It is recorded for the TARGET rather than for what the read found. Recording
-// only the streams a particular database happens to have would assert that the
-// absence of every other one is authoritative, which is the under-claim that
-// turns a presentation decision into a removal.
-//
-// It sits here rather than in the reader because this is where the dialect is
-// known: the PostgreSQL-family reader is shared by five engines and is
-// configured with capabilities rather than with a dialect name.
-func recordUnmodeledObjectKinds(schema *catalog.Database, dialect string) *catalog.Database {
-	if schema == nil || platform.NormalizeDialect(dialect) != platform.Spanner {
-		return schema
+// engine returns the connector of the connection's dialect.
+func (dc *DatabaseConnection) engine() connector.Service {
+	if dc.service != nil {
+		return dc.service
 	}
-	schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
-		Kind:       spannerschema.CoverageChangeStream,
-		Reason:     coverage.Unsupported,
-		Provenance: coverage.DerivedFromTarget,
-	})
-	return schema
+	return serviceFor(dc.info.Dialect)
+}
+
+// serviceFor returns the connector registered for dialect, or [connector.Base]
+// for a dialect Ptah does not connect to, which answers every session
+// question the way an engine with nothing to add does.
+func serviceFor(dialect string) connector.Service {
+	if service, ok := services().Lookup(platform.NormalizeDialect(dialect)); ok {
+		return service
+	}
+	return connector.Base{}
 }
 
 // Info returns the connection's server metadata as a defensive copy: the
@@ -918,24 +508,25 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 		return fmt.Errorf("pin isolated query session: %w", err)
 	}
 	defer func() {
-		if dc.inMemorySQLite {
+		if dc.singleSession {
 			resultErr = errors.Join(resultErr, closeSQLConnection(session, "in-memory SQLite query session"))
 			return
 		}
 		resultErr = errors.Join(resultErr, discardSQLConnection(session, "isolated query session"))
 	}()
-	if platform.NormalizeDialect(dc.info.Dialect) == platform.ClickHouse {
+	service := dc.engine()
+	if !service.Transactional() {
 		return use(isolatedQueryer{runner: session})
 	}
 
-	txOpts, readOnlyStatement := isolatedSessionReadOnly(dc.info.Dialect, opts)
+	txOpts, readOnlyStatement := isolatedSessionReadOnly(service, opts)
 	tx, err := session.BeginTx(ctx, txOpts)
 	if err != nil {
 		return fmt.Errorf("begin isolated query transaction: %w", err)
 	}
 	defer func() {
 		rollbackErr := tx.Rollback()
-		if rollbackErr == nil || errors.Is(rollbackErr, sql.ErrTxDone) || ydbTransactionEnded(dc.info.Dialect, rollbackErr) {
+		if rollbackErr == nil || errors.Is(rollbackErr, sql.ErrTxDone) || service.TransactionEnded(rollbackErr) {
 			return
 		}
 		resultErr = errors.Join(resultErr, fmt.Errorf("roll back transaction: %w", rollbackErr))
@@ -949,52 +540,17 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	return use(isolatedQueryer{runner: tx})
 }
 
-// ydbTransactionEnded reports the rollback of a YDB transaction the server had
-// already ended. YDB ends a transaction when a statement in it fails, and the
-// rollback that follows answers NOT_FOUND (`Transaction not found`), measured
-// on 26.2.1.14; there is nothing left to undo, and the failure that ended it
-// is the one the caller is told about.
-func ydbTransactionEnded(dialect string, rollbackErr error) bool {
-	return platform.NormalizeDialect(dialect) == platform.YDB && ydbschema.TransactionNotFound(rollbackErr)
-}
-
-// isolatedSessionReadOnly moves a read-only request from a driver that cannot
-// carry one to the server, which can.
-//
-// go-ora answers "readonly transaction is not supported" to a BeginTx that asks
-// for a read-only transaction, so passing the request through drops it in
-// silence. The Oracle server accepts SET TRANSACTION READ ONLY as the first
-// statement of a transaction and then answers ORA-01456 to an insert, update or
-// delete inside it, measured on Oracle Free 23.
-//
-// What that binds is DML. Oracle commits DDL on its own, and a routine declared
-// PRAGMA AUTONOMOUS_TRANSACTION runs in a transaction of its own, so a caller
-// that needs a statement to change nothing still has to say so about the
-// statement itself.
-//
-// ydb-go-sdk carries the request only with the isolation it implies: measured
-// with v3.153.2 on YDB 26.2.1.14, a read-only transaction at the default
-// isolation is refused (`unsupported transaction options`), a snapshot
-// read-only one is accepted, and a write inside it answers `Operation 'Upsert'
-// can't be performed in read only transaction`.
-func isolatedSessionReadOnly(dialect string, opts *sql.TxOptions) (*sql.TxOptions, string) {
+// isolatedSessionReadOnly returns the options an isolated session begins its
+// transaction with, and a statement to run first in it, for the read-only
+// request opts carries. A driver that cannot carry the request has its engine
+// move it to the server: Oracle sets the transaction read-only with a
+// statement, and YDB asks for the snapshot isolation a read-only transaction
+// needs there.
+func isolatedSessionReadOnly(service connector.Service, opts *sql.TxOptions) (*sql.TxOptions, string) {
 	if opts == nil || !opts.ReadOnly {
 		return opts, ""
 	}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Oracle:
-		carried := *opts
-		carried.ReadOnly = false
-		return &carried, "SET TRANSACTION READ ONLY"
-	case platform.YDB:
-		carried := *opts
-		if carried.Isolation == sql.LevelDefault {
-			carried.Isolation = sql.LevelSnapshot
-		}
-		return &carried, ""
-	default:
-		return opts, ""
-	}
+	return service.ReadOnlyTransaction(opts)
 }
 
 // WithSession pins one physical database session for the callback and rebuilds
@@ -1025,7 +581,7 @@ func (dc *DatabaseConnection) WithSession(
 		return fmt.Errorf("pin database session: %w", err)
 	}
 	defer func() {
-		if dc.inMemorySQLite {
+		if dc.singleSession {
 			resultErr = errors.Join(resultErr, closeSQLConnection(session, "in-memory SQLite database session"))
 			return
 		}
@@ -1034,16 +590,12 @@ func (dc *DatabaseConnection) WithSession(
 
 	runner := sqlrunner.NewConn(ctx, session)
 	baselineCapabilities := capability.ForServerVersion(dc.info.Dialect, dc.info.Version)
-	sessionCapabilities, err := refineMySQLForeignKeyCapabilities(
-		dc.info.Dialect,
+	sessionCapabilities, err := dc.engine().RefineSession(
+		ctx,
+		session,
+		dc.info,
 		connectionCapabilities(dc.info.Capabilities, baselineCapabilities),
 		baselineCapabilities,
-		func(destination ...any) error {
-			return session.QueryRowContext(
-				ctx,
-				"SELECT @@SESSION.restrict_fk_on_non_standard_key",
-			).Scan(destination...)
-		},
 	)
 	if err != nil {
 		return fmt.Errorf("detect pinned-session foreign-key reference policy: %w", err)
@@ -1091,32 +643,6 @@ func connectionCapabilities(connection, baseline capability.Capabilities) capabi
 		return baseline
 	}
 	return connection
-}
-
-func refineMySQLForeignKeyCapabilities(
-	dialect string,
-	caps,
-	baseline capability.Capabilities,
-	scan func(...any) error,
-) (capability.Capabilities, error) {
-	if platform.NormalizeDialect(dialect) != platform.MySQL ||
-		!baseline.Has(capability.ForeignKeysRequireUniqueReference) {
-		return caps, nil
-	}
-
-	var restrictNonstandardKey int64
-	if err := scan(&restrictNonstandardKey); err != nil {
-		return capability.Capabilities{}, fmt.Errorf("query restrict_fk_on_non_standard_key: %w", err)
-	}
-	if restrictNonstandardKey != 0 {
-		return caps.
-			With(capability.ForeignKeysRequireIndexedReference, false).
-			With(capability.ForeignKeysRequireUniqueReference, true), nil
-	}
-
-	return caps.
-		With(capability.ForeignKeysRequireUniqueReference, false).
-		With(capability.ForeignKeysRequireIndexedReference, true), nil
 }
 
 func discardSQLConnection(session *sql.Conn, label string) error {
@@ -1260,10 +786,7 @@ func (dc *DatabaseConnection) restrictUntrustedSQL(ctx context.Context) error {
 	if !dc.pinned || dc.session == nil {
 		return fmt.Errorf("untrusted SQL restrictions require a pinned session")
 	}
-	if platform.NormalizeDialect(dc.info.Dialect) != platform.SQLite {
-		return nil
-	}
-	return sqlite.RestrictSession(ctx, dc.session)
+	return dc.engine().RestrictUntrustedSQL(ctx, dc.session)
 }
 
 // Conn returns a dedicated database session. Callers that use session-scoped
@@ -1290,27 +813,13 @@ func (dc *DatabaseConnection) Close() error {
 		return nil
 	}
 	err := dc.db.Close()
-	if libSQLTeardownIsBenign(dc.remoteLibSQL, err) {
-		// Measured against libsql-server v0.24.32: EVERY libsql WebSocket
-		// connection that ran a statement reports `failed to close WebSocket:
-		// failed to read frame header: EOF` on Close, and one that ran none
-		// closes cleanly. The server hangs up first, so the client's read of
-		// the close frame returns io.EOF. Reporting it would put a warning on
-		// stderr after every successful command, which the pinned community
-		// binary does not, and which would be the only difference between the
-		// two on this transport (stokaro/ptah#1615).
-		//
-		// Only io.EOF is swallowed, and only here: a genuine close failure on
-		// this transport still reaches the caller.
+	if err != nil && dc.benignClose != nil && dc.benignClose(err) {
+		// The engine's transport reports an error on a teardown that is not
+		// a failure, such as the libsql WebSocket's io.EOF after every
+		// connection that ran a statement; see internal/connector/sqliteconnect.
 		return nil
 	}
 	return err
-}
-
-// libSQLTeardownIsBenign reports the one close error this transport always
-// produces and which is not a failure.
-func libSQLTeardownIsBenign(remoteLibSQL bool, err error) bool {
-	return remoteLibSQL && errors.Is(err, io.EOF)
 }
 
 func (dc *DatabaseConnection) sqlRunner() sqlrunner.Runner {
@@ -1354,586 +863,4 @@ func connectionDialect(parsedURL *url.URL) (string, error) {
 		return "", fmt.Errorf("unsupported database dialect: %s", rawDialect)
 	}
 	return dialect, nil
-}
-
-// errMySQLURLNamesNoDatabase refuses a MySQL-family URL that selects no
-// database, and says what to write instead.
-//
-// The pinned community binary v1.3.0 reads such a URL as the whole server: it
-// inspects every database, plans CREATE DATABASE and DROP DATABASE, keeps its
-// revisions in a database of their own, and `schema clean` drops every
-// database on the server. [ConnectToServer] opens one for the callers that
-// handle a server; every other caller reads and changes one database, so it is
-// refused rather than handed a server (stokaro/ptah#3761, stokaro/ptah#3789).
-var errMySQLURLNamesNoDatabase = errors.New(
-	"the database URL names no database, and this command reads and changes one MySQL or MariaDB database, " +
-		"not a whole server. Name the database in the URL path (mysql://user@host:3306/app) or, " +
-		"for a socket URL, in the database parameter (mysql+unix://user@/run/mysqld/mysqld.sock?database=app), " +
-		"and run the command once for each database")
-
-// cockroachDefaultIntSize reads the width CockroachDB gives a column declared
-// INT or INTEGER in this session, or 0 on any other dialect.
-//
-// CockroachDB resolves those spellings through the session variable
-// default_int_size, 8 unless the session sets it: measured on v26.3.2,
-// `CREATE TABLE t (n integer, k int)` builds both columns as INT8, and the
-// same statement in a session with default_int_size = 4 builds INT4. Taken at
-// PostgreSQL's width, the declaration differs from the table the same SQL
-// built, and a comparison plans an ALTER COLUMN ... TYPE on every run
-// (stokaro/ptah#3922).
-//
-// A failed read leaves 0, which the comparison takes as the server's default,
-// rather than failing the connection over a setting it can do without.
-func cockroachDefaultIntSize(ctx context.Context, db *sql.DB, dialect string) int {
-	if platform.NormalizeDialect(dialect) != platform.CockroachDB {
-		return 0
-	}
-	var size string
-	if err := db.QueryRowContext(ctx, "SHOW default_int_size").Scan(&size); err != nil {
-		slog.Debug("could not read default_int_size", "error", err)
-		return 0
-	}
-	width, err := strconv.Atoi(strings.TrimSpace(size))
-	if err != nil {
-		slog.Debug("could not parse default_int_size", "value", size, "error", err)
-		return 0
-	}
-	return width
-}
-
-// getDatabaseInfo retrieves database metadata
-func getDatabaseInfo(
-	ctx context.Context,
-	db *sql.DB,
-	dialect string,
-	parsedURL *url.URL,
-	originalURL string,
-	resolveSchema schemaResolver,
-) (catalog.ServerInfo, error) {
-	info := catalog.ServerInfo{
-		Dialect:             dialect,
-		URL:                 originalURL,
-		RedactedURL:         dburldisplay.Format(originalURL),
-		IdentifierSemantics: identifier.ForDialect(dialect),
-	}
-
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		// Get PostgreSQL version
-		var version string
-		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version)
-		if err != nil {
-			return info, fmt.Errorf("failed to get PostgreSQL version: %w", err)
-		}
-		info.Version = version
-		info.Dialect = detectPostgresWireDialect(dialect, version)
-		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
-
-		// The schema is whatever the server resolves this session's search_path
-		// to, which is what a `?search_path=` on the URL selects. A constant
-		// "public" here, with a branch on the URL path that assigns "public"
-		// again, does not merely ignore a dev URL naming another schema -- the
-		// writer treats that schema as a stranger's and DROPS it while cleaning
-		// the database realm, then replays with a search_path resolving to
-		// nothing (stokaro/ptah#1198).
-		//
-		// Why a selection that resolves to nothing is refused rather than folded
-		// back to "public" is documented on [schemaselection.Selection.Resolve],
-		// next to the code that decides it.
-		schema, err := resolveSchema(ctx, db, parsedURL)
-		if err != nil {
-			return info, err
-		}
-		info.Schema = schema
-		// The schema a connection resolved to IS the schema its unqualified
-		// names mean, and the two were different values here: the dialect rule
-		// answers the constant "public", so a URL selecting another schema left
-		// every implicit name pointing at the wrong one.
-		//
-		// The catalog reports an object with no schema when it is in the schema
-		// the read was scoped to, and a desired state written as HCL or Go
-		// annotations carries `app` explicitly. Keyed through a "public"
-		// default, `widget` and `app.widget` are two tables. Measured on
-		// PostgreSQL 17 against a database holding `app.widget`, with
-		// `?search_path=app` on the URL and a document declaring the same
-		// table, `schema apply` planned CREATE TABLE "app"."widget" and
-		// DROP TABLE "widget" CASCADE, and failed on 42P07 (stokaro/ptah#1991).
-		//
-		// It costs nothing in the ordinary case: both values are "public"
-		// there. MySQL, MariaDB, Oracle and SQL Server pin the same field from
-		// the same place, for the reason stokaro/ptah#1244 records below.
-		info.IdentifierSemantics.DefaultSchema = info.Schema
-		info.DefaultIntSize = cockroachDefaultIntSize(ctx, db, info.Dialect)
-
-	case platform.MySQL, platform.MariaDB:
-		// Get MySQL/MariaDB version
-		var version string
-		err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
-		if err != nil {
-			return info, fmt.Errorf("failed to get MySQL/MariaDB version: %w", err)
-		}
-		info.Version = version
-		info.Dialect = detectMySQLWireDialect(version)
-		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
-
-		// The database the URL names. None is a whole-server connection,
-		// which only ConnectToServer opens: the session selects no database,
-		// and the empty schema is what every realm question reads it by.
-		info.Schema = strings.TrimPrefix(parsedURL.Path, "/")
-		info.WholeServer = info.Schema == ""
-		// A MySQL-family schema is a database, so no static dialect rule can
-		// name the one that owns an unqualified table the way "public" and
-		// "main" do; only the connection knows it. Leaving the field empty is
-		// what made the two comparison sides key differently: the catalog
-		// reports every table with no schema, while a desired state written as
-		// Atlas HCL carries `schema = schema.<database>`. Measured on live
-		// MySQL 9.7.1, `schema apply` fed the database's own inspected HCL
-		// planned CREATE TABLE and DROP TABLE for every table where the pinned
-		// Atlas community v1.3.0 binary answered "Schema is synced, no changes
-		// to be made" (stokaro/ptah#1244). SQL Server pins the same field from
-		// the same place, in getSQLServerDatabaseInfo.
-		info.IdentifierSemantics.DefaultSchema = info.Schema
-	case platform.ClickHouse:
-		var version string
-		if err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
-			return info, fmt.Errorf("failed to get ClickHouse version: %w", err)
-		}
-		info.Version = version
-
-		if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
-			info.Schema = parsedURL.Path[1:]
-		} else {
-			var dbName string
-			if err := db.QueryRowContext(ctx, "SELECT currentDatabase()").Scan(&dbName); err != nil {
-				return info, fmt.Errorf("failed to get current ClickHouse database name: %w", err)
-			}
-			info.Schema = dbName
-		}
-		// A ClickHouse database is a schema, and no static rule names the
-		// connected one -- the same shape as the MySQL family below.
-		info.IdentifierSemantics.DefaultSchema = info.Schema
-	case platform.SQLite:
-		var version string
-		if err := db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&version); err != nil {
-			return info, fmt.Errorf("failed to get SQLite version: %w", err)
-		}
-		info.Version = version
-		info.Schema = "main"
-		// Already what the dialect rule answers. Assigned anyway so the rule is
-		// one line in every branch: four of the six pinned it and two did not,
-		// and the two that did not were the defect.
-		info.IdentifierSemantics.DefaultSchema = info.Schema
-	case platform.SQLServer:
-		return getSQLServerDatabaseInfo(ctx, db, parsedURL, info)
-	case platform.Oracle:
-		return getOracleDatabaseInfo(ctx, db, parsedURL, info)
-	case platform.YDB:
-		var version string
-		if err := db.QueryRowContext(ctx, "SELECT Version()").Scan(&version); err != nil {
-			return info, fmt.Errorf("failed to get YDB version: %w", err)
-		}
-		info.Version = version
-		// Schema stays empty, as does the default schema identifier.ForDialect
-		// gives YDB: a schema is a directory, and the database root is the one
-		// an unqualified name means.
-	}
-
-	return info, nil
-}
-
-// getOracleDatabaseInfo reads the version and the schema an Oracle connection
-// works in.
-//
-// The version comes from product_component_version.version_full rather than
-// from the banner, and the difference is measured: on 21.3 the banner says
-// "Release 21.0.0.0.0" while that column says "21.3.0.0.0", and only the second
-// is a release line capability.ResolveServerVersion has measured. The banner
-// carries a second trap on the newer line -- "Oracle AI Database 26ai Free
-// Release 23.26.2.0.0" names 26 before it names 23.26 -- which the resolver
-// handles, and which this column avoids entirely.
-//
-// The schema is the connected user, because in Oracle a schema IS a user:
-// objects live in the namespace of the account that owns them, and there is no
-// separate namespace to select. An explicit ?schema= still wins, for the reader
-// that has been granted access to somebody else's objects.
-func getOracleDatabaseInfo(
-	ctx context.Context,
-	db *sql.DB,
-	parsedURL *url.URL,
-	info catalog.ServerInfo,
-) (catalog.ServerInfo, error) {
-	var version string
-	const versionQuery = `SELECT version_full FROM product_component_version WHERE ROWNUM = 1`
-	if err := db.QueryRowContext(ctx, versionQuery).Scan(&version); err != nil {
-		return info, fmt.Errorf("failed to get Oracle version: %w", err)
-	}
-	info.Version = version
-
-	var currentSchema string
-	const schemaQuery = `SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM dual`
-	if err := db.QueryRowContext(ctx, schemaQuery).Scan(&currentSchema); err != nil {
-		return info, fmt.Errorf("failed to get Oracle schema: %w", err)
-	}
-	info.Schema = currentSchema
-	if schema := parsedURL.Query().Get("schema"); schema != "" {
-		info.Schema = schema
-	}
-	info.IdentifierSemantics = identifier.ForDialect(platform.Oracle)
-	info.IdentifierSemantics.DefaultSchema = info.Schema
-	return info, nil
-}
-
-func getSQLServerDatabaseInfo(
-	ctx context.Context,
-	db *sql.DB,
-	parsedURL *url.URL,
-	info catalog.ServerInfo,
-) (catalog.ServerInfo, error) {
-	var version string
-	if err := db.QueryRowContext(ctx, "SELECT @@VERSION").Scan(&version); err != nil {
-		return info, fmt.Errorf("failed to get SQL Server version: %w", err)
-	}
-	info.Version = version
-	var catalogCollation string
-	// Inspect the collation applied by CATALOG_DEFAULT directly. The
-	// sys.databases catalog_collation columns are Azure SQL Database-only.
-	const catalogSemanticsQuery = `
-SELECT
-    COALESCE(CONVERT(
-        nvarchar(128),
-        SQL_VARIANT_PROPERTY(
-            CONVERT(nvarchar(1), N'x') COLLATE CATALOG_DEFAULT,
-            'Collation'
-        )
-    ), N'')`
-	if err := db.QueryRowContext(ctx, catalogSemanticsQuery).Scan(&catalogCollation); err != nil {
-		return info, fmt.Errorf("failed to get SQL Server catalog identifier semantics: %w", err)
-	}
-	info.Schema = "dbo"
-	if schema := parsedURL.Query().Get("schema"); schema != "" {
-		info.Schema = schema
-	}
-	info.IdentifierSemantics = identifier.ForSQLServerCatalog(catalogCollation)
-	info.IdentifierSemantics.DefaultSchema = info.Schema
-	return info, nil
-}
-
-// detectPostgresWireDialect names the product behind a PostgreSQL-wire
-// connection from its own SELECT version() banner.
-//
-// The product tokens come from capability.BannerPlatform rather than a second
-// copy of the same substrings, because this function and
-// capability.ResolveServerVersion must not disagree about which server a
-// banner describes: this one picks the dialect, that one picks the preset the
-// dialect is planned with, and they are handed the same string.
-// TestWireDialectDetectionAgreesWithTheCapabilityResolver holds them together.
-//
-// A banner naming only PostgreSQL is not a product answer here. CockroachDB,
-// YugabyteDB and Spanner all speak this protocol and a deployment of any of
-// them may report a banner carrying no token of its own, so the dialect the
-// operator connected with survives — it is the only evidence left.
-func detectPostgresWireDialect(declaredDialect, version string) string {
-	switch banner := capability.BannerPlatform(version); banner {
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return banner
-	default:
-		return platform.NormalizeDialect(declaredDialect)
-	}
-}
-
-// detectMySQLWireDialect names the product behind a MySQL-wire connection from
-// its VERSION() banner, reading the table detectPostgresWireDialect reads.
-//
-// Unlike the PostgreSQL wire, the server is the whole answer here and the
-// scheme the operator connected with is not consulted. MariaDB announces itself
-// in every banner, the replication prefix included, and a banner without it is
-// a MySQL server. `mysql://`, `mariadb://` and `maria://` open one driver, so
-// the scheme cannot say which of the two a server is; the pinned community
-// binary v1.3.0 decides by the server the same way, and printed byte-identical
-// `schema inspect` output through all three against MariaDB 11.8.9 and against
-// MySQL 8.4.11. Read from the scheme, a `mariadb://` URL naming a MySQL server
-// plans MariaDB statements for it, and a dev URL spelled differently from its
-// target is refused as another dialect on the same server (stokaro/ptah#3756).
-func detectMySQLWireDialect(version string) string {
-	if capability.BannerPlatform(version) == platform.MariaDB {
-		return platform.MariaDB
-	}
-	return platform.MySQL
-}
-
-// convertMySQLURL converts a MySQL-family URL into go-sql-driver's DSN.
-//
-// The DSN is atlasurl.ParseMySQLURL's, which is also where parseDatabaseURL
-// reads the database. One parser is what keeps the two in agreement: with a
-// recognizer in each, a URL can reach the driver with its scheme attached, or
-// be rebuilt around a host that was never one (stokaro/ptah#1540).
-func convertMySQLURL(dbURL string) string {
-	mysqlURL, err := atlasurl.ParseMySQLURL(dbURL)
-	if err != nil {
-		// ConnectToDatabase parsed this URL before reaching here, so a failure
-		// is unreachable rather than tolerated. Returning the input leaves the
-		// driver to report on it.
-		return dbURL
-	}
-	return mysqlURL.DSN()
-}
-
-func convertPostgresWireURL(dbURL string) string {
-	cleaned := removePostgresPoolParams(dbURL)
-	parsedURL, err := url.Parse(cleaned)
-	if err != nil {
-		return cleaned
-	}
-
-	switch platform.NormalizeDialect(parsedURL.Scheme) {
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		parsedURL.Scheme = platform.Postgres
-		return parsedURL.String()
-	default:
-		return cleaned
-	}
-}
-
-// convertClickHouseURL normalizes a ClickHouse connection URL into the form
-// expected by the clickhouse-go/v2 driver's database/sql registration.
-//
-// The driver accepts either the canonical `clickhouse://user:pass@host:port/db`
-// URL form or the legacy DSN form. We canonicalize to the URL form and pass
-// the query parameters through unchanged. If the input cannot be parsed as a
-// URL we return it as-is so the driver can produce its own (likely better)
-// error message.
-func convertClickHouseURL(dbURL string) string {
-	parsed, err := url.Parse(dbURL)
-	if err != nil {
-		return dbURL
-	}
-	if parsed.Scheme == "" {
-		return dbURL
-	}
-	// The driver registers as the lowercase scheme "clickhouse". Normalize.
-	parsed.Scheme = "clickhouse"
-	return parsed.String()
-}
-
-func convertSQLiteURL(dbURL string) string {
-	// Through parseDatabaseURL rather than url.Parse: a Windows absolute path
-	// is refused by the latter, and returning the URL whole then handed the
-	// driver a string beginning with sqlite:// as though it were a filename.
-	parsed, err := parseDatabaseURL(dbURL)
-	if err != nil {
-		return dbURL
-	}
-	if parsed.Scheme == "" {
-		return dbURL
-	}
-
-	var dsn string
-	switch {
-	case parsed.Opaque != "":
-		dsn = parsed.Opaque
-	case parsed.Host != "" && parsed.Path != "":
-		dsn = parsed.Host + parsed.Path
-	case parsed.Host != "":
-		dsn = parsed.Host
-	case parsed.Path == "/:memory:":
-		dsn = ":memory:"
-	case parsed.Path != "":
-		dsn = parsed.Path
-	default:
-		dsn = ":memory:"
-	}
-
-	query := parsed.Query()
-	if !hasSQLiteForeignKeysPragma(query) {
-		query.Add("_pragma", "foreign_keys(1)")
-	}
-	dsn = sqliteURIForMemory(dsn, query)
-	if encoded := query.Encode(); encoded != "" {
-		dsn += "?" + encoded
-	}
-	return dsn
-}
-
-// sqliteURIForMemory prefixes a named in-memory database with `file:`, which is
-// what makes SQLite read the query as URI parameters at all.
-//
-// Without it `mode=memory` is not ignored so much as never seen: the whole
-// string is taken as a filename, so `sqlite://dev?mode=memory` -- the form this
-// repository's own tests, help text and docs use -- opens a FILE named
-// `dev?mode=memory` in the working directory and leaves it there.
-//
-// Measured against modernc.org/sqlite v1.57.0:
-//
-//	dev?mode=memory       -> a file appears
-//	file:dev?mode=memory  -> no file
-//
-// The second problem is the worse one. A dev database exists to be empty, and a
-// persistent one carries the previous run's state into the next plan -- which
-// produces a wrong answer that looks like a right one (stokaro/ptah#1819).
-//
-// Only the memory case is rewritten. A plain path stays a plain path, because
-// `file:` there would change how a name containing `?` or `#` is read.
-func sqliteURIForMemory(dsn string, query url.Values) string {
-	if !strings.EqualFold(query.Get("mode"), "memory") {
-		return dsn
-	}
-	if strings.HasPrefix(dsn, "file:") || dsn == ":memory:" {
-		return dsn
-	}
-	return "file:" + dsn
-}
-
-func isSQLiteMemoryDSN(dsn string) bool {
-	path, rawQuery, _ := strings.Cut(dsn, "?")
-	if path == "" || path == ":memory:" {
-		return true
-	}
-	if strings.EqualFold(path, "file::memory:") {
-		return true
-	}
-	query, err := url.ParseQuery(rawQuery)
-	if err != nil {
-		return false
-	}
-	return strings.EqualFold(query.Get("mode"), "memory")
-}
-
-func convertSQLServerURL(dbURL string) string {
-	parsed, err := url.Parse(dbURL)
-	if err != nil || parsed.Scheme == "" {
-		return dbURL
-	}
-	parsed.Scheme = platform.SQLServer
-	query := parsed.Query()
-	query.Del("schema")
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func hasSQLiteForeignKeysPragma(query url.Values) bool {
-	for _, pragma := range query["_pragma"] {
-		if strings.Contains(strings.ToLower(pragma), "foreign_keys") {
-			return true
-		}
-	}
-	return false
-}
-
-// removePostgresPoolParams removes the pgx pool parameters from a database URL.
-// pool_max_conns and pool_min_conns configure pgx's own pool and are not
-// connection parameters, so a standard connection is opened without them. Every
-// other parameter is kept, and kept BYTE FOR BYTE.
-//
-// That last part is why this rewrites the raw query rather than going through
-// url.Values. Encode spells a space as "+", which is correct for a form and
-// wrong for a value libpq reads as content: `options=-c%20search_path%3Dextra`
-// came back as `options=-c+search_path%3Dextra`, and the server then refused
-// the connection for a startup parameter literally named "+search_path"
-// (SQLSTATE 42704). The function removed nothing from that URL and corrupted it
-// anyway, because it re-encoded unconditionally.
-//
-// A URL carrying neither parameter is returned unchanged, so the common path
-// does not re-serialize at all.
-func removePostgresPoolParams(dbURL string) string {
-	parsedURL, err := url.Parse(dbURL)
-	if err != nil || parsedURL.RawQuery == "" {
-		return dbURL
-	}
-	kept := make([]string, 0, strings.Count(parsedURL.RawQuery, "&")+1)
-	removed := false
-	for pair := range strings.SplitSeq(parsedURL.RawQuery, "&") {
-		rawKey, _, _ := strings.Cut(pair, "=")
-		key, decodeErr := url.QueryUnescape(rawKey)
-		if decodeErr == nil && (key == "pool_max_conns" || key == "pool_min_conns") {
-			removed = true
-			continue
-		}
-		kept = append(kept, pair)
-	}
-	if !removed {
-		return dbURL
-	}
-	parsedURL.RawQuery = strings.Join(kept, "&")
-	return parsedURL.String()
-}
-
-// reconnectCarryingSearchPath opens the connection a second time without the
-// schema selection, for the one failure that is about SENDING it rather than
-// about the database.
-//
-// A `?search_path=` on a PostgreSQL URL is a STARTUP parameter, and a
-// transaction-pooling proxy refuses the whole connection for a parameter
-// outside its allow-list rather than ignoring it:
-//
-//	FATAL: unsupported startup parameter: search_path (SQLSTATE 08P01)
-//
-// Nothing about the schema itself is wrong there. Measured on PgBouncer 1.25.2
-// in transaction mode against PostgreSQL 17, one server reached two ways: the
-// same URL without the parameter connects, and `schema inspect --schemas app`
-// through the proxy produces a document byte-identical to
-// `?search_path=app` direct. An apply through the proxy emits
-// `ALTER TABLE "app"."widget"` and the column lands in `app`. So neither the
-// read nor the write depends on a session `search_path`; only the URL spelling
-// did (stokaro/ptah#1029).
-//
-// The retry is triggered by the refusal and by nothing else. A direct server
-// never answers it, so a direct connection is opened once and behaves exactly
-// as it did -- which is what keeps this from being a change to every
-// PostgreSQL run.
-//
-// When there is nothing to retry the original failure is returned, explained,
-// because the operator's next step is then about the URL rather than about the
-// proxy.
-func reconnectCarryingSearchPath(
-	ctx context.Context,
-	dbURL, dialectProtocol, dialect string,
-	pingErr error,
-) (*sql.DB, error) {
-	retryURL, retryable := urlWithoutSearchPath(dbURL, dialect, pingErr)
-	if !retryable {
-		return nil, fmt.Errorf("failed to ping database: %w",
-			explainRefusedStartupParameter(dbURL, dialect, pingErr))
-	}
-
-	slog.Debug(
-		"reconnecting without the schema selection: the server refused it as a startup parameter",
-		"parameter", "search_path",
-		"selection", schemaselection.FromURL(dbURL).Raw,
-	)
-
-	_, connectionString := databaseDriverConfig(dialect, retryURL)
-	db, err := sql.Open(dialectProtocol, connectionString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database connection: %w", err)
-	}
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		// The second failure is the one to report: the first was about a
-		// parameter this connection does not send.
-		return nil, fmt.Errorf("failed to ping database: %w",
-			explainRefusedStartupParameter(retryURL, dialect, err))
-	}
-	return db, nil
-}
-
-// schemaResolver answers which schema a PostgreSQL-family connection works in.
-//
-// It is a function rather than a flag because the two answers come from two
-// different places, not from two branches of one: the session knows for a
-// connection that could send the selection, and the URL knows for one that
-// could not.
-type schemaResolver func(ctx context.Context, db *sql.DB, parsedURL *url.URL) (string, error)
-
-// resolveSchemaFromSession asks the server what this session resolved to, which
-// accounts for a `search_path` naming several schemas, a schema the URL did not
-// name, and the connection default.
-func resolveSchemaFromSession(ctx context.Context, db *sql.DB, parsedURL *url.URL) (string, error) {
-	return schemaselection.FromParsedURL(parsedURL).Resolve(ctx, db)
-}
-
-// resolveSchemaFromCarriedSelection is the answer for a connection that could
-// not SEND the selection, where the session reports the connection default for
-// a URL that named something else.
-func resolveSchemaFromCarriedSelection(ctx context.Context, db *sql.DB, parsedURL *url.URL) (string, error) {
-	return schemaselection.FromParsedURL(parsedURL).ResolveCarried(ctx, db)
 }

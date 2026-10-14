@@ -52,5 +52,8 @@ func ydb() descriptor.Dialect {
 				Newest:      capabilityline.YDB262,
 			},
 		},
+
+		// How a connection reaches the server.
+		Driver: "ydb",
 	}
 }
