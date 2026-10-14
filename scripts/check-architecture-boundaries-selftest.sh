@@ -259,4 +259,46 @@ GO
   require_acceptance "the repaired Go annotation cleanup"
 done
 
-echo "check-architecture-boundaries-selftest: OK (15 refusals, 2 false-positive controls)"
+# The shared SQL reader links no owner beyond the recorded YQL conversion
+# (stokaro/ptah#4204). internal/sqlschema is outside the neutral layer and every
+# provider contract, so this rule alone can refuse it.
+target="$tree/internal/sqlschema/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package sqlschema
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./internal/sqlschema)
+require_refusal "the SQL schema reader transitively linking a concrete feature"
+rm -f "$target"
+require_acceptance "the repaired SQL schema reader"
+
+target="$tree/internal/parser/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package parser
+
+import _ "ptah.run/feature/boundaryfixture"
+GO
+(cd "$tree" && go build ./internal/parser)
+require_refusal "the shared SQL parser directly linking a concrete feature"
+
+# A dialect helper outside the owner families is allowed: it interprets an
+# object of the common model, as internal/pgname names an unnamed constraint.
+cat >"$target" <<'GO'
+package parser
+
+import _ "ptah.run/internal/pgname"
+GO
+(cd "$tree" && go build ./internal/parser)
+require_acceptance "the shared SQL parser importing a dialect helper"
+rm -f "$target"
+
+# The recorded debt must fall with the tree: a baseline above the measured
+# count is refused until -update lowers it.
+cp "$baseline" "$work_dir/baseline.orig"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['rules']['sql-reader-links-owners']+=1; json.dump(d,open(p,'w'),indent=2)" "$baseline"
+require_refusal "a SQL reader baseline higher than the tree's"
+cp "$work_dir/baseline.orig" "$baseline"
+require_acceptance "the restored SQL reader baseline"
+
+echo "check-architecture-boundaries-selftest: OK (18 refusals, 3 false-positive controls)"

@@ -187,6 +187,11 @@ func rules() []rule {
 			Summary:    "models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner",
 			violations: neutralOwnerLinks,
 		},
+		{
+			ID:         "sql-reader-links-owners",
+			Summary:    "the shared SQL reader must not link a concrete dialect, feature or built-in owner",
+			violations: sqlReaderOwnerLinks,
+		},
 	}
 }
 
@@ -317,7 +322,7 @@ func measure(root string) ([]ruleReport, error) {
 		return nil, fmt.Errorf("packages failed to load")
 	}
 
-	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots, requiredNeutralPackages) {
+	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots, requiredNeutralPackages, sqlReaderRoots) {
 		if !slices.ContainsFunc(loaded, func(pkg *packages.Package) bool { return relative(pkg.PkgPath) == required }) {
 			return nil, fmt.Errorf("architecture root %q was not loaded", required)
 		}

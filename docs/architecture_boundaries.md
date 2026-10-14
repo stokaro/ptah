@@ -37,9 +37,11 @@ features, database implementations, or external modules.
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 | `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
+| `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 2 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
-outright: the first violation fails the build.
+outright: the first violation fails the build. A rule above zero refuses any new
+finding.
 
 A fall fails too, until it is recorded with
 `go run ./internal/cmd/boundaries -update`. That reads odd until the alternative
@@ -81,6 +83,34 @@ Two seams keep the YDB owner out of the layer:
 The HCL reader under `internal/` still decodes owner syntax itself, and the SQL
 reader still converts YQL for the YDB owner. Both sit outside the layer, so
 `core/schemasource` takes them from its caller rather than importing them.
+
+### What the SQL reader rule holds
+
+`sql-reader-links-owners` applies the owner rule to `internal/parser` and
+`internal/sqlschema`, the shared SQL reader. An owner's SQL syntax reaches the
+owner through `core/sqlext` claims, so the reader does not need to link it. A finding is one of the two packages and one
+owner family it links through any chain of imports. The recorded 2 is the YQL
+conversion, deferred to [#4204](https://github.com/stokaro/ptah/issues/4204):
+the parser hands a YDB document to `internal/yqlparse`, and `internal/sqlschema`
+converts it through `dialect/ydb` packages, so each package links `dialect/ydb`.
+
+The reader also imports dialect helpers under `internal/`. They are allowed,
+because each interprets an object of the common model that every reader of the
+dialect needs, whatever owners a load selects:
+
+| Helper | What the reader asks it |
+| --- | --- |
+| `internal/chtype` | Whether a ClickHouse column type admits NULL. |
+| `internal/mysqlcheck` | Whether a column CHECK names another column, which MySQL refuses. |
+| `internal/mysqlindex` | The access method a `USING` clause asks for. |
+| `internal/mysqlname` | The names MySQL and MariaDB give an unnamed foreign key, CHECK or key index. |
+| `internal/mysqlroutine` | The security and volatility a routine's characteristics state. |
+| `internal/pgname` | The names PostgreSQL gives an unnamed constraint. |
+| `internal/pgprivilege` | The privileges `ALL` names in a GRANT or REVOKE. |
+
+The rule does not check this list, since these helpers are not owner families
+and the command does not classify packages by name. A helper that interprets
+syntax an owner models moves to the owner instead.
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
@@ -161,6 +191,7 @@ test and the control that make it evidence.
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 | Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
+| SQL reader isolation: the shared SQL reader links no owner beyond the recorded YQL conversion | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
 
 ## How target facts are held
 
