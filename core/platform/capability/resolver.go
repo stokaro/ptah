@@ -1,6 +1,7 @@
 package capability
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -237,21 +238,18 @@ func (r *Resolver) orderBanners() *Resolver {
 		}
 		return position[rules.name]
 	}
-	r.banners = slices.Clone(r.dialects)
-	slices.SortStableFunc(r.banners, func(left, right *dialectRules) int {
-		if order := group(left) - group(right); order != 0 {
-			return order
+	// A member ranks before the head of its family.
+	rank := func(rules *dialectRules) int {
+		if rules.member() {
+			return 0
 		}
-		return boolOrder(right.member()) - boolOrder(left.member())
-	})
-	return r
-}
-
-func boolOrder(value bool) int {
-	if value {
 		return 1
 	}
-	return 0
+	r.banners = slices.Clone(r.dialects)
+	slices.SortStableFunc(r.banners, func(left, right *dialectRules) int {
+		return cmp.Or(group(left)-group(right), rank(left)-rank(right))
+	})
+	return r
 }
 
 // ResolveServerVersion resolves a server version string onto a preset, as

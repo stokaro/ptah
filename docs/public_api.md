@@ -3969,6 +3969,15 @@ came from — a banner naming only PostgreSQL leaves an explicitly declared
 CockroachDB, YugabyteDB or Spanner target on its own preset, because all three
 speak the PostgreSQL wire protocol and may report exactly that banner.
 
+None of these functions names an engine. Each reads the dialect descriptors of
+the process registry: a descriptor names its default preset, the banner tokens
+its version string carries and the ladder its versions climb, all as data.
+`Resolver` answers the same questions from a registry the caller builds with
+`descriptor.NewRegistry`, which is how an engine Ptah does not ship is
+described and tested. `NewResolver` refuses a descriptor it cannot read with
+`descriptor.ErrInvalidDescriptor`; the package-level functions answer such a
+dialect as one that states no rules, so it receives the conservative empty set.
+
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. Both take a context and a `lint.Runtime`, a
 `lintext.Runtime` that also answers `sqlext.Runtime`, and a nil runtime is
