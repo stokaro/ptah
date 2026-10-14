@@ -205,8 +205,8 @@ func deepCopy(dst, src reflect.Value) {
 func emptyToNil(value reflect.Value) {
 	switch value.Kind() {
 	case reflect.Struct:
-		for i := range value.NumField() {
-			emptyToNil(value.Field(i))
+		for _, field := range value.Fields() {
+			emptyToNil(field)
 		}
 	case reflect.Slice:
 		if value.Len() == 0 {

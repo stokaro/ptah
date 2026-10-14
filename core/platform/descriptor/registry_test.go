@@ -163,7 +163,7 @@ func TestDialect_Equal(t *testing.T) {
 	withoutAliases := head("alpha")
 	withoutAliases.Aliases = nil
 	withEmptyAliases := head("alpha")
-	withEmptyAliases.Aliases = []string{}
+	withEmptyAliases.Aliases = make([]string, 0)
 
 	c.Assert(withoutAliases.Equal(withEmptyAliases), qt.IsTrue)
 	c.Assert(head("alpha", "a").Equal(head("alpha", "a")), qt.IsTrue)
