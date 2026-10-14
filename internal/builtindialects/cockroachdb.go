@@ -114,5 +114,15 @@ func cockroachDB() descriptor.Dialect {
 		Names:       descriptor.Names{Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+
+		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
+		// one dev database are serialized with a lock file, which only serializes
+		// runs on this machine.
+		DevRealm: descriptor.DevRealm{
+			Identity:        "query",
+			Query:           "SELECT current_database()",
+			FileLock:        "loopback",
+			ScratchDatabase: true,
+		},
 	}
 }

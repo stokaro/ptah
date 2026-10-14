@@ -86,6 +86,13 @@ func sqlite() descriptor.Dialect {
 			{Option: "STRICT", Property: "strict"},
 			{Option: "WITHOUT_ROWID", Property: "without_rowid"},
 		},
+
+		// Dev databases. The database is a file, named by its identity on disk.
+		DevRealm: descriptor.DevRealm{
+			Identity: "file",
+			Query:    "SELECT file FROM pragma_database_list WHERE name = 'main'",
+			FileLock: "local",
+		},
 	}
 }
 

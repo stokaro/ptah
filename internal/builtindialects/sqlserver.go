@@ -119,6 +119,12 @@ END`,
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names:   descriptor.Names{Lookup: "unicode_case_insensitive"},
 		Columns: descriptor.Columns{AlterColumnKeepsRest: true},
+
+		// Dev databases.
+		DevRealm: descriptor.DevRealm{
+			Identity: "query",
+			Query:    "SELECT DB_NAME()",
+		},
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dblock"
@@ -44,11 +45,11 @@ type Lock struct {
 // identity: aliases and replicated members cannot be proven independent before
 // cleanup, so equal live database/catalog names fail closed across hosts. A
 // YDB database is named by its path and the moment its server created it, so
-// two servers that each serve /local are two realms; see ydbIdentity.
+// two servers that each serve /local are two realms; see writerIdentity.
 //
 // A connection to a whole MySQL or MariaDB server holds every database on it,
 // so when either side is one, the two are compared by the server they reached;
-// see mysqlServerIdentity. The verbs that take a dev server refuse a dev server
+// see serverIdentity. The verbs that take a dev server refuse a dev server
 // beside one database, and a dev database beside a server, before they get
 // here, so this comparison is what keeps a mixed pair from reading as distinct
 // on a path that does not.
@@ -64,24 +65,25 @@ func SameRealm(
 	if leftDialect != rightDialect {
 		return false, nil
 	}
-	// A whole MySQL-family server holds every database on it, so a server and
-	// any database on the same server are one realm: compare the servers.
-	if isMySQLFamily(leftDialect) && (left.Info().WholeServer || right.Info().WholeServer) {
-		leftServer, err := mysqlServerIdentity(ctx, left, leftDialect)
+	realm := devRealm(leftDialect)
+	// A whole server holds every database on it, so a server and any
+	// database on the same server are one realm: compare the servers.
+	if realm.ServerQuery != "" && (left.Info().WholeServer || right.Info().WholeServer) {
+		leftServer, err := serverIdentity(ctx, left, leftDialect, realm)
 		if err != nil {
 			return false, err
 		}
-		rightServer, err := mysqlServerIdentity(ctx, right, rightDialect)
+		rightServer, err := serverIdentity(ctx, right, rightDialect, realm)
 		if err != nil {
 			return false, err
 		}
 		return leftServer == rightServer, nil
 	}
-	leftIdentity, err := realmIdentity(ctx, left, leftDialect)
+	leftIdentity, err := realmIdentity(ctx, left, leftDialect, realm)
 	if err != nil {
 		return false, err
 	}
-	rightIdentity, err := realmIdentity(ctx, right, rightDialect)
+	rightIdentity, err := realmIdentity(ctx, right, rightDialect, realm)
 	if err != nil {
 		return false, err
 	}
@@ -100,13 +102,13 @@ func Acquire(
 		return nil, errors.New("dev database locking requires a database connection")
 	}
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
-	switch dialect {
-	case platform.ClickHouse, platform.CockroachDB:
+	realm := devRealm(dialect)
+	if realm.FileLock == fileLockLoopback {
 		if err := validateLocalFileLockURL(dialect, conn.Info().URL); err != nil {
 			return nil, err
 		}
 	}
-	identity, err := realmIdentity(ctx, conn, dialect)
+	identity, err := realmIdentity(ctx, conn, dialect, realm)
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +124,8 @@ func Acquire(
 		}
 		return lock, nil
 	}
-	switch dialect {
-	case platform.SQLite, platform.ClickHouse, platform.CockroachDB:
+	switch realm.FileLock {
+	case fileLockLocal, fileLockLoopback:
 		file, err := acquireFile(ctx, localLockPath(lockName), timeout)
 		if err != nil {
 			return nil, fmt.Errorf("acquire %s dev database realm lock: %w", dialect, err)
@@ -237,74 +239,94 @@ func finishAcquire(ctx context.Context, lock *Lock) (*Lock, error) {
 	return lock, nil
 }
 
+// The values of descriptor.DevRealm.Identity this package reads.
+const (
+	identityQuery  = "query"
+	identityFile   = "file"
+	identityWriter = "writer"
+)
+
+// The values of descriptor.DevRealm.FileLock this package reads.
+const (
+	fileLockLocal    = "local"
+	fileLockLoopback = "loopback"
+)
+
+// devRealm is what the descriptor of dialect states about its dev
+// databases, and the zero value for a dialect no descriptor describes.
+func devRealm(dialect string) descriptor.DevRealm {
+	described, _ := platform.Lookup(dialect)
+	return described.DevRealm
+}
+
+// realmIdentity names the dev database conn selected, the way realm says the
+// engine names one. A connection that holds a whole server is named by the
+// server.
 func realmIdentity(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	dialect string,
+	realm descriptor.DevRealm,
 ) (string, error) {
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return selectedDatabase(ctx, conn, dialect, "SELECT current_database()")
-	case platform.SQLServer:
-		return selectedDatabase(ctx, conn, dialect, "SELECT DB_NAME()")
-	case platform.MySQL, platform.MariaDB:
-		if conn.Info().WholeServer {
-			return mysqlServerIdentity(ctx, conn, dialect)
-		}
-		return selectedDatabase(ctx, conn, dialect, "SELECT DATABASE()")
-	case platform.ClickHouse:
-		return selectedDatabase(ctx, conn, dialect, "SELECT currentDatabase()")
-	case platform.SQLite:
-		return sqliteIdentity(ctx, conn)
-	case platform.YDB:
-		return ydbIdentity(ctx, conn)
+	if realm.ServerQuery != "" && conn.Info().WholeServer {
+		return serverIdentity(ctx, conn, dialect, realm)
+	}
+	switch realm.Identity {
+	case identityQuery:
+		return selectedDatabase(ctx, conn, dialect, realm.Query)
+	case identityFile:
+		return fileIdentity(ctx, conn, dialect, realm.Query)
+	case identityWriter:
+		return writerIdentity(ctx, conn, dialect)
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}
 }
 
-// realmIdentifier is what a YDB connection's writer says about the dev
-// database its root is.
+// realmIdentifier is what a connection's writer says about the dev database
+// its root is, for an engine whose dev database the writer names.
 type realmIdentifier interface {
 	RealmIdentity(ctx context.Context) (string, error)
 }
 
-// ydbIdentity names the dev database a YDB connection treats as its database:
-// the database, told apart from one of the same path on another server by the
-// moment its server created it, and the dev realm in it the URL named. Two
-// realms of one database are two realms, and so are a realm and the database
-// that holds it, whose reads and resets leave the realms alone.
-func ydbIdentity(ctx context.Context, conn *dbschema.DatabaseConnection) (string, error) {
+// writerIdentity names the dev database a connection treats as its database
+// by asking the connection's writer. On YDB that is the database, told apart
+// from one of the same path on another server by the moment its server
+// created it, and the dev realm in it the URL named. Two realms of one
+// database are two realms, and so are a realm and the database that holds it,
+// whose reads and resets leave the realms alone.
+func writerIdentity(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) (string, error) {
 	identifier, ok := conn.SchemaWriter().(realmIdentifier)
 	if !ok {
-		return "", fmt.Errorf("resolve ydb dev database realm: the writer %T cannot name its realm", conn.SchemaWriter())
+		return "", fmt.Errorf("resolve %s dev database realm: the writer %T cannot name its realm", dialect, conn.SchemaWriter())
 	}
 	identity, err := identifier.RealmIdentity(ctx)
 	if err != nil {
-		return "", fmt.Errorf("resolve ydb dev database realm: %w", err)
+		return "", fmt.Errorf("resolve %s dev database realm: %w", dialect, err)
 	}
 	return identity, nil
 }
 
-// mysqlServerIdentity names the server a MySQL-family connection reached,
-// whichever database it selected: the server's UUID on MySQL, and on MariaDB,
-// which has none, its host name, port and data directory. A connection to a
-// whole server has no database to name its realm by, and a server reached
-// through another spelling of its address, or through a socket, answers the
-// same identity (stokaro/ptah#3789).
+// serverIdentity names the server a connection reached, whichever database it
+// selected, with the realm's ServerQuery: the server's UUID on MySQL, and on
+// MariaDB, which has none, its host name, port and data directory. A
+// connection to a whole server has no database to name its realm by, and a
+// server reached through another spelling of its address, or through a
+// socket, answers the same identity (stokaro/ptah#3789).
 //
 // The identity is a digest, `@` and 32 hexadecimal digits, because it names
 // the realm's advisory lock and the server refuses a lock name over 64
 // characters; a data directory can be any length. A database name cannot
 // start with `@` unquoted, and a digest collision would only make two servers
 // share a lock.
-func mysqlServerIdentity(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) (string, error) {
-	query := "SELECT @@server_uuid"
-	if dialect == platform.MariaDB {
-		query = "SELECT CONCAT_WS(':', @@hostname, @@port, @@datadir)"
-	}
+func serverIdentity(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	dialect string,
+	realm descriptor.DevRealm,
+) (string, error) {
 	var identity sql.NullString
-	if err := conn.QueryRowContext(ctx, query).Scan(&identity); err != nil {
+	if err := conn.QueryRowContext(ctx, realm.ServerQuery).Scan(&identity); err != nil {
 		return "", fmt.Errorf("resolve %s dev server identity: %w", dialect, err)
 	}
 	if !identity.Valid || strings.TrimSpace(identity.String) == "" {
@@ -312,11 +334,6 @@ func mysqlServerIdentity(ctx context.Context, conn *dbschema.DatabaseConnection,
 	}
 	digest := sha256.Sum256([]byte(dialect + "\x00" + identity.String))
 	return "@" + hex.EncodeToString(digest[:16]), nil
-}
-
-// isMySQLFamily reports whether dialect is MySQL or MariaDB.
-func isMySQLFamily(dialect string) bool {
-	return dialect == platform.MySQL || dialect == platform.MariaDB
 }
 
 func selectedDatabase(
@@ -334,23 +351,24 @@ func selectedDatabase(
 	return database.String, nil
 }
 
-func sqliteIdentity(
+// fileIdentity names the file that holds the dev database, whose path query
+// selects, by its identity on disk, so two spellings of one path name one
+// realm. An empty path is an in-memory database.
+func fileIdentity(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	dialect, query string,
 ) (string, error) {
 	var path string
-	if err := conn.QueryRowContext(
-		ctx,
-		"SELECT file FROM pragma_database_list WHERE name = 'main'",
-	).Scan(&path); err != nil {
-		return "", fmt.Errorf("resolve sqlite dev database realm: %w", err)
+	if err := conn.QueryRowContext(ctx, query).Scan(&path); err != nil {
+		return "", fmt.Errorf("resolve %s dev database realm: %w", dialect, err)
 	}
 	if strings.TrimSpace(path) == "" {
 		return ":memory:", nil
 	}
 	identity, err := filesystemIdentity(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve sqlite dev database file identity: %w", err)
+		return "", fmt.Errorf("resolve %s dev database file identity: %w", dialect, err)
 	}
 	return identity, nil
 }

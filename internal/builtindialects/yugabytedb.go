@@ -112,5 +112,12 @@ func yugabyteDB() descriptor.Dialect {
 		Names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+
+		// Dev databases.
+		DevRealm: descriptor.DevRealm{
+			Identity:        "query",
+			Query:           "SELECT current_database()",
+			ScratchDatabase: true,
+		},
 	}
 }

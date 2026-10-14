@@ -128,6 +128,15 @@ func mysql() descriptor.Dialect {
 		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
 		Columns:     descriptor.Columns{CheckOwnColumnOnly: true},
+
+		// Dev databases.
+		DevRealm: descriptor.DevRealm{
+			Identity:        "query",
+			Query:           "SELECT DATABASE()",
+			ServerQuery:     "SELECT @@server_uuid",
+			ScratchDatabase: true,
+		},
+		SchemaIsDatabase: true,
 	}
 }
 

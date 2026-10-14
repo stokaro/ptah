@@ -93,6 +93,13 @@ func spanner() descriptor.Dialect {
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		Names:       descriptor.Names{PublicKeyword: true},
 		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+
+		// Dev databases.
+		DevRealm: descriptor.DevRealm{
+			Identity:        "query",
+			Query:           "SELECT current_database()",
+			ScratchDatabase: true,
+		},
 	}
 }
 

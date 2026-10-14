@@ -121,5 +121,15 @@ func mariaDB() descriptor.Dialect {
 		Names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
 		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
 		CheckNaming: descriptor.CheckNamingColumnOrConstraint,
+
+		// Dev databases. MariaDB has no server UUID; its host name, port and data
+		// directory tell one server from another.
+		DevRealm: descriptor.DevRealm{
+			Identity:        "query",
+			Query:           "SELECT DATABASE()",
+			ServerQuery:     "SELECT CONCAT_WS(':', @@hostname, @@port, @@datadir)",
+			ScratchDatabase: true,
+		},
+		SchemaIsDatabase: true,
 	}
 }

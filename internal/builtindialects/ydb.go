@@ -125,6 +125,13 @@ func ydb() descriptor.Dialect {
 			Analyzed: true,
 			Scanner:  "yql",
 		},
+
+		// Dev databases. A YDB dev database is a directory of the database the URL
+		// names, and two servers each serve /local, so the writer names the realm by
+		// its path and the moment its server created the database.
+		DevRealm: descriptor.DevRealm{
+			Identity: "writer",
+		},
 	}
 }
 
