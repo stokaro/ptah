@@ -16,15 +16,22 @@ import (
 )
 
 // readExclusions observes each exclusion as an independently named object.
-// Catalog failures fail the read; missing catalog support leaves the namespace
-// uninspected, so an unavailable read cannot authorize constraint removal.
+// Catalog failures fail the read. Missing catalog support leaves the namespace
+// uninspected on a target that holds EXCLUDE constraints, so an unavailable
+// read cannot authorize constraint removal. A target the owner creates none on,
+// such as Spanner, has none for the read to miss, and its namespace is
+// described: recording it as unknown would make every export of that target
+// refuse a loss that cannot happen.
 func (r *Reader) readExclusions(ctx context.Context, database *catalog.Database) error {
 	indexes := make(map[objectidentity.Key]int, len(database.Indexes))
 	builder := objectidentity.NewBuilder(identifier.ForDialect(r.dialect))
 	for i, index := range database.Indexes {
 		indexes[builder.IndexParts(index.Schema, index.TableName, index.Name).Key()] = i
 	}
-	knowledge := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server cannot read exclusion constraints from pg_constraint"}
+	knowledge := schemaext.Knowledge{State: schemaext.Complete}
+	if pgtable.SupportsExclusion(r.dialect) {
+		knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server cannot read exclusion constraints from pg_constraint"}
+	}
 	if r.caps.Has(capability.PostgresCatalogFunctions) {
 		for _, schema := range r.schemasToRead() {
 			objects, err := r.readExclusionsForSchema(ctx, schema)

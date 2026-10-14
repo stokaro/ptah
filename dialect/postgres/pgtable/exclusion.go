@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
@@ -53,6 +54,14 @@ type NormalizedExclusion struct {
 	SourceKey      string `json:"source_key"`
 	Elements       string `json:"elements"`
 	WhereCondition string `json:"where_condition,omitempty"`
+}
+
+// SupportsExclusion reports whether this owner creates EXCLUDE constraints on
+// target. Only PostgreSQL is such a target: planning refuses a declaration for
+// any other, and a reader of a target outside it that cannot query
+// pg_constraint records the namespace as described rather than unknown.
+func SupportsExclusion(target string) bool {
+	return platform.NormalizeDialect(target) == platform.Postgres
 }
 
 // ExclusionRef builds a table-scoped identity using the target's identifier rules.

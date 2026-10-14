@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -64,7 +63,7 @@ func (ExclusionService) PlanFeatures(ctx context.Context, request featureplan.Re
 
 func planExclusion(request featureplan.Request, record schemaext.ChangeRecord, index int) (plangraph.Contribution[featureplan.Operation], error) {
 	var result plangraph.Contribution[featureplan.Operation]
-	if platform.NormalizeDialect(request.Target) != platform.Postgres {
+	if !SupportsExclusion(request.Target) {
 		return result, fmt.Errorf("%w: EXCLUDE constraints cannot be altered on %s", ptaherr.ErrUnsupportedFeature, request.Target)
 	}
 	change, ok := record.Value.(*ExclusionChange)
