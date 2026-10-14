@@ -395,7 +395,7 @@ func TestNewRootCommand_TypedLockTimeoutRefusesUnlockedDialect(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches,
 		`--lock-timeout requested a schema apply lock, and dialect "sqlite" has none: `+
-			`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. `+
+			`only postgres, mysql, mariadb, sqlserver, yugabytedb, ydb take a session advisory lock. `+
 			`Remove --lock-timeout to apply without a lock`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)

@@ -15,7 +15,6 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination/options"
 
-	"ptah.run/core/platform"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -103,6 +102,7 @@ const ydbLockSessionDescription = "ptah"
 func acquireYDBLock(
 	ctx context.Context,
 	pool connOpener,
+	dialect,
 	name string,
 	timeout time.Duration,
 	missing lockNodeMissing,
@@ -118,12 +118,13 @@ func acquireYDBLock(
 	if err != nil {
 		return nil, fmt.Errorf("reach the YDB coordination service: %w", err)
 	}
-	return acquireYDBSemaphore(ctx, sdk, name, timeout, missing)
+	return acquireYDBSemaphore(ctx, sdk, dialect, name, timeout, missing)
 }
 
 func acquireYDBSemaphore(
 	ctx context.Context,
 	sdk *ydbsdk.Driver,
+	dialect,
 	name string,
 	timeout time.Duration,
 	missing lockNodeMissing,
@@ -160,7 +161,7 @@ func acquireYDBSemaphore(
 	if err != nil {
 		closeErr := ydbschema.WithoutStackFrames(session.Close(context.WithoutCancel(ctx)))
 		if errors.Is(err, coordination.ErrAcquireTimeout) {
-			return nil, errors.Join(&TimeoutError{Dialect: platform.YDB, Name: name, Timeout: timeout}, closeErr)
+			return nil, errors.Join(&TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}, closeErr)
 		}
 		return nil, errors.Join(fmt.Errorf("acquire the YDB semaphore %q on %s: %w",
 			name, node, ydbschema.WithoutStackFrames(err)), closeErr)

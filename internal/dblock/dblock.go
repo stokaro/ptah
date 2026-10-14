@@ -14,21 +14,17 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
-	"slices"
 	"strings"
 	"time"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/envbool"
 )
 
-const (
-	// mariaDBDefaultTimeoutSeconds stands in for an infinite GET_LOCK wait on
-	// MariaDB, which rejects the negative timeout MySQL uses for "wait forever".
-	mariaDBDefaultTimeoutSeconds = 31_536_000
-	postgresLockPollInterval     = 25 * time.Millisecond
-)
+// postgresLockPollInterval is how often a pg-advisory wait asks again.
+const postgresLockPollInterval = 25 * time.Millisecond
 
 // DefaultReleaseTimeout bounds the deferred release of an advisory lock so a
 // canceled command still returns its dedicated session connection promptly.
@@ -65,37 +61,38 @@ func IsTimeout(err error) bool {
 	return errors.As(err, &target)
 }
 
-// supportedDialects are the dialects whose servers give Ptah a session-scoped
-// advisory lock. It is one declaration because two readers need the same
-// answer to different questions: [Supported] asks whether this target locks,
-// and [SupportedDialects] asks which targets do, so a caller refusing a lock
-// request can name the alternatives. Written twice, the second copy stops
-// agreeing the moment an engine is added to the first.
+// lockOf is how dialect's descriptor says its lock is held. The descriptor is
+// the one declaration two readers need: [Supported] asks whether this target
+// locks, and [SupportedDialects] asks which targets do, so a caller refusing a
+// lock request can name the alternatives.
 //
-// It is a list of dialects rather than a capability because what it selects
-// is code: each entry has an arm in [acquireOnSession] that takes its lock
-// the way that engine offers one. YDB's arm takes a coordination-node
-// semaphore rather than an SQL lock.
-var supportedDialects = []string{
-	platform.Postgres,
-	platform.YugabyteDB,
-	platform.MySQL,
-	platform.MariaDB,
-	platform.SQLServer,
-	platform.YDB,
+// The descriptor names a protocol rather than a capability because what it
+// selects is code: each protocol has an arm in [acquireOnSession] that takes
+// the lock the way the engine offers one. The coordination semaphore is YDB's,
+// held on a coordination node rather than by an SQL session. A dialect the
+// registry does not know offers none.
+func lockOf(dialect string) descriptor.Lock {
+	described, _ := platform.Lookup(dialect)
+	return described.Lock
 }
 
 // Supported reports whether dialect has session-scoped advisory-lock
 // semantics. [Acquire] returns a no-op lock on unsupported dialects.
 func Supported(dialect string) bool {
-	return slices.Contains(supportedDialects, platform.NormalizeDialect(dialect))
+	return lockOf(dialect).Protocol != ""
 }
 
 // SupportedDialects returns the canonical dialect names whose targets take a
-// session advisory lock, in declaration order. The returned slice is a copy,
-// so a caller may sort or filter it.
+// session advisory lock, in the order the dialect registry lists them. The
+// returned slice is new on every call, so a caller may sort or filter it.
 func SupportedDialects() []string {
-	return slices.Clone(supportedDialects)
+	var supported []string
+	for _, dialect := range platform.Dialects().Dialects() {
+		if dialect.Lock.Protocol != "" {
+			supported = append(supported, dialect.Name)
+		}
+	}
+	return supported
 }
 
 // Lock is a held session-scoped advisory lock. The zero value is the no-op
@@ -410,7 +407,7 @@ func Acquire(
 	if !Supported(dialect) {
 		return &Lock{name: name}, nil
 	}
-	if dialect == platform.YDB {
+	if lockOf(dialect).Protocol == descriptor.LockCoordinationSemaphore {
 		// The semaphore belongs to a coordination session of its own, so
 		// the lock holds no SQL session from the pool.
 		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, createLockNode)
@@ -445,13 +442,14 @@ func acquireOnSession(
 	missing lockNodeMissing,
 ) (*Lock, error) {
 	lock := &Lock{name: name, dialect: dialect}
-	if !Supported(dialect) {
+	protocol := lockOf(dialect)
+	if protocol.Protocol == "" {
 		return lock, nil
 	}
 
 	var acquireErr error
-	switch dialect {
-	case platform.Postgres, platform.YugabyteDB:
+	switch protocol.Protocol {
+	case descriptor.LockPostgresAdvisory:
 		lock.release = releasePostgresLock(session, dialect, name)
 		acquireErr = acquirePostgresLock(ctx, session, dialect, name, timeout)
 		if acquireErr == nil {
@@ -459,15 +457,15 @@ func acquireOnSession(
 				acquireErr = &ambiguousAcquisitionError{err: verifyErr}
 			}
 		}
-	case platform.MySQL, platform.MariaDB:
+	case descriptor.LockGetLock:
 		lock.release = releaseMySQLLock(session, name)
 		acquireErr = acquireMySQLLock(ctx, session, dialect, name, timeout)
-	case platform.SQLServer:
+	case descriptor.LockAppLock:
 		lock.release = releaseSQLServerLock(session, name)
-		acquireErr = acquireSQLServerLock(ctx, session, name, timeout)
-	case platform.YDB:
+		acquireErr = acquireSQLServerLock(ctx, session, dialect, name, timeout)
+	case descriptor.LockCoordinationSemaphore:
 		var hold *ydbHold
-		hold, acquireErr = acquireYDBLock(ctx, witness, name, timeout, missing)
+		hold, acquireErr = acquireYDBLock(ctx, witness, dialect, name, timeout, missing)
 		if hold != nil {
 			lock.release = hold.release
 			lock.holding = hold
@@ -688,7 +686,7 @@ func releaseMySQLLock(conn queryRower, name string) func(context.Context) error 
 	}
 }
 
-func acquireSQLServerLock(ctx context.Context, conn queryRower, name string, timeout time.Duration) error {
+func acquireSQLServerLock(ctx context.Context, conn queryRower, dialect, name string, timeout time.Duration) error {
 	timeoutMilliseconds := sqlServerLockTimeoutMilliseconds(timeout)
 
 	var result int
@@ -706,7 +704,7 @@ SELECT @result;`, name, timeoutMilliseconds).Scan(&result); err != nil {
 		return nil
 	}
 	if result == -1 {
-		return &TimeoutError{Dialect: platform.SQLServer, Name: name, Timeout: timeout}
+		return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
 	}
 	return fmt.Errorf("sqlserver sp_getapplock(%q) failed with return code %d", name, result)
 }
@@ -729,6 +727,11 @@ SELECT @result;`, name).Scan(&result); err != nil {
 	}
 }
 
+// mySQLLockTimeoutSeconds is the GET_LOCK timeout a wait of timeout sends: a
+// positive one rounded up to whole seconds, zero for a negative one, which
+// does not wait, and for a zero one, which waits without limit, the
+// descriptor's unbounded wait where the engine refuses GET_LOCK's own
+// negative spelling of it, as MariaDB does.
 func mySQLLockTimeoutSeconds(dialect string, timeout time.Duration) float64 {
 	if timeout > 0 {
 		return math.Ceil(timeout.Seconds())
@@ -736,8 +739,8 @@ func mySQLLockTimeoutSeconds(dialect string, timeout time.Duration) float64 {
 	if timeout < 0 {
 		return 0
 	}
-	if platform.NormalizeDialect(dialect) == platform.MariaDB {
-		return mariaDBDefaultTimeoutSeconds
+	if unbounded := lockOf(dialect).UnboundedWaitSeconds; unbounded > 0 {
+		return float64(unbounded)
 	}
 	return -1
 }

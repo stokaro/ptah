@@ -241,7 +241,10 @@ func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
 		{name: "postgres honors the variable", dialect: platform.Postgres, wantRemedy: true},
 		{name: "cockroachdb is the same family", dialect: platform.CockroachDB, wantRemedy: true},
 		{name: "yugabytedb is the same family", dialect: platform.YugabyteDB, wantRemedy: true},
+		{name: "spanner is the same family", dialect: platform.Spanner, wantRemedy: true},
+		{name: "postgresql alias", dialect: "postgresql", wantRemedy: true},
 		{name: "clickhouse consults no such variable", dialect: platform.ClickHouse, wantRemedy: false},
+		{name: "ydb consults no such variable", dialect: platform.YDB, wantRemedy: false},
 		{name: "an unknown dialect promises nothing", dialect: "nonsense", wantRemedy: false},
 	}
 
@@ -367,4 +370,38 @@ func TestReportUndescribedNamesWhyYDBLeavesPrincipalsOut(t *testing.T) {
 		" cluster made them or they own the database, or the read was of a dev realm, which shares its database's"+
 		" users and groups; comparison still treats them as present, so none of them is planned as a CREATE"+
 		" ROLE.\n")
+}
+
+// TestReportUndescribedNamesTheCauseTheReaderHas pins why the note says roles
+// were left out: the YDB reader leaves out what the cluster made and what owns
+// the database, and every other reader leaves out what nothing refers to.
+func TestReportUndescribedNamesTheCauseTheReaderHas(t *testing.T) {
+	const (
+		unreferenced = "because nothing in the inspected schemas refers to them;"
+		clusterMade  = "because the cluster made them or they own the database, or the read was of a dev realm," +
+			" which shares its database's users and groups;"
+	)
+	tests := []struct {
+		dialect string
+		want    string
+	}{
+		{dialect: platform.Postgres, want: unreferenced},
+		{dialect: platform.ClickHouse, want: unreferenced},
+		{dialect: platform.MySQL, want: unreferenced},
+		{dialect: platform.YDB, want: clusterMade},
+		{dialect: "ydbs", want: clusterMade},
+		{dialect: "nonsense", want: unreferenced},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			var out bytes.Buffer
+			rolescope.ReportUndescribed(&out, test.dialect, &catalog.Database{
+				RolesOutOfScope: []catalog.Role{{Name: "elsewhere"}},
+			})
+
+			c.Assert(out.String(), qt.Contains, test.want)
+		})
+	}
 }
