@@ -69,6 +69,12 @@ func neutralOwnerLinks(pkg *packages.Package) []finding {
 	if self == "" || !neutral(self) {
 		return nil
 	}
+	return ownerLinks(pkg, self)
+}
+
+// ownerLinks reports each concrete owner pkg links, directly or through any
+// chain of imports, once per owner family, attributed to self.
+func ownerLinks(pkg *packages.Package, self string) []finding {
 	reached := make(map[string]string)
 	visited := make(map[string]bool)
 	var visit func(*packages.Package)
