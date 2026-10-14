@@ -39,8 +39,11 @@ func (r *Registry) With(dialects ...Dialect) (*Registry, error) {
 		if err := dialect.validate(); err != nil {
 			return nil, err
 		}
-		if index, found := next.bySpelling[dialect.Name]; found && next.dialects[index].Equal(dialect) {
-			continue
+		if index, found := next.bySpelling[dialect.Name]; found && next.dialects[index].Name == dialect.Name {
+			if next.dialects[index].Equal(dialect) {
+				continue
+			}
+			return nil, fmt.Errorf("%w: dialect %q is already described differently", ErrConflict, dialect.Name)
 		}
 		for _, spelling := range dialect.Spellings() {
 			if index, found := next.bySpelling[spelling]; found {

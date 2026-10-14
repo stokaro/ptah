@@ -58,6 +58,78 @@ func TestForDialect(t *testing.T) {
 			},
 		},
 		{
+			name:    "yugabytedb through an alias",
+			dialect: "ysql",
+			want: identifier.Semantics{
+				DefaultSchema:  "public",
+				IndexNamespace: identifier.IndexNamespaceSchema,
+				IndexNames:     identifier.ComparisonExact,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonExact,
+			},
+		},
+		{
+			name:    "spanner",
+			dialect: "spanner",
+			want: identifier.Semantics{
+				DefaultSchema:  "public",
+				IndexNamespace: identifier.IndexNamespaceSchema,
+				IndexNames:     identifier.ComparisonExact,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonExact,
+			},
+		},
+		{
+			name:    "mysql folds ASCII and leaves the rest unknown",
+			dialect: "mysql",
+			want: identifier.Semantics{
+				IndexNamespace: identifier.IndexNamespaceTable,
+				IndexNames:     identifier.ComparisonASCIIFoldedNonASCIIUnknown,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonASCIIFoldedNonASCIIUnknown,
+			},
+		},
+		{
+			name:    "mariadb through an alias",
+			dialect: "maria",
+			want: identifier.Semantics{
+				IndexNamespace: identifier.IndexNamespaceTable,
+				IndexNames:     identifier.ComparisonASCIIFoldedNonASCIIUnknown,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonASCIIFoldedNonASCIIUnknown,
+			},
+		},
+		{
+			name:    "oracle folds and scopes index names to the schema",
+			dialect: "oracle",
+			want: identifier.Semantics{
+				IndexNamespace: identifier.IndexNamespaceSchema,
+				IndexNames:     identifier.ComparisonASCIIInsensitive,
+				TableNames:     identifier.ComparisonASCIIInsensitive,
+				ColumnNames:    identifier.ComparisonASCIIInsensitive,
+			},
+		},
+		{
+			name:    "clickhouse has the conservative rules",
+			dialect: "clickhouse",
+			want: identifier.Semantics{
+				IndexNamespace: identifier.IndexNamespaceTable,
+				IndexNames:     identifier.ComparisonExact,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonExact,
+			},
+		},
+		{
+			name:    "an unknown dialect has the conservative rules",
+			dialect: "duckdb",
+			want: identifier.Semantics{
+				IndexNamespace: identifier.IndexNamespaceTable,
+				IndexNames:     identifier.ComparisonExact,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonExact,
+			},
+		},
+		{
 			name:    "sqlserver is conservative offline",
 			dialect: "sqlserver",
 			want: identifier.Semantics{
