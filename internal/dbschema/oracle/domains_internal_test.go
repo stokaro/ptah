@@ -7,9 +7,17 @@ package oracle
 // constraint name each time.
 
 import (
+	"database/sql/driver"
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/oratype"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // TestNotNullRestatement_MatchesTheColumnTheCatalogNames pins the recognition,
@@ -98,9 +106,9 @@ func TestDeclaredDomainChecks_KeepsWhatADeclarationCouldHaveWritten(t *testing.T
 	})
 }
 
-// TestDomainQuery_AsksTheCatalogThatHasTheAnswer holds the two views apart.
+// TestDomainQuery_AsksTheCatalogThatHasTheAnswer holds the views apart.
 //
-// USER_DOMAINS carries no base type at all; USER_DOMAIN_COLS does. And the two
+// ALL_DOMAINS carries no base type at all; ALL_DOMAIN_COLS does. And the views
 // spell the owner differently -- OWNER against DOMAIN_OWNER -- which is a
 // difference a reader that assumed one name would find at runtime.
 func TestDomainQuery_AsksTheCatalogThatHasTheAnswer(t *testing.T) {
@@ -109,10 +117,13 @@ func TestDomainQuery_AsksTheCatalogThatHasTheAnswer(t *testing.T) {
 		query    string
 		fragment string
 	}{
-		{name: "the base type", query: domainQuery, fragment: "c.data_type"},
-		{name: "the nullability", query: domainQuery, fragment: "c.nullable"},
+		{name: "the base type", query: domainColumnQuery, fragment: "c.data_type"},
+		{name: "the nullability", query: domainColumnQuery, fragment: "c.nullable"},
+		{name: "the column order", query: domainColumnQuery, fragment: "ORDER BY c.domain_name, c.column_id"},
+		{name: "the cols owner", query: domainColumnQuery, fragment: "c.owner = :1"},
 		{name: "the column count", query: domainQuery, fragment: "d.cols"},
-		{name: "the cols owner", query: domainQuery, fragment: "c.owner = d.owner"},
+		{name: "the domain's type", query: domainQuery, fragment: "d.type"},
+		{name: "the domains owner", query: domainQuery, fragment: "d.owner = :1"},
 		{name: "the constraint owner", query: domainConstraintQuery, fragment: "c.domain_owner = :1"},
 		{name: "checks only", query: domainConstraintQuery, fragment: "c.constraint_type = 'C'"},
 	}
@@ -123,4 +134,77 @@ func TestDomainQuery_AsksTheCatalogThatHasTheAnswer(t *testing.T) {
 			c.Assert(test.query, qt.Contains, test.fragment)
 		})
 	}
+}
+
+// TestReadDomains_RecordsWhatTheModelCannotCarry pins each domain shape the
+// model cannot describe, and that the read records it rather than leaving it
+// out.
+//
+// The shapes are the ones ALL_DOMAINS reported on 23.26.3.0.0. A domain of two
+// columns left out reads as absent, and a declaration of that name plans its
+// creation. An enumeration domain has one NUMBER column, so the column count
+// alone would describe it as a NUMBER domain. A flexible domain declares one
+// column and lists two in ALL_DOMAIN_COLS, which a read keyed on the column
+// rows reported as two domains of one name and failed.
+func TestReadDomains_RecordsWhatTheModelCannotCarry(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, domainShapeCatalog)
+	reader := NewOracleReader(db.SQL, "APP")
+
+	read := &catalog.Database{}
+	err := reader.readDomains(t.Context(), read)
+
+	c.Assert(err, qt.IsNil)
+	objects, err := read.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{{Ref: oratype.Ref(oratype.DomainKind, "", "D_SINGLE"),
+		Value: &oratype.ObservedDomain{BaseType: "VARCHAR2(10)", NotNull: true}}})
+	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{
+		undescribedDomainClaim("D_ENUM", "the domain is an enumeration domain, which the domain model cannot describe"),
+		undescribedDomainClaim("D_FLEX", "the domain is a flexible domain, which the domain model cannot describe"),
+		undescribedDomainClaim("D_LOST", "the read found 0 columns of a single-column domain"),
+		undescribedDomainClaim("D_MULTI", "the domain has 2 columns, and the domain model describes a single-column domain"),
+	})
+}
+
+// undescribedDomainClaim is the claim a read records about a domain it found and
+// could not describe.
+func undescribedDomainClaim(name, reason string) schemaext.SubjectCoverage {
+	return schemaext.SubjectCoverage{Kind: oratype.DomainKind, Subject: oratype.Ref(oratype.DomainKind, "", name),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: reason}}
+}
+
+// domainShapeCatalog answers the domain read with one domain of each shape
+// ALL_DOMAINS reported on 23.26.3.0.0, and one whose column the read misses.
+func domainShapeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+	folded := strings.ToLower(query)
+	switch {
+	case strings.Contains(folded, "from all_domain_constraints"):
+		return dbtest.QueryResult{Columns: []string{"domain_name", "name", "search_condition"}}, nil
+	case strings.Contains(folded, "from all_domain_cols"):
+		return dbtest.QueryResult{
+			Columns: []string{"domain_name", "column_name", "data_type", "data_length", "data_precision",
+				"data_scale", "char_length", "nullable", "data_default"},
+			Rows: [][]driver.Value{
+				{"D_ENUM", "D_ENUM", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_FLEX", "A", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_FLEX", "K", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_MULTI", "LAT", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_MULTI", "LON", "NUMBER", int64(22), nil, nil, int64(0), "Y", nil},
+				{"D_SINGLE", "D_SINGLE", "VARCHAR2", int64(10), nil, nil, int64(10), "N", nil},
+			},
+		}, nil
+	case strings.Contains(folded, "from all_domains"):
+		return dbtest.QueryResult{
+			Columns: []string{"name", "cols", "type"},
+			Rows: [][]driver.Value{
+				{"D_ENUM", int64(1), "ENUMERATED"},
+				{"D_FLEX", int64(1), "FLEXIBLE"},
+				{"D_LOST", int64(1), "REGULAR"},
+				{"D_MULTI", int64(2), "REGULAR"},
+				{"D_SINGLE", int64(1), "REGULAR"},
+			},
+		}, nil
+	}
+	return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 }

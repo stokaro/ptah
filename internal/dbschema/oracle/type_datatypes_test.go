@@ -62,14 +62,22 @@ func readTypes(c *qt.C, read *catalog.Database) (map[string]string, map[string][
 func nativeDatatypeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 	switch folded := strings.ToLower(query); {
 	case strings.Contains(folded, "from all_domains"):
+		return projectedTypeRows(query, []string{"name", "cols", "type"}, [][]driver.Value{
+			{"INTEGER_DOMAIN", int64(1), "REGULAR"},
+			{"ROUNDED_DOMAIN", int64(1), "REGULAR"},
+			{"NATIONAL_DOMAIN", int64(1), "REGULAR"},
+			{"NATIONAL_FIXED_DOMAIN", int64(1), "REGULAR"},
+			{"TEXT_DOMAIN", int64(1), "REGULAR"},
+		})
+	case strings.Contains(folded, "from all_domain_cols"):
 		return projectedTypeRows(query,
-			[]string{"name", "column_name", "data_type", "data_length", "data_precision", "data_scale", "char_length", "nullable", "data_default", "cols"},
+			[]string{"domain_name", "column_name", "data_type", "data_length", "data_precision", "data_scale", "char_length", "nullable", "data_default"},
 			[][]driver.Value{
-				{"INTEGER_DOMAIN", "INTEGER_DOMAIN", "NUMBER", int64(22), nil, int64(0), int64(0), "Y", nil, int64(1)},
-				{"ROUNDED_DOMAIN", "ROUNDED_DOMAIN", "NUMBER", int64(22), nil, int64(-2), int64(0), "Y", nil, int64(1)},
-				{"NATIONAL_DOMAIN", "NATIONAL_DOMAIN", "NVARCHAR2", int64(20), nil, nil, int64(10), "Y", nil, int64(1)},
-				{"NATIONAL_FIXED_DOMAIN", "NATIONAL_FIXED_DOMAIN", "NCHAR", int64(20), nil, nil, int64(10), "Y", nil, int64(1)},
-				{"TEXT_DOMAIN", "TEXT_DOMAIN", "VARCHAR2", int64(20), nil, nil, int64(20), "Y", nil, int64(1)},
+				{"INTEGER_DOMAIN", "INTEGER_DOMAIN", "NUMBER", int64(22), nil, int64(0), int64(0), "Y", nil},
+				{"ROUNDED_DOMAIN", "ROUNDED_DOMAIN", "NUMBER", int64(22), nil, int64(-2), int64(0), "Y", nil},
+				{"NATIONAL_DOMAIN", "NATIONAL_DOMAIN", "NVARCHAR2", int64(20), nil, nil, int64(10), "Y", nil},
+				{"NATIONAL_FIXED_DOMAIN", "NATIONAL_FIXED_DOMAIN", "NCHAR", int64(20), nil, nil, int64(10), "Y", nil},
+				{"TEXT_DOMAIN", "TEXT_DOMAIN", "VARCHAR2", int64(20), nil, nil, int64(20), "Y", nil},
 			},
 		)
 	case strings.Contains(folded, "from all_type_attrs"):
@@ -87,7 +95,8 @@ func nativeDatatypeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryRes
 			},
 		)
 	case strings.Contains(folded, "from all_types"):
-		return projectedTypeRows(query, []string{"type_name"}, [][]driver.Value{{"RECORD_T"}})
+		return projectedTypeRows(query, []string{"type_name", "typecode", "methods", "supertype_name", "incomplete"},
+			[][]driver.Value{{"RECORD_T", "OBJECT", int64(0), nil, "NO"}})
 	default:
 		return dbtest.QueryResult{Columns: []string{"unused"}}, nil
 	}

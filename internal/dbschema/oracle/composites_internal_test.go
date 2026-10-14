@@ -1,8 +1,9 @@
 package oracle
 
 // White-box testing required: which object types this description can carry is
-// decided by predicates inside the query, and the exported read returns the same
-// list whether a type was excluded or was never there.
+// decided inside the read, and readComposites is the unit that records the
+// types it cannot carry; the exported read reaches it only behind every other
+// catalog query.
 
 import (
 	"database/sql/driver"
@@ -14,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/oratype"
@@ -46,49 +48,53 @@ func TestReadComposites_CarriesTheAttributesInDeclarationOrder(t *testing.T) {
 	}})
 }
 
-// TestReadComposites_LeavesOutATypeWithNoAttributesRead is the guard on the
-// half the query cannot express.
+// TestReadComposites_RecordsWhatTheModelCannotCarry pins each shape the model
+// cannot describe, and that the read records it rather than leaving it out.
 //
-// The predicates keep the incomplete shells out, so an object type reaching
-// this loop with no attribute row is one the attribute read could not see.
-// Describing it as a composite with no fields would plan a CREATE OR REPLACE
-// that empties a type on the server.
-func TestReadComposites_LeavesOutATypeWithNoAttributesRead(t *testing.T) {
+// Left out, the claim that the read describes every object type says the type
+// is absent, and a declaration of that name plans CREATE OR REPLACE TYPE over
+// the one the schema holds: an object type with methods loses them, and a
+// collection type becomes an object type. The type with no attribute row is
+// the guard on what the read FOUND rather than on what the type IS: describing
+// it as a type with no fields would plan a CREATE OR REPLACE that empties it.
+func TestReadComposites_RecordsWhatTheModelCannotCarry(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.Open(t, attributelessCompositeCatalog)
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return compositeCatalog(query, [][]driver.Value{
+			{"ORA_CHILD", "OBJECT", int64(0), "ORA_PARENT", "NO"},
+			{"ORA_EMPTY", "OBJECT", int64(0), nil, "NO"},
+			{"ORA_KEPT", "OBJECT", int64(0), nil, "NO"},
+			{"ORA_LIST", "COLLECTION", int64(0), nil, "NO"},
+			{"ORA_METHOD", "OBJECT", int64(1), nil, "NO"},
+			{"ORA_SHELL", "OBJECT", int64(0), nil, "YES"},
+		}, [][]driver.Value{
+			{"ORA_CHILD", "B", "NUMBER", nil, nil, nil},
+			{"ORA_KEPT", "A", "NUMBER", nil, nil, nil},
+			{"ORA_METHOD", "A", "NUMBER", nil, nil, nil},
+		})
+	})
 	reader := NewOracleReader(db.SQL, "APP")
 
 	read := &catalog.Database{}
 	err := reader.readComposites(t.Context(), read)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(read.FeatureObjects.Refs(), qt.HasLen, 0)
+	c.Assert(read.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{oratype.Ref(oratype.ObjectTypeKind, "", "ORA_KEPT")})
+	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, []schemaext.SubjectCoverage{
+		undescribedObjectType("ORA_CHILD", "the object type is a subtype of ORA_PARENT, which the object type model cannot describe"),
+		undescribedObjectType("ORA_EMPTY", "the read found no attribute of the object type"),
+		undescribedObjectType("ORA_LIST", "the type is a collection type, which the object type model cannot describe"),
+		undescribedObjectType("ORA_METHOD", "the object type has methods, which the object type model cannot describe"),
+		undescribedObjectType("ORA_SHELL", "the object type is incomplete"),
+	})
+	c.Assert(claimedKinds(read), qt.DeepEquals, []schemaext.Kind{oratype.ObjectTypeKind})
 }
 
-// TestCompositeQuery_DeclinesEveryShapeTheModelCannotCarry pins the four
-// predicates, because each of them is the difference between "not described"
-// and "described wrongly".
-func TestCompositeQuery_DeclinesEveryShapeTheModelCannotCarry(t *testing.T) {
-	tests := []struct {
-		name     string
-		fragment string
-	}{
-		{name: "only object types", fragment: "t.typecode = 'OBJECT'"},
-		{name: "no methods", fragment: "t.methods = 0"},
-		{name: "no subtypes", fragment: "t.supertype_name IS NULL"},
-		{name: "no incomplete shells", fragment: "t.incomplete = 'NO'"},
-		{name: "scoped to one owner", fragment: "t.owner = :1"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(compositeQuery, qt.Contains, test.fragment)
-			// ALL_TYPES rather than USER_TYPES, so the owner predicate is the
-			// scope rather than the connection.
-			c.Assert(compositeQuery, qt.Contains, "all_types")
-		})
-	}
+// undescribedObjectType is the claim a read records about an object type it
+// found and could not describe.
+func undescribedObjectType(name, reason string) schemaext.SubjectCoverage {
+	return schemaext.SubjectCoverage{Kind: oratype.ObjectTypeKind, Subject: oratype.Ref(oratype.ObjectTypeKind, "", name),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: reason}}
 }
 
 // TestCompositeAttributeQuery_OrdersByDeclarationPosition is the other half of
@@ -140,12 +146,7 @@ func TestReadSchema_AsksForCompositesOnlyWhereThePresetClaimsThem(t *testing.T) 
 // asks for, so a query that stopped selecting a column fails here rather than
 // being handed the same rows.
 func answeringCompositeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return compositeAnswer(query, compositeAttributeRows())
-}
-
-// attributelessCompositeCatalog reports the type and no attribute for it.
-func attributelessCompositeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return compositeAnswer(query, nil)
+	return compositeCatalog(query, [][]driver.Value{{"ORA_POINT", "OBJECT", int64(0), nil, "NO"}}, compositeAttributeRows())
 }
 
 func emptyOrCompositeCatalog(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -156,13 +157,15 @@ func emptyOrCompositeCatalog(query string, args []driver.NamedValue) (dbtest.Que
 	return dbtest.QueryResult{Columns: []string{"unused"}}, nil
 }
 
-func compositeAnswer(query string, attributes [][]driver.Value) (dbtest.QueryResult, error) {
+// compositeCatalog answers ALL_TYPES with types and ALL_TYPE_ATTRS with
+// attributes.
+func compositeCatalog(query string, types, attributes [][]driver.Value) (dbtest.QueryResult, error) {
 	folded := strings.ToLower(query)
 	switch {
 	case strings.Contains(folded, "from all_types"):
 		return dbtest.QueryResult{
-			Columns: []string{"type_name"},
-			Rows:    [][]driver.Value{{"ORA_POINT"}},
+			Columns: []string{"type_name", "typecode", "methods", "supertype_name", "incomplete"},
+			Rows:    types,
 		}, nil
 	case strings.Contains(folded, "from all_type_attrs"):
 		return dbtest.QueryResult{

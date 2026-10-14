@@ -3066,7 +3066,9 @@ The package holds every stage's service for the Oracle target:
 - `CompareService` compares a domain by its base type, in a canonical
   spelling, and its NOT NULL; a domain's CHECK and default are written at
   creation and never compared. An object type is compared by its attributes,
-  in order, names without regard to case.
+  in order, names without regard to case. A declared type the read recorded
+  as unrepresentable, which it found and could not describe, is reported
+  undecided rather than created.
 - `PlanService` joins `featureplan.PhaseType`: creations before the routines
   and tables that may name a type, and drops after the tables. An object type
   whose attributes changed is replaced in place, and a domain whose base type
