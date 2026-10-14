@@ -1,0 +1,233 @@
+// Package descriptor declares what a database engine states about itself as
+// data: its names, its protocol family, how it compares identifiers and how a
+// query marks a bound parameter. Shared packages read a [Dialect] instead of
+// switching on a dialect's name, so an engine can be added by describing it
+// rather than by editing every package that branches on the name.
+//
+// A [Dialect] holds data only. It has no functions, interfaces or channels, so
+// it can cross a process boundary, and a [Registry] can be built from
+// descriptors another process sent. What an engine does differently, rather
+// than states differently, belongs to its provider's services, not here.
+//
+// A [Registry] is an immutable, validated set of descriptors. The registry
+// every package-level function of core/platform reads is the process
+// registry: core/platform seeds it with the built-in engines and extends it
+// through platform.Register. Code that needs a set of its own, such as a test
+// of an engine Ptah does not ship, builds one with [NewRegistry].
+//
+// This package checks the parts of a descriptor every reader shares: names,
+// aliases, family and the placeholder style. A package that interprets a
+// field checks that field's values when it reads them; see
+// core/platform/identifier.FromDescriptor.
+package descriptor
+
+import (
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+	"strings"
+)
+
+// ErrInvalidDescriptor identifies a descriptor whose content is malformed:
+// an empty or badly spelled name, an alias that repeats a spelling, a family
+// that names no family head, or an undeclared value of an enumerated field.
+var ErrInvalidDescriptor = errors.New("invalid dialect descriptor")
+
+// ErrConflict identifies a descriptor that claims a spelling another,
+// different descriptor of the same registry already owns.
+var ErrConflict = errors.New("conflicting dialect descriptor")
+
+// Dialect is the description one database engine gives of itself. The zero
+// value is not a valid descriptor: Name and Placeholder are required.
+//
+// Every field is data. A field added here is added to the built-in
+// descriptors and read by the package it is for; a field that would hold
+// behavior is a provider service instead.
+type Dialect struct {
+	// Name is the canonical name every other spelling folds onto, such as
+	// "postgres". It uses lowercase ASCII letters, digits, '-', '_' and '+',
+	// and begins with a letter.
+	Name string `json:"name"`
+	// Aliases are the other spellings that select this dialect, in the same
+	// alphabet as Name: a driver's name, a URL scheme, a transport spelling
+	// such as "mysql+unix". A spelling belongs to one dialect of a registry.
+	Aliases []string `json:"aliases,omitempty"`
+	// Family names the dialect whose wire protocol and catalog this one
+	// speaks, such as "postgres" for CockroachDB. The head of a family names
+	// itself; a dialect that shares its protocol with no other leaves it
+	// empty. Membership answers which reader and renderer serve a dialect. It
+	// says nothing about features: CockroachDB is in the PostgreSQL family and
+	// refuses constructs PostgreSQL accepts.
+	Family string `json:"family,omitempty"`
+	// DefaultSchema is the schema an unqualified name resolves to offline,
+	// such as "public". Empty means the connection decides, or the engine has
+	// no schemas.
+	DefaultSchema string `json:"default_schema,omitempty"`
+	// Identifiers states how the engine compares the names of indexes,
+	// tables and columns.
+	Identifiers Identifiers `json:"identifiers"`
+	// Placeholder is how a statement marks a bound parameter.
+	Placeholder Placeholder `json:"placeholder"`
+}
+
+// Identifiers states how an engine compares identifiers offline. The values
+// are spelled as core/platform/identifier spells its IndexNamespace and
+// Comparison values, and that package checks them when it reads them.
+type Identifiers struct {
+	// IndexNamespace is where an index name must be unique: "table" or
+	// "schema".
+	IndexNamespace string `json:"index_namespace"`
+	// IndexNames is how two index names compare, such as "exact".
+	IndexNames string `json:"index_names"`
+	// TableNames is how two table names compare.
+	TableNames string `json:"table_names"`
+	// ColumnNames is how two column names compare.
+	ColumnNames string `json:"column_names"`
+}
+
+// Placeholder is how a statement marks a bound parameter.
+type Placeholder string
+
+const (
+	// PlaceholderQuestion marks every parameter with "?".
+	PlaceholderQuestion Placeholder = "question"
+	// PlaceholderDollar numbers parameters "$1", "$2" and so on.
+	PlaceholderDollar Placeholder = "dollar"
+	// PlaceholderAtP numbers parameters "@p1", "@p2" and so on.
+	PlaceholderAtP Placeholder = "at-p"
+	// PlaceholderColon numbers parameters ":1", ":2" and so on.
+	PlaceholderColon Placeholder = "colon"
+	// PlaceholderDollarNamed names parameters "$p1", "$p2" and so on, as
+	// declared query parameters rather than positions.
+	PlaceholderDollarNamed Placeholder = "dollar-named"
+)
+
+// Placeholders returns every declared placeholder style.
+func Placeholders() []Placeholder {
+	return []Placeholder{PlaceholderQuestion, PlaceholderDollar, PlaceholderAtP, PlaceholderColon, PlaceholderDollarNamed}
+}
+
+// Spellings returns Name followed by Aliases, as a new slice.
+func (d Dialect) Spellings() []string {
+	return append([]string{d.Name}, d.Aliases...)
+}
+
+// Clone returns a deep copy of d: nothing reachable from the copy is shared
+// with d.
+func (d Dialect) Clone() Dialect {
+	var clone Dialect
+	deepCopy(reflect.ValueOf(&clone).Elem(), reflect.ValueOf(d))
+	return clone
+}
+
+// Equal reports whether d and other state the same things. A nil slice or map
+// and an empty one are equal.
+func (d Dialect) Equal(other Dialect) bool {
+	return reflect.DeepEqual(d.canonical(), other.canonical())
+}
+
+// canonical returns a copy in which every empty slice and map is nil, so
+// Equal does not tell them apart.
+func (d Dialect) canonical() Dialect {
+	clone := d.Clone()
+	emptyToNil(reflect.ValueOf(&clone).Elem())
+	return clone
+}
+
+// validate checks the fields every reader shares. The family is checked by
+// the registry, which knows the other descriptors.
+func (d Dialect) validate() error {
+	if !validSpelling(d.Name) {
+		return fmt.Errorf("%w: name %q must be lowercase ASCII letters, digits, '-', '_' or '+', beginning with a letter", ErrInvalidDescriptor, d.Name)
+	}
+	seen := map[string]bool{d.Name: true}
+	for _, alias := range d.Aliases {
+		if !validSpelling(alias) {
+			return fmt.Errorf("%w: dialect %q: alias %q must be lowercase ASCII letters, digits, '-', '_' or '+', beginning with a letter", ErrInvalidDescriptor, d.Name, alias)
+		}
+		if seen[alias] {
+			return fmt.Errorf("%w: dialect %q spells %q twice", ErrInvalidDescriptor, d.Name, alias)
+		}
+		seen[alias] = true
+	}
+	if !slices.Contains(Placeholders(), d.Placeholder) {
+		return fmt.Errorf("%w: dialect %q: placeholder %q is not one of %q", ErrInvalidDescriptor, d.Name, d.Placeholder, Placeholders())
+	}
+	return nil
+}
+
+// validSpelling reports whether value is a name or alias: lowercase ASCII
+// letters, digits, '-', '_' and '+', beginning with a letter.
+func validSpelling(value string) bool {
+	if value == "" || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	return strings.IndexFunc(value, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' && r != '+'
+	}) < 0
+}
+
+// deepCopy copies src into dst, allocating every slice and map anew. A
+// descriptor holds data only, which is what lets one function copy every
+// field a later change adds.
+func deepCopy(dst, src reflect.Value) {
+	switch src.Kind() {
+	case reflect.Struct:
+		for i := range src.NumField() {
+			deepCopy(dst.Field(i), src.Field(i))
+		}
+	case reflect.Slice:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Len()))
+		for i := range src.Len() {
+			deepCopy(dst.Index(i), src.Index(i))
+		}
+	case reflect.Map:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeMapWithSize(src.Type(), src.Len()))
+		iter := src.MapRange()
+		for iter.Next() {
+			value := reflect.New(src.Type().Elem()).Elem()
+			deepCopy(value, iter.Value())
+			dst.SetMapIndex(iter.Key(), value)
+		}
+	default:
+		dst.Set(src)
+	}
+}
+
+// emptyToNil replaces every empty slice and map reachable from value with nil.
+func emptyToNil(value reflect.Value) {
+	switch value.Kind() {
+	case reflect.Struct:
+		for i := range value.NumField() {
+			emptyToNil(value.Field(i))
+		}
+	case reflect.Slice:
+		if value.Len() == 0 {
+			value.Set(reflect.Zero(value.Type()))
+			return
+		}
+		for i := range value.Len() {
+			emptyToNil(value.Index(i))
+		}
+	case reflect.Map:
+		if value.Len() == 0 {
+			value.Set(reflect.Zero(value.Type()))
+			return
+		}
+		iter := value.MapRange()
+		for iter.Next() {
+			element := reflect.New(value.Type().Elem()).Elem()
+			element.Set(iter.Value())
+			emptyToNil(element)
+			value.SetMapIndex(iter.Key(), element)
+		}
+	default:
+	}
+}

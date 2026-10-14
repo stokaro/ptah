@@ -34,6 +34,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
+	"ptah.run/internal/builtindialects"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/mssqlroutineprep"
 	mysqlrules "ptah.run/internal/mysqlroutine"
@@ -67,25 +68,17 @@ func New() (*engine.Runtime, error) {
 	if err := ydbplanner.RegisterPlanner(); err != nil {
 		return nil, fmt.Errorf("register the YDB planner: %w", err)
 	}
-	aliases := make(map[string][]string)
-	var names []string
-	for _, spelling := range platform.DialectSpellings() {
-		name := platform.NormalizeDialect(spelling)
-		if _, exists := aliases[name]; !exists {
-			names = append(names, name)
-			aliases[name] = nil
-		}
-		if spelling != name {
-			aliases[name] = append(aliases[name], spelling)
-		}
-	}
-	providers := make([]engine.Provider, 0, len(names))
-	for _, name := range names {
+	// The built-in descriptors, not the process registry: a dialect another
+	// program registered has no bundled provider.
+	described := builtindialects.Descriptors()
+	providers := make([]engine.Provider, 0, len(described))
+	for _, dialect := range described {
+		name := dialect.Name
 		provider := engine.Provider{
 			ID: "ptah.run/" + name,
 			Targets: []engine.Target{{
 				Name:        name,
-				Aliases:     aliases[name],
+				Aliases:     dialect.Aliases,
 				Rendering:   renderingService{},
 				Preparation: schemapreparation.Identity{},
 				Creations:   schemaprojection.IdentityCreations{},

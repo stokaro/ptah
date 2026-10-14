@@ -21,11 +21,13 @@
 package identifier
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/tableref"
 )
 
@@ -111,111 +113,56 @@ type ResolvedName struct {
 	Key  string `json:"key"`
 }
 
-// ForDialect returns conservative offline identifier semantics for dialect.
-// The argument is folded through [platform.NormalizeDialect], so every
-// accepted spelling of a dialect name selects the same rules. A dialect Ptah
-// does not model still receives usable rules rather than a zero value:
-// comparison that never treats two different spellings as one object, and no
-// default schema. Those are a fallback for an unmodelled target rather than a
-// description of one, so a caller who knows the target's rules should build
-// [Semantics] directly.
+// ForDialect returns conservative offline identifier semantics for dialect:
+// the rules its descriptor in the process registry states, through
+// [FromDescriptor]. The argument is folded through [platform.NormalizeDialect],
+// so every accepted spelling of a dialect name selects the same rules. A
+// dialect Ptah does not model, or one whose descriptor states rules this
+// package does not declare, still receives usable rules rather than a zero
+// value: comparison that never treats two different spellings as one object,
+// and no default schema. Those are a fallback for an unmodelled target rather
+// than a description of one, so a caller who knows the target's rules should
+// build [Semantics] directly.
 func ForDialect(dialect string) Semantics {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
-		return Semantics{
-			DefaultSchema:  "public",
-			IndexNamespace: IndexNamespaceSchema,
-			IndexNames:     ComparisonExact,
-			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonExact,
-		}
-	// CockroachDB resolves an unqualified name in `public`, as PostgreSQL does:
-	// measured on v26.3.2, search_path is `"$user", public` and a table created
-	// as `t` is read as `public.t`. Without the default, `t` and `public.t` are
-	// two names offline, and a render creates a routine returning
-	// `SETOF public.t` before the table `t` (stokaro/ptah#4065). Index names
-	// stay table-scoped: the same server accepts one index name on two tables.
-	case platform.CockroachDB:
-		return Semantics{
-			DefaultSchema:  "public",
-			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonExact,
-			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonExact,
-		}
-	case platform.SQLite:
-		return Semantics{
-			DefaultSchema:  "main",
-			IndexNamespace: IndexNamespaceSchema,
-			IndexNames:     ComparisonASCIIInsensitive,
-			TableNames:     ComparisonASCIIInsensitive,
-			ColumnNames:    ComparisonASCIIInsensitive,
-		}
-	// Both engines fold index names with a collation table Ptah has no offline
-	// copy of, and they disagree about every non-ASCII pair measured. ASCII
-	// folding is shared and exact, so it is kept; beyond ASCII the equivalence
-	// class is unknown and is reported as a possible conflict rather than
-	// guessed at in either direction (stokaro/ptah#2768).
-	case platform.MySQL:
-		return Semantics{
-			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonASCIIFoldedNonASCIIUnknown,
-			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonASCIIFoldedNonASCIIUnknown,
-		}
-	case platform.MariaDB:
-		return Semantics{
-			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonASCIIFoldedNonASCIIUnknown,
-			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonASCIIFoldedNonASCIIUnknown,
-		}
-	case platform.Oracle:
-		// Case-insensitive because the renderer writes a plain name bare and
-		// Oracle folds it to upper case: a declared `view_count` is stored as
-		// VIEW_COUNT, and comparing exactly would report a difference on every
-		// run against a catalog Ptah itself wrote. Measured -- user_tables
-		// reports PTAH_FOLD for a bare CREATE and ptah_fold for a quoted one,
-		// and the two coexist as separate tables.
-		//
-		// Index names are schema-scoped, not table-scoped: `DROP INDEX <name>`
-		// is the whole statement here, with no ON clause naming a table, so
-		// two tables in one schema cannot both carry an index called `idx_name`
-		// (stokaro/ptah#1875).
-		return Semantics{
-			IndexNamespace: IndexNamespaceSchema,
-			IndexNames:     ComparisonASCIIInsensitive,
-			TableNames:     ComparisonASCIIInsensitive,
-			ColumnNames:    ComparisonASCIIInsensitive,
-		}
-	case platform.SQLServer:
-		return Semantics{
-			DefaultSchema:  "dbo",
-			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonCatalogUnknown,
-			TableNames:     ComparisonCatalogUnknown,
-			ColumnNames:    ComparisonCatalogUnknown,
-		}
-	case platform.YDB:
-		// Every YDB name is case-sensitive, quoted or not: measured on
-		// 26.2.1.14, tables `Users` and `users` coexist, and so do columns
-		// `id`, `ID` and `Id` in one table. There is no schema to default to:
-		// a Ptah schema is a directory, and the database root is the empty
-		// one. An index belongs to its table -- it is the path `table/index`,
-		// and two tables carry an index of the same name without a clash.
-		return Semantics{
-			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonExact,
-			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonExact,
-		}
-	default:
-		return Semantics{
-			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonExact,
-			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonExact,
-		}
+	described, found := platform.Lookup(dialect)
+	if !found {
+		return unmodelled()
+	}
+	semantics, err := FromDescriptor(described)
+	if err != nil {
+		return unmodelled()
+	}
+	return semantics
+}
+
+// FromDescriptor returns the offline identifier semantics a dialect
+// descriptor states: its default schema and its index namespace and name
+// comparisons. It refuses, with [descriptor.ErrInvalidDescriptor], a
+// descriptor whose rules are not declared values of [IndexNamespace] and
+// [Comparison], or that claims a resolved comparison, which needs a live
+// catalog to answer and so cannot be stated offline.
+func FromDescriptor(described descriptor.Dialect) (Semantics, error) {
+	semantics := Semantics{
+		DefaultSchema:  described.DefaultSchema,
+		IndexNamespace: IndexNamespace(described.Identifiers.IndexNamespace),
+		IndexNames:     Comparison(described.Identifiers.IndexNames),
+		TableNames:     Comparison(described.Identifiers.TableNames),
+		ColumnNames:    Comparison(described.Identifiers.ColumnNames),
+	}
+	if !semantics.valid() {
+		return Semantics{}, fmt.Errorf("%w: dialect %q states identifier rules %+v, which are not complete offline rules",
+			descriptor.ErrInvalidDescriptor, described.Name, described.Identifiers)
+	}
+	return semantics, nil
+}
+
+// unmodelled returns the rules for a target Ptah does not model.
+func unmodelled() Semantics {
+	return Semantics{
+		IndexNamespace: IndexNamespaceTable,
+		IndexNames:     ComparisonExact,
+		TableNames:     ComparisonExact,
+		ColumnNames:    ComparisonExact,
 	}
 }
 
