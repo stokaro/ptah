@@ -384,6 +384,63 @@ GO
   rm -f "$target"
 done
 
+# A collection of dialect names is a dialect branch wherever it is searched,
+# so the names count where the collection is written, and so does the value a
+# membership test searches for. Each shape is its own defect.
+target="$tree/core/astbuilder/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package astbuilder
+
+import "slices"
+
+func boundariesSelftestDefect(dialect string) bool {
+	return slices.Contains([]string{"mysql", "mariadb"}, dialect)
+}
+GO
+require_refusal "a shared package listing dialect names in a slice literal"
+cat >"$target" <<'GO'
+package astbuilder
+
+import "slices"
+
+func boundariesSelftestDefect(names []string) bool {
+	return slices.Contains(names, "sqlite")
+}
+GO
+require_refusal "a shared package searching a slice for a dialect name"
+cat >"$target" <<'GO'
+package astbuilder
+
+var boundariesSelftestDefect = map[string]int{"postgres": 1}
+GO
+require_refusal "a shared package keying a map literal by a dialect name"
+cat >"$target" <<'GO'
+package astbuilder
+
+func boundariesSelftestDefect(byDialect map[string]int) int {
+	return byDialect["ydb"]
+}
+GO
+require_refusal "a shared package looking a dialect name up in a map"
+
+# The same shapes over other words, and a dialect spelling in a struct field,
+# are not dialect branches.
+cat >"$target" <<'GO'
+package astbuilder
+
+import "slices"
+
+var boundariesSelftestWords = map[string]int{"alpha": 1}
+
+var boundariesSelftestRole = struct{ Name string }{Name: "postgres"}
+
+func boundariesSelftestControl(byWord map[string]int) bool {
+	return slices.Contains([]string{"alpha", "beta"}, "alpha") && byWord["beta"] > 0
+}
+GO
+require_acceptance "collections, a lookup and a struct field holding no dialect name"
+rm -f "$target"
+
 # A fall must be recorded package by package. A baseline that still permits
 # one more reference in a package is refused, and so is debt that moved
 # between two packages with the total unchanged.
@@ -396,4 +453,4 @@ require_refusal "dialect debt recorded in the wrong package with the total uncha
 cp "$work_dir/baseline.orig" "$baseline"
 require_acceptance "the restored dialect-name baseline"
 
-echo "check-architecture-boundaries-selftest: OK (24 refusals, 7 false-positive controls)"
+echo "check-architecture-boundaries-selftest: OK (28 refusals, 8 false-positive controls)"

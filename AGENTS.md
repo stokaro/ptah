@@ -414,9 +414,9 @@ surface takes no new flag and keeps fuller behavior behind a `PTAH_*` variable
 
 Native code must not depend on `internal/cli/atlas`, and shared packages must not
 either. **No gate checks this direction**: `scripts/check-architecture-boundaries.sh`
-enforces only the four ADR 0001 directions, none of which names
-`internal/cli/atlas`,
-so a new non-test importer is caught by review alone. One exists beside the
+enforces the rules [`docs/architecture_boundaries.md`](docs/architecture_boundaries.md)
+lists, and none of them names `internal/cli/atlas`, so a new non-test importer is
+caught by review alone. One exists beside the
 binary `cmd/ptah-compat`: `internal/cmdrefviews`, which has to construct both
 trees in one process to say what strict mode takes out, and says so at the top
 of the file. A second needs the same kind of reason written beside it.
