@@ -9,14 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/core/platform/capability"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedcutover"
 	"ptah.run/internal/embeddigest"
 	"ptah.run/internal/embedgen"
-	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrelease"
 	"ptah.run/internal/embedreport"
 	"ptah.run/internal/embedrun"
@@ -69,15 +68,23 @@ func runPrepare(
 	}
 	defer opened.close()
 
+	spec := opened.loaded.Spec
+	// Before the run-state tables, so a specification this database cannot
+	// run is refused with nothing created: the mode it cannot provide, and a
+	// target it cannot hold.
+	if err := opened.backend.CheckMode(opened.loaded.Mode); err != nil {
+		return err
+	}
+	if _, err := opened.backend.TargetObjects(spec); err != nil {
+		return err
+	}
 	runtime, err := builtin.New()
 	if err != nil {
 		return err
 	}
-	// Internal store DDL uses the explicit PostgreSQL baseline profile.
-	if err := opened.store.EnsureSchema(ctx, runtime, capability.ForDialect(embedpg.Dialect)); err != nil {
+	if err := opened.backend.EnsureSchema(ctx, runtime); err != nil {
 		return err
 	}
-	spec := opened.loaded.Spec
 	generation := embedstore.Generation{
 		Identity: spec.Identity().Digest, SpecDigest: opened.loaded.Digest,
 		SpecDocument: string(opened.loaded.Document),
@@ -98,14 +105,14 @@ func runPrepare(
 		// The digest the outbox is keyed on, not the bare table name. Recorded
 		// bare, `public.docs` and `archive.docs` were one source string and two
 		// outboxes, so each run held the other's floor (stokaro/ptah#2724).
-		Environment: "cli", Source: embedpg.SourceIdentity(opened.source.Schema, opened.source.Table),
+		Environment: "cli", Source: embedstore.SourceIdentity(opened.source.Schema, opened.source.Table),
 		Target:          spec.Target.Table + "." + spec.Target.Column,
 		ProviderProfile: spec.Model.Provider, PtahVersion: "cli", PolicyDigest: "",
 		Phase: embedrun.PhasePrepared, Status: embedrun.StatusRunning,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	run.Claim(worker, defaultPrepareLease)
-	result, err := opened.store.PrepareRun(
+	result, err := opened.backend.PrepareRun(
 		ctx, spec, generation, run, opened.loaded.Mode)
 	if err != nil {
 		return err
@@ -144,16 +151,19 @@ func newIndexCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Build the generation's vector index and wait for it to be valid",
-		Long: `Build the vector index the specification declares, concurrently.
+		Long: `Build the vector index the specification declares, after the backfill rather
+than before it. An IVFFlat index trains its lists on the data present when it is
+built, so one built over an empty column is valid and useless.
 
-After the backfill rather than before it. An IVFFlat index trains its lists on
-the data present when it is built, so one built over an empty column is valid
-and useless.
+On PostgreSQL the build runs concurrently, because the table is one an
+application is reading and writing while this runs. That is also why the index
+is read back afterwards: a concurrent build that fails leaves an index behind
+that PostgreSQL will not use, and it reports no error of its own.
 
-Concurrently, because the table is one an application is reading and writing
-while this runs. That is also why the index is read back afterwards: a
-concurrent build that fails leaves an index behind that PostgreSQL will not use,
-and it reports no error of its own.
+On YDB the index is a vector_kmeans_tree, built with ALTER TABLE ... ADD INDEX,
+which returns once the index holds every row. YDB 25.1 builds one only with its
+EnableVectorIndex feature flag on, and its index does not take in rows written
+after the build, so a later write into the generation is refused there.
 
 A specification naming no index method has no index to build, and this says so
 rather than failing. Every query over that generation is then a sequential scan
@@ -183,7 +193,7 @@ func runIndex(ctx context.Context, out io.Writer, options commonOptions, runID s
 	// CREATE INDEX CONCURRENTLY cannot be in the run transaction. The store's
 	// generation lock prevents abandonment or retirement between them, and its
 	// fenced row update preserves a checkpoint committed during the build.
-	outcome, err := opened.store.EnsureRunIndex(ctx, runID, opened.loaded.Spec)
+	outcome, err := opened.backend.EnsureRunIndex(ctx, runID, opened.loaded.Spec)
 	if err != nil {
 		return err
 	}
@@ -191,16 +201,16 @@ func runIndex(ctx context.Context, out io.Writer, options commonOptions, runID s
 }
 
 // indexOutcomeText says what the build did, including having nothing to do.
-func indexOutcomeText(outcome embedpg.IndexOutcome, spec embedgen.Spec) string {
+func indexOutcomeText(outcome embedbackend.IndexOutcome, spec embedgen.Spec) string {
 	generation := spec.Identity().Short()
-	messages := map[embedpg.IndexOutcome]string{
-		embedpg.IndexNotDeclared: "the specification declares no index method, so generation " +
+	messages := map[embedbackend.IndexOutcome]string{
+		embedbackend.IndexNotDeclared: "the specification declares no index method, so generation " +
 			generation + " has no index: every query over it is a sequential scan over the " +
 			"whole corpus",
-		embedpg.IndexAlreadyValid: "generation " + generation + " already has a valid index",
-		embedpg.IndexRebuilt: "generation " + generation + " had an index that was not valid, " +
+		embedbackend.IndexAlreadyValid: "generation " + generation + " already has a valid index",
+		embedbackend.IndexRebuilt: "generation " + generation + " had an index that was not valid, " +
 			"left by a concurrent build that failed; it was dropped and built again",
-		embedpg.IndexBuilt: "generation " + generation + " has a valid index",
+		embedbackend.IndexBuilt: "generation " + generation + " has a valid index",
 	}
 	return messages[outcome]
 }
@@ -294,7 +304,7 @@ func runStatus(ctx context.Context, out io.Writer, options statusOptions) error 
 		return err
 	}
 	readiness, err := embedreport.ReadReadiness(
-		ctx, opened.db, opened.store, opened.loaded, options.runID, time.Now())
+		ctx, opened.backend, opened.loaded, options.runID, time.Now())
 	if err != nil {
 		return err
 	}
@@ -537,7 +547,7 @@ func runRollback(
 				toGeneration, pointer.Previous),
 		})
 	}
-	state, err := embedpg.RollbackState(ctx, opened.db, toGeneration, pointer)
+	state, err := embedbackend.MeasureRollback(ctx, opened.backend, toGeneration, pointer)
 	if err != nil {
 		return err
 	}
@@ -545,7 +555,7 @@ func runRollback(
 	if err != nil {
 		return err
 	}
-	policy, err := rollbackPolicy(destination, window)
+	policy, err := rollbackPolicy(opened.backend, destination, window)
 	if err != nil {
 		return err
 	}
@@ -603,14 +613,14 @@ func publishRollback(
 // specification. The file supplied to this invocation describes the current
 // operator intent; it is not evidence of how a previous generation was built.
 func rollbackPolicy(
-	destination embedstore.Generation, window time.Duration,
+	backend embedbackend.Backend, destination embedstore.Generation, window time.Duration,
 ) (embedcutover.RollbackPolicy, error) {
-	recorded, err := embedpg.RecordedSpec(destination,
+	recorded, err := embedbackend.RecordedSpec(destination,
 		"checked for the index required to roll back to it")
 	if err != nil {
 		return embedcutover.RollbackPolicy{}, err
 	}
-	objects, err := recorded.Spec.TargetObjects()
+	objects, err := backend.TargetObjects(recorded.Spec)
 	if err != nil {
 		return embedcutover.RollbackPolicy{}, err
 	}

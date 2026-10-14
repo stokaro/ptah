@@ -20,6 +20,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedpg"
@@ -48,7 +49,7 @@ func TestEnsureRunIndex_BindsTheCatalogChangeToAFencedRunTransitionLive(t *testi
 	outcome, err := store.EnsureRunIndex(ctx, "index-run", spec)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(outcome, qt.Equals, embedpg.IndexBuilt)
+	c.Assert(outcome, qt.Equals, embedbackend.IndexBuilt)
 	stored, err := store.Run(ctx, "index-run")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stored.Phase, qt.Equals, embedrun.PhaseIndexed)
@@ -125,7 +126,7 @@ func TestEnsureIndex_BuildsAValidIndexLive(t *testing.T) {
 	outcome, err := embedpg.EnsureIndex(ctx, db, spec)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(outcome, qt.Equals, embedpg.IndexBuilt)
+	c.Assert(outcome, qt.Equals, embedbackend.IndexBuilt)
 	method, valid, definition := indexInCatalog(c, ctx, db, spec)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(method, qt.Equals, "hnsw")
@@ -148,7 +149,7 @@ func TestEnsureIndex_IsIdempotentLive(t *testing.T) {
 	outcome, err := embedpg.EnsureIndex(ctx, db, spec)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(outcome, qt.Equals, embedpg.IndexAlreadyValid)
+	c.Assert(outcome, qt.Equals, embedbackend.IndexAlreadyValid)
 }
 
 // TestEnsureIndex_RebuildsAnInvalidIndexLive is the case the read-back exists
@@ -172,7 +173,7 @@ func TestEnsureIndex_RebuildsAnInvalidIndexLive(t *testing.T) {
 	outcome, err := embedpg.EnsureIndex(ctx, db, spec)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(outcome, qt.Equals, embedpg.IndexRebuilt)
+	c.Assert(outcome, qt.Equals, embedbackend.IndexRebuilt)
 	_, valid, _ := indexInCatalog(c, ctx, db, spec)
 	c.Assert(valid, qt.IsTrue)
 }
@@ -195,7 +196,7 @@ func TestEnsureIndex_ASpecificationWithNoMethodBuildsNothingLive(t *testing.T) {
 	outcome, err := embedpg.EnsureIndex(ctx, db, spec)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(outcome, qt.Equals, embedpg.IndexNotDeclared)
+	c.Assert(outcome, qt.Equals, embedbackend.IndexNotDeclared)
 	c.Assert(indexNames(c, ctx, db, table), qt.HasLen, 0)
 }
 

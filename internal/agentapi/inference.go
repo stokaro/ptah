@@ -2,15 +2,13 @@ package agentapi
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-
-	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical uses
 
 	"ptah.run/internal/agentdiag"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/agenttarget"
-	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedbackend"
+	"ptah.run/internal/embedconnect"
 	"ptah.run/internal/embedreport"
 	"ptah.run/internal/embedspec"
 )
@@ -69,13 +67,13 @@ func (s *Session) InferencePlan(
 	if err != nil {
 		return nil, err
 	}
-	db, err := openInferenceDatabase(ctx, target)
+	backend, err := openInferenceDatabase(ctx, target)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = backend.Close() }()
 
-	plan, err := embedreport.BuildPlan(ctx, db, loaded, req.Current)
+	plan, err := embedreport.BuildPlan(ctx, backend, loaded, req.Current)
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseReadFailed, "build the plan: %w", err)
 	}
@@ -103,16 +101,16 @@ func (s *Session) InferenceStatus(
 		req.RunID, target.Name(), target.Display(), target.Class())); err != nil {
 		return nil, err
 	}
-	db, err := openInferenceDatabase(ctx, target)
+	backend, err := openInferenceDatabase(ctx, target)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = backend.Close() }()
 
 	// No mode: this request takes a run id and a target, not a specification,
 	// so the watermark renders without a reason for its absence rather than
 	// with an invented one (stokaro/ptah#2646).
-	status, err := embedreport.ReadStatus(ctx, embedpg.NewStore(db), req.RunID, "")
+	status, err := embedreport.ReadStatus(ctx, backend.Store(), req.RunID, "")
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseReadFailed, "read the run: %w", err)
 	}
@@ -155,24 +153,18 @@ func (s *Session) openInference(
 	return loaded, target, nil
 }
 
-// openInferenceDatabase dials the target the operator configured.
-//
-// The PostgreSQL driver directly rather than dbschema, because the run state
-// and the vector catalogs this reads are a PostgreSQL vertical: there is no
-// dialect-agnostic form of them to read through a dialect-agnostic connection.
-// A target naming another engine is refused before it is dialed, in the words
-// `ptah inference` uses for the same URL.
-func openInferenceDatabase(ctx context.Context, target *agenttarget.Target) (*sql.DB, error) {
-	if err := embedpg.RefuseAnotherEngine(target.URL()); err != nil {
+// openInferenceDatabase opens the backend of the target the operator
+// configured, through the same function `ptah inference` opens its database
+// with, so both surfaces reach PostgreSQL and YDB alike. A target naming
+// another engine is refused before it is dialed, in the words `ptah inference`
+// uses for the same URL.
+func openInferenceDatabase(ctx context.Context, target *agenttarget.Target) (embedbackend.Backend, error) {
+	if err := embedconnect.RefuseAnotherEngine(target.URL()); err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest, "target %s: %w", target.Name(), err)
 	}
-	db, err := sql.Open("pgx", target.URL())
+	backend, err := embedconnect.Open(ctx, target.URL())
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseUnreachable, "connect: %w", err)
 	}
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseUnreachable, "connect: %w", err)
-	}
-	return db, nil
+	return backend, nil
 }

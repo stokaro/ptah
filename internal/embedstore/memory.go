@@ -15,10 +15,13 @@ import (
 // Memory is a Store held in memory.
 //
 // It exists so the rules above can be tested without a database, and so a
-// caller can be written against the contract before the PostgreSQL
-// implementation lands. It is not a fallback: nothing here survives a restart,
-// which is the one thing a run-state store is for, so a caller that reached for
-// it in production would have a resumable migration that cannot resume.
+// store that persists rows without the PostgreSQL store's locks can decide with
+// these rules rather than with a copy of them: the YDB store builds one from a
+// [Snapshot] read inside a serializable transaction and writes back what the
+// decision changed. On its own it is not a fallback: nothing here survives a
+// restart, which is the one thing a run-state store is for, so a caller that
+// reached for it in production would have a resumable migration that cannot
+// resume.
 type Memory struct {
 	mu          sync.Mutex
 	now         func() time.Time
@@ -173,7 +176,7 @@ func (m *Memory) CreateRun(_ context.Context, run embedrun.Run) error {
 			return fmt.Errorf("create positioned run %s: %w: generation %s must be registered",
 				run.ID, ErrNotFound, run.GenerationIdentity)
 		}
-		if err := validateRunSource(run, generation); err != nil {
+		if err := RunSourceMatches(run, generation); err != nil {
 			return err
 		}
 	}
@@ -188,7 +191,11 @@ func (m *Memory) CreateRun(_ context.Context, run embedrun.Run) error {
 	return nil
 }
 
-func validateRunSource(run embedrun.Run, generation Generation) error {
+// RunSourceMatches refuses a positioned run whose source is not the one its
+// generation records. The canonical identity and the bare table name both
+// match, because runs created before the source identity was qualified carried
+// the bare name.
+func RunSourceMatches(run embedrun.Run, generation Generation) error {
 	if generation.SourceTable == "" {
 		return fmt.Errorf("%w: generation %s does not record a source for positioned run %s",
 			ErrConflict, generation.Identity, run.ID)

@@ -22,10 +22,12 @@ func newDescribeCommand() *cobra.Command {
 		Short: "Show what a specification says, without a database",
 		Long: `Read a specification and report what it says on its own.
 
-Every other verb needs a live database, so until this one a specification could
-not be checked at all without PostgreSQL. Two readers need the file's own
+Every other verb needs a live database, and two readers need the file's own
 answer and have no server to hand: an author writing a specification, and a CI
 job asking whether an edit changed the corpus.
+
+The engine the target objects describe is the one the representation names:
+vector, halfvec and sparsevec are pgvector's types, and float is YDB's.
 
 What it reports is the generation identity, whether that generation can be
 rebuilt and why not, what running it would send out of the database, what the

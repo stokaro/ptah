@@ -11,7 +11,7 @@ import (
 // prevents a helper from reintroducing implicit built-in selection. All roots
 // must load, even when their dependency graph has no forbidden package.
 var rendererConsumerRoots = []string{
-	"internal/embedpg", "internal/genexprprobe", "migration/generator", "migration/importer",
+	"internal/embedpg", "internal/embedydb", "internal/genexprprobe", "migration/generator", "migration/importer",
 	"migration/planner", "migration/safety", "migration/schemadiff", "migration/shadow",
 }
 

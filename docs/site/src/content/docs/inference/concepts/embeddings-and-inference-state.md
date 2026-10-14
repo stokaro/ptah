@@ -81,6 +81,12 @@ time. For this feature it means, concretely:
 It is *state*, not a service. Ptah manages the rows and columns. It does not
 run a model, hold one in memory, or answer a search query.
 
+All of it lives in the database the vectors are in, beside them: on PostgreSQL
+in pgvector columns and tables named `ptah_embedding_*`, and on YDB in String
+columns holding YDB's float vectors and row tables of the same names. The run
+state is there because a checkpoint has to commit in the same transaction as
+the vectors it records.
+
 ## What changes the vectors
 
 Anything that changes the text sent, or what turns that text into numbers,

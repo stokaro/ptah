@@ -9,6 +9,7 @@ readerQuestion: "Which fields and values does an inference specification accept?
 goal: "Look up the accepted inference specification fields and values."
 sourceOfTruth:
   - "internal/cli/inference"
+  - "internal/embedydb"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []
@@ -48,10 +49,10 @@ way, at the top of the file.
 
 | Field | Identity | Required | Meaning |
 | --- | --- | --- | --- |
-| `schema` | yes | | The schema the source table is in. |
+| `schema` | yes | | The schema the source table is in. On YDB, its directory relative to the database root. |
 | `table` | yes | | The source table. |
-| `filter` | yes | | A SQL condition narrowing the rows in scope. |
-| `key_fields` | yes | | The columns identifying a row, in order. |
+| `filter` | yes | | A SQL condition narrowing the rows in scope, in YQL on YDB. |
+| `key_fields` | yes | | The columns identifying a row, in order. On YDB, the table's primary key. |
 | `input_fields` | yes | | The columns whose text is sent, in order. |
 | `version_strategy` | yes | | How a stale vector is recognized. |
 | `version_field` | yes | | The column the strategy reads, where it needs one. |
@@ -185,10 +186,10 @@ not another copy of it.
 | `schema` | yes | | The schema the target table is in. |
 | `table` | yes | **yes** | The table the vectors go on. |
 | `column` | yes | **yes** | The vector column. Two generations need two columns. |
-| `representation` | yes | **yes** | `vector`, `halfvec`, or `sparsevec`. |
+| `representation` | yes | **yes** | `vector`, `halfvec`, or `sparsevec` on PostgreSQL; `float` on YDB. |
 | `metric` | yes | **yes** | `cosine`, `l2`, or `inner_product`. |
-| `index_method` | yes | | `hnsw` or `ivfflat`. Omit for no index. |
-| `index_options` | **no** | | Build options such as `m` and `ef_construction`. |
+| `index_method` | yes | | `hnsw` or `ivfflat` on PostgreSQL; `vector_kmeans_tree` on YDB. Omit for no index. |
+| `index_options` | **no** | | Build options: `m`, `ef_construction` or `lists` on PostgreSQL; `levels` and `clusters` on YDB. |
 | `layout` | **no** | | `source_columns`, or `own_table` to have Ptah create the target table. Omit for `source_columns`. |
 
 `index_options` is excluded deliberately: retuning an index trades build cost
@@ -210,11 +211,20 @@ Option values must be whole numbers, and option names lower-case identifiers.
 PostgreSQL takes no parameter in a `WITH` clause, so anything else is refused by
 name rather than escaped.
 
+On YDB the representation names the vector index's element type, and `float` is
+the one a provider's answer fills; the vectors are stored as the bytes
+`Knn::ToBinaryStringFloat` writes, in a `String` column. A `vector_kmeans_tree`
+index needs both `levels` and `clusters`, and YDB holds them to its limits:
+levels between 1 and 16, clusters between 2 and 2048. The metric maps onto
+YDB's settings as `distance=cosine`, `distance=euclidean` and
+`similarity=inner_product`. See [Plan vector
+indexes](../../strategies/plan-vector-indexes/).
+
 ## `consistency`
 
 | Field | Meaning |
 | --- | --- |
-| `mode` | `outbox`, `immutable`, or omitted. |
+| `mode` | `outbox`, `immutable`, or omitted. YDB takes `immutable`: the outbox needs row triggers. |
 | `paused` | Whether writes are declared stopped. |
 
 Not part of the identity: how changes were captured does not change what the

@@ -2,18 +2,16 @@ package inference
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical uses
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/cmdflags"
-	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/embedbackend"
+	"ptah.run/internal/embedconnect"
 	"ptah.run/internal/embeddigest"
-	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrelease"
 	"ptah.run/internal/embedspec"
 )
@@ -57,29 +55,30 @@ type specSource struct {
 	loaded *embedspec.Loaded
 }
 
-// session is a resolved specification and an open connection.
+// session is a resolved specification and the backend of the database it
+// runs against.
 type session struct {
-	loaded embedspec.Loaded
-	db     *sql.DB
-	store  *embedpg.Store
+	loaded  embedspec.Loaded
+	backend embedbackend.Backend
+	store   embedbackend.Store
 	// source and target are the physical relations the specification's
 	// spellings resolve to on this server, which is what every durable
 	// identity is derived from: the source digest the outbox is named after,
-	// the source-scoped advisory lock, and the target pointer.
+	// the source-scoped lock, and the target pointer.
 	//
 	// They are resolved once, here, because every verb comes through open()
-	// and because an unqualified spelling means whatever the session's
-	// search_path says it means. A spelling that names no relation keeps the
-	// authored value, so the verb that needs the relation reports its absence
-	// rather than this resolution doing it (stokaro/ptah#2806).
-	source embedpg.Relation
-	target embedpg.Relation
+	// and because an unqualified PostgreSQL spelling means whatever the
+	// session's search_path says it means. A spelling that names no relation
+	// keeps the authored value, so the verb that needs the relation reports
+	// its absence rather than this resolution doing it (stokaro/ptah#2806).
+	source embedbackend.Relation
+	target embedbackend.Relation
 }
 
 // close releases the connection.
 func (s *session) close() {
-	if s.db != nil {
-		_ = s.db.Close()
+	if s.backend != nil {
+		_ = s.backend.Close()
 	}
 }
 
@@ -101,51 +100,35 @@ func open(ctx context.Context, options commonOptions) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := connectDatabase(ctx, options.dbURL)
+	backend, err := embedconnect.Open(ctx, options.dbURL)
 	if err != nil {
 		return nil, err
 	}
-	source, _, err := embedpg.ResolveRelation(
-		ctx, db, loaded.Spec.Source.Schema, loaded.Spec.Source.Table)
+	source, err := backend.ResolveRelation(ctx, loaded.Spec.Source.Schema, loaded.Spec.Source.Table)
 	if err != nil {
-		_ = db.Close()
+		_ = backend.Close()
 		return nil, err
 	}
-	target, _, err := embedpg.ResolveRelation(
-		ctx, db, loaded.Spec.Target.Schema, loaded.Spec.Target.Table)
+	target, err := backend.ResolveRelation(ctx, loaded.Spec.Target.Schema, loaded.Spec.Target.Table)
 	if err != nil {
-		_ = db.Close()
+		_ = backend.Close()
 		return nil, err
 	}
 	return &session{
-		loaded: loaded, db: db, store: embedpg.NewStore(db),
+		loaded: loaded, backend: backend, store: backend.Store(),
 		source: source, target: target,
 	}, nil
 }
 
 // validateDatabaseURL checks the part of a database connection that does not
-// require opening it. Kept separate from connectDatabase so specification-led
+// require opening it. Kept separate from the connection so specification-led
 // verbs preserve their error order: arguments and engine first, specification
 // second, network third.
 func validateDatabaseURL(dbURL string) error {
 	if strings.TrimSpace(dbURL) == "" {
 		return fmt.Errorf("--db-url is required")
 	}
-	return embedpg.RefuseAnotherEngine(dbURL)
-}
-
-// connectDatabase opens the PostgreSQL run-state database after its arguments
-// have been checked.
-func connectDatabase(ctx context.Context, dbURL string) (*sql.DB, error) {
-	db, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", dburldisplay.Format(dbURL), err)
-	}
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("connect to %s: %w", dburldisplay.Format(dbURL), err)
-	}
-	return db, nil
+	return embedconnect.RefuseAnotherEngine(dbURL)
 }
 
 // resolve reads the specification from wherever the operator put it: a file

@@ -9,6 +9,7 @@ readerQuestion: "Which inference commands and flags does Ptah expose?"
 goal: "Look up the available inference commands and flags."
 sourceOfTruth:
   - "internal/cli/inference"
+  - "internal/embedydb"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []
@@ -37,6 +38,11 @@ All verbs except `abandon` take `--spec` or `--release`. Most also take
 `--db-url` and `--run-id` — an identifier you choose, and how a resumed run
 finds its checkpoint. `abandon` reads the generation identity from the existing
 run, so it needs only the run-state database and run identifier.
+
+`--db-url` names PostgreSQL with pgvector or YDB, and its scheme decides which:
+`postgres://`, or a keyword/value DSN with no scheme, for PostgreSQL, and
+`ydb://` or `ydbs://` for YDB. Each verb runs the same lifecycle on both; where
+one differs, its section says so.
 
 `--release` names a published release instead of a file. The release carries the
 specification it was built from, so an environment that has never seen the file
@@ -173,6 +179,14 @@ privileged act, and the refusal names the statement to run.
 
 It refuses when the column you named already holds another generation.
 
+On YDB it adds the five columns with `ALTER TABLE ... ADD COLUMN`, or creates
+the generation's own table, and installs no change capture: YDB has no row
+triggers, so a specification selecting the outbox mode is refused here, before
+anything is created. It also refuses `key_fields` that are not the source
+table's primary key. YDB runs a schema statement outside any transaction, so the
+storage is created first and the run recorded second; a prepare stopped between
+the two is finished by running it again.
+
 ## `backfill`
 
 Embeds the source as it was at the boundary. Resumable: run it again after an
@@ -190,7 +204,8 @@ Processes the source changes made since the boundary. Run it until it reports
 nothing left.
 
 Takes the flags `backfill` takes, and `--maintain-for` besides. Refused against
-a consistency mode that records nothing, rather than reported as success.
+a consistency mode that records nothing, rather than reported as success. A YDB
+generation has no catch-up to run: the only mode it takes is `immutable`.
 
 It also removes the events every usable live feeder reading that source has passed, so the
 companion table holds the backlog rather than the whole migration. Nothing is
@@ -212,8 +227,13 @@ flag would extend a promise with nothing behind it.
 
 ## `index`
 
-Builds the vector index the specification declares, concurrently, and leaves it
-valid. An invalid index left by a failed build is dropped and built again.
+Builds the vector index the specification declares and leaves it valid. On
+PostgreSQL the build runs concurrently, and an invalid index left by a failed
+build is dropped and built again. On YDB it is `ALTER TABLE ... ADD INDEX ...
+GLOBAL USING vector_kmeans_tree`, which returns once the index holds every row;
+an index whose build did not finish is dropped and built again. YDB 25.1 needs
+its `EnableVectorIndex` feature flag on, and the refusal names the capability,
+`vector_indexes`, and the line.
 
 | Flag | Meaning |
 | --- | --- |
@@ -472,6 +492,13 @@ The approval binds to what is **destroyed** rather than to what is named:
 approving the removal of an index does not authorize the removal of the column,
 and the plan file says which, along with how many rows go with it. For an
 operation nothing can undo, `--approval` is worth the extra step.
+
+On YDB the retirement is two steps, because YDB runs a schema statement outside
+any transaction. The generation is recorded as retired, and its runs completed,
+in one transaction; from that moment no pointer can move to it. Its index and
+columns, or its table, are dropped after. A retirement whose drops did not
+finish says so, and running `retire` again for the same generation drops what
+is left.
 
 ## Environment variables
 

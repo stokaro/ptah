@@ -5,13 +5,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/inference"
-	"ptah.run/internal/ydbgap"
 )
 
 // TestOpen_AnotherEngineIsRefusedByName is stokaro/ptah#2386.
@@ -119,18 +118,20 @@ func TestOpen_AnUnrecognizedSchemeStillReachesTheDriver(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against PostgreSQL")
 }
 
-// TestOpen_YDBIsRefusedThroughItsGap is the YDB row, which reads differently
-// from the rows above: an inference migration on YDB's vector indexes is
-// planned, so the refusal names the gap that plans it rather than saying there
-// is nothing to run against the engine. Both YDB schemes are read as YDB, and
-// no connection is attempted.
-func TestOpen_YDBIsRefusedThroughItsGap(t *testing.T) {
-	for _, dbURL := range []string{"ydb://localhost:2136/local", "ydbs://ydb.example.com:2135/?database=/a/b"} {
+// TestOpen_YDBReachesTheYDBDriver is the YDB row, which reads differently from
+// the rows above: YDB is an engine this namespace runs against, so a YDB URL is
+// not refused, under either scheme. It is handed to the YDB driver, which
+// fails here only because nothing listens on the port.
+func TestOpen_YDBReachesTheYDBDriver(t *testing.T) {
+	for _, dbURL := range []string{"ydb://127.0.0.1:1/local", "ydbs://127.0.0.1:1/local"} {
 		t.Run(dbURL, func(t *testing.T) {
 			c := qt.New(t)
-			output, err := runInference(c, "plan", "--spec", writeSpec(c), "--db-url", dbURL)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			output, err := runInferenceContext(ctx, c, "plan", "--spec", writeSpec(c), "--db-url", dbURL)
 
-			c.Assert(err, qt.ErrorMatches, `"ydbs?://" names a YDB database: `+regexp.QuoteMeta(ydbgap.Inference.Message()))
+			c.Assert(err, qt.ErrorMatches, `connect to ydbs?://127\.0\.0\.1:1/local: .*`)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against")
 			c.Assert(output, qt.Not(qt.Contains), "invalid keyword/value")
 		})
 	}
@@ -139,12 +140,19 @@ func TestOpen_YDBIsRefusedThroughItsGap(t *testing.T) {
 // runInference drives the namespace's own command tree.
 func runInference(c *qt.C, args ...string) (string, error) {
 	c.Helper()
+	return runInferenceContext(context.Background(), c, args...)
+}
+
+// runInferenceContext drives it under ctx, for a run that dials a port nothing
+// answers on and has to stop.
+func runInferenceContext(ctx context.Context, c *qt.C, args ...string) (string, error) {
+	c.Helper()
 	cmd := inference.NewCommand()
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
 	cmd.SetArgs(args)
-	err := cmd.ExecuteContext(context.Background())
+	err := cmd.ExecuteContext(ctx)
 	return output.String(), err
 }
 

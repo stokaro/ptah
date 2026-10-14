@@ -55,6 +55,9 @@ type Inputs struct {
 	EstimatedRows int64
 	// Capabilities are what the target database can do, by name.
 	Capabilities map[string]bool
+	// Refusals are reasons the target database cannot run the specification
+	// at all, each naming what is missing. Every one is a blocker.
+	Refusals []string
 	// Permissions are what the caller holds.
 	Permissions map[string]bool
 }
@@ -195,6 +198,7 @@ func planCapabilities(plan *Plan, inputs Inputs) {
 			"the target database has no operator class for this representation and metric "+
 				"under the index method the specification names, so the index cannot be built")
 	}
+	plan.Blockers = append(plan.Blockers, inputs.Refusals...)
 	if !inputs.Permissions["inference:plan"] {
 		plan.Blockers = append(plan.Blockers, "the caller does not hold inference:plan")
 	}

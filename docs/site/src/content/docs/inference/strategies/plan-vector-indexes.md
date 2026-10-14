@@ -9,7 +9,9 @@ readerQuestion: "When should I build each type of vector index?"
 goal: "Choose a vector index type and when to build it."
 sourceOfTruth:
   - "internal/cli/inference"
+  - "internal/embedydb"
   - "integration/inference_cli_e2e_test.go"
+  - "integration/inference_ydb_cli_e2e_test.go"
 generated: false
 overlaps: []
 disposition: keep
@@ -43,17 +45,54 @@ what its author asked for.
 
 `hnsw` is the answer unless the build time or memory is a real constraint.
 
+## On YDB
+
+YDB has one vector index, `vector_kmeans_tree`, and a generation declares its
+shape with two options, both required:
+
+```yaml
+target:
+  representation: float
+  metric: cosine
+  index_method: vector_kmeans_tree
+  index_options:
+    levels: "2"
+    clusters: "128"
+```
+
+`clusters` is how many clusters each level of the tree splits into, between 2
+and 2048, and `levels` is how deep the tree goes, between 1 and 16.
+`clusters` to the power of `levels` is at most 2^30. The metric becomes the
+index's distance or similarity, and `vector_type` and `vector_dimension` come
+from the representation and the provider's dimension. `ptah inference index`
+builds it with `ALTER TABLE ... ADD INDEX ... GLOBAL USING vector_kmeans_tree`,
+which returns once the index holds every row.
+
+What the index can do depends on the YDB line, and Ptah reads it from the
+server's capabilities:
+
+| Line | Builds the index | Takes rows written after the build |
+| --- | --- | --- |
+| 25.1 | with `EnableVectorIndex` on | no |
+| 25.2 | yes | no |
+| 25.3 and later | yes | yes |
+
+On a line whose index does not take later writes, a write into a generation
+whose index exists is refused rather than left for the index to miss. The
+lifecycle builds the index after the backfill, so the refusal appears only when
+the source changed after the index was built.
+
 ## Build it after the backfill, not before
 
 `ptah inference index` comes after `catchup` in the lifecycle, and the ordering
 matters for `ivfflat`: it trains its lists on the data present when it is built,
 so one built over an empty column is valid and useless.
 
-The build runs concurrently, because the table is one your application is reading
-and writing throughout. That is also why the command reads the index back
-afterwards — a concurrent build that fails leaves an index PostgreSQL will not
-use, and reporting that as done would report a generation ready while every query
-over it is a sequential scan.
+On PostgreSQL the build runs concurrently, because the table is one your
+application is reading and writing throughout. That is also why the command
+reads the index back afterwards — a concurrent build that fails leaves an index
+PostgreSQL will not use, and reporting that as done would report a generation
+ready while every query over it is a sequential scan.
 
 Running it again is the finished state:
 
@@ -89,6 +128,12 @@ exactly this reason:
 
 Comparing two generations means comparing them at the same settings. The
 evaluation's `--baseline` does that for you.
+
+On YDB the setting is `ydb.KMeansTreeSearchTopSize`, the number of clusters a
+search descends into. Ptah does not set it, so `evaluate` reports it as
+`ydb.KMeansTreeSearchTopSize=(server default)`. The indexed search reads the
+generation through `VIEW <index>`, and the exhaustive one reads the table
+without it.
 
 ## The exact-agreement check
 

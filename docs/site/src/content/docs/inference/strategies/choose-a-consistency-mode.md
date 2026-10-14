@@ -9,6 +9,7 @@ readerQuestion: "Which consistency mode fits my source-write behavior?"
 goal: "Choose a consistency mode for the source-write behavior."
 sourceOfTruth:
   - "internal/cli/inference"
+  - "internal/embedydb"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []
@@ -30,6 +31,13 @@ Four answers, and the right one depends on whether you control the writes.
   - Otherwise → `outbox`.
 
 `outbox` is the answer unless you have a specific reason against it.
+
+**On YDB the answer is `immutable`.** The outbox records each change with a row
+trigger in the writer's own transaction, and YDB has no triggers. `plan` reports
+an outbox specification as blocked and `prepare` refuses it, naming the missing
+capability and the server line. A YDB source that keeps taking writes is
+migrated in a window with its writes stopped and `consistency.paused: true`, as
+[Migrate a paused source](../../guides/migrate-a-paused-source/) describes.
 
 ## What each costs
 

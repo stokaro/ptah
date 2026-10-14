@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedengine"
-	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedprovider"
 	"ptah.run/internal/embedreport"
 	"ptah.run/internal/embedrun"
@@ -192,15 +192,11 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	// The outbox is named after the PHYSICAL source, so it is built from the
 	// specification resolved against this server rather than from the
 	// spelling the document used (stokaro/ptah#2806).
-	physical, err := embedpg.WithResolvedRelations(ctx, opened.db, opened.loaded.Spec)
+	outbox, err := opened.backend.Outbox(ctx, opened.loaded.Spec)
 	if err != nil {
 		return err
 	}
-	outbox, err := embedpg.NewOutbox(opened.db, physical)
-	if err != nil {
-		return err
-	}
-	source, err := embedpg.NewSource(opened.db, opened.loaded.Spec)
+	source, err := opened.backend.NewSource(opened.loaded.Spec)
 	if err != nil {
 		return err
 	}
@@ -234,28 +230,28 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 // would leave the events gone and the durable watermark behind them, which a
 // resumed run reads as an empty range and reports as caught up.
 //
-// Called on the concrete PostgreSQL store rather than through embedengine's
-// Changes interface, deliberately. The store owns the durable reader set and
+// Called on the backend's outbox rather than through embedengine's Changes
+// interface, deliberately. The backend's store owns the durable reader set and
 // is the only layer that can bind its floor to the deleting statement.
 //
 // Reported and never fatal, for the reason extendMaintenance gives: the
 // catch-up's work is committed, and failing here would report a run that did
 // not do what it did. Nothing is lost when a prune fails; the table is bigger.
 func pruneOutbox(
-	ctx context.Context, opened *session, outbox *embedpg.Outbox, run embedrun.Run,
+	ctx context.Context, opened *session, outbox embedbackend.Outbox, run embedrun.Run,
 ) []string {
-	floor, ok, removed, err := opened.store.PruneOutbox(ctx, outbox)
+	floor, err := outbox.Prune(ctx)
 	if err != nil {
 		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
 	}
-	if !ok {
+	if !floor.Found {
 		// No live reader answered, which is not a license to empty the table.
 		return nil
 	}
 	lines := make([]string, 0, 2)
-	if removed > 0 {
+	if floor.Removed > 0 {
 		lines = append(lines, bullet(fmt.Sprintf(
-			"pruned %d processed event(s) from the outbox", removed)))
+			"pruned %d processed event(s) from the outbox", floor.Removed)))
 	}
 	// This run has moved past the floor: something else still reading this
 	// table is holding the remaining events. Report it even when this pass
@@ -276,7 +272,7 @@ func pruneOutbox(
 // outboxFloorHolders renders the exact runs an operator can inspect or
 // abandon. The query returns them in generation and run order, so the message
 // is stable across repeated catch-up passes.
-func outboxFloorHolders(holders []embedpg.OutboxFloorHolder) string {
+func outboxFloorHolders(holders []embedbackend.OutboxFloorHolder) string {
 	named := make([]string, 0, len(holders))
 	for _, holder := range holders {
 		named = append(named, fmt.Sprintf(
@@ -347,12 +343,12 @@ func buildEngine(
 		opened.close()
 		return nil, nil, err
 	}
-	source, err := embedpg.NewSource(opened.db, opened.loaded.Spec)
+	source, err := opened.backend.NewSource(opened.loaded.Spec)
 	if err != nil {
 		opened.close()
 		return nil, nil, err
 	}
-	target, err := embedpg.NewTarget(opened.db, opened.loaded.Spec)
+	target, err := opened.backend.NewTarget(opened.loaded.Spec)
 	if err != nil {
 		opened.close()
 		return nil, nil, err

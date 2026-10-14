@@ -1467,6 +1467,10 @@ const (
 	// through the index as it was built, while a full scan sees the writes:
 	// a vector index there describes its table only as it stood at the
 	// build.
+	//
+	// `ptah inference` reads it before a write into a generation whose index
+	// exists, and refuses the write on a line without it rather than leave the
+	// index answering for a table that has moved on.
 	VectorIndexMaintainedOnWrite Capability = "vector_index_maintained_on_write"
 
 	// VectorBitType marks a target whose vector index takes bit vectors,
@@ -1932,7 +1936,7 @@ var registry = map[Capability]spec{
 		requires: []Capability{Functions},
 	},
 	Triggers: {
-		doc: "CREATE TRIGGER objects",
+		doc: "CREATE TRIGGER objects, which the inference outbox mode captures source changes with",
 	},
 	CreateOrReplaceTrigger: {
 		doc:      "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
@@ -2233,10 +2237,10 @@ var registry = map[Capability]spec{
 		doc: "Ptah declares, reads and plans YDB fulltext_plain and fulltext_relevance indexes (behind a feature flag)",
 	},
 	VectorIndexes: {
-		doc: "Ptah declares, reads and plans a YDB vector index, GLOBAL USING vector_kmeans_tree (behind a flag on YDB 25.1)",
+		doc: "Ptah declares, reads, plans and builds for inference a YDB vector index, GLOBAL USING vector_kmeans_tree (behind a flag on YDB 25.1)",
 	},
 	VectorIndexMaintainedOnWrite: {
-		doc: "a vector index takes in the rows written after its build (YDB 25.3 and later)",
+		doc: "a vector index takes in the rows written after its build, so inference may write into an indexed generation (YDB 25.3 and later)",
 	},
 	VectorBitType: {
 		doc: "a vector index takes bit vectors, vector_type = bit (YDB 26.1 and later)",

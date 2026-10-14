@@ -67,7 +67,8 @@ func addCommonFlags(cmd *cobra.Command, options *commonOptions) {
 // command also needs a specification.
 func addDatabaseFlag(cmd *cobra.Command, destination *string) {
 	cmd.Flags().StringVar(destination, "db-url", "",
-		"Database URL (required). Example: postgres://localhost:5432/dbname")
+		"Database URL (required): PostgreSQL with pgvector, or YDB. Example: postgres://localhost:5432/dbname "+
+			"or ydb://localhost:2136/local")
 }
 
 // addSpecFlags registers the two ways to name a specification.
@@ -105,7 +106,7 @@ func runPlan(
 	}
 	defer opened.close()
 
-	plan, err := embedreport.BuildPlan(ctx, opened.db, opened.loaded, current)
+	plan, err := embedreport.BuildPlan(ctx, opened.backend, opened.loaded, current)
 	if err != nil {
 		return err
 	}

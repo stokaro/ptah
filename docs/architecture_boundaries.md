@@ -132,9 +132,10 @@ checks parent receipts and accounts for their contributed steps in the complete
 plan graph. YDB changefeed assessment lives in `dialect/ydb/ydbplan`; the table
 planner supplies captured operands and consumes the selected result.
 
-`internal/embedpg`, `internal/genexprprobe`, `migration/generator`,
-`migration/importer`, `migration/planner`, `migration/safety`,
-`migration/schemadiff`, and `migration/shadow` receive rendering from their caller. Their complete import
+`internal/embedpg`, `internal/embedydb`, `internal/genexprprobe`,
+`migration/generator`, `migration/importer`, `migration/planner`,
+`migration/safety`, `migration/schemadiff`, and `migration/shadow` receive
+rendering from their caller. Their complete import
 graphs must exclude `engine/builtin` and its children. The gate requires every
 root to load; its self-test injects a forbidden import through a helper and
 accepts a similarly named package outside that subtree.

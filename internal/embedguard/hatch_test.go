@@ -18,8 +18,9 @@ import (
 // need not import the implementation.
 //
 // That widening cannot tell a legitimate case from a name that merely collides,
-// and its potential reach is most of the tree: 151 of the 233 declarations
-// carry a name some interface declares. Its actual reach is the eleven below.
+// and its potential reach is a large part of the tree: 135 of the 322
+// declarations carry a name some interface declares. Its actual reach is the
+// list below.
 // Nothing reports the gap between those two numbers, so one interface with an
 // ordinary method name -- `Close`, `Run`, `Name` -- would take a large part of
 // the guard's coverage with it and every test here would stay green.
@@ -42,23 +43,57 @@ func TestHatchedByInterface_IsWrittenDown(t *testing.T) {
 		// An error type's Unwrap, matched by errors.Is and errors.As rather
 		// than by a call anybody writes.
 		"ptah.run/internal/embedengine.Unwrap",
-		// The store, reached through the interfaces its callers declare. The
-		// engine and the report layer each take a narrow interface rather than
-		// importing embedpg, which is what keeps the persistence choice out of
-		// them -- and what puts these here.
+		// The PostgreSQL store, source, outbox and searcher, reached through
+		// the interfaces their callers declare. The engine takes a narrow
+		// interface, and the verbs, the report layer and the agent tools take
+		// embedbackend's contract rather than importing an engine, which is
+		// what keeps the persistence choice out of them -- and what puts these
+		// here.
 		"ptah.run/internal/embedpg.AbandonRun",
 		"ptah.run/internal/embedpg.AppendEvent",
+		"ptah.run/internal/embedpg.CheckMode",
 		"ptah.run/internal/embedpg.ClaimRun",
 		"ptah.run/internal/embedpg.CreateRun",
+		"ptah.run/internal/embedpg.Current",
 		"ptah.run/internal/embedpg.Events",
+		"ptah.run/internal/embedpg.Maintain",
+		"ptah.run/internal/embedpg.Measure",
 		"ptah.run/internal/embedpg.MovePointer",
+		"ptah.run/internal/embedpg.MovePointerWithMaintenance",
+		"ptah.run/internal/embedpg.MovePointerWithRollback",
+		"ptah.run/internal/embedpg.Prune",
+		"ptah.run/internal/embedpg.QueryParameters",
+		"ptah.run/internal/embedpg.ReachPhase",
+		"ptah.run/internal/embedpg.RecordVerification",
 		"ptah.run/internal/embedpg.RegisterGeneration",
+		"ptah.run/internal/embedpg.RetireGeneration",
 		"ptah.run/internal/embedpg.RunsForGeneration",
+		"ptah.run/internal/embedpg.Search",
 		// The catch-up loop calls this through the Changes interface, and
 		// embedengine does not import embedpg. It is the case the widening was
 		// added for, and the one the rule's own comment names.
 		"ptah.run/internal/embedpg.Since",
+		"ptah.run/internal/embedpg.Unprocessed",
 		// The second error type's Unwrap.
 		"ptah.run/internal/embedprovider.Unwrap",
+		// The YDB backend, reached through embedbackend's contract for the
+		// same reason as the PostgreSQL one above. The integration suite's YDB
+		// lifecycle test drives each of them through the command line.
+		"ptah.run/internal/embedydb.AppendEvent",
+		"ptah.run/internal/embedydb.Current",
+		"ptah.run/internal/embedydb.EnsureRunIndex",
+		"ptah.run/internal/embedydb.EnsureSchema",
+		"ptah.run/internal/embedydb.Events",
+		"ptah.run/internal/embedydb.Measure",
+		"ptah.run/internal/embedydb.NewSearcher",
+		"ptah.run/internal/embedydb.NewSource",
+		"ptah.run/internal/embedydb.NewTarget",
+		"ptah.run/internal/embedydb.PrepareRun",
+		"ptah.run/internal/embedydb.QueryParameters",
+		"ptah.run/internal/embedydb.ReadStructure",
+		"ptah.run/internal/embedydb.RunsForGeneration",
+		"ptah.run/internal/embedydb.Search",
+		"ptah.run/internal/embedydb.VerificationCorpus",
+		"ptah.run/internal/embedydb.WithResolvedRelations",
 	})
 }

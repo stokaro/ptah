@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedpg"
@@ -150,14 +151,14 @@ func TestPruneOutbox_SerializesANewReaderWithTheDeleteLive(t *testing.T) {
 
 	joiningGeneration, joiningRun := prepareRecords(spec, "prune-joining", now)
 	prepared := make(chan struct {
-		result embedpg.PrepareResult
+		result embedbackend.PrepareResult
 		err    error
 	}, 1)
 	go func() {
 		result, prepareErr := store.PrepareRun(
 			ctx, spec, joiningGeneration, joiningRun, embedcatchup.ModeOutbox)
 		prepared <- struct {
-			result embedpg.PrepareResult
+			result embedbackend.PrepareResult
 			err    error
 		}{result: result, err: prepareErr}
 	}()

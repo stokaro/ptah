@@ -68,12 +68,12 @@ func hatchedByInterface(
 // implementation. What it cannot do is tell one legitimate case from a name
 // that merely collides.
 //
-// Measured on this tree: 233 declarations, of which 11 are kept out by this
-// rule alone -- and 151 of the 233 carry a name SOME interface declares. So the
-// rule's potential reach is most of the tree and its actual reach is small,
-// which is a gap nothing would report. One interface with an ordinary method
-// name -- `Close`, `Run`, `Name` -- would silently take a large part of the
-// guard's coverage with it.
+// Measured on this tree: 322 declarations, of which 40 are kept out by this
+// rule alone -- and 135 of the 322 carry a name SOME interface declares. So the
+// rule's potential reach is a large part of the tree and its actual reach is
+// smaller, which is a gap nothing would report. One interface with an
+// ordinary method name -- `Close`, `Run`, `Name` -- would silently take a large
+// part of the guard's coverage with it.
 //
 // So the set is asserted against a written list rather than counted. A
 // declaration entering it is a decision, the same shape the emission census

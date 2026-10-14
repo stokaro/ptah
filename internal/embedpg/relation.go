@@ -7,20 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedgen"
 )
-
-// Relation is one physical PostgreSQL relation, named the way the server names
-// it rather than the way a specification spelled it.
-//
-// Both halves are always set on a resolved value: PostgreSQL has no unqualified
-// relation, only an unqualified spelling that a search_path turns into one.
-type Relation struct {
-	// Schema is the namespace the relation is in.
-	Schema string
-	// Table is the relation's own name.
-	Table string
-}
 
 // relationReader is the one method resolution needs, so a *sql.DB, a *sql.Conn
 // and a *sql.Tx all answer it.
@@ -71,12 +60,12 @@ const resolveRelationSQL = `
 // the place to decide that.
 func ResolveRelation(
 	ctx context.Context, db relationReader, schema, table string,
-) (relation Relation, found bool, err error) {
-	authored := Relation{Schema: strings.TrimSpace(schema), Table: strings.TrimSpace(table)}
+) (relation embedbackend.Relation, found bool, err error) {
+	authored := embedbackend.Relation{Schema: strings.TrimSpace(schema), Table: strings.TrimSpace(table)}
 	if authored.Table == "" {
 		return authored, false, nil
 	}
-	var resolved Relation
+	var resolved embedbackend.Relation
 	err = db.QueryRowContext(ctx, resolveRelationSQL, authored.Schema, authored.Table).
 		Scan(&resolved.Schema, &resolved.Table)
 	if err != nil {
@@ -86,15 +75,6 @@ func ResolveRelation(
 		return authored, false, fmt.Errorf("resolve relation %s: %w", authored, err)
 	}
 	return resolved, true, nil
-}
-
-// String is the qualified name, for a diagnostic that has to say which
-// relation it means.
-func (r Relation) String() string {
-	if r.Schema == "" {
-		return r.Table
-	}
-	return r.Schema + "." + r.Table
 }
 
 // WithResolvedRelations answers a copy of spec whose source and target name the
