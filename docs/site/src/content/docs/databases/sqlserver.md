@@ -54,6 +54,10 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   `NVARCHAR`/`NVARCHAR(MAX)` string mapping. A column's identity is compared;
   a change to it is refused by name, because `ALTER COLUMN` has no `IDENTITY`.
   Create the column, or the table, again with the identity it should have.
+  `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
+  `SMALLINT` with `IDENTITY(1,1)`, unless the field gives its own SQL Server
+  type. A table takes one identity column (`Msg 2744`), so a serial column
+  beside another auto-increment column is refused by name.
 - Core table DDL: primary keys, unique constraints, foreign keys, `CHECK`
   constraints, and indexes with ordered ascending or descending key columns.
 - Filtered indexes (see below).

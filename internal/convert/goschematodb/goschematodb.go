@@ -209,6 +209,7 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 			field.Nullable = false
 		}
 		column := toDBColumn(field, i+1)
+		column.IsAutoIncrement = autoincrement.DeclaredOn(field, dialect)
 		if dialect == platform.Oracle {
 			// Oracle stores few declared type names as written: a TEXT
 			// column is a CLOB and a BIGINT a NUMBER(19). The reader reports

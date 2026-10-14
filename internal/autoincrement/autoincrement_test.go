@@ -50,3 +50,41 @@ func TestSerialType(t *testing.T) {
 		})
 	}
 }
+
+// TestDeclaredOn names the declarations each target builds auto-increment. A
+// serial type is one on MySQL, MariaDB and SQL Server, which write it as their
+// own auto-increment integer, unless the field spells the target's type itself.
+func TestDeclaredOn(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   schemamodel.Field
+		dialect string
+		want    bool
+	}{
+		{name: "SERIAL on MySQL", field: schemamodel.Field{Type: "SERIAL"}, dialect: "mysql", want: true},
+		{name: "BIGSERIAL on MariaDB", field: schemamodel.Field{Type: "BIGSERIAL"}, dialect: "mariadb", want: true},
+		{name: "SMALLSERIAL on SQL Server", field: schemamodel.Field{Type: "smallserial"}, dialect: "mssql", want: true},
+		{name: "AutoInc anywhere", field: schemamodel.Field{Type: "INT", AutoInc: true}, dialect: "sqlite", want: true},
+		{name: "SERIAL on SQLite, the rowid", field: schemamodel.Field{Type: "SERIAL"}, dialect: "sqlite", want: false},
+		{name: "SERIAL on PostgreSQL, a sequence", field: schemamodel.Field{Type: "SERIAL"}, dialect: "postgres", want: false},
+		{
+			name:    "SERIAL whose MySQL type is its own",
+			field:   schemamodel.Field{Type: "SERIAL", Overrides: map[string]map[string]string{"mysql": {"type": "INT AUTO_INCREMENT"}}},
+			dialect: "mysql", want: false,
+		},
+		{
+			name:    "SERIAL whose override is for another target",
+			field:   schemamodel.Field{Type: "SERIAL", Overrides: map[string]map[string]string{"postgres": {"type": "INTEGER"}}},
+			dialect: "mysql", want: true,
+		},
+		{name: "SERIAL written as raw SQL", field: schemamodel.Field{Type: "SERIAL", TypeRawSQL: true}, dialect: "mysql", want: false},
+		{name: "a plain integer", field: schemamodel.Field{Type: "INT"}, dialect: "mysql", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(autoincrement.DeclaredOn(test.field, test.dialect), qt.Equals, test.want)
+		})
+	}
+}

@@ -59,6 +59,12 @@ func TestCompareWithDatabaseInfo_AutoIncrement_ReportsAChange(t *testing.T) {
 		},
 		{name: "SQLite gains it", dialect: "sqlite", declared: schemamodel.Field{Type: "INTEGER", AutoInc: true}, dataType: "integer", built: false, want: "false -> true"},
 		{name: "SQLite loses it", dialect: "sqlite", declared: schemamodel.Field{Type: "INTEGER"}, dataType: "integer", built: true, want: "true -> false"},
+		{
+			// Written as INT AUTO_INCREMENT, so a SERIAL key a server holds
+			// as a plain INT is missing it.
+			name: "MySQL, a SERIAL key held as a plain integer", dialect: "mysql",
+			declared: schemamodel.Field{Type: "SERIAL"}, dataType: "int", built: false, want: "false -> true",
+		},
 		{name: "SQL Server gains it", dialect: "sqlserver", declared: schemamodel.Field{Type: "INT", AutoInc: true}, dataType: "int", built: false, want: "false -> true"},
 	}
 	for _, test := range tests {
@@ -95,11 +101,13 @@ func TestCompareWithDatabaseInfo_AutoIncrement_AgreesWhenEqual(t *testing.T) {
 		{name: "MySQL without it", dialect: "mysql", declared: schemamodel.Field{Type: "INT"}, dataType: "int", built: false},
 		{name: "SQLite with it", dialect: "sqlite", declared: schemamodel.Field{Type: "INTEGER", AutoInc: true}, dataType: "integer", built: true},
 		{name: "SQL Server with it", dialect: "sqlserver", declared: schemamodel.Field{Type: "INT", AutoInc: true}, dataType: "int", built: true},
+		{name: "MySQL, a SERIAL key", dialect: "mysql", declared: schemamodel.Field{Type: "SERIAL"}, dataType: "int", built: true},
+		{name: "SQL Server, a SERIAL key", dialect: "sqlserver", declared: schemamodel.Field{Type: "SERIAL"}, dataType: "int", built: true},
 		{
-			// Written as a plain INT on MySQL, so a SERIAL declaration does
-			// not say whether the column auto-increments.
-			name: "MySQL, a SERIAL column the server made AUTO_INCREMENT", dialect: "mysql",
-			declared: schemamodel.Field{Type: "SERIAL"}, dataType: "int", built: true,
+			// SQLite writes it as the rowid, which numbers rows without
+			// AUTOINCREMENT, so the declaration does not say which.
+			name: "SQLite, a SERIAL key some tool made AUTOINCREMENT", dialect: "sqlite",
+			declared: schemamodel.Field{Type: "SERIAL"}, dataType: "integer", built: true,
 		},
 		{
 			name: "PostgreSQL, an identity column", dialect: "postgres",

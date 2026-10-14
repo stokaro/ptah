@@ -5,7 +5,7 @@ package stubs
 //ptah:schema:table name="boolean_demo"
 type BooleanDemo struct {
 	// Primary key with simplified syntax
-	//ptah:schema:field name="id" type="SERIAL" primary not_null
+	//ptah:schema:field name="id" type="INTEGER" primary not_null
 	ID int `db:"id"`
 
 	// Unique field with a separate index directive

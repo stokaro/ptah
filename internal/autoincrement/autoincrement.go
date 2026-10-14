@@ -1,6 +1,6 @@
 // Package autoincrement says whether a declared column is built
-// auto-incrementing. The conversion of a declaration to a catalog and the
-// comparison of a declaration with a catalog both ask it, so the two cannot
+// auto-incrementing. The rendering of a declaration, its conversion to a
+// catalog and its comparison with a catalog all ask it, so the three cannot
 // disagree about which columns a declaration makes auto-increment.
 package autoincrement
 
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaprep"
 )
 
 // Declared reports whether field declares an auto-increment column: AutoInc,
@@ -27,4 +28,11 @@ func SerialType(declared string) bool {
 	default:
 		return false
 	}
+}
+
+// DeclaredOn reports whether field builds an auto-increment column on
+// dialect: what [Declared] reports, or a serial type the target writes as its
+// own auto-increment integer ([schemaprep.SerialWritesAutoIncrement]).
+func DeclaredOn(field schemamodel.Field, dialect string) bool {
+	return Declared(field) || schemaprep.SerialWritesAutoIncrement(field, dialect)
 }

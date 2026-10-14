@@ -86,6 +86,8 @@ The SQLite renderer and planner support:
 - Views without `WITH CHECK OPTION`, and row-level triggers (SQLite has no
   statement-level triggers).
 
+A `SERIAL` key is written as `INTEGER PRIMARY KEY`, the rowid, which numbers
+rows without `AUTOINCREMENT`; declare `auto_increment` to get the keyword.
 A single-column `INTEGER` primary key on a table with a rowid is the rowid
 alias, and SQLite stores no `NULL` in it whether or not it says `NOT NULL`. The
 two spellings are one table, so a comparison between them plans nothing. Any
