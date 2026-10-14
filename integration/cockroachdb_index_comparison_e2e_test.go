@@ -160,3 +160,45 @@ func writeCockroachIndexSchema(c *qt.C, name, content string) string {
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 	return path
 }
+
+// TestCockroachDBUniqueIndexReadE2E_HappyPath describes a CockroachDB
+// database whose unique indexes have descending keys, and applies the
+// description to an empty database.
+//
+// CockroachDB lists a unique index in pg_constraint as a UNIQUE constraint.
+// Measured on master against v26.3.2, the description wrote
+// `CONSTRAINT "t_a" UNIQUE ("a")` for `CREATE UNIQUE INDEX t_a ON t (a DESC)`,
+// so the database built from it held an ascending key. A unique key without a
+// direction is the control: it is still described as a constraint.
+func TestCockroachDBUniqueIndexReadE2E_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+	defer cancel()
+	sourceURL := newCockroachIndexDatabase(c, ctx, "ptah_uq_src")
+	targetURL := newCockroachIndexDatabase(c, ctx, "ptah_uq_dst")
+	source := writeCockroachIndexSchema(c, "source.sql", cockroachIndexTable+
+		"CREATE UNIQUE INDEX t_a ON t (a DESC);\nCREATE UNIQUE INDEX t_ab ON t (a, b DESC);\n"+
+		"CREATE UNIQUE INDEX t_b ON t (b);\n")
+	created, createdErr, err := runPtahSplitStreams(ctx, []string{
+		"schema", "apply", "--schema-file", source, "--db-url", sourceURL, "--auto-approve",
+	})
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", created, createdErr))
+
+	read, readErr, err := runPtahSplitStreams(ctx, []string{"db", "read", "--db-url", sourceURL})
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", readErr))
+	c.Assert(read, qt.Contains, `CREATE UNIQUE INDEX IF NOT EXISTS "t_a" ON "t" ("a" DESC);`)
+	c.Assert(read, qt.Contains, `CREATE UNIQUE INDEX IF NOT EXISTS "t_ab" ON "t" ("a", "b" DESC);`)
+	c.Assert(read, qt.Contains, `CONSTRAINT "t_b" UNIQUE ("b")`)
+	described := writeCockroachIndexSchema(c, "described.sql", read)
+
+	applied, appliedErr, err := runPtahSplitStreams(ctx, []string{
+		"schema", "apply", "--schema-file", described, "--db-url", targetURL, "--auto-approve",
+	})
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied, appliedErr))
+
+	compared, comparedErr, err := runPtahSplitStreams(ctx, []string{
+		"schema", "apply", "--schema-file", source, "--db-url", targetURL, "--auto-approve",
+	})
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", compared, comparedErr))
+	c.Assert(compared, qt.Equals, "Schema is synced, no changes to be made.\n")
+}

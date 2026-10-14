@@ -2418,6 +2418,9 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			constraint.Match = postgresMatchFromDefinition(constraintDefinition)
 		}
 		constraint.NotValid = postgresNotValidFromDefinition(constraintDefinition)
+		if cockroachUniqueIndexOnly(r.dialect, constraint.Type, constraintDefinition) {
+			continue
+		}
 
 		constraints = append(constraints, constraint)
 	}
@@ -2426,6 +2429,39 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 	}
 
 	return constraints, nil
+}
+
+// cockroachUniqueIndexOnly reports whether a UNIQUE constraint CockroachDB
+// reports is a unique index that only CREATE UNIQUE INDEX can describe.
+//
+// CockroachDB lists every unique index in pg_constraint as a UNIQUE
+// constraint, and its definition names each key's direction: measured on
+// v26.3.2, `CREATE UNIQUE INDEX t_ab ON t (a, b DESC)` reports
+// `UNIQUE (a ASC, b DESC)`. A common constraint carries no key direction, so a
+// description of that constraint wrote `CONSTRAINT "t_ab" UNIQUE ("a", "b")`
+// and dropped the index it stands for, and the database it built held an
+// ascending key. Left out of the constraints, the key is read with the index,
+// which keeps each key's direction. A key without a direction still reads as
+// a constraint: CockroachDB builds both declarations alike.
+func cockroachUniqueIndexOnly(dialect, constraintType, definition string) bool {
+	if dialect != platform.CockroachDB || constraintType != "UNIQUE" {
+		return false
+	}
+	trimmed := strings.TrimSpace(definition)
+	if !strings.HasPrefix(strings.ToUpper(trimmed), "UNIQUE") {
+		return false
+	}
+	keys := strings.TrimSpace(trimmed[len("UNIQUE"):])
+	end := closingParenthesis(keys)
+	if !strings.HasPrefix(keys, "(") || end < 0 {
+		return false
+	}
+	for _, key := range splitPostgresIndexColumns(keys[1:end]) {
+		if strings.HasSuffix(strings.ToUpper(strings.TrimSpace(key)), " DESC") {
+			return true
+		}
+	}
+	return false
 }
 
 // postgresNotValidFromDefinition reports whether pg_get_constraintdef ends a
