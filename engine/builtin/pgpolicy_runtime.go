@@ -10,10 +10,9 @@ import (
 // without the PostgreSQL target importing them. Its rendering joins the
 // family's composition in [ownersFor].
 //
-// No reader or source produces a policy or table-state value yet, so a
-// comparison, a plan or a render reaches these services only with values a
-// caller built itself; the common row-level security path still renders what a
-// declaration asks for.
+// The PostgreSQL-family reader and every source (Go annotations, YAML, HCL and
+// SQL) produce its policy and table-state values, so comparison, planning and
+// rendering of row-level security run through these services.
 func pgpolicyProvider() engine.Provider {
 	return pgpolicyprovider.Provider()
 }
