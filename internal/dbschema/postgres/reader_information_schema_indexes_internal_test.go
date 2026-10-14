@@ -166,3 +166,33 @@ func indexNamed(indexes []catalog.Index, name string) *catalog.Index {
 	}
 	return nil
 }
+
+// TestInformationSchemaKeyOrdering reads each spelling of column_ordering the
+// emulator behind PGAdapter v0.56.1 reports. A NULLS clause that contradicts
+// the direction's default is the one recorded; a clause that agrees with it
+// is never reported, and is not recorded if a server reports one.
+func TestInformationSchemaKeyOrdering(t *testing.T) {
+	tests := []struct {
+		ordering  string
+		wantDesc  bool
+		wantNulls string
+	}{
+		{ordering: "ASC", wantDesc: false, wantNulls: ""},
+		{ordering: "DESC", wantDesc: true, wantNulls: ""},
+		{ordering: "ASC NULLS FIRST", wantDesc: false, wantNulls: catalog.NullsOrderFirst},
+		{ordering: "DESC NULLS LAST", wantDesc: true, wantNulls: catalog.NullsOrderLast},
+		{ordering: "ASC NULLS LAST", wantDesc: false, wantNulls: ""},
+		{ordering: "desc nulls first", wantDesc: true, wantNulls: ""},
+		{ordering: "", wantDesc: false, wantNulls: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.ordering, func(t *testing.T) {
+			c := qt.New(t)
+
+			desc, nulls := informationSchemaKeyOrdering(test.ordering)
+
+			c.Assert(desc, qt.Equals, test.wantDesc)
+			c.Assert(nulls, qt.Equals, test.wantNulls)
+		})
+	}
+}

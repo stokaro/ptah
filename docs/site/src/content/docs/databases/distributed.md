@@ -77,6 +77,10 @@ matching preset automatically.
   columns, advisory locks, and concurrent indexes. Foreign key actions are
   limited to `ON DELETE NO ACTION` or `CASCADE`; `ON UPDATE` fails before
   rendering.
+  An index is compared by its uniqueness, its keys (column, direction and
+  NULLS ordering) and its `STORING` columns, and a change rebuilds it. Spanner
+  refuses an access method, an operator class and storage parameters in
+  `CREATE INDEX`, so none of them is compared.
 
 Spanner refuses a schema statement inside an explicit transaction, so the
 migrator applies a migration body unwrapped and every statement commits as it

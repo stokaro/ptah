@@ -13,11 +13,15 @@ import (
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/engine"
+	"ptah.run/internal/spannercomparison"
 )
 
 // The Spanner row deletion policy is a table facet, and a change stream is
 // state the read records and does not describe.
 func registerSpannerServices(provider *engine.Provider, target string) {
+	// The shared comparison reads a Spanner index's whole definition through
+	// Spanner's own rules.
+	provider.Targets[0].Comparison.Indexes = spannercomparison.Rules().Indexes
 	provider.Annotations = append(provider.Annotations, spannersource.Annotations())
 	provider.YAML = append(provider.YAML, spannersource.YAML())
 	provider.SQL = append(provider.SQL, spannersource.SQL())

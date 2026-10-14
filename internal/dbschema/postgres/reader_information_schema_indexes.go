@@ -120,10 +120,35 @@ func addInformationSchemaIndexColumn(
 		return
 	}
 	index.Columns = append(index.Columns, columnName)
-	index.Parts = append(index.Parts, catalog.IndexPart{
-		Name: columnName,
-		Desc: strings.EqualFold(strings.TrimSpace(ordering.String), "DESC"),
-	})
+	desc, nullsOrder := informationSchemaKeyOrdering(ordering.String)
+	index.Parts = append(index.Parts, catalog.IndexPart{Name: columnName, Desc: desc, NullsOrder: nullsOrder})
+}
+
+// informationSchemaKeyOrdering reads a key's direction and NULLS ordering out
+// of index_columns.column_ordering.
+//
+// Spanner spells the ordering a key was built with, and writes a NULLS clause
+// only where it contradicts the direction's default, as PostgreSQL does:
+// measured on the emulator behind PGAdapter v0.56.1, `(b ASC NULLS LAST)`
+// reports ASC, `(b DESC NULLS LAST)` reports DESC NULLS LAST and
+// `(b ASC NULLS FIRST)` reports ASC NULLS FIRST. Compared with DESC alone,
+// the last two read as plain ascending keys. The NULLS ordering is recorded
+// when the catalog states one that contradicts the default, which is the form
+// the PostgreSQL reader records.
+func informationSchemaKeyOrdering(ordering string) (desc bool, nullsOrder string) {
+	words := strings.Fields(strings.ToUpper(ordering))
+	desc = len(words) > 0 && words[0] == "DESC"
+	if len(words) != 3 || words[1] != "NULLS" {
+		return desc, ""
+	}
+	switch {
+	case words[2] == catalog.NullsOrderFirst && !desc:
+		return desc, catalog.NullsOrderFirst
+	case words[2] == catalog.NullsOrderLast && desc:
+		return desc, catalog.NullsOrderLast
+	default:
+		return desc, ""
+	}
 }
 
 // informationSchemaIndexDefinition writes the DDL the catalog described, the
@@ -136,6 +161,9 @@ func informationSchemaIndexDefinition(index catalog.Index) string {
 		spelled := part.Name
 		if part.Desc {
 			spelled += " DESC"
+		}
+		if part.NullsOrder != "" {
+			spelled += " NULLS " + part.NullsOrder
 		}
 		parts = append(parts, spelled)
 	}
