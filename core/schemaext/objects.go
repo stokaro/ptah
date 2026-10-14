@@ -135,16 +135,27 @@ func (o Objects) ForParent(parent objectidentity.ID) Objects {
 
 // Merge combines independently captured objects and refuses duplicate identities.
 // Both inputs and the returned collection retain immutable snapshot ownership.
+// Where other repeats several identities, the refusal names the first in
+// [CompareRefs] order, so one input is refused with one message.
 func (o Objects) Merge(other Objects) (Objects, error) {
 	result := Objects{values: make(map[objectidentity.Key]Object, len(o.values)+len(other.values))}
 	maps.Copy(result.values, o.values)
-	for key, value := range other.values {
+	for _, value := range other.ordered() {
+		key := value.Ref.Key()
 		if _, exists := result.values[key]; exists {
 			return Objects{}, fmt.Errorf("%w: object %s", ErrDuplicate, value.Ref)
 		}
 		result.values[key] = value
 	}
 	return result, nil
+}
+
+// ordered returns the collection's stored objects in [CompareRefs] order,
+// without cloning them.
+func (o Objects) ordered() []Object {
+	result := slices.Collect(maps.Values(o.values))
+	slices.SortFunc(result, func(a, b Object) int { return CompareRefs(a.Ref, b.Ref) })
+	return result
 }
 
 // Without returns a new collection without ref. It does not infer cascade rules.

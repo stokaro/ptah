@@ -78,11 +78,13 @@ func (o Objects) Declare(object Object) (Objects, error) {
 
 // MergeDeclarations combines independently captured declarations, as
 // [Objects.Merge] does, under the rule [Objects.Declare] applies to an
-// identity both hold.
+// identity both hold. Where several identities both hold are refused, the
+// refusal names the first in [CompareRefs] order.
 func (o Objects) MergeDeclarations(other Objects) (Objects, error) {
 	result := Objects{values: make(map[objectidentity.Key]Object, len(o.values)+len(other.values))}
 	maps.Copy(result.values, o.values)
-	for key, value := range other.values {
+	for _, value := range other.ordered() {
+		key := value.Ref.Key()
 		if held, exists := result.values[key]; exists {
 			combined, err := combineDeclaration(held, value)
 			if err != nil {
