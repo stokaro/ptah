@@ -586,7 +586,8 @@ PostgreSQL exclusion constraints are independently named
 `pgtable.DesiredExclusion` and `ObservedExclusion` objects. `ExclusionRef`
 includes the parent table, so equal constraint names on different tables remain
 distinct. Common constraint structs and constraint AST nodes accept only
-PRIMARY KEY, UNIQUE, FOREIGN KEY and CHECK.
+PRIMARY KEY, UNIQUE, FOREIGN KEY and CHECK. `SupportsExclusion` reports the
+targets the owner creates the constraint on, which is PostgreSQL alone.
 
 `ExclusionService` converts, compares, plans and reverses captured batches.
 A definition change uses a transactional drop and creation; a comment-only
