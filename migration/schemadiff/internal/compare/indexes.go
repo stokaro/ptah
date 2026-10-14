@@ -1138,10 +1138,9 @@ func indexDefinitionsChanged(
 //
 // On a target whose preset has [capability.IndexCoveringColumns], Ptah renders
 // the payload and the reader reports it, so the two lists are compared as the
-// PostgreSQL comparison compares them, order included. CockroachDB, YugabyteDB
-// and Spanner kept the name-only comparison for everything past the predicate,
-// so an index that only gained a payload compared equal and the database never
-// got it (stokaro/ptah#4112).
+// PostgreSQL comparison compares them, order included. It is asked before the
+// per-target comparison, so a target that compares nothing else past the
+// predicate still sees an index that only gained a payload (stokaro/ptah#4112).
 //
 // On a target without the key, the renderer refuses an index that declares a
 // payload, and the reader reports none. A declared payload is therefore a
