@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 640,
+    "shared-packages-name-dialects": 597,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -34,9 +34,6 @@
       "internal/dialectlexer": 12,
       "internal/foreignkeyscope": 4,
       "internal/indexbacking": 6,
-      "internal/lintdialect": 14,
-      "internal/lintkit": 2,
-      "internal/lintscan": 5,
       "internal/liquibaserun": 10,
       "internal/migrateclean": 42,
       "internal/migrationreplay": 1,
@@ -57,7 +54,6 @@
       "migration/internal/scratchdb": 10,
       "migration/internal/shadowdb": 1,
       "migration/internal/tableidentity": 1,
-      "migration/lint": 22,
       "migration/schemadiff": 10,
       "migration/schemadiff/internal/compare": 49,
       "migration/shadow": 3
