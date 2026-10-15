@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -263,7 +262,7 @@ func applyModifyColumn(
 	if err := refuseMySQLColumnCheckReference(replacement, columns, target); err != nil {
 		return err
 	}
-	if platform.NormalizeDialect(sourcePlatform) == platform.SQLServer {
+	if factsOf(sourcePlatform).columns.AlterColumnKeepsRest {
 		field.Type = replacement.Type
 		field.Nullable = replacement.Nullable
 		field.Collate = replacement.Collate
@@ -291,12 +290,7 @@ func applyModifyColumn(
 // constraint under the name the server gives the new key. A column without a
 // key of its own takes one.
 func (t alterTarget) keepColumnKey(database *schemamodel.Database, field, replacement *schemamodel.Field) {
-	switch platform.NormalizeDialect(t.sourcePlatform) {
-	case platform.MySQL, platform.MariaDB:
-	default:
-		return
-	}
-	if !field.Unique {
+	if !factsOf(t.sourcePlatform).indexNaming.UniqueIsIndex || !field.Unique {
 		return
 	}
 	if replacement.Unique {
@@ -322,7 +316,7 @@ func (t alterTarget) keepColumnKey(database *schemamodel.Database, field, replac
 // columns, the one written here included. The parser refuses the same CHECK in
 // CREATE TABLE, where the whole table is in the statement.
 func refuseMySQLColumnCheckReference(field schemamodel.Field, columns []string, target alterTarget) error {
-	if platform.NormalizeDialect(target.sourcePlatform) != platform.MySQL || field.Check == "" {
+	if !factsOf(target.sourcePlatform).columns.CheckOwnColumnOnly || field.Check == "" {
 		return nil
 	}
 	if other, found := mysqlcheck.OtherColumn(field.Name, field.Check, columns); found {

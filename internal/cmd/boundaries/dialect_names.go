@@ -310,9 +310,8 @@ func sharedPackageSet(loaded []*packages.Package, tracked, spellings map[string]
 // not counted, since nothing tells a name from a word there.
 //
 // Some false positives are known and counted: a string that equals a dialect
-// spelling and names something else. PostgreSQL's bootstrap superuser is the
-// role "postgres" (internal/sqlschema), and Liquibase names its databases with
-// short names that include several dialect spellings (internal/liquibaserun). The type checker cannot tell a role,
+// spelling and names something else: Liquibase names its databases with short
+// names that include several dialect spellings (internal/liquibaserun). The type checker cannot tell a role,
 // database or tool name from a dialect name, since all are strings. Each is
 // engine knowledge in shared code all the same.
 func dialectNameFindings(pkg *packages.Package, self string, identity dialectIdentity) []finding {

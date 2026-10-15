@@ -122,6 +122,9 @@ END;`,
 		// Oracle scanner mode, so a run that names Oracle is refused rather
 		// than run clean against a grammar nothing parsed (stokaro/ptah#1875).
 		Lint: descriptor.Lint{},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
 	}
 }
 

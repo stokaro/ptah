@@ -8,9 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/columnkey"
 	"ptah.run/internal/pgname"
 )
 
@@ -219,7 +217,7 @@ func numberedAddedColumnKey(field schemamodel.Field, target alterTarget) (schema
 	schema, table := splitQualifiedTable(target.qualified)
 	constraints := constraintNamesInSchema(target.databases, schema)
 	relations := pgname.RelationNames(target.databases, schema)
-	name, _ := columnkey.Name(platform.Postgres, table, field.Name, func(candidate string) bool {
+	name := pgname.Constraint(table, []string{field.Name}, "key", func(candidate string) bool {
 		return constraints.Taken(candidate) || relations.Taken(candidate)
 	})
 	if name == pgname.ColumnKey(table, field.Name) {
@@ -388,8 +386,7 @@ func (s *createdStatement) keys() []createdConstraint {
 		keys = append(keys, createdConstraint{
 			place: s.fieldPlaces[i],
 			derive: func(taken func(string) bool) string {
-				name, _ := columnkey.Name(platform.Postgres, s.table.Name, field.Name, taken)
-				return name
+				return pgname.Constraint(s.table.Name, []string{field.Name}, "key", taken)
 			},
 			keep: func(name string) {
 				if name != pgname.ColumnKey(s.table.Name, field.Name) {

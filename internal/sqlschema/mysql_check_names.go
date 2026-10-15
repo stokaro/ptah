@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlname"
 )
@@ -34,7 +34,7 @@ var ErrCheckNameTooLong = errors.New("the derived CHECK name is longer than the 
 // CHECK written on a column after the column: MariaDB does, measured on
 // 11.8.9, and keeps it apart from the CHECKs written on the table.
 func namesColumnChecksAfterColumns(sourcePlatform string) bool {
-	return platform.NormalizeDialect(sourcePlatform) == platform.MariaDB
+	return factsOf(sourcePlatform).checkNaming == descriptor.CheckNamingColumnOrConstraint
 }
 
 // isCheck reports whether a constraint of the model is a CHECK.
@@ -55,8 +55,8 @@ func nameCreatedMySQLFamilyChecks(
 	database, base *schemamodel.Database, table schemamodel.Table, checks []elementSite, sourcePlatform string,
 ) error {
 	databases := []*schemamodel.Database{database, base}
-	switch platform.NormalizeDialect(sourcePlatform) {
-	case platform.MySQL:
+	switch factsOf(sourcePlatform).checkNaming {
+	case descriptor.CheckNamingTableNumbered:
 		n := uint32(1)
 		for _, site := range checks {
 			name := checkSites().name(database, site)
@@ -70,7 +70,7 @@ func nameCreatedMySQLFamilyChecks(
 			}
 			*name = derived
 		}
-	case platform.MariaDB:
+	case descriptor.CheckNamingColumnOrConstraint:
 		for _, site := range checks {
 			if site.field != noPosition && database.Fields[site.field].CheckName == "" {
 				database.Fields[site.field].CheckName = database.Fields[site.field].Name
@@ -100,8 +100,8 @@ func nameAddedMySQLFamilyCheck(name *string, column *schemamodel.Field, target a
 		return nil
 	}
 	table, statement := *target.table, target.statement
-	switch platform.NormalizeDialect(target.sourcePlatform) {
-	case platform.MySQL:
+	switch factsOf(target.sourcePlatform).checkNaming {
+	case descriptor.CheckNamingTableNumbered:
 		derived := mysqlname.Check(table.Name, statement.nextCheck)
 		statement.nextCheck++
 		// First: the CHECK the later drop takes still holds the name in the
@@ -116,7 +116,7 @@ func nameAddedMySQLFamilyCheck(name *string, column *schemamodel.Field, target a
 			return duplicateMySQLCheckName(derived, table)
 		}
 		*name = derived
-	case platform.MariaDB:
+	case descriptor.CheckNamingColumnOrConstraint:
 		if column != nil {
 			*name = column.Name
 			return nil

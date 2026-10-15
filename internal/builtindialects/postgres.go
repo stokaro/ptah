@@ -117,5 +117,12 @@ func postgres() descriptor.Dialect {
 			TypeRestatements: "pgtype",
 			AtlasAnalyzer:    "PG",
 		},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
+		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
+		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
+		Columns:          descriptor.Columns{IdentityNotNull: true},
+		Statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: "plpgsql"},
 	}
 }

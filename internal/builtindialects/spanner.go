@@ -88,6 +88,11 @@ func spanner() descriptor.Dialect {
 
 		// Lint: what migration lint reads.
 		Lint: descriptor.Lint{Analyzed: true},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
+		Names:       descriptor.Names{PublicKeyword: true},
+		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
 	}
 }
 

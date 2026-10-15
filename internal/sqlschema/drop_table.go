@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -142,7 +141,7 @@ func tableReference(target alterTarget, dropped func(structName string) bool) st
 			}
 		}
 	}
-	if !platform.IsPostgresFamily(target.sourcePlatform) {
+	if !factsOf(target.sourcePlatform).statements.ViewsBlockDropTable {
 		return ""
 	}
 	for _, database := range target.databases {

@@ -115,6 +115,10 @@ END`,
 			NotNullConsequence: "SQL Server scans the table once to check every row and a row holding NULL fails the statement " +
 				"(Msg 515, Cannot insert the value NULL into column); a DEFAULT constraint applies to new rows only",
 		},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names:   descriptor.Names{Lookup: "unicode_case_insensitive"},
+		Columns: descriptor.Columns{AlterColumnKeepsRest: true},
 	}
 }
 
