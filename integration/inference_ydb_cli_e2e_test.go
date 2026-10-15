@@ -434,12 +434,15 @@ func buildYDBGeneration(c *qt.C, ctx context.Context, specPath, dbURL, runID str
 // vector_kmeans_tree index and exhaustively, and reports both under the
 // setting that decides what the indexed search reaches.
 //
-// No floor is set on either number. The index is approximate by design and
-// its clusters come from a k-means build over five rows, so which cluster a
-// query descends into differs between builds: measured, the same corpus agreed
-// with exhaustive search on 1.000 of results on one build and 0.667 on the
-// next. What is deterministic is that both searches ran and what they ran
-// under.
+// No floor is set on either number, and no case requires a key, since a
+// required key the search does not return is a blocking finding. The index is
+// approximate by design and its clusters come from a k-means build over five
+// rows, so which cluster a query descends into differs between builds:
+// measured, the same corpus agreed with exhaustive search on 1.000 of results
+// on one build and 0.667 on the next, and on 26.2 the index once left out the
+// billing key. What is deterministic is that both searches ran and what they
+// ran under. internal/embedeval and inference_evaluate_e2e_test.go cover the
+// refusal of a missed required key.
 func assertYDBEvaluationFindsTheCorpus(c *qt.C, ctx context.Context, specPath, dbURL string) {
 	c.Helper()
 	corpus := writeCorpus(c, `
@@ -449,15 +452,12 @@ default_k: 2
 cases:
   - id: pricing
     query: pricing
-    required: ["1"]
     relevant: {"1": 3}
   - id: support
     query: support
-    required: ["2"]
     relevant: {"2": 3}
   - id: billing
     query: billing
-    required: ["3"]
     relevant: {"3": 3}
 `)
 	output := runInference(c, ctx, "evaluate",
