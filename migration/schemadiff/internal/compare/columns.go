@@ -827,7 +827,7 @@ func columnTypeChange(
 // A declared type without a schema, or with a modifier list, is left to the
 // comparison below, which is what that comparison is for.
 func sameQualifiedTypeName(declared, reported, udtSchema, dialect string) bool {
-	if !isPostgresFamilyDialect(dialect) {
+	if !comparisonOf(dialect).QualifiedTypeNames {
 		return false
 	}
 	declared, reported = strings.TrimSpace(declared), strings.TrimSpace(reported)
@@ -858,15 +858,6 @@ func splitArrayDepth(typeName string) (base string, depth int) {
 			return typeName, depth
 		}
 		typeName, depth = trimmed, depth+1
-	}
-}
-
-func isPostgresFamilyDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return true
-	default:
-		return false
 	}
 }
 
@@ -1485,7 +1476,7 @@ func normalizeSQLServerGeneratedExpression(expression string) string {
 
 func normalizeCatalogGeneratedExpression(expression, dialect string) string {
 	var b strings.Builder
-	mysqlFamily := isMySQLFamilyDialect(dialect)
+	mysqlFamily := comparisonOf(dialect).DoubleQuotedStrings
 	for i := 0; i < len(expression); i++ {
 		ch := expression[i]
 		if ch == '\'' || (mysqlFamily && ch == '"') {

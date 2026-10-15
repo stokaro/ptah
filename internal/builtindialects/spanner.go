@@ -109,6 +109,7 @@ func spanner() descriptor.Dialect {
 		Comparison: descriptor.Comparison{
 			ForeignKeyBackingIndex: true,
 			RolePasswords:          true,
+			RoutineTypeAliases:     "pg-aliases",
 		},
 	}
 }

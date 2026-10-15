@@ -2,18 +2,7 @@ package compare
 
 import (
 	"strings"
-
-	"ptah.run/core/platform"
 )
-
-func isMySQLFamilyDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
-}
 
 func replaceSQLFunctionOutsideSingleQuotedSQL(value, old, replacement string) string {
 	return replaceOutsideSingleQuotedSQL(value, old, replacement, func(value string, start int) bool {
@@ -52,7 +41,7 @@ func replaceOutsideSingleQuotedSQL(
 
 func normalizeSQLCaseAndIdentifierQuotes(value, dialect string) string {
 	var b strings.Builder
-	mysqlFamily := isMySQLFamilyDialect(dialect)
+	mysqlFamily := comparisonOf(dialect).DoubleQuotedStrings
 	for i := 0; i < len(value); i++ {
 		switch ch := value[i]; {
 		case ch == '\'' || (mysqlFamily && ch == '"'):

@@ -138,6 +138,8 @@ func cockroachDB() descriptor.Dialect {
 			ProbeViewsInSchema:    true,
 			RewritesRoutineBodies: true,
 			RolePasswords:         true,
+			RoutineTypeAliases:    "pg-aliases",
+			QualifiedTypeNames:    true,
 		},
 	}
 }

@@ -42,6 +42,36 @@ type Comparison struct {
 	// RolePasswords reports that the catalog can say whether a role has a
 	// password, which a comparison that sets one must establish first.
 	RolePasswords bool `json:"role_passwords,omitempty"`
+	// DoubleQuotedStrings reports that a double-quoted token is a string
+	// literal, as it is under MySQL's default SQL mode, rather than a name.
+	DoubleQuotedStrings bool `json:"double_quoted_strings,omitempty"`
+	// RestrictIsNoAction reports that a RESTRICT referential action means
+	// what NO ACTION does, as InnoDB implements both.
+	RestrictIsNoAction bool `json:"restrict_is_no_action,omitempty"`
+	// PrimaryKeyName is the name the server gives every primary key, such as
+	// "PRIMARY". Empty means a primary key keeps the name it is declared
+	// with, and one declared with none is named after its table.
+	PrimaryKeyName string `json:"primary_key_name,omitempty"`
+	// ConstraintComments reports that a constraint carries a comment the
+	// catalog reports, so a changed comment is a changed constraint.
+	ConstraintComments bool `json:"constraint_comments,omitempty"`
+	// RoutineNamesFold reports that the server folds the case of a routine
+	// name it is given, so two spellings that fold together name one routine.
+	RoutineNamesFold bool `json:"routine_names_fold,omitempty"`
+	// RoutineTypeAliases is the alias table a routine's parameter and return
+	// types are compared through: "mysqlroutine" (internal/mysqlroutine's
+	// synonyms) or "pg-aliases" (the type aliases PostgreSQL accepts and
+	// reports back under another name), or empty for none.
+	RoutineTypeAliases string `json:"routine_type_aliases,omitempty"`
+	// ArgumentModeAfterName reports that a routine argument's mode follows
+	// its name, as PL/SQL writes `p IN NUMBER`.
+	ArgumentModeAfterName bool `json:"argument_mode_after_name,omitempty"`
+	// ViewPredicatesAsIntegers reports that the server stores a view's
+	// boolean predicate as an integer comparison.
+	ViewPredicatesAsIntegers bool `json:"view_predicates_as_integers,omitempty"`
+	// QualifiedTypeNames reports that the catalog names a column of a
+	// schema-qualified user type by its type schema and name.
+	QualifiedTypeNames bool `json:"qualified_type_names,omitempty"`
 	// DefaultGeneratedKind is the storage a generated column declared
 	// without one gets, such as "STORED". Empty means it has no default.
 	DefaultGeneratedKind string `json:"default_generated_kind,omitempty"`

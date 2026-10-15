@@ -7,7 +7,6 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
@@ -302,7 +301,7 @@ func tableMapIdentity(schema, name, dialect string, semantics identifier.Semanti
 // it here can redirect an authorized DROP from a virtual table to a distinct
 // ordinary near-twin. Other dialects retain the established canonical spelling.
 func tableDiffName(schema, name, dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.SQLite {
+	if comparisonOf(dialect).VerbatimTableNames {
 		return tableref.CanonicalExact(schema, name)
 	}
 	return catalog.QualifyTableName(schema, name)

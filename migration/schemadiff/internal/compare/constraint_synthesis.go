@@ -316,8 +316,8 @@ func tablePrimaryKeyConstraintName(
 		return name
 	}
 
-	if isMySQLFamily(dialect) {
-		return "PRIMARY"
+	if name := comparisonOf(dialect).PrimaryKeyName; name != "" {
+		return name
 	}
 	return table.Name + "_pkey"
 }

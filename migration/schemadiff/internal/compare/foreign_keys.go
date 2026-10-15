@@ -171,21 +171,10 @@ func normalizeReferentialAction(action, dialect string) string {
 	if normalized == "" {
 		return "NO ACTION"
 	}
-	if normalized == "RESTRICT" && isMySQLFamily(dialect) {
+	if normalized == "RESTRICT" && comparisonOf(dialect).RestrictIsNoAction {
 		return "NO ACTION"
 	}
 	return normalized
-}
-
-// isMySQLFamily reports whether the dialect is MySQL or MariaDB, which share the
-// InnoDB referential-action semantics (RESTRICT == NO ACTION).
-func isMySQLFamily(dialect string) bool {
-	switch strings.ToLower(strings.TrimSpace(dialect)) {
-	case "mysql", "mariadb":
-		return true
-	default:
-		return false
-	}
 }
 
 // getStringValue safely extracts string value from a pointer, returning empty string if nil

@@ -142,6 +142,8 @@ func postgres() descriptor.Dialect {
 			ExpressionProbes:     "pg-catalog",
 			RolePasswords:        true,
 			DefaultGeneratedKind: "STORED",
+			RoutineTypeAliases:   "pg-aliases",
+			QualifiedTypeNames:   true,
 		},
 	}
 }

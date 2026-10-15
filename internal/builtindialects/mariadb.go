@@ -139,9 +139,16 @@ func mariaDB() descriptor.Dialect {
 		IndexesBeforeForeignKeys: true,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
-			ForeignKeysOutside:     true,
-			ForeignKeyBackingIndex: true,
-			DefaultGeneratedKind:   "VIRTUAL",
+			ForeignKeysOutside:       true,
+			ForeignKeyBackingIndex:   true,
+			DefaultGeneratedKind:     "VIRTUAL",
+			DoubleQuotedStrings:      true,
+			RestrictIsNoAction:       true,
+			PrimaryKeyName:           "PRIMARY",
+			ConstraintComments:       true,
+			RoutineNamesFold:         true,
+			RoutineTypeAliases:       "mysqlroutine",
+			ViewPredicatesAsIntegers: true,
 		},
 	}
 }

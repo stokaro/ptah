@@ -148,9 +148,16 @@ func mysql() descriptor.Dialect {
 		// database is the schema, so a key into another database is accepted
 		// and read back with that database's name (stokaro/ptah#3891).
 		Comparison: descriptor.Comparison{
-			ForeignKeysOutside:     true,
-			ForeignKeyBackingIndex: true,
-			DefaultGeneratedKind:   "VIRTUAL",
+			ForeignKeysOutside:       true,
+			ForeignKeyBackingIndex:   true,
+			DefaultGeneratedKind:     "VIRTUAL",
+			DoubleQuotedStrings:      true,
+			RestrictIsNoAction:       true,
+			PrimaryKeyName:           "PRIMARY",
+			ConstraintComments:       true,
+			RoutineNamesFold:         true,
+			RoutineTypeAliases:       "mysqlroutine",
+			ViewPredicatesAsIntegers: true,
 		},
 	}
 }

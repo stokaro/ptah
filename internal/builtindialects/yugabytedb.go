@@ -124,8 +124,10 @@ func yugabyteDB() descriptor.Dialect {
 		GeneratedColumnDefault: "STORED",
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
-			ExpressionProbes: "pg-catalog",
-			RolePasswords:    true,
+			ExpressionProbes:   "pg-catalog",
+			RolePasswords:      true,
+			RoutineTypeAliases: "pg-aliases",
+			QualifiedTypeNames: true,
 		},
 	}
 }
