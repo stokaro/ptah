@@ -38,6 +38,10 @@ func TestRegister_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	before := platform.Dialects()
 	builtins := len(before.Dialects())
+	// Ask before registering, so that the answers derived from the earlier
+	// registry exist and have to give way to the new one.
+	c.Assert(platform.IsPostgresFamily("acmedb"), qt.IsFalse)
+	c.Assert(identifier.ForDialect("acmedb").DefaultSchema, qt.Equals, "")
 
 	err := platform.Register(described("acme", platform.Postgres, "acmedb"))
 
@@ -134,7 +138,8 @@ func TestRegister_Concurrently(t *testing.T) {
 		})
 		group.Go(func() {
 			_ = platform.NormalizeDialect(fmt.Sprintf("concurrent-%d", i))
-			_ = identifier.ForDialect(platform.Postgres)
+			_ = platform.IsPostgresFamily(fmt.Sprintf("concurrent-%d", i))
+			_ = identifier.ForDialect(fmt.Sprintf("concurrent-%d", i))
 		})
 	}
 
@@ -143,5 +148,6 @@ func TestRegister_Concurrently(t *testing.T) {
 	c.Assert(errs, qt.DeepEquals, make([]error, 16))
 	for i := range errs {
 		c.Assert(platform.NormalizeDialect(fmt.Sprintf("concurrent-%d", i)), qt.Equals, fmt.Sprintf("concurrent-%d", i))
+		c.Assert(identifier.ForDialect(fmt.Sprintf("concurrent-%d", i)).DefaultSchema, qt.Equals, "app")
 	}
 }
