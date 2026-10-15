@@ -4,27 +4,33 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/sqlident"
 )
 
 // InlineEnumDialect reports whether dialect builds an enum column inline,
-// with no standalone enum type: MySQL and MariaDB as an ENUM column type,
+// with no standalone enum type, as its descriptor states
+// (descriptor.Preparation.Enums): MySQL and MariaDB as an ENUM column type,
 // ClickHouse as an Enum8 or Enum16 column type, and SQLite, SQL Server,
 // Oracle and Spanner as a text column with a CHECK.
 //
 // YDB has no enum, inline or standalone, and the renderer and the planner
-// refuse one; it is classed with the standalone dialects to agree with
-// [EmitsStandaloneEnumDefinitions], which keeps the enum a declaration of its
-// own for that refusal to meet.
+// refuse one; its descriptor classes it with the standalone dialects to agree
+// with [EmitsStandaloneEnumDefinitions], which keeps the enum a declaration of
+// its own for that refusal to meet.
 func InlineEnumDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.SQLServer, platform.Oracle, platform.Spanner:
-		return true
+	return inlineEnumStyle(dialect) != ""
+}
+
+// inlineEnumStyle is the inline enum style dialect's descriptor states, or ""
+// for a standalone enum and for a style this package does not build.
+func inlineEnumStyle(dialect string) descriptor.EnumStyle {
+	switch style := describe(dialect).preparation.Enums; style {
+	case descriptor.EnumColumnType, descriptor.EnumNumbered, descriptor.EnumCheck:
+		return style
 	default:
-		return false
+		return ""
 	}
 }
 
@@ -92,6 +98,8 @@ func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dial
 	if !InlineEnumDialect(dialect) {
 		return fields
 	}
+	target := describe(dialect)
+	style := inlineEnumStyle(dialect)
 	lowered := append([]schemamodel.Field(nil), fields...)
 	for i := range lowered {
 		field := &lowered[i]
@@ -100,24 +108,23 @@ func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dial
 			continue
 		}
 		field.Enum = values
-		switch platform.NormalizeDialect(dialect) {
-		case platform.MySQL, platform.MariaDB:
-			field.Type = mysqlInlineEnumType(field.Enum)
-		case platform.ClickHouse:
+		switch style {
+		case descriptor.EnumColumnType:
+			field.Type = enumColumnType(field.Enum)
+		case descriptor.EnumNumbered:
 			field.Type = ClickHouseEnumType(field.Enum)
-		case platform.SQLite, platform.Spanner:
-			field.Type = "TEXT"
-			field.Check = inlineEnumCheck(*field, field.Name)
-		case platform.SQLServer:
-			field.Type = "NVARCHAR(255)"
-			field.Check = inlineEnumCheck(*field, "["+strings.ReplaceAll(field.Name, "]", "]]")+"]")
-		case platform.Oracle:
-			// Oracle refuses a CHECK whose spelling disagrees with the column
-			// it constrains, so the column is spelled by sqlident.Ident, which
-			// is what the renderer's escapeIdentifier and
-			// modelast.applyInlineEnumModel call for the same expression.
-			field.Type = "VARCHAR2(255)"
-			field.Check = inlineEnumCheck(*field, sqlident.Ident(platform.Oracle, field.Name))
+		case descriptor.EnumCheck:
+			// A dialect that refuses a CHECK whose spelling of the column
+			// disagrees with the column, as Oracle does, names it by
+			// sqlident.Ident, which is what the renderer and
+			// modelast.applyInlineEnumModel call for the same expression; SQL
+			// Server brackets it the same way.
+			column := field.Name
+			if target.preparation.EnumCheckQuotesColumn {
+				column = sqlident.Ident(target.name, field.Name)
+			}
+			field.Type = target.preparation.EnumCheckType
+			field.Check = inlineEnumCheck(*field, column)
 		}
 	}
 	return lowered
@@ -151,7 +158,9 @@ func ClickHouseEnumType(values []string) string {
 	return family + "(" + strings.Join(elements, ", ") + ")"
 }
 
-func mysqlInlineEnumType(values []string) string {
+// enumColumnType is the ENUM column type an enum with values is built as,
+// enum('a','b').
+func enumColumnType(values []string) string {
 	return "enum(" + strings.Join(quotedEnumValues(values), ",") + ")"
 }
 

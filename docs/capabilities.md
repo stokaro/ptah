@@ -285,20 +285,16 @@ validation. The renderer now reads the limit from the capability model, which is
 what makes the model load-bearing rather than decorative: it asks the question
 instead of carrying its own copy of the switch.
 
-`Exceeds` is not yet the only place the rule is **applied**. Two copies existed
-when the model was introduced. `engine/builtin` and
-`dbschema.validateSQLServerIdentifierNames` now both consume it. One copy
-remains in `internal/schemaprep`: `foreignKeyNameFits` and
-`foreignKeyNameWithSuffix` keep a three-arm switch because they *truncate* a
-generated name to fit rather than refusing it. The truncation needs a budget in
-the limit's unit, which `IdentifierLimit` does not expose today.
-
-Its predicate agrees with `capability.Identifiers`: compared against it over
-nine dialects and 16 name shapes chosen to straddle every boundary, 144
-verdicts, zero disagreements. So the cost of the remaining copy is drift, not a
-wrong answer today. Giving `IdentifierLimit` unit-aware truncation is what would
-retire it; until then, a further caller should ask `Exceeds` rather than add a
-copy.
+`Exceeds` is not the only place the rule is **applied**. `engine/builtin` and
+`dbschema.validateSQLServerIdentifierNames` consume it. `internal/schemaprep`
+reads the same limit from the dialect descriptor
+(`descriptor.Dialect.IdentifierLimit`): `foreignKeyNameFits` and
+`foreignKeyNameWithSuffix` *truncate* a generated name to fit rather than
+refusing it, and the truncation needs a budget in the limit's unit, which
+`IdentifierLimit` does not expose today. Both read one declaration, so no
+dialect switch is left to drift; giving `IdentifierLimit` unit-aware
+truncation would let the two share one function, and until then a further
+caller should ask `Exceeds` rather than add a copy.
 
 The other two values are read off the boolean set rather than declared beside
 it. `enum_inline_column` against `enum_custom_type`, and the three referenced-key

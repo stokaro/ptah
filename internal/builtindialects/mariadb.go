@@ -151,5 +151,13 @@ func mariaDB() descriptor.Dialect {
 			ViewPredicatesAsIntegers: true,
 			AutoIncrementFlag:        true,
 		},
+
+		// As MySQL.
+		Preparation: descriptor.Preparation{
+			Enums:                   descriptor.EnumColumnType,
+			SerialAutoIncrement:     true,
+			ForeignKeyNamespace:     descriptor.NamespaceDatabase,
+			ForeignKeyNamesFoldCase: true,
+		},
 	}
 }

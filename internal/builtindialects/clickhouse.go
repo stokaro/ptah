@@ -131,6 +131,11 @@ func clickHouse() descriptor.Dialect {
 		Comparison: descriptor.Comparison{
 			NullableTypes: true,
 		},
+
+		// An enum column is an Enum8, or an Enum16 past 127 values.
+		Preparation: descriptor.Preparation{
+			Enums: descriptor.EnumNumbered,
+		},
 	}
 }
 

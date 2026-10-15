@@ -160,6 +160,17 @@ func mysql() descriptor.Dialect {
 			ViewPredicatesAsIntegers: true,
 			AutoIncrementFlag:        true,
 		},
+
+		// An enum column is the ENUM column type, and a serial type is the
+		// integer with AUTO_INCREMENT: written as INT alone, a SERIAL key took
+		// no value of its own. A foreign key name is unique in the database
+		// and compared without regard to case.
+		Preparation: descriptor.Preparation{
+			Enums:                   descriptor.EnumColumnType,
+			SerialAutoIncrement:     true,
+			ForeignKeyNamespace:     descriptor.NamespaceDatabase,
+			ForeignKeyNamesFoldCase: true,
+		},
 	}
 }
 

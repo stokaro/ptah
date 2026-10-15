@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 )
@@ -177,11 +177,15 @@ type foreignKeyNameAllocation struct {
 	counts    map[string]int
 }
 
+// foreignKeyNameAllocationScope is the namespace a foreign key name of table
+// has to be unique in on targetPlatform, as its descriptor states
+// (descriptor.Preparation.ForeignKeyNamespace): the database on MySQL and
+// MariaDB, the schema on SQL Server and Spanner, the table elsewhere.
 func foreignKeyNameAllocationScope(table schemamodel.Table, targetPlatform string) string {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
+	switch describe(targetPlatform).preparation.ForeignKeyNamespace {
+	case descriptor.NamespaceDatabase:
 		return "database"
-	case platform.SQLServer, platform.Spanner:
+	case descriptor.NamespaceSchema:
 		schema := strings.TrimSpace(table.Schema)
 		if schema == "" {
 			schema = identifier.ForDialect(targetPlatform).DefaultSchema
@@ -333,13 +337,14 @@ func allocateForeignKeyName(
 	}
 }
 
+// foreignKeyNameReservationKey is name as two foreign key names compare on
+// targetPlatform: folded to lower case where its descriptor says names that
+// differ only in case collide (descriptor.Preparation.ForeignKeyNamesFoldCase).
 func foreignKeyNameReservationKey(name, targetPlatform string) string {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.Spanner:
+	if describe(targetPlatform).preparation.ForeignKeyNamesFoldCase {
 		return strings.ToLower(name)
-	default:
-		return name
 	}
+	return name
 }
 
 func generatedForeignKeyName(base, identity, targetPlatform string) string {
@@ -354,29 +359,30 @@ func foreignKeyNameHashSuffix(base, identity string) string {
 	return fmt.Sprintf("_%x", digest[:4])
 }
 
+// foreignKeyNameFits reports whether name is within targetPlatform's
+// identifier limit (descriptor.Dialect.IdentifierLimit), counted in the unit
+// the limit states. A dialect with no stated limit takes every name.
 func foreignKeyNameFits(name, targetPlatform string) bool {
-	switch {
-	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer,
-		platform.NormalizeDialect(targetPlatform) == platform.Spanner:
-		return len([]rune(name)) <= 128
-	case platform.IsPostgresFamily(targetPlatform):
-		return len(name) <= 63
-	case isMySQLFamilyTarget(targetPlatform):
-		return len([]rune(name)) <= 64
+	limit := describe(targetPlatform).identifiers
+	switch limit.Unit {
+	case "bytes":
+		return len(name) <= limit.Max
+	case "characters":
+		return len([]rune(name)) <= limit.Max
 	default:
 		return true
 	}
 }
 
+// foreignKeyNameWithSuffix appends suffix to base, truncating base so the
+// result is within targetPlatform's identifier limit.
 func foreignKeyNameWithSuffix(base, suffix, targetPlatform string) string {
-	switch {
-	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer,
-		platform.NormalizeDialect(targetPlatform) == platform.Spanner:
-		return truncateIdentifierCharacters(base, 128-len([]rune(suffix))) + suffix
-	case platform.IsPostgresFamily(targetPlatform):
-		return truncateIdentifierBytes(base, 63-len(suffix)) + suffix
-	case isMySQLFamilyTarget(targetPlatform):
-		return truncateIdentifierCharacters(base, 64-len([]rune(suffix))) + suffix
+	limit := describe(targetPlatform).identifiers
+	switch limit.Unit {
+	case "bytes":
+		return truncateIdentifierBytes(base, limit.Max-len(suffix)) + suffix
+	case "characters":
+		return truncateIdentifierCharacters(base, limit.Max-len([]rune(suffix))) + suffix
 	default:
 		return base + suffix
 	}
@@ -402,13 +408,4 @@ func truncateIdentifierCharacters(value string, maxCharacters int) string {
 		return value
 	}
 	return string(runes[:maxCharacters])
-}
-
-func isMySQLFamilyTarget(targetPlatform string) bool {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
 }

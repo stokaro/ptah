@@ -4773,6 +4773,8 @@ data only. Beside its names and aliases, protocol family, default schema,
 identifier rules and placeholder style, it carries what shared packages read
 in place of a dialect's name:
 
+- `Preparation`: how a declared schema is prepared for the engine: enum
+  columns, rewritten types, and the names of unnamed constraints.
 - `Query`: how `core/query` spells what engines spell differently.
 - `Scripts`: how a script is cut into statements.
 - `Literals`: how `migration/datadiff` writes a value as a literal.

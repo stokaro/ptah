@@ -129,5 +129,10 @@ func yugabyteDB() descriptor.Dialect {
 			RoutineTypeAliases: "pg-aliases",
 			QualifiedTypeNames: true,
 		},
+
+		// A bare type name PostgreSQL defines is the built-in type here too.
+		Preparation: descriptor.Preparation{
+			PostgresBuiltInTypes: true,
+		},
 	}
 }

@@ -112,6 +112,18 @@ func spanner() descriptor.Dialect {
 			RoutineTypeAliases:     "pg-aliases",
 			SingleStringType:       true,
 		},
+
+		// The PostgreSQL interface has no enum type, so an enum column is TEXT
+		// with a CHECK. A foreign key name is unique in its schema and compared
+		// without regard to case. A bare type name PostgreSQL defines is the
+		// built-in type.
+		Preparation: descriptor.Preparation{
+			Enums:                   descriptor.EnumCheck,
+			EnumCheckType:           "TEXT",
+			ForeignKeyNamespace:     descriptor.NamespaceSchema,
+			ForeignKeyNamesFoldCase: true,
+			PostgresBuiltInTypes:    true,
+		},
 	}
 }
 

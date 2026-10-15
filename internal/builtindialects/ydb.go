@@ -139,6 +139,12 @@ func ydb() descriptor.Dialect {
 		// YDB has no UNIQUE constraint (`UNIQUE (a)` in CREATE TABLE is a
 		// parse error), so a unique index backs nothing.
 		Comparison: descriptor.Comparison{UniqueIndexStandsAlone: true},
+
+		// YDB has no enum, inline or standalone, so an enum stays a declaration
+		// of its own for the renderer to refuse by name. Its SERIAL types are
+		// its own: the YDB type map writes them as Serial, BigSerial and
+		// SmallSerial where capability.SerialColumns holds, so they are kept.
+		Preparation: descriptor.Preparation{},
 	}
 }
 

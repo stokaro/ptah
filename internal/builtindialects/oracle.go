@@ -137,6 +137,15 @@ END;`,
 			ArgumentModeAfterName:        true,
 			MapsDeclaredTypes:            true,
 		},
+
+		// An enum column is VARCHAR2(255) with a CHECK. Oracle refuses a CHECK
+		// whose spelling of the column disagrees with the column, so the CHECK
+		// names it as every other Oracle statement does.
+		Preparation: descriptor.Preparation{
+			Enums:                 descriptor.EnumCheck,
+			EnumCheckType:         "VARCHAR2(255)",
+			EnumCheckQuotesColumn: true,
+		},
 	}
 }
 

@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 349,
+    "shared-packages-name-dialects": 309,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -35,7 +35,6 @@
       "internal/ptahdirective": 9,
       "internal/rlspolicy": 1,
       "internal/schemafile": 2,
-      "internal/schemaprep": 40,
       "internal/sqlcompound": 5,
       "internal/sqlreach": 22,
       "internal/sqlsyntax": 1,

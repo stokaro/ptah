@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 )
 
@@ -75,7 +74,7 @@ func FoldedIndexConstraints(
 	constraints []schemamodel.Constraint,
 	dialect string,
 ) []IndexConstraintFold {
-	if platform.NormalizeDialect(dialect) != platform.Postgres {
+	if !describe(dialect).preparation.FoldsIndexConstraints {
 		return nil
 	}
 	type keptIndex struct {
