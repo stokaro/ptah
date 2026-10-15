@@ -3,8 +3,6 @@ package schemamodel
 import (
 	"strings"
 
-	"ptah.run/core/platform"
-	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -22,7 +20,7 @@ import (
 // uses: single-quoted strings with or without the E prefix, dollar quotes and
 // double-quoted identifiers. A comment is kept as written too.
 func lowerOutsideQuotes(text string) string {
-	scanner := lexer.NewLexerWithOptions(text, dialectlexer.Options(platform.Postgres))
+	scanner := lexer.NewLexerWithOptions(text, postgresQuoting)
 	var folded strings.Builder
 	folded.Grow(len(text))
 	for {
@@ -36,4 +34,14 @@ func lowerOutsideQuotes(text string) string {
 			folded.WriteString(strings.ToLower(token.Value))
 		}
 	}
+}
+
+// postgresQuoting is how lowerOutsideQuotes reads quotes: PostgreSQL's
+// standard strings, E-strings, dollar quotes and string constants, which is
+// the lexer mode internal/dialectlexer gives PostgreSQL. A test pins the two
+// together.
+var postgresQuoting = lexer.Options{
+	StandardStrings:           true,
+	PostgreSQLEscapeStrings:   true,
+	PostgreSQLStringConstants: true,
 }

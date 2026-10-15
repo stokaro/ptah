@@ -492,7 +492,7 @@ func (c *liquibaseConverter) column(
 		// Liquibase writes an identity column for autoIncrement on the
 		// PostgreSQL family, and it is the only spelling this renderer has
 		// that does not change the declared type.
-		if platform.IsPostgresFamily(c.dialect) {
+		if described, _ := platform.Lookup(c.dialect); described.Conversion.AutoIncrementIdentity {
 			column.IdentityGeneration = "BY_DEFAULT"
 		}
 	}

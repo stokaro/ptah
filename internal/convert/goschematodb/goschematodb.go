@@ -203,6 +203,8 @@ func tableRLSEnablement(
 // (stokaro/ptah#3658).
 func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect string) []catalog.Column {
 	keyColumns := sqlitekey.KeyColumns(table, fields)
+	described, _ := platform.Lookup(dialect)
+	conversion := described.Conversion
 	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
 		if sqlitekey.KeyColumnIsNotNull(dialect, table, keyColumns, field) {
@@ -230,7 +232,7 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 			column.DataType = cockroachtype.Resolve(field.Type, 0)
 			column.ColumnType = column.DataType
 		}
-		if platform.IsPostgresFamily(dialect) {
+		if conversion.OwnedSequences {
 			column.OwnedSequence, _ = columnsequence.Declared(table.Name, field)
 		}
 		out = append(out, column)
@@ -387,8 +389,9 @@ func toDBIndexes(
 // carries how the index is maintained, synchronously or not, and the YDB
 // comparison reads that from Method on the current side.
 func indexAccessMethod(indexType, dialect string) string {
+	described, _ := platform.Lookup(dialect)
 	switch {
-	case platform.IsPostgresFamily(dialect), platform.NormalizeDialect(dialect) == platform.YDB:
+	case described.Conversion.IndexTypeIsMethod:
 		return indexType
 	case platform.NormalizeDialect(dialect) == platform.MySQL, platform.NormalizeDialect(dialect) == platform.MariaDB:
 		// A MySQL-family read reports INDEX_TYPE here, and the comparison
@@ -901,7 +904,7 @@ func toDBGrants(db *schemamodel.Database, dialect string) []catalog.Grant {
 			}
 		}
 	}
-	if platform.IsPostgresFamily(dialect) {
+	if described, _ := platform.Lookup(dialect); described.Conversion.ImplicitRoutineGrants {
 		out = append(out, implicitRoutineGrants(db)...)
 	}
 	return out

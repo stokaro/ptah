@@ -4783,6 +4783,8 @@ in place of a dialect's name:
 - `DevRealm`: how Ptah names, locks, isolates and resets a dev database on
   the engine, and `SchemaIsDatabase`: whether a schema is the database the
   connection selected.
+- `Conversion`: what the schema readers and converters read of the engine,
+  such as its property shortcuts and how its row-level security is held.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,

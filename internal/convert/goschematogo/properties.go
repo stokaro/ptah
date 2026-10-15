@@ -35,7 +35,7 @@ func fieldProperties(field schemamodel.Field) map[string]map[string]string {
 	for target, values := range field.Overrides {
 		for key, value := range values {
 			derived := field.Comment != "" && key == "comment" && value == field.Comment &&
-				(target == platform.MySQL || target == platform.MariaDB)
+				readsPropertyShortcuts(target)
 			if derived {
 				continue
 			}
@@ -126,4 +126,13 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 		return nil, err
 	}
 	return facetsplit.Restore(properties, annotated)
+}
+
+// readsPropertyShortcuts reports whether target is the canonical name of a
+// dialect whose descriptor reads a field's comment as a platform property
+// (descriptor.Conversion.PropertyShortcuts), so the Go annotation reader
+// derives it again from the field's comment attribute.
+func readsPropertyShortcuts(target string) bool {
+	described, found := platform.Lookup(target)
+	return found && described.Name == target && described.Conversion.PropertyShortcuts
 }

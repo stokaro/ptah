@@ -69,7 +69,7 @@ func Command(policyFor string) string {
 // The fold is for comparison only, like [Command]: a declaration that omitted
 // TO keeps rendering without one.
 func Roles(dialect, roles string) string {
-	if !platform.IsPostgresFamily(dialect) {
+	if described, _ := platform.Lookup(dialect); !described.Conversion.EmptyPolicyRolesArePublic {
 		return roles
 	}
 	var names []string

@@ -1135,10 +1135,14 @@ func presentAttributes(attributes map[string]string) map[string]string {
 	return attributes
 }
 
-// scopesClickHouse reports whether a row-level security entry's scope names
-// ClickHouse, whose row policy is its owner's and not row-level security.
+// scopesClickHouse reports whether a row-level security entry's scope names a
+// target whose row policy is its owner's and not row-level security, as its
+// descriptor says (descriptor.Conversion.RowPolicyOwned): ClickHouse.
 func scopesClickHouse(scope []string) bool {
-	return slices.ContainsFunc(scope, func(target string) bool { return platform.NormalizeDialect(target) == platform.ClickHouse })
+	return slices.ContainsFunc(scope, func(target string) bool {
+		described, _ := platform.Lookup(target)
+		return described.Conversion.RowPolicyOwned
+	})
 }
 
 // rowSecurityScope reads a row-level security entry's `dialects`. An entry

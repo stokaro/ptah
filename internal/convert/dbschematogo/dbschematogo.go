@@ -635,7 +635,7 @@ func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]t
 		}
 		method := primaryKeyMethod(constraint)
 		comment := ""
-		if dialect == platform.MySQL || dialect == platform.MariaDB {
+		if described, _ := platform.Lookup(dialect); described.Conversion.ConstraintComments {
 			comment = constraint.Comment
 		}
 		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.Facets.IsZero() {
@@ -1218,8 +1218,10 @@ func tableStorageOverrides(table catalog.Table) map[string]map[string]string {
 		return nil
 	}
 	overrides := make(map[string]map[string]string)
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		overrides[dialect] = map[string]string{"row_format": "COMPRESSED"}
+	for _, described := range platform.Dialects().Dialects() {
+		if described.Conversion.RowFormatProperty {
+			overrides[described.Name] = map[string]string{"row_format": "COMPRESSED"}
+		}
 	}
 	return overrides
 }

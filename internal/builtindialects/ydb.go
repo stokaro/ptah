@@ -145,6 +145,14 @@ func ydb() descriptor.Dialect {
 		// its own: the YDB type map writes them as Serial, BigSerial and
 		// SmallSerial where capability.SerialColumns holds, so they are kept.
 		Preparation: descriptor.Preparation{},
+
+		// A schema document names objects by absolute paths under the
+		// database root the URL names, and an index's declared type says how
+		// it is maintained, as the YDB comparison reads it.
+		Conversion: descriptor.Conversion{
+			DatabaseRootPaths: true,
+			IndexTypeIsMethod: true,
+		},
 	}
 }
 

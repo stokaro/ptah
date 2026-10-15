@@ -866,7 +866,7 @@ func readSQLFile(
 // are read against: the one opts.DatabaseURL names, or empty without one or
 // for another dialect.
 func sourceDatabasePath(opts Options) (string, error) {
-	if platform.NormalizeDialect(opts.Dialect) != platform.YDB || opts.DatabaseURL == "" {
+	if described, _ := platform.Lookup(opts.Dialect); !described.Conversion.DatabaseRootPaths || opts.DatabaseURL == "" {
 		return "", nil
 	}
 	root, err := YDBSourceRoot(opts.DatabaseURL)
@@ -923,7 +923,7 @@ func YDBSourceRoot(raw string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if spec.Dialect != platform.YDB {
+		if described, _ := platform.Lookup(spec.Dialect); !described.Conversion.DatabaseRootPaths {
 			return "", fmt.Errorf("source context is not YDB")
 		}
 		return "/" + strings.Trim(spec.Database, "/"), nil
