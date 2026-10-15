@@ -122,18 +122,21 @@ func New() (*engine.Runtime, error) {
 			registerClickHouseServices(&provider, name)
 		}
 		if name == platform.MariaDB {
-			// MariaDB's tables are created by the MySQL owner's rules too; the
-			// rest of that owner registers its MariaDB services on the mysql
-			// provider.
+			// MariaDB's tables are created, and its indexes read back, by the
+			// MySQL owner's rules too; the rest of that owner registers its
+			// MariaDB services on the mysql provider.
 			provider.Targets[0].Creations = mysqlconvert.CreationService{}
+			provider.Targets[0].ReadBack = mysqlconvert.ReadBack{}
 		}
 		if name == platform.MySQL {
 			registerMySQLServices(&provider)
 		}
 		if name == platform.Oracle {
 			// The Oracle type map decides which declared columns hold a
-			// moment, and Oracle refuses text for those.
+			// moment, and Oracle refuses text for those; it is also the type a
+			// read reports for a declared column.
 			provider.Targets[0].Data = oracledata.Services()
+			provider.Targets[0].ReadBack = oracledata.ReadBack{}
 		}
 		if name == platform.SQLite {
 			registerSQLiteServices(&provider)

@@ -23,6 +23,7 @@ import (
 type Runtime interface {
 	schemaext.ConversionRuntime
 	schemaprojection.TableCreationService
+	schemaprojection.ReadBackRuntime
 	schemaproperties.Runtime
 	schemapreparation.Lowering
 }

@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 287,
+    "shared-packages-name-dialects": 281,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -20,8 +20,6 @@
       "internal/atlasschema": 21,
       "internal/atlassource": 2,
       "internal/atlasurl": 46,
-      "internal/convert/dbschematogo": 2,
-      "internal/convert/goschematodb": 4,
       "internal/dialectlexer": 12,
       "internal/liquibaserun": 10,
       "internal/migrateclean": 42,

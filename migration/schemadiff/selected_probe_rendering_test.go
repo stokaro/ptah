@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
@@ -34,6 +35,12 @@ type selectedProbeRuntime struct {
 
 func (s *selectedProbeRuntime) Render(ctx context.Context, request renderer.Request) (renderer.Result, error) {
 	return s.service.Render(ctx, request)
+}
+
+// ReadBack reports no read-back service: the probes under test read a SQLite
+// target, whose reads report what the declaration wrote.
+func (s *selectedProbeRuntime) ReadBack(string) (schemaprojection.ReadBack, error) {
+	return nil, nil
 }
 
 func (s *selectedProbeRuntime) ValidateSchema(context.Context, schemavalidation.Request) (schemavalidation.Result, error) {

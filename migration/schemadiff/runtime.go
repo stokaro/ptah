@@ -5,6 +5,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 )
 
@@ -24,6 +25,7 @@ type DatabaseRuntime interface {
 	renderer.Service
 	schemaext.NormalizationService
 	schemaext.FacetNormalizationService
+	schemaprojection.ReadBackRuntime
 }
 
 func selectedComparisonOptions(opts *config.CompareOptions, runtime schemaext.TargetResolver) (*config.CompareOptions, schemaext.TargetSelection, error) {

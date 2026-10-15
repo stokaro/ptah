@@ -21,6 +21,8 @@ func registerCockroachDBServices(provider *engine.Provider, target string) {
 	// The shared comparison reads a CockroachDB index's whole definition
 	// through CockroachDB's own rules.
 	provider.Targets[0].Comparison.Indexes = cockroachcomparison.Rules().Indexes
+	// A read reports an INT column at CockroachDB's integer width.
+	provider.Targets[0].ReadBack = crdbconvert.ReadBack{}
 	provider.Annotations = append(provider.Annotations, crdbsource.Annotations())
 	provider.YAML = append(provider.YAML, crdbsource.YAML())
 	registerTableFacetOwner(provider, target, tableFacetOwner{

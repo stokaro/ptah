@@ -35,4 +35,5 @@ type SchemaRuntime interface {
 	schemaext.NormalizationService
 	schemaext.FacetNormalizationService
 	dataext.Runtime
+	schemaprojection.ReadBackRuntime
 }

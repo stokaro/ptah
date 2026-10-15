@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlashcl"
@@ -197,6 +198,7 @@ func DBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect
 type ConversionRuntime interface {
 	schemaext.ConversionRuntime
 	schemacomparison.Runtime
+	schemaprojection.ReadBackRuntime
 }
 
 // SumEntry is one migration file and its content hash.
