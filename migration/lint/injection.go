@@ -47,18 +47,19 @@ type injectionSite struct {
 
 // injectionSites scans a routine body for the three spellings.
 func injectionSites(dialect string, body []string) []injectionSite {
+	form := lintOf(dialect).DynamicSQL
 	var sites []injectionSite
 	for i := range body {
 		switch {
-		case body[i] == "EXECUTE" && dialect == "postgres":
+		case body[i] == "EXECUTE" && form == "execute":
 			if site, ok := unsafeExpression("EXECUTE", body, i+1, expressionEnd(body, i+1, "INTO", "USING")); ok {
 				sites = append(sites, site)
 			}
-		case body[i] == "PREPARE" && i+2 < len(body) && body[i+2] == "FROM" && (dialect == "mysql" || dialect == "mariadb"):
+		case body[i] == "PREPARE" && i+2 < len(body) && body[i+2] == "FROM" && form == "prepare-from":
 			if site, ok := unsafeExpression("PREPARE ... FROM", body, i+3, expressionEnd(body, i+3)); ok {
 				sites = append(sites, site)
 			}
-		case (body[i] == "EXEC" || body[i] == "EXECUTE") && dialect == "sqlserver":
+		case (body[i] == "EXEC" || body[i] == "EXECUTE") && form == "exec":
 			if site, ok := sqlServerInjectionSite(body, i); ok {
 				sites = append(sites, site)
 			}
@@ -250,18 +251,13 @@ func spelled(words []string) string {
 	return b.String()
 }
 
-// injectionAdvice is per language, because the safe form is.
+// injectionAdvice is per language, because the safe form is: the advice the
+// dialect's descriptor states, or the generic advice.
 func injectionAdvice(dialect string) string {
-	switch dialect {
-	case "postgres":
-		return "quote an identifier with quote_ident() or format('%I'), a literal with quote_literal() or format('%L'), and pass values through USING with $1 placeholders"
-	case "mysql", "mariadb":
-		return "prepare a literal statement with ? placeholders and pass the values through EXECUTE ... USING; an identifier that must vary has no placeholder and needs a whitelist"
-	case "sqlserver":
-		return "pass values as parameters of sp_executesql and wrap an identifier in QUOTENAME() before it joins the text"
-	default:
-		return "quote every identifier and literal that joins the text, and pass values as parameters"
+	if advice := lintOf(dialect).InjectionAdvice; advice != "" {
+		return advice
 	}
+	return "quote every identifier and literal that joins the text, and pass values as parameters"
 }
 
 func injectionRules() []Rule {

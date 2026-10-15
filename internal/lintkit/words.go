@@ -530,9 +530,6 @@ func ParseTypeParams(words []string, j int) ([]int, int, bool) {
 	return nil, j, false
 }
 
-// MySQLFamily is the pair Ptah's MySQL rules are defined for.
-var MySQLFamily = []string{"mysql", "mariadb"}
-
 // ClauseEndFrom is the end of the clause a word index sits in.
 func ClauseEndFrom(w []string, index int) int {
 	end := len(w)

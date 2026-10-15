@@ -106,6 +106,15 @@ END`,
 			RevisionTables: true,
 			RevisionProbe:  sqlServerRevisionProbe,
 		},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{
+			Analyzed:        true,
+			DynamicSQL:      "exec",
+			InjectionAdvice: "pass values as parameters of sp_executesql and wrap an identifier in QUOTENAME() before it joins the text",
+			NotNullConsequence: "SQL Server scans the table once to check every row and a row holding NULL fails the statement " +
+				"(Msg 515, Cannot insert the value NULL into column); a DEFAULT constraint applies to new rows only",
+		},
 	}
 }
 

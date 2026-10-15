@@ -73,6 +73,12 @@ func sqlite() descriptor.Dialect {
 		// reader hides schema_migrations and the writer keeps it, so the
 		// revision tables stay out of the plan.
 		Cleanup: descriptor.Cleanup{Views: true},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{
+			Analyzed:           true,
+			SetNotNullRebuilds: true,
+		},
 	}
 }
 

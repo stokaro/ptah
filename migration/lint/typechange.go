@@ -1,8 +1,7 @@
 package lint
 
 import (
-	"slices"
-
+	"ptah.run/core/platform"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintkit/mytype"
 	"ptah.run/internal/lintkit/pgtype"
@@ -53,10 +52,11 @@ func typeUnchangedByState(file *File, index int) bool {
 	}
 	stmt := &file.Statements[index]
 	clauses := typeChangeClauses(stmt.Words)
-	switch {
-	case file.dialect == "postgres":
+	described, _ := platform.Lookup(file.dialect)
+	switch described.Lint.TypeRestatements {
+	case "pgtype":
 		return pgTypesUnchanged(file, index, clauses)
-	case slices.Contains(lintkit.MySQLFamily, file.dialect):
+	case "mytype":
 		return mysqlTypesUnchanged(file, index, clauses)
 	default:
 		return false

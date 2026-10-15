@@ -106,5 +106,16 @@ func postgres() descriptor.Dialect {
 			SchemaScoped:      true,
 			Restrict:          true,
 		},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{
+			Analyzed:         true,
+			Scanner:          "dollar",
+			DynamicSQL:       "execute",
+			InjectionAdvice:  "quote an identifier with quote_ident() or format('%I'), a literal with quote_literal() or format('%L'), and pass values through USING with $1 placeholders",
+			OnlineMeasured:   true,
+			TypeRestatements: "pgtype",
+			AtlasAnalyzer:    "PG",
+		},
 	}
 }

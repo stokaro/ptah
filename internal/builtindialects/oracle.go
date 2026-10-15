@@ -117,6 +117,11 @@ END;`,
 		// The writer lists what it drops, with each statement, in its drop
 		// order, and the listing carries the revision tables the reader hides.
 		Cleanup: descriptor.Cleanup{WriterListing: true},
+
+		// Lint: what migration lint reads. Lint has no Oracle rule and no
+		// Oracle scanner mode, so a run that names Oracle is refused rather
+		// than run clean against a grammar nothing parsed (stokaro/ptah#1875).
+		Lint: descriptor.Lint{},
 	}
 }
 

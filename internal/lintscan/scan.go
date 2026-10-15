@@ -74,13 +74,16 @@ type Mode struct {
 //
 // The dialect-specific behaviors (MySQL '#' comments, PostgreSQL nested
 // comments) require an explicit --dialect.
+//
+// The mode is the one the dialect's descriptor states as its lint scanner.
 func ForDialect(dialect string) Mode {
-	switch dialect {
-	case "mysql", "mariadb":
+	described, _ := platform.Lookup(dialect)
+	switch described.Lint.Scanner {
+	case "hash":
 		return Mode{dialect: dialect, hashComments: true, backslashEscapes: true, execComments: true}
-	case "postgres":
+	case "dollar":
 		return Mode{dialect: dialect, dollarQuotes: true, nestedComments: true}
-	case platform.YDB:
+	case "yql":
 		return Mode{dialect: dialect, yql: true}
 	default:
 		return Mode{dialect: dialect, execComments: true, dollarQuotes: true}
@@ -118,7 +121,7 @@ type lintToken struct {
 // unterminated string or comment consumes the rest of the input.
 func scanSQL(input string, mode Mode) []lintToken {
 	if mode.yql {
-		return scanYQL(input)
+		return scanYQL(input, mode.dialect)
 	}
 	var toks []lintToken
 	n := len(input)
@@ -330,12 +333,12 @@ func dollarQuoteEnd(input string, i int) (int, bool) {
 // a keyword, a name, a $name, a number with its suffix -- is a word. A
 // translation setting such as --!syntax_v1 at the head of the text is a
 // comment here: it starts no statement.
-func scanYQL(input string) []lintToken {
+func scanYQL(input, dialect string) []lintToken {
 	start := 0
 	if strings.HasPrefix(input, "\uFEFF") {
 		start = len("\uFEFF") // a UTF-8 BOM must not become part of the first word
 	}
-	lexr := lexer.NewLexerWithOptions(input[start:], dialectlexer.Options(platform.YDB))
+	lexr := lexer.NewLexerWithOptions(input[start:], dialectlexer.Options(dialect))
 	var toks []lintToken
 	line := 1
 	for {

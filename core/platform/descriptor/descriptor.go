@@ -156,6 +156,11 @@ type Dialect struct {
 	// Cleanup states what a development database cleanup destroys and how it
 	// spells the statements.
 	Cleanup Cleanup `json:"cleanup,omitzero"`
+
+	// Lint: what migration lint reads.
+
+	// Lint states how migration lint reads the dialect's migrations.
+	Lint Lint `json:"lint,omitzero"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE

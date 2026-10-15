@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"ptah.run/core/platform/descriptor"
 )
 
 // The ON family is an allowlist, which is what separates it from every other
@@ -52,10 +54,10 @@ import (
 // refusal names them.
 //
 // The list is short because the guarantee is: each of these has a measurement
-// behind it in this package. An engine is added here when somebody measures
-// it, not when its documentation claims online DDL.
+// behind it in this package. An engine's descriptor says so when somebody
+// measures it, not when its documentation claims online DDL.
 func onlineModeDialects() []string {
-	return []string{"postgres", "mysql", "mariadb"}
+	return lintDialects(func(described descriptor.Lint) bool { return described.OnlineMeasured })
 }
 
 // onlineModeCovers reports whether the mode has a measured answer for the

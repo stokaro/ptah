@@ -85,6 +85,9 @@ func spanner() descriptor.Dialect {
 		// was available to measure its coverage, so its plan reports tables
 		// only.
 		Cleanup: descriptor.Cleanup{},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{Analyzed: true},
 	}
 }
 

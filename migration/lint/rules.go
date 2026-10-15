@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/tableref"
 )
@@ -1238,7 +1239,7 @@ func sqliteRules() []Rule {
 			Code:     "LT101",
 			Title:    "not-null constraint added without a default",
 			Severity: SeverityWarning,
-			Dialects: []string{"sqlite"},
+			Dialects: lintDialects(func(described descriptor.Lint) bool { return described.SetNotNullRebuilds }),
 			CheckStatement: func(stmt *Statement) (bool, string) {
 				if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanSetNotNull(stmt.Words) {
 					return false, ""

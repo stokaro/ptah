@@ -418,7 +418,7 @@ func columnTypeCopyRule() lintkit.Rule {
 			Code:     "MY130",
 			Title:    "column type change copies the table",
 			Severity: lintext.Warning,
-			Targets:  lintkit.MySQLFamily,
+			Targets:  family(),
 			Subsumes: []string{"DS103", "MY101"},
 			Input:    lintext.InputBaselineSchema,
 		},
@@ -450,7 +450,7 @@ func primaryKeyDropCopyRule() lintkit.Rule {
 			Code:     "MY133",
 			Title:    "primary key dropped without a replacement copies the table",
 			Severity: lintext.Warning,
-			Targets:  lintkit.MySQLFamily,
+			Targets:  family(),
 		},
 		Statement: func(_ *lintkit.File, stmt *lintext.Statement) (bool, string) {
 			if !lintkit.IsAlterTable(stmt.Words) || !lintkit.ScanDropPrimaryKey(stmt.Words) || lintkit.ScanAddPrimaryKey(stmt.Words) {
@@ -577,7 +577,7 @@ func charsetConversionCopyRule() lintkit.Rule {
 			Code:     "MY136",
 			Title:    "character set conversion copies the table",
 			Severity: lintext.Warning,
-			Targets:  lintkit.MySQLFamily,
+			Targets:  family(),
 			Subsumes: []string{"MY101"},
 			Input:    lintext.InputBaselineSchema,
 		},
