@@ -488,7 +488,7 @@ func TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured(t *testing.
 func TestExpected_NamesEveryAnalyzedDialect(t *testing.T) {
 	c := qt.New(t)
 	listed := make(map[string]bool)
-	for _, name := range strings.Split(strings.ReplaceAll(lintdialect.Expected, ", or ", ", "), ", ") {
+	for name := range strings.SplitSeq(strings.ReplaceAll(lintdialect.Expected, ", or ", ", "), ", ") {
 		listed[name] = true
 		c.Assert(lintdialect.Valid(name), qt.IsTrue, qt.Commentf("%s", name))
 	}
