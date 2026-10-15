@@ -125,6 +125,10 @@ import (
 	"strings"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devdocker/dockerengine"
+	"ptah.run/internal/devdocker/mysqldocker"
+	"ptah.run/internal/devdocker/pgdocker"
+	"ptah.run/internal/devdocker/ydbdocker"
 )
 
 // Scheme is the URL scheme this package provisions.
@@ -182,186 +186,43 @@ func IsURL(rawURL string) bool {
 // engine describes one database this package can start. The dialect it
 // speaks is [atlasurl.DockerEngineDialect]'s, which is also the answer to
 // which engines there are.
-type engine struct {
-	// image is the container image, without a tag.
-	image string
-	// port is the port the server listens on inside the container.
-	port string
-	// params are the connection parameters the provisioned URL needs by
-	// default. Parameters written on the docker URL are merged over these, so
-	// an operator can override one and cannot lose one they did not mention.
-	params map[string]string
-	// env builds the container environment that creates database.
-	env func(database, password string) []string
-	// url builds a directly connectable URL for the published hostPort. query
-	// is the merged parameter string, already encoded and without a leading
-	// `?`; it is empty when there are no parameters.
-	url func(hostPort, database, password, query string) string
-	// serverDatabase is what a URL naming an image connects to when it names
-	// no database, and what the readiness wait probes on such an image:
-	// `postgres` on PostgreSQL, and no database -- the whole server -- on the
-	// MySQL family. It is the pinned community binary's own default for each.
-	serverDatabase string
-	// createsDatabase reports an image that fills the database its variable
-	// names with objects of its own, so env leaves the variable unset and the
-	// database is created once the server is ready; see
-	// [Spec.CreatesDatabase].
-	createsDatabase bool
-	// defaultDatabase is the database a URL that names none connects to, when
-	// it is not [DefaultDatabase].
-	defaultDatabase string
-	// databases, when set, lists the only databases the image serves; a URL
-	// naming another is refused.
-	databases []string
-	// routing are the engine's own parameters that would point the
-	// connection away from the container, refused as [routingParams] are.
-	routing []string
-	// anonymous reports a server that takes every connection without a
-	// credential, which no password generated here can change. Such a
-	// server is started only by a container runtime on this machine, where
-	// its port is published on loopback; see [Provision].
-	anonymous bool
-	// ready, when set, is the engine's readiness probe in place of
-	// [Connectable].
-	ready ReadyFunc
-}
-
-// postgresEnv is the container environment of an image built on the official
-// PostgreSQL one.
-//
-// POSTGRES_USER is the image's. The official image's default is postgres, and
-// an image that names another user runs its init scripts as that user: the
-// Supabase image declares supabase_admin, and with the variable overridden its
-// init fails and the container exits (stokaro/ptah#4053). The pinned binary
-// passes these two variables and no user, measured on 2026-10-03.
-func postgresEnv(database, password string) []string {
-	return []string{
-		"POSTGRES_PASSWORD=" + password,
-		"POSTGRES_DB=" + database,
-	}
-}
-
-// postgresURL is the connectable URL of a server an image built on the
-// official PostgreSQL one runs.
-func postgresURL(hostPort, database, password, query string) string {
-	return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, url.PathEscape(database), querySuffix(query))
-}
-
-// postgresParams are the connection parameters of such a server. The
-// container publishes on loopback and speaks no TLS, so the default disables
-// it. An operator who writes `sslmode` on the docker URL replaces this value
-// rather than being silently overruled.
-func postgresParams() map[string]string {
-	return map[string]string{"sslmode": "disable"}
-}
+type engine = dockerengine.Engine
 
 // engines maps the host segment of a docker URL onto the container to start.
-//
-// The keys are the spellings the pinned binary accepts, measured one at a time,
-// and match [atlasurl.DockerEngineDialect]'s. Anything else is refused,
-// including schemes [ptah.run/core/platform.NormalizeDialect] would happily name -- `sqlite`
-// is a dialect Ptah has and an image the pinned binary refuses, so it must not
-// appear here.
-var engines = map[string]engine{
-	"postgres": {
-		image:          "postgres",
-		port:           "5432",
-		params:         postgresParams(),
-		env:            postgresEnv,
-		url:            postgresURL,
-		serverDatabase: "postgres",
-	},
-	// The pgvector project's image is the official one with the extension
-	// installed and not created. Measured, the pinned binary starts
-	// `pgvector/pgvector:<tag>` with POSTGRES_PASSWORD and POSTGRES_DB, as it
-	// starts `postgres:<tag>`.
-	"pgvector": {
-		image:          "pgvector/pgvector",
-		port:           "5432",
-		params:         postgresParams(),
-		env:            postgresEnv,
-		url:            postgresURL,
-		serverDatabase: "postgres",
-	},
-	// The PostGIS image creates postgis, postgis_topology, fuzzystrmatch and
-	// postgis_tiger_geocoder, and the tiger and topology schemas, in the
-	// database POSTGRES_DB names. Measured, the pinned binary starts
-	// `postgis/postgis:<tag>` with POSTGRES_PASSWORD alone and creates the
-	// URL's database itself, which leaves it empty: `CREATE EXTENSION postgis`
-	// succeeds there.
-	"postgis": {
-		image:  "postgis/postgis",
-		port:   "5432",
-		params: postgresParams(),
-		env: func(_, password string) []string {
-			return []string{"POSTGRES_PASSWORD=" + password}
-		},
-		url:             postgresURL,
-		serverDatabase:  "postgres",
-		createsDatabase: true,
-	},
-	"mysql": {
-		image: "mysql",
-		port:  "3306",
-		env: func(database, password string) []string {
-			return []string{
-				"MYSQL_ROOT_PASSWORD=" + password,
-				"MYSQL_DATABASE=" + database,
-			}
-		},
-		// The database is NOT escaped here, unlike the PostgreSQL URL above.
-		// A MySQL DSN is not a URL: the driver reads the name between the last
-		// `/` and the `?` literally and never percent-decodes it, so escaping
-		// would connect to a database called `foo%23bar` while the container
-		// created `foo#bar`. The one delimiter that would break the DSN, `?`,
-		// is refused in [Parse] instead.
-		url: func(hostPort, database, password, query string) string {
-			return fmt.Sprintf("mysql://root:%s@tcp(%s)/%s%s", password, hostPort, database, querySuffix(query))
-		},
-	},
-	"maria":   mariaEngine,
-	"mariadb": mariaEngine,
-	// local-ydb serves the one database /local and takes every connection
-	// without a credential. It advertises its node through discovery under
-	// the container's host name, which nothing outside the container
-	// resolves, so the URL disables the balancer and the SDK connects to the
-	// published port it was given; measured on 26.2.1.14 with a port the
-	// daemon chose and no --hostname, the connection reads the database at
-	// once. In-memory disks start the server fastest and hold nothing a
-	// throwaway database needs to keep.
-	"ydb": {
-		image: "ydbplatform/local-ydb",
-		port:  "2136",
-		env: func(_, _ string) []string {
-			return []string{"YDB_USE_IN_MEMORY_PDISKS=true"}
-		},
-		url: func(hostPort, database, _, query string) string {
-			return fmt.Sprintf("ydb://%s/%s%s", hostPort, url.PathEscape(database), querySuffix(query))
-		},
-		params:          map[string]string{"go_balancer": "disable"},
-		serverDatabase:  "local",
-		defaultDatabase: "local",
-		databases:       []string{"local"},
-		routing:         []string{"database", "dev_realm", "monitoring"},
-		anonymous:       true,
-		ready:           ydbReady,
-	},
+// Each engine family declares its engines in a package of its own, under the
+// spellings the pinned binary accepts, measured one at a time, and they match
+// [atlasurl.DockerEngineDialect]'s. Anything else is refused, including
+// schemes [ptah.run/core/platform.NormalizeDialect] would happily name --
+// `sqlite` is a dialect Ptah has and an image the pinned binary refuses, so
+// no package declares it.
+var engines = indexEngines(slices.Concat(
+	pgdocker.Engines(),
+	mysqldocker.Engines(),
+	ydbdocker.Engines(),
+))
+
+// indexEngines keys each engine by its name. Two engines of one name are a
+// defect in the declarations, which are data compiled into the binary.
+func indexEngines(declared []engine) map[string]engine {
+	indexed := make(map[string]engine, len(declared))
+	for _, found := range declared {
+		if _, taken := indexed[found.Name]; taken || found.Name == "" {
+			panic(fmt.Sprintf("devdocker: docker engine %q is declared twice or has no name", found.Name))
+		}
+		indexed[found.Name] = found
+	}
+	return indexed
 }
 
-// mariaEngine is shared by both spellings the pinned binary accepts for
-// MariaDB, so the two cannot drift apart.
-var mariaEngine = engine{
-	image: "mariadb",
-	port:  "3306",
-	env: func(database, password string) []string {
-		return []string{
-			"MARIADB_ROOT_PASSWORD=" + password,
-			"MARIADB_DATABASE=" + database,
-		}
-	},
-	url: func(hostPort, database, password, query string) string {
-		return fmt.Sprintf("mariadb://root:%s@tcp(%s)/%s%s", password, hostPort, database, querySuffix(query))
-	},
+// BlockAttributes returns the attributes an atlas.hcl `docker "<typ>"` block
+// may carry, and whether such a block exists for typ. The slice is new on
+// every call.
+func BlockAttributes(typ string) ([]string, bool) {
+	found, ok := engines[typ]
+	if !ok || found.BlockAttributes == nil {
+		return nil, false
+	}
+	return slices.Clone(found.BlockAttributes), true
 }
 
 // routingParams are the connection parameters that decide WHICH server, and as
@@ -411,19 +272,6 @@ func refuseRoutingParams(operator url.Values, engineRouting []string) error {
 	return nil
 }
 
-// querySuffix renders an encoded parameter string as a URL suffix.
-//
-// It exists so each engine's URL template can carry parameters without every
-// one of them repeating the empty-string case, and so a `?` never appears with
-// nothing after it -- the MySQL driver reads its DSN by cutting on `?` and a
-// bare one leaves it parsing an empty parameter list.
-func querySuffix(query string) string {
-	if query == "" {
-		return ""
-	}
-	return "?" + query
-}
-
 // mergeParams overlays the parameters written on the docker URL onto the
 // engine's defaults and encodes the result.
 //
@@ -433,12 +281,12 @@ func querySuffix(query string) string {
 // not mention survive, which is the half a naive "use the operator's query if
 // there is one" would drop.
 func mergeParams(found engine, rawQuery string) (string, error) {
-	defaults := found.params
+	defaults := found.Params
 	operator, err := url.ParseQuery(rawQuery)
 	if err != nil {
 		return "", fmt.Errorf("parse docker --dev-url parameters %q: %w", rawQuery, err)
 	}
-	if err := refuseRoutingParams(operator, found.routing); err != nil {
+	if err := refuseRoutingParams(operator, found.Routing); err != nil {
 		return "", err
 	}
 	merged := url.Values{}
@@ -482,7 +330,7 @@ type Spec struct {
 // URL is the directly connectable URL for a server published at hostPort. It
 // carries the operator's parameters.
 func (s Spec) URL(hostPort, password string) string {
-	return s.engine.url(hostPort, s.Database, password, s.Query)
+	return s.engine.URL(hostPort, s.Database, password, s.Query)
 }
 
 // ReadyURL is the URL the readiness wait probes: the same server, with the
@@ -502,9 +350,9 @@ func (s Spec) URL(hostPort, password string) string {
 func (s Spec) ReadyURL(hostPort, password string) string {
 	database := s.Database
 	if s.databaseFollowsReadiness() {
-		database = s.engine.serverDatabase
+		database = s.engine.ServerDatabase
 	}
-	return s.engine.url(hostPort, database, password, defaultParams(s.engine.params))
+	return s.engine.URL(hostPort, database, password, defaultParams(s.engine.Params))
 }
 
 // CreatesDatabase reports whether the database the URL names is created once
@@ -519,20 +367,20 @@ func (s Spec) ReadyURL(hostPort, password string) string {
 // never created here. Neither is the server's own database, which every image
 // has.
 func (s Spec) CreatesDatabase() bool {
-	return s.databaseFollowsReadiness() && s.Database != s.engine.serverDatabase
+	return s.databaseFollowsReadiness() && s.Database != s.engine.ServerDatabase
 }
 
 // databaseFollowsReadiness reports a URL whose database may not exist when the
 // server first answers, so the readiness wait probes the server's own.
 func (s Spec) databaseFollowsReadiness() bool {
-	return s.fromImage || s.engine.createsDatabase
+	return s.fromImage || s.engine.CreatesDatabase
 }
 
 // Env is the container environment that creates the database with password as
 // its superuser credential. A docker block's own environment comes first, so
 // the variables the provisioner depends on are the ones the container sees.
 func (s Spec) Env(password string) []string {
-	return append(slices.Clone(s.declaration.Env), s.engine.env(s.Database, password)...)
+	return append(slices.Clone(s.declaration.Env), s.engine.Env(s.Database, password)...)
 }
 
 // BaselineURL is the URL a docker block's baseline runs on: the dev database
@@ -540,18 +388,18 @@ func (s Spec) Env(password string) []string {
 // with the engine's own parameters only. An operator's `search_path` may name
 // a schema the baseline is about to create.
 func (s Spec) BaselineURL(hostPort, password string) string {
-	return s.engine.url(hostPort, s.Database, password, defaultParams(s.engine.params))
+	return s.engine.URL(hostPort, s.Database, password, defaultParams(s.engine.Params))
 }
 
 // Port is the port the provisioned server listens on inside the container.
 func (s Spec) Port() string {
-	return s.engine.port
+	return s.engine.Port
 }
 
 // Anonymous reports a server that takes every connection without a
 // credential, which is started only by a container runtime on this machine.
 func (s Spec) Anonymous() bool {
-	return s.engine.anonymous
+	return s.engine.Anonymous
 }
 
 // defaultParams encodes an engine's own parameters, with nothing merged in.
@@ -639,7 +487,7 @@ func Parse(rawURL string) (Spec, error) {
 	return Spec{
 		Engine:   host,
 		Dialect:  dialect,
-		Image:    found.image + ":" + tag,
+		Image:    found.Image + ":" + tag,
 		Database: database,
 		Query:    query,
 		engine:   found,
@@ -664,7 +512,7 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 		return Spec{}, fmt.Errorf("docker+%s --dev-url names no image", driver)
 	}
 	if database == "" {
-		database = found.serverDatabase
+		database = found.ServerDatabase
 	}
 	if strings.Contains(database, "?") {
 		return Spec{}, fmt.Errorf("docker --dev-url database name %q contains a query separator", database)
@@ -720,9 +568,9 @@ func splitDockerPath(urlPath string, found engine) (tag, database string, err er
 	if err != nil {
 		return "", "", err
 	}
-	if len(found.databases) > 0 && !slices.Contains(found.databases, database) {
+	if len(found.Databases) > 0 && !slices.Contains(found.Databases, database) {
 		return "", "", fmt.Errorf("docker --dev-url database %q is not one the %s image serves: name %s",
-			database, found.image, strings.Join(found.databases, " or "))
+			database, found.Image, strings.Join(found.Databases, " or "))
 	}
 	return tag, database, nil
 }
@@ -731,8 +579,8 @@ func splitDockerPath(urlPath string, found engine) (tag, database string, err er
 // with the engine's default database when it names none.
 func splitDockerSegments(urlPath string, found engine) (tag, database string, err error) {
 	defaultDatabase := DefaultDatabase
-	if found.defaultDatabase != "" {
-		defaultDatabase = found.defaultDatabase
+	if found.DefaultDatabase != "" {
+		defaultDatabase = found.DefaultDatabase
 	}
 	trimmed := strings.Trim(urlPath, "/")
 	if trimmed == "" {

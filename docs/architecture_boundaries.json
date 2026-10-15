@@ -8,12 +8,11 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 760,
+    "shared-packages-name-dialects": 752,
     "sql-reader-links-owners": 0
   },
   "packages": {
     "shared-packages-name-dialects": {
-      "config/projectconfig": 3,
       "core/goschema": 1,
       "core/goschema/internal/parseutils": 2,
       "core/schemamodel": 4,
@@ -32,7 +31,6 @@
       "internal/dbexprprobe": 6,
       "internal/deporder": 4,
       "internal/devclean": 87,
-      "internal/devdocker": 5,
       "internal/devlock": 18,
       "internal/dialectlexer": 12,
       "internal/foreignkeyscope": 4,

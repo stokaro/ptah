@@ -355,8 +355,8 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	if spec.declaration.ReadyTimeout > 0 {
 		opts.ReadyTimeout = spec.declaration.ReadyTimeout
 	}
-	if opts.Ready == nil && spec.engine.ready != nil {
-		opts.Ready = spec.engine.ready
+	if opts.Ready == nil && spec.engine.Ready != nil {
+		opts.Ready = spec.engine.Ready
 	}
 	name, err := containerName()
 	if err != nil {
