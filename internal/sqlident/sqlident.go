@@ -39,7 +39,9 @@ var spellings sync.Map
 // bare.
 func spellingOf(dialect string) spelling {
 	if cached, ok := spellings.Load(dialect); ok {
-		return cached.(spelling)
+		if written, ok := cached.(spelling); ok {
+			return written
+		}
 	}
 	described, found := platform.Lookup(dialect)
 	if !found {
