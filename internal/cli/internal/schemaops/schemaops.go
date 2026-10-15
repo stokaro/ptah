@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/dataext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -162,7 +163,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	// reuses the connection the structural read opened, which the deferred
 	// close above would already have returned by the time a command saw the
 	// result.
-	dataDrift, err := compareManagedData(ctx, conn, desired, dbSchema, opts)
+	dataDrift, err := compareManagedData(ctx, conn, owners, desired, dbSchema, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +189,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 func compareManagedData(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	owners dataext.Runtime,
 	desired *schemamodel.Database,
 	live *catalog.Database,
 	opts CompareOptions,
@@ -195,9 +197,14 @@ func compareManagedData(
 	if !opts.ManagedData {
 		return nil, nil
 	}
+	data, err := owners.DataServices(conn.Info().Dialect)
+	if err != nil {
+		return nil, fmt.Errorf("error comparing declared rows: %w", err)
+	}
 	summary, err := datamigrate.Inspect(ctx, conn, datamigrate.Options{
 		Desired: desired,
 		Live:    live,
+		Data:    data,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error comparing declared rows: %w", err)

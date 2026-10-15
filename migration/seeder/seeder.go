@@ -33,13 +33,12 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
-	"ptah.run/internal/atlasretry"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/protectedtable"
-	"ptah.run/internal/yqlquery"
 )
 
 const (
@@ -270,8 +269,14 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
 	}
-	if opts.Idempotent && platform.NormalizeDialect(conn.Info().Dialect) == platform.ClickHouse {
-		return nil, fmt.Errorf("--idempotent is not supported for clickhouse seeds because transactions and savepoints are unavailable")
+	described, _ := platform.Lookup(conn.Info().Dialect)
+	if described.Seeds.ByOwner && conn.Seeds() == nil {
+		return nil, fmt.Errorf("seeds on %s run through the engine's seed service, and the connection has none",
+			described.Name)
+	}
+	if opts.Idempotent && !described.Seeds.ByOwner &&
+		(!described.Seeds.Transactional || described.Seeds.Savepoint.Create == "") {
+		return nil, fmt.Errorf("--idempotent is not supported for %s seeds because transactions and savepoints are unavailable", described.Name)
 	}
 	if err := ensureSafeTarget(ctx, conn, opts); err != nil {
 		return nil, err
@@ -324,16 +329,18 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 	if err != nil {
 		return fmt.Errorf("read seed file %q: %w", seed.Path, err)
 	}
+	described, _ := platform.Lookup(conn.Info().Dialect)
+	if described.Seeds.ByOwner {
+		return applySeedByOwner(ctx, conn, dataext.Seed{
+			Path: seed.Path, Filename: seed.Filename, Checksum: seed.Checksum, Text: string(data), Env: opts.Env,
+		}, opts)
+	}
 	// Split with the connection's dialect so a semicolon inside a backslash-
 	// escaped string literal (valid on MySQL/MariaDB/ClickHouse) is not
 	// mis-split into a separately-executed statement.
-	dialect := platform.NormalizeDialect(conn.Info().Dialect)
-	if dialect == platform.YDB {
-		return applyYDBSeed(ctx, conn, seed, string(data), opts)
-	}
 	statements := sqlutil.SplitStatementsForDialect(conn.Info().Dialect, string(data))
 
-	if dialect == platform.ClickHouse {
+	if !described.Seeds.Transactional {
 		return applySeedWithoutTransaction(ctx, conn, seed, statements, opts)
 	}
 
@@ -379,6 +386,29 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 	return nil
 }
 
+// applySeedByOwner runs a seed file through the connection's seed service,
+// for an engine whose seed files do not run as split statements
+// (descriptor.Seeds.ByOwner). The service runs the file and its record in one
+// transaction, so a file that fails leaves nothing of itself applied. YDB has
+// no savepoint, and a conflict ends the transaction it ran in, so with
+// [Options.Idempotent] a file that hits a duplicate key is rolled back whole
+// and the seed is recorded in a transaction of its own: nothing of the file
+// is applied, as on the engines that roll back to a savepoint.
+func applySeedByOwner(ctx context.Context, conn *dbschema.DatabaseConnection, seed dataext.Seed, opts Options) error {
+	seeds := conn.Seeds()
+	err := seeds.Apply(ctx, conn, seed)
+	if err == nil {
+		return nil
+	}
+	if !opts.Idempotent || !IsConflictError(err) {
+		return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
+	}
+	if err := seeds.Record(ctx, conn, seed); err != nil {
+		return fmt.Errorf("record seed %s: %w", seed.Filename, err)
+	}
+	return nil
+}
+
 func applySeedWithoutTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, seed SeedFile, statements []string, opts Options) error {
 	if err := executeStatements(ctx, conn, statements); err != nil {
 		return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
@@ -421,94 +451,29 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // longer hash to the recorded value is refused with a [ChecksumMismatchError]
 // rather than reported as already applied.
 //
-// The default arm is the portable spelling. These dialects refuse it, and each
-// gets its own:
-//
-//   - ClickHouse needs a table engine and has its own type names.
-//   - SQL Server has no IF NOT EXISTS on CREATE TABLE; T-SQL refuses it at
-//     parse time with Msg 156, so the guard is IF OBJECT_ID(...) IS NULL, the
-//     spelling the migrator uses for its revision table. The column type
-//     changes too: T-SQL's TIMESTAMP is rowversion, a counter the server fills
-//     in, and inserting the time a seed ran into it fails with Msg 273. The
-//     column is DATETIME2.
-//   - Oracle accepts CREATE TABLE IF NOT EXISTS on 23 and refuses it on 21 with
-//     ORA-00922. The table is created from a PL/SQL block that ignores
-//     ORA-00955, name already used, and raises every other error. The block
-//     does not read [capability.ObjectExistenceGuards]: one statement for both
-//     lines means a 23 server measures exactly what a 21 server is sent.
-//   - YDB declares the key in a clause of its own (an inline PRIMARY KEY is a
-//     parse error) and has no length-limited string, so every text column is
-//     Utf8. The time a seed ran is a Timestamp, the type a Go time.Time binds
-//     as, which every line has. CREATE TABLE IF NOT EXISTS on an existing table
-//     succeeds on every line, with issue text the driver does not return.
+// portableTrackerDDL is the spelling most dialects take. A dialect that refuses
+// it states its own in its descriptor (descriptor.Seeds.Tracker): ClickHouse
+// needs a table engine and its own type names, SQL Server has no IF NOT EXISTS
+// on CREATE TABLE and no TIMESTAMP that holds a time, Oracle 21 refuses IF NOT
+// EXISTS, Spanner's PostgreSQL interface has neither CHAR nor TIMESTAMP, and
+// YDB declares its key in a clause of its own. The internal/builtindialects
+// file of each engine records the measurement behind its statement.
 //
 // Every name is unqualified, so each guard looks in the schema the CREATE
 // TABLE and every later tracker statement resolve against.
 func trackerDDL(dialect string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.ClickHouse:
-		return `CREATE TABLE IF NOT EXISTS schema_seeds (
-    seed_path String,
-    env String,
-    checksum String,
-    applied_at DateTime
-) ENGINE = MergeTree ORDER BY seed_path`
-	case platform.SQLServer:
-		return `IF OBJECT_ID(N'schema_seeds', N'U') IS NULL
-BEGIN
-    CREATE TABLE schema_seeds (
-        seed_path VARCHAR(512) PRIMARY KEY,
-        env VARCHAR(128) NOT NULL,
-        checksum CHAR(64) NOT NULL,
-        applied_at DATETIME2 NOT NULL
-    )
-END`
-	case platform.Spanner:
-		// Spanner's PostgreSQL interface has neither of the two types the
-		// portable statement uses. CHAR(64) arrives as bpchar and the endpoint
-		// answers `Type <bpchar> is not supported. (SQLSTATE P0001)`, which is
-		// where `ptah seed` stopped, before it read a seed file; TIMESTAMP is
-		// refused next, which is why the migrator's revision table carries
-		// TIMESTAMPTZ there too. Measured on the emulator: this statement is
-		// accepted, running it twice is a no-op, and a row written through it
-		// reads back (stokaro/ptah#3325).
-		return `CREATE TABLE IF NOT EXISTS schema_seeds (
-    seed_path VARCHAR(512) PRIMARY KEY,
-    env VARCHAR(128) NOT NULL,
-    checksum TEXT NOT NULL,
-    applied_at TIMESTAMPTZ NOT NULL
-)`
-	case platform.YDB:
-		return `CREATE TABLE IF NOT EXISTS schema_seeds (
-    seed_path Utf8 NOT NULL,
-    env Utf8 NOT NULL,
-    checksum Utf8 NOT NULL,
-    applied_at Timestamp NOT NULL,
-    PRIMARY KEY (seed_path)
-)`
-	case platform.Oracle:
-		return `BEGIN
-    EXECUTE IMMEDIATE 'CREATE TABLE schema_seeds (
-        seed_path VARCHAR(512) PRIMARY KEY,
-        env VARCHAR(128) NOT NULL,
-        checksum CHAR(64) NOT NULL,
-        applied_at TIMESTAMP NOT NULL
-    )';
-EXCEPTION
-    WHEN OTHERS THEN
-        IF SQLCODE != -955 THEN
-            RAISE;
-        END IF;
-END;`
-	default:
-		return `CREATE TABLE IF NOT EXISTS schema_seeds (
+	if described, _ := platform.Lookup(dialect); described.Seeds.Tracker != "" {
+		return described.Seeds.Tracker
+	}
+	return portableTrackerDDL
+}
+
+const portableTrackerDDL = `CREATE TABLE IF NOT EXISTS schema_seeds (
     seed_path VARCHAR(512) PRIMARY KEY,
     env VARCHAR(128) NOT NULL,
     checksum CHAR(64) NOT NULL,
     applied_at TIMESTAMP NOT NULL
 )`
-	}
-}
 
 // appliedSeeds returns the checksum recorded for each applied seed path.
 //
@@ -576,18 +541,18 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 	return nil
 }
 
+// existingTables lists the base tables of the connection's schema, with the
+// query the dialect's descriptor names (descriptor.Seeds.TablesQuery), or the
+// portable information_schema query bound to the schema. A dialect whose seeds
+// run through the connection's seed service lists them through it.
 func existingTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		return existingYDBTables(ctx, conn)
+	described, _ := platform.Lookup(conn.Info().Dialect)
+	if described.Seeds.ByOwner {
+		return conn.Seeds().TableNames(ctx, conn, conn.Info().Schema)
 	}
-	var query string
+	query := described.Seeds.TablesQuery
 	var args []any
-	switch platform.NormalizeDialect(conn.Info().Dialect) {
-	case platform.MySQL, platform.MariaDB:
-		query = "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'"
-	case platform.ClickHouse:
-		query = "SELECT name FROM system.tables WHERE database = currentDatabase() AND is_temporary = 0"
-	default:
+	if query == "" {
 		query = sqlutil.Rebind(conn.Info().Dialect, "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'")
 		args = append(args, conn.Info().Schema)
 	}
@@ -646,39 +611,29 @@ type seedSavepoint struct {
 	release  string
 }
 
-// savepointStatements names those statements for a dialect.
+// savepointStatements names those statements for a dialect, from the keywords
+// its descriptor states (descriptor.Seeds.Savepoint).
 //
 // Two engines do not take the portable spelling, and `ptah seed --idempotent`
-// failed on the first seed file for both. Measured (stokaro/ptah#3330):
-//
-//   - SQL Server answers SAVEPOINT with `Could not find stored procedure
-//     'SAVEPOINT'` (2812), ROLLBACK TO SAVEPOINT with Msg 156 and RELEASE
-//     SAVEPOINT with Msg 102. Its own spelling is SAVE TRANSACTION and
-//     ROLLBACK TRANSACTION, and it has no release.
-//   - Oracle takes SAVEPOINT and ROLLBACK TO SAVEPOINT and answers RELEASE
-//     SAVEPOINT with ORA-00900, invalid SQL statement.
-//
-// ClickHouse is refused earlier, by name, because it has neither transactions
-// nor savepoints.
+// failed on the first seed file for both (stokaro/ptah#3330): SQL Server
+// spells them SAVE TRANSACTION and ROLLBACK TRANSACTION and has no release,
+// and Oracle answers RELEASE SAVEPOINT with ORA-00900. A dialect with no
+// savepoint, such as ClickHouse, which has no transactions either, is refused
+// an idempotent run before any seed runs.
 func savepointStatements(dialect string) seedSavepoint {
 	const name = "ptah_seed_file"
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer:
-		return seedSavepoint{
-			create:   "SAVE TRANSACTION " + name,
-			rollback: "ROLLBACK TRANSACTION " + name,
+	described, _ := platform.Lookup(dialect)
+	keywords := described.Seeds.Savepoint
+	statement := func(keyword string) string {
+		if keyword == "" {
+			return ""
 		}
-	case platform.Oracle:
-		return seedSavepoint{
-			create:   "SAVEPOINT " + name,
-			rollback: "ROLLBACK TO SAVEPOINT " + name,
-		}
-	default:
-		return seedSavepoint{
-			create:   "SAVEPOINT " + name,
-			rollback: "ROLLBACK TO SAVEPOINT " + name,
-			release:  "RELEASE SAVEPOINT " + name,
-		}
+		return keyword + " " + name
+	}
+	return seedSavepoint{
+		create:   statement(keywords.Create),
+		rollback: statement(keywords.Rollback),
+		release:  statement(keywords.Release),
 	}
 }
 
@@ -710,127 +665,4 @@ func IsConflictError(err error) bool {
 		strings.Contains(msg, "duplicate entry") ||
 		strings.Contains(msg, "unique constraint") ||
 		strings.Contains(msg, "unique violation")
-}
-
-// applyYDBSeed runs one seed file on YDB.
-//
-// The file runs as the queries YQL reads it into (internal/yqlquery), so a
-// named expression or an action reaches the statements that use it, and all
-// of them run in one serializable transaction with the row that records the
-// seed: the file and its record commit together or not at all. YDB aborts the
-// transaction of two conflicting ones that commits second, and nothing of it
-// is applied, so the whole transaction runs again (see [ydbSeedTransaction]).
-//
-// A scheme query, or a BATCH UPDATE or BATCH DELETE, runs on YDB only outside
-// a transaction, so a file holding one is refused before anything runs.
-//
-// YDB has no savepoint, and a conflict ends the transaction it ran in -- the
-// next statement in it answers `Transaction not found` -- so with
-// [Options.Idempotent] a file that hits a duplicate key is rolled back whole
-// and the seed is recorded in a transaction of its own. Nothing of the file is
-// applied, as on the engines that roll back to a savepoint.
-func applyYDBSeed(ctx context.Context, conn *dbschema.DatabaseConnection, seed SeedFile, text string, opts Options) error {
-	queries, err := yqlquery.Split(text)
-	if err != nil {
-		return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
-	}
-	for _, query := range queries {
-		if query.Kind != yqlquery.Data {
-			return fmt.Errorf("apply seed %s: YDB runs a %s query only outside a transaction, and a seed runs "+
-				"in one; move this statement to a migration: %s", seed.Filename, query.Kind, query.Source)
-		}
-	}
-	err = ydbSeedTransaction(ctx, conn, func(tx *sql.Tx) error {
-		for _, query := range queries {
-			if _, err := tx.ExecContext(ctx, query.Text); err != nil {
-				return err
-			}
-		}
-		if err := recordYDBSeed(ctx, tx, seed, opts); err != nil {
-			return fmt.Errorf("record the seed: %w", err)
-		}
-		return nil
-	})
-	if err == nil {
-		return nil
-	}
-	if !opts.Idempotent || !IsConflictError(err) {
-		return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
-	}
-	if err := ydbSeedTransaction(ctx, conn, func(tx *sql.Tx) error {
-		return recordYDBSeed(ctx, tx, seed, opts)
-	}); err != nil {
-		return fmt.Errorf("record seed %s: %w", seed.Filename, err)
-	}
-	return nil
-}
-
-// ydbSeedTransactionAttempts bounds how often a seed transaction YDB aborted
-// for a conflicting one is run again.
-const ydbSeedTransactionAttempts = 5
-
-// ydbSeedTransaction runs body in a serializable transaction and commits it,
-// and runs the whole transaction again when YDB aborts it: `Transaction locks
-// invalidated` is the answer for the transaction of two conflicting ones that
-// commits second, and nothing of it was applied. Any other failure is
-// returned, with the transaction rolled back.
-func ydbSeedTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, body func(*sql.Tx) error) error {
-	var err error
-	for attempt := range ydbSeedTransactionAttempts {
-		if err = ydbSeedAttempt(ctx, conn, body); err == nil {
-			return nil
-		}
-		if !atlasretry.IsRetryable(err) || attempt == ydbSeedTransactionAttempts-1 {
-			return err
-		}
-		timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return errors.Join(err, ctx.Err())
-		case <-timer.C:
-		}
-	}
-	return err
-}
-
-// ydbSeedAttempt is one attempt of [ydbSeedTransaction].
-func ydbSeedAttempt(ctx context.Context, conn *dbschema.DatabaseConnection, body func(*sql.Tx) error) error {
-	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return err
-	}
-	if err := body(tx); err != nil {
-		// A failed statement may have ended the transaction on the server
-		// already, and then the rollback answers `Transaction not found`;
-		// the statement's failure is the one that matters.
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
-}
-
-// recordYDBSeed writes the row that records a seed. UPSERT replaces the row a
-// forced re-run finds, which is what the DELETE and INSERT pair does on the
-// other engines, in one statement.
-func recordYDBSeed(ctx context.Context, tx *sql.Tx, seed SeedFile, opts Options) error {
-	query := sqlutil.Rebind(platform.YDB,
-		"UPSERT INTO schema_seeds (seed_path, env, checksum, applied_at) VALUES (?, ?, ?, ?)")
-	_, err := tx.ExecContext(ctx, query, seed.Path, opts.Env, seed.Checksum, time.Now().UTC())
-	return err
-}
-
-// existingYDBTables lists the tables in the directory the connection reads as
-// its schema, as the other engines list the tables of their current schema.
-func existingYDBTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
-	session, err := conn.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query target tables: %w", err)
-	}
-	defer func() { _ = session.Close() }()
-	tables, err := ydbschema.TableNames(ctx, session, conn.Info().Schema)
-	if err != nil {
-		return nil, fmt.Errorf("query target tables: %w", err)
-	}
-	return tables, nil
 }

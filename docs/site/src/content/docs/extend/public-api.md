@@ -32,6 +32,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
+| `core/dataext` | The data contract an engine owner answers where its descriptor cannot: typed literals, moment columns, typed managed rows and seed execution. |
 | `core/objectidentity` | Structured object identities, target-aware name comparison, and reference resolution. |
 | `core/plangraph` | Owner-contributed steps, object effects, and validated dependency ordering. |
 | `core/featureplan` | Contextual feature-planning batches, captured parents, and typed graph contributions. |

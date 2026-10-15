@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
@@ -132,6 +133,11 @@ type Service interface {
 	// RowValue converts a value the driver scanned into the value a row read
 	// returns.
 	RowValue(scanned any) (any, error)
+
+	// Seeds returns the engine's seed service, for an engine whose seed files
+	// do not run as split statements in one transaction
+	// (descriptor.Seeds.ByOwner), and nil for every other engine.
+	Seeds() dataext.Seeds
 }
 
 // Base is the answer of an engine with nothing to add. Its Open opens
@@ -230,6 +236,9 @@ func (Base) HoldsBytes(databaseType string) bool {
 
 // RowValue returns scanned unchanged.
 func (Base) RowValue(scanned any) (any, error) { return scanned, nil }
+
+// Seeds returns nil: the engine's seed files run as split statements.
+func (Base) Seeds() dataext.Seeds { return nil }
 
 // OpenDB opens a pool with database/sql. sql.Open dials nothing, so the pool
 // is verified by [Ping].

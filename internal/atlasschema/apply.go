@@ -489,7 +489,7 @@ func computeApplyPlan(
 	// only edits a reference row changes no DDL, and a planner that returned
 	// here would report an empty plan for a change its author made.
 	computation.dataStatements, computation.rowSets, err = managedDataStatements(
-		ctx, conn, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables),
+		ctx, conn, opts.Runtime, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables),
 	)
 	if err != nil {
 		return applyComputation{}, err

@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/dataext"
 	"ptah.run/core/hclext"
 	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
@@ -187,6 +188,11 @@ type Target struct {
 	// target that answers nothing it cannot hold with a comment, because a
 	// comment lets an apply succeed without the object.
 	RefusesSkips bool
+	// Data holds the target's managed-data and seed services, which
+	// [Runtime.DataServices] hands to the packages that write rows and run
+	// seeds. A nil member is a service the target does not have; a typed-nil
+	// member is an invalid registration.
+	Data dataext.Services
 }
 
 // Runtime is a frozen selection of providers. It is safe for concurrent calls
@@ -245,6 +251,7 @@ type target struct {
 	annotator       lintext.Annotator
 	routineBodies   routineext.Reader
 	refusesSkips    bool
+	data            dataext.Services
 }
 
 // New validates and freezes explicit provider ownership. Duplicate provider
@@ -423,6 +430,9 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"statement splitter", declared.Splitter},
 		{"statement annotator", declared.Annotator},
 		{"routine body reader", declared.RoutineBodies},
+		{"data literal", declared.Data.Literals},
+		{"data column", declared.Data.Columns},
+		{"data row", declared.Data.Rows},
 	} {
 		if service.value != nil && nilService(service.value) {
 			return fmt.Errorf("%w: target %q has a typed-nil %s service", ErrInvalidRegistration, declared.Name, service.name)
@@ -439,7 +449,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
 			splitter: declared.Splitter, annotator: declared.Annotator, routineBodies: declared.RoutineBodies,
-			refusesSkips: declared.RefusesSkips,
+			refusesSkips: declared.RefusesSkips, data: declared.Data,
 		}
 	}
 	return nil

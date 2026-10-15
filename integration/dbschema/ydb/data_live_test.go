@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/query"
@@ -20,6 +21,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/managedrows"
 	"ptah.run/migration/datadiff"
 )
@@ -317,9 +319,19 @@ func compareDeclared(
 		Live:              readScoped(c, conn, []string{dataDiffSchema}),
 		CatalogIsComplete: true,
 		Intent:            managedrows.Write,
+		Data:              ydbData(c),
 	})
 	c.Assert(err, qt.IsNil)
 	return diff
+}
+
+// ydbData is the YDB owner's data services, as the bundled runtime registers
+// them for a command.
+func ydbData(c *qt.C) dataext.Services {
+	c.Helper()
+	services, err := builtintest.Runtime().DataServices("ydb")
+	c.Assert(err, qt.IsNil)
+	return services
 }
 
 func changes(diff *datadiff.DataDiff) [3]int {
@@ -345,14 +357,14 @@ func TestYDBDataDiff_RoundTrips(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, db, []string{dataDiffSchema}))
 
 			first := compareDeclared(c, conn, db, diffRows(1))
-			up, _, err := datadiff.RenderStatements(first, conn.Info().Dialect)
+			up, _, err := datadiff.RenderStatements(first, conn.Info().Dialect, ydbData(c))
 			c.Assert(err, qt.IsNil)
 			apply(c, conn, up)
 			written := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
 			converged := compareDeclared(c, conn, db, diffRows(1))
 
 			moved := compareDeclared(c, conn, db, diffRowsWithDE(9))
-			forward, backward, err := datadiff.RenderStatements(moved, conn.Info().Dialect)
+			forward, backward, err := datadiff.RenderStatements(moved, conn.Info().Dialect, ydbData(c))
 			c.Assert(err, qt.IsNil)
 			apply(c, conn, forward)
 			afterForward := compareDeclared(c, conn, db, diffRowsWithDE(9))
@@ -513,6 +525,7 @@ func TestYDBDeclaredRows_RefuseAValueTheColumnCannotHold(t *testing.T) {
 						Live:              live,
 						CatalogIsComplete: true,
 						Intent:            managedrows.Write,
+						Data:              ydbData(c),
 					})
 
 					c.Assert(err, qt.ErrorMatches, `compare declared rows of .*countries: `+test.wantErr)

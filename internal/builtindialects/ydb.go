@@ -82,6 +82,30 @@ func ydb() descriptor.Dialect {
 		Roles:               descriptor.Roles{OutOfScope: descriptor.RoleScopeUserMade},
 		Lock:                descriptor.Lock{Protocol: descriptor.LockCoordinationSemaphore},
 		URLValuedParameters: []string{"monitoring"},
+		// YQL types every literal and converts few, so the owner writes each
+		// value in its column's YDB type and types the rows it compares. A
+		// seed file runs as the queries YQL reads it into, in one serializable
+		// transaction with its record, which the owner runs. The tracker
+		// declares its key in a clause of its own (an inline PRIMARY KEY is a
+		// parse error), every text column is Utf8, and the time a seed ran is
+		// the Timestamp a Go time.Time binds as.
+		Literals: descriptor.Literals{
+			ByOwner: true,
+		},
+		ManagedData: descriptor.ManagedData{
+			TypedRows: true,
+		},
+		Seeds: descriptor.Seeds{
+			Tracker: `CREATE TABLE IF NOT EXISTS schema_seeds (
+    seed_path Utf8 NOT NULL,
+    env Utf8 NOT NULL,
+    checksum Utf8 NOT NULL,
+    applied_at Timestamp NOT NULL,
+    PRIMARY KEY (seed_path)
+)`,
+			Transactional: true,
+			ByOwner:       true,
+		},
 	}
 }
 

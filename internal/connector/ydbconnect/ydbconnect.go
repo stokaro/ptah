@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/connector"
@@ -202,4 +203,11 @@ func (Service) HoldsBytes(databaseType string) bool {
 // values.
 func (Service) RowValue(scanned any) (any, error) {
 	return ydbschema.RowValue(scanned)
+}
+
+// Seeds returns YDB's seed service: a seed file runs as the queries YQL reads
+// it into, in one serializable transaction with its record, and the tables a
+// seed run guards are listed through the scheme service.
+func (Service) Seeds() dataext.Seeds {
+	return ydbschema.Seeds{}
 }

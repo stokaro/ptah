@@ -66,6 +66,32 @@ func clickHouse() descriptor.Dialect {
 		RevisionTable:   clickHouseRevisionTable(),
 
 		Roles: descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced},
+		// String literals process C-style backslash escapes. A plain UPDATE
+		// answers "Lightweight updates are not supported" unless the table
+		// carries a materialized _block_number column, which a reference
+		// table does not, so a row change is the ALTER TABLE ... UPDATE
+		// mutation; the lightweight DELETE has been on by default since 23.3
+		// (stokaro/ptah#3281). ClickHouse has neither transactions nor
+		// savepoints, so a seed runs statement by statement into a MergeTree
+		// tracker whose ORDER BY key constrains nothing.
+		Literals: descriptor.Literals{
+			NumericBool:      true,
+			BackslashEscapes: true,
+			BinaryPrefix:     "X'",
+			BinarySuffix:     "'",
+		},
+		ManagedData: descriptor.ManagedData{
+			AlterTableUpdate: true,
+		},
+		Seeds: descriptor.Seeds{
+			Tracker: `CREATE TABLE IF NOT EXISTS schema_seeds (
+    seed_path String,
+    env String,
+    checksum String,
+    applied_at DateTime
+) ENGINE = MergeTree ORDER BY seed_path`,
+			TablesQuery: "SELECT name FROM system.tables WHERE database = currentDatabase() AND is_temporary = 0",
+		},
 	}
 }
 

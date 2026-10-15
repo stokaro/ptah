@@ -1,9 +1,4 @@
-package managedrows
-
-// White-box testing required: typedYDBRows decides the YDB type every value of
-// a declared row set is written in, and the exported Compare reaches it only
-// through a live YDB connection, which the unit suite does not provision. The
-// live tests drive it through Compare on both certified lines.
+package ydbdata_test
 
 import (
 	"testing"
@@ -13,12 +8,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbdata"
 )
 
 // A live column keeps the type the table has, a column the table lacks takes
 // the type its declaration lands on for the target, and both row sets come
 // back in canonical form.
-func TestTypedYDBRows_HappyPath(t *testing.T) {
+func TestRowsTypeRows_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	live := &catalog.Table{Name: "rates", Columns: []catalog.Column{
 		{Name: "code", DataType: "Utf8"},
@@ -30,37 +26,37 @@ func TestTypedYDBRows_HappyPath(t *testing.T) {
 	read := []map[string]any{{"code": "CZ", "rate": "1.5",
 		"joined": time.Date(2026, time.January, 2, 1, 0, 0, 0, time.FixedZone("CET", 3600))}}
 
-	typed, err := typedYDBRows(capability.YDB262(), live, declared, desired, read)
+	typed, err := ydbdata.Rows{}.TypeRows(capability.YDB262(), live, declared, desired, read)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(typed.columnTypes, qt.DeepEquals, map[string]string{
+	c.Assert(typed.ColumnTypes, qt.DeepEquals, map[string]string{
 		"code": "Utf8", "rate": "Decimal(10,2)", "joined": "Timestamp", "since": "Date32",
 	})
 	midnight := time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)
-	c.Assert(typed.desired, qt.DeepEquals, []map[string]any{
+	c.Assert(typed.Desired, qt.DeepEquals, []map[string]any{
 		{"code": "CZ", "rate": "1.5", "joined": midnight, "since": midnight},
 	})
-	c.Assert(typed.live, qt.DeepEquals, []map[string]any{{"code": "CZ", "rate": "1.5", "joined": midnight}})
+	c.Assert(typed.Live, qt.DeepEquals, []map[string]any{{"code": "CZ", "rate": "1.5", "joined": midnight}})
 	// The canonical rows are copies: the caller's maps are left as they were.
 	c.Assert(desired[0]["rate"], qt.Equals, "1.50")
 }
 
 // A line without the 64-bit types lands a declared DATE on Date, and a column
 // no declaration types keeps its value for the diff to refuse.
-func TestTypedYDBRows_HappyPath_NarrowLineAndUntypedColumn(t *testing.T) {
+func TestRowsTypeRows_HappyPath_NarrowLineAndUntypedColumn(t *testing.T) {
 	c := qt.New(t)
-	typed, err := typedYDBRows(capability.YDB251(), nil,
+	typed, err := ydbdata.Rows{}.TypeRows(capability.YDB251(), nil,
 		map[string]string{"since": "DATE"},
 		[]map[string]any{{"since": "2026-01-02", "note": 7}}, nil)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(typed.columnTypes, qt.DeepEquals, map[string]string{"since": "Date"})
-	c.Assert(typed.desired, qt.DeepEquals, []map[string]any{
+	c.Assert(typed.ColumnTypes, qt.DeepEquals, map[string]string{"since": "Date"})
+	c.Assert(typed.Desired, qt.DeepEquals, []map[string]any{
 		{"since": time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC), "note": 7},
 	})
 }
 
-func TestTypedYDBRows_FailurePath(t *testing.T) {
+func TestRowsTypeRows_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
 		live     *catalog.Table
@@ -93,11 +89,11 @@ func TestTypedYDBRows_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			typed, err := typedYDBRows(capability.YDB262(), test.live, test.declared, test.desired, test.read)
+			typed, err := ydbdata.Rows{}.TypeRows(capability.YDB262(), test.live, test.declared, test.desired, test.read)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(typed.columnTypes, qt.IsNil)
-			c.Assert(typed.desired, qt.IsNil)
-			c.Assert(typed.live, qt.IsNil)
+			c.Assert(typed.ColumnTypes, qt.IsNil)
+			c.Assert(typed.Desired, qt.IsNil)
+			c.Assert(typed.Live, qt.IsNil)
 		})
 	}
 }

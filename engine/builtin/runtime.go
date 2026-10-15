@@ -38,10 +38,12 @@ import (
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/mssqlroutineprep"
 	mysqlrules "ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/oracledata"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgdefaultprivilegeprovider"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbcomparison"
+	"ptah.run/internal/ydbdata"
 	"ptah.run/internal/ydbextensions"
 	"ptah.run/internal/ydblowering"
 	"ptah.run/internal/ydbsource"
@@ -128,6 +130,11 @@ func New() (*engine.Runtime, error) {
 		if name == platform.MySQL {
 			registerMySQLServices(&provider)
 		}
+		if name == platform.Oracle {
+			// The Oracle type map decides which declared columns hold a
+			// moment, and Oracle refuses text for those.
+			provider.Targets[0].Data = oracledata.Services()
+		}
 		if name == platform.SQLite {
 			registerSQLiteServices(&provider)
 		}
@@ -136,6 +143,10 @@ func New() (*engine.Runtime, error) {
 			// facts the shared lint rules read, and judges one of them over
 			// the split of a run that names no dialect.
 			provider.Targets[0].Splitter = ydblint.Splitter{}
+			// YDB writes every literal in its column's type, compares rows
+			// typed the same way, and runs a seed file as YQL queries in one
+			// transaction with its record.
+			provider.Targets[0].Data = ydbdata.Services()
 			provider.Targets[0].Annotator = ydblint.Annotator{}
 			provider.Lint = []engine.Lint{{Rules: ydblint.Rules(), Service: ydblint.Service{}}}
 			// A YDB read reports a UNIQUE constraint as an index and a

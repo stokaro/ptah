@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 752,
+    "shared-packages-name-dialects": 703,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -39,7 +39,6 @@
       "internal/lintkit": 2,
       "internal/lintscan": 5,
       "internal/liquibaserun": 10,
-      "internal/managedrows": 7,
       "internal/migrateclean": 42,
       "internal/migrationreplay": 1,
       "internal/modelast": 14,
@@ -57,7 +56,6 @@
       "internal/sqlsyntax": 1,
       "internal/systemschema": 6,
       "internal/txrequire": 1,
-      "migration/datadiff": 27,
       "migration/generator": 4,
       "migration/importer": 1,
       "migration/internal/generatedschema": 2,
@@ -67,7 +65,6 @@
       "migration/lint": 22,
       "migration/schemadiff": 10,
       "migration/schemadiff/internal/compare": 49,
-      "migration/seeder": 15,
       "migration/shadow": 3
     }
   }

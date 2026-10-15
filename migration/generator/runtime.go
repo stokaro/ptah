@@ -2,6 +2,7 @@ package generator
 
 import (
 	"ptah.run/core/annotation"
+	"ptah.run/core/dataext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
@@ -25,4 +26,5 @@ type Runtime interface {
 	schemavalidation.Service
 	schemaext.NormalizationService
 	schemaext.FacetNormalizationService
+	dataext.Runtime
 }

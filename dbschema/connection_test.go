@@ -469,3 +469,16 @@ func TestConnectToDatabase_DeadlineExceeded(t *testing.T) {
 	c.Assert(elapsed < 5*time.Second, qt.IsTrue,
 		qt.Commentf("ConnectToDatabase took %s with a 200ms deadline, want <5s", elapsed))
 }
+
+// TestDatabaseConnection_SeedsIsNilWhereSeedsRunAsStatements pins that an
+// engine whose seed files run as split statements hands the seeder no seed
+// service, so the seeder takes its own path there. YDB's service is driven by
+// the live seed tests, which a missing one would refuse.
+func TestDatabaseConnection_SeedsIsNilWhereSeedsRunAsStatements(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://:memory:")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+
+	c.Assert(conn.Seeds(), qt.IsNil)
+}

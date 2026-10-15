@@ -125,13 +125,18 @@ func migrateDataCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	annotations, err := builtin.Annotations()
+	owners, err := builtin.Bundled()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	data, err := owners.DataServices(conn.Info().Dialect)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	upSQL, downSQL, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
 		RootDir:          opts.rootDir,
-		Annotations:      annotations,
+		Annotations:      owners.Annotations(),
+		Data:             data,
 		AllowDestructive: opts.allowDestructive,
 		ProtectedTables:  opts.protectedTables,
 		AllowProd:        opts.allowProd,

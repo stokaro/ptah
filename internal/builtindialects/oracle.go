@@ -67,6 +67,49 @@ func oracle() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",
 		RevisionTable:   oracleRevisionTable(),
+
+		// A boolean is 1 or 0 because the type map creates BOOLEAN as
+		// NUMBER(1): 21.3 has no BOOLEAN type, and internal/oracledata pins
+		// this value against the map. A bare string is read through
+		// NLS_TIMESTAMP_FORMAT and refused with ORA-01843, so a moment is a
+		// typed TIMESTAMP literal with its offset; measured on 23.26, DATE,
+		// TIMESTAMP and TIMESTAMP WITH TIME ZONE columns all accept it. Text
+		// declared for a column that holds a moment is the owner's literal,
+		// because which columns hold one is the type map's answer. GENERATED
+		// ALWAYS refuses an explicit value with ORA-32795.
+		Literals: descriptor.Literals{
+			NumericBool:     true,
+			BinaryPrefix:    "HEXTORAW('",
+			BinarySuffix:    "')",
+			TimestampPrefix: "TIMESTAMP ",
+			TimestampOffset: true,
+			ByOwner:         true,
+		},
+		ManagedData: descriptor.ManagedData{
+			IdentityRefusesInsert: descriptor.IdentityInsertGeneratedAlways,
+		},
+		// Oracle accepts CREATE TABLE IF NOT EXISTS on 23 and refuses it on 21
+		// with ORA-00922, so the tracker is created from a PL/SQL block that
+		// ignores ORA-00955, name already used; one statement for both lines
+		// means a 23 server measures what a 21 server is sent. RELEASE
+		// SAVEPOINT answers ORA-00900 (stokaro/ptah#3330).
+		Seeds: descriptor.Seeds{
+			Tracker: `BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE schema_seeds (
+        seed_path VARCHAR(512) PRIMARY KEY,
+        env VARCHAR(128) NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        applied_at TIMESTAMP NOT NULL
+    )';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN
+            RAISE;
+        END IF;
+END;`,
+			Transactional: true,
+			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
+		},
 	}
 }
 

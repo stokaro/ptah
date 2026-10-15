@@ -71,5 +71,20 @@ func mariaDB() descriptor.Dialect {
 		// MariaDB refuses the negative timeout MySQL's GET_LOCK takes for a
 		// wait without limit, so a year stands in for it.
 		Lock: descriptor.Lock{Protocol: descriptor.LockGetLock, UnboundedWaitSeconds: 31_536_000},
+		// String literals process C-style backslash escapes by default, so a
+		// backslash in a value is doubled, and a boolean is the TINYINT(1) the
+		// family creates it as. Neither engine's DATETIME literal accepts an
+		// offset; the wall clock round-trips in the session's time zone.
+		Literals: descriptor.Literals{
+			NumericBool:      true,
+			BackslashEscapes: true,
+			BinaryPrefix:     "X'",
+			BinarySuffix:     "'",
+		},
+		Seeds: descriptor.Seeds{
+			Transactional: true,
+			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
+			TablesQuery:   "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
+		},
 	}
 }
