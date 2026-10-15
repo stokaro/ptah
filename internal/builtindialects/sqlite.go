@@ -111,6 +111,12 @@ func sqlite() descriptor.Dialect {
 			RowidTables:          true,
 			TypeAffinity:         true,
 		},
+
+		// SQLite has no enum type, so an enum column is TEXT with a CHECK.
+		Preparation: descriptor.Preparation{
+			Enums:         descriptor.EnumCheck,
+			EnumCheckType: "TEXT",
+		},
 	}
 }
 

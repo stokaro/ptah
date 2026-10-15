@@ -234,6 +234,10 @@ type Dialect struct {
 	// Comparison states facts about the engine that comparing a declaration
 	// with a catalog depends on.
 	Comparison Comparison `json:"comparison,omitzero"`
+
+	// Preparation states how a declared schema is prepared for the engine
+	// before it is rendered or compared.
+	Preparation Preparation `json:"preparation,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and

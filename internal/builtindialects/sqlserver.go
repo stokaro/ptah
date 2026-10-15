@@ -138,6 +138,20 @@ END`,
 			DefaultGeneratedKind:   "PERSISTED",
 			AutoIncrementFlag:      true,
 		},
+
+		// An enum column is NVARCHAR(255) with a CHECK over the bracketed
+		// column. A serial type is the integer with IDENTITY(1,1), and TEXT and
+		// VARCHAR are NVARCHAR(MAX). A foreign key name is unique in its schema
+		// and compared without regard to case.
+		Preparation: descriptor.Preparation{
+			Enums:                   descriptor.EnumCheck,
+			EnumCheckType:           "NVARCHAR(255)",
+			EnumCheckQuotesColumn:   true,
+			SerialAutoIncrement:     true,
+			TypeSubstitutions:       map[string]string{"TEXT": "NVARCHAR(MAX)", "VARCHAR": "NVARCHAR(MAX)"},
+			ForeignKeyNamespace:     descriptor.NamespaceSchema,
+			ForeignKeyNamesFoldCase: true,
+		},
 	}
 }
 

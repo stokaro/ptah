@@ -143,5 +143,10 @@ func cockroachDB() descriptor.Dialect {
 			CatalogTypeNames:        true,
 			PrimaryKeyStoresColumns: true,
 		},
+
+		// A bare type name PostgreSQL defines is the built-in type here too.
+		Preparation: descriptor.Preparation{
+			PostgresBuiltInTypes: true,
+		},
 	}
 }

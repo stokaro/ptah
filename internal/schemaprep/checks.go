@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
@@ -59,21 +59,21 @@ func ColumnCheckNames(
 			taken[field.CheckName] = struct{}{}
 		}
 	}
-	target := platform.NormalizeDialect(dialect)
+	target := describe(dialect)
 	names := make(map[string]string)
-	mysqlNumber := uint32(1)
+	number := uint32(1)
 	for _, field := range own {
 		switch {
 		case field.Check == "":
 			continue
 		case field.CheckName != "":
 			names[field.Name] = field.CheckName
-		case target == platform.MySQL:
-			names[field.Name] = mysqlname.Check(leaf, mysqlNumber)
-			mysqlNumber++
-		case target == platform.MariaDB:
+		case target.checkNaming == descriptor.CheckNamingTableNumbered:
+			names[field.Name] = mysqlname.Check(leaf, number)
+			number++
+		case target.checkNaming == descriptor.CheckNamingColumnOrConstraint:
 			names[field.Name] = field.Name
-		case target == platform.Postgres:
+		case target.constraintNaming == descriptor.ConstraintNamingTableColumnsSuffix:
 			name := pgname.Check(leaf, field.Check, columns, func(candidate string) bool {
 				_, used := taken[candidate]
 				return used

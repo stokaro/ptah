@@ -145,5 +145,15 @@ func postgres() descriptor.Dialect {
 			RoutineTypeAliases:   "pg-aliases",
 			QualifiedTypeNames:   true,
 		},
+
+		// PostgreSQL keeps one index for equal UNIQUE and PRIMARY KEY
+		// constraints of a table. A
+		// bare type name its catalog or grammar defines is the built-in type:
+		// measured on 17.10, a user domain named money beside a pg_catalog
+		// money column (stokaro/ptah#1138).
+		Preparation: descriptor.Preparation{
+			FoldsIndexConstraints: true,
+			PostgresBuiltInTypes:  true,
+		},
 	}
 }

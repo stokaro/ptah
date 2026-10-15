@@ -112,31 +112,22 @@ func platformFieldType(field schemamodel.Field, targetPlatform string) string {
 
 // platformType is the type targetPlatform writes for field's declared type,
 // and whether it writes that type, a serial one, as its own auto-increment
-// integer.
+// integer. The dialect's descriptor states both
+// (descriptor.Preparation.SerialAutoIncrement and TypeSubstitutions). A
+// dialect with serial types of its own, such as YDB, keeps the declared type
+// for its type map, which writes it as one of those.
 func platformType(field schemamodel.Field, targetPlatform string) (fieldType string, serialAutoIncrement bool) {
 	if field.TypeRawSQL || field.TypeIsDeclaredText {
 		return field.Type, false
 	}
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
+	preparation := describe(targetPlatform).preparation
+	if preparation.SerialAutoIncrement {
 		if integer, ok := serialInteger(field.Type); ok {
 			return integer, true
 		}
-	case platform.SQLServer:
-		if integer, ok := serialInteger(field.Type); ok {
-			return integer, true
-		}
-		switch field.Type {
-		case "TEXT", "VARCHAR":
-			return "NVARCHAR(MAX)", false
-		}
-	case platform.YDB:
-		// YDB has SERIAL of its own: Serial, BigSerial and SmallSerial fill the
-		// column from a sequence YDB creates with the table. The declared type
-		// is kept for the YDB type map, which writes it as one of those where
-		// capability.SerialColumns holds and refuses it where it does not, so
-		// rewriting it here into a plain integer would lose the increment.
-		return field.Type, false
+	}
+	if substitute, ok := preparation.TypeSubstitutions[field.Type]; ok {
+		return substitute, false
 	}
 	return field.Type, false
 }

@@ -4,7 +4,6 @@ import (
 	"maps"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
@@ -176,8 +175,12 @@ func namesABuiltInType(dialect, typeName string) bool {
 	return found
 }
 
+// builtInTypeNamesFor is the set of built-in type names a bare name on
+// dialect is read as, from its descriptor
+// (descriptor.Preparation.PostgresBuiltInTypes), and nil for a dialect whose
+// built-in names are not modeled.
 func builtInTypeNamesFor(dialect string) map[string]struct{} {
-	if !platform.IsPostgresFamily(dialect) {
+	if !describe(dialect).preparation.PostgresBuiltInTypes {
 		return nil
 	}
 	return postgresBuiltInTypeNames
