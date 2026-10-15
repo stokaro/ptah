@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
@@ -382,8 +381,7 @@ func primaryKeyConstraintChanged(
 	dialect string,
 	semantics identifier.Semantics,
 ) bool {
-	if (platform.NormalizeDialect(dialect) == platform.MySQL || platform.NormalizeDialect(dialect) == platform.MariaDB) &&
-		genConstraint.Comment != dbConstraint.Comment {
+	if comparisonOf(dialect).ConstraintComments && genConstraint.Comment != dbConstraint.Comment {
 		return true
 	}
 	return !sameColumnNames(semantics, genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
@@ -457,7 +455,7 @@ func comparedDeclaredConstraint(
 	if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") || database == nil {
 		return constraint, key
 	}
-	if !isMySQLFamily(dialect) && strings.TrimSpace(constraint.Name) != "" {
+	if comparisonOf(dialect).PrimaryKeyName == "" && strings.TrimSpace(constraint.Name) != "" {
 		return constraint, key
 	}
 	identity := newQualifiedTableIdentity(constraint.Table, semantics)

@@ -104,6 +104,14 @@ func spanner() descriptor.Dialect {
 		// How the common model is lowered for the engine.
 		GeneratedColumnDefault: "STORED",
 		InlineEnum:             descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare},
+		// Comparison: what comparing a declaration with a catalog reads.
+		// Spanner reports a backing index for a foreign key.
+		Comparison: descriptor.Comparison{
+			ForeignKeyBackingIndex: true,
+			RolePasswords:          true,
+			RoutineTypeAliases:     "pg-aliases",
+			SingleStringType:       true,
+		},
 	}
 }
 

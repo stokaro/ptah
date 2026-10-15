@@ -149,7 +149,7 @@ func IndexesWithSemantics(
 	rules schemacomparison.Indexes,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
-	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+	if comparisonOf(dialect).PrimaryKeyStoresColumns {
 		withoutImplicitPrimaryKeyPayload(genIndexes, desired, semantics)
 	}
 	owned := constraintBackedIndexIdentities(database, dialect, semantics)

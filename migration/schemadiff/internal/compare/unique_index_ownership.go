@@ -2,7 +2,6 @@ package compare
 
 import (
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
@@ -93,7 +92,7 @@ func uniqueConstraintOwnedByDeclaredIndex(
 	semantics identifier.Semantics,
 ) bool {
 	if constraint.Type != "UNIQUE" ||
-		platform.NormalizeDialect(dialect) == platform.SQLServer {
+		comparisonOf(dialect).UniqueIndexStandsAlone {
 		return false
 	}
 	identity := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{

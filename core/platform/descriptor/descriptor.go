@@ -229,6 +229,11 @@ type Dialect struct {
 	// escapes, is not stated yet, since stating it changes how the scanner
 	// reads such a body.
 	Lexical Lexical `json:"lexical,omitzero"`
+	// Comparison: what migration/schemadiff and its helpers read.
+
+	// Comparison states facts about the engine that comparing a declaration
+	// with a catalog depends on.
+	Comparison Comparison `json:"comparison,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and

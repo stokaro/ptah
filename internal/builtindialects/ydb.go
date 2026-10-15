@@ -135,6 +135,10 @@ func ydb() descriptor.Dialect {
 
 		// How the common model is lowered for the engine.
 		Lexical: descriptor.Lexical{Lexer: descriptor.LexerYQL},
+		// Comparison: what comparing a declaration with a catalog reads.
+		// YDB has no UNIQUE constraint (`UNIQUE (a)` in CREATE TABLE is a
+		// parse error), so a unique index backs nothing.
+		Comparison: descriptor.Comparison{UniqueIndexStandsAlone: true},
 	}
 }
 

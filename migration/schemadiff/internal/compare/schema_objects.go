@@ -10,7 +10,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
@@ -123,7 +122,7 @@ func Functions(desired *schemamodel.Database, current *catalog.Database, diff *d
 // kept the two spellings apart would then report the live routine as both added
 // and removed, on every run.
 func routineIdentityKey(name, dialect string) string {
-	if isMySQLFamily(dialect) || isOracle(dialect) {
+	if comparisonOf(dialect).RoutineNamesFold {
 		// The rule itself is mysqlroutine.IdentityKey, not a ToLower written
 		// here, because the declaration validator in engine/builtin has to reach
 		// the same answer: a pair this folds together is a pair that target
@@ -132,12 +131,6 @@ func routineIdentityKey(name, dialect string) string {
 		return mysqlroutine.IdentityKey(name)
 	}
 	return name
-}
-
-// isOracle reports whether the dialect is the one whose routine rules
-// [oracleroutine] describes.
-func isOracle(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.Oracle
 }
 
 // qualifiedRoutineIdentityKey folds ONLY the routine component of a name that
@@ -693,7 +686,7 @@ func functionDefinitions(
 
 	// After Canonicalize, not before: it lowercases Returns and Parameters, and
 	// the synonym table this resolves is keyed on the lowercase spelling.
-	if isMySQLFamily(dialect) {
+	if comparisonOf(dialect).RoutineTypeAliases == "mysqlroutine" {
 		genFunction.Returns = mysqlroutine.NormalizeType(genFunction.Returns)
 		genFunction.Parameters = mysqlroutine.NormalizeParameterList(genFunction.Parameters)
 		dbFunction.Returns = mysqlroutine.NormalizeType(dbFunction.Returns)
@@ -719,7 +712,7 @@ func functionDefinitions(
 	// same default, and both spellings are ordinary in a declaration, so the
 	// same reasoning applies in the other word order and the same rule is
 	// applied to both sides.
-	if isOracle(dialect) {
+	if comparisonOf(dialect).ArgumentModeAfterName {
 		genFunction.Parameters = oracleroutine.FoldDefaultArgumentMode(genFunction.Parameters)
 		dbFunction.Parameters = oracleroutine.FoldDefaultArgumentMode(dbFunction.Parameters)
 	}
@@ -731,7 +724,7 @@ func functionDefinitions(
 	// function is already what the statement says -- and plans it again. The
 	// range subtype and the domain base type already go through this
 	// canonicalization; parameters did not (stokaro/ptah#2273).
-	if platform.IsPostgresFamily(dialect) {
+	if comparisonOf(dialect).RoutineTypeAliases == "pg-aliases" {
 		genFunction.Parameters = canonicalizePostgresArguments(genFunction.Parameters)
 		dbFunction.Parameters = canonicalizePostgresArguments(dbFunction.Parameters)
 	}
@@ -746,7 +739,7 @@ func functionDefinitions(
 	// so `RETURNS int` against a catalog reporting `integer` planned a
 	// CREATE OR REPLACE on every run, applied it, changed nothing, and planned
 	// it again (stokaro/ptah#3155).
-	if platform.IsPostgresFamily(dialect) {
+	if comparisonOf(dialect).RoutineTypeAliases == "pg-aliases" {
 		genFunction.Returns = canonicalizePostgresReturns(impliedPostgresReturns(genFunction))
 		dbFunction.Returns = canonicalizePostgresReturns(dbFunction.Returns)
 	}
@@ -1044,7 +1037,7 @@ func canonicalizeNormalizedSQLBody(body, dialect string) string {
 	body = stripDefaultColumnAliases(body)
 	body = stripSimpleComparisonParentheses(body)
 	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
-	if isMySQLFamilyDialect(dialect) {
+	if comparisonOf(dialect).ViewPredicatesAsIntegers {
 		body = normalizeMySQLBooleanViewPredicates(body)
 	}
 	return strings.TrimSpace(body)

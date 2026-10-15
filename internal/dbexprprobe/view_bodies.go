@@ -68,7 +68,7 @@ func ResolveViewBodies(
 		return nil, nil
 	}
 	place := temporaryProbeView
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.CockroachDB {
+	if described, _ := platform.Lookup(conn.Info().Dialect); described.Comparison.ProbeViewsInSchema {
 		place = schemaProbeView
 	}
 	return resolveProbes(ctx, conn, "resolve view bodies", probes,

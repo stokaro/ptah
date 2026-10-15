@@ -24,7 +24,7 @@ func ValidateRolePasswordComparison(
 	if err := selected.Validate(); err != nil {
 		return err
 	}
-	if !platform.IsPostgresFamily(selected.Name()) || desired == nil || database == nil {
+	if described, _ := platform.Lookup(selected.Name()); !described.Comparison.RolePasswords || desired == nil || database == nil {
 		return nil
 	}
 	desired, err := schemamodel.ScopeToTarget(desired, selected)

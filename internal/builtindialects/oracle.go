@@ -128,6 +128,15 @@ END;`,
 
 		// How the common model is lowered for the engine.
 		InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted},
+		// Comparison: what comparing a declaration with a catalog reads.
+		// Oracle stores a generated column's expression in a form of its own
+		// (stokaro/ptah#1915).
+		Comparison: descriptor.Comparison{
+			RewritesGeneratedExpressions: true,
+			RoutineNamesFold:             true,
+			ArgumentModeAfterName:        true,
+			MapsDeclaredTypes:            true,
+		},
 	}
 }
 

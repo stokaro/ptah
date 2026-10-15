@@ -69,7 +69,7 @@ func ResolveGeneratedExpressions(
 	if dev == nil || len(probes) == 0 {
 		return nil, nil
 	}
-	if platform.NormalizeDialect(dev.Info().Dialect) != platform.Oracle {
+	if described, _ := platform.Lookup(dev.Info().Dialect); !described.Comparison.RewritesGeneratedExpressions {
 		return nil, nil
 	}
 

@@ -460,7 +460,8 @@ func columnListsChange(
 // and qualified the same way. PostgreSQL stores prosrc as written
 // (stokaro/ptah#4058).
 func rewritesStoredBodies(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.CockroachDB
+	described, _ := platform.Lookup(dialect)
+	return described.Comparison.RewritesRoutineBodies
 }
 
 // resolveColumnSpellings asks the server to spell the type and default of
