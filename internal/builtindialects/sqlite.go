@@ -98,6 +98,15 @@ func sqlite() descriptor.Dialect {
 		GeneratedColumnDefault:   "VIRTUAL",
 		InlineEnum:               descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare},
 		ForeignKeysInCreateTable: true,
+		// Comparison: what comparing a declaration with a catalog reads.
+		// SQLite keeps a table's name as the bytes it was given, and names
+		// its own backing structures sqlite_autoindex_*, which no statement
+		// can refer to.
+		Comparison: descriptor.Comparison{
+			VerbatimTableNames:   true,
+			InternalIndexPrefix:  "sqlite_autoindex_",
+			DefaultGeneratedKind: "VIRTUAL",
+		},
 	}
 }
 

@@ -168,13 +168,16 @@ var sqlServerSavepoints = savepointSyntax{
 	rollback: func(name string) string { return "ROLLBACK TRANSACTION " + name },
 }
 
-// isPostgresFamily reports whether the dialect is one of the PostgreSQL family,
-// whose server rewrites the expressions these probes ask about.
+// isPostgresFamily reports whether the server answers the probes through
+// PostgreSQL's catalog functions, as its descriptor states: the server
+// rewrites the expressions these probes ask about.
 func isPostgresFamily(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return true
-	default:
-		return false
-	}
+	return expressionProbes(dialect) == "pg-catalog"
+}
+
+// expressionProbes is the catalog dialect's descriptor says its server is
+// asked how it stores a declared expression.
+func expressionProbes(dialect string) string {
+	described, _ := platform.Lookup(dialect)
+	return described.Comparison.ExpressionProbes
 }

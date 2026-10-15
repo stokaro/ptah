@@ -313,17 +313,11 @@ func normalizeGeneratedColumnsForCompare(
 	return &normalizedGenerated
 }
 
+// defaultGeneratedColumnKind is the storage a generated column declared
+// without one gets on dialect, as its descriptor states it.
 func defaultGeneratedColumnKind(dialect string) string {
-	switch dialect {
-	case platform.Postgres:
-		return "STORED"
-	case platform.MySQL, platform.MariaDB, platform.SQLite:
-		return "VIRTUAL"
-	case platform.SQLServer:
-		return "PERSISTED"
-	default:
-		return ""
-	}
+	described, _ := platform.Lookup(dialect)
+	return described.Comparison.DefaultGeneratedKind
 }
 
 // validateDeclaredBeforeComparison applies every refusal a declaration must

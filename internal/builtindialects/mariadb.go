@@ -137,5 +137,11 @@ func mariaDB() descriptor.Dialect {
 		GeneratedColumnDefault:   "VIRTUAL",
 		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
 		IndexesBeforeForeignKeys: true,
+		// Comparison: what comparing a declaration with a catalog reads.
+		Comparison: descriptor.Comparison{
+			ForeignKeysOutside:     true,
+			ForeignKeyBackingIndex: true,
+			DefaultGeneratedKind:   "VIRTUAL",
+		},
 	}
 }

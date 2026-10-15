@@ -129,6 +129,14 @@ END`,
 		// How the common model is lowered for the engine.
 		GeneratedColumnDefault: "PERSISTED",
 		InlineEnum:             descriptor.InlineEnum{Type: "NVARCHAR(255)", Check: descriptor.InlineEnumCheckQuoted},
+		// Comparison: what comparing a declaration with a catalog reads.
+		// A UNIQUE constraint and a unique index are separate objects, so
+		// neither backs the other.
+		Comparison: descriptor.Comparison{
+			UniqueIndexStandsAlone: true,
+			ExpressionProbes:       "sys-catalog",
+			DefaultGeneratedKind:   "PERSISTED",
+		},
 	}
 }
 

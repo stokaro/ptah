@@ -127,5 +127,17 @@ func cockroachDB() descriptor.Dialect {
 
 		// How the common model is lowered for the engine.
 		GeneratedColumnDefault: "STORED",
+		// Comparison: what comparing a declaration with a catalog reads.
+		// A probe's view goes in a schema, and a routine body is stored
+		// reflowed and qualified: measured on v26.3.2, `SELECT * FROM
+		// public.items` is stored as `SELECT public.items.id, ... FROM
+		// f1.public.items;` (stokaro/ptah#4058).
+		Comparison: descriptor.Comparison{
+			ForeignKeysOutside:    true,
+			ExpressionProbes:      "pg-catalog",
+			ProbeViewsInSchema:    true,
+			RewritesRoutineBodies: true,
+			RolePasswords:         true,
+		},
 	}
 }

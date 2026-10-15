@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/config"
-	"ptah.run/core/platform"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can
@@ -107,13 +106,14 @@ func ResolveCheckExpressions(
 // MySQL 8.4.11 and MariaDB 11.4.12 converged on every CHECK shape in the sweep
 // that found this, so they are deliberately absent rather than unmeasured.
 func checkProbeFor(dialect string) (probeFunc[CheckExpressionProbe, config.CheckExpression], bool) {
-	if isPostgresFamily(dialect) {
+	switch expressionProbes(dialect) {
+	case "pg-catalog":
 		return resolveOnePostgresCheckExpression, true
-	}
-	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+	case "sys-catalog":
 		return resolveOneSQLServerCheckExpression, true
+	default:
+		return nil, false
 	}
-	return nil, false
 }
 
 // resolveOnePostgresCheckExpression creates one probe table and reads its

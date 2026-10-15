@@ -143,6 +143,15 @@ func mysql() descriptor.Dialect {
 		GeneratedColumnDefault:   "VIRTUAL",
 		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
 		IndexesBeforeForeignKeys: true,
+		// Comparison: what comparing a declaration with a catalog reads.
+		// MySQL creates an index for every foreign key unasked, and a
+		// database is the schema, so a key into another database is accepted
+		// and read back with that database's name (stokaro/ptah#3891).
+		Comparison: descriptor.Comparison{
+			ForeignKeysOutside:     true,
+			ForeignKeyBackingIndex: true,
+			DefaultGeneratedKind:   "VIRTUAL",
+		},
 	}
 }
 

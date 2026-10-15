@@ -82,7 +82,8 @@ func KindOf(constraintType string) Kind {
 // that path has always produced. It is stated here rather than implied by a
 // switch nobody wrote an arm in.
 func ServerBacks(dialect string, kind Kind) bool {
-	normalized := platform.NormalizeDialect(dialect)
+	described, _ := platform.Lookup(dialect)
+	comparison := described.Comparison
 	switch kind {
 	case PrimaryKey:
 		// Every server enforces a primary key with an index. The reader marks
@@ -97,15 +98,13 @@ func ServerBacks(dialect string, kind Kind) bool {
 		// filters `is_unique_constraint = 0`. YDB has no UNIQUE constraint at
 		// all (`UNIQUE (a)` in CREATE TABLE is a parse error), so a unique
 		// index there is an index of its own and backs nothing.
-		return normalized != platform.SQLServer && normalized != platform.YDB
+		return !comparison.UniqueIndexStandsAlone
 	case ForeignKey:
 		// MySQL and MariaDB create an index for every foreign key unasked, and
 		// Spanner reports a backing index for one. The PostgreSQL family
 		// creates none: a foreign key there is enforced by the referenced
 		// key's index, not by one of its own.
-		return normalized == platform.MySQL ||
-			normalized == platform.MariaDB ||
-			normalized == platform.Spanner
+		return comparison.ForeignKeyBackingIndex
 	case None:
 		return false
 	default:
@@ -155,6 +154,7 @@ func Unaddressable(index catalog.Index, dialect string) bool {
 }
 
 func isSQLiteInternalAutoindex(indexName, dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.SQLite &&
-		strings.HasPrefix(indexName, "sqlite_autoindex_")
+	described, _ := platform.Lookup(dialect)
+	prefix := described.Comparison.InternalIndexPrefix
+	return prefix != "" && strings.HasPrefix(indexName, prefix)
 }

@@ -136,5 +136,12 @@ func postgres() descriptor.Dialect {
 		// How the common model is lowered for the engine.
 		GeneratedTimeouts:      descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"},
 		GeneratedColumnDefault: "STORED",
+		// Comparison: what comparing a declaration with a catalog reads.
+		Comparison: descriptor.Comparison{
+			ForeignKeysOutside:   true,
+			ExpressionProbes:     "pg-catalog",
+			RolePasswords:        true,
+			DefaultGeneratedKind: "STORED",
+		},
 	}
 }

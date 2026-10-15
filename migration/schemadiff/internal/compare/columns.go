@@ -1375,7 +1375,8 @@ func tablePrimaryKeyColumns(table schemamodel.Table) []string {
 // not, so the attribute is left uncompared rather than reported as a change
 // that a MODIFY would not make (stokaro/ptah#1915).
 func generatedExpressionIsRewritten(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.Oracle
+	described, _ := platform.Lookup(dialect)
+	return described.Comparison.RewritesGeneratedExpressions
 }
 
 // generatedColumnDiff compares a generated column, using the server's own

@@ -21,10 +21,11 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-// unqualifiedTableSchema is the schema a table declared with none is in, on
-// each dialect whose foreign key may name a table outside its description. A
-// dialect missing here has no such key: the renderer refuses it as a reference
-// to an unknown table.
+// unqualifiedTableSchema is the schema a table declared with none is in, on a
+// dialect whose foreign key may name a table outside its description, and
+// whether the dialect is one: its descriptor states ForeignKeysOutside. On any
+// other dialect the renderer refuses such a key as a reference to an unknown
+// table.
 //
 // On MySQL and MariaDB a database is the schema, and a description of one
 // database names none. On PostgreSQL and CockroachDB an unqualified table is
@@ -32,11 +33,12 @@ import (
 // `customers` is a key into the description, not out of it. These are the
 // engines measured: each accepts the key, and reads it back with the other
 // schema's name (stokaro/ptah#3891, stokaro/ptah#3906).
-var unqualifiedTableSchema = map[string]string{
-	platform.MySQL:       "",
-	platform.MariaDB:     "",
-	platform.Postgres:    "public",
-	platform.CockroachDB: "public",
+func unqualifiedTableSchema(dialect string) (string, bool) {
+	described, found := platform.Lookup(dialect)
+	if !found || !described.Comparison.ForeignKeysOutside {
+		return "", false
+	}
+	return described.DefaultSchema, true
 }
 
 // Outside reports whether reference names a table in a schema database holds
@@ -47,7 +49,7 @@ var unqualifiedTableSchema = map[string]string{
 // it names: `crm.missing` beside a described `crm` is a table that is not
 // there.
 func Outside(database schemamodel.Database, dialect, reference string) (schema string, outside bool) {
-	unqualified, accepted := unqualifiedTableSchema[platform.NormalizeDialect(dialect)]
+	unqualified, accepted := unqualifiedTableSchema(dialect)
 	if !accepted {
 		return "", false
 	}
