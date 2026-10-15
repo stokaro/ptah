@@ -95,6 +95,15 @@ func clickHouse() descriptor.Dialect {
 
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteBacktick},
+
+		// Cleanup: what a development database cleanup reads.
+		// The writer drops tables, views and materialized views, and the
+		// reader already reports both revision tables.
+		Cleanup: descriptor.Cleanup{
+			Views:             true,
+			MaterializedViews: true,
+			Sync:              true,
+		},
 	}
 }
 

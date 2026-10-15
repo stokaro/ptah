@@ -109,6 +109,16 @@ func ydb() descriptor.Dialect {
 
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteYQL, Bare: descriptor.BareNever, Paths: true},
+
+		// Cleanup: what a development database cleanup reads.
+		// The writer drops row tables and nothing else; a view, a column table
+		// and a topic stay, and the reader records them as not described. It
+		// finds the revision tables by name in every directory, where the
+		// reader leaves them out.
+		Cleanup: descriptor.Cleanup{
+			RevisionTables:           true,
+			RevisionTablesEverywhere: true,
+		},
 	}
 }
 

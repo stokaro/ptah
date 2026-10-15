@@ -96,6 +96,18 @@ func mysql() descriptor.Dialect {
 		// How an identifier is written, and how a column's own key is named.
 		Quoting:    descriptor.Quoting{Style: descriptor.QuoteBacktick},
 		ColumnKeys: descriptor.ColumnKeyAfterColumn,
+
+		// Cleanup: what a development database cleanup reads.
+		Cleanup: descriptor.Cleanup{
+			ForeignKeys:    true,
+			Views:          true,
+			StoredObjects:  true,
+			RevisionTables: true,
+			RevisionProbe:  mysqlRevisionProbe,
+			ForeignKeyDrop: "DROP FOREIGN KEY",
+			DropsDatabases: true,
+			ViewsFirst:     true,
+		},
 	}
 }
 

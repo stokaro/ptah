@@ -11,6 +11,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/feature/pgextension"
@@ -102,12 +104,12 @@ func SnapshotWithinWriterScope(
 	dialect,
 	writerSchema string,
 ) *catalog.Database {
-	if schema == nil || !isPostgresFamily(dialect) {
+	if schema == nil || !cleanupOf(dialect).SchemaScoped {
 		return schema
 	}
 	writerSchema = strings.TrimSpace(writerSchema)
 	if writerSchema == "" {
-		writerSchema = "public"
+		writerSchema = defaultSchemaOf(dialect)
 	}
 	owned := *schema
 	// The extension owner's observations are kept when they are installed in
@@ -229,9 +231,9 @@ func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, 
 	if err != nil {
 		return Plan{}, err
 	}
-	if isYDB(dialect) {
-		// The YDB reader leaves these names out of every directory, so none
-		// is listed already, and two directories may each hold one.
+	if cleanupOf(dialect).RevisionTablesEverywhere {
+		// The reader leaves these names out of every directory, so none is
+		// listed already, and two directories may each hold one.
 		objects = append(objects, revisionObjects...)
 	} else {
 		objects = append(objects, unlistedObjects(objects, revisionObjects)...)
@@ -306,7 +308,7 @@ func ApplyPlanWithOptions(
 		return nil
 	}
 	conn.SchemaWriter().SetDryRun(false)
-	if isPostgresFamily(conn.Info().Dialect) {
+	if cleanupOf(conn.Info().Dialect).SchemaScoped {
 		return applyPostgresFamilyPlan(ctx, conn, changes, opts)
 	}
 	if opts.ValidateBeforeExecute != nil {
@@ -336,7 +338,7 @@ func applyPostgresFamilyPlan(
 	if err != nil {
 		return fmt.Errorf("begin scoped schema cleanup: %w", err)
 	}
-	if normalizeDialect(conn.Info().Dialect) == "postgres" {
+	if cleanupOf(conn.Info().Dialect).CatalogInventory {
 		if err := lockPostgresPlanRelations(ctx, tx, changes); err != nil {
 			return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 		}
@@ -600,61 +602,37 @@ func changesFromObjects(objects []Object, dialect string) []Change {
 // tables through the reader, and SQLite would be reporting a table that
 // survives the cleanup.
 func coverageFor(dialect string) dialectCoverage {
-	normalized := normalizeDialect(dialect)
-	switch normalized {
-	case "postgres", "postgresql", "cockroachdb", "yugabytedb":
-		return dialectCoverage{
-			foreignKeys:       true,
-			views:             true,
-			materializedViews: true,
-			enums:             true,
-			domains:           true,
-			composites:        true,
-			ranges:            true,
-			functions:         true,
-			// The writer-only live-catalog inventory stays restricted to
-			// PostgreSQL proper because that is the only PostgreSQL-family engine
-			// this package has been measured against. CockroachDB and YugabyteDB
-			// plans remain conservative until their cleanup inventories are
-			// measured independently.
-			postgresRuntimeObjects: normalized == "postgres" || normalized == "postgresql",
-			revisionTables:         true,
-		}
-	case "mysql", "mariadb":
-		return dialectCoverage{
-			foreignKeys:        true,
-			views:              true,
-			mysqlStoredObjects: true,
-			revisionTables:     true,
-		}
-	case "sqlite", "sqlite3":
-		return dialectCoverage{views: true}
-	case "sqlserver", "mssql":
-		return dialectCoverage{foreignKeys: true, revisionTables: true}
-	case "clickhouse":
-		return dialectCoverage{views: true, materializedViews: true}
-	case "oracle":
-		return dialectCoverage{writerListing: true}
-	case "ydb":
-		// The writer drops row tables and nothing else; a view, a column
-		// table and a topic stay, and the reader records them as not
-		// described.
-		return dialectCoverage{revisionTables: true}
-	default:
-		// Any dialect this package has not measured: report tables only, which
-		// every writer drops.
-		//
-		// Spanner lands here even though dbschema hands it the PostgreSQL
-		// writer, because Spanner's PostgreSQL interface does not accept the
-		// CASCADE and DROP TYPE forms the PostgreSQL rows above render, and no
-		// Spanner instance was available to measure the real coverage against.
-		// Its plan therefore still understates cleanup.
-		return dialectCoverage{}
+	cleanup := cleanupOf(dialect)
+	return dialectCoverage{
+		foreignKeys:            cleanup.ForeignKeys,
+		views:                  cleanup.Views,
+		materializedViews:      cleanup.MaterializedViews,
+		enums:                  cleanup.Enums,
+		domains:                cleanup.Domains,
+		composites:             cleanup.Composites,
+		ranges:                 cleanup.Ranges,
+		functions:              cleanup.Functions,
+		postgresRuntimeObjects: cleanup.CatalogInventory,
+		mysqlStoredObjects:     cleanup.StoredObjects,
+		revisionTables:         cleanup.RevisionTables,
+		writerListing:          cleanup.WriterListing,
 	}
 }
 
-func normalizeDialect(dialect string) string {
-	return strings.ToLower(strings.TrimSpace(dialect))
+// cleanupOf returns what dialect's descriptor states about cleaning up a
+// database of it, folding the spelling as platform.NormalizeDialect does, and
+// the zero value, which reports tables only, for a dialect the registry does
+// not know.
+func cleanupOf(dialect string) descriptor.Cleanup {
+	described, _ := platform.Lookup(dialect)
+	return described.Cleanup
+}
+
+// defaultSchemaOf returns the schema an unqualified name resolves to on
+// dialect, as its descriptor states it.
+func defaultSchemaOf(dialect string) string {
+	described, _ := platform.Lookup(dialect)
+	return described.DefaultSchema
 }
 
 // cleanupObjects turns the reader's schema snapshot into plan rows. Tables are
@@ -1108,7 +1086,7 @@ func inspectPostgresViewDependencyDepths(
 	conn *dbschema.DatabaseConnection,
 	objects []Object,
 ) (map[executionObjectIdentity]int, error) {
-	if !isPostgres(conn.Info().Dialect) {
+	if !cleanupOf(conn.Info().Dialect).CatalogInventory {
 		return nil, nil
 	}
 	schema := strings.TrimSpace(conn.Info().Schema)
@@ -1304,8 +1282,8 @@ func inspectRevisionTables(ctx context.Context, conn *dbschema.DatabaseConnectio
 	if !coverageFor(dialect).revisionTables {
 		return nil, nil
 	}
-	if isYDB(dialect) {
-		return inspectYDBRevisionTables(ctx, conn)
+	if cleanupOf(dialect).RevisionProbe == "" {
+		return inspectRevisionTablesByName(ctx, conn)
 	}
 	names := revisiontable.DefaultNames()
 	query, args := revisionTableProbe(dialect, strings.TrimSpace(conn.Info().Schema), names)
@@ -1352,7 +1330,7 @@ type ydbTableFinder interface {
 // `migrations up`: `db drop-all --dry-run` reported 1 object for a database
 // whose writer then dropped users, schema_migrations and
 // schema_migrations_log.
-func inspectYDBRevisionTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
+func inspectRevisionTablesByName(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
 	finder, ok := conn.SchemaWriter().(ydbTableFinder)
 	if !ok {
 		return nil, fmt.Errorf("inspect cleanup revision tables: the %T writer cannot find tables by name", conn.SchemaWriter())
@@ -1382,50 +1360,15 @@ func inspectYDBRevisionTables(ctx context.Context, conn *dbschema.DatabaseConnec
 // function how to read its catalog is a mistake that should surface, not one
 // that should send pg_class to a database that has none.
 func revisionTableProbe(dialect, schema string, names []string) (string, []any) {
-	switch {
-	case isSQLServer(dialect):
-		if schema == "" {
-			schema = "dbo"
-		}
-		args := append([]any{schema}, namesAsArgs(names)...)
-		return `
-			SELECT t.name
-			FROM sys.tables AS t
-			JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-			WHERE t.is_ms_shipped = 0
-			  AND s.name = @p1
-			  AND t.name IN (` + revisionTablePlaceholders(dialect, 2, len(names)) + `)
-			ORDER BY t.name`, args
-	case isMySQLFamily(dialect):
-		// COALESCE mirrors mysql.Writer.cleanupSchema: the configured schema
-		// when the connection pins one, otherwise the session's database.
-		args := append([]any{schema}, namesAsArgs(names)...)
-		return `
-			SELECT table_name
-			FROM information_schema.tables
-			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
-			  AND table_type = 'BASE TABLE'
-			  AND table_name IN (` + revisionTablePlaceholders(dialect, 2, len(names)) + `)
-			ORDER BY table_name`, args
-	case isPostgresFamily(dialect):
-		if schema == "" {
-			schema = "public"
-		}
-		args := append([]any{schema}, namesAsArgs(names)...)
-		// relkind 'r' and 'p' are ordinary and partitioned tables. Anything the
-		// writer would drop under a different statement is excluded, so a
-		// same-named view or sequence cannot enter the plan as a table.
-		return `
-			SELECT c.relname
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1
-			  AND c.relkind IN ('r', 'p')
-			  AND c.relname IN (` + revisionTablePlaceholders(dialect, 2, len(names)) + `)
-			ORDER BY c.relname`, args
-	default:
+	probe := cleanupOf(dialect).RevisionProbe
+	if probe == "" {
 		return "", nil
 	}
+	if schema == "" {
+		schema = defaultSchemaOf(dialect)
+	}
+	args := append([]any{schema}, namesAsArgs(names)...)
+	return strings.Replace(probe, "{names}", revisionTablePlaceholders(dialect, 2, len(names)), 1), args
 }
 
 func namesAsArgs(names []string) []any {
@@ -1437,12 +1380,13 @@ func namesAsArgs(names []string) []any {
 }
 
 func revisionTablePlaceholders(dialect string, start, count int) string {
+	described, _ := platform.Lookup(dialect)
 	parts := make([]string, count)
 	for i := range parts {
-		switch {
-		case isSQLServer(dialect):
+		switch described.Placeholder {
+		case descriptor.PlaceholderAtP:
 			parts[i] = fmt.Sprintf("@p%d", start+i)
-		case isPostgresFamily(dialect):
+		case descriptor.PlaceholderDollar:
 			parts[i] = fmt.Sprintf("$%d", start+i)
 		default:
 			parts[i] = "?"
@@ -1594,7 +1538,7 @@ func executionPriority(dialect, objectType string) int {
 	if coverageFor(dialect).writerListing {
 		return 0
 	}
-	if isMySQLFamily(dialect) {
+	if cleanupOf(dialect).ViewsFirst {
 		switch objectType {
 		case ObjectTypeView, ObjectTypeMaterializedView:
 			return 0
@@ -1650,7 +1594,7 @@ func dropCommand(dialect string, object Object) string {
 	case ObjectTypeForeignKey:
 		return dropForeignKeyCommand(dialect, object)
 	case ObjectTypeSchema:
-		if isMySQLFamily(dialect) {
+		if cleanupOf(dialect).DropsDatabases {
 			return "DROP DATABASE " + sqlident.Quote(dialect, object.Name)
 		}
 		return ""
@@ -1674,58 +1618,59 @@ func dropCommand(dialect string, object Object) string {
 func dropForeignKeyCommand(dialect string, object Object) string {
 	table := sqlident.Qualified(dialect, object.Schema, object.Table)
 	constraint := sqlident.Quote(dialect, object.Name)
-	if isMySQLFamily(dialect) {
-		return "ALTER TABLE " + table + " DROP FOREIGN KEY " + constraint
+	clause := cleanupOf(dialect).ForeignKeyDrop
+	if clause == "" {
+		clause = "DROP CONSTRAINT"
 	}
-	return "ALTER TABLE " + table + " DROP CONSTRAINT " + constraint
+	return "ALTER TABLE " + table + " " + clause + " " + constraint
 }
 
 func dropRoutineCommand(dialect, keyword, name, parameters string) string {
-	if isPostgresFamily(dialect) {
+	if cleanupOf(dialect).Restrict {
 		return "DROP " + keyword + " IF EXISTS " + name + "(" + parameters + ") RESTRICT"
 	}
 	return "DROP " + keyword + " IF EXISTS " + name
 }
 
 func dropSequenceCommand(dialect, name string) string {
-	if isPostgresFamily(dialect) {
+	if cleanupOf(dialect).Restrict {
 		return "DROP SEQUENCE IF EXISTS " + name + " RESTRICT"
 	}
 	return "DROP SEQUENCE IF EXISTS " + name
 }
 
 func dropViewCommand(dialect, name string) string {
-	if isPostgresFamily(dialect) {
-		return "DROP VIEW IF EXISTS " + name + " RESTRICT"
-	}
-	if normalizeDialect(dialect) == "clickhouse" {
-		return "DROP VIEW IF EXISTS " + name + " SYNC"
-	}
-	return "DROP VIEW IF EXISTS " + name
+	return "DROP VIEW IF EXISTS " + name + dropSuffix(dialect)
 }
 
 // dropMaterializedViewCommand renders the drop a materialized view takes.
 //
-// ClickHouse has no DROP MATERIALIZED VIEW statement at all — that spelling is
-// a syntax error on the server, and DROP VIEW is what removes a materialized
-// view together with the storage table it owns. Rendering the portable
-// spelling here would put a statement in the plan that the scoped executor
-// cannot run.
+// ClickHouse has no DROP MATERIALIZED VIEW statement at all -- that spelling
+// is a syntax error on the server, and DROP VIEW is what removes a
+// materialized view together with the storage table it owns. Rendering the
+// portable spelling there would put a statement in the plan that the scoped
+// executor cannot run. The descriptor says so with Sync.
 func dropMaterializedViewCommand(dialect, name string) string {
-	if normalizeDialect(dialect) == "clickhouse" {
+	if cleanupOf(dialect).Sync {
 		return "DROP VIEW IF EXISTS " + name + " SYNC"
 	}
 	return "DROP MATERIALIZED VIEW IF EXISTS " + name + " RESTRICT"
 }
 
 func dropTableCommand(dialect, name string) string {
-	if isPostgresFamily(dialect) {
-		return "DROP TABLE IF EXISTS " + name + " RESTRICT"
+	return "DROP TABLE IF EXISTS " + name + dropSuffix(dialect)
+}
+
+// dropSuffix is what a DROP TABLE or DROP VIEW ends with on dialect.
+func dropSuffix(dialect string) string {
+	switch cleanup := cleanupOf(dialect); {
+	case cleanup.Restrict:
+		return " RESTRICT"
+	case cleanup.Sync:
+		return " SYNC"
+	default:
+		return ""
 	}
-	if normalizeDialect(dialect) == "clickhouse" {
-		return "DROP TABLE IF EXISTS " + name + " SYNC"
-	}
-	return "DROP TABLE IF EXISTS " + name
 }
 
 func isCleanupTableType(tableType string) bool {
@@ -1739,46 +1684,6 @@ func isCleanupTableType(tableType string) bool {
 
 func isForeignKeyConstraint(constraint catalog.Constraint) bool {
 	return strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY")
-}
-
-func isPostgresFamily(dialect string) bool {
-	switch normalizeDialect(dialect) {
-	case "postgres", "postgresql", "cockroachdb", "yugabytedb":
-		return true
-	default:
-		return false
-	}
-}
-
-func isYDB(dialect string) bool {
-	return normalizeDialect(dialect) == "ydb"
-}
-
-func isPostgres(dialect string) bool {
-	switch normalizeDialect(dialect) {
-	case "postgres", "postgresql":
-		return true
-	default:
-		return false
-	}
-}
-
-func isMySQLFamily(dialect string) bool {
-	switch normalizeDialect(dialect) {
-	case "mysql", "mariadb":
-		return true
-	default:
-		return false
-	}
-}
-
-func isSQLServer(dialect string) bool {
-	switch normalizeDialect(dialect) {
-	case "sqlserver", "mssql":
-		return true
-	default:
-		return false
-	}
 }
 
 // dependentRelationsQuery asks which relations are defined in terms of the

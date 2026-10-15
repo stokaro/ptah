@@ -85,5 +85,26 @@ func postgres() descriptor.Dialect {
 		// How an identifier is written, and how a column's own key is named.
 		Quoting:    descriptor.Quoting{Style: descriptor.QuoteDouble},
 		ColumnKeys: descriptor.ColumnKeyTableColumnKey,
+
+		// Cleanup: what a development database cleanup reads.
+		// The writer-only catalog inventory is PostgreSQL proper's alone:
+		// it is the only engine of the family the cleanup has been measured
+		// against, and CockroachDB and YugabyteDB plans stay conservative
+		// until theirs are.
+		Cleanup: descriptor.Cleanup{
+			ForeignKeys:       true,
+			Views:             true,
+			MaterializedViews: true,
+			Enums:             true,
+			Domains:           true,
+			Composites:        true,
+			Ranges:            true,
+			Functions:         true,
+			CatalogInventory:  true,
+			RevisionTables:    true,
+			RevisionProbe:     postgresRevisionProbe,
+			SchemaScoped:      true,
+			Restrict:          true,
+		},
 	}
 }

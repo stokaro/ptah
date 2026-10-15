@@ -112,6 +112,11 @@ END;`,
 		},
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble, Bare: descriptor.BareEverywhere, Keywords: oracleKeywords()},
+
+		// Cleanup: what a development database cleanup reads.
+		// The writer lists what it drops, with each statement, in its drop
+		// order, and the listing carries the revision tables the reader hides.
+		Cleanup: descriptor.Cleanup{WriterListing: true},
 	}
 }
 

@@ -150,6 +150,12 @@ type Dialect struct {
 	// ColumnKeys is how the server names the key a column's own UNIQUE
 	// builds. Empty means the naming is not measured.
 	ColumnKeys ColumnKeyNaming `json:"column_keys,omitempty"`
+
+	// Cleanup: what internal/schemaclean reads.
+
+	// Cleanup states what a development database cleanup destroys and how it
+	// spells the statements.
+	Cleanup Cleanup `json:"cleanup,omitzero"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE
