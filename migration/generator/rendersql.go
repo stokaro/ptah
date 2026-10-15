@@ -83,12 +83,26 @@ func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generate
 	return withGeneratedTimeoutDirectives(sql, dialect)
 }
 
+// withGeneratedTimeoutDirectives states the GeneratedTimeouts of the
+// dialect's descriptor ([ptah.run/core/platform/descriptor.Dialect]) at the
+// head of sql when one of its statements waits for a lock on a table. A
+// dialect that states none, and a file whose statements wait for no table
+// lock, are left as they are.
 func withGeneratedTimeoutDirectives(sql, dialect string) string {
-	if !waitsForTableLock(sql) || !supportsGeneratedTimeoutDirectives(dialect) {
+	if !waitsForTableLock(sql) {
 		return sql
 	}
-
-	directives := "-- +ptah lock_timeout=3s\n-- +ptah statement_timeout=30s\n"
+	described, _ := platform.Lookup(dialect)
+	var directives string
+	if timeout := described.GeneratedTimeouts.Lock; timeout != "" {
+		directives += "-- +ptah lock_timeout=" + timeout + "\n"
+	}
+	if timeout := described.GeneratedTimeouts.Statement; timeout != "" {
+		directives += "-- +ptah statement_timeout=" + timeout + "\n"
+	}
+	if directives == "" {
+		return sql
+	}
 	separator := "\n\n"
 	if before, after, ok := strings.Cut(sql, separator); ok {
 		return before + "\n" + directives + "\n" + after
@@ -107,11 +121,6 @@ var tableLockWaiter = regexp.MustCompile(
 
 func waitsForTableLock(sql string) bool {
 	return tableLockWaiter.MatchString(sqlutil.StripComments(sql))
-}
-
-func supportsGeneratedTimeoutDirectives(dialect string) bool {
-	normalized := platform.NormalizeDialect(dialect)
-	return slices.Contains([]string{platform.Postgres, platform.MySQL, platform.MariaDB}, normalized)
 }
 
 func withNoTransactionDirective(sql string) string {

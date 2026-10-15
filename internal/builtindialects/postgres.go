@@ -132,5 +132,9 @@ func postgres() descriptor.Dialect {
 			ScratchDatabase: true,
 			DropSchema:      "DROP SCHEMA IF EXISTS %s CASCADE",
 		},
+
+		// How the common model is lowered for the engine.
+		GeneratedTimeouts:      descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"},
+		GeneratedColumnDefault: "STORED",
 	}
 }

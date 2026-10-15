@@ -125,6 +125,10 @@ END`,
 			Identity: "query",
 			Query:    "SELECT DB_NAME()",
 		},
+
+		// How the common model is lowered for the engine.
+		GeneratedColumnDefault: "PERSISTED",
+		InlineEnum:             descriptor.InlineEnum{Type: "NVARCHAR(255)", Check: descriptor.InlineEnumCheckQuoted},
 	}
 }
 

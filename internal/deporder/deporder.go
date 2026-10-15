@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
@@ -1028,12 +1029,15 @@ func sqlCodeMask(body string) []bool {
 	return sqlMasksForDialect(body, "").code
 }
 
-// sqlCodeMaskForDialect adds the target's nonstandard comment forms without
-// changing the generic PostgreSQL-oriented scanner. ClickHouse recognizes #,
-// #!, and // line comments in addition to -- and /* ... */. YDB is read by
-// the YQL lexer instead; see [yqlMasks].
+// sqlMasksForDialect adds the target's nonstandard lexical forms, as its
+// descriptor states them, without changing the generic PostgreSQL-oriented
+// scanner: ClickHouse recognizes #, #!, and // line comments in addition to
+// -- and /* ... */, and escapes with a backslash. A target read by a lexer of
+// its own, as YDB's YQL is, is read by that lexer instead; see [yqlMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	described, _ := platform.Lookup(dialect)
+	lexical := described.Lexical
+	if lexical.Lexer == descriptor.LexerYQL {
 		return yqlMasks(body)
 	}
 	masks := sqlMasks{
@@ -1042,21 +1046,23 @@ func sqlMasksForDialect(body, dialect string) sqlMasks {
 		quoteOpen:        make([]bool, len(body)),
 		quoteClose:       make([]bool, len(body)),
 	}
-	clickHouse := platform.NormalizeDialect(dialect) == platform.ClickHouse
+	opensLineComment := func(rest string) bool {
+		return slices.ContainsFunc(lexical.LineComments, func(marker string) bool {
+			return marker != "" && strings.HasPrefix(rest, marker)
+		})
+	}
 	for i := 0; i < len(body); {
 		switch {
-		case clickHouse && body[i] == '#':
-			i = skipLineComment(body, i)
-		case clickHouse && strings.HasPrefix(body[i:], "//"):
+		case opensLineComment(body[i:]):
 			i = skipLineComment(body, i)
 		case strings.HasPrefix(body[i:], "--"):
 			i = skipLineComment(body, i)
 		case strings.HasPrefix(body[i:], "/*"):
 			i = skipBlockComment(body, i)
 		case body[i] == '\'':
-			i = skipStringLiteral(body, i, dialect)
+			i = skipStringLiteral(body, i, lexical.BackslashEscapes)
 		case body[i] == '"' || body[i] == '`':
-			end, closeAt := quotedIdentifierEnd(body, i, dialect)
+			end, closeAt := quotedIdentifierEnd(body, i, lexical.BackslashEscapes)
 			masks.quoteOpen[i] = true
 			if closeAt >= 0 {
 				masks.quoteClose[closeAt] = true
@@ -1158,9 +1164,9 @@ func skipBlockComment(body string, start int) int {
 
 // skipStringLiteral consumes a '...' literal. A doubled quote continues it.
 // PostgreSQL enables backslash escapes for E-prefixed literals; ClickHouse
-// enables them for ordinary literals, which the dialect flag carries here.
-func skipStringLiteral(body string, start int, dialect string) int {
-	escapes := platform.NormalizeDialect(dialect) == platform.ClickHouse || start > 0 && body[start-1] == 'e' &&
+// enables them for ordinary literals, which backslashEscapes carries here.
+func skipStringLiteral(body string, start int, backslashEscapes bool) int {
+	escapes := backslashEscapes || start > 0 && body[start-1] == 'e' &&
 		(start == 1 || !isSQLIdentifierRune(rune(body[start-2])))
 	for i := start + 1; i < len(body); {
 		switch {
@@ -1181,9 +1187,8 @@ func skipStringLiteral(body string, start int, dialect string) int {
 // including doubled closing quotes and ClickHouse backslash escapes. It returns
 // both the exclusive end and the closing delimiter offset, or -1 when the
 // identifier is unterminated.
-func quotedIdentifierEnd(body string, start int, dialect string) (end, closeAt int) {
+func quotedIdentifierEnd(body string, start int, backslashEscapes bool) (end, closeAt int) {
 	quote := body[start]
-	backslashEscapes := platform.NormalizeDialect(dialect) == platform.ClickHouse
 	for i := start + 1; i < len(body); {
 		switch {
 		case backslashEscapes && body[i] == '\\' && i+1 < len(body):

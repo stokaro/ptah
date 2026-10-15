@@ -123,6 +123,10 @@ func clickHouse() descriptor.Dialect {
 			FileLock: "loopback",
 		},
 		SchemaIsDatabase: true,
+
+		// How the common model is lowered for the engine.
+		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumNumbered},
+		Lexical:    descriptor.Lexical{LineComments: []string{"#", "//"}, BackslashEscapes: true},
 	}
 }
 

@@ -119,5 +119,8 @@ func yugabyteDB() descriptor.Dialect {
 			Query:           "SELECT current_database()",
 			ScratchDatabase: true,
 		},
+
+		// How the common model is lowered for the engine.
+		GeneratedColumnDefault: "STORED",
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -39,39 +40,29 @@ func escapeSQLStringLiteral(value string) string {
 	return "'" + escaped + "'"
 }
 
-func sqlServerBracketIdentifier(value string) string {
-	return "[" + strings.ReplaceAll(value, "]", "]]") + "]"
-}
-
+// defaultGeneratedKind is the persistence a generated column is created with:
+// the one the field states, or else the target's default, which its descriptor
+// states (PostgreSQL spells it STORED, SQL Server PERSISTED).
+//
+// It changes how a COLUMN is modeled only. It does not decide whether any
+// declared object is converted at all: CollectDatabase hands every object to
+// the renderer and the capability set answers there, so that `schema render`
+// and `schema apply` cannot disagree about the same file (stokaro/ptah#929).
 func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string {
 	if field.GeneratedExpression == "" || field.GeneratedKind != "" {
 		return field.GeneratedKind
 	}
-	switch {
-	case isPostgreSQLFamilyPlatform(targetPlatform):
-		return "STORED"
-	case isMySQLFamilyTarget(targetPlatform):
-		return "VIRTUAL"
-	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer:
-		return "PERSISTED"
-	case isSQLiteTarget(targetPlatform):
-		return "VIRTUAL"
-	default:
-		return field.GeneratedKind
+	if kind := describe(targetPlatform).GeneratedColumnDefault; kind != "" {
+		return kind
 	}
+	return field.GeneratedKind
 }
 
-// isPostgreSQLFamilyPlatform reports whether the target renders PostgreSQL
-// object DDL: PostgreSQL itself and the wire-compatible engines.
-//
-// It survives only where the answer changes how a COLUMN is modeled -- the
-// default persistence of a generated column, which PostgreSQL spells STORED and
-// SQL Server spells PERSISTED. It does not decide whether any declared object
-// is converted at all: CollectDatabase hands every object to the renderer and the
-// capability set answers there, so that `schema render` and `schema apply`
-// cannot disagree about the same file (stokaro/ptah#929).
-func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
-	return platform.IsPostgresFamily(targetPlatform)
+// describe is the target's descriptor, and the zero descriptor for a target no
+// descriptor answers, which states none of the facts this package reads.
+func describe(targetPlatform string) descriptor.Dialect {
+	described, _ := platform.Lookup(targetPlatform)
+	return described
 }
 
 // typeRawSQLSurvives reports whether the column type is still the one the
@@ -156,41 +147,43 @@ func applyInlineEnumModel(field schemamodel.Field, values []string, targetPlatfo
 		quotedValues[i] = escapeSQLStringLiteral(value)
 	}
 
+	// The target's descriptor states the form. A type that lists the values,
+	// as MySQL's ENUM does, or numbers them, as ClickHouse's Enum8 does, holds
+	// them itself; any other type holds them under a CHECK.
+	inline := describe(targetPlatform).InlineEnum
 	newField := field
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
+	switch inline.Type {
+	case "":
+		return newField
+	case descriptor.InlineEnumValues:
 		newField.Type = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
-	case platform.ClickHouse:
+		return newField
+	case descriptor.InlineEnumNumbered:
 		newField.Type = schemaprep.ClickHouseEnumType(values)
-	case platform.SQLite, platform.Spanner:
-		newField.Type = "TEXT"
-		enumCheck := fmt.Sprintf("%s IN (%s)", field.Name, strings.Join(quotedValues, ", "))
-		if field.Check != "" {
-			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
-		}
-		newField.Check = enumCheck
-	case platform.SQLServer:
-		newField.Type = "NVARCHAR(255)"
-		enumCheck := fmt.Sprintf("%s IN (%s)", sqlServerBracketIdentifier(field.Name), strings.Join(quotedValues, ", "))
-		if field.Check != "" {
-			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
-		}
-		newField.Check = enumCheck
-	case platform.Oracle:
-		newField.Type = "VARCHAR2(255)"
-		// The column reference is spelled by the same rule the Oracle renderer
+		return newField
+	default:
+		newField.Type = inline.Type
+	}
+	column := field.Name
+	switch inline.Check {
+	case descriptor.InlineEnumCheckBare:
+	case descriptor.InlineEnumCheckQuoted:
+		// The column reference is spelled by the same rule the renderer
 		// spells the declaration with, because Oracle refuses a CHECK whose
 		// spelling disagrees with the column it constrains: measured,
 		// `"view_count" NUMBER(10) CHECK (view_count >= 0)` answers ORA-00904
 		// while the two agreeing forms are accepted. sqlident.Ident is what
-		// escapeIdentifier there calls, so the two cannot drift apart.
-		enumCheck := fmt.Sprintf("%s IN (%s)",
-			sqlident.Ident(platform.Oracle, field.Name), strings.Join(quotedValues, ", "))
-		if field.Check != "" {
-			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
-		}
-		newField.Check = enumCheck
+		// the Oracle renderer's escapeIdentifier calls, so the two cannot
+		// drift apart, and on SQL Server it is the bracketed name.
+		column = sqlident.Ident(targetPlatform, field.Name)
+	default:
+		return newField
 	}
+	enumCheck := fmt.Sprintf("%s IN (%s)", column, strings.Join(quotedValues, ", "))
+	if field.Check != "" {
+		enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
+	}
+	newField.Check = enumCheck
 	return newField
 }
 
@@ -699,18 +692,20 @@ func fromTableWithFieldConverter(
 }
 
 func renderTableName(table schemamodel.Table, targetPlatform string) string {
-	// SQLite catalog identifiers are already parsed. Preserve their exact
-	// components for a table a facet defines, such as a virtual table: quoted
-	// leading or trailing whitespace is part of the identity, and normalizing
-	// it would recreate another object.
-	if _, defined := schemaext.DefiningKind(table.Facets); isSQLiteTarget(targetPlatform) && defined {
+	// A table a facet defines, such as a SQLite virtual table, carries the
+	// catalog identifiers its owner already parsed. Preserve their exact
+	// components: quoted leading or trailing whitespace is part of the
+	// identity, and normalizing it would recreate another object. Such a facet
+	// is on its owner's target only, so this reads no dialect.
+	if _, defined := schemaext.DefiningKind(table.Facets); defined {
 		return tableref.CanonicalExact(table.Schema, table.Name)
 	}
-	// The YDB renderer reads every table reference through tableref, so it
-	// takes the canonical spelling, whose quoting tableref reads. Quoting the
-	// name for YDB here would hand it a backtick escaped with a backslash,
-	// which tableref does not read, and the name would be quoted twice.
-	if platform.NormalizeDialect(targetPlatform) == platform.YDB {
+	// A renderer of path names, as YDB's is, reads every table reference
+	// through tableref, so it takes the canonical spelling, whose quoting
+	// tableref reads. Quoting the name for YDB here would hand it a backtick
+	// escaped with a backslash, which tableref does not read, and the name
+	// would be quoted twice.
+	if describe(targetPlatform).Quoting.Paths {
 		return table.QualifiedName()
 	}
 	if strings.Contains(table.Schema, ".") || strings.Contains(table.Name, ".") {
@@ -1727,15 +1722,15 @@ func walkCommonDatabase(
 	if err := appendUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
 		return err
 	}
-	mysqlFamily := isMySQLFamilyTarget(targetPlatform)
-	if mysqlFamily {
+	indexesFirst := describe(targetPlatform).IndexesBeforeForeignKeys
+	if indexesFirst {
 		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
 			return err
 		}
 	}
 
 	// 8. Add foreign key constraints after all tables and unique indexes exist.
-	if !isSQLiteTarget(targetPlatform) {
+	if !describe(targetPlatform).ForeignKeysInCreateTable {
 		if err := appendForeignKeyConstraintStatements(visit, database.Tables, allFields, database.Constraints, targetPlatform); err != nil {
 			return err
 		}
@@ -1753,7 +1748,7 @@ func walkCommonDatabase(
 
 	// 10. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
-	if !mysqlFamily {
+	if !indexesFirst {
 		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
 			return err
 		}
@@ -1861,9 +1856,9 @@ func appendTableStatements(
 	inlineIndexes map[string][]*ast.IndexNode,
 	resolves deporder.BodyResolution,
 ) (map[string]bool, error) {
-	sqliteTarget := isSQLiteTarget(targetPlatform)
+	inlineForeignKeys := describe(targetPlatform).ForeignKeysInCreateTable
 	mode := tableConstraintsWithoutForeignKeys
-	if sqliteTarget {
+	if inlineForeignKeys {
 		mode = tableConstraintsWithForeignKeys
 	}
 	var routines []schemamodel.Function
@@ -1902,7 +1897,7 @@ func appendTableStatements(
 		table := tables[step.Name][0]
 		tables[step.Name] = tables[step.Name][1:]
 		tableNode := fromTableWithoutForeignKeys(table, allFields, database.Enums, targetPlatform)
-		if sqliteTarget {
+		if inlineForeignKeys {
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
 		parent := objectidentity.NewBuilder(identifier.ForDialect(targetPlatform)).TableParts(table.Schema, table.Name)
@@ -2271,19 +2266,6 @@ func declaredRoutinePlacements(
 		created.Relations = append(created.Relations, view.Name)
 	}
 	return deporder.PlaceRoutines(database.Functions, database.FunctionDependencies, created, targetPlatform, resolves)
-}
-
-func isSQLiteTarget(targetPlatform string) bool {
-	return platform.NormalizeDialect(targetPlatform) == platform.SQLite
-}
-
-func isMySQLFamilyTarget(targetPlatform string) bool {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
 }
 
 func appendSchemaStatements(visit func(ast.Node) error, schemas []schemamodel.Schema) error {
