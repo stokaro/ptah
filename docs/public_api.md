@@ -4768,14 +4768,20 @@ defaults from a dialect descriptor, and `ForDialect` is that function over the
 process dialect registry.
 
 `core/platform/descriptor.Dialect` is what an engine states about itself, as
-data only: names and aliases, protocol family, default schema, identifier rules
-and placeholder style. A `descriptor.Registry` is an immutable, validated set
-of them. `core/platform` serves the process registry through `Dialects` and
-`Lookup`, and `NormalizeDialect`, `DialectSpellings` and `IsPostgresFamily`
-read it. The registry starts with the built-in engines, ready before any
-package-level variable reads it. `platform.Register` adds an engine Ptah does
-not ship. It only adds: an equal descriptor registered again changes nothing,
-and one that claims a spelling a different descriptor owns fails with
+data only. Beside its names and aliases, protocol family, default schema,
+identifier rules and placeholder style, it carries what shared packages read
+in place of a dialect's name:
+
+- `Query`: how `core/query` spells what engines spell differently.
+- `Scripts`: how a script is cut into statements.
+
+A `descriptor.Registry` is an immutable, validated set of descriptors.
+`core/platform` serves the process registry through `Dialects` and `Lookup`,
+and `NormalizeDialect`, `DialectSpellings` and `IsPostgresFamily` read it. The
+registry starts with the built-in engines, ready before any package-level
+variable reads it. `platform.Register` adds an engine Ptah does not ship. It
+only adds: an equal descriptor registered again changes nothing, and one that
+claims a spelling a different descriptor owns fails with
 `descriptor.ErrConflict`, so a spelling keeps its first answer for the life of
 the process. `engine.New` registers nothing, and `engine/builtin.New` builds
 providers for the built-in engines only.

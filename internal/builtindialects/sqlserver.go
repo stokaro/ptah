@@ -44,5 +44,17 @@ func sqlServer() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "sqlserver",
+
+		// T-SQL has no LIMIT. It accepts OFFSET and FETCH, and only after an
+		// ORDER BY, so a row limit the caller ordered by nothing gets `ORDER
+		// BY (SELECT NULL)`, its spelling of "no particular order"
+		// (stokaro/ptah#941). GO ends a batch in sqlcmd and SSMS.
+		Query: descriptor.Query{
+			OffsetFetch:  true,
+			FetchOrderBy: "(SELECT NULL)",
+			UpsertRefusal: "SQL Server has no ON CONFLICT: it expresses an upsert as MERGE, " +
+				"a different statement with its own source, join condition and match clauses",
+		},
+		Scripts: descriptor.Scripts{BatchSeparator: "GO", ClientDelimiters: true},
 	}
 }

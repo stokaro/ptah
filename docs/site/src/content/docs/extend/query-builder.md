@@ -292,7 +292,7 @@ that fails at execution time against the database.
 
 - **SQLite** gained `RIGHT` and `FULL OUTER JOIN` only in version 3.39 (2022).
   Because Ptah targets a range of SQLite versions and cannot assume 3.39+, both
-  are rejected (`renderer: SQLite does not support RIGHT JOIN`).
+  are rejected (`renderer: sqlite does not support RIGHT JOIN`).
 - **MySQL and MariaDB** have no `FULL [OUTER] JOIN` in any version — it must be
   emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
   (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.

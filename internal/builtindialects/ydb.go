@@ -55,5 +55,24 @@ func ydb() descriptor.Dialect {
 
 		// How a connection reaches the server.
 		Driver: "ydb",
+
+		// What a YDB line runs differs by release, so the query builder reads
+		// the target's capabilities. YQL types LIMIT and OFFSET as Uint64 and
+		// converts no signed parameter: measured on 26.2.1.14 and 25.1.4.7,
+		// `LIMIT $p1` bound to an Int64 answers `Failed to convert type: Int64
+		// to Uint64`. UPSERT INTO is YQL's own statement; on the same lines
+		// `INSERT OR IGNORE INTO` answers `INSERT OR IGNORE is not yet
+		// supported for Kikimr`, and YQL has no ON CONFLICT.
+		Query: descriptor.Query{
+			ChecksCapabilities: true,
+			UnsignedBounds:     true,
+			Upsert:             descriptor.UpsertInto,
+			UpsertRefusal: "YDB has no ON CONFLICT: UpsertInto writes each row over the row with the same " +
+				"primary key, and the server refuses INSERT OR IGNORE",
+		},
+		// No YDB client writes a delimiter directive, and the shared rewriter
+		// reads strings and comments by rules YQL does not share: it would
+		// rewrite a delimiter inside an @@...@@ literal.
+		Scripts: descriptor.Scripts{ClientDelimiters: false},
 	}
 }

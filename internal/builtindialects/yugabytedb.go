@@ -49,5 +49,10 @@ func yugabyteDB() descriptor.Dialect {
 		// How a connection reaches the server.
 		Driver:     "pgx",
 		WireScheme: "postgres",
+
+		Query: descriptor.Query{
+			Upsert: descriptor.UpsertOnConflict,
+		},
+		Scripts: descriptor.Scripts{ClientDelimiters: true},
 	}
 }

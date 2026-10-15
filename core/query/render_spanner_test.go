@@ -129,10 +129,9 @@ func spannerParityCases() []spannerParityCase {
 // TestSpannerRendersIdenticallyToPostgres pins the Spanner rendering of the whole
 // DML surface against the PostgreSQL rendering of the same statement.
 //
-// Revert the Spanner entry in selectPlaceholderStyle and every case prints
-//
-//	error: got non-nil error, want nil
-//	error message: renderer: SELECT rendering is not supported for dialect "spanner"
+// The two renderings are compared, so a Spanner descriptor whose placeholder
+// or query spellings drift from PostgreSQL's fails here rather than in a
+// table written for one of them.
 //
 // Revert only the Spanner half of supportsReturning and the three RETURNING
 // cases print `renderer: spanner does not support RETURNING` where the postgres

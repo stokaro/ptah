@@ -5,18 +5,21 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
 // Rebind converts portable `?` placeholders in query to the dialect's
-// placeholder syntax. For PostgreSQL it rewrites them to `$1`, `$2`, ... in
-// the order they appear; for SQL Server it rewrites them to `@p1`, `@p2`, ...
-// for github.com/microsoft/go-mssqldb; for MySQL/MariaDB the query is returned
-// unchanged because `?` is already the native placeholder. For YDB it rewrites
-// them to YQL's named parameters `$p1`, `$p2`, ..., which the YDB connection
-// binds from positional arguments; see [rebindYQL]. Unknown dialects pass
-// through verbatim: Rebind is a translator, not a validator.
+// placeholder syntax, the descriptor.Placeholder its descriptor in the process
+// registry states (platform.Lookup). For PostgreSQL it rewrites them to `$1`,
+// `$2`, ... in the order they appear; for SQL Server it rewrites them to
+// `@p1`, `@p2`, ... for github.com/microsoft/go-mssqldb; for Oracle to `:1`,
+// `:2`, ...; for MySQL/MariaDB the query is returned unchanged because `?` is
+// already the native placeholder. For YDB it rewrites them to YQL's named
+// parameters `$p1`, `$p2`, ..., which the YDB connection binds from positional
+// arguments; see [rebindNamed]. Unknown dialects pass through verbatim:
+// Rebind is a translator, not a validator.
 //
 // The scanner skips occurrences inside standard single-quoted string
 // literals (where a single quote inside is escaped by doubling it, per the
@@ -30,17 +33,19 @@ import (
 // single-quoted literals and double-quoted identifiers. Apply Rebind to
 // known templates — never to user-supplied SQL.
 func Rebind(dialect, query string) string {
-	switch platform.NormalizeDialect(strings.ToLower(dialect)) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	described, ok := platform.Lookup(dialect)
+	if !ok {
+		return query
+	}
+	switch described.Placeholder {
+	case descriptor.PlaceholderDollar:
 		return rebindToOrdinal(query, "$")
-	case platform.SQLServer:
+	case descriptor.PlaceholderAtP:
 		return rebindToOrdinal(query, "@p")
-	case platform.Oracle:
-		// Measured on 23.26: an INSERT bound with :1 is accepted, while ? and
-		// $1 both answer ORA-00911, invalid character.
+	case descriptor.PlaceholderColon:
 		return rebindToOrdinal(query, ":")
-	case platform.YDB:
-		return rebindYQL(query)
+	case descriptor.PlaceholderDollarNamed:
+		return rebindNamed(query, described.Name)
 	default:
 		return query
 	}
@@ -110,8 +115,10 @@ func rebindToOrdinal(query, prefix string) string {
 	return b.String()
 }
 
-// rebindYQL rewrites each `?` placeholder to `$p1`, `$p2`, ... in the order they
-// appear.
+// rebindNamed rewrites each `?` placeholder to `$p1`, `$p2`, ... in the order
+// they appear, reading query with the lexer of dialect, the dialect whose
+// descriptor names its parameters (descriptor.PlaceholderDollarNamed). YDB is
+// the one such dialect.
 //
 // YQL has no positional placeholder: `$1` is a parse error, and a bare `?` is
 // one too unless a client rewrites it. ydb-go-sdk's own positional binder does
@@ -127,8 +134,8 @@ func rebindToOrdinal(query, prefix string) string {
 // the `??` operator in YQL. Rebind reads every `?` outside a literal as a
 // placeholder, which is why it is for Ptah's own templates and not for an
 // author's YQL.
-func rebindYQL(query string) string {
-	lexr := lexer.NewLexerWithOptions(query, dialectlexer.Options(platform.YDB))
+func rebindNamed(query, dialect string) string {
+	lexr := lexer.NewLexerWithOptions(query, dialectlexer.Options(dialect))
 	var b strings.Builder
 	b.Grow(len(query) + 8)
 	written, n := 0, 0

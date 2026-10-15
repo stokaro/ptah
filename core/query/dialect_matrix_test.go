@@ -18,9 +18,9 @@ import (
 // This file is the dialect-coverage guard for the query builder's four render
 // entry points. It exists because the previous shape of the suite let the
 // builder acquire a dialect silently: only three cells anywhere pinned a
-// refusal, all three on ClickHouse, so adding a dialect to
-// selectPlaceholderStyle and deleting those three cells produced a green suite
-// and SQL nobody had ever looked at.
+// refusal, all three on ClickHouse, so teaching the builder a dialect and
+// deleting those three cells produced a green suite and SQL nobody had ever
+// looked at. A dialect now renders when the process registry describes it.
 //
 // Two independent things are pinned here:
 //
@@ -42,7 +42,7 @@ import (
 // the two placeholder tables in this repository cannot drift apart.
 
 // genericRefusalMarker is the substring newSelectRenderer and newWriteRenderer
-// emit for a dialect that has no entry in selectPlaceholderStyle. A cell that
+// emit for a dialect the process registry does not describe. A cell that
 // still carries it is a dialect the builder has never been taught, as opposed to
 // one it refuses for a stated engine reason.
 const genericRefusalMarker = "rendering is not supported for dialect"
@@ -304,8 +304,8 @@ func ydbCells(dialect string) dmlMatrixRow {
 //
 // It is EMPTY: every dialect renderer.SupportedDialects() reports renders all
 // four verbs. The list and the test stay, because the guard is about the next
-// dialect rather than about the names it once held: a name added to
-// selectPlaceholderStyle without a row written for it lands here.
+// dialect rather than about the names it once held: a name the registry
+// describes without a row written for it lands here.
 //
 // The list is compared against OBSERVED behavior rather than against
 // dmlMatrixRows, so shrinking it without also teaching the renderer is red too.
@@ -453,8 +453,8 @@ func onePlaceholderInsert() *query.InsertStatement {
 // agreesWithRebind renders the one-placeholder INSERT and compares it against a
 // string built from sqlutil.Rebind for the same dialect. The expectation is
 // derived, not written out: there is no constant here to edit into agreement, so
-// a placeholder style added to selectPlaceholderStyle that disagrees with Rebind
-// fails on this line.
+// a placeholder style the query builder reads differently from Rebind fails on
+// this line.
 func assertAgreesWithRebind(c *qt.C, dialect string) {
 	c.Helper()
 	text, args, err := query.RenderInsert(onePlaceholderInsert(), dialect)
@@ -488,7 +488,7 @@ func boundValue(arg any) any {
 // taught: the render refuses, while sqlutil.Rebind already has an answer for the
 // same name. wantRebind records that answer so whoever teaches the renderer this
 // dialect has the placeholder style in front of them; for SQL Server it is @p1,
-// not the ? a naive entry in selectPlaceholderStyle would emit.
+// not the ? a naive placeholder style would emit.
 func assertRefusesButRebindKnows(c *qt.C, dialect, wantRebind string) {
 	c.Helper()
 	_, _, err := query.RenderInsert(onePlaceholderInsert(), dialect)

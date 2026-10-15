@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/sqlident"
 )
@@ -39,16 +41,17 @@ import (
 // A function name (COUNT, SUM, …) is a keyword emitted verbatim, never quoted;
 // the renderer rejects a name that is not a simple identifier rather than emit it.
 //
-// Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
-// YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
-// platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse,
-// SQL Server, Oracle, and YDB. SQL Server and Oracle both page with OFFSET/FETCH
-// rather than LIMIT, which neither of them accepts. Only SQL Server also gets a
-// synthesized ORDER BY (SELECT NULL) when the caller ordered nothing, because
-// only T-SQL refuses the row-limiting clause without an ORDER BY; Oracle needs
-// no sentinel and is given none, which keeps the query runnable on every Oracle
-// release Ptah targets rather than only the ones that parse the sentinel.
-// Any other dialect returns an error, as does a nil
+// Supported dialects are the ones the process registry describes
+// (platform.Lookup): every built-in engine, and any dialect a program adds
+// with platform.Register. The descriptor's Placeholder and Query fields state
+// how the dialect spells what dialects spell differently, so core/query names
+// no dialect. Among the built-ins, SQL Server and Oracle both page with
+// OFFSET/FETCH rather than LIMIT, which neither of them accepts. Only SQL
+// Server also gets a synthesized ORDER BY (SELECT NULL) when the caller
+// ordered nothing, because only T-SQL refuses the row-limiting clause without
+// an ORDER BY; Oracle needs no sentinel and is given none, which keeps the
+// query runnable on every Oracle release Ptah targets rather than only the
+// ones that parse the sentinel. Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
 // operator, a function call with an invalid name or a bad argument shape, a GROUP
 // BY term with an empty column, a join without a table or ON condition, or a
@@ -95,72 +98,47 @@ func RenderSelectWithCapabilities(
 	return r.buf.String(), r.args, nil
 }
 
-// placeholderStyle selects how bound parameters are numbered in the output.
-type placeholderStyle int
-
-const (
-	// placeholderDollar numbers parameters $1, $2, … (PostgreSQL family).
-	placeholderDollar placeholderStyle = iota
-	// placeholderQuestion emits ? for every parameter (MySQL, MariaDB, SQLite,
-	// ClickHouse).
-	placeholderQuestion
-	// placeholderColon numbers parameters :1, :2, … (Oracle). Measured on
-	// 23.26: an INSERT with :1 is accepted, while the same statement with ?
-	// answers ORA-00911 and with $1 answers ORA-00911.
-	placeholderColon
-	// placeholderAtP numbers parameters @p1, @p2, … (SQL Server).
-	//
-	// SQL Server has no positional `?` in T-SQL itself; its drivers bind named
-	// parameters, and @pN is the name the standard Go driver generates for an
-	// ordinal argument. Emitting `?` here would render SQL the server parses as
-	// a syntax error rather than as a parameter.
-	placeholderAtP
-	// placeholderYQL names parameters $p1, $p2, … (YDB) and binds each
-	// argument as a sql.NamedArg of the same name.
-	//
-	// YQL has no positional parameter: `$1` and `?` are parse errors. The
-	// name is the one sqlutil.Rebind writes for the same position, and the
-	// argument carries it, because ydb-go-sdk binds a parameter by name:
-	// measured on YDB 26.2.1.14 with ydb-go-sdk v3.153.2, a positional
-	// argument for `$p1` answers `Unknown name: $p1` through the SDK's own
-	// connector, and sql.Named("p1", v) binds there and through Ptah's
-	// connection alike.
-	placeholderYQL
-)
-
 // selectRenderer holds the mutable state for one RenderSelect call: the target
-// dialect and its capabilities, the placeholder style, the accumulated
-// arguments, and the SQL buffer.
+// dialect, how it spells what dialects spell differently, its capabilities,
+// the accumulated arguments, and the SQL buffer.
 type selectRenderer struct {
 	dialect     string
+	placeholder descriptor.Placeholder
+	query       descriptor.Query
 	caps        capability.Capabilities
-	placeholder placeholderStyle
 	args        []any
 	buf         strings.Builder
 	// nestDepth bounds WITH nesting; see maxNestDepth.
 	nestDepth int
 }
 
+// newSelectRenderer builds the renderer for a dialect the process registry
+// describes. The descriptor is the whole answer: a dialect renders when it
+// is described, with the placeholder style and spellings its descriptor
+// states, and core/query names no dialect.
 func newSelectRenderer(dialect string, caps capability.Capabilities) (*selectRenderer, error) {
-	normalized := platform.NormalizeDialect(dialect)
-	style, ok := selectPlaceholderStyle(normalized)
+	described, ok := platform.Lookup(dialect)
 	if !ok {
 		return nil, fmt.Errorf("renderer: SELECT rendering is not supported for dialect %q", dialect)
 	}
-	return &selectRenderer{dialect: normalized, caps: caps, placeholder: style}, nil
+	return newDescribedRenderer(described, caps), nil
 }
 
-// asksKeys reports whether the renderer decides a construct by the target's
-// capabilities rather than by its dialect. Only YDB does; see
-// RenderSelectWithCapabilities for why the other dialects do not.
-func (r *selectRenderer) asksKeys() bool {
-	return r.dialect == platform.YDB
+func newDescribedRenderer(described descriptor.Dialect, caps capability.Capabilities) *selectRenderer {
+	return &selectRenderer{
+		dialect:     described.Name,
+		placeholder: described.Placeholder,
+		query:       described.Query,
+		caps:        caps,
+	}
 }
 
-// refuseWithout refuses subject when the renderer decides by capabilities and
-// the target lacks key.
+// refuseWithout refuses subject when the dialect decides constructs by the
+// target's capabilities (descriptor.Query.ChecksCapabilities) and the target
+// lacks key. See RenderSelectWithCapabilities for why the other dialects do
+// not.
 func (r *selectRenderer) refuseWithout(key capability.Capability, subject string) error {
-	if !r.asksKeys() || r.caps.Has(key) {
+	if !r.query.ChecksCapabilities || r.caps.Has(key) {
 		return nil
 	}
 	return capabilityRefusal(r.dialect, key, subject)
@@ -178,78 +156,45 @@ func capabilityRefusal(dialect string, key capability.Capability, subject string
 	}
 }
 
-// selectPlaceholderStyle reports how a dialect numbers bound parameters, and
-// whether the query builder renders for it at all.
+// bind records value as an argument and returns its placeholder, in the
+// style the dialect's descriptor states.
 //
-// The PostgreSQL family is resolved through platform.IsPostgresFamily rather
-// than by listing member names, so this table cannot disagree with the rest of
-// the repository about who is in that family. Listing Postgres, CockroachDB and
-// YugabyteDB by name omits Spanner, which every other subsystem treats as
-// PostgreSQL: platform.IsPostgresFamily("spanner")
-// is true, sqlutil.Rebind gives it $n, NewRendererWithCapabilities routes its
-// DDL through the PostgreSQL renderer, and dbschema reads it over pgx.
-//
-// SQL Server and ClickHouse are both present, and what each needs is worth
-// recording because neither is a missing map entry.
-//
-// SQL Server needed a third placeholder style (@p1, @p2, … — the same style
-// sqlutil.Rebind already emits for it) and T-SQL pagination in place of LIMIT;
-// see renderFetchOffset. Its OUTPUT clause is still unmodeled, so a RETURNING
-// projection is refused by supportsReturning rather than silently mapped onto a
-// clause with different placement and different semantics.
-//
-// Oracle needed a fourth style, :1 and :2, and the same ANSI pagination SQL
-// Server takes: measured on 23.26, LIMIT answers ORA-03049 while `OFFSET n ROWS
-// FETCH NEXT m ROWS ONLY` is accepted. Its RETURNING is refused by
-// supportsReturning for a reason of its own -- Oracle has the keyword, but only
-// with an INTO clause binding out-parameters, so `RETURNING id` as a projection
-// answers ORA-00925, missing INTO keyword.
-//
-// ClickHouse needed nothing here — it takes ? and backticks like MySQL — but it
-// executes only two of the four verbs portably. UPDATE and DELETE are mutations
-// there and are refused by refuseUnportableWrite with that reason, which is a
-// statement about the engine rather than about this table.
-//
-// YDB needed a fifth style, $p1 and $p2, whose arguments carry the names; see
-// placeholderYQL.
-func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
-	if platform.IsPostgresFamily(normalized) {
-		return placeholderDollar, true
-	}
-	switch normalized {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.ClickHouse:
-		return placeholderQuestion, true
-	case platform.SQLServer:
-		return placeholderAtP, true
-	case platform.Oracle:
-		return placeholderColon, true
-	case platform.YDB:
-		return placeholderYQL, true
-	default:
-		return 0, false
-	}
-}
-
-// bind records value as an argument and returns its placeholder. The argument
-// is positional on every dialect but YDB, where it is a sql.NamedArg carrying
-// the placeholder's name.
+// SQL Server has no positional `?` in T-SQL itself; its drivers bind named
+// parameters, and @pN is the name the standard Go driver generates for an
+// ordinal argument. YQL has no positional parameter either: `$1` and `?` are
+// parse errors there. So a dollar-named parameter is bound as a sql.NamedArg
+// of the same name, the one sqlutil.Rebind writes for the same position,
+// because ydb-go-sdk binds a parameter by name: measured on YDB 26.2.1.14 with
+// ydb-go-sdk v3.153.2, a positional argument for `$p1` answers `Unknown name:
+// $p1` through the SDK's own connector, and sql.Named("p1", v) binds there and
+// through Ptah's connection alike.
 func (r *selectRenderer) bind(value any) string {
-	if r.placeholder == placeholderYQL {
+	if r.placeholder == descriptor.PlaceholderDollarNamed {
 		name := "p" + strconv.Itoa(len(r.args)+1)
 		r.args = append(r.args, sql.Named(name, value))
 		return "$" + name
 	}
 	r.args = append(r.args, value)
 	switch r.placeholder {
-	case placeholderDollar:
+	case descriptor.PlaceholderDollar:
 		return "$" + strconv.Itoa(len(r.args))
-	case placeholderAtP:
+	case descriptor.PlaceholderAtP:
 		return "@p" + strconv.Itoa(len(r.args))
-	case placeholderColon:
+	case descriptor.PlaceholderColon:
 		return ":" + strconv.Itoa(len(r.args))
 	default:
 		return "?"
 	}
+}
+
+// bindBound binds a row limit or offset, as an unsigned integer where the
+// dialect refuses a signed one. A negative bound was refused before, by
+// renderLimitOffset.
+func (r *selectRenderer) bindBound(value int64) string {
+	if r.query.UnsignedBounds {
+		return r.bind(uint64(value)) // #nosec G115 -- a negative bound is refused by renderLimitOffset
+	}
+	return r.bind(value)
 }
 
 // quote returns identifier quoted for the renderer's dialect.
@@ -332,15 +277,16 @@ func (r *selectRenderer) render(stmt *SelectStatement) error {
 		return err
 	}
 
-	// T-SQL accepts OFFSET/FETCH only after an ORDER BY, so a row-limited query
-	// with no ordering is a SYNTAX ERROR on SQL Server rather than an unordered
-	// result. `ORDER BY (SELECT NULL)` is the documented spelling for "no
-	// particular order", which is exactly the semantics every other dialect
-	// gives an unordered LIMIT -- so this synthesizes the same meaning rather
-	// than imposing an order the caller did not ask for (stokaro/ptah#941).
-	if r.dialect == platform.SQLServer &&
+	// An engine that accepts a row limit only after an ORDER BY answers an
+	// unordered limited query with a syntax error rather than an unordered
+	// result. Its descriptor names the term that means "no particular order",
+	// which is the meaning every other dialect gives an unordered LIMIT, so
+	// this states the same thing rather than imposing an order the caller did
+	// not ask for (stokaro/ptah#941).
+	if r.query.FetchOrderBy != "" &&
 		len(stmt.OrderBy) == 0 && (stmt.Limit != nil || stmt.Offset != nil) {
-		r.buf.WriteString(" ORDER BY (SELECT NULL)")
+		r.buf.WriteString(" ORDER BY ")
+		r.buf.WriteString(r.query.FetchOrderBy)
 	}
 
 	return r.renderLimitOffset(stmt.Limit, stmt.Offset)
@@ -500,29 +446,31 @@ func (r *selectRenderer) renderJoin(join *JoinClause) error {
 
 // checkJoinDialect rejects join types a dialect cannot express, so an
 // unsupported join fails at render time rather than at execution time against
-// the database.
-//
-//   - SQLite gained RIGHT and FULL [OUTER] JOIN only in version 3.39 (2022);
-//     because Ptah targets a range of SQLite versions and cannot assume 3.39+,
-//     both are rejected.
-//   - MySQL and MariaDB have no FULL [OUTER] JOIN in any version (it must be
-//     emulated with a UNION of a LEFT and a RIGHT join), so it is rejected.
-//
-// INNER and LEFT joins are accepted by every supported dialect; RIGHT is
-// accepted everywhere except SQLite; FULL OUTER is accepted only by the
-// PostgreSQL family.
+// the database. The dialect's descriptor lists them
+// (descriptor.Query.UnsupportedJoins): SQLite, for one, has RIGHT and FULL
+// joins only from 3.39, and MySQL and MariaDB have no FULL OUTER JOIN at all.
 func (r *selectRenderer) checkJoinDialect(t JoinType) error {
-	switch r.dialect {
-	case platform.SQLite:
-		if t == JoinRight || t == JoinFull {
-			return fmt.Errorf("renderer: SQLite does not support %s", t)
-		}
-	case platform.MySQL, platform.MariaDB:
-		if t == JoinFull {
-			return fmt.Errorf("renderer: %s does not support %s", r.dialect, t)
-		}
+	if slices.Contains(r.query.UnsupportedJoins, t.descriptorJoin()) {
+		return fmt.Errorf("renderer: %s does not support %s", r.dialect, t)
 	}
 	return nil
+}
+
+// descriptorJoin is the descriptor's name for the join type, or "" for a type
+// outside the defined range, which no descriptor lists.
+func (t JoinType) descriptorJoin() descriptor.Join {
+	switch t {
+	case JoinInner:
+		return descriptor.JoinInner
+	case JoinLeft:
+		return descriptor.JoinLeft
+	case JoinRight:
+		return descriptor.JoinRight
+	case JoinFull:
+		return descriptor.JoinFull
+	default:
+		return ""
+	}
 }
 
 // renderExpr dispatches over the sealed Expression sum type. Each case
@@ -924,86 +872,63 @@ func (r *selectRenderer) writeOrderByTerms(terms []OrderByClause) error {
 	return nil
 }
 
-// When a caller sets OFFSET but not LIMIT, MySQL, MariaDB, and SQLite reject a
-// bare OFFSET: it is only valid as a suffix of LIMIT. These sentinels express
-// "no upper bound" so the OFFSET can still be emitted. PostgreSQL accepts a bare
-// OFFSET and needs no sentinel.
-const (
-	// sqliteNoLimit is SQLite's documented "no limit" value.
-	sqliteNoLimit = "-1"
-	// mysqlNoLimit is the maximum BIGINT UNSIGNED, MySQL and MariaDB's documented
-	// idiom for "all rows from the offset onward".
-	mysqlNoLimit = "18446744073709551615"
-)
-
-// renderLimitOffset appends the LIMIT and OFFSET clauses, binding each present
+// renderLimitOffset appends the row-limiting clause, binding each present
 // bound as a parameter so it is numbered after the WHERE-clause placeholders.
 //
-// When OFFSET is set without LIMIT, a dialect that cannot express a bare OFFSET
-// gets a synthesized "no limit" sentinel in front of it. The sentinel is a
-// structural constant, not caller data, so it is emitted as a literal and does
-// not consume a placeholder; the OFFSET value remains bound. YDB has no
-// sentinel that works (see capability.OffsetWithoutLimit), so there a bare
-// OFFSET is refused where the target lacks the key.
+// A dialect whose descriptor states descriptor.Query.OffsetFetch takes the
+// ANSI clause instead of LIMIT; see renderFetchOffset. When OFFSET is set
+// without LIMIT, a dialect that cannot express a bare OFFSET gets the "no
+// limit" literal its descriptor names (descriptor.Query.OffsetOnlyLimit) in
+// front of it. The literal is a structural constant, not caller data, so it
+// does not consume a placeholder; the OFFSET value remains bound. A dialect
+// that has no such literal and decides by capabilities refuses a bare OFFSET
+// where the target lacks capability.OffsetWithoutLimit: YDB has no sentinel
+// that works.
+//
+// A dialect that binds the bounds unsigned (descriptor.Query.UnsignedBounds)
+// refuses a negative one here, before anything is written: YDB types LIMIT and
+// OFFSET as Uint64, and no Uint64 holds a negative value.
 func (r *selectRenderer) renderLimitOffset(limit, offset *int64) error {
-	if r.dialect == platform.SQLServer || r.dialect == platform.Oracle {
+	if r.query.UnsignedBounds {
+		for _, bound := range []struct {
+			name  string
+			value *int64
+		}{{"LIMIT", limit}, {"OFFSET", offset}} {
+			if bound.value != nil && *bound.value < 0 {
+				return fmt.Errorf("renderer: %s binds %s as an unsigned integer, and %d is negative", r.dialect, bound.name, *bound.value)
+			}
+		}
+	}
+	if r.query.OffsetFetch {
 		r.renderFetchOffset(limit, offset)
 		return nil
 	}
-	if r.dialect == platform.YDB {
-		return r.renderYQLLimitOffset(limit, offset)
-	}
-	if limit != nil {
-		r.buf.WriteString(" LIMIT ")
-		r.buf.WriteString(r.bind(*limit))
-	} else if offset != nil {
-		if sentinel, ok := r.offsetOnlyLimit(); ok {
-			r.buf.WriteString(" LIMIT ")
-			r.buf.WriteString(sentinel)
-		}
-	}
-	if offset != nil {
-		r.buf.WriteString(" OFFSET ")
-		r.buf.WriteString(r.bind(*offset))
-	}
-	return nil
-}
-
-// renderYQLLimitOffset writes YDB's LIMIT and OFFSET. YQL types both as Uint64
-// and does not convert a signed parameter: measured on 26.2.1.14 and 25.1.4.7,
-// `LIMIT $p1` bound to an Int64 answers `Failed to convert type: Int64 to
-// Uint64`. So each bound is bound as a uint64, and a negative one, which no
-// Uint64 holds, is refused here rather than wrapped.
-func (r *selectRenderer) renderYQLLimitOffset(limit, offset *int64) error {
-	for _, bound := range []struct {
-		name  string
-		value *int64
-	}{{"LIMIT", limit}, {"OFFSET", offset}} {
-		if bound.value != nil && *bound.value < 0 {
-			return fmt.Errorf("renderer: YDB takes %s as a Uint64, and %d is negative", bound.name, *bound.value)
-		}
-	}
-	if offset != nil && limit == nil {
+	sentinel := r.query.OffsetOnlyLimit
+	if offset != nil && limit == nil && sentinel == "" {
 		if err := r.refuseWithout(capability.OffsetWithoutLimit, "an OFFSET without a LIMIT"); err != nil {
 			return err
 		}
 	}
 	if limit != nil {
 		r.buf.WriteString(" LIMIT ")
-		r.buf.WriteString(r.bind(uint64(*limit))) // #nosec G115 -- a negative bound is refused above
+		r.buf.WriteString(r.bindBound(*limit))
+	} else if offset != nil && sentinel != "" {
+		r.buf.WriteString(" LIMIT ")
+		r.buf.WriteString(sentinel)
 	}
 	if offset != nil {
 		r.buf.WriteString(" OFFSET ")
-		r.buf.WriteString(r.bind(uint64(*offset))) // #nosec G115 -- a negative bound is refused above
+		r.buf.WriteString(r.bindBound(*offset))
 	}
 	return nil
 }
 
-// renderFetchOffset writes SQL Server's row-limiting clause.
+// renderFetchOffset writes the ANSI row-limiting clause, for SQL Server and
+// Oracle, which take no LIMIT.
 //
-// T-SQL has no LIMIT. The ANSI spelling it accepts is
-// `OFFSET n ROWS FETCH NEXT m ROWS ONLY`, and OFFSET is mandatory before FETCH
-// -- so a query with only a limit still emits `OFFSET 0 ROWS`. That zero is a
+// The spelling is `OFFSET n ROWS FETCH NEXT m ROWS ONLY`, and OFFSET is
+// mandatory before FETCH -- so a query with only a limit still emits `OFFSET 0
+// ROWS`. That zero is a
 // structural constant rather than caller data, so it is written as a literal and
 // consumes no placeholder, which keeps the argument order the doc comment
 // promises (stokaro/ptah#941).
@@ -1013,27 +938,14 @@ func (r *selectRenderer) renderFetchOffset(limit, offset *int64) {
 	}
 	r.buf.WriteString(" OFFSET ")
 	if offset != nil {
-		r.buf.WriteString(r.bind(*offset))
+		r.buf.WriteString(r.bindBound(*offset))
 	} else {
 		r.buf.WriteString("0")
 	}
 	r.buf.WriteString(" ROWS")
 	if limit != nil {
 		r.buf.WriteString(" FETCH NEXT ")
-		r.buf.WriteString(r.bind(*limit))
+		r.buf.WriteString(r.bindBound(*limit))
 		r.buf.WriteString(" ROWS ONLY")
-	}
-}
-
-// offsetOnlyLimit returns the sentinel LIMIT literal a dialect requires in front
-// of a bare OFFSET, and whether one is needed. The PostgreSQL family needs none.
-func (r *selectRenderer) offsetOnlyLimit() (string, bool) {
-	switch r.dialect {
-	case platform.SQLite:
-		return sqliteNoLimit, true
-	case platform.MySQL, platform.MariaDB:
-		return mysqlNoLimit, true
-	default:
-		return "", false
 	}
 }
