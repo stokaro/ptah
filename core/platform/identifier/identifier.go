@@ -25,6 +25,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
@@ -124,15 +125,44 @@ type ResolvedName struct {
 // than a description of one, so a caller who knows the target's rules should
 // build [Semantics] directly.
 func ForDialect(dialect string) Semantics {
-	described, found := platform.Lookup(dialect)
+	registry := platform.Dialects()
+	table := semanticsTables.Load()
+	if table == nil || table.registry != registry {
+		table = newSemanticsTable(registry)
+		semanticsTables.Store(table)
+	}
+	semantics, found := table.byName[registry.Normalize(dialect)]
 	if !found {
 		return unmodelled()
 	}
-	semantics, err := FromDescriptor(described)
-	if err != nil {
-		return unmodelled()
-	}
 	return semantics
+}
+
+// semanticsTable is the answer [ForDialect] gives for every dialect of one
+// registry, keyed by name. ForDialect runs once per name compared on the
+// render and plan paths, and a descriptor lookup copies the whole descriptor,
+// so the answers are derived once per registry. A registry never changes, and
+// a registration replaces the process registry, which makes a table for an
+// older registry stale rather than wrong; ForDialect builds a new one.
+type semanticsTable struct {
+	registry *descriptor.Registry
+	byName   map[string]Semantics
+}
+
+// semanticsTables holds the table for the latest registry ForDialect read.
+var semanticsTables atomic.Pointer[semanticsTable]
+
+func newSemanticsTable(registry *descriptor.Registry) *semanticsTable {
+	dialects := registry.Dialects()
+	byName := make(map[string]Semantics, len(dialects))
+	for _, described := range dialects {
+		semantics, err := FromDescriptor(described)
+		if err != nil {
+			semantics = unmodelled()
+		}
+		byName[described.Name] = semantics
+	}
+	return &semanticsTable{registry: registry, byName: byName}
 }
 
 // FromDescriptor returns the offline identifier semantics a dialect

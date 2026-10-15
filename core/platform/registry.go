@@ -21,7 +21,36 @@ var process = newProcessRegistry(builtindialects.Descriptors())
 // one atomic load.
 type processRegistry struct {
 	mu      sync.Mutex
-	current atomic.Pointer[descriptor.Registry]
+	current atomic.Pointer[snapshot]
+}
+
+// snapshot is one registry and a copy of each of its descriptors, keyed by
+// name, for this package's own predicates. [Lookup] copies the whole
+// descriptor on every call, and a predicate such as [IsPostgresFamily] runs
+// once per column and index on the render and plan paths, so the predicates
+// read these copies instead. Nothing modifies them, and a registration makes
+// a new snapshot.
+type snapshot struct {
+	registry *descriptor.Registry
+	byName   map[string]descriptor.Dialect
+}
+
+func newSnapshot(registry *descriptor.Registry) *snapshot {
+	dialects := registry.Dialects()
+	byName := make(map[string]descriptor.Dialect, len(dialects))
+	for _, dialect := range dialects {
+		byName[dialect.Name] = dialect
+	}
+	return &snapshot{registry: registry, byName: byName}
+}
+
+// described returns the descriptor of the dialect a spelling selects, folded
+// as [NormalizeDialect] folds it, from the current snapshot. The caller only
+// reads it.
+func described(dialect string) (descriptor.Dialect, bool) {
+	current := process.current.Load()
+	found, ok := current.byName[current.registry.Normalize(dialect)]
+	return found, ok
 }
 
 func newProcessRegistry(seed []descriptor.Dialect) *processRegistry {
@@ -32,7 +61,7 @@ func newProcessRegistry(seed []descriptor.Dialect) *processRegistry {
 		panic(fmt.Sprintf("platform: the built-in dialect descriptors are invalid: %v", err))
 	}
 	process := &processRegistry{}
-	process.current.Store(registry)
+	process.current.Store(newSnapshot(registry))
 	return process
 }
 
@@ -41,7 +70,7 @@ func newProcessRegistry(seed []descriptor.Dialect) *processRegistry {
 // registry is immutable; a later Register produces a new one and leaves this
 // one as it was.
 func Dialects() *descriptor.Registry {
-	return process.current.Load()
+	return process.current.Load().registry
 }
 
 // Lookup returns a copy of the descriptor of the dialect a spelling selects,
@@ -71,10 +100,10 @@ func Lookup(dialect string) (descriptor.Dialect, bool) {
 func Register(dialects ...descriptor.Dialect) error {
 	process.mu.Lock()
 	defer process.mu.Unlock()
-	next, err := process.current.Load().With(dialects...)
+	next, err := process.current.Load().registry.With(dialects...)
 	if err != nil {
 		return fmt.Errorf("register dialects: %w", err)
 	}
-	process.current.Store(next)
+	process.current.Store(newSnapshot(next))
 	return nil
 }

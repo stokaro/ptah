@@ -56,8 +56,8 @@ func DialectSpellings() []string {
 // accepts. A caller deciding whether a capability exists reads the capability,
 // not this.
 func IsPostgresFamily(dialect string) bool {
-	described, found := Lookup(dialect)
-	return found && described.Family == Postgres
+	target, found := described(dialect)
+	return found && target.Family == Postgres
 }
 
 // GrantOptionIsPerObject reports whether a WITH GRANT OPTION grant on this
@@ -73,6 +73,6 @@ func IsPostgresFamily(dialect string) bool {
 // (grantee, object), not of (grantee, object, privilege). Every other built-in
 // target keeps one grantable flag per privilege.
 func GrantOptionIsPerObject(dialect string) bool {
-	described, found := Lookup(dialect)
-	return found && described.GrantOptionPerObject
+	target, found := described(dialect)
+	return found && target.GrantOptionPerObject
 }
