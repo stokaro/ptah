@@ -3,7 +3,6 @@ package sqlident
 import (
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 )
 
@@ -12,7 +11,7 @@ import (
 // name is one identifier, so a dot inside it is part of the name: `a.b/c` is
 // the object c in the directory a.b. See [SplitPath].
 func NamesArePaths(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.YDB
+	return spellingOf(dialect).paths
 }
 
 // ReadName reads written, one identifier of dialect, into the name it denotes

@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
@@ -337,7 +337,7 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 	// renderer.TestGetOrderedCreateStatementsRefusesAReservedRole.
 	//
 	// The second assertion is what keeps this from becoming decorative: every
-	// name this comparison would read as absent is a name reservedrole.Is
+	// name this comparison would read as absent is a name pgreservedrole.Is
 	// recognizes, so there is no reserved spelling that slips past the refusal
 	// and lands here.
 	desired := &schemamodel.Database{
@@ -359,10 +359,10 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 		qt.Commentf("reserved names are in neither database list, so they read as absent"))
 	c.Assert(diff.RolesModified, qt.HasLen, 0)
 	for _, role := range diff.RolesAdded {
-		c.Assert(reservedrole.Is(role.Name), qt.IsTrue,
+		c.Assert(pgreservedrole.Is(role.Name), qt.IsTrue,
 			qt.Commentf("%q read as absent but the refusal would not have caught it", role.Name))
 	}
-	c.Assert(reservedrole.ValidateDeclared("postgres", desired.Roles), qt.IsNotNil,
+	c.Assert(pgreservedrole.ValidateDeclared("postgres", desired.Roles), qt.IsNotNil,
 		qt.Commentf("the desired schema this comparison received should never have reached it"))
 }
 

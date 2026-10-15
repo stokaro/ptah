@@ -1,4 +1,4 @@
-package reservedrole_test
+package pgreservedrole_test
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/envbool/envbooltest"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 )
 
 // TestIsRecognizesBothSpellingsTheServerRefuses covers the two names that fail
@@ -41,7 +41,7 @@ func TestIsRecognizesBothSpellingsTheServerRefuses(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(reservedrole.Is(test.role), qt.Equals, test.want)
+			c.Assert(pgreservedrole.Is(test.role), qt.Equals, test.want)
 		})
 	}
 }
@@ -52,11 +52,11 @@ func TestIsRecognizesBothSpellingsTheServerRefuses(t *testing.T) {
 // rendered rather than written out at each read site: an unescaped underscore
 // is a single-character wildcard, so 'pg_%' matches pgbouncer and drops it from
 // both role reads at once (stokaro/ptah#1291). Pinning the text is what keeps
-// the SQL exclusion and [reservedrole.Is] from drifting apart.
+// the SQL exclusion and [pgreservedrole.Is] from drifting apart.
 func TestExcludeSQLEscapesTheUnderscore(t *testing.T) {
 	c := qt.New(t)
 
-	got := reservedrole.ExcludeSQL("r.rolname")
+	got := pgreservedrole.ExcludeSQL("r.rolname")
 
 	c.Assert(got, qt.Equals, `r.rolname NOT LIKE 'pg\_%' ESCAPE '\' AND r.rolname != 'postgres'`)
 	c.Assert(got, qt.Not(qt.Contains), `NOT LIKE 'pg_%'`)
@@ -101,7 +101,7 @@ func TestValidateDeclaredHappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(reservedrole.ValidateDeclared(test.dialect, test.roles), qt.IsNil)
+			c.Assert(pgreservedrole.ValidateDeclared(test.dialect, test.roles), qt.IsNil)
 		})
 	}
 }
@@ -165,11 +165,11 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := reservedrole.ValidateDeclared(test.dialect, test.roles)
+			err := pgreservedrole.ValidateDeclared(test.dialect, test.roles)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(err.Error(), qt.Contains, reservedrole.AllowEnvVar)
+			c.Assert(err.Error(), qt.Contains, pgreservedrole.AllowEnvVar)
 		})
 	}
 }
@@ -195,9 +195,9 @@ func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Setenv(reservedrole.AllowEnvVar, test.value)
+			c.Setenv(pgreservedrole.AllowEnvVar, test.value)
 
-			err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
+			err := pgreservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNil)
 		})
@@ -211,10 +211,10 @@ func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
 		name string
 		env  func(testing.TB)
 	}{
-		{name: "unset", env: envbooltest.Unset(reservedrole.AllowEnvVar)},
-		{name: "zero", env: envbooltest.Set(reservedrole.AllowEnvVar, "0")},
-		{name: "false", env: envbooltest.Set(reservedrole.AllowEnvVar, "false")},
-		{name: "FALSE", env: envbooltest.Set(reservedrole.AllowEnvVar, "FALSE")},
+		{name: "unset", env: envbooltest.Unset(pgreservedrole.AllowEnvVar)},
+		{name: "zero", env: envbooltest.Set(pgreservedrole.AllowEnvVar, "0")},
+		{name: "false", env: envbooltest.Set(pgreservedrole.AllowEnvVar, "false")},
+		{name: "FALSE", env: envbooltest.Set(pgreservedrole.AllowEnvVar, "FALSE")},
 	}
 
 	for _, test := range tests {
@@ -222,7 +222,7 @@ func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 
-			err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
+			err := pgreservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 		})
@@ -244,12 +244,12 @@ func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
 	}{
 		{
 			name:        "unparsable",
-			env:         envbooltest.Set(reservedrole.AllowEnvVar, "yes please"),
+			env:         envbooltest.Set(pgreservedrole.AllowEnvVar, "yes please"),
 			wantMessage: `invalid boolean value "yes please" for PTAH_ALLOW_RESERVED_ROLE_NAMES`,
 		},
 		{
 			name:        "an exported empty value",
-			env:         envbooltest.Set(reservedrole.AllowEnvVar, ""),
+			env:         envbooltest.Set(pgreservedrole.AllowEnvVar, ""),
 			wantMessage: `invalid boolean value "" for PTAH_ALLOW_RESERVED_ROLE_NAMES`,
 		},
 	}
@@ -259,7 +259,7 @@ func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 
-			err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
+			err := pgreservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantMessage)
@@ -278,9 +278,9 @@ func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
 // the run they would have noticed anyway.
 func TestValidateDeclaredRefusesAMalformedOptInWithNoReservedRole(t *testing.T) {
 	c := qt.New(t)
-	envbooltest.Set(reservedrole.AllowEnvVar, "yes please")(t)
+	envbooltest.Set(pgreservedrole.AllowEnvVar, "yes please")(t)
 
-	err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "app_user"}})
+	err := pgreservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "app_user"}})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Equals, `invalid boolean value "yes please" for PTAH_ALLOW_RESERVED_ROLE_NAMES`)
@@ -293,7 +293,7 @@ func TestValidateDeclaredRefusesAMalformedOptInWithNoReservedRole(t *testing.T) 
 // A MySQL render declares nothing about PostgreSQL role names, so this subsystem
 // does not recognize the variable on that invocation and must not fail for it.
 func TestValidateDeclaredLeavesAnUnrelatedDialectAlone(t *testing.T) {
-	envbooltest.Set(reservedrole.AllowEnvVar, "yes please")(t)
+	envbooltest.Set(pgreservedrole.AllowEnvVar, "yes please")(t)
 
 	tests := []struct {
 		name    string
@@ -308,7 +308,7 @@ func TestValidateDeclaredLeavesAnUnrelatedDialectAlone(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := reservedrole.ValidateDeclared(test.dialect, []schemamodel.Role{{Name: "postgres"}})
+			err := pgreservedrole.ValidateDeclared(test.dialect, []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNil)
 		})

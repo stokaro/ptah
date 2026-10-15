@@ -30,10 +30,10 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
-	"ptah.run/internal/systemschema"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -573,7 +573,7 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 	// SQL has already been executed and validated by replay before this point.
 	if state.DB != nil {
 		for _, schema := range state.DB.Schemas {
-			if !systemschema.IsPostgresFamilySystemSchema(dialect, schema.Name) {
+			if !pgsystemschema.IsPostgresFamilySystemSchema(dialect, schema.Name) {
 				continue
 			}
 			return fmt.Errorf("validate %s database schema: %w", flag, &ptaherr.PlanError{
@@ -586,7 +586,7 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 		}
 		return nil
 	}
-	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
+	if err := pgsystemschema.ValidateDeclaredPostgresSystemSchemas(
 		dialect,
 		state.Schema.Schemas,
 	); err != nil {

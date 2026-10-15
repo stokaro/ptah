@@ -81,11 +81,11 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/nullsdistinct"
+	"ptah.run/internal/pgreservedrole"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/renderdiag"
-	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
-	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbacl"
@@ -1926,7 +1926,7 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredRowSecurity(dialect, database); err != nil {
 		return err
 	}
-	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+	if err := pgsystemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
 	}
 	if err := validateDeclaredHosts(dialect, database); err != nil {
@@ -2026,7 +2026,7 @@ func validateDeclaredRoleNames(
 	// guaranteed to reject, so it is refused here, in the validation phase both
 	// whole-schema rendering and migration planning run before they emit
 	// anything (stokaro/ptah#1312).
-	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
+	if err := pgreservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
 		return &ptaherr.RenderError{
 			Dialect: dialect,
 			Err:     err,

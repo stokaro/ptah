@@ -170,10 +170,8 @@ Some false positives are known and counted: a string that equals a dialect
 spelling and names something else. The type checker cannot tell a role,
 database or tool name from a dialect name, since all are strings.
 
-- `internal/reservedrole` and `internal/sqlschema` compare a role name with
-  `postgres`, PostgreSQL's bootstrap superuser.
-- `internal/systemschema` lists `mysql`, the database MySQL keeps its grant
-  tables in.
+- `internal/sqlschema` compares a role name with `postgres`, PostgreSQL's
+  bootstrap superuser.
 - `internal/liquibaserun` lists Liquibase's database short names, several of
   which are dialect spellings.
 

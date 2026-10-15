@@ -94,6 +94,9 @@ END`,
 			Transactional: true,
 			Savepoint:     descriptor.Savepoint{Create: "SAVE TRANSACTION", Rollback: "ROLLBACK TRANSACTION"},
 		},
+
+		// How an identifier is written, and how a column's own key is named.
+		Quoting: descriptor.Quoting{Style: descriptor.QuoteBracket},
 	}
 }
 

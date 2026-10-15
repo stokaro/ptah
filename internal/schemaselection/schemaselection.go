@@ -30,7 +30,8 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/systemschema"
+	"ptah.run/internal/mysqlsystemdb"
+	"ptah.run/internal/pgsystemschema"
 )
 
 // searchPathParam is the PostgreSQL-family query parameter that restricts a
@@ -249,12 +250,12 @@ func RealmSchemas(
 		query = `
 		SELECT n.nspname
 		FROM pg_namespace n
-		WHERE ` + systemschema.PostgresDescribedSchemasPredicate(dialect, caps)
+		WHERE ` + pgsystemschema.PostgresDescribedSchemasPredicate(dialect, caps)
 	case descriptor.SchemaSelectionDatabase:
 		query = `
 		SELECT SCHEMA_NAME
 		FROM information_schema.SCHEMATA
-		WHERE ` + systemschema.MySQLUserDatabasesPredicate("SCHEMA_NAME")
+		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("SCHEMA_NAME")
 	default:
 		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
 	}

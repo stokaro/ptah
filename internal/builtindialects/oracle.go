@@ -110,6 +110,8 @@ END;`,
 			Transactional: true,
 			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
 		},
+		// How an identifier is written, and how a column's own key is named.
+		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble, Bare: descriptor.BareEverywhere, Keywords: oracleKeywords()},
 	}
 }
 
@@ -216,5 +218,49 @@ END;`,
 		VersionLiteral:    "standard",
 		LiteralRowSource:  " FROM dual",
 		SerializableInSQL: true,
+	}
+}
+
+// oracleKeywords are the words Oracle refuses as a bare identifier.
+//
+// The list is the server's own, and the predicate matters: `reserved = 'Y'`
+// alone is NOT the set Oracle refuses as an identifier. v$reserved_words has
+// 3082 rows and four flags, and the words below are spread across two of them --
+// SIZE and RESOURCE answer reserved='Y', while COMMENT, LEVEL, SESSION and USER
+// answer reserved='N' with res_semi='Y'. Measured on 23.26, the server refuses
+// every one of them the same way:
+//
+//	CREATE TABLE t (comment CLOB)  ->  ORA-03050: invalid identifier: "COMMENT" is a reserved word
+//	CREATE TABLE t (user CLOB)     ->  ORA-03050: invalid identifier: "USER" is a reserved word
+//	CREATE TABLE t (description CLOB)  ->  created  (control)
+//
+// So the list is every word-shaped keyword any of the four flags marks:
+//
+//	SELECT keyword FROM v$reserved_words
+//	 WHERE reserved = 'Y' OR res_type = 'Y' OR res_attr = 'Y' OR res_semi = 'Y'
+//
+// which answers 111 word-shaped rows on 23.26 and the identical 111 on 21.3, so
+// one list serves both measured lines. Narrowing it to `reserved='Y'` alone
+// answers 81 and drops `user`, `comment`, `level` and `session`, which are
+// ordinary column names (stokaro/ptah#1875).
+//
+// It matters more here than it does for SQLite, because the Oracle renderer
+// writes a plain name WITHOUT quotes -- see escapeIdentifier there for why -- so
+// a column named "size" or "comment" would otherwise reach the server as
+// syntax.
+func oracleKeywords() []string {
+	return []string{
+		"access", "add", "all", "alter", "and", "any", "as", "asc", "audit", "between", "by", "char",
+		"check", "cluster", "column", "column_value", "comment", "compress", "connect", "create",
+		"current", "date", "decimal", "default", "delete", "desc", "distinct", "drop", "else",
+		"except", "exclusive", "exists", "file", "float", "for", "from", "grant", "group", "having",
+		"identified", "immediate", "in", "increment", "index", "initial", "insert", "integer",
+		"intersect", "into", "is", "level", "like", "lock", "long", "maxextents", "minus",
+		"mlslabel", "mode", "modify", "nested_table_id", "noaudit", "nocompress", "not", "nowait",
+		"null", "number", "of", "offline", "on", "online", "option", "or", "order", "pctfree",
+		"prior", "public", "raw", "rename", "resource", "revoke", "row", "rowid", "rownum", "rows",
+		"select", "session", "set", "share", "size", "smallint", "start", "successful", "synonym",
+		"sysdate", "table", "then", "to", "trigger", "uid", "union", "unique", "update", "user",
+		"validate", "values", "varchar", "varchar2", "view", "whenever", "where", "with",
 	}
 }

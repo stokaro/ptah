@@ -9,32 +9,83 @@ package sqlident
 
 import (
 	"strings"
+	"sync"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlutil"
 )
 
-// Quote returns name as a safely-quoted identifier for dialect. The dialect
-// selects the quote style: backticks for MySQL, MariaDB, ClickHouse and YDB;
-// square brackets for SQL Server; and double quotes for the PostgreSQL family,
-// SQLite, and any unrecognized dialect. Embedded quote characters are doubled
-// per the SQL standard so the value cannot terminate the quoted identifier,
-// except on YDB, where a backslash escapes them; see [sqlutil.QuoteYQLIdentifier]. The dialect is
-// resolved through platform.NormalizeDialect, so every documented spelling of
-// an engine (`mssql`, `tsql`, `sql-server`, `sql_server`; `ch`) picks the same
-// quote style as its canonical name. name itself is quoted verbatim (it is not
-// trimmed).
+// spelling is how one dialect writes an identifier, read once from its
+// descriptor's Quoting.
+type spelling struct {
+	style    descriptor.QuoteStyle
+	bare     descriptor.BareNames
+	keywords map[string]bool
+	paths    bool
+}
+
+// spellings caches the spelling of each dialect name a caller has asked
+// about. Quoting runs for every identifier a statement names, and a lookup
+// copies the whole descriptor, so the answer is read once per name. The cache
+// is safe because a registered spelling keeps the descriptor it was first
+// given for the life of the process; a name no descriptor carries is not
+// cached, since a later platform.Register may describe it.
+var spellings sync.Map
+
+// spellingOf returns how dialect writes an identifier. A dialect no
+// descriptor describes, the empty name among them, writes the SQL standard's
+// spelling: double quotes, and a plain name bare only where one is recorded
+// bare.
+func spellingOf(dialect string) spelling {
+	if cached, ok := spellings.Load(dialect); ok {
+		if written, ok := cached.(spelling); ok {
+			return written
+		}
+	}
+	described, found := platform.Lookup(dialect)
+	if !found {
+		return spelling{}
+	}
+	quoting := described.Quoting
+	written := spelling{style: quoting.Style, bare: quoting.Bare, paths: quoting.Paths}
+	if len(quoting.Keywords) > 0 {
+		written.keywords = make(map[string]bool, len(quoting.Keywords))
+		for _, keyword := range quoting.Keywords {
+			written.keywords[strings.ToUpper(keyword)] = true
+		}
+	}
+	spellings.Store(dialect, written)
+	return written
+}
+
+// Quote returns name as a safely-quoted identifier for dialect. The quote
+// style is the dialect descriptor's: backticks for MySQL, MariaDB, ClickHouse
+// and YDB; square brackets for SQL Server; and double quotes for the
+// PostgreSQL family, SQLite, Oracle and any unrecognized dialect. Embedded
+// quote characters are doubled per the SQL standard so the value cannot
+// terminate the quoted identifier, except on YDB, where a backslash escapes
+// them; see [sqlutil.QuoteYQLIdentifier]. The dialect is resolved through the
+// dialect registry, so every documented spelling of an engine (`mssql`,
+// `tsql`, `sql-server`, `sql_server`; `ch`) picks the same quote style as its
+// canonical name. name itself is quoted verbatim (it is not trimmed).
 func Quote(dialect, name string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.YDB:
+	switch spellingOf(dialect).style {
+	case descriptor.QuoteYQL:
 		return sqlutil.QuoteYQLIdentifier(name)
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
+	case descriptor.QuoteBacktick:
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
-	case platform.SQLServer:
+	case descriptor.QuoteBracket:
 		return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 	default:
-		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+		return quoteDouble(name)
 	}
+}
+
+// quoteDouble quotes name the SQL standard's way: in double quotes, with each
+// quote inside doubled.
+func quoteDouble(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 // Ident returns the spelling that refers to name in dialect.
@@ -55,7 +106,7 @@ func Quote(dialect, name string) string {
 // chose: a CHECK or a generated expression is author text this repository does
 // not rewrite, and only the bare form agrees with it.
 func Ident(dialect, name string) string {
-	if platform.NormalizeDialect(dialect) == platform.Oracle {
+	if spellingOf(dialect).bare == descriptor.BareEverywhere {
 		return BareOrQuoted(dialect, name)
 	}
 	return Quote(dialect, name)
@@ -78,105 +129,19 @@ func Ident(dialect, name string) string {
 // the empty string, is quoted. SQLite keywords are also quoted because their
 // bare forms are parsed as syntax in the virtual-table module position.
 //
-// YDB is always quoted. A bare and a quoted YQL name are the same name, since
-// YQL compares names case-sensitively either way, so nothing is gained by the
-// bare form, and a keyword list would only have to be kept up to date.
+// A dialect whose descriptor writes no name bare, as YDB's does, is always
+// quoted. A bare and a quoted YQL name are the same name, since YQL compares
+// names case-sensitively either way, so nothing is gained by the bare form,
+// and a keyword list would only have to be kept up to date.
 func BareOrQuoted(dialect, name string) string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	written := spellingOf(dialect)
+	if written.bare == descriptor.BareNever {
 		return Quote(dialect, name)
 	}
-	if !isPlainIdentifier(name) || isReservedKeyword(dialect, name) {
+	if !isPlainIdentifier(name) || written.keywords[strings.ToUpper(name)] {
 		return Quote(dialect, name)
 	}
 	return name
-}
-
-// isReservedKeyword reports identifiers the target parses as SQL syntax.
-//
-// SQLite publishes one exhaustive list for every supported build. Virtual
-// table module names occupy an identifier position after USING, so a module
-// named `select` must render as `"select"`; the bare form is a syntax error.
-// Other dialects currently use BareOrQuoted only in tests and retain the
-// existing plain-identifier behavior.
-func isReservedKeyword(dialect, name string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLite:
-		return isSQLiteReservedKeyword(name)
-	case platform.Oracle:
-		return isOracleReservedKeyword(name)
-	default:
-		return false
-	}
-}
-
-// isOracleReservedKeyword reports whether name is one of the words Oracle
-// refuses as a bare identifier.
-//
-// The list is the server's own, and the predicate matters: `reserved = 'Y'`
-// alone is NOT the set Oracle refuses as an identifier. v$reserved_words has
-// 3082 rows and four flags, and the words below are spread across two of them --
-// SIZE and RESOURCE answer reserved='Y', while COMMENT, LEVEL, SESSION and USER
-// answer reserved='N' with res_semi='Y'. Measured on 23.26, the server refuses
-// every one of them the same way:
-//
-//	CREATE TABLE t (comment CLOB)  ->  ORA-03050: invalid identifier: "COMMENT" is a reserved word
-//	CREATE TABLE t (user CLOB)     ->  ORA-03050: invalid identifier: "USER" is a reserved word
-//	CREATE TABLE t (description CLOB)  ->  created  (control)
-//
-// So the list is every word-shaped keyword any of the four flags marks:
-//
-//	SELECT keyword FROM v$reserved_words
-//	 WHERE reserved = 'Y' OR res_type = 'Y' OR res_attr = 'Y' OR res_semi = 'Y'
-//
-// which answers 111 word-shaped rows on 23.26 and the identical 111 on 21.3, so
-// one list serves both measured lines. Narrowing it to `reserved='Y'` alone
-// answers 81 and drops `user`, `comment`, `level` and `session`, which are
-// ordinary column names (stokaro/ptah#1875).
-//
-// It matters more here than it does for SQLite, because the Oracle renderer
-// writes a plain name WITHOUT quotes -- see escapeIdentifier there for why -- so
-// a column named "size" or "comment" would otherwise reach the server as
-// syntax.
-func isOracleReservedKeyword(name string) bool {
-	switch strings.ToUpper(name) {
-	case "ACCESS", "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUDIT", "BETWEEN", "BY",
-		"CHAR", "CHECK", "CLUSTER", "COLUMN", "COLUMN_VALUE", "COMMENT", "COMPRESS", "CONNECT",
-		"CREATE", "CURRENT", "DATE", "DECIMAL", "DEFAULT", "DELETE", "DESC", "DISTINCT", "DROP",
-		"ELSE", "EXCEPT", "EXCLUSIVE", "EXISTS", "FILE", "FLOAT", "FOR", "FROM", "GRANT", "GROUP",
-		"HAVING", "IDENTIFIED", "IMMEDIATE", "IN", "INCREMENT", "INDEX", "INITIAL", "INSERT",
-		"INTEGER", "INTERSECT", "INTO", "IS", "LEVEL", "LIKE", "LOCK", "LONG", "MAXEXTENTS", "MINUS",
-		"MLSLABEL", "MODE", "MODIFY", "NESTED_TABLE_ID", "NOAUDIT", "NOCOMPRESS", "NOT", "NOWAIT",
-		"NULL", "NUMBER", "OF", "OFFLINE", "ON", "ONLINE", "OPTION", "OR", "ORDER", "PCTFREE",
-		"PRIOR", "PUBLIC", "RAW", "RENAME", "RESOURCE", "REVOKE", "ROW", "ROWID", "ROWNUM", "ROWS",
-		"SELECT", "SESSION", "SET", "SHARE", "SIZE", "SMALLINT", "START", "SUCCESSFUL", "SYNONYM",
-		"SYSDATE", "TABLE", "THEN", "TO", "TRIGGER", "UID", "UNION", "UNIQUE", "UPDATE", "USER",
-		"VALIDATE", "VALUES", "VARCHAR", "VARCHAR2", "VIEW", "WHENEVER", "WHERE", "WITH":
-		return true
-	default:
-		return false
-	}
-}
-
-func isSQLiteReservedKeyword(name string) bool {
-	switch strings.ToUpper(name) {
-	case "ABORT", "ACTION", "ADD", "AFTER", "ALL", "ALTER", "ALWAYS", "ANALYZE", "AND", "AS", "ASC", "ATTACH",
-		"AUTOINCREMENT", "BEFORE", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE", "CAST", "CHECK", "COLLATE", "COLUMN",
-		"COMMIT", "CONFLICT", "CONSTRAINT", "CREATE", "CROSS", "CURRENT", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
-		"DATABASE", "DEFAULT", "DEFERRABLE", "DEFERRED", "DELETE", "DESC", "DETACH", "DISTINCT", "DO", "DROP", "EACH",
-		"ELSE", "END", "ESCAPE", "EXCEPT", "EXCLUDE", "EXCLUSIVE", "EXISTS", "EXPLAIN", "FAIL", "FILTER", "FIRST",
-		"FOLLOWING", "FOR", "FOREIGN", "FROM", "FULL", "GENERATED", "GLOB", "GROUP", "GROUPS", "HAVING", "IF", "IGNORE",
-		"IMMEDIATE", "IN", "INDEX", "INDEXED", "INITIALLY", "INNER", "INSERT", "INSTEAD", "INTERSECT", "INTO", "IS",
-		"ISNULL", "JOIN", "KEY", "LAST", "LEFT", "LIKE", "LIMIT", "MATCH", "MATERIALIZED", "NATURAL", "NO", "NOT",
-		"NOTHING", "NOTNULL", "NULL", "NULLS", "OF", "OFFSET", "ON", "OR", "ORDER", "OTHERS", "OUTER", "OVER",
-		"PARTITION", "PLAN", "PRAGMA", "PRECEDING", "PRIMARY", "QUERY", "RAISE", "RANGE", "RECURSIVE", "REFERENCES",
-		"REGEXP", "REINDEX", "RELEASE", "RENAME", "REPLACE", "RESTRICT", "RETURNING", "RIGHT", "ROLLBACK", "ROW", "ROWS",
-		"SAVEPOINT", "SELECT", "SET", "TABLE", "TEMP", "TEMPORARY", "THEN", "TIES", "TO", "TRANSACTION", "TRIGGER",
-		"UNBOUNDED", "UNION", "UNIQUE", "UPDATE", "USING", "VACUUM", "VALUES", "VIEW", "VIRTUAL", "WHEN", "WHERE",
-		"WINDOW", "WITH", "WITHOUT":
-		return true
-	default:
-		return false
-	}
 }
 
 func isPlainIdentifier(name string) bool {
@@ -206,7 +171,7 @@ func QualifiedIdent(dialect, schema, name string) string {
 	if strings.TrimSpace(schema) == "" {
 		return Ident(dialect, name)
 	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	if NamesArePaths(dialect) {
 		return Qualified(dialect, schema, name)
 	}
 	return Ident(dialect, schema) + "." + Ident(dialect, name)
@@ -227,7 +192,7 @@ func Qualified(dialect, schema, name string) string {
 	if strings.TrimSpace(schema) == "" {
 		return Quote(dialect, name)
 	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	if NamesArePaths(dialect) {
 		return Quote(dialect, strings.TrimRight(schema, "/")+"/"+name)
 	}
 	return Quote(dialect, schema) + "." + Quote(dialect, name)
@@ -287,7 +252,7 @@ func UnquoteDoubleQuoted(part string) string {
 func QuotePostgresQualified(name string) string {
 	parts := SplitQualified(name)
 	for i, part := range parts {
-		parts[i] = Quote(platform.Postgres, UnquoteDoubleQuoted(part))
+		parts[i] = quoteDouble(UnquoteDoubleQuoted(part))
 	}
 	return strings.Join(parts, ".")
 }

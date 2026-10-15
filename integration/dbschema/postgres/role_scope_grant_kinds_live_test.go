@@ -16,7 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 )
 
 // TestRoleScope_LiveDescribesTheRoleAGrantNames holds a schema-scoped read to
@@ -187,6 +187,6 @@ func undefinedRoles(live *catalog.Database) []string {
 	described := roleNamesOf(live.Roles)
 	return slices.DeleteFunc(rolesNamedByGrants(live.Grants), func(name string) bool {
 		return name == "" || name == "PUBLIC" || name == "admin" || name == "root" ||
-			reservedrole.Is(name) || slices.Contains(described, name)
+			pgreservedrole.Is(name) || slices.Contains(described, name)
 	})
 }

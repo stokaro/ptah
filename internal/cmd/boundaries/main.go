@@ -451,8 +451,7 @@ func writeBaseline(root string, reports []ruleReport) error {
 			"A count may fall and may never rise, and a rule with package counts is compared package by package. " +
 			"Known false positives: shared-packages-name-dialects counts a string that equals a dialect spelling " +
 			"and names something else, since the type checker cannot tell them apart: PostgreSQL's bootstrap role " +
-			"\"postgres\" (internal/reservedrole, internal/sqlschema), MySQL's system database \"mysql\" " +
-			"(internal/systemschema), and Liquibase's database short names (internal/liquibaserun). " +
+			"\"postgres\" (internal/sqlschema) and Liquibase's database short names (internal/liquibaserun). " +
 			"Regenerate with: go run ./internal/cmd/boundaries -update",
 		Rules: make(map[string]int),
 	}

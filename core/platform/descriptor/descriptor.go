@@ -142,6 +142,14 @@ type Dialect struct {
 	ManagedData ManagedData `json:"managed_data,omitzero"`
 	// Seeds states how seed files run and are recorded.
 	Seeds Seeds `json:"seeds,omitzero"`
+
+	// Identifier spelling and key naming; see identifiers.go.
+
+	// Quoting states how the engine writes an identifier.
+	Quoting Quoting `json:"quoting,omitzero"`
+	// ColumnKeys is how the server names the key a column's own UNIQUE
+	// builds. Empty means the naming is not measured.
+	ColumnKeys ColumnKeyNaming `json:"column_keys,omitempty"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE
@@ -244,6 +252,9 @@ func (d Dialect) validate() error {
 		return err
 	}
 	if err := d.validateScope(); err != nil {
+		return err
+	}
+	if err := d.validateIdentifiers(); err != nil {
 		return err
 	}
 	return nil
