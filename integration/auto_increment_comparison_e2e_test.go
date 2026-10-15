@@ -15,13 +15,18 @@ import (
 )
 
 // autoIncrementDatabases creates an empty scratch database on each engine
-// whose comparison reads a column's auto-increment, and returns its URL.
+// whose comparison reads a column's auto-increment, and returns its URL. On
+// MySQL and MariaDB it takes the account that may create databases: CI's
+// ordinary account is granted the test database alone, and CREATE DATABASE
+// as that account answers Error 1044.
 var autoIncrementDatabases = map[string]func(c *qt.C) string{
 	"mysql": func(c *qt.C) string {
-		return createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.MySQL), "DROP DATABASE IF EXISTS %s", renameInPath)
+		_, url := newMySQLFamilyScratch(c, dbtarget.MySQLAdmin).database(c, "autoinc")
+		return url
 	},
 	"mariadb": func(c *qt.C) string {
-		return createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.MariaDB), "DROP DATABASE IF EXISTS %s", renameInPath)
+		_, url := newMySQLFamilyScratch(c, dbtarget.MariaDBAdmin).database(c, "autoinc")
+		return url
 	},
 	"sqlite": func(c *qt.C) string {
 		return "sqlite://" + filepath.ToSlash(filepath.Join(c.TempDir(), "auto_increment.db"))
