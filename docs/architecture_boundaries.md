@@ -71,12 +71,13 @@ renaming or omitting that package cannot silently reduce the measured scope.
 
 Two seams keep the YDB owner out of the layer:
 
-- `migration/planner` registers no YDB planner. `engine/builtin.New` registers
-  the YDB owner's planner through `planner.Register`, once per process, so
-  `planner.GetPlanner("ydb")` succeeds only after a built-in runtime exists.
-  That order dependence is pinned by a test in
-  `engine/builtin/internal/plannerorder`. The follow-up is to serve target
-  planners from the runtime ([#4204](https://github.com/stokaro/ptah/issues/4204)).
+- `migration/planner` registers no planner of its own. `engine/builtin.New`
+  registers the planner of every bundled dialect, the YDB owner's included,
+  through `planner.Register`, once per process, so `planner.GetPlanner`
+  succeeds for a bundled dialect only after a built-in runtime exists. That
+  order dependence is pinned by a test in `engine/builtin/internal/plannerorder`.
+  The follow-up is to serve target planners from the runtime
+  ([#4204](https://github.com/stokaro/ptah/issues/4204)).
 - `internal/modelast` names a grant's object through `Lowering.GrantPath`.
   `internal/builtinlowering` sets the hook for YDB, which names a grant on the
   database, or on an object at its root, by its absolute path.

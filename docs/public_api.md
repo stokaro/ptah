@@ -4786,6 +4786,11 @@ claims a spelling a different descriptor owns fails with
 the process. `engine.New` registers nothing, and `engine/builtin.New` builds
 providers for the built-in engines only.
 
+A descriptor also states the planning grammars the engine has: a concurrent
+index build (`ConcurrentIndexes`) and an online ALTER TABLE (`OnlineAlter`). A
+capability says whether a given server takes such a grammar, and a capability
+set cannot claim one the dialect lacks.
+
 `migration/generator.GenerateCheckpointFromShadow` preserves the same live
 semantics when a replayed history is rendered as a checkpoint: the render goes
 through the shadow connection, so on SQL Server Ptah resolves the complete
@@ -4812,10 +4817,10 @@ from that state rather than from a newly reopened path.
 references, unresolved additions, and target index-namespace conflicts fail
 before SQL is returned.
 
-`migration/planner` registers a built-in planner for every dialect but YDB,
-and links no owner. The YDB planner is the YDB owner's: `engine/builtin.New`
-registers it through `planner.Register` once per process. `GetPlanner` and the
-`GenerateSchemaDiff*` functions therefore refuse `ydb` with
+`migration/planner` registers no planner of its own and links no dialect's
+planner. `engine/builtin.New` registers the planner of every bundled dialect
+through `planner.Register` once per process. `GetPlanner` and the
+`GenerateSchemaDiff*` functions therefore refuse a bundled dialect with
 `ptaherr.ErrUnsupportedDialect` until a built-in runtime exists in the
 process, and `RegisteredDialects` lists it only from then on. This changes
 behavior; pre-v1, so no compatibility is owed.

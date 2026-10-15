@@ -4,6 +4,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 )
 
 // requestOnlineAlter rewrites a plan so the server is asked to apply it
@@ -28,26 +29,23 @@ import (
 // A target without the grammar is left alone here rather than rewritten and
 // dropped in the renderer, so an offline plan for such a target reads exactly
 // as it did before anything was asked for.
+//
+// The dialect's descriptor names the grammar, and the capability says whether
+// the server takes it, so a capability set cannot ask for a grammar the
+// dialect does not have.
 func requestOnlineAlter(nodes []ast.Node, dialect string, caps capability.Capabilities) []ast.Node {
-	if isMySQLFamily(dialect) && caps.Has(capability.AlterTableAlgorithmLock) {
-		return requestInPlaceAlgorithm(nodes)
-	}
-	if platform.IsPostgresFamily(dialect) && caps.Has(capability.AddConstraintNotValid) {
-		return requestUnvalidatedConstraints(nodes)
+	described, _ := platform.Lookup(dialect)
+	switch described.OnlineAlter {
+	case descriptor.OnlineAlterAlgorithmLock:
+		if caps.Has(capability.AlterTableAlgorithmLock) {
+			return requestInPlaceAlgorithm(nodes)
+		}
+	case descriptor.OnlineAlterNotValid:
+		if caps.Has(capability.AddConstraintNotValid) {
+			return requestUnvalidatedConstraints(nodes)
+		}
 	}
 	return nodes
-}
-
-// isMySQLFamily reports whether the dialect takes the MySQL grammar. The
-// capability decides whether the clause is written; this decides which of the
-// two rewrites below is the one for the target.
-func isMySQLFamily(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
 }
 
 // requestInPlaceAlgorithm asks every ALTER TABLE for the in-place algorithm

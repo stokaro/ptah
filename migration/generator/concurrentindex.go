@@ -50,8 +50,9 @@ func containsUnsplittableNoTransactionNode(nodes []ast.Node) bool {
 
 // concurrentIndexRefsForPolicy resolves which newly added indexes are built
 // concurrently. When the diff policy requests it, every newly added index is
-// concurrent (still gated on dialect and the CreateIndexConcurrently
-// capability); otherwise the populated-table heuristic applies.
+// concurrent (still gated on the dialect's grammar and the
+// CreateIndexConcurrently capability); otherwise the populated-table heuristic
+// applies.
 //
 // A partitioned parent is refused rather than published: PostgreSQL rejects
 // CREATE INDEX CONCURRENTLY on relkind 'p' with SQLSTATE 0A000, so the request
@@ -67,7 +68,7 @@ func concurrentIndexRefsForPolicy(
 	if !policy.ConcurrentIndex {
 		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info), nil
 	}
-	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+	if !concurrentIndexes(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil, nil
 	}
 	refs := diff.IndexAdditions()
@@ -158,7 +159,7 @@ func concurrentIndexDropRefsForPolicy(
 	if !policy.ConcurrentIndexDrop {
 		return nil, nil
 	}
-	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.DropIndexConcurrently) {
+	if !concurrentIndexes(info.Dialect) || !info.Capabilities.Has(capability.DropIndexConcurrently) {
 		return nil, nil
 	}
 	// Match the planner's own redefinition test (indexscope conflict semantics),
@@ -200,7 +201,7 @@ func concurrentIndexRefsForPopulatedTables(
 	dbSchema *catalog.Database,
 	info catalog.ServerInfo,
 ) []difftypes.IndexRef {
-	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+	if !concurrentIndexes(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
 	tables := concurrentindex.IndexTableFacts(dbSchema)
@@ -288,4 +289,14 @@ func partitionIndexChanges(
 		unselected = append(unselected, change)
 	}
 	return unselected, matched
+}
+
+// concurrentIndexes reports whether the dialect's grammar has a concurrent
+// index build and drop ([ptah.run/core/platform/descriptor.Dialect]). The
+// capability then says whether the server takes it: a capability set that
+// claims the statements for a dialect without the grammar does not make
+// them valid there.
+func concurrentIndexes(dialect string) bool {
+	described, _ := platform.Lookup(dialect)
+	return described.ConcurrentIndexes
 }

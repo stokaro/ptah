@@ -388,7 +388,7 @@ func requireConcurrentIndexCapability(
 	required capability.Capability,
 	kind concurrentIndexPolicyKind,
 ) error {
-	if platform.IsPostgresFamily(dialect) && caps.Has(required) {
+	if described, _ := platform.Lookup(dialect); described.ConcurrentIndexes && caps.Has(required) {
 		return nil
 	}
 	return fmt.Errorf(

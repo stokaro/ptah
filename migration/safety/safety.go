@@ -270,13 +270,13 @@ func AssessRenderedWithCapabilities(
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
-	var units []ast.Node
-	for _, whole := range nodes {
-		units = append(units, assessmentUnits(whole, dialect)...)
-	}
 	target := platform.NormalizeDialect(dialect)
 	if target == "" {
 		target = dialect
+	}
+	units, err := assessmentUnits(ctx, runtime, nodes, target, caps)
+	if err != nil {
+		return nil, err
 	}
 	result, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
 	if err != nil {
@@ -318,7 +318,7 @@ func AssessRenderedWithCapabilities(
 				raiseAssessment(&assessment, nodeAssessment)
 			}
 			if fills {
-				judgeNullFillPair(&assessment, statement)
+				judgeNullFillPair(&assessment, statement, target)
 			}
 			assessment.Index = len(assessments) + 1
 			assessments = append(assessments, assessment)
@@ -330,26 +330,56 @@ func AssessRenderedWithCapabilities(
 	return assessments, nil
 }
 
-// assessmentUnits is node, or one ALTER TABLE per operation when node is a
-// PostgreSQL-family ALTER TABLE carrying several operations and one of them
-// fills a column's NULL rows. Rendered one operation at a time, each fill and
-// SET NOT NULL is assessed with the operation that wrote it, so the SET NOT
-// NULL of a column that is filled is not confused with the one of a column
-// that is not. A plan carries one column modification per ALTER TABLE, so
-// this changes nothing about the statements a planned node reports.
-func assessmentUnits(node ast.Node, dialect string) []ast.Node {
-	alter, ok := node.(*ast.AlterTableNode)
-	if !ok || len(alter.Operations) < 2 || !platform.IsPostgresFamily(dialect) ||
-		!slices.ContainsFunc(alter.Operations, operationFillsNullRows) {
-		return []ast.Node{node}
+// assessmentUnits is nodes, with each ALTER TABLE that carries several
+// operations, and a column's NULL rows filled by its target's renderer, split
+// into one ALTER TABLE per operation. Rendered one operation at a time, each
+// fill and SET NOT NULL is assessed with the operation that wrote it, so the
+// SET NOT NULL of a column that is filled is not confused with the one of a
+// column that is not. A plan that fills carries one column modification per
+// ALTER TABLE, so this changes nothing about the statements a planned node
+// reports.
+//
+// The renderer says whether it fills: an ALTER TABLE is split only when its
+// render holds the fill, an UPDATE, which is what the PostgreSQL family
+// writes. MySQL's MODIFY, SQL Server's ALTER COLUMN and Oracle's MODIFY carry
+// the whole definition in one statement, write no UPDATE, and stay whole.
+func assessmentUnits(
+	ctx context.Context, runtime RenderingRuntime, nodes []ast.Node, target string, caps capability.Capabilities,
+) ([]ast.Node, error) {
+	var candidates []ast.Node
+	for _, node := range nodes {
+		if alter, ok := node.(*ast.AlterTableNode); ok && len(alter.Operations) >= 2 &&
+			slices.ContainsFunc(alter.Operations, operationFillsNullRows) {
+			candidates = append(candidates, node)
+		}
 	}
-	units := make([]ast.Node, 0, len(alter.Operations))
-	for _, operation := range alter.Operations {
-		unit := *alter
-		unit.Operations = []ast.AlterOperation{operation}
-		units = append(units, &unit)
+	if len(candidates) == 0 {
+		return nodes, nil
 	}
-	return units
+	rendered, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: candidates})
+	if err != nil {
+		return nil, err
+	}
+	filled := make(map[ast.Node]bool, len(candidates))
+	for i, node := range candidates {
+		filled[node] = slices.ContainsFunc(sqlutil.SplitSQLStatementsForDialect(rendered.Fragments[i], target), func(statement string) bool {
+			return hasWordPrefix(rawWords(sqlutil.StripCommentsForDialect(statement, target)), "UPDATE")
+		})
+	}
+	units := make([]ast.Node, 0, len(nodes))
+	for _, node := range nodes {
+		alter, ok := node.(*ast.AlterTableNode)
+		if !ok || !filled[node] {
+			units = append(units, node)
+			continue
+		}
+		for _, operation := range alter.Operations {
+			unit := *alter
+			unit.Operations = []ast.AlterOperation{operation}
+			units = append(units, &unit)
+		}
+	}
+	return units, nil
 }
 
 // fillsNullRows reports whether node is an ALTER TABLE whose one operation
@@ -384,8 +414,8 @@ func operationFillsNullRows(operation ast.AlterOperation) bool {
 // The fill is the one UPDATE the PostgreSQL renderer writes for a column
 // modification, which is how it is told from the other statements here;
 // [notnullfill.FillsNullRows] decided that the operation writes it.
-func judgeNullFillPair(assessment *StatementAssessment, statement string) {
-	words := rawWords(sqlutil.StripCommentsForDialect(statement, platform.Postgres))
+func judgeNullFillPair(assessment *StatementAssessment, statement, target string) {
+	words := rawWords(sqlutil.StripCommentsForDialect(statement, target))
 	switch {
 	case hasWordPrefix(words, "UPDATE"):
 		assessment.Severity = Warning

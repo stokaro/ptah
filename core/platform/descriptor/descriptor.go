@@ -97,7 +97,31 @@ type Dialect struct {
 	Query Query `json:"query,omitzero"`
 	// Scripts states how a script of several statements is cut into them.
 	Scripts Scripts `json:"scripts,omitzero"`
+
+	// ConcurrentIndexes reports that the engine's grammar builds and drops an
+	// index without blocking writes, as PostgreSQL's CREATE INDEX CONCURRENTLY
+	// and DROP INDEX CONCURRENTLY do. Whether a given server takes the
+	// statements is a capability; an engine without the grammar has no such
+	// statement whatever a capability set claims.
+	ConcurrentIndexes bool `json:"concurrent_indexes,omitempty"`
+	// OnlineAlter is the grammar in which the engine is asked to apply an
+	// ALTER TABLE without blocking the writes running against the table:
+	// [OnlineAlterAlgorithmLock] or [OnlineAlterNotValid]. Empty has none.
+	OnlineAlter OnlineAlter `json:"online_alter,omitempty"`
 }
+
+// OnlineAlter is a grammar for asking the server to apply an ALTER TABLE
+// without blocking writes.
+type OnlineAlter string
+
+const (
+	// OnlineAlterAlgorithmLock is the MySQL family's ALGORITHM= and LOCK=
+	// clauses, which the server refuses when it cannot honor them.
+	OnlineAlterAlgorithmLock OnlineAlter = "algorithm-lock"
+	// OnlineAlterNotValid is PostgreSQL's NOT VALID constraint, validated by a
+	// second statement whose scan takes a weaker lock.
+	OnlineAlterNotValid OnlineAlter = "not-valid"
+)
 
 // Identifiers states how an engine compares identifiers offline. The values
 // are spelled as core/platform/identifier spells its IndexNamespace and
