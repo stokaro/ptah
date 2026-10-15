@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemasource"
 	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
@@ -56,6 +57,7 @@ type Runtime interface {
 	hclext.Runtime
 	coverage.Runtime
 	selectext.Runtime
+	schemaprojection.ReadBackRuntime
 }
 
 // ResolveOptions configures resolution of one classified desired-state set.

@@ -1,5 +1,6 @@
 // Package crdbconvert projects CockroachDB row-level TTL between desired and
-// observed representations without reading a server.
+// observed representations without reading a server, and answers what a
+// CockroachDB read reports for a declared column type (ReadBack).
 package crdbconvert
 
 import (

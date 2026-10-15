@@ -188,6 +188,10 @@ type Target struct {
 	// target that answers nothing it cannot hold with a comment, because a
 	// comment lets an apply succeed without the object.
 	RefusesSkips bool
+	// ReadBack answers what a read of the target reports for a declared
+	// column or index where the server keeps something else. Nil means reads
+	// report what the declaration wrote.
+	ReadBack schemaprojection.ReadBack
 	// Data holds the target's managed-data and seed services, which
 	// [Runtime.DataServices] hands to the packages that write rows and run
 	// seeds. A nil member is a service the target does not have; a typed-nil
@@ -252,6 +256,7 @@ type target struct {
 	routineBodies   routineext.Reader
 	refusesSkips    bool
 	data            dataext.Services
+	readBack        schemaprojection.ReadBack
 }
 
 // New validates and freezes explicit provider ownership. Duplicate provider
@@ -430,6 +435,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"statement splitter", declared.Splitter},
 		{"statement annotator", declared.Annotator},
 		{"routine body reader", declared.RoutineBodies},
+		{"read-back", declared.ReadBack},
 		{"data literal", declared.Data.Literals},
 		{"data column", declared.Data.Columns},
 		{"data row", declared.Data.Rows},
@@ -449,7 +455,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
 			splitter: declared.Splitter, annotator: declared.Annotator, routineBodies: declared.RoutineBodies,
-			refusesSkips: declared.RefusesSkips, data: declared.Data,
+			refusesSkips: declared.RefusesSkips, data: declared.Data, readBack: declared.ReadBack,
 		}
 	}
 	return nil

@@ -19,13 +19,11 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/internal/autoincrement"
-	"ptah.run/internal/cockroachtype"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
-	"ptah.run/internal/mysqlindex"
-	"ptah.run/internal/oracletype"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -86,13 +84,17 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 	for _, table := range db.Tables {
 		tableByStruct[table.StructName] = table
 	}
+	readBack, err := runtime.ReadBack(dialect)
+	if err != nil {
+		return nil, err
+	}
 
 	out := &catalog.Database{
 		Facets:      db.Facets,
 		Schemas:     toDBSchemas(db.Schemas),
-		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
+		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect, readBack),
 		Enums:       toDBEnums(db.Enums),
-		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
+		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect, readBack),
 		Constraints: toDBConstraints(db, tableByStruct, dialect),
 		Functions:   toDBFunctions(db.Functions),
 		Sequences:   toDBSequences(db.Sequences),
@@ -150,6 +152,7 @@ func toDBTables(
 	fields []schemamodel.Field,
 	rlsEnabledTables []schemamodel.RLSEnabledTable,
 	dialect string,
+	readBack schemaprojection.ReadBack,
 ) []catalog.Table {
 	fieldsByStruct := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
@@ -166,7 +169,7 @@ func toDBTables(
 			Type:       "TABLE",
 			Comment:    table.Comment,
 			RowFormat:  table.Overrides[platform.NormalizeDialect(dialect)]["row_format"],
-			Columns:    toDBColumns(table, fieldsByStruct[table.StructName], dialect),
+			Columns:    toDBColumns(table, fieldsByStruct[table.StructName], dialect, readBack),
 			RLSEnabled: rlsEnabled,
 			RLSForced:  rlsEnabled && enablement.Forced,
 		})
@@ -201,7 +204,7 @@ func tableRLSEnablement(
 // `id bigint PRIMARY KEY` as a nullable field, so without the same answer here
 // the same file compared with itself planned SET NOT NULL on every key column
 // (stokaro/ptah#3658).
-func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect string) []catalog.Column {
+func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect string, readBack schemaprojection.ReadBack) []catalog.Column {
 	keyColumns := sqlitekey.KeyColumns(table, fields)
 	described, _ := platform.Lookup(dialect)
 	conversion := described.Conversion
@@ -212,25 +215,17 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 		}
 		column := toDBColumn(field, i+1)
 		column.IsAutoIncrement = autoincrement.DeclaredOn(field, dialect)
-		if dialect == platform.Oracle {
-			// Oracle stores few declared type names as written: a TEXT
-			// column is a CLOB and a BIGINT a NUMBER(19). The reader reports
-			// what Oracle stores, and the comparison folds the declared side
-			// through the same mapping, so a declared type kept here compared
-			// unequal to itself and planned a MODIFY for every column.
-			column.DataType = oracletype.Map(field.Type)
-			column.ColumnType = column.DataType
-		}
-		if dialect == platform.CockroachDB {
-			// CockroachDB builds a column declared INT or INTEGER at the
-			// session's integer width, and a read reports that width. The
-			// comparison resolves the declared side the same way, so the
-			// declared spelling kept here planned ALTER COLUMN ... TYPE
-			// INTEGER for every such column. No session is read here, so
-			// the width is CockroachDB's own default, as it is for an offline
-			// comparison.
-			column.DataType = cockroachtype.Resolve(field.Type, 0)
-			column.ColumnType = column.DataType
+		// A target that stores a declared type as another reports the one it
+		// stores: Oracle a TEXT column as a CLOB, CockroachDB an INT column at
+		// its integer width. The comparison folds the declared side the same
+		// way, so a declared type kept here compared unequal to itself and
+		// planned a change for every such column. The target's owner answers
+		// (schemaprojection.ReadBack).
+		if readBack != nil {
+			if stored, ok := readBack.ColumnType(field.Type); ok {
+				column.DataType = stored
+				column.ColumnType = stored
+			}
 		}
 		if conversion.OwnedSequences {
 			column.OwnedSequence, _ = columnsequence.Declared(table.Name, field)
@@ -358,6 +353,7 @@ func toDBIndexes(
 	indexes []schemamodel.Index,
 	tables map[string]schemamodel.Table,
 	dialect string,
+	readBack schemaprojection.ReadBack,
 ) []catalog.Index {
 	out := make([]catalog.Index, 0, len(indexes))
 	for _, index := range indexes {
@@ -374,7 +370,7 @@ func toDBIndexes(
 			Comment:        index.Comment,
 			Invisible:      index.Invisible,
 			NullsDistinct:  clonePtr(index.NullsDistinct),
-			Method:         indexAccessMethod(index.Type, dialect),
+			Method:         indexAccessMethod(index.Type, dialect, readBack),
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),
 			StorageParams:  maps.Clone(index.StorageParams),
 			Requires:       slices.Clone(index.Requires),
@@ -384,27 +380,26 @@ func toDBIndexes(
 }
 
 // indexAccessMethod reports schemamodel.Index.Type as an access method only where
-// that is what it means. On ClickHouse the selected owner consumes the field as
-// the data-skipping-index type, a facet rather than an access method. On YDB it
-// carries how the index is maintained, synchronously or not, and the YDB
-// comparison reads that from Method on the current side.
-func indexAccessMethod(indexType, dialect string) string {
-	described, _ := platform.Lookup(dialect)
-	switch {
-	case described.Conversion.IndexTypeIsMethod:
+// that is what it means. On the PostgreSQL family the type is the access
+// method, and on YDB it carries how the index is maintained, synchronously or
+// not, which the YDB comparison reads from Method on the current side
+// (descriptor.Conversion.IndexTypeIsMethod). On ClickHouse the selected owner
+// consumes the field as the data-skipping-index type, a facet rather than an
+// access method. Where a read reports something else, the target's owner says
+// what (schemaprojection.ReadBack): a MySQL-family read reports INDEX_TYPE,
+// and the comparison reads the index's kind and method from it, so left empty
+// a declared FULLTEXT or SPATIAL index compared with its own conversion read
+// as a plain one and was dropped and added again.
+func indexAccessMethod(indexType, dialect string, readBack schemaprojection.ReadBack) string {
+	if described, _ := platform.Lookup(dialect); described.Conversion.IndexTypeIsMethod {
 		return indexType
-	case platform.NormalizeDialect(dialect) == platform.MySQL, platform.NormalizeDialect(dialect) == platform.MariaDB:
-		// A MySQL-family read reports INDEX_TYPE here, and the comparison
-		// reads the index's kind and method from it through mysqlindex. Left
-		// empty, a declared FULLTEXT or SPATIAL index compared with its own
-		// conversion read as a plain one and was dropped and added again.
-		if kind := mysqlindex.KindOf(indexType); kind != mysqlindex.Plain {
-			return string(kind)
-		}
-		return mysqlindex.Method(indexType)
-	default:
-		return ""
 	}
+	if readBack != nil {
+		if method, ok := readBack.IndexMethod(indexType); ok {
+			return method
+		}
+	}
+	return ""
 }
 
 // toDBIndexParts converts structured key parts, resolving the index-level

@@ -6,6 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/internal/convert/features"
 )
 
@@ -16,6 +17,7 @@ import (
 func Columns(ctx context.Context, table schemamodel.Table, fields []schemamodel.Field, target string, runtime interface {
 	schemaext.ConversionRuntime
 	schemaext.TargetResolver
+	schemaprojection.ReadBackRuntime
 }) ([]catalog.Column, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
@@ -24,7 +26,11 @@ func Columns(ctx context.Context, table schemamodel.Table, fields []schemamodel.
 	if err != nil {
 		return nil, err
 	}
-	columns := toDBColumns(table, fields, selected.Name())
+	readBack, err := runtime.ReadBack(selected.Name())
+	if err != nil {
+		return nil, err
+	}
+	columns := toDBColumns(table, fields, selected.Name(), readBack)
 	projected := &catalog.Database{Tables: []catalog.Table{{Columns: columns}}}
 	applyTablePrimaryKeys(projected, []schemamodel.Table{table})
 	_, _, err = features.Convert(ctx, runtime, selected.Name(), schemaext.Desired, schemaext.Observed, schemaext.Objects{}, schemaext.Coverage{}, projected.FacetSlots())

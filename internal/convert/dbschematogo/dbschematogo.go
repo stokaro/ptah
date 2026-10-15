@@ -17,8 +17,8 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/sqlutil"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/indexbacking"
@@ -48,6 +48,10 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	if err != nil {
 		return nil, err
 	}
+	readBack, err := targetReadBack(dialect, runtime)
+	if err != nil {
+		return nil, err
+	}
 	database := newDatabase()
 	database.Facets = dbSchema.Facets
 	convertSchemas(database, dbSchema.Schemas)
@@ -68,7 +72,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 
 	// One decision, consulted by both pools below. A unique constraint and its
 	// backing index describe one object, so exactly one of them may be emitted.
-	indexDescribed := indexDescribedUniques(dbSchema, dialect)
+	indexDescribed := indexDescribedUniques(dbSchema, readBack)
 	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed, dialect)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed, columnKeys.besideColumn)
 	clearColumnUniqueForNamedConstraints(database, dbSchema, tableStructNames)
@@ -103,6 +107,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 type Runtime interface {
 	schemaext.ConversionRuntime
 	schemacomparison.Runtime
+	schemaprojection.ReadBackRuntime
 }
 
 // targetRules are the comparison rules of the target dialect names, under the
@@ -117,6 +122,19 @@ func targetRules(dialect string, runtime schemacomparison.Runtime) (schemacompar
 		target = normalized
 	}
 	return runtime.ComparisonRules(target)
+}
+
+// targetReadBack is the read-back service of the target dialect names, and
+// none for a catalog read without a dialect.
+func targetReadBack(dialect string, runtime schemaprojection.ReadBackRuntime) (schemaprojection.ReadBack, error) {
+	if dialect == "" {
+		return nil, nil
+	}
+	target := dialect
+	if normalized := platform.NormalizeDialect(dialect); normalized != "" {
+		target = normalized
+	}
+	return runtime.ReadBack(target)
 }
 
 func convertSchemas(database *schemamodel.Database, schemas []catalog.Schema) {
@@ -895,13 +913,15 @@ func constraintBackedIndexesByTable(
 // stokaro/ptah#1245 established for the comparator, applied to the description
 // path (stokaro/ptah#2589).
 //
-// INCLUDE payload, visibility, and MySQL-family index options cannot be kept
-// by the UNIQUE constraint representation. Describe such an object as an
-// index so a DB read and rollback preserve the complete definition.
-func indexDescribedUniques(dbSchema *catalog.Database, dialect string) map[tableMemberKey]struct{} {
+// INCLUDE payload, visibility, and the index options a target's owner names
+// (schemaprojection.ReadBack.UniqueIndexDetail), such as the MySQL family's,
+// cannot be kept by the UNIQUE constraint representation. Describe such an
+// object as an index so a DB read and rollback preserve the complete
+// definition.
+func indexDescribedUniques(dbSchema *catalog.Database, readBack schemaprojection.ReadBack) map[tableMemberKey]struct{} {
 	covering := make(map[tableMemberKey]struct{})
 	for _, index := range dbSchema.Indexes {
-		if !index.IsUnique || index.IsPrimary || !uniqueNeedsIndexDescription(index, dialect) {
+		if !index.IsUnique || index.IsPrimary || !uniqueNeedsIndexDescription(index, readBack) {
 			continue
 		}
 		covering[tableMemberKey{table: index.QualifiedTableName(), member: index.Name}] = struct{}{}
@@ -1226,17 +1246,9 @@ func tableStorageOverrides(table catalog.Table) map[string]map[string]string {
 	return overrides
 }
 
-func uniqueNeedsIndexDescription(index catalog.Index, dialect string) bool {
+func uniqueNeedsIndexDescription(index catalog.Index, readBack schemaprojection.ReadBack) bool {
 	if len(index.IncludeColumns) > 0 || index.Invisible {
 		return true
 	}
-	if dialect == platform.MySQL || dialect == platform.MariaDB {
-		// The MySQL owner's block-size observation is one only an index
-		// carries; a reader gives one to an index with a hint or on a table
-		// that keeps one. A facet of another type is refused when the facets
-		// are converted.
-		_, observed, _ := mysqlschema.IndexBlockSize(index.Facets)
-		return observed || index.Comment != "" || mysqlindex.Method(index.Method) != ""
-	}
-	return false
+	return readBack != nil && readBack.UniqueIndexDetail(index)
 }

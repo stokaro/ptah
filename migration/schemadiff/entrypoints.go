@@ -42,6 +42,7 @@ func CompareWithDialect(ctx context.Context, desired *schemamodel.Database, curr
 type DocumentRuntime interface {
 	schemapreparation.Runtime
 	schemaprojection.TableCreationService
+	schemaprojection.ReadBackRuntime
 }
 
 // CompareSchemas compares desired documents after the selected runtime predicts

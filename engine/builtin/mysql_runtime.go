@@ -31,6 +31,7 @@ import (
 // replacement of its index, and reversed by another.
 func registerMySQLServices(provider *engine.Provider) {
 	provider.Targets[0].Creations = mysqlconvert.CreationService{}
+	provider.Targets[0].ReadBack = mysqlconvert.ReadBack{}
 	// The MySQL owner checks its lint rules for both engines of the family;
 	// each rule names the targets it judges.
 	provider.Lint = append(provider.Lint, engine.Lint{Rules: mysqllint.Rules(), Service: mysqllint.Service{}})
