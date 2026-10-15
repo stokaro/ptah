@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 548,
+    "shared-packages-name-dialects": 429,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -29,8 +29,6 @@
       "internal/convert/goschematogo": 2,
       "internal/dbexprprobe": 6,
       "internal/deporder": 4,
-      "internal/devclean": 87,
-      "internal/devlock": 18,
       "internal/dialectlexer": 12,
       "internal/foreignkeyscope": 4,
       "internal/indexbacking": 6,
@@ -50,12 +48,9 @@
       "migration/generator": 4,
       "migration/importer": 1,
       "migration/internal/generatedschema": 2,
-      "migration/internal/scratchdb": 10,
-      "migration/internal/shadowdb": 1,
       "migration/internal/tableidentity": 1,
       "migration/schemadiff": 10,
-      "migration/schemadiff/internal/compare": 49,
-      "migration/shadow": 3
+      "migration/schemadiff/internal/compare": 49
     }
   }
 }
