@@ -21,9 +21,9 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/foreignkeyscope"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaprep"
-	"ptah.run/internal/systemschema"
 	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -349,7 +349,7 @@ func validateDeclaredBeforeComparison(
 	if err := schemaprep.ValidateTableSpellings(desired, defaultSchema); err != nil {
 		return err
 	}
-	if err := reservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
+	if err := pgreservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
 		return err
 	}
 	// On a target where the grant option belongs to the grantee at the whole
@@ -375,7 +375,7 @@ func validateDeclaredBeforeComparison(
 	if err := clickhouserbac.ValidateLive(info.Dialect, desired, database); err != nil {
 		return err
 	}
-	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
+	if err := pgsystemschema.ValidateDeclaredPostgresSystemSchemas(
 		info.Dialect,
 		desired.Schemas,
 	); err != nil {

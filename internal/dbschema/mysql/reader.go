@@ -17,9 +17,9 @@ import (
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/mysqlsystemdb"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
-	"ptah.run/internal/systemschema"
 )
 
 // Reader reads schema information from MySQL/MariaDB databases
@@ -38,7 +38,7 @@ type Reader struct {
 
 // SetSchemas names the databases a whole-server read covers, from a
 // connection that selected no database. A nil or empty list is every user
-// database; see [systemschema.IsMySQLSystemDatabase].
+// database; see [mysqlsystemdb.IsMySQLSystemDatabase].
 //
 // A connection that selected a database reads that database and nothing else,
 // whatever the list says. The pinned community binary v1.3.0 does the same:
@@ -182,7 +182,7 @@ func (r *Reader) serverDatabases(ctx context.Context) ([]catalog.Schema, error) 
 	query := `
 		SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
 		FROM information_schema.SCHEMATA
-		WHERE ` + systemschema.MySQLUserDatabasesPredicate("SCHEMA_NAME")
+		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("SCHEMA_NAME")
 	args := make([]any, 0, len(r.databases))
 	if len(r.databases) > 0 {
 		query += ` AND SCHEMA_NAME IN (?` + strings.Repeat(", ?", len(r.databases)-1) + `)`

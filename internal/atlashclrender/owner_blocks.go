@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/systemschema"
+	"ptah.run/internal/pgsystemschema"
 )
 
 // encodeOwnerBlocks hands the owners the document: its objects, the facets
@@ -182,7 +182,7 @@ func (r *renderer) omitOwnerBlock(block hclext.EncodedBlock) bool {
 func (r *renderer) writeOwnerSchema(block hclext.EncodedBlock, schema string) {
 	switch {
 	case schema == "":
-	case block.SchemaRole == hclext.SchemaPlacement && systemschema.IsPostgresFamilySystemSchema(r.dialect, schema):
+	case block.SchemaRole == hclext.SchemaPlacement && pgsystemschema.IsPostgresFamilySystemSchema(r.dialect, schema):
 		r.stringAttr(1, "schema", schema)
 	default:
 		r.rawAttr(1, "schema", r.schemaRef(schema))

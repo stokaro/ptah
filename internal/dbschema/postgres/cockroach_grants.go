@@ -6,7 +6,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 )
 
 // cockroachBuiltinRoles are the roles CockroachDB grants ALL on every object
@@ -95,7 +95,7 @@ func (r *Reader) readCockroachRelationGrants(ctx context.Context, schemaName str
 		WHERE g.table_schema = $1
 		AND ` + notCockroachBuiltin("g.grantee") + `
 		AND g.grantee <> pg_get_userbyid(c.relowner)
-		AND ` + reservedrole.ExcludeSQL("g.grantee") + `
+		AND ` + pgreservedrole.ExcludeSQL("g.grantee") + `
 		ORDER BY c.relname, 1, g.privilege_type`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
@@ -136,7 +136,7 @@ func (r *Reader) readCockroachSchemaGrants(ctx context.Context, schemaName strin
 		WHERE p.table_schema = $1
 		AND ` + notCockroachBuiltin("p.grantee") + `
 		AND p.grantee <> pg_get_userbyid(n.nspowner)
-		AND ` + reservedrole.ExcludeSQL("p.grantee") + `
+		AND ` + pgreservedrole.ExcludeSQL("p.grantee") + `
 		ORDER BY 1, p.privilege_type`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
@@ -189,7 +189,7 @@ func (r *Reader) readCockroachRoutineGrants(ctx context.Context, schemaName stri
 		WHERE g.routine_schema = $1
 		AND n.nspname = $1` + describedRoutinePredicate + `
 		AND (` + notCockroachBuiltin("g.grantee") + ` OR g.grantee = pg_get_userbyid(p.proowner))
-		AND ` + reservedrole.ExcludeSQL("g.grantee") + `
+		AND ` + pgreservedrole.ExcludeSQL("g.grantee") + `
 		ORDER BY p.proname, 2, 4, g.privilege_type`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)

@@ -2606,7 +2606,7 @@ func verifyCompletedPostgresDatabaseCleanup(
 // schema is gone and fails on it, which IF EXISTS cannot cover: the revoke of
 // a default grant in the schema is one. Leaving the schema out is also how the
 // reader and the clean gate see it
-// ([systemschema.PostgresDescribedSchemasPredicate]). The check that a cleanup
+// ([pgsystemschema.PostgresDescribedSchemasPredicate]). The check that a cleanup
 // finished reads the same list, and answers for extension schemas through the
 // extensions that own them.
 //

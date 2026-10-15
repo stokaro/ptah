@@ -1352,7 +1352,7 @@ func TestReadRolesPartitionsEveryManageableRole(t *testing.T) {
 	// compared against nothing, which is why such a schema is refused before it
 	// reaches the comparator -- see
 	// compare.TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll and
-	// ptah.run/internal/reservedrole.
+	// ptah.run/internal/pgreservedrole.
 	//
 	// This test alone cannot catch a broken complement predicate: the fake
 	// answers the complement read by negating its own scoped answer. What

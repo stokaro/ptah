@@ -1,10 +1,10 @@
-// Package reservedrole owns the single definition of a PostgreSQL role name
+// Package pgreservedrole owns the single definition of a PostgreSQL role name
 // Ptah never manages: the reserved pg_ prefix and the bootstrap superuser. The
 // PostgreSQL reader excludes both from every role read through the SQL fragment
 // this package renders, and the desired-schema surfaces refuse to plan them
 // through the Go predicate this package exports, so the exclusion and the
 // refusal cannot drift into disagreeing about what "reserved" means.
-package reservedrole
+package pgreservedrole
 
 import (
 	"fmt"

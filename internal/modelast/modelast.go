@@ -23,9 +23,9 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 )
@@ -2324,7 +2324,7 @@ func schemasForRender(database schemamodel.Database, targetPlatform string) ([]s
 		seen[schema.Name] = struct{}{}
 	}
 	for _, name := range named {
-		if name == "" || systemschema.IsPostgresSystemSchema(name) {
+		if name == "" || pgsystemschema.IsPostgresSystemSchema(name) {
 			continue
 		}
 		if _, exists := seen[name]; exists {

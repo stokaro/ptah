@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 )
 
 // TestGetOrderedCreateStatementsRefusesAReservedRole is the regression for
@@ -68,7 +68,7 @@ func TestValidateSchemaRefusesAReservedRole(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err.Error(), qt.Contains, reservedrole.AllowEnvVar)
+	c.Assert(err.Error(), qt.Contains, pgreservedrole.AllowEnvVar)
 }
 
 // TestGetOrderedCreateStatementsStillRendersAnOrdinaryRole is the control: the
@@ -113,7 +113,7 @@ func TestGetOrderedCreateStatementsStillRendersAnOrdinaryRole(t *testing.T) {
 func TestGetOrderedCreateStatementsOptInRendersTheReservedRoleAnyway(t *testing.T) {
 	c := qt.New(t)
 
-	c.Setenv(reservedrole.AllowEnvVar, "1")
+	c.Setenv(pgreservedrole.AllowEnvVar, "1")
 
 	statements, err := builtin.GetOrderedCreateStatements(
 		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "postgres"}}},

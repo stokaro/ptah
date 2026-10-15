@@ -1,5 +1,5 @@
 {
-  "comment": "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). A count may fall and may never rise, and a rule with package counts is compared package by package. Known false positives: shared-packages-name-dialects counts a string that equals a dialect spelling and names something else, since the type checker cannot tell them apart: PostgreSQL's bootstrap role \"postgres\" (internal/reservedrole, internal/sqlschema), MySQL's system database \"mysql\" (internal/systemschema), and Liquibase's database short names (internal/liquibaserun). Regenerate with: go run ./internal/cmd/boundaries -update",
+  "comment": "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). A count may fall and may never rise, and a rule with package counts is compared package by package. Known false positives: shared-packages-name-dialects counts a string that equals a dialect spelling and names something else, since the type checker cannot tell them apart: PostgreSQL's bootstrap role \"postgres\" (internal/sqlschema) and Liquibase's database short names (internal/liquibaserun). Regenerate with: go run ./internal/cmd/boundaries -update",
   "rules": {
     "model-imports-pipeline": 0,
     "neutral-packages-link-owners": 0,
@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 703,
+    "shared-packages-name-dialects": 670,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -24,7 +24,6 @@
       "internal/atlasschema": 21,
       "internal/atlassource": 2,
       "internal/atlasurl": 46,
-      "internal/columnkey": 12,
       "internal/convert/dbschematogo": 6,
       "internal/convert/goschematodb": 8,
       "internal/convert/goschematogo": 2,
@@ -44,17 +43,14 @@
       "internal/modelast": 14,
       "internal/parser": 66,
       "internal/ptahdirective": 9,
-      "internal/reservedrole": 2,
       "internal/rlspolicy": 1,
       "internal/schemaclean": 30,
       "internal/schemafile": 2,
       "internal/schemaprep": 40,
       "internal/sqlcompound": 5,
-      "internal/sqlident": 13,
       "internal/sqlreach": 22,
       "internal/sqlschema": 49,
       "internal/sqlsyntax": 1,
-      "internal/systemschema": 6,
       "internal/txrequire": 1,
       "migration/generator": 4,
       "migration/importer": 1,

@@ -18,9 +18,9 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/mysqlsystemdb"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
-	"ptah.run/internal/systemschema"
 )
 
 const (
@@ -595,7 +595,7 @@ func dropServerDatabases(ctx context.Context, conn *sql.Conn) error {
 
 // serverUserDatabases lists the user databases the session sees.
 func serverUserDatabases(ctx context.Context, conn *sql.Conn) ([]string, error) {
-	rows, err := conn.QueryContext(ctx, systemschema.MySQLUserDatabasesQuery())
+	rows, err := conn.QueryContext(ctx, mysqlsystemdb.MySQLUserDatabasesQuery())
 	if err != nil {
 		return nil, fmt.Errorf("mysql: list the dev server's databases: %w", err)
 	}
@@ -617,7 +617,7 @@ func serverUserDatabases(ctx context.Context, conn *sql.Conn) ([]string, error) 
 // serverCrossDatabaseForeignKeys lists the foreign keys between databases,
 // each as database, table and name.
 func serverCrossDatabaseForeignKeys(ctx context.Context, conn *sql.Conn) ([][3]string, error) {
-	rows, err := conn.QueryContext(ctx, systemschema.MySQLCrossDatabaseForeignKeysQuery())
+	rows, err := conn.QueryContext(ctx, mysqlsystemdb.MySQLCrossDatabaseForeignKeysQuery())
 	if err != nil {
 		return nil, fmt.Errorf("mysql: list foreign keys between the dev server's databases: %w", err)
 	}
@@ -637,7 +637,7 @@ func serverCrossDatabaseForeignKeys(ctx context.Context, conn *sql.Conn) ([][3]s
 }
 
 func rejectProtectedMySQLDatabase(database string) error {
-	if systemschema.IsMySQLSystemDatabase(database) {
+	if mysqlsystemdb.IsMySQLSystemDatabase(database) {
 		return fmt.Errorf("mysql: refusing to clean protected database %q", database)
 	}
 	return nil

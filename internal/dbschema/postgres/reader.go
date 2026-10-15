@@ -26,7 +26,7 @@ import (
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgindexstorage"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/routineargs"
@@ -3924,11 +3924,11 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, de
 // make a reported role look absent.
 //
 // The partition is over managed roles, not over pg_roles. queryRoles ends both
-// statements with the exclusion [reservedrole.ExcludeSQL] renders, so the
+// statements with the exclusion [pgreservedrole.ExcludeSQL] renders, so the
 // reserved roles and the bootstrap superuser are in neither list -- Ptah
 // manages neither, in either direction. A desired schema that names one is
 // refused before anything is compared or planned, through
-// [reservedrole.ValidateDeclared] over the same definition of "reserved"
+// [pgreservedrole.ValidateDeclared] over the same definition of "reserved"
 // (stokaro/ptah#1312), rather than being compared against nothing here. Do not
 // restate this as "every role the server has".
 //
@@ -4059,7 +4059,7 @@ func (r *Reader) queryRoles(
 		-- unescaped 'pg_%' matches pgbouncer, pgadmin and pgpool, which are
 		-- ordinary user roles (stokaro/ptah#1291).
 		WHERE ` + membership + `
-		AND ` + reservedrole.ExcludeSQL("r.rolname") + `
+		AND ` + pgreservedrole.ExcludeSQL("r.rolname") + `
 		ORDER BY r.rolname`
 
 	rows, err := r.db.QueryContext(ctx, rolesQuery, args...)
@@ -4196,7 +4196,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // needs to see.
 //
 // Both ends exclude the reserved system roles, through the same
-// [reservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
+// [pgreservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
 // disagree about what "reserved" means (stokaro/ptah#1950).
 func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
 	query := `
@@ -4207,8 +4207,8 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 		FROM pg_auth_members m
 		JOIN pg_roles role ON role.oid = m.roleid
 		JOIN pg_roles member ON member.oid = m.member
-		WHERE ` + reservedrole.ExcludeSQL("role.rolname") + `
-		AND ` + reservedrole.ExcludeSQL("member.rolname") + `
+		WHERE ` + pgreservedrole.ExcludeSQL("role.rolname") + `
+		AND ` + pgreservedrole.ExcludeSQL("member.rolname") + `
 		ORDER BY role.rolname, member.rolname`
 
 	rows, err := r.db.QueryContext(ctx, query)
@@ -4638,7 +4638,7 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 // granted privilege, which is the grain aclexplode answers. identity carries
 // the row's grantor, schema and object type.
 //
-// A reserved grantee is left out through [reservedrole.Is], the Go spelling of
+// A reserved grantee is left out through [pgreservedrole.Is], the Go spelling of
 // the exclusion every role read renders in SQL, so a default privilege held by
 // a pg_ role is left out of the description exactly as an ordinary grant to it
 // is. The prefix test is a plain one: pgbouncer, pgadmin and pgpool are
@@ -4649,7 +4649,7 @@ func explodeDefaultPrivileges(identity defaultPrivilegeRow, items []aclitem.Item
 	var privileges []defaultPrivilegeRow
 	for _, item := range items {
 		grantee := pgdefaultacl.GranteeName(item)
-		if reservedrole.Is(grantee) {
+		if pgreservedrole.Is(grantee) {
 			continue
 		}
 		for _, privilege := range item.Privileges {
@@ -4910,7 +4910,7 @@ func globalDefaultPrivileges(identity defaultPrivilegeRow, deltas []pgdefaultacl
 	var privileges []defaultPrivilegeRow
 	for _, delta := range deltas {
 		grantee := pgdefaultacl.GranteeName(aclitem.Item{Grantee: delta.Grantee})
-		if reservedrole.Is(grantee) {
+		if pgreservedrole.Is(grantee) {
 			continue
 		}
 		entry := identity

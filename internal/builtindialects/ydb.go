@@ -106,6 +106,9 @@ func ydb() descriptor.Dialect {
 			Transactional: true,
 			ByOwner:       true,
 		},
+
+		// How an identifier is written, and how a column's own key is named.
+		Quoting: descriptor.Quoting{Style: descriptor.QuoteYQL, Bare: descriptor.BareNever, Paths: true},
 	}
 }
 

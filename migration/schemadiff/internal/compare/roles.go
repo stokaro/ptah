@@ -55,7 +55,7 @@ import (
 // refused first, at the surfaces that accept one and can return an error
 // (stokaro/ptah#1312). This comparison keeps no opinion about reserved names,
 // which is why it still needs no error return. The single definition of
-// "reserved" lives in [ptah.run/internal/reservedrole], shared with the
+// "reserved" lives in [ptah.run/internal/pgreservedrole], shared with the
 // reader's own exclusion so the two cannot disagree.
 //
 // # Role Modification Detection

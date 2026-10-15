@@ -92,6 +92,9 @@ func clickHouse() descriptor.Dialect {
 ) ENGINE = MergeTree ORDER BY seed_path`,
 			TablesQuery: "SELECT name FROM system.tables WHERE database = currentDatabase() AND is_temporary = 0",
 		},
+
+		// How an identifier is written, and how a column's own key is named.
+		Quoting: descriptor.Quoting{Style: descriptor.QuoteBacktick},
 	}
 }
 

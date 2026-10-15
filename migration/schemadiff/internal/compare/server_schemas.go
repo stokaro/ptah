@@ -9,7 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/systemschema"
+	"ptah.run/internal/mysqlsystemdb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -49,7 +49,7 @@ func ServerSchemas(
 	declared := make(map[string]struct{}, len(declaredSchemas))
 	for _, schema := range declaredSchemas {
 		key := semantics.TableIdentityKey(schema.Name)
-		if strings.TrimSpace(schema.Name) == "" || systemschema.IsMySQLSystemDatabase(schema.Name) {
+		if strings.TrimSpace(schema.Name) == "" || mysqlsystemdb.IsMySQLSystemDatabase(schema.Name) {
 			continue
 		}
 		if _, seen := declared[key]; seen {

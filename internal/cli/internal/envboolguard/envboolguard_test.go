@@ -30,7 +30,7 @@ import (
 	_ "ptah.run/internal/cli/internal/editor" // links its PTAH_* declarations into the registry
 	"ptah.run/internal/envbool"
 	_ "ptah.run/internal/migrationintegrity" // links its PTAH_* declarations into the registry
-	_ "ptah.run/internal/reservedrole"       // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/pgreservedrole"     // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/rolescope"          // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
 	_ "ptah.run/migration/migrator"          // links its PTAH_* declarations into the registry

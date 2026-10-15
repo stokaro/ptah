@@ -54,7 +54,7 @@ func isRoleReadDenied(err error) bool {
 // Measured on a fresh 23.26.2.0.0: DBA_ROLES holds 109 rows, of which 2 answer
 // 'N', and both were the ones a test had just created. A name list would go
 // stale with every release; this is a catalog fact, and it is the Oracle
-// equivalent of what internal/reservedrole does for PostgreSQL and of
+// equivalent of what internal/pgreservedrole does for PostgreSQL and of
 // sys.database_principals.is_fixed_role for SQL Server.
 //
 // DBA_ROLES rather than ALL_ROLES because Oracle has no ALL_ROLES. That is

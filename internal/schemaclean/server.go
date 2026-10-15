@@ -9,7 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/internal/envbool"
-	"ptah.run/internal/systemschema"
+	"ptah.run/internal/mysqlsystemdb"
 )
 
 // AllowServerCleanEnvVar lets a cleanup drop every user database of a whole
@@ -21,7 +21,7 @@ import (
 // at exit 0, measured on MySQL 8.4.11 and MariaDB 11.8.9, so the refusal is a
 // deliberate difference, and the variable restores the binary's behavior
 // (stokaro/ptah#3789). It is an environment variable rather than a flag for
-// the reason [ptah.run/internal/reservedrole.AllowEnvVar] gives.
+// the reason [ptah.run/internal/pgreservedrole.AllowEnvVar] gives.
 const AllowServerCleanEnvVar = "PTAH_ALLOW_SERVER_CLEAN"
 
 // It is [envbool.Retained]: a true value restores what the pinned community
@@ -97,7 +97,7 @@ func IsServer(conn *dbschema.DatabaseConnection) bool {
 // (HY000): Cannot drop table 't' referenced by a foreign key constraint 'zfk'
 // on table 'z'`. Dropping those keys first empties the server whatever order
 // the databases come in. A database the server owns is never listed; see
-// [systemschema.IsMySQLSystemDatabase].
+// [mysqlsystemdb.IsMySQLSystemDatabase].
 func inspectServer(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
 	databases, err := serverDatabases(ctx, conn)
 	if err != nil {
@@ -117,7 +117,7 @@ func inspectServer(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Ob
 
 // serverDatabases lists the user databases of a whole server.
 func serverDatabases(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
-	rows, err := conn.QueryContext(ctx, systemschema.MySQLUserDatabasesQuery())
+	rows, err := conn.QueryContext(ctx, mysqlsystemdb.MySQLUserDatabasesQuery())
 	if err != nil {
 		return nil, fmt.Errorf("inspect cleanup databases: %w", err)
 	}
@@ -139,7 +139,7 @@ func serverDatabases(ctx context.Context, conn *dbschema.DatabaseConnection) ([]
 // crossDatabaseForeignKeys lists the foreign keys of a user database that
 // reference a table of another database.
 func crossDatabaseForeignKeys(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
-	rows, err := conn.QueryContext(ctx, systemschema.MySQLCrossDatabaseForeignKeysQuery())
+	rows, err := conn.QueryContext(ctx, mysqlsystemdb.MySQLCrossDatabaseForeignKeysQuery())
 	if err != nil {
 		return nil, fmt.Errorf("inspect cleanup foreign keys between databases: %w", err)
 	}

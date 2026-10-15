@@ -59,7 +59,7 @@
 //     `Schema is synced, no changes to be made.` with the catalog untouched;
 //   - to drop it, [AllowDropEnvVar] plans the drop exactly as before. It is an
 //     environment variable rather than a flag for the reason
-//     [ptah.run/internal/reservedrole.AllowEnvVar] gives: the conformance
+//     [ptah.run/internal/pgreservedrole.AllowEnvVar] gives: the conformance
 //     cli-surface tier asserts that ptah-compat registers exactly the flags the
 //     pinned Atlas community binary registers.
 //
@@ -180,7 +180,7 @@ var allowDrop = envbool.New(AllowDropEnvVar, false, envbool.Retained)
 // second.
 //
 // It is an environment variable rather than a flag for the reason
-// [ptah.run/internal/reservedrole.AllowEnvVar] gives: the conformance
+// [ptah.run/internal/pgreservedrole.AllowEnvVar] gives: the conformance
 // cli-surface tier asserts that ptah-compat registers exactly the flags the
 // pinned Atlas community binary registers.
 const AllowUnregisteredModuleEnvVar = "PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE"
@@ -385,7 +385,7 @@ func ValidateComparison(
 	// dormant: the operator believes they enabled the drop, nothing says
 	// otherwise, and the value is first parsed on the day a virtual table
 	// appears. Same boundary as
-	// [ptah.run/internal/reservedrole.ValidateDeclared], which resolves
+	// [ptah.run/internal/pgreservedrole.ValidateDeclared], which resolves
 	// after the dialect gate and before the roles are scanned.
 	dropAllowed, err := DropAllowed()
 	if err != nil {

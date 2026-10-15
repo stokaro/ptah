@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
@@ -33,7 +34,6 @@ import (
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
-	"ptah.run/internal/systemschema"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -893,7 +893,7 @@ func loadAndValidateDesiredApplySchema(
 	if err := refuseOutsideTargetDatabase(conn.Info(), desired); err != nil {
 		return nil, err
 	}
-	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
+	if err := pgsystemschema.ValidateDeclaredPostgresSystemSchemas(
 		conn.Info().Dialect,
 		desired.Schemas,
 	); err != nil {

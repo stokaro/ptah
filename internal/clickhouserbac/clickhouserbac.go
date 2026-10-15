@@ -74,7 +74,7 @@ var reservedRoleNames = map[string]bool{
 // It runs at the entry points a declaration reaches before a server does — the
 // renderer and the schema comparison — so the refusal arrives instead of a
 // mutation, never after one. Non-ClickHouse dialects return nil immediately,
-// which is how internal/reservedrole keeps PostgreSQL's rules from reaching
+// which is how internal/pgreservedrole keeps PostgreSQL's rules from reaching
 // MySQL and how this package keeps ClickHouse's from reaching PostgreSQL.
 //
 // defaultDatabase resolves an unqualified table name. Empty means there is no

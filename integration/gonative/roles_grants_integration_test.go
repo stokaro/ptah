@@ -519,7 +519,7 @@ func rolesNamedByDescription(schema *catalog.Database) []string {
 // naming one is refused before anything is compared or planned rather than
 // turned into a CREATE ROLE the server refuses. See
 // compare.TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll and
-// ptah.run/internal/reservedrole.
+// ptah.run/internal/pgreservedrole.
 func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	c := qt.New(t)
 	dsn := skipIfNoPostgreSQL(t)

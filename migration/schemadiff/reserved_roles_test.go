@@ -10,7 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/pgreservedrole"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -141,7 +141,7 @@ func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
 func TestCompareWithDatabaseInfoOptInPlansTheReservedRoleAnyway(t *testing.T) {
 	c := qt.New(t)
 
-	c.Setenv(reservedrole.AllowEnvVar, "1")
+	c.Setenv(pgreservedrole.AllowEnvVar, "1")
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
 		t.Context(), &schemamodel.Database{Roles: []schemamodel.Role{{Name: "postgres"}, {Name: "pg_monitor"}}},

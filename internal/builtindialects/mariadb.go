@@ -86,5 +86,9 @@ func mariaDB() descriptor.Dialect {
 			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 			TablesQuery:   "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
 		},
+
+		// How an identifier is written, and how a column's own key is named.
+		Quoting:    descriptor.Quoting{Style: descriptor.QuoteBacktick},
+		ColumnKeys: descriptor.ColumnKeyAfterColumn,
 	}
 }

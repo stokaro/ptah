@@ -24,22 +24,26 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
 )
 
-// Named reports whether the package names a column's own UNIQUE on dialect.
-// On another engine the naming is not measured, and a caller keeps the
-// column's uniqueness with whichever key covers the column.
+// naming is the dialect descriptor's naming of a column's own key, or empty
+// where none is measured or the dialect is not described.
+func naming(dialect string) descriptor.ColumnKeyNaming {
+	described, _ := platform.Lookup(dialect)
+	return described.ColumnKeys
+}
+
+// Named reports whether the package names a column's own UNIQUE on dialect:
+// whether the dialect's descriptor states how its server names the key. On
+// another engine the naming is not measured, and a caller keeps the column's
+// uniqueness with whichever key covers the column.
 func Named(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.Postgres:
-		return true
-	default:
-		return false
-	}
+	return naming(dialect) != ""
 }
 
 // Name answers the name the server of dialect gives the own UNIQUE of column
@@ -61,10 +65,10 @@ func Name(dialect, table, column string, taken func(string) bool) (string, bool)
 	if taken == nil {
 		taken = func(string) bool { return false }
 	}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
+	switch naming(dialect) {
+	case descriptor.ColumnKeyAfterColumn:
 		return mysqlname.IndexName(dialect, column, taken), true
-	case platform.Postgres:
+	case descriptor.ColumnKeyTableColumnKey:
 		return pgname.Constraint(table, []string{column}, "key", taken), true
 	default:
 		return "", false
@@ -85,7 +89,7 @@ func Name(dialect, table, column string, taken func(string) bool) (string, bool)
 // asked for would count its own, and another column's is `<column>` or
 // `<table>_<column>_key` of a different column.
 func Taken(dialect string, databases []*schemamodel.Database, table schemamodel.Table) func(string) bool {
-	if platform.NormalizeDialect(dialect) == platform.Postgres {
+	if naming(dialect) == descriptor.ColumnKeyTableColumnKey {
 		constraints := pgname.ConstraintNames(databases, table.Schema)
 		relations := pgname.RelationNames(databases, table.Schema)
 		return func(name string) bool { return constraints.Taken(name) || relations.Taken(name) }
@@ -124,12 +128,10 @@ func Taken(dialect string, databases []*schemamodel.Database, table schemamodel.
 // the column's own there; Atlas CE v1.3.0 renames it to `x`, which changes
 // nothing the server tells apart. Other engines compare the names as written.
 func Same(dialect, a, b string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
+	if naming(dialect) == descriptor.ColumnKeyAfterColumn {
 		return strings.EqualFold(a, b)
-	default:
-		return a == b
 	}
+	return a == b
 }
 
 // Shares reports whether a constraint of kind, on the column's table, holds a
@@ -142,10 +144,10 @@ func Same(dialect, a, b string) bool {
 // c_x_key answers `constraint "c_x_key" for relation "c" already exists`.
 // Measured on MySQL 8.4.11 and PostgreSQL 18.6.
 func Shares(dialect, kind string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
+	switch naming(dialect) {
+	case descriptor.ColumnKeyAfterColumn:
 		return strings.EqualFold(kind, "UNIQUE")
-	case platform.Postgres:
+	case descriptor.ColumnKeyTableColumnKey:
 		return true
 	default:
 		return false

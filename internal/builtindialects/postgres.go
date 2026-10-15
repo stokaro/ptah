@@ -81,5 +81,9 @@ func postgres() descriptor.Dialect {
 			Transactional: true,
 			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 		},
+
+		// How an identifier is written, and how a column's own key is named.
+		Quoting:    descriptor.Quoting{Style: descriptor.QuoteDouble},
+		ColumnKeys: descriptor.ColumnKeyTableColumnKey,
 	}
 }

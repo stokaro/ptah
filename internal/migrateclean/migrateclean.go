@@ -40,8 +40,9 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/mysqlsystemdb"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaselection"
-	"ptah.run/internal/systemschema"
 )
 
 const (
@@ -634,7 +635,7 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 //
 // On MySQL and MariaDB the realm is a whole server, reached through a URL that
 // names no database, and its schemas are the user databases; see
-// [systemschema.MySQLUserDatabasesPredicate]. A view is not a table there
+// [mysqlsystemdb.MySQLUserDatabasesPredicate]. A view is not a table there
 // either.
 func realmProbe(dialect string, caps capability.Capabilities) string {
 	if isMySQLFamily(dialect) {
@@ -644,14 +645,14 @@ func realmProbe(dialect string, caps capability.Capabilities) string {
 		LEFT JOIN information_schema.TABLES t
 		  ON t.TABLE_SCHEMA = s.SCHEMA_NAME
 		 AND t.TABLE_TYPE = 'BASE TABLE'
-		WHERE ` + systemschema.MySQLUserDatabasesPredicate("s.SCHEMA_NAME") + `
+		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("s.SCHEMA_NAME") + `
 		ORDER BY s.SCHEMA_NAME, t.TABLE_NAME`
 	}
 	if !platform.IsPostgresFamily(dialect) {
 		return ""
 	}
 	// Which schemas belong to the realm is
-	// [systemschema.PostgresDescribedSchemasPredicate], shared so this gate
+	// [pgsystemschema.PostgresDescribedSchemasPredicate], shared so this gate
 	// and `schema inspect` cannot disagree about it. It leaves out a schema
 	// an extension created, and everything in it: measured, the binary applies
 	// against a schema an extension owns even while that schema holds a table
@@ -664,7 +665,7 @@ func realmProbe(dialect string, caps capability.Capabilities) string {
 		  ON c.relnamespace = n.oid
 		 AND c.relkind IN ('r', 'p')
 		 AND ` + postgresUserTable(caps) + `
-		WHERE ` + systemschema.PostgresDescribedSchemasPredicate(dialect, caps) + `
+		WHERE ` + pgsystemschema.PostgresDescribedSchemasPredicate(dialect, caps) + `
 		ORDER BY n.nspname, c.relname`
 }
 
@@ -692,7 +693,7 @@ func realmProbe(dialect string, caps capability.Capabilities) string {
 //
 // The extension arm reads pg_depend and is gated on
 // [capability.CatalogDependencies] for the reason
-// [systemschema.PostgresDescribedSchemasPredicate] gives.
+// [pgsystemschema.PostgresDescribedSchemasPredicate] gives.
 func postgresUserTable(caps capability.Capabilities) string {
 	predicate := `c.relispartition IS NOT TRUE`
 	if !caps.Has(capability.CatalogDependencies) {

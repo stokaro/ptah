@@ -21,13 +21,13 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
-	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/diffpolicy"
@@ -529,7 +529,7 @@ func (p *Planner) addSchemaPreconditions(
 		// PostgreSQL that spares a statement nobody needs; on Spanner it is
 		// what makes the migration run at all, because `public` there is
 		// implicit and CREATE SCHEMA for it is refused by name.
-		if systemschema.IsUncreatableSchema(p.dialect, schema) {
+		if pgsystemschema.IsUncreatableSchema(p.dialect, schema) {
 			continue
 		}
 		if _, ok := seen[schema]; ok {
@@ -539,7 +539,7 @@ func (p *Planner) addSchemaPreconditions(
 		schemas = append(schemas, schema)
 	}
 	for _, schema := range p.placedSchemas(diff) {
-		if schema == "" || systemschema.IsUncreatableSchema(p.dialect, schema) {
+		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) {
 			continue
 		}
 		if _, ok := seen[schema]; !ok {
