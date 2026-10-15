@@ -60,6 +60,8 @@ func sqlServer() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "transactional",
 		RevisionTable:   sqlServerRevisionTable(),
+
+		Lock: descriptor.Lock{Protocol: descriptor.LockAppLock},
 	}
 }
 

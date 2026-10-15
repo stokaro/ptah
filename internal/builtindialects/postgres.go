@@ -61,5 +61,9 @@ func postgres() descriptor.Dialect {
 		// TestRevisionCompletionFailure_PostgresTransactionalLive.
 		DDLTransactions: "transactional",
 		RevisionTable:   postgresFamilyRevisionTable(),
+
+		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSearchPath, Implicit: true},
+		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced, Widenable: true},
+		Lock:    descriptor.Lock{Protocol: descriptor.LockPostgresAdvisory},
 	}
 }

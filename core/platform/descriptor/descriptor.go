@@ -16,7 +16,8 @@
 // of an engine Ptah does not ship, builds one with [NewRegistry].
 //
 // This package checks the parts of a descriptor every reader shares: names,
-// aliases, family and the placeholder style. A package that interprets a
+// aliases, family, the placeholder style, and the enumerated schema, role and
+// lock values of [Schemas], [Roles] and [Lock]. A package that interprets a
 // field checks that field's values when it reads them; see
 // core/platform/identifier.FromDescriptor.
 package descriptor
@@ -118,6 +119,23 @@ type Dialect struct {
 	DDLTransactions string `json:"ddl_transactions,omitempty"`
 	// RevisionTable states how the migrator keeps its own tables.
 	RevisionTable RevisionTable `json:"revision_table,omitzero"`
+
+	// Schema scope, locking and URL display; see scope.go.
+
+	// Schemas states what a schema is on the engine and how a database URL
+	// selects one.
+	Schemas Schemas `json:"schemas,omitzero"`
+	// Roles states which of the roles Ptah manages a schema read leaves out of
+	// a description, and whether that can be widened.
+	Roles Roles `json:"roles,omitzero"`
+	// Lock states how the engine holds the advisory lock that serializes
+	// schema-changing runs.
+	Lock Lock `json:"lock,omitzero"`
+	// URLValuedParameters are the query parameters of a database URL whose
+	// value is a URL of its own, such as the monitoring endpoint of a YDB
+	// cluster. A display of the URL hides the credentials inside them too.
+	// They are matched without regard to case.
+	URLValuedParameters []string `json:"url_valued_parameters,omitempty"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE
@@ -217,6 +235,9 @@ func (d Dialect) validate() error {
 		return fmt.Errorf("%w: dialect %q: placeholder %q is not one of %q", ErrInvalidDescriptor, d.Name, d.Placeholder, Placeholders())
 	}
 	if err := d.validateConnection(); err != nil {
+		return err
+	}
+	if err := d.validateScope(); err != nil {
 		return err
 	}
 	return nil

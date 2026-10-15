@@ -42,6 +42,11 @@ func spanner() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",
 		RevisionTable:   spannerRevisionTable(),
+
+		// Unlike the rest of its family, Spanner does not place a desired
+		// object declared without a schema in public.
+		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSearchPath},
+		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced, Widenable: true},
 	}
 }
 

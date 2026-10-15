@@ -66,5 +66,10 @@ func mariaDB() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "implicit_commit",
 		RevisionTable:   mysqlFamilyRevisionTable(),
+
+		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionDatabase},
+		// MariaDB refuses the negative timeout MySQL's GET_LOCK takes for a
+		// wait without limit, so a year stands in for it.
+		Lock: descriptor.Lock{Protocol: descriptor.LockGetLock, UnboundedWaitSeconds: 31_536_000},
 	}
 }

@@ -15,6 +15,8 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/devdocker"
 )
 
@@ -307,7 +309,8 @@ func dockerDeclarationName(key atlasDockerBlockKey, values map[string]string, de
 // dockerImageURL is the `docker+<driver>://` URL a docker block's reference
 // evaluates to. The image always carries a tag or a digest, so the URL's last
 // path segment is never read as a database by mistake; the daemon resolves an
-// untagged image to `latest` either way. On PostgreSQL the database is always
+// untagged image to `latest` either way. Where the driver's dialect selects a
+// schema through search_path, as PostgreSQL does, the database is always
 // written, `postgres` when the block names none, and the schema is the URL's
 // search_path; on the MySQL family the schema is the database.
 func dockerImageURL(typ, image, database, schema, name string) string {
@@ -316,19 +319,19 @@ func dockerImageURL(typ, image, database, schema, name string) string {
 	}
 	segments := []string{image}
 	query := url.Values{}
-	switch typ {
-	case "postgres":
+	if described, _ := platform.Lookup(typ); described.Schemas.Selection == descriptor.SchemaSelectionSearchPath {
 		if database == "" {
+			// PostgreSQL's maintenance database, the one every server has.
+			// The postgres block is the only search_path driver a docker
+			// block takes; see atlasDockerAttributes.
 			database = "postgres"
 		}
 		segments = append(segments, database)
 		if schema != "" {
 			query.Set("search_path", schema)
 		}
-	default:
-		if schema != "" {
-			segments = append(segments, schema)
-		}
+	} else if schema != "" {
+		segments = append(segments, schema)
 	}
 	return (&url.URL{
 		Scheme:   "docker+" + typ,

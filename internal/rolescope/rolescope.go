@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/envbool"
 )
 
@@ -120,13 +121,14 @@ func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 	)
 }
 
-// outOfScopeCause says why a reader left roles out of the description. The
-// YDB reader leaves out the users and groups the cluster made for itself, such
-// as ADMINS and DATA-READERS, the database's owner, and every user and group
-// when it reads a dev realm; the others leave out the roles nothing in the
-// inspected schemas refers to.
+// outOfScopeCause says why a reader left roles out of the description, as the
+// dialect's descriptor states it. The YDB reader leaves out the users and
+// groups the cluster made for itself, such as ADMINS and DATA-READERS, the
+// database's owner, and every user and group when it reads a dev realm; the
+// others leave out the roles nothing in the inspected schemas refers to.
 func outOfScopeCause(dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	described, _ := platform.Lookup(dialect)
+	if described.Roles.OutOfScope == descriptor.RoleScopeUserMade {
 		return "the cluster made them or they own the database, or the read was of a dev realm," +
 			" which shares its database's users and groups"
 	}
@@ -134,7 +136,8 @@ func outOfScopeCause(dialect string) string {
 }
 
 // describeAllRemedy returns the sentence naming the opt-out, and the empty
-// string where there is none.
+// string where there is none: the opt-out is offered where the dialect's
+// descriptor says its read can be widened.
 //
 // Ending the note with it unconditionally holds only while the PostgreSQL
 // reader is the one filling RolesOutOfScope. ClickHouse fills it too
@@ -143,7 +146,7 @@ func outOfScopeCause(dialect string) string {
 // nothing — a remedy that does not work is worse than no remedy, because the
 // reader spends the attempt before learning it was never offered.
 func describeAllRemedy(dialect string) string {
-	if !platform.IsPostgresFamily(platform.NormalizeDialect(dialect)) {
+	if described, _ := platform.Lookup(dialect); !described.Roles.Widenable {
 		return ""
 	}
 	return fmt.Sprintf(" Set %s=1 to describe every role Ptah manages.", DescribeAllEnvVar)

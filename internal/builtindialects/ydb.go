@@ -78,6 +78,10 @@ func ydb() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",
 		RevisionTable:   ydbRevisionTable(),
+
+		Roles:               descriptor.Roles{OutOfScope: descriptor.RoleScopeUserMade},
+		Lock:                descriptor.Lock{Protocol: descriptor.LockCoordinationSemaphore},
+		URLValuedParameters: []string{"monitoring"},
 	}
 }
 

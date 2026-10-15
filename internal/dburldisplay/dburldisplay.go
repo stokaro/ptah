@@ -12,12 +12,12 @@ package dburldisplay
 import (
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/ydburl"
 )
 
 const redactedQueryValue = "redacted"
@@ -196,17 +196,21 @@ func redactRawQuery(rawQuery string, urlValued func(key string) bool) string {
 }
 
 // urlValuedParameter reports, for a URL of the given scheme, which query
-// parameters hold a URL of their own. A YDB URL names the cluster's monitoring
-// endpoint that way, and a command prints the URL before internal/ydburl
-// parses it and refuses a user in that endpoint, so the display has to hide
-// the user itself. The parameter name is matched in any case: the display may
-// hide more than the parser reads, never less.
+// parameters hold a URL of their own: the ones the scheme's dialect
+// descriptor names. A YDB URL names the cluster's monitoring endpoint that
+// way, and a command prints the URL before internal/ydburl parses it and
+// refuses a user in that endpoint, so the display has to hide the user
+// itself. The parameter name is matched in any case: the display may hide
+// more than the parser reads, never less.
 func urlValuedParameter(scheme string) func(key string) bool {
-	if platform.NormalizeDialect(scheme) != platform.YDB {
+	described, _ := platform.Lookup(scheme)
+	if len(described.URLValuedParameters) == 0 {
 		return noURLValuedParameter
 	}
 	return func(key string) bool {
-		return strings.EqualFold(key, ydburl.MonitoringParameter)
+		return slices.ContainsFunc(described.URLValuedParameters, func(parameter string) bool {
+			return strings.EqualFold(key, parameter)
+		})
 	}
 }
 

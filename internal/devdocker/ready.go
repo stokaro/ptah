@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqlident"
@@ -49,7 +50,7 @@ func ydbReady(ctx context.Context, rawURL string) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, conn.Close()) }()
-	table := sqlident.Quote(platform.YDB, ydbReadyTable)
+	table := sqlident.Quote(conn.Info().Dialect, ydbReadyTable)
 	return ydbready.Until(ctx, func(ctx context.Context) error {
 		// #nosec G202 -- the table name is a constant quoted through sqlident.
 		if _, err := conn.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+
@@ -62,11 +63,12 @@ func ydbReady(ctx context.Context, rawURL string) (err error) {
 	})
 }
 
-// CreateDatabase is the default [DatabaseCreator]. On the PostgreSQL family it
+// CreateDatabase is the default [DatabaseCreator]. Where a schema is a
+// search_path namespace inside a database, as on the PostgreSQL family, it
 // creates the database when `pg_database` has no row for it, since `CREATE
-// DATABASE` there has no IF NOT EXISTS form; on the MySQL family it runs
-// `CREATE DATABASE IF NOT EXISTS`, which is what the pinned community binary
-// v1.3.0 runs on an image the URL names.
+// DATABASE` there has no IF NOT EXISTS form; everywhere else, as on the MySQL
+// family, it runs `CREATE DATABASE IF NOT EXISTS`, which is what the pinned
+// community binary v1.3.0 runs on an image the URL names.
 func CreateDatabase(ctx context.Context, serverURL, dialect, database string) (err error) {
 	conn, err := dbschema.ConnectToServer(ctx, serverURL)
 	if err != nil {
@@ -74,7 +76,7 @@ func CreateDatabase(ctx context.Context, serverURL, dialect, database string) (e
 	}
 	defer func() { err = errors.Join(err, conn.Close()) }()
 	quoted := sqlident.Quote(dialect, database)
-	if !platform.IsPostgresFamily(dialect) {
+	if described, _ := platform.Lookup(dialect); described.Schemas.Selection != descriptor.SchemaSelectionSearchPath {
 		// #nosec G202 -- the database name is quoted through sqlident.
 		_, err = conn.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS "+quoted)
 		return err

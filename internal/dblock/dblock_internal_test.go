@@ -318,6 +318,7 @@ func TestAcquireSQLServerLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T)
 	acquireErr := acquireSQLServerLock(
 		c.Context(),
 		session,
+		platform.SQLServer,
 		"ptah_test",
 		time.Second,
 	)
@@ -381,7 +382,7 @@ func TestMySQLLockTimeoutSeconds(t *testing.T) {
 		want    float64
 	}{
 		{name: "mysql default uses native infinite timeout", dialect: "mysql", want: -1},
-		{name: "mariadb default avoids unsupported negative timeout", dialect: "mariadb", want: mariaDBDefaultTimeoutSeconds},
+		{name: "mariadb default avoids unsupported negative timeout", dialect: "mariadb", want: 31_536_000},
 		{name: "mysql explicit subsecond rounds up", dialect: "mysql", timeout: 500 * time.Millisecond, want: 1},
 		{name: "mariadb explicit duration", dialect: "mariadb", timeout: 2 * time.Second, want: 2},
 	}

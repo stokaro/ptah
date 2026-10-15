@@ -64,6 +64,8 @@ func clickHouse() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",
 		RevisionTable:   clickHouseRevisionTable(),
+
+		Roles: descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced},
 	}
 }
 

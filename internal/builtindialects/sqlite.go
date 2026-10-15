@@ -52,6 +52,8 @@ func sqlite() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions: "transactional",
 		RevisionTable:   sqliteRevisionTable(),
+
+		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSingle, Implicit: true},
 	}
 }
 
