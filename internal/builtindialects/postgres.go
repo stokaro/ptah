@@ -124,5 +124,13 @@ func postgres() descriptor.Dialect {
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 		Columns:          descriptor.Columns{IdentityNotNull: true},
 		Statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: "plpgsql"},
+
+		// Dev databases.
+		DevRealm: descriptor.DevRealm{
+			Identity:        "query",
+			Query:           "SELECT current_database()",
+			ScratchDatabase: true,
+			DropSchema:      "DROP SCHEMA IF EXISTS %s CASCADE",
+		},
 	}
 }

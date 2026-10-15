@@ -1,4 +1,4 @@
-package devclean
+package postgresreplay
 
 // White-box testing required: this file verifies the unexported PostgreSQL-
 // family replay policy without expanding the package API.
@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 )
 
 func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
@@ -88,7 +89,7 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			tokens := significantTokens(test.statement, replayLexerOptions(test.dialect))
+			tokens := replay.Tokens(test.statement, lexerOptions())
 			err := validatePostgresReplayStatement(test.dialect, tokens)
 			c.Assert(err, qt.IsNil)
 		})
@@ -425,7 +426,7 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			tokens := significantTokens(test.statement, replayLexerOptions(test.dialect))
+			tokens := replay.Tokens(test.statement, lexerOptions())
 			err := validatePostgresReplayStatement(test.dialect, tokens)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

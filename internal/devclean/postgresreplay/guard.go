@@ -1,4 +1,4 @@
-package devclean
+package postgresreplay
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlreach"
 )
@@ -15,42 +16,42 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 		return nil
 	}
 
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "DO" {
-		return unsafeReplayStatement(dialect, "DO sublanguage")
+		return replay.Refuse(dialect, "DO sublanguage")
 	}
 	if first == "CALL" {
-		return unsafeReplayStatement(dialect, "CALL sublanguage")
+		return replay.Refuse(dialect, "CALL sublanguage")
 	}
 	if definesPostgresRoutine(tokens) {
-		return unsafeReplayStatement(dialect, first+" routine definition")
+		return replay.Refuse(dialect, first+" routine definition")
 	}
 	if namespace := protectedPostgresMutationNamespace(tokens); namespace != "" {
-		return unsafeReplayStatement(
+		return replay.Refuse(
 			dialect,
 			fmt.Sprintf("protected namespace %q mutation", namespace),
 		)
 	}
-	if first == "IMPORT" && containsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
-		return unsafeReplayStatement(dialect, "IMPORT FOREIGN SCHEMA")
+	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
+		return replay.Refuse(dialect, "IMPORT FOREIGN SCHEMA")
 	}
 	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" {
-		return unsafeReplayStatement(dialect, operation)
+		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresRoleOrAuthorizationChange(tokens); operation != "" {
-		return unsafeReplayStatement(dialect, operation)
+		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresDialectGlobalOperation(dialect, tokens); operation != "" {
-		return unsafeReplayStatement(dialect, operation)
+		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresSessionOrControlOperation(tokens); operation != "" {
-		return unsafeReplayStatement(dialect, operation)
+		return replay.Refuse(dialect, operation)
 	}
 	if selectsIntoPostgresTemporaryObject(tokens) {
-		return unsafeReplayStatement(dialect, "TEMP object")
+		return replay.Refuse(dialect, "TEMP object")
 	}
 	if operation := dangerousPostgresFunctionCall(tokens); operation != "" {
-		return unsafeReplayStatement(dialect, operation)
+		return replay.Refuse(dialect, operation)
 	}
 
 	return validatePostgresReplayStatementBase(dialect, tokens)
@@ -72,9 +73,9 @@ func protectedPostgresMutationNamespace(tokens []lexer.Token) string {
 		return namespace
 	}
 
-	switch normalizedIdentifier(tokens[0]) {
+	switch replay.NormalizedIdentifier(tokens[0]) {
 	case "ALTER":
-		if tokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") {
+		if replay.TokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") {
 			return protectedPostgresSchemaClause(tokens)
 		}
 	case "COMMENT", "SECURITY":
@@ -89,17 +90,17 @@ func protectedPostgresMutationNamespace(tokens []lexer.Token) string {
 }
 
 func protectedPostgresSelectIntoNamespace(tokens []lexer.Token) string {
-	tokens = leadingCTEExecutableTokens(tokens)
-	if normalizedIdentifier(tokens[0]) != "SELECT" {
+	tokens = replay.LeadingCTEExecutableTokens(tokens)
+	if replay.NormalizedIdentifier(tokens[0]) != "SELECT" {
 		return ""
 	}
 	for index := 1; index < len(tokens); index++ {
-		if normalizedIdentifier(tokens[index]) != "INTO" {
+		if replay.NormalizedIdentifier(tokens[index]) != "INTO" {
 			continue
 		}
 		targetIndex := index + 1
 		for targetIndex < len(tokens) {
-			switch normalizedIdentifier(tokens[targetIndex]) {
+			switch replay.NormalizedIdentifier(tokens[targetIndex]) {
 			case "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "TABLE":
 				targetIndex++
 			default:
@@ -112,11 +113,11 @@ func protectedPostgresSelectIntoNamespace(tokens []lexer.Token) string {
 }
 
 func postgresMutationTargets(tokens []lexer.Token) [][]string {
-	targets := mutationTargets(tokens)
+	targets := replay.MutationTargets(tokens)
 	for index := 1; index < len(tokens); index++ {
-		switch normalizedIdentifier(tokens[index]) {
+		switch replay.NormalizedIdentifier(tokens[index]) {
 		case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
-			targets = append(targets, mutationTargets(tokens[index:])...)
+			targets = append(targets, replay.MutationTargets(tokens[index:])...)
 		}
 	}
 	return targets
@@ -130,9 +131,9 @@ func protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string)
 		return ""
 	}
 
-	kindIndex := statementObjectKindIndex(tokens)
-	if kindIndex != mutationTargetNotFound &&
-		normalizedIdentifier(tokens[kindIndex]) == "SCHEMA" &&
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex != replay.MutationTargetNotFound &&
+		replay.NormalizedIdentifier(tokens[kindIndex]) == "SCHEMA" &&
 		isProtectedPostgresNamespace(target[0]) {
 		return target[0]
 	}
@@ -141,11 +142,11 @@ func protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string)
 
 func protectedPostgresSchemaClause(tokens []lexer.Token) string {
 	for index := 0; index+1 < len(tokens); index++ {
-		if normalizedIdentifier(tokens[index]) != "SCHEMA" {
+		if replay.NormalizedIdentifier(tokens[index]) != "SCHEMA" {
 			continue
 		}
 		if index > 0 {
-			previous := normalizedIdentifier(tokens[index-1])
+			previous := replay.NormalizedIdentifier(tokens[index-1])
 			if previous != "IN" && previous != "ON" {
 				continue
 			}
@@ -163,14 +164,14 @@ func protectedPostgresSchemaClause(tokens []lexer.Token) string {
 }
 
 func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "DROP":
 		const kindIndex = 1
 		if kindIndex >= len(tokens) {
 			return ""
 		}
-		kind := normalizedIdentifier(tokens[kindIndex])
+		kind := replay.NormalizedIdentifier(tokens[kindIndex])
 		if !postgresDropSupportsObjectList(tokens, kindIndex, kind) {
 			return ""
 		}
@@ -180,16 +181,16 @@ func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
 		}
 		return protectedPostgresObjectListNamespace(
 			tokens,
-			objectNameIndex(tokens, kindIndex),
+			replay.ObjectNameIndex(tokens, kindIndex),
 			"",
 			targetAt,
 		)
 	case "TRUNCATE":
 		index := 1
-		if tokenSequenceAt(tokens, index, "TABLE") {
+		if replay.TokenSequenceAt(tokens, index, "TABLE") {
 			index++
 		}
-		if tokenSequenceAt(tokens, index, "ONLY") {
+		if replay.TokenSequenceAt(tokens, index, "ONLY") {
 			index++
 		}
 		return protectedPostgresObjectListNamespace(
@@ -210,21 +211,21 @@ func postgresDropSupportsObjectList(tokens []lexer.Token, kindIndex int, kind st
 		"TABLE", "TYPE", "VIEW":
 		return true
 	case "FOREIGN":
-		return tokenSequenceAt(tokens, kindIndex, "FOREIGN", "TABLE")
+		return replay.TokenSequenceAt(tokens, kindIndex, "FOREIGN", "TABLE")
 	case "MATERIALIZED":
-		return tokenSequenceAt(tokens, kindIndex, "MATERIALIZED", "VIEW")
+		return replay.TokenSequenceAt(tokens, kindIndex, "MATERIALIZED", "VIEW")
 	default:
 		return false
 	}
 }
 
 func protectedPostgresSpecialMutationNamespace(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "ALTER", "CREATE", "DROP":
 		return protectedPostgresSpecialDDLNamespace(tokens)
 	case "IMPORT":
-		if containsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
+		if replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
 			return protectedPostgresNamespaceAfterKeyword(
 				tokens,
 				"INTO",
@@ -233,9 +234,9 @@ func protectedPostgresSpecialMutationNamespace(tokens []lexer.Token) string {
 			)
 		}
 	case "REFRESH":
-		if tokenSequenceAt(tokens, 1, "MATERIALIZED", "VIEW") {
+		if replay.TokenSequenceAt(tokens, 1, "MATERIALIZED", "VIEW") {
 			index := 3
-			if tokenSequenceAt(tokens, index, "CONCURRENTLY") {
+			if replay.TokenSequenceAt(tokens, index, "CONCURRENTLY") {
 				index++
 			}
 			return protectedPostgresQualifiedNamespaceAt(tokens, index)
@@ -251,7 +252,7 @@ func protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) string {
 	if kindIndex >= len(tokens) {
 		return ""
 	}
-	kind := normalizedIdentifier(tokens[kindIndex])
+	kind := replay.NormalizedIdentifier(tokens[kindIndex])
 	switch kind {
 	case "AGGREGATE", "COLLATION", "CONVERSION", "OPERATOR", "STATISTICS":
 		return protectedPostgresNamedSpecialDDLNamespace(tokens, kindIndex, kind)
@@ -271,7 +272,7 @@ func protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) string {
 		)
 	case "RULE":
 		keyword := "ON"
-		if normalizedIdentifier(tokens[0]) == "CREATE" {
+		if replay.NormalizedIdentifier(tokens[0]) == "CREATE" {
 			keyword = "TO"
 		}
 		return protectedPostgresNamespaceAfterKeyword(
@@ -287,8 +288,8 @@ func protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) string {
 
 func postgresSpecialDDLKindIndex(tokens []lexer.Token) int {
 	index := 1
-	if normalizedIdentifier(tokens[0]) == "CREATE" &&
-		tokenSequenceAt(tokens, index, "OR", "REPLACE") {
+	if replay.NormalizedIdentifier(tokens[0]) == "CREATE" &&
+		replay.TokenSequenceAt(tokens, index, "OR", "REPLACE") {
 		index += 2
 	}
 	return index
@@ -301,11 +302,11 @@ func protectedPostgresNamedSpecialDDLNamespace(
 ) string {
 	nameIndex := kindIndex + 1
 	if kind == "OPERATOR" &&
-		(tokenSequenceAt(tokens, nameIndex, "CLASS") ||
-			tokenSequenceAt(tokens, nameIndex, "FAMILY")) {
+		(replay.TokenSequenceAt(tokens, nameIndex, "CLASS") ||
+			replay.TokenSequenceAt(tokens, nameIndex, "FAMILY")) {
 		nameIndex++
 	}
-	nameIndex = skipNameModifiers(tokens, nameIndex)
+	nameIndex = replay.SkipNameModifiers(tokens, nameIndex)
 	if namespace := protectedPostgresObjectListNamespace(
 		tokens,
 		nameIndex,
@@ -327,14 +328,14 @@ func protectedPostgresNamedSpecialDDLNamespace(
 
 func protectedPostgresReindexNamespace(tokens []lexer.Token) string {
 	for index := 1; index < len(tokens); index++ {
-		switch normalizedIdentifier(tokens[index]) {
+		switch replay.NormalizedIdentifier(tokens[index]) {
 		case "DATABASE", "SYSTEM":
 			return ""
 		case "INDEX", "TABLE":
-			targetIndex := skipNameModifiers(tokens, index+1)
+			targetIndex := replay.SkipNameModifiers(tokens, index+1)
 			return protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
 		case "SCHEMA":
-			targetIndex := skipNameModifiers(tokens, index+1)
+			targetIndex := replay.SkipNameModifiers(tokens, index+1)
 			return protectedPostgresNamespaceObjectAt(tokens, targetIndex)
 		}
 	}
@@ -348,7 +349,7 @@ func protectedPostgresNamespaceAfterKeyword(
 	targetAt func([]lexer.Token, int) string,
 ) string {
 	index := findPostgresKeyword(tokens, keyword, start)
-	if index == mutationTargetNotFound {
+	if index == replay.MutationTargetNotFound {
 		return ""
 	}
 	return targetAt(tokens, index+1)
@@ -356,7 +357,7 @@ func protectedPostgresNamespaceAfterKeyword(
 
 func protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
-	if onIndex == mutationTargetNotFound || onIndex+1 >= len(tokens) {
+	if onIndex == replay.MutationTargetNotFound || onIndex+1 >= len(tokens) {
 		return ""
 	}
 
@@ -364,7 +365,7 @@ func protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	classWidth := postgresObjectClassWidth(tokens, targetIndex)
 	targetIndex += classWidth
 	targetAt := protectedPostgresQualifiedNamespaceAt
-	if classWidth == 1 && normalizedIdentifier(tokens[onIndex+1]) == "SCHEMA" {
+	if classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "SCHEMA" {
 		targetAt = protectedPostgresNamespaceObjectAt
 	}
 	if namespace := protectedPostgresObjectListNamespace(
@@ -376,12 +377,12 @@ func protectedPostgresObjectTarget(tokens []lexer.Token) string {
 		return namespace
 	}
 
-	kind := normalizedIdentifier(tokens[onIndex+1])
+	kind := replay.NormalizedIdentifier(tokens[onIndex+1])
 	if kind != "CONSTRAINT" && kind != "POLICY" && kind != "RULE" && kind != "TRIGGER" {
 		return ""
 	}
 	relationOnIndex := findPostgresKeyword(tokens, "ON", targetIndex+1)
-	if relationOnIndex == mutationTargetNotFound {
+	if relationOnIndex == replay.MutationTargetNotFound {
 		return ""
 	}
 	return protectedPostgresQualifiedNamespaceAt(tokens, relationOnIndex+1)
@@ -420,7 +421,7 @@ func protectedPostgresObjectListNamespace(
 		if namespace := targetAt(tokens, index); namespace != "" {
 			return namespace
 		}
-		parts, next := qualifiedIdentifierAt(tokens, index)
+		parts, next := replay.QualifiedIdentifierAt(tokens, index)
 		if len(parts) == 0 {
 			continue
 		}
@@ -434,7 +435,7 @@ func protectedPostgresNamespaceObjectAt(tokens []lexer.Token, index int) string 
 	if index < 0 || index >= len(tokens) {
 		return ""
 	}
-	name := identifierValue(tokens[index])
+	name := replay.IdentifierValue(tokens[index])
 	if !isProtectedPostgresNamespace(name) {
 		return ""
 	}
@@ -460,27 +461,27 @@ func isProtectedPostgresNamespace(namespace string) bool {
 }
 
 func postgresGlobalDCLOrMetadata(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "ALTER":
 		return postgresGlobalAlterOperation(tokens)
 	case "COMMENT", "SECURITY":
 		return postgresGlobalMetadataOperation(tokens)
 	case "CREATE":
-		if tokenSequenceAt(tokens, 1, "GROUP") {
+		if replay.TokenSequenceAt(tokens, 1, "GROUP") {
 			return "CREATE GROUP"
 		}
 	case "DROP":
-		if tokenSequenceAt(tokens, 1, "GROUP") {
+		if replay.TokenSequenceAt(tokens, 1, "GROUP") {
 			return "DROP GROUP"
 		}
-		if tokenSequenceAt(tokens, 1, "OWNED") {
+		if replay.TokenSequenceAt(tokens, 1, "OWNED") {
 			return "DROP OWNED"
 		}
 	case "GRANT", "REVOKE":
 		return postgresGlobalPrivilegeOperation(tokens)
 	case "REASSIGN":
-		if tokenSequenceAt(tokens, 1, "OWNED") {
+		if replay.TokenSequenceAt(tokens, 1, "OWNED") {
 			return "REASSIGN OWNED"
 		}
 	}
@@ -500,13 +501,13 @@ func postgresGlobalAlterOperation(tokens []lexer.Token) string {
 	switch {
 	case isGlobalAllRolesDefaultPrivileges(tokens):
 		return "ALTER DEFAULT PRIVILEGES FOR ALL ROLES without IN SCHEMA"
-	case tokenSequenceAt(tokens, 1, "GROUP"):
+	case replay.TokenSequenceAt(tokens, 1, "GROUP"):
 		return "ALTER GROUP"
-	case tokenSequenceAt(tokens, 1, "LARGE", "OBJECT"):
+	case replay.TokenSequenceAt(tokens, 1, "LARGE", "OBJECT"):
 		return "ALTER LARGE OBJECT"
-	case tokenSequenceAt(tokens, 1, "EXTENSION"):
+	case replay.TokenSequenceAt(tokens, 1, "EXTENSION"):
 		return "ALTER EXTENSION"
-	case tokenSequenceAt(tokens, 1, "SCHEMA"):
+	case replay.TokenSequenceAt(tokens, 1, "SCHEMA"):
 		return "ALTER SCHEMA metadata"
 	default:
 		return ""
@@ -516,17 +517,17 @@ func postgresGlobalAlterOperation(tokens []lexer.Token) string {
 // isGlobalAllRolesDefaultPrivileges reports ALTER DEFAULT PRIVILEGES FOR ALL
 // ROLES without IN SCHEMA.
 func isGlobalAllRolesDefaultPrivileges(tokens []lexer.Token) bool {
-	return tokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES", "FOR", "ALL", "ROLES") &&
-		!containsTokenSequence(tokens, "IN", "SCHEMA")
+	return replay.TokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES", "FOR", "ALL", "ROLES") &&
+		!replay.ContainsTokenSequence(tokens, "IN", "SCHEMA")
 }
 
 func postgresGlobalPrivilegeOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	recipientKeyword := postgresPrivilegeRecipientKeyword(tokens)
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
 	recipientIndex := findPostgresKeyword(tokens, recipientKeyword, 1)
-	if onIndex == mutationTargetNotFound ||
-		(recipientIndex != mutationTargetNotFound && onIndex > recipientIndex) {
+	if onIndex == replay.MutationTargetNotFound ||
+		(recipientIndex != replay.MutationTargetNotFound && onIndex > recipientIndex) {
 		return first + " role membership"
 	}
 	if onIndex+1 >= len(tokens) {
@@ -534,20 +535,20 @@ func postgresGlobalPrivilegeOperation(tokens []lexer.Token) string {
 	}
 
 	classIndex := onIndex + 1
-	if normalizedIdentifier(tokens[classIndex]) == "ALL" {
+	if replay.NormalizedIdentifier(tokens[classIndex]) == "ALL" {
 		classIndex++
 	}
 	if classIndex >= len(tokens) {
 		return first + " global privilege"
 	}
-	switch normalizedIdentifier(tokens[classIndex]) {
+	switch replay.NormalizedIdentifier(tokens[classIndex]) {
 	case "DATABASE", "LANGUAGE", "PARAMETER", "ROLE", "SCHEMA", "TABLEGROUP", "TABLESPACE":
 		return first + " database or global privilege"
 	case "FOREIGN":
 		return first + " foreign server privilege"
 	case "LARGE":
-		if tokenSequenceAt(tokens, classIndex, "LARGE", "OBJECT") ||
-			tokenSequenceAt(tokens, classIndex, "LARGE", "OBJECTS") {
+		if replay.TokenSequenceAt(tokens, classIndex, "LARGE", "OBJECT") ||
+			replay.TokenSequenceAt(tokens, classIndex, "LARGE", "OBJECTS") {
 			return first + " large object privilege"
 		}
 	case "SERVER":
@@ -558,36 +559,36 @@ func postgresGlobalPrivilegeOperation(tokens []lexer.Token) string {
 
 func postgresGlobalMetadataOperation(tokens []lexer.Token) string {
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
-	if onIndex == mutationTargetNotFound || onIndex+1 >= len(tokens) {
+	if onIndex == replay.MutationTargetNotFound || onIndex+1 >= len(tokens) {
 		return ""
 	}
-	switch normalizedIdentifier(tokens[onIndex+1]) {
+	switch replay.NormalizedIdentifier(tokens[onIndex+1]) {
 	case "ACCESS", "CAST", "DATABASE", "EVENT", "EXTENSION", "LANGUAGE", "PUBLICATION",
 		"ROLE", "SCHEMA", "SERVER", "SUBSCRIPTION", "TABLEGROUP", "TABLESPACE", "TRANSFORM":
-		return normalizedIdentifier(tokens[0]) + " ON global metadata"
+		return replay.NormalizedIdentifier(tokens[0]) + " ON global metadata"
 	case "FOREIGN":
-		return normalizedIdentifier(tokens[0]) + " ON foreign server metadata"
+		return replay.NormalizedIdentifier(tokens[0]) + " ON foreign server metadata"
 	case "LARGE":
-		if tokenSequenceAt(tokens, onIndex+1, "LARGE", "OBJECT") {
-			return normalizedIdentifier(tokens[0]) + " ON large object metadata"
+		if replay.TokenSequenceAt(tokens, onIndex+1, "LARGE", "OBJECT") {
+			return replay.NormalizedIdentifier(tokens[0]) + " ON large object metadata"
 		}
 	}
 	return ""
 }
 
 func postgresRoleOrAuthorizationChange(tokens []lexer.Token) string {
-	if normalizedIdentifier(tokens[0]) != "SET" {
+	if replay.NormalizedIdentifier(tokens[0]) != "SET" {
 		return ""
 	}
 
-	if tokenSequenceAt(tokens, 1, "ROLE") ||
-		tokenSequenceAt(tokens, 1, "LOCAL", "ROLE") ||
-		tokenSequenceAt(tokens, 1, "SESSION", "ROLE") {
+	if replay.TokenSequenceAt(tokens, 1, "ROLE") ||
+		replay.TokenSequenceAt(tokens, 1, "LOCAL", "ROLE") ||
+		replay.TokenSequenceAt(tokens, 1, "SESSION", "ROLE") {
 		return "SET ROLE"
 	}
-	if tokenSequenceAt(tokens, 1, "SESSION", "AUTHORIZATION") ||
-		tokenSequenceAt(tokens, 1, "LOCAL", "SESSION", "AUTHORIZATION") ||
-		tokenSequenceAt(tokens, 1, "SESSION", "SESSION", "AUTHORIZATION") {
+	if replay.TokenSequenceAt(tokens, 1, "SESSION", "AUTHORIZATION") ||
+		replay.TokenSequenceAt(tokens, 1, "LOCAL", "SESSION", "AUTHORIZATION") ||
+		replay.TokenSequenceAt(tokens, 1, "SESSION", "SESSION", "AUTHORIZATION") {
 		return "SET SESSION AUTHORIZATION"
 	}
 	return ""
@@ -615,11 +616,11 @@ func cockroachGlobalOperation(tokens []lexer.Token) string {
 }
 
 func cockroachClusterSettingOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch {
-	case first == "SET" && tokenSequenceAt(tokens, 1, "CLUSTER", "SETTING"):
+	case first == "SET" && replay.TokenSequenceAt(tokens, 1, "CLUSTER", "SETTING"):
 		return "SET CLUSTER SETTING"
-	case first == "RESET" && tokenSequenceAt(tokens, 1, "CLUSTER", "SETTING"):
+	case first == "RESET" && replay.TokenSequenceAt(tokens, 1, "CLUSTER", "SETTING"):
 		return "RESET CLUSTER SETTING"
 	default:
 		return ""
@@ -627,21 +628,21 @@ func cockroachClusterSettingOperation(tokens []lexer.Token) string {
 }
 
 func cockroachGlobalDDLOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch {
 	case (first == "CREATE" || first == "ALTER" || first == "DROP") &&
-		tokenSequenceAt(tokens, 1, "CHANGEFEED"):
+		replay.TokenSequenceAt(tokens, 1, "CHANGEFEED"):
 		return first + " CHANGEFEED"
 	case (first == "CREATE" || first == "ALTER" || first == "DROP") &&
-		tokenSequenceAt(tokens, 1, "EXTERNAL", "CONNECTION"):
+		replay.TokenSequenceAt(tokens, 1, "EXTERNAL", "CONNECTION"):
 		return first + " EXTERNAL CONNECTION"
 	case (first == "CREATE" || first == "ALTER" || first == "DROP") &&
-		tokenSequenceAt(tokens, 1, "TENANT"):
+		replay.TokenSequenceAt(tokens, 1, "TENANT"):
 		return first + " TENANT"
 	case (first == "CREATE" || first == "ALTER" || first == "DROP") &&
-		tokenSequenceAt(tokens, 1, "SCHEDULE"):
+		replay.TokenSequenceAt(tokens, 1, "SCHEDULE"):
 		return first + " SCHEDULE"
-	case first == "ALTER" && tokenSequenceAt(tokens, 1, "RANGE"):
+	case first == "ALTER" && replay.TokenSequenceAt(tokens, 1, "RANGE"):
 		return "ALTER RANGE"
 	default:
 		return ""
@@ -649,15 +650,15 @@ func cockroachGlobalDDLOperation(tokens []lexer.Token) string {
 }
 
 func cockroachJobOrIOOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "BACKUP", "EXPORT", "IMPORT", "RESTORE":
 		return first
 	case "CANCEL", "PAUSE", "RESUME":
-		if tokenSequenceAt(tokens, 1, "JOB") ||
-			tokenSequenceAt(tokens, 1, "JOBS") ||
-			tokenSequenceAt(tokens, 1, "SCHEDULE") ||
-			tokenSequenceAt(tokens, 1, "SCHEDULES") {
+		if replay.TokenSequenceAt(tokens, 1, "JOB") ||
+			replay.TokenSequenceAt(tokens, 1, "JOBS") ||
+			replay.TokenSequenceAt(tokens, 1, "SCHEDULE") ||
+			replay.TokenSequenceAt(tokens, 1, "SCHEDULES") {
 			return first + " cluster job"
 		}
 	default:
@@ -667,18 +668,18 @@ func cockroachJobOrIOOperation(tokens []lexer.Token) string {
 }
 
 func yugabyteGlobalOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if (first == "CREATE" || first == "ALTER" || first == "DROP") &&
-		tokenSequenceAt(tokens, 1, "TABLEGROUP") {
+		replay.TokenSequenceAt(tokens, 1, "TABLEGROUP") {
 		return first + " TABLEGROUP"
 	}
 	return ""
 }
 
 func postgresSessionOrControlOperation(tokens []lexer.Token) string {
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "REINDEX" &&
-		(containsIdentifier(tokens, "DATABASE") || containsIdentifier(tokens, "SYSTEM")) {
+		(replay.ContainsIdentifier(tokens, "DATABASE") || replay.ContainsIdentifier(tokens, "SYSTEM")) {
 		return "REINDEX database or system"
 	}
 	if first == "SET" && setsPostgresSearchPath(tokens) {
@@ -712,16 +713,16 @@ func postgresSessionOrControlOperation(tokens []lexer.Token) string {
 // one transaction unless the file opts out, so the setting is in effect for
 // the rest of that migration and gone before the next.
 func postgresTransactionScopedSetting(tokens []lexer.Token) bool {
-	if len(tokens) < 3 || normalizedIdentifier(tokens[0]) != "SET" {
+	if len(tokens) < 3 || replay.NormalizedIdentifier(tokens[0]) != "SET" {
 		return false
 	}
-	switch normalizedIdentifier(tokens[1]) {
+	switch replay.NormalizedIdentifier(tokens[1]) {
 	case "CONSTRAINTS":
 		return true
 	case "LOCAL":
 		// SET LOCAL ROLE and SET LOCAL SESSION AUTHORIZATION never reach here:
 		// postgresRoleOrAuthorizationChange refuses both first.
-		return postgresTransactionScopedParameter(normalizedIdentifier(tokens[2]))
+		return postgresTransactionScopedParameter(replay.NormalizedIdentifier(tokens[2]))
 	default:
 		return false
 	}
@@ -747,8 +748,8 @@ func postgresTransactionScopedSetConfig(tokens []lexer.Token, open int) bool {
 	}
 	isLocal := arguments[2][0]
 	return isLocal.Type == lexer.TokenIdentifier &&
-		normalizedIdentifier(isLocal) == "TRUE" &&
-		postgresTransactionScopedParameter(normalizedIdentifier(name))
+		replay.NormalizedIdentifier(isLocal) == "TRUE" &&
+		postgresTransactionScopedParameter(replay.NormalizedIdentifier(name))
 }
 
 // postgresTransactionScopedParameter reports whether a parameter set for one
@@ -804,24 +805,24 @@ func postgresCallArguments(tokens []lexer.Token, open int) [][]lexer.Token {
 
 func setsPostgresSearchPath(tokens []lexer.Token) bool {
 	index := 1
-	if tokenSequenceAt(tokens, index, "LOCAL") || tokenSequenceAt(tokens, index, "SESSION") {
+	if replay.TokenSequenceAt(tokens, index, "LOCAL") || replay.TokenSequenceAt(tokens, index, "SESSION") {
 		index++
 	}
-	return tokenSequenceAt(tokens, index, "SEARCH_PATH")
+	return replay.TokenSequenceAt(tokens, index, "SEARCH_PATH")
 }
 
 func selectsIntoPostgresTemporaryObject(tokens []lexer.Token) bool {
 	for index := 0; index+1 < len(tokens); index++ {
-		if normalizedIdentifier(tokens[index]) != "INTO" {
+		if replay.NormalizedIdentifier(tokens[index]) != "INTO" {
 			continue
 		}
 		targetIndex := index + 1
-		if tokenSequenceAt(tokens, targetIndex, "GLOBAL") ||
-			tokenSequenceAt(tokens, targetIndex, "LOCAL") {
+		if replay.TokenSequenceAt(tokens, targetIndex, "GLOBAL") ||
+			replay.TokenSequenceAt(tokens, targetIndex, "LOCAL") {
 			targetIndex++
 		}
-		if tokenSequenceAt(tokens, targetIndex, "TEMP") ||
-			tokenSequenceAt(tokens, targetIndex, "TEMPORARY") {
+		if replay.TokenSequenceAt(tokens, targetIndex, "TEMP") ||
+			replay.TokenSequenceAt(tokens, targetIndex, "TEMPORARY") {
 			return true
 		}
 	}
@@ -829,14 +830,14 @@ func selectsIntoPostgresTemporaryObject(tokens []lexer.Token) bool {
 }
 
 func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
-	if definesPostgresRoutine(tokens) || normalizedIdentifier(tokens[0]) == "CALL" {
+	if definesPostgresRoutine(tokens) || replay.NormalizedIdentifier(tokens[0]) == "CALL" {
 		return ""
 	}
 	for index := 0; index+1 < len(tokens); index++ {
 		if !tokens[index+1].MatchOperatorValue("(") {
 			continue
 		}
-		name := normalizedIdentifier(tokens[index])
+		name := replay.NormalizedIdentifier(tokens[index])
 		// The control-function names are sqlreach's, shared with the
 		// check-assertion validator, which refuses the same set in a predicate
 		// it is about to send to a live database. The rest below are this
@@ -872,36 +873,36 @@ func definesPostgresRoutine(tokens []lexer.Token) bool {
 	if len(tokens) == 0 {
 		return false
 	}
-	first := normalizedIdentifier(tokens[0])
+	first := replay.NormalizedIdentifier(tokens[0])
 	if first != "CREATE" && first != "ALTER" {
 		return false
 	}
 	index := 1
-	if first == "CREATE" && tokenSequenceAt(tokens, index, "OR", "REPLACE") {
+	if first == "CREATE" && replay.TokenSequenceAt(tokens, index, "OR", "REPLACE") {
 		index += 2
 	}
-	return tokenSequenceAt(tokens, index, "FUNCTION") ||
-		tokenSequenceAt(tokens, index, "PROCEDURE") ||
-		first == "ALTER" && tokenSequenceAt(tokens, index, "ROUTINE")
+	return replay.TokenSequenceAt(tokens, index, "FUNCTION") ||
+		replay.TokenSequenceAt(tokens, index, "PROCEDURE") ||
+		first == "ALTER" && replay.TokenSequenceAt(tokens, index, "ROUTINE")
 }
 
 func postgresObjectClassWidth(tokens []lexer.Token, index int) int {
-	switch normalizedIdentifier(tokens[index]) {
+	switch replay.NormalizedIdentifier(tokens[index]) {
 	case "ACCESS", "EVENT", "LARGE", "MATERIALIZED":
 		return 2
 	case "FOREIGN":
-		if tokenSequenceAt(tokens, index, "FOREIGN", "DATA", "WRAPPER") {
+		if replay.TokenSequenceAt(tokens, index, "FOREIGN", "DATA", "WRAPPER") {
 			return 3
 		}
 		return 2
 	case "OPERATOR":
-		if tokenSequenceAt(tokens, index, "OPERATOR", "CLASS") ||
-			tokenSequenceAt(tokens, index, "OPERATOR", "FAMILY") {
+		if replay.TokenSequenceAt(tokens, index, "OPERATOR", "CLASS") ||
+			replay.TokenSequenceAt(tokens, index, "OPERATOR", "FAMILY") {
 			return 2
 		}
 		return 1
 	case "TEXT":
-		if tokenSequenceAt(tokens, index, "TEXT", "SEARCH") {
+		if replay.TokenSequenceAt(tokens, index, "TEXT", "SEARCH") {
 			return min(3, len(tokens)-index)
 		}
 		return 1
@@ -917,7 +918,7 @@ func postgresObjectClassWidth(tokens []lexer.Token, index int) int {
 }
 
 func postgresPrivilegeRecipientKeyword(tokens []lexer.Token) string {
-	if len(tokens) > 0 && normalizedIdentifier(tokens[0]) == "REVOKE" {
+	if len(tokens) > 0 && replay.NormalizedIdentifier(tokens[0]) == "REVOKE" {
 		return "FROM"
 	}
 	return "TO"
@@ -929,7 +930,7 @@ func findPostgresKeyword(tokens []lexer.Token, value string, start int) int {
 			return index
 		}
 	}
-	return mutationTargetNotFound
+	return replay.MutationTargetNotFound
 }
 
 func postgresKeywordAt(token lexer.Token, value string) bool {

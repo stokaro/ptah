@@ -11,13 +11,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/ydbrealm"
+	"ptah.run/migration/internal/scratchdb/isolators"
 )
 
 // ErrNoIsolation reports that the dialect a URL names has no way to give one
@@ -31,11 +29,11 @@ var ErrNoIsolation = errors.New("this dialect has no per-case database isolation
 // Scratch is one disposable database and the means to remove it.
 type Scratch struct {
 	url         string
-	temporary   string
 	dropFrom    string
 	dropCommand string
-	// release removes a YDB dev realm, and is nil for every other dialect.
-	release func()
+	// release removes what an engine's own isolation provisioned, and is nil
+	// for a database the server created.
+	release func() error
 }
 
 // URL is the address of the disposable database.
@@ -54,16 +52,10 @@ func (s *Scratch) Close(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
-	if s.temporary != "" {
-		dir := s.temporary
-		s.temporary = ""
-		return os.RemoveAll(dir)
-	}
 	if s.release != nil {
 		release := s.release
 		s.release = nil
-		release()
-		return nil
+		return release()
 	}
 	if s.dropCommand == "" {
 		return nil
@@ -107,32 +99,36 @@ func Provision(ctx context.Context, baseURL string) (*Scratch, error) {
 		return nil, fmt.Errorf("read the dialect of the scratch server URL: %w", err)
 	}
 
-	if dialect == platform.SQLite {
-		return provisionSQLite()
-	}
-	if dialect == platform.YDB {
-		realmURL, release, err := ydbrealm.Enter(ctx, baseURL)
+	if isolate, found := isolation(dialect); found {
+		url, release, err := isolate(ctx, baseURL)
 		if err != nil {
-			return nil, fmt.Errorf("create a scratch dev realm: %w", err)
+			return nil, err
 		}
-		return &Scratch{url: realmURL, release: release}, nil
+		return &Scratch{url: url, release: release}, nil
 	}
-	if platform.IsPostgresFamily(dialect) || dialect == platform.MySQL || dialect == platform.MariaDB {
+	if createsDatabases(dialect) {
 		return provisionServerDatabase(ctx, baseURL)
 	}
 	return nil, fmt.Errorf("%w: %s", ErrNoIsolation, dialect)
 }
 
-// provisionSQLite gives the case a database file nothing else opens.
-func provisionSQLite() (*Scratch, error) {
-	dir, err := os.MkdirTemp("", "ptah-scratch-*")
-	if err != nil {
-		return nil, fmt.Errorf("create scratch directory: %w", err)
+// isolation returns the engine's own way to give a case a database, for an
+// engine whose server does not create one.
+func isolation(dialect string) (func(context.Context, string) (string, func() error, error), bool) {
+	name := platform.NormalizeDialect(dialect)
+	for _, service := range isolators.All() {
+		if name != "" && service.Dialect == name {
+			return service.Isolate, true
+		}
 	}
-	return &Scratch{
-		url:       atlasurl.SQLiteURLFromPath(filepath.Join(dir, "scratch.db")),
-		temporary: dir,
-	}, nil
+	return nil, false
+}
+
+// createsDatabases reports whether the dialect's server creates and drops a
+// database per case, as its descriptor states.
+func createsDatabases(dialect string) bool {
+	described, _ := platform.Lookup(dialect)
+	return described.DevRealm.ScratchDatabase
 }
 
 // provisionServerDatabase creates a database on the server and returns an
@@ -220,11 +216,7 @@ func CanIsolate(baseURL string) error {
 	if err != nil {
 		return fmt.Errorf("read the dialect of the scratch server URL: %w", err)
 	}
-	if dialect == platform.SQLite ||
-		platform.IsPostgresFamily(dialect) ||
-		dialect == platform.MySQL ||
-		dialect == platform.MariaDB ||
-		dialect == platform.YDB {
+	if _, found := isolation(dialect); found || createsDatabases(dialect) {
 		return nil
 	}
 	return fmt.Errorf("%w: %s", ErrNoIsolation, dialect)

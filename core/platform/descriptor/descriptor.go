@@ -185,6 +185,56 @@ type Dialect struct {
 	// CREATE TABLE, such as SQLite's STRICT, each with the property of the
 	// dialect's own group it sets on the table.
 	TableOptions []TableOption `json:"table_options,omitempty"`
+
+	// Dev databases.
+
+	// DevRealm states how Ptah treats a disposable database on this engine:
+	// how it names one, keeps two runs from using one at once, gives a test
+	// case one of its own and resets one. The zero value names none, and a
+	// command that replays migrations into a dev database refuses one.
+	DevRealm DevRealm `json:"dev_realm,omitzero"`
+	// SchemaIsDatabase reports that a schema is a database: the namespace an
+	// unqualified name resolves in is the database the connection selected,
+	// read from the URL, rather than a rule of the engine. Two connections to
+	// two databases of one server therefore resolve names in two places.
+	SchemaIsDatabase bool `json:"schema_is_database,omitempty"`
+}
+
+// DevRealm states how Ptah names the dev database a connection selected and
+// serializes the runs that use it. internal/devlock reads it, and checks the
+// enumerated values when it does.
+type DevRealm struct {
+	// Identity is where the name of the dev database comes from. "query"
+	// runs Query, which selects the name of the database the session is in.
+	// "file" runs Query, which selects the path of the file that holds the
+	// database, and names the file by its identity on disk; an empty path is
+	// an in-memory database. "writer" asks the connection's schema writer,
+	// for an engine whose dev database is a realm only the writer can name.
+	// Empty names none.
+	Identity string `json:"identity,omitempty"`
+	// Query is the statement Identity "query" and "file" run, such as
+	// "SELECT current_database()". It selects one value.
+	Query string `json:"query,omitempty"`
+	// ServerQuery selects what names the server itself, for a connection that
+	// holds a whole server rather than one database. Empty means no
+	// connection to the engine holds a whole server.
+	ServerQuery string `json:"server_query,omitempty"`
+	// FileLock is how runs are serialized where the server takes no advisory
+	// lock: "local" with a lock file on this machine, and "loopback" with one
+	// too, refused unless the URL names this machine, since a file lock
+	// cannot serialize runs on two machines. Empty refuses the dev database.
+	FileLock string `json:"file_lock,omitempty"`
+	// ScratchDatabase reports that the server gives a test case a database
+	// of its own: CREATE DATABASE creates one beside the database the URL
+	// names, DROP DATABASE removes it, and the URL with its name in place of
+	// the database's addresses it. An engine without it may still isolate a
+	// case through a service of its own.
+	ScratchDatabase bool `json:"scratch_database,omitempty"`
+	// DropSchema is the statement that drops a schema and everything in it
+	// when a disposable database is reset, with %s standing for the schema
+	// name in double quotes. Empty means a reset leaves the schemas alone,
+	// and the default schema is always left.
+	DropSchema string `json:"drop_schema,omitempty"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE

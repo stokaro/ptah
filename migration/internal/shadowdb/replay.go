@@ -75,19 +75,21 @@ func SameDialect(left, right string) bool {
 // starts from nothing.
 //
 // Dropping every table leaves the schemas that held them, and on PostgreSQL a
-// migration that creates a schema then fails against the one already there. The
-// public schema is left alone: it is part of the database rather than something
-// a migration created. Other dialects have no schema to reset here, so the call
-// is a no-op for them.
+// migration that creates a schema then fails against the one already there.
+// The statement is the descriptor's DevRealm.DropSchema. The default schema,
+// public on PostgreSQL, is left alone: it is part of the database rather than
+// something a migration created. A dialect whose descriptor states no such
+// statement has no schema to reset here, so the call is a no-op for it.
 func ResetSchemas(ctx context.Context, conn *dbschema.DatabaseConnection, schemas []string) error {
-	if conn.Info().Dialect != platform.Postgres {
+	described, _ := platform.Lookup(conn.Info().Dialect)
+	if described.DevRealm.DropSchema == "" {
 		return nil
 	}
 	for _, schema := range schemas {
-		if schema == "" || schema == "public" {
+		if schema == "" || schema == described.DefaultSchema {
 			continue
 		}
-		_, err := conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quotePostgresIdentifier(schema)+" CASCADE")
+		_, err := conn.ExecContext(ctx, fmt.Sprintf(described.DevRealm.DropSchema, quoteIdentifier(schema)))
 		if err != nil {
 			return fmt.Errorf("drop schema %q: %w", schema, err)
 		}
@@ -118,6 +120,6 @@ func DropMigrationMetadata(
 	return nil
 }
 
-func quotePostgresIdentifier(value string) string {
+func quoteIdentifier(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }

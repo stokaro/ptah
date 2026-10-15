@@ -4778,6 +4778,9 @@ in place of a dialect's name:
 - `Literals`: how `migration/datadiff` writes a value as a literal.
 - `ManagedData`: how managed rows are compared and changed.
 - `Seeds`: how `migration/seeder` runs seed files and records them.
+- `DevRealm`: how Ptah names, locks, isolates and resets a dev database on
+  the engine, and `SchemaIsDatabase`: whether a schema is the database the
+  connection selected.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,

@@ -1,4 +1,4 @@
-package devclean
+package clickhousereplay
 
 // White-box testing required: the ClickHouse validator is an internal replay
 // boundary whose token-level decisions are not exposed through the public API.
@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/platform"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 )
 
@@ -471,5 +471,5 @@ func TestValidateClickHouseReplayStatement_InsertFailurePath(t *testing.T) {
 }
 
 func clickHouseReplayTokens(statement string) []lexer.Token {
-	return significantTokens(statement, replayLexerOptions(platform.ClickHouse))
+	return replay.Tokens(statement, lexerOptions())
 }

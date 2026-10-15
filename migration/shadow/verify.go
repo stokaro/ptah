@@ -403,8 +403,7 @@ func identifierSemanticsAgree(
 // dialect and nothing can reach the case. Shadow support for Oracle is its own
 // question.
 func semanticsAgree(dialect string, target, shadow identifier.Semantics) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
+	if described, _ := platform.Lookup(dialect); described.SchemaIsDatabase {
 		shadow.DefaultSchema = target.DefaultSchema
 	}
 	return target.Equal(shadow)

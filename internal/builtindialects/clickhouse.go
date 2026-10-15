@@ -113,6 +113,16 @@ func clickHouse() descriptor.Dialect {
 				"error until the mutation is killed and the column modified back to Nullable; a DEFAULT in the clause does not rescue the NULL",
 			NotNullByType: true,
 		},
+
+		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
+		// one dev database are serialized with a lock file, which only serializes
+		// runs on this machine.
+		DevRealm: descriptor.DevRealm{
+			Identity: "query",
+			Query:    "SELECT currentDatabase()",
+			FileLock: "loopback",
+		},
+		SchemaIsDatabase: true,
 	}
 }
 
