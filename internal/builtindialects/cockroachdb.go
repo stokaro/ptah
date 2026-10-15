@@ -109,5 +109,10 @@ func cockroachDB() descriptor.Dialect {
 
 		// Lint: what migration lint reads.
 		Lint: descriptor.Lint{Analyzed: true},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names:       descriptor.Names{Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true},
+		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
+		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
 	}
 }

@@ -169,13 +169,9 @@ word there.
 Some false positives are known and counted: a string that equals a dialect
 spelling and names something else. The type checker cannot tell a role,
 database or tool name from a dialect name, since all are strings.
-
-- `internal/sqlschema` compares a role name with `postgres`, PostgreSQL's
-  bootstrap superuser.
-- `internal/liquibaserun` lists Liquibase's database short names, several of
-  which are dialect spellings.
-
-Each is engine knowledge in shared code all the same.
+`internal/liquibaserun` lists Liquibase's database short names, several of
+which are dialect spellings. It is engine knowledge in shared code all the
+same.
 
 The shared set starts at the neutral layer, the shared SQL reader, and `core`,
 `migration`, `dbschema` and `catalog`. It adds every package those link through

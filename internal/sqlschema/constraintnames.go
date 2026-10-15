@@ -7,9 +7,9 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/tableref"
@@ -53,7 +53,7 @@ const foreignKeyLabel = "fkey"
 // Ptah derives. The foreign keys of MySQL and MariaDB have a rule of their
 // own; see [mysqlname.NamesForeignKeys].
 func namesConstraintsLikePostgres(sourcePlatform string) bool {
-	return platform.NormalizeDialect(sourcePlatform) == platform.Postgres
+	return factsOf(sourcePlatform).constraintNaming == descriptor.ConstraintNamingTableColumnsSuffix
 }
 
 // nameCreatedMySQLForeignKeys gives every unnamed foreign key one CREATE TABLE
@@ -377,8 +377,7 @@ func constraintNamesInSchema(databases []*schemamodel.Database, schema string) p
 		for _, field := range database.Fields {
 			table, inSchema := tables[field.StructName]
 			if inSchema && field.Unique && strings.TrimSpace(field.UniqueExpr) == "" {
-				name, _ := columnkey.Name(platform.Postgres, table, field.Name, nil)
-				names.Claim(name)
+				names.Claim(pgname.Constraint(table, []string{field.Name}, "key", nil))
 			}
 		}
 	}

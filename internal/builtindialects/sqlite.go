@@ -79,6 +79,13 @@ func sqlite() descriptor.Dialect {
 			Analyzed:           true,
 			SetNotNullRebuilds: true,
 		},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
+		TableOptions: []descriptor.TableOption{
+			{Option: "STRICT", Property: "strict"},
+			{Option: "WITHOUT_ROWID", Property: "without_rowid"},
+		},
 	}
 }
 

@@ -2,7 +2,7 @@ package sqlschema
 
 import (
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 )
 
@@ -28,8 +28,9 @@ func appendNamespace(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 		})
 		return true
 	case *ast.CreateDatabaseNode:
-		switch platform.NormalizeDialect(sourcePlatform) {
-		case platform.MySQL, platform.MariaDB:
+		// A schema is a database where the descriptor says so, so CREATE
+		// DATABASE declares one there.
+		if factsOf(sourcePlatform).selection == descriptor.SchemaSelectionDatabase {
 			database.Schemas = append(database.Schemas, schemamodel.Schema{
 				Name: normalizeSQLIdentifier(sourcePlatform, node.Name),
 			})

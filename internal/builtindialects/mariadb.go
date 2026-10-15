@@ -116,5 +116,10 @@ func mariaDB() descriptor.Dialect {
 			TypeRestatements: "mytype",
 			AtlasAnalyzer:    "MY",
 		},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
+		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
+		CheckNaming: descriptor.CheckNamingColumnOrConstraint,
 	}
 }

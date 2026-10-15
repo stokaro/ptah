@@ -450,8 +450,8 @@ func writeBaseline(root string, reports []ruleReport) error {
 		Comment: "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). " +
 			"A count may fall and may never rise, and a rule with package counts is compared package by package. " +
 			"Known false positives: shared-packages-name-dialects counts a string that equals a dialect spelling " +
-			"and names something else, since the type checker cannot tell them apart: PostgreSQL's bootstrap role " +
-			"\"postgres\" (internal/sqlschema) and Liquibase's database short names (internal/liquibaserun). " +
+			"and names something else, since the type checker cannot tell them apart: " +
+			"Liquibase's database short names (internal/liquibaserun). " +
 			"Regenerate with: go run ./internal/cmd/boundaries -update",
 		Rules: make(map[string]int),
 	}

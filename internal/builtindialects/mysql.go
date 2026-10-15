@@ -122,6 +122,12 @@ func mysql() descriptor.Dialect {
 			TypeRestatements: "mytype",
 			AtlasAnalyzer:    "MY",
 		},
+
+		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
+		Names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
+		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true},
+		CheckNaming: descriptor.CheckNamingTableNumbered,
+		Columns:     descriptor.Columns{CheckOwnColumnOnly: true},
 	}
 }
 

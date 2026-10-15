@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlname"
 )
@@ -130,24 +129,6 @@ type engineIndexNaming struct {
 	// engines different index names. coverage.covers carries the measurement.
 	descendingCovers bool
 }
-
-// mysqlNaming and mariaDBNaming are the two measured answers.
-//
-// The engines agree on the index an unnamed foreign key builds when nothing
-// covers it: it takes its name from the key's first column, in the same
-// namespace and at the key's place in the statement; see
-// [mysqlname.IsUnnamedKeyIndexName]. Measured on MySQL 8.4.11, 26.7.0 and
-// MariaDB 11.8.9, `FOREIGN KEY (a, b) ..., KEY (a)` names the key's index `a`
-// and the other index `a_2`, and the other order gives `a` to the other index
-// and `a_2` to the key's.
-var (
-	mysqlNaming = engineIndexNaming{
-		dialect:        platform.MySQL,
-		maxBytes:       64,
-		functionalBase: "functional_index",
-	}
-	mariaDBNaming = engineIndexNaming{dialect: platform.MariaDB, maxBytes: 64, descendingCovers: true}
-)
 
 // nameMySQLInlineIndexes gives every unnamed inline index and unique constraint
 // of one table the name a MySQL-family server would assign it.
@@ -594,14 +575,26 @@ func firstFree(claimed indexNames, column string, naming engineIndexNaming) stri
 	return mysqlname.IndexName(naming.dialect, column, claimed.taken)
 }
 
-// namingFor answers which engine's rules apply, and whether any do.
+// namingFor answers which engine's rules apply, and whether any do: the
+// dialect descriptor's IndexNaming, where it states a longest name. MySQL's
+// and MariaDB's are the two measured answers.
+//
+// The engines agree on the index an unnamed foreign key builds when nothing
+// covers it: it takes its name from the key's first column, in the same
+// namespace and at the key's place in the statement; see
+// [mysqlname.IsUnnamedKeyIndexName]. Measured on MySQL 8.4.11, 26.7.0 and
+// MariaDB 11.8.9, `FOREIGN KEY (a, b) ..., KEY (a)` names the key's index `a`
+// and the other index `a_2`, and the other order gives `a` to the other index
+// and `a_2` to the key's.
 func namingFor(dialect string) (engineIndexNaming, bool) {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL:
-		return mysqlNaming, true
-	case platform.MariaDB:
-		return mariaDBNaming, true
-	default:
+	facts := factsOf(dialect)
+	if facts.indexNaming.MaxBytes == 0 {
 		return engineIndexNaming{}, false
 	}
+	return engineIndexNaming{
+		dialect:          facts.name,
+		maxBytes:         facts.indexNaming.MaxBytes,
+		functionalBase:   facts.indexNaming.FunctionalBase,
+		descendingCovers: facts.indexNaming.DescendingCovers,
+	}, true
 }

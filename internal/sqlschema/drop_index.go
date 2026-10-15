@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgname"
 )
@@ -102,14 +103,10 @@ func dropIndexOfTable(database *schemamodel.Database, document *Document, node *
 }
 
 // isMySQLFamily reports whether a source reads DROP INDEX as MySQL and
-// MariaDB do.
+// MariaDB do: its descriptor says a UNIQUE constraint is an index of the
+// table.
 func isMySQLFamily(sourcePlatform string) bool {
-	switch platform.NormalizeDialect(sourcePlatform) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
+	return factsOf(sourcePlatform).indexNaming.UniqueIsIndex
 }
 
 // isIndexBacked reports whether a constraint of this kind is enforced by an
@@ -131,14 +128,19 @@ func sameSchema(sourcePlatform, written, actual string) bool {
 	if written == actual {
 		return true
 	}
+	// The default schema has a name where a URL selects a schema by search
+	// path or the engine has one schema, and a bare name means it. The name
+	// is compared as the engine compares a name it looks up: SQLite's `MAIN`
+	// is `main`.
+	facts := factsOf(sourcePlatform)
+	named := facts.selection == descriptor.SchemaSelectionSearchPath || facts.selection == descriptor.SchemaSelectionSingle
+	fold := identifier.Comparison(facts.names.Lookup)
 	isDefault := func(schema string) bool {
 		switch {
 		case schema == "":
 			return true
-		case platform.IsPostgresFamily(sourcePlatform):
-			return schema == "public"
-		case platform.NormalizeDialect(sourcePlatform) == platform.SQLite:
-			return strings.EqualFold(schema, "main")
+		case named && facts.defaultSchema != "":
+			return fold.IdentityKey(schema) == fold.IdentityKey(facts.defaultSchema)
 		default:
 			return false
 		}
@@ -150,8 +152,8 @@ func sameSchema(sourcePlatform, written, actual string) bool {
 // table: the declared name, or on PostgreSQL the name the server derives when
 // none is declared.
 func primaryKeyIndexName(table schemamodel.Table, sourcePlatform string) string {
-	if table.PrimaryKeyName == "" && platform.IsPostgresFamily(sourcePlatform) {
-		return pgname.Constraint(table.Name, nil, "pkey", nil)
+	if suffix := factsOf(sourcePlatform).indexNaming.PrimaryKeySuffix; table.PrimaryKeyName == "" && suffix != "" {
+		return pgname.Constraint(table.Name, nil, suffix, nil)
 	}
 	return table.PrimaryKeyName
 }

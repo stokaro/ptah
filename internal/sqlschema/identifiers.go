@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/sqlident"
@@ -44,14 +43,10 @@ func identifierPart(sourcePlatform, part string) string {
 	if isQuotedSQLIdentifierPart(part) {
 		return unquoteSQLIdentifierPart(part)
 	}
-	switch platform.NormalizeDialect(sourcePlatform) {
-	case platform.Postgres, platform.YugabyteDB:
-		return identifier.ComparisonASCIIInsensitive.IdentityKey(part)
-	case platform.CockroachDB:
-		return identifier.ComparisonUnicodeInsensitive.IdentityKey(part)
-	default:
-		return part
+	if fold := factsOf(sourcePlatform).names.Unquoted; fold != "" {
+		return identifier.Comparison(fold).IdentityKey(part)
 	}
+	return part
 }
 
 // resolveDeclaredName returns the index in declared of the name that written
@@ -105,13 +100,8 @@ func resolveDeclaredName(sourcePlatform, written string, declared []string) int 
 	if index := slices.Index(declared, written); index >= 0 {
 		return index
 	}
-	var fold identifier.Comparison
-	switch platform.NormalizeDialect(sourcePlatform) {
-	case platform.SQLite, platform.Oracle:
-		fold = identifier.ComparisonASCIIInsensitive
-	case platform.SQLServer, platform.MySQL, platform.MariaDB:
-		fold = identifier.ComparisonUnicodeInsensitive
-	default:
+	fold := identifier.Comparison(factsOf(sourcePlatform).names.Lookup)
+	if fold == "" {
 		return -1
 	}
 	match := -1
@@ -176,8 +166,8 @@ func normalizeSQLTableReference(sourcePlatform, value string) string {
 // that creates a role and names it elsewhere names one role.
 func roleName(sourcePlatform, value string) string {
 	value = strings.TrimSpace(value)
-	if platform.NormalizeDialect(sourcePlatform) == platform.CockroachDB {
-		return identifier.ComparisonUnicodeInsensitive.IdentityKey(unquoteSQLIdentifierPart(value))
+	if fold := factsOf(sourcePlatform).names.Roles; fold != "" {
+		return identifier.Comparison(fold).IdentityKey(unquoteSQLIdentifierPart(value))
 	}
 	return identifierPart(sourcePlatform, value)
 }

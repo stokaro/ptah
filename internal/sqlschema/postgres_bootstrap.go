@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/pgreservedrole"
 )
 
 // bootstrapMode separates syntax validation from applying selected declarations.
@@ -26,6 +26,8 @@ const (
 // or reads a deployment server. Unknown control flow is refused, including in
 // an unselected branch, because a partial interpretation is not a schema.
 type roleBootstrap struct {
+	// dialect is the dialect the block is read as.
+	dialect string
 	sql     string
 	tokens  []lexer.Token
 	pos     int
@@ -36,13 +38,19 @@ type roleBootstrap struct {
 func appendRoleBootstrap(
 	database *schemamodel.Database, document *Document, block *ast.PostgresDoBlockNode, dialect string,
 ) error {
-	if platform.NormalizeDialect(dialect) != platform.Postgres && dialect != "" {
+	// The block is read as the source dialect's, or for a read with no
+	// dialect as the dialect whose descriptor names a DO-block language.
+	reader := factsOf(dialect)
+	if dialect == "" {
+		reader = factsOf(factsOfRegistry().doBlockReader)
+	}
+	if reader.statements.DoBlocks == "" {
 		return fmt.Errorf("%w: procedural role declarations require PostgreSQL", ErrUnmodeledStatement)
 	}
-	if block.Language != "" && !strings.EqualFold(block.Language, "plpgsql") {
+	if block.Language != "" && !strings.EqualFold(block.Language, reader.statements.DoBlocks) {
 		return fmt.Errorf("%w: desired-state DO blocks require the supported PL/pgSQL role-bootstrap form", ErrUnmodeledStatement)
 	}
-	p := roleBootstrap{sql: block.Body.SQL, roles: make(map[string]bool)}
+	p := roleBootstrap{sql: block.Body.SQL, roles: make(map[string]bool), dialect: reader.name}
 	for _, role := range database.Roles {
 		p.roles[role.Name] = true
 	}
@@ -217,11 +225,11 @@ func (p *roleBootstrap) roleLiteral() (string, error) {
 	if token.Type != lexer.TokenString || len(token.Value) < 2 || token.Value[0] != '\'' || token.Value[len(token.Value)-1] != '\'' {
 		return "", p.unsupported("expected an ordinary role-name string literal")
 	}
-	name, valid := lexer.StringValue(token.Value, dialectlexer.Options(platform.Postgres))
+	name, valid := lexer.StringValue(token.Value, dialectlexer.Options(p.dialect))
 	if !valid {
 		return "", p.unsupported("invalid role-name string literal")
 	}
-	if strings.HasPrefix(name, "pg_") || name == "postgres" {
+	if pgreservedrole.Is(name) {
 		return "", p.unsupported("role conditions must name application roles, not server infrastructure")
 	}
 	p.pos++
@@ -252,7 +260,7 @@ func (p *roleBootstrap) createRole() (*schemamodel.Role, error) {
 		return nil, err
 	}
 	sql := p.sql[p.tokens[start].Start:p.tokens[p.pos].Start]
-	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
+	statements, err := parser.NewParser(sql, parser.WithDialect(p.dialect)).Parse()
 	if err != nil || len(statements.Statements) != 1 {
 		// A role declaration can contain a password. Keep parser fragments out
 		// of this error, including for malformed declarations.
@@ -262,8 +270,8 @@ func (p *roleBootstrap) createRole() (*schemamodel.Role, error) {
 	if !ok {
 		return nil, p.unsupported("expected CREATE ROLE")
 	}
-	role := toRole(node, platform.Postgres)
-	if role.Name == "" || len(role.Name) > 63 || strings.HasPrefix(role.Name, "pg_") || role.Name == "postgres" {
+	role := toRole(node, p.dialect)
+	if role.Name == "" || len(role.Name) > 63 || pgreservedrole.Is(role.Name) {
 		return nil, p.unsupported("CREATE ROLE must name an application role of 1 to 63 bytes")
 	}
 	return &role, nil
@@ -300,7 +308,7 @@ func (p *roleBootstrap) tokenize() error {
 	if strings.ContainsRune(p.sql, 0) {
 		return p.unsupported("NUL is not allowed in a procedural body")
 	}
-	options := dialectlexer.Options(platform.Postgres)
+	options := dialectlexer.Options(p.dialect)
 	options.DisableHashComments = true // PostgreSQL does not treat # as a comment.
 	l := lexer.NewLexerWithOptions(p.sql, options)
 	for token := l.NextToken(); token.Type != lexer.TokenEOF; token = l.NextToken() {

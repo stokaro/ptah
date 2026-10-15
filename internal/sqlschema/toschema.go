@@ -29,7 +29,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/sqlident"
@@ -149,7 +148,7 @@ func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) 
 
 	// PostgreSQL identity columns are implicitly NOT NULL, even when the SQL
 	// omits that clause. Preserve the server semantics in desired-state diffs.
-	if sqlplatform.NormalizeDialect(sourcePlatform) == sqlplatform.Postgres && column.IdentityGeneration != "" {
+	if factsOf(sourcePlatform).columns.IdentityNotNull && column.IdentityGeneration != "" {
 		field.Nullable = false
 	}
 
@@ -331,7 +330,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 
 	// STRICT and WITHOUT ROWID are the SQLite owner's, which reads them from
 	// the table's sqlite platform properties.
-	tableSchema.Overrides = sqliteTableProperties(tableSchema.Overrides, table.Options)
+	tableSchema.Overrides = tableOptionProperties(tableSchema.Overrides, table.Options)
 	return tableSchema
 }
 
@@ -1584,9 +1583,12 @@ func MergeTableOverrides(baseTable schemamodel.Table, platformTables map[string]
 		if platformTable.Comment != baseTable.Comment {
 			platformOverrides["comment"] = platformTable.Comment
 		}
-		for _, key := range []string{"strict", "without_rowid"} {
-			if on := sqliteOption(platformTable, key); on != sqliteOption(baseTable, key) {
-				platformOverrides[key] = strconv.FormatBool(on)
+		for _, owner := range factsOfRegistry().optionOwners {
+			for _, option := range owner.options {
+				key := option.Property
+				if on := tableOption(platformTable, owner.dialect, key); on != tableOption(baseTable, owner.dialect, key) {
+					platformOverrides[key] = strconv.FormatBool(on)
+				}
 			}
 		}
 
@@ -1650,15 +1652,27 @@ func generateStructName(tableName string) string {
 	return structName
 }
 
-// sqliteTableProperties states the STRICT and WITHOUT ROWID options a parsed
-// CREATE TABLE carries as the table's sqlite platform properties, where the
-// SQLite owner reads them. An option that is off states nothing, and a group
-// that states one already keeps its own. overrides is not changed.
-func sqliteTableProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
-	stated := make(map[string]string, 2)
-	for option, key := range map[string]string{"STRICT": "strict", "WITHOUT_ROWID": "without_rowid"} {
-		if on, _ := strconv.ParseBool(options[option]); on {
-			stated[key] = "true"
+// tableOptionProperties states the table options a parsed CREATE TABLE
+// carries, such as SQLite's STRICT and WITHOUT ROWID, as the properties of
+// the group of the dialect whose grammar writes them, where that dialect's
+// owner reads them. An option that is off states nothing, and a group that
+// states one already keeps its own. overrides is not changed.
+func tableOptionProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
+	result := overrides
+	for _, owner := range factsOfRegistry().optionOwners {
+		result = ownerOptionProperties(result, owner, options)
+	}
+	return result
+}
+
+// ownerOptionProperties is [tableOptionProperties] for one dialect's options.
+func ownerOptionProperties(
+	overrides map[string]map[string]string, owner optionOwner, options map[string]string,
+) map[string]map[string]string {
+	stated := make(map[string]string, len(owner.options))
+	for _, option := range owner.options {
+		if on, _ := strconv.ParseBool(options[option.Option]); on {
+			stated[option.Property] = "true"
 		}
 	}
 	if len(stated) == 0 {
@@ -1668,20 +1682,20 @@ func sqliteTableProperties(overrides map[string]map[string]string, options map[s
 	for target, group := range overrides {
 		result[target] = maps.Clone(group)
 	}
-	if result[sqlplatform.SQLite] == nil {
-		result[sqlplatform.SQLite] = make(map[string]string, len(stated))
+	if result[owner.dialect] == nil {
+		result[owner.dialect] = make(map[string]string, len(stated))
 	}
 	for key, value := range stated {
-		if _, own := result[sqlplatform.SQLite][key]; !own {
-			result[sqlplatform.SQLite][key] = value
+		if _, own := result[owner.dialect][key]; !own {
+			result[owner.dialect][key] = value
 		}
 	}
 	return result
 }
 
-// sqliteOption reports whether a table's sqlite platform properties turn the
-// option key on.
-func sqliteOption(table schemamodel.Table, key string) bool {
-	on, _ := strconv.ParseBool(table.Overrides[sqlplatform.SQLite][key])
+// tableOption reports whether a table's properties in the group of dialect
+// turn the option key on.
+func tableOption(table schemamodel.Table, dialect, key string) bool {
+	on, _ := strconv.ParseBool(table.Overrides[dialect][key])
 	return on
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/privilegefold"
@@ -50,7 +49,7 @@ var routineObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "R
 // `public`, which also covers CockroachDB 26.3.2 reading GRANT ... TO "PUBLIC"
 // as the keyword. Any other name there is the role [roleName] resolves.
 func normalizeGrantee(sourcePlatform, role string) string {
-	if platform.IsPostgresFamily(sourcePlatform) {
+	if factsOf(sourcePlatform).names.PublicKeyword {
 		name := roleName(sourcePlatform, role)
 		if name == "public" {
 			return "PUBLIC"

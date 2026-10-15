@@ -161,6 +161,30 @@ type Dialect struct {
 
 	// Lint states how migration lint reads the dialect's migrations.
 	Lint Lint `json:"lint,omitzero"`
+
+	// Reading a schema file; see names.go.
+
+	// Names states how the server resolves a name a schema file writes.
+	Names Names `json:"names,omitzero"`
+	// IndexNaming states how the server names an index a schema file leaves
+	// unnamed. The zero value means the naming is not modeled.
+	IndexNaming IndexNaming `json:"index_naming,omitzero"`
+	// CheckNaming is how the server names a CHECK a schema file leaves
+	// unnamed. Empty keeps the name the rest of Ptah derives.
+	CheckNaming CheckNaming `json:"check_naming,omitempty"`
+	// ConstraintNaming is how the server names a CHECK, UNIQUE or FOREIGN
+	// KEY a schema file leaves unnamed. Empty keeps the name the rest of
+	// Ptah derives.
+	ConstraintNaming ConstraintNaming `json:"constraint_naming,omitempty"`
+	// Columns states how the server reads a column definition.
+	Columns Columns `json:"columns,omitzero"`
+	// Statements states how the server reads statements a schema file
+	// writes about roles and tables.
+	Statements Statements `json:"statements,omitzero"`
+	// TableOptions are the options the engine's grammar writes after a
+	// CREATE TABLE, such as SQLite's STRICT, each with the property of the
+	// dialect's own group it sets on the table.
+	TableOptions []TableOption `json:"table_options,omitempty"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE
@@ -266,6 +290,9 @@ func (d Dialect) validate() error {
 		return err
 	}
 	if err := d.validateIdentifiers(); err != nil {
+		return err
+	}
+	if err := d.validateNames(); err != nil {
 		return err
 	}
 	return nil
