@@ -136,6 +136,12 @@ func clickHouse() descriptor.Dialect {
 		Preparation: descriptor.Preparation{
 			Enums: descriptor.EnumNumbered,
 		},
+
+		// A row-level security declaration scoped to ClickHouse is its
+		// owner's row policy.
+		Conversion: descriptor.Conversion{
+			RowPolicyOwned: true,
+		},
 	}
 }
 

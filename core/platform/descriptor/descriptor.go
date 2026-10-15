@@ -238,6 +238,10 @@ type Dialect struct {
 	// Preparation states how a declared schema is prepared for the engine
 	// before it is rendered or compared.
 	Preparation Preparation `json:"preparation,omitzero"`
+
+	// Conversion states what the readers and converters of schema documents
+	// read of the engine where engines differ.
+	Conversion Conversion `json:"conversion,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and

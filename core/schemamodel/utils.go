@@ -1002,12 +1002,16 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 	// Generate automatic foreign key constraint name following convention
 	foreignKeyName := generateForeignKeyName(structName, fieldName)
 
-	// Create platform-specific overrides for MySQL/MariaDB compatibility
-	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
+	// A dialect that writes a SERIAL key as another integer type, as MySQL
+	// and MariaDB write it as INT, writes the foreign key column referencing
+	// it as that type too (descriptor.Conversion.SerialForeignKeyType).
 	overrides := make(map[string]map[string]string)
 	if refType == "INTEGER" {
-		overrides["mysql"] = map[string]string{"type": "INT"}
-		overrides["mariadb"] = map[string]string{"type": "INT"}
+		for _, described := range platform.Dialects().Dialects() {
+			if keyType := described.Conversion.SerialForeignKeyType; keyType != "" {
+				overrides[described.Name] = map[string]string{"type": keyType}
+			}
+		}
 	}
 	overrides = mergePlatformOverrides(overrides, embedded.Overrides)
 
@@ -1344,10 +1348,22 @@ func deduplicateEmbeddedFields(
 }
 
 // rlsTableSemantics are the identifier rules the owning table of a row-level
-// security declaration is folded with. Row-level security is a
-// PostgreSQL-family construct, so the default schema an unqualified table
-// lands in is `public`.
-var rlsTableSemantics = identifier.ForDialect(platform.Postgres)
+// security declaration is folded with: those of the first dialect whose
+// descriptor holds the shared row-level security model
+// (descriptor.Conversion.RowLevelSecurity), the PostgreSQL family, so the
+// default schema an unqualified table lands in is `public`.
+var rlsTableSemantics = identifier.ForDialect(rowLevelSecurityDialect())
+
+// rowLevelSecurityDialect is the first registered dialect that holds the
+// shared row-level security model, or "" when none does.
+func rowLevelSecurityDialect() string {
+	for _, described := range platform.Dialects().Dialects() {
+		if described.Conversion.RowLevelSecurity {
+			return described.Name
+		}
+	}
+	return ""
+}
 
 // rlsTableResolver answers one question: which declared table does this
 // row-level security declaration name?

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/annotationmeta"
 )
 
@@ -150,11 +151,17 @@ func (p KeyValueParser) isAutoPromotedBoolean(attr string, skip map[string]bool)
 }
 
 // ParsePlatformSpecific returns a table or field directive's platform
-// overrides: the MySQL-family `engine` and `comment` shortcuts, then every
-// `platform.<dialect>.<key>` attribute, which takes precedence.
+// overrides: the `engine` and `comment` shortcuts, for every dialect whose
+// descriptor reads them (descriptor.Conversion.PropertyShortcuts: MySQL and
+// MariaDB), then every `platform.<dialect>.<key>` attribute, which takes
+// precedence.
 func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
-	for _, dialect := range []string{"mysql", "mariadb"} {
+	for _, described := range platform.Dialects().Dialects() {
+		if !described.Conversion.PropertyShortcuts {
+			continue
+		}
+		dialect := described.Name
 		if engine := kv["engine"]; engine != "" {
 			out[dialect] = map[string]string{"engine": engine}
 		}

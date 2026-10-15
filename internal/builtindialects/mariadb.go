@@ -159,5 +159,18 @@ func mariaDB() descriptor.Dialect {
 			ForeignKeyNamespace:     descriptor.NamespaceDatabase,
 			ForeignKeyNamesFoldCase: true,
 		},
+
+		// A table directive's engine and comment attributes, and a field's
+		// comment, are the family's platform properties, and so is a table's
+		// row format, which a converted declaration keeps for the index hints
+		// that need it. A primary key carries a comment of its own. An
+		// embedded relation's INTEGER key column is INT, the type a SERIAL key
+		// is written as here.
+		Conversion: descriptor.Conversion{
+			PropertyShortcuts:    true,
+			SerialForeignKeyType: "INT",
+			RowFormatProperty:    true,
+			ConstraintComments:   true,
+		},
 	}
 }

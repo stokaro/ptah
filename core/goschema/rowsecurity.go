@@ -115,7 +115,7 @@ func (s *schemaParseState) rowSecurityOwner(directive string, scope []string, ct
 	if owned {
 		return selectedRowSecurity, nil
 	}
-	if slices.ContainsFunc(scope, func(target string) bool { return platform.NormalizeDialect(target) == platform.ClickHouse }) {
+	if slices.ContainsFunc(scope, ownsRowPolicies) {
 		return clickHouseRowSecurity, nil
 	}
 	return sharedRowSecurity, nil
@@ -147,4 +147,12 @@ func (s *schemaParseState) targetScopeError(ctx annotationErrorContext, attribut
 		Err:       fmt.Errorf("%w: %w", ptaherr.ErrInvalidAttributeValue, err),
 		Message:   fmt.Sprintf("%s at %s: %v", ctx.directive, ctx.location, err),
 	}
+}
+
+// ownsRowPolicies reports whether target's descriptor says a row-level
+// security declaration scoped to it is its owner's row policy
+// (descriptor.Conversion.RowPolicyOwned), as ClickHouse's is.
+func ownsRowPolicies(target string) bool {
+	described, _ := platform.Lookup(target)
+	return described.Conversion.RowPolicyOwned
 }
