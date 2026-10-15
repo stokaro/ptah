@@ -542,7 +542,7 @@ func autoIncrementChange(genCol schemamodel.Field, dbCol catalog.Column, dialect
 // the target's two sides mean the same thing by it at all.
 //
 // The flag is compared only where both hold: the renderer writes
-// [autoincrement.Declared] as the one clause the reader then reports, and
+// [autoincrement.DeclaredOn] as the one clause the reader then reports, and
 // nothing else writes that clause.
 //
 //   - MySQL and MariaDB: AUTO_INCREMENT, from information_schema.COLUMNS.EXTRA.
@@ -557,15 +557,15 @@ func autoIncrementChange(genCol schemamodel.Field, dbCol catalog.Column, dialect
 func declaredAutoIncrement(field schemamodel.Field, dialect string) (declared, compared bool) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
-		// A column declared with a serial type and no auto-increment is
-		// written as a plain integer on these targets, without the clause,
-		// so its declaration says nothing the flag could be held to. Holding
-		// it to one would remove AUTO_INCREMENT from a key column some other
-		// tool created as SERIAL.
-		if !autoincrement.Declared(field) && autoincrement.SerialType(field.Type) {
+		declared := autoincrement.DeclaredOn(field, dialect)
+		// SQLite writes a serial key as INTEGER PRIMARY KEY, the rowid, which
+		// numbers its rows without AUTOINCREMENT, so a SERIAL declaration
+		// there says nothing the flag could be held to. Holding it to one
+		// would rebuild a table some other tool made AUTOINCREMENT.
+		if !declared && autoincrement.SerialType(field.Type) {
 			return false, false
 		}
-		return autoincrement.Declared(field), true
+		return declared, true
 	default:
 		return false, false
 	}

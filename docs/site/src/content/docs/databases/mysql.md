@@ -137,6 +137,11 @@ SQL:
   `MODIFY COLUMN`. A key column is restated `NOT NULL` without `PRIMARY KEY`,
   because both engines refuse a `MODIFY COLUMN ... PRIMARY KEY` on a table that
   has a key (`ERROR 1068`); the same holds for a key column whose type changes.
+- `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
+  `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
+  MariaDB type. Both engines take one auto-increment column per table, and only
+  as the first column of a key (`ERROR 1075`), so a serial column that breaks
+  either rule is refused by name before anything runs.
 - A primary key declared on its column and again as a `PRIMARY KEY`
   constraint over the same columns is one key, and the table is created with
   it once. Both engines refuse a `CREATE TABLE` that holds two primary keys

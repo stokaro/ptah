@@ -1982,6 +1982,9 @@ func validateDeclaredKeysAndConstraints(
 	if err := validateDeclaredIndexOptions(dialect, caps, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredSerialColumns(dialect, database); err != nil {
+		return err
+	}
 	if err := validateDeclaredSkippingIndexKeys(dialect, database); err != nil {
 		return err
 	}

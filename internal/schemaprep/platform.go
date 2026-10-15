@@ -2,6 +2,7 @@ package schemaprep
 
 import (
 	"slices"
+	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -11,6 +12,13 @@ import (
 // EffectiveFieldForPlatform returns the field after applying the target's
 // declared platform overrides and portable type mapping.
 func EffectiveFieldForPlatform(field schemamodel.Field, targetPlatform string) schemamodel.Field {
+	// A serial type is an auto-increment integer on the targets that write it
+	// as a plain one, so the column takes their auto-increment clause with
+	// it: written as INT alone, a SERIAL key on MySQL or SQL Server took no
+	// value of its own.
+	if SerialWritesAutoIncrement(field, targetPlatform) {
+		field.AutoInc = true
+	}
 	fieldType := platformFieldType(field, targetPlatform)
 	checkConstraint := field.Check
 	checkName := field.CheckName
@@ -98,25 +106,29 @@ func canonicalPlatform(targetPlatform string) string {
 }
 
 func platformFieldType(field schemamodel.Field, targetPlatform string) string {
+	fieldType, _ := platformType(field, targetPlatform)
+	return fieldType
+}
+
+// platformType is the type targetPlatform writes for field's declared type,
+// and whether it writes that type, a serial one, as its own auto-increment
+// integer.
+func platformType(field schemamodel.Field, targetPlatform string) (fieldType string, serialAutoIncrement bool) {
 	if field.TypeRawSQL || field.TypeIsDeclaredText {
-		return field.Type
+		return field.Type, false
 	}
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB:
-		switch field.Type {
-		case "SERIAL":
-			return "INT"
-		case "BIGSERIAL":
-			return "BIGINT"
+		if integer, ok := serialInteger(field.Type); ok {
+			return integer, true
 		}
 	case platform.SQLServer:
+		if integer, ok := serialInteger(field.Type); ok {
+			return integer, true
+		}
 		switch field.Type {
-		case "SERIAL":
-			return "INT"
-		case "BIGSERIAL":
-			return "BIGINT"
 		case "TEXT", "VARCHAR":
-			return "NVARCHAR(MAX)"
+			return "NVARCHAR(MAX)", false
 		}
 	case platform.YDB:
 		// YDB has SERIAL of its own: Serial, BigSerial and SmallSerial fill the
@@ -124,9 +136,42 @@ func platformFieldType(field schemamodel.Field, targetPlatform string) string {
 		// is kept for the YDB type map, which writes it as one of those where
 		// capability.SerialColumns holds and refuses it where it does not, so
 		// rewriting it here into a plain integer would lose the increment.
-		return field.Type
+		return field.Type, false
 	}
-	return field.Type
+	return field.Type, false
+}
+
+// serialInteger is the integer type a serial type stands for: SERIAL is INT,
+// BIGSERIAL BIGINT and SMALLSERIAL SMALLINT, as PostgreSQL builds them over a
+// sequence.
+func serialInteger(declared string) (string, bool) {
+	switch strings.ToUpper(strings.TrimSpace(declared)) {
+	case "SERIAL":
+		return "INT", true
+	case "BIGSERIAL":
+		return "BIGINT", true
+	case "SMALLSERIAL":
+		return "SMALLINT", true
+	default:
+		return "", false
+	}
+}
+
+// SerialWritesAutoIncrement reports whether targetPlatform writes field's
+// serial type as its own auto-increment integer: INT, BIGINT or SMALLINT with
+// AUTO_INCREMENT on MySQL and MariaDB, and with IDENTITY(1,1) on SQL Server.
+//
+// A type written as raw SQL or kept as declared text is the server's to read,
+// and a type the field overrides for the target is the one written there, so
+// neither is one: `type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"`
+// already says what MySQL gets.
+func SerialWritesAutoIncrement(field schemamodel.Field, targetPlatform string) bool {
+	if _, serial := platformType(field, targetPlatform); !serial {
+		return false
+	}
+	overrides, _ := PlatformOverrideGroup(field.Overrides, targetPlatform)
+	_, typed := overrides["type"]
+	return !typed
 }
 
 func fieldWithPlatformValues(
