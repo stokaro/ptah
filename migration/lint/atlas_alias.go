@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/internal/lintkit"
+	"ptah.run/core/platform"
 )
 
 // atlasCodeAliases maps an Atlas analyzer code onto the Ptah rules that report
@@ -31,9 +31,11 @@ import (
 // there checks the two agree, so an alias cannot outlive the mapping it stands
 // for.
 type atlasAlias struct {
-	// dialects are the engines the ATLAS code is defined for. Empty means the
-	// code is not engine-specific and the alias applies everywhere.
-	dialects []string
+	// analyzer is the Atlas analyzer the ATLAS code belongs to, by its code
+	// prefix, when that analyzer is defined for particular engines. The alias
+	// applies to the dialects whose descriptor names that analyzer. Empty
+	// means the code is not engine-specific and the alias applies everywhere.
+	analyzer string
 	// rules are the Ptah rules that report the same hazard.
 	rules []string
 }
@@ -47,7 +49,7 @@ var atlasCodeAliases = map[string]atlasAlias{
 	// type change, so a config naming MY148 would otherwise be refused as an
 	// unknown code. It is scoped to the engines MY130 runs on: an alias for
 	// one engine must not weaken another engine's run (stokaro/ptah#1631).
-	"MY148": {dialects: lintkit.MySQLFamily, rules: []string{"MY130"}},
+	"MY148": {analyzer: "MY", rules: []string{"MY130"}},
 	// No other engine-specific code is here: MY110 through MY123, MY130, MY133,
 	// MY136 and MY137 through MY147 (the MySQL owner, dialect/mysql/mysqllint),
 	// and PG301, PG304, PG108, PG109, PG312, PG314 and PG320 (the PostgreSQL
@@ -137,10 +139,11 @@ func expandSelectorsWithAliases(aliases map[string]atlasAlias, selectors []strin
 // engine applies everywhere, and an empty configured dialect accepts every
 // alias.
 func aliasAppliesToDialect(alias atlasAlias, dialect string) bool {
-	if len(alias.dialects) == 0 || dialect == "" {
+	if alias.analyzer == "" || dialect == "" {
 		return true
 	}
-	return slices.Contains(alias.dialects, dialect)
+	described, _ := platform.Lookup(dialect)
+	return described.Lint.AtlasAnalyzer == alias.analyzer
 }
 
 // ExpandAtlasRuleSelectors expands the Atlas-spelled entries in selectors into

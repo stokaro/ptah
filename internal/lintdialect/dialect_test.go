@@ -482,3 +482,17 @@ func TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured(t *testing.
 	c.Assert(beyondPostgres, qt.DeepEquals, measured,
 		qt.Commentf("a rule names a PostgreSQL-family member other than postgres that this test does not record as measured"))
 }
+
+// Expected is the list a refusal prints, so it names exactly the dialects
+// whose descriptor says lint analyzes them.
+func TestExpected_NamesEveryAnalyzedDialect(t *testing.T) {
+	c := qt.New(t)
+	listed := make(map[string]bool)
+	for name := range strings.SplitSeq(strings.ReplaceAll(lintdialect.Expected, ", or ", ", "), ", ") {
+		listed[name] = true
+		c.Assert(lintdialect.Valid(name), qt.IsTrue, qt.Commentf("%s", name))
+	}
+	for _, described := range platform.Dialects().Dialects() {
+		c.Assert(listed[described.Name], qt.Equals, described.Lint.Analyzed, qt.Commentf("%s", described.Name))
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintkit/mytype"
 )
@@ -87,7 +88,7 @@ func notNullSites(file *File) []notNullSite {
 		if site.OldName != site.NewName {
 			clause = "CHANGE COLUMN"
 		}
-		if file.dialect == "clickhouse" {
+		if lintOf(file.dialect).NotNullByType {
 			if w[site.TypeStart] != "NULLABLE" {
 				sites = append(sites, notNullSite{statement: site.Statement, table: site.Table, column: site.OldName, clause: clause})
 			}
@@ -142,28 +143,14 @@ func notNullStatements(file *File) []int {
 	return indexes
 }
 
-// notNullConsequence says what the engine does with a NULL row, measured
-// per engine and neutral where the run named none.
+// notNullConsequence says what the engine does with a NULL row, as the
+// dialect's descriptor states it from a measurement, and neutral where the
+// run named no dialect.
 func notNullConsequence(dialect string) string {
-	switch dialect {
-	case "mysql":
-		return "a row holding NULL fails the rebuild under the strict SQL mode MySQL defaults to (Invalid use of NULL value), " +
-			"and is silently rewritten to the type's implicit default (0, '', or the zero date) when strict mode is off; " +
-			"a DEFAULT in the same clause applies to new rows only. The rebuild itself runs in place with writes allowed (ALGORITHM=INPLACE, LOCK=NONE)"
-	case "mariadb":
-		return "a row holding NULL fails the rebuild under the strict SQL mode MariaDB defaults to (Data truncated for column), " +
-			"and is silently rewritten to the type's implicit default (0, '', or the zero date) when strict mode is off; " +
-			"a DEFAULT in the same clause applies to new rows only. The rebuild itself runs in place with writes allowed (ALGORITHM=INPLACE, LOCK=NONE)"
-	case "sqlserver":
-		return "SQL Server scans the table once to check every row and a row holding NULL fails the statement " +
-			"(Msg 515, Cannot insert the value NULL into column); a DEFAULT constraint applies to new rows only"
-	case "clickhouse":
-		return "ClickHouse runs the change as a mutation that fails on the first NULL (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN) and " +
-			"stays unfinished while the column is already declared non-Nullable, so every read of the table fails with the same " +
-			"error until the mutation is killed and the column modified back to Nullable; a DEFAULT in the clause does not rescue the NULL"
-	default:
-		return "a row holding NULL either fails the statement or is rewritten to the type's implicit default, depending on the engine and its SQL mode"
+	if consequence := lintOf(dialect).NotNullConsequence; consequence != "" {
+		return consequence
 	}
+	return "a row holding NULL either fails the statement or is rewritten to the type's implicit default, depending on the engine and its SQL mode"
 }
 
 // notNullRules is the part of the family this package checks: the
@@ -175,10 +162,12 @@ func notNullRules() []Rule {
 
 func nullableMadeNotNullRule() Rule {
 	return Rule{
-		Code:             "DD103",
-		Title:            "nullable column made NOT NULL",
-		Severity:         SeverityWarning,
-		Dialects:         []string{"mysql", "mariadb", "sqlserver", "clickhouse"},
+		Code:     "DD103",
+		Title:    "nullable column made NOT NULL",
+		Severity: SeverityWarning,
+		Dialects: lintDialects(func(described descriptor.Lint) bool {
+			return described.NotNullConsequence != ""
+		}),
 		Input:            InputBaselineSchema,
 		BaselineSubjects: notNullStatements,
 		CheckFile: func(file *File) []Finding {

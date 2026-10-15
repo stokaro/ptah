@@ -104,6 +104,15 @@ func clickHouse() descriptor.Dialect {
 			MaterializedViews: true,
 			Sync:              true,
 		},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{
+			Analyzed: true,
+			NotNullConsequence: "ClickHouse runs the change as a mutation that fails on the first NULL (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN) and " +
+				"stays unfinished while the column is already declared non-Nullable, so every read of the table fails with the same " +
+				"error until the mutation is killed and the column modified back to Nullable; a DEFAULT in the clause does not rescue the NULL",
+			NotNullByType: true,
+		},
 	}
 }
 

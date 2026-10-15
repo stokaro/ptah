@@ -58,7 +58,7 @@ func mysqlInPlaceRule() lintkit.Rule {
 			Code:     "MY130P",
 			Title:    "column change applied in place",
 			Severity: lintext.Info,
-			Targets:  lintkit.MySQLFamily,
+			Targets:  family(),
 			Subsumes: []string{"DS103", "MY101"},
 			Input:    lintext.InputBaselineSchema,
 		},

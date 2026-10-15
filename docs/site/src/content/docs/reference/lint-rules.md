@@ -273,7 +273,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY147` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |
 | `ON102` | the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse | both | Ptah |
 
-### mysql, mariadb, sqlserver, clickhouse
+### mysql, mariadb, clickhouse, sqlserver
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |

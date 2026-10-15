@@ -106,5 +106,8 @@ func cockroachDB() descriptor.Dialect {
 			SchemaScoped:      true,
 			Restrict:          true,
 		},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{Analyzed: true},
 	}
 }

@@ -119,6 +119,12 @@ func ydb() descriptor.Dialect {
 			RevisionTables:           true,
 			RevisionTablesEverywhere: true,
 		},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{
+			Analyzed: true,
+			Scanner:  "yql",
+		},
 	}
 }
 

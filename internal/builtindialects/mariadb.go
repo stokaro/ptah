@@ -102,5 +102,19 @@ func mariaDB() descriptor.Dialect {
 			DropsDatabases: true,
 			ViewsFirst:     true,
 		},
+
+		// Lint: what migration lint reads.
+		Lint: descriptor.Lint{
+			Analyzed:        true,
+			Scanner:         "hash",
+			DynamicSQL:      "prepare-from",
+			InjectionAdvice: "prepare a literal statement with ? placeholders and pass the values through EXECUTE ... USING; an identifier that must vary has no placeholder and needs a whitelist",
+			NotNullConsequence: "a row holding NULL fails the rebuild under the strict SQL mode MariaDB defaults to (Data truncated for column), " +
+				"and is silently rewritten to the type's implicit default (0, '', or the zero date) when strict mode is off; " +
+				"a DEFAULT in the same clause applies to new rows only. The rebuild itself runs in place with writes allowed (ALGORITHM=INPLACE, LOCK=NONE)",
+			OnlineMeasured:   true,
+			TypeRestatements: "mytype",
+			AtlasAnalyzer:    "MY",
+		},
 	}
 }

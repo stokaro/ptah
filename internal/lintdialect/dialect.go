@@ -3,8 +3,6 @@
 package lintdialect
 
 import (
-	"slices"
-
 	"ptah.run/core/platform"
 )
 
@@ -19,7 +17,7 @@ const Expected = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockr
 // Canonical resolves an accepted lint dialect spelling to the canonical name
 // the lint engine compares against, and reports whether it is supported.
 //
-// Resolution is [platform.NormalizeDialect]'s, so every spelling ptah accepts
+// Resolution is the process registry's, so every spelling ptah accepts
 // anywhere else is accepted here: "pgx" and "postgresql" resolve to "postgres",
 // "mssql" and "tsql" to "sqlserver", "crdb" to "cockroachdb". This closes a gap
 // where a documented alias was refused by lint alone while `ptah generate`,
@@ -32,43 +30,28 @@ const Expected = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockr
 // PostgreSQL rule and picking the hybrid lexer instead of the PostgreSQL one.
 // Every caller must therefore store what this returns, not what it was given.
 //
+// A dialect is supported when its descriptor says lint analyzes it. "Whatever
+// the registry resolves" is not enough, because a dialect Ptah knows need not
+// be one lint can read: Oracle has no lint rule and no scanner mode, so a run
+// that named it would exit 0 having matched no rule and scanned with the
+// hybrid lexer, which is the failure described above for aliases. An engine
+// becomes supported when its descriptor says so, once lint can analyze it
+// (stokaro/ptah#1875).
+//
 // The empty dialect is supported and resolves to itself: it means "run every
 // dialect-independent rule".
 func Canonical(dialect string) (string, bool) {
 	if dialect == "" {
 		return "", true
 	}
-	canonical := platform.NormalizeDialect(dialect)
-	if !slices.Contains(supported, canonical) {
+	described, found := platform.Lookup(dialect)
+	if !found || !described.Lint.Analyzed {
 		// The empty return is the safe half. A caller that ignores ok would
 		// otherwise receive a name that selects no Rule.Dialects entry and no
 		// lexer mode, and run clean against a grammar nothing parsed.
 		return "", false
 	}
-	return canonical, true
-}
-
-// supported is the engine list [Expected] names, as data.
-//
-// "Whatever NormalizeDialect resolves" holds only while every dialect Ptah
-// knows is also a dialect lint analyzes, and Oracle breaks that: the moment
-// platform gains the name, `--dialect oracle` becomes valid here while
-// migration/lint has no Oracle rule and internal/dialectlexer has no Oracle
-// mode -- so the run exits 0 having matched no rule and scanned with the hybrid
-// lexer, which is the exact failure the comment on Canonical describes for
-// aliases. A new engine has to be added here deliberately, when lint can
-// actually analyze it (stokaro/ptah#1875).
-var supported = []string{
-	platform.Postgres,
-	platform.MySQL,
-	platform.MariaDB,
-	platform.SQLite,
-	platform.SQLServer,
-	platform.ClickHouse,
-	platform.CockroachDB,
-	platform.YugabyteDB,
-	platform.Spanner,
-	platform.YDB,
+	return described.Name, true
 }
 
 // Valid reports whether dialect is supported. The empty value means that the
@@ -133,17 +116,16 @@ func Compatible(policyDialect, databaseDialect string) bool {
 }
 
 // Family returns the lint family a canonical dialect belongs to: the group
-// whose members select the same built-in rule set. Members of one family are
-// interchangeable in a lint policy; members of different families are not.
+// whose members select the same built-in rule set, which is the protocol
+// family its descriptor names. Members of one family are interchangeable in a
+// lint policy; members of different families are not.
 //
-// An unsupported or empty dialect is its own family, so it can only ever match
-// itself.
+// An unsupported or empty dialect, and one whose descriptor names no family,
+// is its own family, so it can only ever match itself.
 func Family(canonical string) string {
-	if platform.IsPostgresFamily(canonical) {
-		return platform.Postgres
-	}
-	if canonical == platform.MariaDB {
-		return platform.MySQL
+	described, found := platform.Lookup(canonical)
+	if found && described.Family != "" {
+		return described.Family
 	}
 	return canonical
 }
