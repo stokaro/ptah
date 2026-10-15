@@ -51,14 +51,6 @@ func (k atlasDockerBlockKey) String() string {
 	return "docker." + k.typ + "." + k.name
 }
 
-// atlasDockerAttributes are the attributes a docker block may carry, keyed by
-// the engines it may start.
-var atlasDockerAttributes = map[string][]string{
-	"postgres": {"image", "schema", "database", "baseline", "env", "timeout"},
-	"mysql":    {"image", "schema", "baseline", "env", "timeout"},
-	"mariadb":  {"image", "schema", "baseline", "env", "timeout"},
-}
-
 // atlasDockerBuildAttributes are the attributes of a docker block's build.
 var atlasDockerBuildAttributes = []string{"context", "dockerfile", "dockerfile_inline", "target", "args", "platform"}
 
@@ -153,7 +145,8 @@ func (e *atlasEvaluator) setDockerValue(key atlasDockerBlockKey, value cty.Value
 // dockerBlockURL validates block, records its declaration, and returns the URL
 // a reference to it evaluates to.
 func (p atlasParser) dockerBlockURL(key atlasDockerBlockKey, block *hclsyntax.Block) (string, error) {
-	allowed, ok := atlasDockerAttributes[key.typ]
+	// The engine a block may start declares the attributes its block takes.
+	allowed, ok := devdocker.BlockAttributes(key.typ)
 	if !ok {
 		return "", unsupported("docker."+key.typ, block.TypeRange)
 	}
@@ -323,7 +316,7 @@ func dockerImageURL(typ, image, database, schema, name string) string {
 		if database == "" {
 			// PostgreSQL's maintenance database, the one every server has.
 			// The postgres block is the only search_path driver a docker
-			// block takes; see atlasDockerAttributes.
+			// block takes; see devdocker.BlockAttributes.
 			database = "postgres"
 		}
 		segments = append(segments, database)
