@@ -78,6 +78,13 @@ func spanner() descriptor.Dialect {
 
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble},
+
+		// Cleanup: what a development database cleanup reads.
+		// Spanner's PostgreSQL interface does not accept the CASCADE and DROP
+		// TYPE forms the PostgreSQL family's cleanup renders, and no instance
+		// was available to measure its coverage, so its plan reports tables
+		// only.
+		Cleanup: descriptor.Cleanup{},
 	}
 }
 

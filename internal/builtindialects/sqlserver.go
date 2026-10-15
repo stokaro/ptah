@@ -97,6 +97,15 @@ END`,
 
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteBracket},
+
+		// Cleanup: what a development database cleanup reads.
+		// The writer drops foreign keys and tables, and nothing else: the
+		// reader populates views, but the writer never drops them.
+		Cleanup: descriptor.Cleanup{
+			ForeignKeys:    true,
+			RevisionTables: true,
+			RevisionProbe:  sqlServerRevisionProbe,
+		},
 	}
 }
 

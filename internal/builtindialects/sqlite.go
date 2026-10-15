@@ -67,6 +67,12 @@ func sqlite() descriptor.Dialect {
 
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble, Keywords: sqliteKeywords()},
+
+		// Cleanup: what a development database cleanup reads.
+		// The writer reads pragma_table_list and drops tables and views. The
+		// reader hides schema_migrations and the writer keeps it, so the
+		// revision tables stay out of the plan.
+		Cleanup: descriptor.Cleanup{Views: true},
 	}
 }
 

@@ -90,5 +90,21 @@ func cockroachDB() descriptor.Dialect {
 
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble},
+
+		// Cleanup: what a development database cleanup reads.
+		Cleanup: descriptor.Cleanup{
+			ForeignKeys:       true,
+			Views:             true,
+			MaterializedViews: true,
+			Enums:             true,
+			Domains:           true,
+			Composites:        true,
+			Ranges:            true,
+			Functions:         true,
+			RevisionTables:    true,
+			RevisionProbe:     postgresRevisionProbe,
+			SchemaScoped:      true,
+			Restrict:          true,
+		},
 	}
 }

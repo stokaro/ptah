@@ -200,7 +200,7 @@ func TestPostgresFamilyClassificationKeepsScopedExecutionAtomic(t *testing.T) {
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(isPostgresFamily(test.dialect), qt.Equals, test.want)
+			c.Assert(cleanupOf(test.dialect).SchemaScoped, qt.Equals, test.want)
 		})
 	}
 }
