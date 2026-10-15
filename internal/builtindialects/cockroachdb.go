@@ -133,13 +133,15 @@ func cockroachDB() descriptor.Dialect {
 		// public.items` is stored as `SELECT public.items.id, ... FROM
 		// f1.public.items;` (stokaro/ptah#4058).
 		Comparison: descriptor.Comparison{
-			ForeignKeysOutside:    true,
-			ExpressionProbes:      "pg-catalog",
-			ProbeViewsInSchema:    true,
-			RewritesRoutineBodies: true,
-			RolePasswords:         true,
-			RoutineTypeAliases:    "pg-aliases",
-			QualifiedTypeNames:    true,
+			ForeignKeysOutside:      true,
+			ExpressionProbes:        "pg-catalog",
+			ProbeViewsInSchema:      true,
+			RewritesRoutineBodies:   true,
+			RolePasswords:           true,
+			RoutineTypeAliases:      "pg-aliases",
+			QualifiedTypeNames:      true,
+			CatalogTypeNames:        true,
+			PrimaryKeyStoresColumns: true,
 		},
 	}
 }

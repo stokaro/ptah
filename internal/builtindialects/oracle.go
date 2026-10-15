@@ -135,6 +135,7 @@ END;`,
 			RewritesGeneratedExpressions: true,
 			RoutineNamesFold:             true,
 			ArgumentModeAfterName:        true,
+			MapsDeclaredTypes:            true,
 		},
 	}
 }

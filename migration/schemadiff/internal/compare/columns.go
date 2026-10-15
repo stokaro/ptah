@@ -555,8 +555,8 @@ func autoIncrementChange(genCol schemamodel.Field, dbCol catalog.Column, dialect
 // column. ClickHouse and Spanner have no such column, and Oracle's identity
 // column is not decided here.
 func declaredAutoIncrement(field schemamodel.Field, dialect string) (declared, compared bool) {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
+	switch {
+	case comparisonOf(dialect).AutoIncrementFlag:
 		declared := autoincrement.DeclaredOn(field, dialect)
 		// SQLite writes a serial key as INTEGER PRIMARY KEY, the rowid, which
 		// numbers its rows without AUTOINCREMENT, so a SERIAL declaration
@@ -687,7 +687,7 @@ func columnDefaultChange(
 // column is accepted, so a comparison that treated the declared key as
 // nullable would plan exactly that on the second apply.
 func primaryKeyImpliesNotNull(dialect string) bool {
-	return platform.NormalizeDialect(dialect) != platform.SQLite
+	return !comparisonOf(dialect).PrimaryKeyNullable
 }
 
 // sqliteKeyColumnImpliesNotNull reports whether SQLite -- not SQL in general --
@@ -704,7 +704,7 @@ func sqliteKeyColumnImpliesNotNull(
 	keyColumns []string,
 	field schemamodel.Field,
 ) bool {
-	if platform.NormalizeDialect(dialect) != platform.SQLite {
+	if !comparisonOf(dialect).RowidTables {
 		return false
 	}
 	return sqlitekey.ImpliesNotNull(table, keyColumns, field)
@@ -722,7 +722,7 @@ func sqliteRowidAlias(
 	keyColumns []string,
 	field schemamodel.Field,
 ) bool {
-	if platform.NormalizeDialect(dialect) != platform.SQLite {
+	if !comparisonOf(dialect).RowidTables {
 		return false
 	}
 	return sqlitekey.IsRowidAlias(table, keyColumns, field)
@@ -798,7 +798,7 @@ func columnTypeChange(
 	if rules != nil {
 		return rules.TypeChange(genCol, dbCol, dbRawType)
 	}
-	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
+	if comparisonOf(dialect).NullableTypes {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
 	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
@@ -1050,12 +1050,12 @@ func unquoteIdentifier(name string) string {
 // the catalog holds" -- and it is answered by the renderer's own mapping rather
 // than a second copy of it.
 func renderedDefaultForDialect(declaredDefault, declaredType, dialect string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Oracle:
+	switch comparison := comparisonOf(dialect); {
+	case comparison.MapsDeclaredTypes:
 		if base := oracletype.Base(declaredType); base != "BOOLEAN" && base != "BOOL" {
 			return declaredDefault
 		}
-	case platform.SQLite:
+	case comparison.TypeAffinity:
 		// The affinity decides, because the affinity is what SQLite converts
 		// by. A TEXT or BLOB column keeps the characters, so `true` there is
 		// the word rather than the number.
@@ -1080,8 +1080,8 @@ func normalizeColumnTypesForDialect(
 	dbType, dialect string,
 ) (generatedType, databaseType string) {
 	genType := genCol.Type
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLite:
+	switch comparison := comparisonOf(dialect); {
+	case comparison.TypeAffinity:
 		// SQLite stores the declaration and never resolves it, so two spellings
 		// are the same type exactly when they yield the same AFFINITY. Comparing
 		// the canonical spellings instead reported a change between
@@ -1096,7 +1096,7 @@ func normalizeColumnTypesForDialect(
 		// verbatim is written as it stands and keeps its own affinity.
 		return normalize.SQLiteAffinity(renderedSQLiteType(genCol)),
 			normalize.SQLiteAffinity(dbType)
-	case platform.Spanner:
+	case comparison.SingleStringType:
 		// Spanner's PostgreSQL interface has ONE string type. A `text` column
 		// and an unbounded `character varying` are the same STRING(MAX), and
 		// the catalog reports the second whichever of the two was declared --
@@ -1116,7 +1116,7 @@ func normalizeColumnTypesForDialect(
 		// are asked about by shouldReportSizedTypeChange, as everywhere else.
 		return spannerStringType(genType, normalize.Type(genType)),
 			spannerStringType(dbType, normalize.Type(dbType))
-	case platform.Oracle:
+	case comparison.MapsDeclaredTypes:
 		// Oracle has no counterpart for most declared type names, so the
 		// declaration and the catalog never agree on the spelling: a declared
 		// TEXT is a CLOB, an INT is a NUMBER(10), a BOOLEAN is a NUMBER(1).
@@ -1128,7 +1128,7 @@ func normalizeColumnTypesForDialect(
 		// has to answer is not "are these the same word" but "would rendering
 		// this declaration produce the type the catalog holds".
 		return normalize.Type(oracletype.Map(genType)), normalize.Type(dbType)
-	case platform.CockroachDB:
+	case comparison.CatalogTypeNames:
 		return normalize.Type(cockroachCatalogTypeName(genType)), normalize.Type(cockroachCatalogTypeName(dbType))
 	default:
 		return normalize.Type(genType), normalize.Type(dbType)
@@ -1172,7 +1172,7 @@ func cockroachCatalogTypeName(typeName string) string {
 // defaultIntSize is 0 where no connection read the setting. Every other
 // dialect's declaration is returned unchanged.
 func resolvedDeclaredType(declared, dialect string, defaultIntSize int) string {
-	if platform.NormalizeDialect(dialect) != platform.CockroachDB {
+	if !comparisonOf(dialect).CatalogTypeNames {
 		return declared
 	}
 	return cockroachtype.Resolve(declared, defaultIntSize)
@@ -1186,7 +1186,7 @@ func resolvedDeclaredType(declared, dialect string, defaultIntSize int) string {
 // told `NUMERIC -> INTEGER` has to work out which of their columns that was,
 // so there the raw spellings are reported instead (stokaro/ptah#2040).
 func typeChangeText(dbRawType, genRawType, dbNormalized, genNormalized, dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.SQLite {
+	if comparisonOf(dialect).TypeAffinity {
 		return fmt.Sprintf("%s -> %s", strings.TrimSpace(dbRawType), strings.TrimSpace(genRawType))
 	}
 	return fmt.Sprintf("%s -> %s", dbNormalized, genNormalized)
@@ -1280,7 +1280,7 @@ func renderedSQLiteType(genCol schemamodel.Field) string {
 // schema would carry, so both are reported. The SQLite guard suppresses these
 // for SQLite's type affinity, where such distinctions do not exist.
 func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
-	if platform.NormalizeDialect(dialect) == platform.SQLite &&
+	if comparisonOf(dialect).TypeAffinity &&
 		normalize.Type(dbType) == normalize.Type(normalize.SQLiteColumnType(genType)) {
 		return false
 	}
@@ -1295,7 +1295,7 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	// reported. Comparing what the renderer would actually write keeps the
 	// suppression to the case it is for: a declaration that already produces
 	// exactly the catalog's type.
-	if platform.NormalizeDialect(dialect) == platform.Oracle {
+	if comparisonOf(dialect).MapsDeclaredTypes {
 		// The declaration is asked in the renderer's spelling on both counts.
 		// typechange compares type FAMILIES, and it has no reading of a
 		// declared VARCHAR against a catalog VARCHAR2 -- so without the

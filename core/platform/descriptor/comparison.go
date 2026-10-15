@@ -72,6 +72,38 @@ type Comparison struct {
 	// QualifiedTypeNames reports that the catalog names a column of a
 	// schema-qualified user type by its type schema and name.
 	QualifiedTypeNames bool `json:"qualified_type_names,omitempty"`
+	// AutoIncrementFlag reports that the catalog reports whether a column
+	// auto-increments, so a declared auto-increment is compared with it.
+	AutoIncrementFlag bool `json:"auto_increment_flag,omitempty"`
+	// PrimaryKeyNullable reports that a primary key column may hold NULL
+	// unless the table's shape says otherwise, so a key does not imply NOT
+	// NULL.
+	PrimaryKeyNullable bool `json:"primary_key_nullable,omitempty"`
+	// RowidTables reports that a table has a rowid, whose alias and whose
+	// STRICT and WITHOUT ROWID shapes decide a key column's nullability as
+	// internal/sqlitekey measures it.
+	RowidTables bool `json:"rowid_tables,omitempty"`
+	// TypeAffinity reports that the engine stores a declared type as written
+	// and converts by its affinity, so two spellings with one affinity are
+	// one type and a width is no distinction.
+	TypeAffinity bool `json:"type_affinity,omitempty"`
+	// SingleStringType reports that the engine has one string type, so the
+	// unbounded spellings of it are one type and only a width distinguishes.
+	SingleStringType bool `json:"single_string_type,omitempty"`
+	// MapsDeclaredTypes reports that the renderer maps most declared type
+	// names to types of the engine's own, as internal/oracletype does, so a
+	// declaration is compared in the renderer's spelling.
+	MapsDeclaredTypes bool `json:"maps_declared_types,omitempty"`
+	// CatalogTypeNames reports that the catalog names the string and byte
+	// types STRING and BYTES, as internal/cockroachtype spells them, and an
+	// unsized INT resolves to the width the session's default_int_size gives.
+	CatalogTypeNames bool `json:"catalog_type_names,omitempty"`
+	// PrimaryKeyStoresColumns reports that the primary key's index stores
+	// every column of its table, so a declared payload on it is implied.
+	PrimaryKeyStoresColumns bool `json:"primary_key_stores_columns,omitempty"`
+	// NullableTypes reports that nullability is part of a column's type, as
+	// ClickHouse's Nullable(T) wraps it.
+	NullableTypes bool `json:"nullable_types,omitempty"`
 	// DefaultGeneratedKind is the storage a generated column declared
 	// without one gets, such as "STORED". Empty means it has no default.
 	DefaultGeneratedKind string `json:"default_generated_kind,omitempty"`

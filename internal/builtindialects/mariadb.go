@@ -149,6 +149,7 @@ func mariaDB() descriptor.Dialect {
 			RoutineNamesFold:         true,
 			RoutineTypeAliases:       "mysqlroutine",
 			ViewPredicatesAsIntegers: true,
+			AutoIncrementFlag:        true,
 		},
 	}
 }

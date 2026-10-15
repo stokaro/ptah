@@ -128,7 +128,9 @@ func clickHouse() descriptor.Dialect {
 		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumNumbered},
 		Lexical:    descriptor.Lexical{LineComments: []string{"#", "//"}, BackslashEscapes: true},
 		// Comparison: what comparing a declaration with a catalog reads.
-		Comparison: descriptor.Comparison{},
+		Comparison: descriptor.Comparison{
+			NullableTypes: true,
+		},
 	}
 }
 

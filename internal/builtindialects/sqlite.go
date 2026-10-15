@@ -106,6 +106,10 @@ func sqlite() descriptor.Dialect {
 			VerbatimTableNames:   true,
 			InternalIndexPrefix:  "sqlite_autoindex_",
 			DefaultGeneratedKind: "VIRTUAL",
+			AutoIncrementFlag:    true,
+			PrimaryKeyNullable:   true,
+			RowidTables:          true,
+			TypeAffinity:         true,
 		},
 	}
 }

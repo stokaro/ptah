@@ -136,6 +136,7 @@ END`,
 			UniqueIndexStandsAlone: true,
 			ExpressionProbes:       "sys-catalog",
 			DefaultGeneratedKind:   "PERSISTED",
+			AutoIncrementFlag:      true,
 		},
 	}
 }
