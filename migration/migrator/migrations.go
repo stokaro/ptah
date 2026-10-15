@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/execoutcome"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrationfile"
 )
@@ -35,12 +35,12 @@ func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql stri
 }
 
 // splitSQLStatementsForDialect splits a migration body into the units the
-// migrator runs, counts and records progress over: statements on every
-// dialect but YDB, and on YDB the queries YDB runs the body as (see
-// ydbQueryTexts).
+// migrator runs, counts and records progress over: statements, or the
+// queries the engine runs the body as where it has query units (see
+// unitTexts).
 func splitSQLStatementsForDialect(sql, dialect string) []string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return ydbQueryTexts(sql)
+	if units := builtin.Lookup(dialect).Units; units != nil {
+		return unitTexts(units, sql, dialect)
 	}
 	return sqlutil.SplitStatementsForDialect(dialect, sql)
 }

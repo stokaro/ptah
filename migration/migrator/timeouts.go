@@ -3,13 +3,11 @@ package migrator
 import (
 	"context"
 	"fmt"
-	"slices"
-	"strconv"
-	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -187,27 +185,18 @@ func timeoutStatements(
 		return nil, nil, err
 	}
 
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		if scope == timeoutScopeSession {
-			setup, restore := postgresSessionTimeoutStatements(timeouts)
-			return setup, restore, nil
-		}
-		return postgresTimeoutStatements(timeouts), nil, nil
-	case platform.MySQL:
-		return mysqlTimeoutStatements(timeouts)
-	case platform.MariaDB:
-		return mariaDBTimeoutStatements(timeouts)
-	case platform.YDB:
-		// No statement sets anything: the statement timeout travels in the
-		// context, and the executor bounds each query with it.
-		return nil, nil, nil
-	default:
+	spelling := builtin.Lookup(dialect).Timeouts
+	if spelling == nil {
 		return nil, nil, fmt.Errorf(
 			"migration timeouts are declared supported for dialect %q but no statement spelling is "+
 				"registered for it",
 			dialect)
 	}
+	spellingScope := migratorext.ScopeTransaction
+	if scope == timeoutScopeSession {
+		spellingScope = migratorext.ScopeSession
+	}
+	return spelling.Statements(timeouts, spellingScope)
 }
 
 // refuseTimeoutsWithoutCapability refuses a timeout the target has no
@@ -235,114 +224,4 @@ func refuseTimeoutsWithoutCapability(
 		return nil
 	}
 	return fmt.Errorf("migration timeouts are not supported for dialect %q: %s", dialect, reason)
-}
-
-func postgresTimeoutStatements(timeouts migrationfile.Timeouts) []string {
-	statements := make([]string, 0, 2)
-	if timeouts.HasLockTimeout {
-		statements = append(statements, "SET LOCAL lock_timeout = '"+durationMillisLiteral(timeouts.LockTimeout)+"'")
-	}
-	if timeouts.HasStatementTimeout {
-		statements = append(statements, "SET LOCAL statement_timeout = '"+durationMillisLiteral(timeouts.StatementTimeout)+"'")
-	}
-	return statements
-}
-
-func postgresSessionTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string) {
-	setup := make([]string, 0, 2)
-	restore := make([]string, 0, 2)
-	if timeouts.HasLockTimeout {
-		setup = append(setup, "SET lock_timeout = '"+durationMillisLiteral(timeouts.LockTimeout)+"'")
-		restore = append(restore, "RESET lock_timeout")
-	}
-	if timeouts.HasStatementTimeout {
-		setup = append(setup, "SET statement_timeout = '"+durationMillisLiteral(timeouts.StatementTimeout)+"'")
-		restore = append(restore, "RESET statement_timeout")
-	}
-	return setup, reverseStrings(restore)
-}
-
-func mysqlTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {
-	setup := make([]string, 0, 6)
-	restore := make([]string, 0, 3)
-	if timeouts.HasLockTimeout {
-		lockSetup, lockRestore := mysqlFamilyLockTimeoutStatements(timeouts.LockTimeout)
-		setup = append(setup, lockSetup...)
-		restore = append(restore, lockRestore...)
-	}
-	if timeouts.HasStatementTimeout {
-		setup = append(setup,
-			"SET @ptah_prev_max_execution_time = @@SESSION.max_execution_time",
-			"SET SESSION max_execution_time = "+strconv.FormatInt(durationMillis(timeouts.StatementTimeout), 10),
-		)
-		restore = append(restore, "SET SESSION max_execution_time = @ptah_prev_max_execution_time")
-	}
-	return setup, reverseStrings(restore), nil
-}
-
-func mariaDBTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {
-	setup := make([]string, 0, 6)
-	restore := make([]string, 0, 3)
-	if timeouts.HasLockTimeout {
-		lockSetup, lockRestore := mysqlFamilyLockTimeoutStatements(timeouts.LockTimeout)
-		setup = append(setup, lockSetup...)
-		restore = append(restore, lockRestore...)
-	}
-	if timeouts.HasStatementTimeout {
-		setup = append(setup,
-			"SET @ptah_prev_max_statement_time = @@SESSION.max_statement_time",
-			"SET SESSION max_statement_time = "+strconv.FormatFloat(timeouts.StatementTimeout.Seconds(), 'f', -1, 64),
-		)
-		restore = append(restore, "SET SESSION max_statement_time = @ptah_prev_max_statement_time")
-	}
-	return setup, reverseStrings(restore), nil
-}
-
-// mysqlFamilyLockTimeoutStatements bounds both lock waits a MySQL or MariaDB
-// statement can make, in the order they are restored.
-//
-// innodb_lock_wait_timeout bounds a wait for a row lock and nothing else. DDL
-// waits for a metadata lock, and lock_wait_timeout bounds that wait; its
-// server default is a year on MySQL and a day on MariaDB. Measured on MySQL
-// 8.4.11 and MariaDB 11.8.9 with a second session holding an open transaction
-// that read the table: under innodb_lock_wait_timeout = 3 alone, DROP TRIGGER
-// waited until that transaction ended, 7 and 8 seconds later, and every later
-// write to the table queued behind it; under lock_wait_timeout = 3 it failed
-// with ERROR 1205 after 3 seconds (stokaro/ptah#4012). Both take whole seconds,
-// and a timeout is never zero, so rounding up never asks for no wait.
-func mysqlFamilyLockTimeoutStatements(timeout time.Duration) (setup, restore []string) {
-	seconds := strconv.FormatInt(durationSeconds(timeout), 10)
-	setup = []string{
-		"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
-		"SET SESSION innodb_lock_wait_timeout = " + seconds,
-		"SET @ptah_prev_lock_wait_timeout = @@SESSION.lock_wait_timeout",
-		"SET SESSION lock_wait_timeout = " + seconds,
-	}
-	restore = []string{
-		"SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout",
-		"SET SESSION lock_wait_timeout = @ptah_prev_lock_wait_timeout",
-	}
-	return setup, restore
-}
-
-func reverseStrings(values []string) []string {
-	reversed := slices.Clone(values)
-	slices.Reverse(reversed)
-	return reversed
-}
-
-func durationMillisLiteral(duration time.Duration) string {
-	return strconv.FormatInt(durationMillis(duration), 10) + "ms"
-}
-
-func durationMillis(duration time.Duration) int64 {
-	return ceilDurationUnits(duration, time.Millisecond)
-}
-
-func durationSeconds(duration time.Duration) int64 {
-	return ceilDurationUnits(duration, time.Second)
-}
-
-func ceilDurationUnits(duration, unit time.Duration) int64 {
-	return int64((duration-1)/unit) + 1
 }

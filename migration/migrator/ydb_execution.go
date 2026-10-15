@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasretry"
-	"ptah.run/internal/yqlquery"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 )
 
 // How a migration body runs on YDB.
@@ -37,13 +37,14 @@ import (
 // first query the row does not record, which for a data query is exactly the
 // one that did not commit.
 
-// ydbQueryTexts is the texts of the queries a YDB body runs as. A body the
-// split refuses is refused before anything runs (see refuseUnsplittableSQL),
-// so the statements returned for it here are counted but never executed.
-func ydbQueryTexts(sqlText string) []string {
-	queries, err := yqlquery.Split(sqlText)
+// unitTexts is the texts of the queries a body runs as on an engine with
+// query units. A body the split refuses is refused before anything runs (see
+// refuseUnsplittableSQL), so the statements returned for it here are counted
+// but never executed.
+func unitTexts(units migratorext.Units, sqlText, dialect string) []string {
+	queries, err := units.Split(sqlText)
 	if err != nil {
-		return sqlutil.SplitStatementsForDialect(platform.YDB, sqlText)
+		return sqlutil.SplitStatementsForDialect(dialect, sqlText)
 	}
 	texts := make([]string, 0, len(queries))
 	for _, query := range queries {
@@ -54,13 +55,14 @@ func ydbQueryTexts(sqlText string) []string {
 
 // sourceStatementsForDialect returns the source text of each unit the migrator
 // runs a body as, which is what partial hashes digest and what a failure
-// records as the failing statement. On YDB a unit is a query, whose source is
-// its statements' sources.
+// records as the failing statement. On an engine with query units a unit is a
+// query, whose source is its statements' sources.
 func sourceStatementsForDialect(sqlText, dialect string) []sqlutil.SourceStatement {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
+	units := builtin.Lookup(dialect).Units
+	if units == nil {
 		return sqlutil.SplitSourceStatements(sqlText, dialect)
 	}
-	queries, err := yqlquery.Split(sqlText)
+	queries, err := units.Split(sqlText)
 	if err != nil {
 		return sqlutil.SplitSourceStatements(sqlText, dialect)
 	}
@@ -74,9 +76,10 @@ func sourceStatementsForDialect(sqlText, dialect string) []sqlutil.SourceStateme
 	return statements
 }
 
-// refuseUnsplittableSQL refuses a YDB body the migrator cannot split the way
-// YDB reads it, one holding a statement that controls a transaction, and one
-// holding a query YDB refuses whole. Every other dialect passes.
+// refuseUnsplittableSQL refuses, on an engine with query units, a body the
+// migrator cannot split the way the engine reads it: one holding a statement
+// that controls a transaction, and one holding a query the engine refuses
+// whole. Every other engine passes.
 //
 // YQL refuses COMMIT inside a query (`COMMIT not supported inside YDB
 // query`, measured on 26.2.1.14), and the migrator decides where each
@@ -89,10 +92,11 @@ func sourceStatementsForDialect(sqlText, dialect string) []sqlutil.SourceStateme
 // statement runs outside any transaction, so the queries before such a block
 // would stay applied when it fails; it is refused here, before any of them.
 func refuseUnsplittableSQL(dialect, sqlText string) error {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
+	units := builtin.Lookup(dialect).Units
+	if units == nil {
 		return nil
 	}
-	queries, err := yqlquery.Split(sqlText)
+	queries, err := units.Split(sqlText)
 	if err != nil {
 		return err
 	}
@@ -103,7 +107,7 @@ func refuseUnsplittableSQL(dialect, sqlText string) error {
 				"move the scheme statement out of the block or action into a statement of its own", query.Source)
 		}
 		for _, statement := range query.Statements {
-			if isTransactionControlStatement(statement, platform.YDB) {
+			if isTransactionControlStatement(statement, dialect) {
 				return fmt.Errorf("%q controls a transaction, and on YDB the migrator runs each data query "+
 					"in a transaction of its own; remove it", statement)
 			}
@@ -125,14 +129,14 @@ func (m *Migrator) refuseUnsplittableMigrations(migrations []*Migration, directi
 }
 
 // runsQueriesOnTheirOwn reports whether the target runs every query of a
-// migration on its own, whatever transaction mode the run asked for: YDB has
-// no transaction a scheme statement can join, so a file's transaction would
-// hold nothing but data queries, which already commit one by one together
-// with their checkpoints. `file` is therefore run the way `none` is, with
-// progress recorded after each query, and `all` is refused by the
-// transactional-DDL capability before anything runs.
+// migration on its own, whatever transaction mode the run asked for: an
+// engine with query units has no transaction a scheme statement can join, so
+// a file's transaction would hold nothing but data queries, which already
+// commit one by one together with their checkpoints. `file` is therefore run
+// the way `none` is, with progress recorded after each query, and `all` is
+// refused by the transactional-DDL capability before anything runs.
 func (m *Migrator) runsQueriesOnTheirOwn() bool {
-	return platform.NormalizeDialect(m.connectionDialect()) == platform.YDB
+	return m.services().Units != nil
 }
 
 // effectiveTxMode is the mode a migration runs in on this target, given the
@@ -167,26 +171,20 @@ func (m *Migrator) withRecordedStatementProgress(
 		return ctx
 	}
 	return withStatementCommitter(ctx, statementCommitter{
-		claims: isYDBDataQuery,
+		claims: m.services().Units.IsData,
 		run: func(ctx context.Context, event StatementEvent) error {
-			return m.commitYDBDataQuery(ctx, migration, startedAt, event, direction)
+			return m.commitDataQuery(ctx, migration, startedAt, event, direction)
 		},
 	})
-}
-
-// isYDBDataQuery reports whether a unit of a YDB body is a data query.
-func isYDBDataQuery(query string) bool {
-	kind, ok := yqlquery.KindOf(query)
-	return ok && kind == yqlquery.Data
 }
 
 // ydbTransactionAttempts bounds how often a transaction YDB aborted for a
 // conflicting one is run again.
 const ydbTransactionAttempts = 5
 
-// commitYDBDataQuery runs one data query of a YDB body and the checkpoint that
+// commitDataQuery runs one data query of a YDB body and the checkpoint that
 // records it in one serializable transaction; see [dataQueryCommit].
-func (m *Migrator) commitYDBDataQuery(
+func (m *Migrator) commitDataQuery(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,

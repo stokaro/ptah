@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/revisiontable"
@@ -59,38 +58,15 @@ func (m *Migrator) qualifiedMigrationTagsTable() string {
 // stored under the Atlas layout's opaque string tokens. Resolving one to the
 // other is the reader's job, not the column's.
 func (m *Migrator) createMigrationTagsTableSQL() string {
-	qualifiedTable := m.qualifiedMigrationTagsTable()
-	switch platform.NormalizeDialect(m.connectionDialect()) {
-	case platform.SQLServer:
-		return fmt.Sprintf(`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(%s) AND type = 'U')
-BEGIN
-    CREATE TABLE %s (
-        tag NVARCHAR(255) NOT NULL PRIMARY KEY,
-        version BIGINT NOT NULL,
-        recorded_at DATETIME2 NOT NULL
-    )
-END`, sqlStringLiteral(m.sqlServerTagsObjectName()), qualifiedTable)
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    tag VARCHAR(255) NOT NULL PRIMARY KEY,
-    version BIGINT NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL
-)`, qualifiedTable)
-	case platform.YDB:
-		return ydbMigrationTagsTableDDL(qualifiedTable)
-	}
-	engineClause := ""
-	if implicitCommitDialect(m.connectionDialect()) {
-		engineClause = " ENGINE=InnoDB"
-	}
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    tag VARCHAR(255) NOT NULL PRIMARY KEY,
-    version BIGINT NOT NULL,
-    recorded_at TIMESTAMP NOT NULL
-)%s`, qualifiedTable, engineClause)
+	return expandTableStatement(
+		m.revisionTable().CreateTags,
+		m.qualifiedMigrationTagsTable(),
+		sqlStringLiteral(m.tagsObjectName()),
+		"",
+	)
 }
 
-func (m *Migrator) sqlServerTagsObjectName() string {
+func (m *Migrator) tagsObjectName() string {
 	schema := m.metadataTableSchemaName()
 	if schema == "" {
 		return m.migrationTagsTableName()
@@ -144,31 +120,7 @@ func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version i
 }
 
 func (m *Migrator) upsertMigrationTagSQL() string {
-	table := m.qualifiedMigrationTagsTable()
-	switch platform.NormalizeDialect(m.connectionDialect()) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite:
-		return fmt.Sprintf(
-			"INSERT INTO %s (tag, version, recorded_at) VALUES (?, ?, ?)"+
-				" ON CONFLICT (tag) DO UPDATE SET version = EXCLUDED.version,"+
-				" recorded_at = EXCLUDED.recorded_at",
-			table)
-	case platform.YDB:
-		// UPSERT writes the row whether or not the tag exists; it is YQL's
-		// own statement for this, and YQL has no ON DUPLICATE KEY.
-		return fmt.Sprintf("UPSERT INTO %s (tag, version, recorded_at) VALUES (?, ?, ?)", table)
-	case platform.SQLServer:
-		return fmt.Sprintf(
-			"MERGE %s AS target USING (SELECT ? AS tag, ? AS version, ? AS recorded_at) AS source"+
-				" ON target.tag = source.tag"+
-				" WHEN MATCHED THEN UPDATE SET version = source.version, recorded_at = source.recorded_at"+
-				" WHEN NOT MATCHED THEN INSERT (tag, version, recorded_at)"+
-				" VALUES (source.tag, source.version, source.recorded_at);",
-			table)
-	}
-	return fmt.Sprintf(
-		"INSERT INTO %s (tag, version, recorded_at) VALUES (?, ?, ?)"+
-			" ON DUPLICATE KEY UPDATE version = VALUES(version), recorded_at = VALUES(recorded_at)",
-		table)
+	return strings.NewReplacer("{table}", m.qualifiedMigrationTagsTable()).Replace(m.revisionTable().UpsertTag)
 }
 
 // ResolveMigrationTag returns the version a tag selects.
@@ -249,8 +201,8 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 	if !exists {
 		return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, normalized)
 	}
-	if m.usesDescribedMetadata() {
-		return m.deleteYDBMigrationTag(ctx, normalized)
+	if m.revisionTable().DeleteCountsKeys {
+		return m.deleteCountedMigrationTag(ctx, normalized)
 	}
 	query := sqlutil.Rebind(m.connectionDialect(),
 		fmt.Sprintf("DELETE FROM %s WHERE tag = ?", m.qualifiedMigrationTagsTable()))
@@ -300,17 +252,17 @@ func normalizeMigrationTag(tag string) (string, error) {
 // a tag that silently collides with another.
 const migrationTagMaxLength = 255
 
-// deleteYDBMigrationTag removes a tag on YDB, where the count of rows a DELETE
-// affected cannot say whether the tag existed: ydb-go-sdk counts the rows the
-// statement's plan deleted, and a DELETE by key counts its key whether a row
-// held it or not. Measured on 26.2.1.14, deleting a tag that was already gone
-// reported one row affected. So the tag is counted and deleted in one
-// serializable transaction, which YDB aborts rather than let a concurrent
-// write change what the count saw.
-func (m *Migrator) deleteYDBMigrationTag(ctx context.Context, tag string) error {
+// deleteCountedMigrationTag removes a tag where the count of rows a DELETE
+// affected cannot say whether the tag existed. On YDB ydb-go-sdk counts the
+// rows the statement's plan deleted, and a DELETE by key counts its key
+// whether a row held it or not: measured on 26.2.1.14, deleting a tag that
+// was already gone reported one row affected. So the tag is counted and
+// deleted in one serializable transaction, which the engine aborts rather
+// than let a concurrent write change what the count saw.
+func (m *Migrator) deleteCountedMigrationTag(ctx context.Context, tag string) error {
 	table := m.qualifiedMigrationTagsTable()
 	for attempt := range ydbTransactionAttempts {
-		found, err := m.tryDeleteYDBMigrationTag(ctx, table, tag)
+		found, err := m.tryDeleteCountedMigrationTag(ctx, table, tag)
 		if err == nil && !found {
 			return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, tag)
 		}
@@ -327,14 +279,14 @@ func (m *Migrator) deleteYDBMigrationTag(ctx context.Context, tag string) error 
 	return nil
 }
 
-func (m *Migrator) tryDeleteYDBMigrationTag(ctx context.Context, table, tag string) (bool, error) {
+func (m *Migrator) tryDeleteCountedMigrationTag(ctx context.Context, table, tag string) (bool, error) {
 	tx, err := m.conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return false, err
 	}
 	var count int64
 	if err := tx.QueryRowContext(ctx,
-		sqlutil.Rebind(platform.YDB, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE tag = ?", table)), tag,
+		sqlutil.Rebind(m.connectionDialect(), fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE tag = ?", table)), tag,
 	).Scan(&count); err != nil {
 		_ = tx.Rollback()
 		return false, err
@@ -343,7 +295,7 @@ func (m *Migrator) tryDeleteYDBMigrationTag(ctx context.Context, table, tag stri
 		return false, tx.Rollback()
 	}
 	if _, err := tx.ExecContext(ctx,
-		sqlutil.Rebind(platform.YDB, fmt.Sprintf("DELETE FROM %s WHERE tag = ?", table)), tag,
+		sqlutil.Rebind(m.connectionDialect(), fmt.Sprintf("DELETE FROM %s WHERE tag = ?", table)), tag,
 	); err != nil {
 		_ = tx.Rollback()
 		return false, err

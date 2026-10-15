@@ -90,14 +90,6 @@ func Test_migrationTablePresenceQuery_HappyPath(t *testing.T) {
 	}
 }
 
-func Test_metadataInformationSchemaName_SpannerUsesConnectionSchema(t *testing.T) {
-	c := qt.New(t)
-
-	got := metadataInformationSchemaName(platform.Spanner, "public", "")
-
-	c.Assert(got, qt.Equals, "public")
-}
-
 func Test_migrationTablePresenceQuery_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -107,9 +99,9 @@ func Test_migrationTablePresenceQuery_FailurePath(t *testing.T) {
 		{name: "a dialect it does not know", dialect: "unsupported",
 			wantErr: `unsupported migration metadata dialect "unsupported"`},
 		// YDB has no catalog SQL could ask, and its tables are described
-		// instead; a query for it would be another dialect's.
+		// through the reader instead, so it has no catalog service.
 		{name: "ydb is described, not queried", dialect: platform.YDB,
-			wantErr: `YDB migration metadata is described through the scheme service, not queried`},
+			wantErr: `unsupported migration metadata dialect "ydb"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ package migrator
 // below are where the Oracle spelling is decided, and they are package-local.
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -78,20 +79,27 @@ func TestAtlasRevisionsTableDDL_SpellsTheTableOracleTakes(t *testing.T) {
 	}
 }
 
-// TestOracleCreateTableIfAbsent_CarriesTheStatementAsALiteral pins the quoting.
+// TestOracleRevisionTable_CarriesTheStatementAsALiteral pins the quoting.
 // The CREATE travels inside EXECUTE IMMEDIATE as a string, so a quote left
 // single would end the literal early, and a quoted table name has to survive
 // with its case.
-func TestOracleCreateTableIfAbsent_CarriesTheStatementAsALiteral(t *testing.T) {
+func TestOracleRevisionTable_CarriesTheStatementAsALiteral(t *testing.T) {
 	c := qt.New(t)
 
-	block := oracleCreateTableIfAbsent(`CREATE TABLE "it's" (x VARCHAR2(1) DEFAULT 'a')`)
+	block := ptahRevisionsTableDDL(platform.Oracle, `"it's"`, "", "")
 
-	c.Assert(block, qt.Equals, `DECLARE
-    already_exists EXCEPTION;
-    PRAGMA EXCEPTION_INIT(already_exists, -955);
+	c.Assert(block, qt.Contains, `
 BEGIN
-    EXECUTE IMMEDIATE 'CREATE TABLE "it''s" (x VARCHAR2(1) DEFAULT ''a'')';
+    EXECUTE IMMEDIATE 'CREATE TABLE "it''s" (
+    version NUMBER(19) PRIMARY KEY,`)
+	c.Assert(block, qt.Contains, `    state VARCHAR2(32) DEFAULT ''applied'' NOT NULL,`)
+	c.Assert(strings.HasSuffix(block, `
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`), qt.IsTrue, qt.Commentf("%s", block))
+	c.Assert(block, qt.Contains, `
+)';
 EXCEPTION
     WHEN already_exists THEN NULL;
 END;`)

@@ -6,84 +6,11 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 )
 
-// The YDB spelling of the migrator's tables.
-//
-// YQL has no inline PRIMARY KEY, so each key is a table-level clause. Every
-// integer column is Int64, because the YDB connection widens a Go int to 64
-// bits and YDB refuses an Int64 value for an Int32 column. Every text column is
-// Utf8; partial_hashes too, since a Utf8 value cannot be written to a Json or
-// JsonDocument column (measured on YDB 26.2.1.14: `Failed to convert 'j': Utf8
-// to Optional<JsonDocument>`, and the same for String), so the column holds the
-// JSON document as text, as it does on SQL Server and ClickHouse. Timestamp
-// rather than Timestamp64, because every line Ptah supports has it and a
-// revision is never older than 1970. No column has a default: the migrator
-// writes every column of every row it inserts.
-
-func ydbRevisionsTableDDL(qualifiedTable string) string {
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version Int64 NOT NULL,
-    description Utf8 NOT NULL,
-    applied_at Timestamp NOT NULL,
-    state Utf8 NOT NULL,
-    applied Int64 NOT NULL,
-    total Int64 NOT NULL,
-    error Utf8,
-    error_stmt Utf8,
-    execution_time_ms Int64 NOT NULL,
-    checksum Utf8 NOT NULL,
-    PRIMARY KEY (version)
-)`, qualifiedTable)
-}
-
-func ydbAtlasRevisionsTableDDL(qualifiedTable string) string {
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version Utf8 NOT NULL,
-    description Utf8 NOT NULL,
-    type Int64 NOT NULL,
-    applied Int64 NOT NULL,
-    total Int64 NOT NULL,
-    executed_at Timestamp NOT NULL,
-    execution_time Int64 NOT NULL,
-    error Utf8,
-    error_stmt Utf8,
-    hash Utf8 NOT NULL,
-    partial_hashes Utf8,
-    operator_version Utf8 NOT NULL,
-    PRIMARY KEY (version)
-)`, qualifiedTable)
-}
-
-func ydbMigrationLogDDL(qualifiedTable string) string {
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    run_id Utf8 NOT NULL,
-    seq Int64 NOT NULL,
-    operation Utf8 NOT NULL,
-    version Int64 NOT NULL,
-    state Utf8 NOT NULL,
-    actor Utf8,
-    actor_source Utf8 NOT NULL,
-    checksum Utf8,
-    logged_at Timestamp NOT NULL,
-    error Utf8,
-    PRIMARY KEY (run_id, seq)
-)`, qualifiedTable)
-}
-
-func ydbMigrationTagsTableDDL(qualifiedTable string) string {
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    tag Utf8 NOT NULL,
-    version Int64 NOT NULL,
-    recorded_at Timestamp NOT NULL,
-    PRIMARY KEY (tag)
-)`, qualifiedTable)
-}
-
 // ydbNativeRevisionColumns are the columns of the native revision table, in
-// the order ydbRevisionsTableDDL declares them.
+// the order the YDB descriptor's revision table declares them.
 var ydbNativeRevisionColumns = []string{
 	"version", "description", "applied_at", "state", "applied", "total",
 	"error", "error_stmt", "execution_time_ms", "checksum",
@@ -98,9 +25,15 @@ type metadataTableDescriber interface {
 }
 
 // usesDescribedMetadata reports whether the migrator learns about its tables
-// by describing them rather than by querying a catalog.
+// by describing them rather than by querying a catalog: whether the
+// connection's schema reader can describe one of them, which the reader of an
+// engine with no catalog SQL could ask does.
 func (m *Migrator) usesDescribedMetadata() bool {
-	return platform.NormalizeDialect(m.connectionDialect()) == platform.YDB
+	if m.conn == nil {
+		return false
+	}
+	_, ok := m.conn.Reader().(metadataTableDescriber)
+	return ok
 }
 
 // describeMetadataTable returns the columns of the metadata table named table,
@@ -119,8 +52,8 @@ func (m *Migrator) describeMetadataTable(ctx context.Context, table string) ([]s
 }
 
 // metadataTableExists reports whether the metadata table named table exists,
-// asking the catalog through migrationTablePresenceQuery or, on YDB, by
-// describing it.
+// asking the engine's catalog or, where the connection's reader can describe
+// the table, describing it.
 func (m *Migrator) metadataTableExists(ctx context.Context, table string) (bool, error) {
 	if m.usesDescribedMetadata() {
 		_, exists, err := m.describeMetadataTable(ctx, table)

@@ -48,5 +48,31 @@ func sqlite() descriptor.Dialect {
 			Upsert:           descriptor.UpsertOnConflict,
 		},
 		Scripts: descriptor.Scripts{ClientDelimiters: true},
+
+		// Migrations: what the migrator reads.
+		DDLTransactions: "transactional",
+		RevisionTable:   sqliteRevisionTable(),
+	}
+}
+
+// sqliteRevisionTable is how SQLite keeps the migrator's tables. A schema
+// there is an attached database file, which the migrator does not create, and
+// a revision timestamp is bound as RFC 3339 text. Its DDL joins the
+// transaction, which the SQLite case of the revision-completion matrix
+// measures in process.
+func sqliteRevisionTable() descriptor.RevisionTable {
+	return descriptor.RevisionTable{
+		Create:         createRevisions,
+		CreateAtlas:    createAtlasRevisions,
+		CreateTags:     createTags,
+		CreateLog:      createLog,
+		FirstRow:       "limit",
+		Update:         updateRevision,
+		Respell:        respellRevision(),
+		UpsertTag:      upsertTagOnConflict,
+		VersionCast:    "BIGINT",
+		VersionLiteral: "standard",
+		DerivedTableAs: " AS",
+		TimeAsText:     true,
 	}
 }

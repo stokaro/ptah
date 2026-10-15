@@ -108,6 +108,16 @@ type Dialect struct {
 	// ALTER TABLE without blocking the writes running against the table:
 	// [OnlineAlterAlgorithmLock] or [OnlineAlterNotValid]. Empty has none.
 	OnlineAlter OnlineAlter `json:"online_alter,omitempty"`
+
+	// Migrations: what the migrator reads.
+
+	// DDLTransactions is the transaction contract the migrator implements for
+	// the engine's schema statements, spelled as internal/ddltx spells its
+	// classes: "transactional", "implicit_commit" or "no_transaction". Empty
+	// means nobody decided, which internal/ddltx reports as unclassified.
+	DDLTransactions string `json:"ddl_transactions,omitempty"`
+	// RevisionTable states how the migrator keeps its own tables.
+	RevisionTable RevisionTable `json:"revision_table,omitzero"`
 }
 
 // OnlineAlter is a grammar for asking the server to apply an ALTER TABLE

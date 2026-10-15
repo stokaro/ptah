@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 990,
+    "shared-packages-name-dialects": 804,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -32,7 +32,6 @@
       "internal/dbexprprobe": 6,
       "internal/dblock": 16,
       "internal/dburldisplay": 1,
-      "internal/ddltx": 11,
       "internal/deporder": 4,
       "internal/devclean": 87,
       "internal/devdocker": 7,
@@ -51,7 +50,6 @@
       "internal/parser": 66,
       "internal/ptahdirective": 9,
       "internal/reservedrole": 2,
-      "internal/revisiontable": 9,
       "internal/rlspolicy": 1,
       "internal/rolescope": 2,
       "internal/schemaclean": 30,
@@ -73,7 +71,6 @@
       "migration/internal/shadowdb": 1,
       "migration/internal/tableidentity": 1,
       "migration/lint": 22,
-      "migration/migrator": 166,
       "migration/schemadiff": 10,
       "migration/schemadiff/internal/compare": 49,
       "migration/seeder": 15,

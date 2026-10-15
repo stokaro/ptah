@@ -6,9 +6,10 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 )
 
 type noTransactionPrefixAction uint8
@@ -55,11 +56,12 @@ func (m *Migrator) withNoTransactionSession(
 		scoped := *m
 		scoped.noTransactionSession = conn
 		scoped.postgresIndexObservation = nil
-		if platform.NormalizeDialect(scoped.connectionDialect()) == platform.SQLite {
-			// In-memory SQLite has one physical connection, so using the pool for
-			// checkpoints while that connection is pinned would deadlock. Keep
-			// metadata on the session and qualify it against main so temporary
-			// objects cannot shadow the revision table.
+		if scoped.services().PinnedMetadata {
+			// A database with one physical connection, such as in-memory
+			// SQLite, would deadlock if checkpoints used the pool while that
+			// connection is pinned. Keep metadata on the session and qualify it
+			// against the connection's schema so temporary objects cannot
+			// shadow the revision table.
 			scoped.conn = conn
 			if scoped.migrationsSchema == "" {
 				scoped.migrationsSchema = scoped.connectionSchemaName()
@@ -115,7 +117,7 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 					err,
 				)
 			}
-			if changed, known := postgresSearchPathReplayState(statement); changed {
+			if changed, known := searchPathChange(m.services().Indexes, statement); changed {
 				searchPathKnowledge = postgresSearchPathUnknown
 				if known {
 					searchPathKnowledge = postgresSearchPathKnown
@@ -135,52 +137,29 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 	return nil
 }
 
-func postgresSearchPathReplayState(statement string) (changed, known bool) {
-	tokens := significantSQLTokens(statement, platform.Postgres)
-	if len(tokens) < 2 {
+// searchPathChange reports whether a replayed statement changes how an
+// unqualified name resolves, and whether the value it leaves is known. Only
+// the index guard reads the answer, so an engine without one has none.
+func searchPathChange(guard migratorext.IndexGuard, statement string) (changed, known bool) {
+	if guard == nil {
 		return false, false
 	}
-	if tokens[0].MatchIdentifierValue("RESET") {
-		if tokens[1].MatchIdentifierValue("ALL") || tokens[1].MatchIdentifierValue("SEARCH_PATH") {
-			return true, false
-		}
-		return false, false
-	}
-	if !tokens[0].MatchIdentifierValue("SET") {
-		return false, false
-	}
-	setting := 1
-	local := tokens[setting].MatchIdentifierValue("LOCAL")
-	if local || tokens[setting].MatchIdentifierValue("SESSION") {
-		setting++
-	}
-	if setting >= len(tokens) || !tokens[setting].MatchIdentifierValue("SEARCH_PATH") {
-		return false, false
-	}
-	if local {
-		return true, false
-	}
-	for _, token := range tokens[setting+1:] {
-		if matchesAnyKeyword(token, "DEFAULT", "CURRENT") || strings.Contains(strings.ToLower(token.Value), "$user") {
-			return true, false
-		}
-	}
-	return true, true
+	return guard.SearchPath(statement)
 }
 
 func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		// A YDB query carries every definition and setting it needs (see
-		// internal/yqlquery), and YDB keeps no session state between
-		// queries, so a committed one leaves nothing a resumed session has
-		// to replay.
+	services := builtin.Lookup(dialect)
+	if services.Units != nil {
+		// A query unit carries every definition and setting it needs, and
+		// the engine keeps no session state between queries, so a committed
+		// one leaves nothing a resumed session has to replay.
 		return noTransactionPrefixDurable
 	}
 	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) == 0 {
 		return noTransactionPrefixDurable
 	}
-	if createsTemporaryObject(tokens, dialect) {
+	if createsTemporaryObject(tokens, services) {
 		return noTransactionPrefixReject
 	}
 	if matchesAnyKeyword(tokens[0],
@@ -224,16 +203,20 @@ func isTransactionControlStatement(statement, dialect string) bool {
 	if len(tokens) == 0 {
 		return false
 	}
-	normalized := platform.NormalizeDialect(dialect)
-	return isPrimaryTransactionControl(tokens, normalized) || isSetTransactionControl(statement, dialect, tokens, normalized)
+	services := builtin.Lookup(dialect)
+	return isPrimaryTransactionControl(tokens, services) ||
+		isSetTransactionControl(statement, dialect, tokens, services)
 }
 
-func isPrimaryTransactionControl(tokens []lexer.Token, dialect string) bool {
+// isPrimaryTransactionControl reports whether a statement opens, ends or marks
+// a transaction. Where the engine's BEGIN and END delimit a block, only BEGIN
+// TRAN, BEGIN TRANSACTION and BEGIN DISTRIBUTED open one.
+func isPrimaryTransactionControl(tokens []lexer.Token, services migratorext.Services) bool {
 	first := tokens[0]
 	if matchesAnyKeyword(first, "COMMIT", "ROLLBACK", "SAVEPOINT", "ABORT") {
 		return true
 	}
-	if first.MatchIdentifierValue("END") && dialect != platform.SQLServer {
+	if first.MatchIdentifierValue("END") && !services.BlockBegin {
 		return true
 	}
 	if first.MatchIdentifierValue("XA") {
@@ -252,7 +235,7 @@ func isPrimaryTransactionControl(tokens []lexer.Token, dialect string) bool {
 		return len(tokens) > 1 && tokens[1].MatchIdentifierValue("TRANSACTION")
 	}
 	if first.MatchIdentifierValue("BEGIN") {
-		if dialect != platform.SQLServer {
+		if !services.BlockBegin {
 			return true
 		}
 		return len(tokens) > 1 && matchesAnyKeyword(tokens[1], "TRAN", "TRANSACTION", "DISTRIBUTED")
@@ -260,7 +243,7 @@ func isPrimaryTransactionControl(tokens []lexer.Token, dialect string) bool {
 	return false
 }
 
-func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, normalizedDialect string) bool {
+func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, services migratorext.Services) bool {
 	first := tokens[0]
 	if !first.MatchIdentifierValue("SET") {
 		return false
@@ -269,12 +252,11 @@ func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, no
 		containsIdentifierSequence(statement, dialect, "IMPLICIT_TRANSACTIONS") {
 		return true
 	}
-	return (normalizedDialect == platform.MySQL || normalizedDialect == platform.MariaDB) &&
-		containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
+	return services.AutocommitControl && containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
 }
 
-func createsTemporaryObject(tokens []lexer.Token, dialect string) bool {
-	if platform.NormalizeDialect(dialect) == platform.SQLServer && slices.ContainsFunc(tokens, isSQLServerTemporaryIdentifier) {
+func createsTemporaryObject(tokens []lexer.Token, services migratorext.Services) bool {
+	if services.HashTemporaryNames && slices.ContainsFunc(tokens, isHashTemporaryIdentifier) {
 		return true
 	}
 	if !tokens[0].MatchIdentifierValue("CREATE") {
@@ -288,7 +270,9 @@ func createsTemporaryObject(tokens []lexer.Token, dialect string) bool {
 	return false
 }
 
-func isSQLServerTemporaryIdentifier(token lexer.Token) bool {
+// isHashTemporaryIdentifier reports whether a token names a temporary object
+// by a leading #, bracket-quoted or not.
+func isHashTemporaryIdentifier(token lexer.Token) bool {
 	if token.Type != lexer.TokenIdentifier {
 		return false
 	}

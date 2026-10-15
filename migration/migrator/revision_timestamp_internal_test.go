@@ -3,9 +3,12 @@ package migrator
 // White-box testing required: the revision table is created before any Ptah
 // command reports anything, so a type the target does not have surfaces as a
 // driver error from inside initialization and never as a value a black-box test
-// could read. revisionTimestampType is where the decision is made.
+// could read. The engine's revision table statement is where the decision is
+// made.
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -29,7 +32,7 @@ import (
 // and what six engines accept, so a change that spelled TIMESTAMPTZ everywhere
 // would rewrite the column type under every existing PostgreSQL and MySQL
 // deployment; it would also pass a table that only checked Spanner.
-func TestRevisionTimestampType_SpannerHasNoTimestamp(t *testing.T) {
+func TestPtahRevisionsTableDDL_SpannerHasNoTimestamp(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
@@ -64,7 +67,7 @@ func TestRevisionTimestampType_SpannerHasNoTimestamp(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(revisionTimestampType(test.dialect), qt.Equals, test.want)
+			c.Assert(ptahRevisionsTableDDL(test.dialect, "t", "", ""), qt.Contains, "\n    applied_at "+test.want+" NOT NULL,\n")
 		})
 	}
 }
@@ -155,7 +158,9 @@ func TestIsPostgresFamily_SpannerIsExcludedOnPurpose(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(usesPostgresMetadataQueries(test.dialect), qt.Equals, test.migrator)
+			query, _, err := migrationTablePresenceQuery(test.dialect, "", "public", "schema_migrations", strconv.Quote)
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Contains(query, "current_schema()"), qt.Equals, test.migrator)
 			c.Assert(platform.IsPostgresFamily(test.dialect), qt.Equals, test.exported)
 		})
 	}

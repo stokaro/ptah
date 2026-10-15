@@ -62,5 +62,9 @@ func mariaDB() descriptor.Dialect {
 
 		// The grammars the planner asks for non-blocking DDL in.
 		OnlineAlter: descriptor.OnlineAlterAlgorithmLock,
+
+		// Migrations: what the migrator reads.
+		DDLTransactions: "implicit_commit",
+		RevisionTable:   mysqlFamilyRevisionTable(),
 	}
 }

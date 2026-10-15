@@ -58,5 +58,12 @@ func yugabyteDB() descriptor.Dialect {
 		// The grammars the planner asks for non-blocking DDL in.
 		ConcurrentIndexes: true,
 		OnlineAlter:       descriptor.OnlineAlterNotValid,
+
+		// Migrations: what the migrator reads.
+		// The PostgreSQL driver and the transactional migrator path PostgreSQL
+		// takes, so this is the contract that code implements; no live
+		// revision-completion test drives it yet.
+		DDLTransactions: "transactional",
+		RevisionTable:   postgresFamilyRevisionTable(),
 	}
 }
