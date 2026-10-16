@@ -102,7 +102,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --enable-only=gosec --output.sarif.path=gosec.sarif --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
 
       # The tagged contour: every opt-in build tag the tree uses at once, as
       # scripts/list-build-tags.sh lists them. A tagged file is outside the
@@ -116,7 +116,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --enable-only=gosec --build-tags=integration,observability --output.sarif.path=gosec-integration.sarif --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
 
       # One upload per contour, each under its own category. The pinned
       # upload-sarif refuses two runs from one tool under one category: it
