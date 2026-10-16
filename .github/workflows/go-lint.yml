@@ -341,7 +341,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
 
       # The tagged contour: every opt-in build tag the tree uses at once, as
       # scripts/list-build-tags.sh lists them. A file behind a tag is not in the
@@ -354,7 +354,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m --build-tags=integration,observability
-          version: v2.14.0
+          version: v2.15.0
 
       # The action lints one directory per invocation, so a nested module needs
       # its own step, one per contour. scripts/check-go-module-lint-coverage.sh
@@ -371,28 +371,28 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
           working-directory: examples/orm-loaders/gorm
 
       - name: Golint (gorm example, tagged contour)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m --build-tags=integration,observability
-          version: v2.14.0
+          version: v2.15.0
           working-directory: examples/orm-loaders/gorm
 
       - name: Golint (documentation source fixture)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
           working-directory: docs/site/fixtures/source-equivalence
 
       - name: Golint (documentation source fixture, tagged contour)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m --build-tags=integration,observability
-          version: v2.14.0
+          version: v2.15.0
           working-directory: docs/site/fixtures/source-equivalence
 
   go-lint-gate:
@@ -499,7 +499,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
           # A paired Windows run took 15m51s with cache restore, 7m33s without
           # it (#3984). Extracting the 70 MiB cache alone took 6m26s.
           skip-cache: true
@@ -511,7 +511,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m --build-tags=integration,observability
-          version: v2.14.0
+          version: v2.15.0
           skip-cache: true
 
       # The action lints one directory per invocation, so a nested module needs
@@ -529,7 +529,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
           skip-cache: true
           working-directory: examples/orm-loaders/gorm
 
@@ -537,7 +537,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m --build-tags=integration,observability
-          version: v2.14.0
+          version: v2.15.0
           skip-cache: true
           working-directory: examples/orm-loaders/gorm
 
@@ -545,7 +545,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.14.0
+          version: v2.15.0
           skip-cache: true
           working-directory: docs/site/fixtures/source-equivalence
 
@@ -553,6 +553,6 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m --build-tags=integration,observability
-          version: v2.14.0
+          version: v2.15.0
           skip-cache: true
           working-directory: docs/site/fixtures/source-equivalence
