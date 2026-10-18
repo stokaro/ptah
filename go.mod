@@ -144,7 +144,7 @@ require (
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
-	github.com/shopspring/decimal v1.5.0 // indirect
+	github.com/shopspring/decimal v1.6.0 // indirect
 	github.com/stokaro/teststyle v0.2.0 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
 	github.com/yandex-cloud/go-genproto v0.128.0 // indirect
