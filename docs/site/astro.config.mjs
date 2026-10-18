@@ -116,6 +116,9 @@ export default defineConfig({
         MobileTableOfContents: './src/components/MobileTableOfContents.astro',
         Footer: './src/components/Footer.astro',
         Head: './src/components/Head.astro',
+        // Upstream's search button, with the shortcut hint in its accessible
+        // name so that it contains the visible text.
+        Search: './src/components/Search.astro',
         // Upstream's content wrapper, plus the FAQ tag rail. The FAQ cannot be
         // MDX -- its anchors are `{#id}`, which MDX reads as an expression -- so
         // the component comes to the page instead of the page importing it.
