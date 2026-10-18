@@ -1,0 +1,32 @@
+---
+/**
+ * The search button. Registered in astro.config.mjs as the override of
+ * Starlight's Search; it renders the default component and one inline script
+ * that puts the shortcut hint into the button's accessible name.
+ *
+ * Upstream labels the button "Search documentation" and also shows the
+ * shortcut ("Ctrl K", or the command key on Apple platforms) as visible text.
+ * WCAG 2.5.3 wants the accessible name to contain the visible text, and axe
+ * 4.14 reports `label-content-name-mismatch` on the button while it does not.
+ * The hint is platform-dependent and Starlight sets it in its own inline
+ * script, which runs before this one, so the name is built here from what the
+ * button shows.
+ */
+import Default from '@astrojs/starlight/components/Search.astro';
+---
+
+<Default {...Astro.props} />
+
+<script is:inline>
+	(function () {
+		var button = document.querySelector('site-search button[data-open-modal]');
+		if (!button) return;
+		var label = button.getAttribute('aria-label');
+		var keys = Array.prototype.map
+			.call(button.querySelectorAll('kbd kbd'), function (key) {
+				return key.textContent;
+			})
+			.join(' ');
+		if (label && keys) button.setAttribute('aria-label', label + ' ' + keys);
+	})();
+</script>
