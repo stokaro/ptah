@@ -7,6 +7,7 @@
 package mysqlcomparison
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/normalize"
@@ -31,8 +33,8 @@ func Rules(dialect string) schemacomparison.Rules {
 		Indexes:              Indexes{dialect: dialect},
 		GeneratedExpressions: GeneratedExpressions{},
 		ForeignKeyIndexes: ForeignKeyIndexes{
-			dialect:          dialect,
 			numbersKeys:      described.ForeignKeyNaming == descriptor.ForeignKeyNamingTableNumbered,
+			nameRules:        described.ForeignKeyNameRules,
 			descendingCovers: described.IndexNaming.DescendingCovers,
 		},
 	}
@@ -170,12 +172,14 @@ func (GeneratedExpressions) Spelling(expression string) string {
 
 // ForeignKeyIndexes finds the index MySQL or MariaDB built for a foreign key.
 type ForeignKeyIndexes struct {
-	dialect string
 	// numbersKeys is whether the descriptor's ForeignKeyNaming is
 	// descriptor.ForeignKeyNamingTableNumbered: the server names a key
 	// written without a name by the rules of [mysqlname], and the index it
 	// builds for the key after the key's first column.
 	numbersKeys bool
+	// nameRules is the descriptor's ForeignKeyNameRules: which other names
+	// the server gives a key written without one.
+	nameRules descriptor.ForeignKeyNameRules
 	// descendingCovers is the descriptor's IndexNaming.DescendingCovers: an
 	// index whose leading parts descend can still back a key.
 	descendingCovers bool
@@ -273,13 +277,31 @@ func (f ForeignKeyIndexes) engineCouldNameIndex(
 	if identifiersEqual(semantics, index.Name, key.Name) {
 		return true
 	}
-	if !f.numbersKeys || !mysqlname.IsServerForeignKeyName(f.dialect, key.TableName, key.Name) {
+	if !f.numbersKeys || !mysqlname.IsServerForeignKeyName(f.nameRules, key.TableName, key.Name) {
 		return false
 	}
-	return mysqlname.IsUnnamedKeyIndexName(firstColumn, index.Name, func(a, b string) bool {
+	return mysqlname.IsUnnamedKeyIndexName(familyBaseBytes.Get(), firstColumn, index.Name, func(a, b string) bool {
 		return identifiersEqual(semantics, a, b)
 	})
 }
+
+// familyBaseBytes are the IndexNaming.BaseBytes the registered dialects of
+// the table-numbered foreign key naming state, each once and none zero, in
+// registry order. The index name is accepted cut as any of them would cut it,
+// because a database one engine of the family built can be read on another:
+// a MySQL dump loaded into MariaDB keeps the index MySQL named, and the
+// comparison would otherwise plan to drop an index the key needs.
+var familyBaseBytes = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []int {
+	var cuts []int
+	for _, described := range dialects {
+		bytes := described.IndexNaming.BaseBytes
+		if described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered || bytes == 0 || slices.Contains(cuts, bytes) {
+			continue
+		}
+		cuts = append(cuts, bytes)
+	}
+	return cuts
+})
 
 // anotherIndexCoversForeignKey reports whether some index other than the
 // candidate already serves the key, which is what makes the candidate the

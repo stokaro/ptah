@@ -115,7 +115,9 @@ func mariaDB() descriptor.Dialect {
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
+		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
+		// A name an index takes after a column keeps the whole column before
+		// `_2` and on, where MySQL cuts it.
 		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
 		CheckNaming: descriptor.CheckNamingColumnOrConstraint,
 
@@ -227,9 +229,14 @@ func mariaDB() descriptor.Dialect {
 					Refused: []string{"INVISIBLE"},
 					Refusal: "it is MySQL's clause, and MariaDB 11.8.9 answers ERROR 1064; MariaDB spells it IGNORED",
 				},
-				BareUniqueName:       true,
-				ForeignKeyIndexName:  true,
-				RefusesNullsDistinct: true,
+				BareUniqueName:      true,
+				ForeignKeyIndexName: true,
+				// Measured on 11.8.9, `FOREIGN KEY idx_c_p (p_id) REFERENCES
+				// p(id)` with no CONSTRAINT symbol holds the key idx_c_p over
+				// the index idx_c_p, in CREATE TABLE and in ALTER TABLE ... ADD.
+				// MySQL 8.4.11 and 26.7.0 hold the key c_ibfk_1 over the index.
+				ForeignKeyIndexNameNamesKey: true,
+				RefusesNullsDistinct:        true,
 			},
 			AlterTable: descriptor.AlterTableGrammar{
 				AddIndex:           true,
@@ -266,5 +273,13 @@ func mariaDB() descriptor.Dialect {
 		// Reach: none of its own. MariaDB's constructs that reach outside the
 		// database are MySQL's, which MySQL's descriptor states and a scan
 		// refuses on every engine.
+
+		// Foreign key name rules: where MariaDB keeps other names than MySQL.
+		// Measured over a utf8mb4 connection on 11.8.9, CREATE TABLE answers
+		// ERROR 1059 to a derived name of 64 characters, and ALTER TABLE cuts
+		// a longer one to 64 without a warning. Measured on 12.1.2, 12.2.2 and
+		// 12.3.3, an unnamed key is `<n>` where 12.0.2 and earlier write
+		// `<table>_ibfk_<n>`.
+		ForeignKeyNameRules: descriptor.ForeignKeyNameRules{CreateTableMaxChars: 63, BareNumbers: true},
 	}
 }

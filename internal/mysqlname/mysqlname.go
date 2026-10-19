@@ -12,11 +12,14 @@
 // changes.
 //
 // The rules were measured on MySQL 8.4.11, MySQL 26.7.0 and MariaDB 11.8.9,
-// and the cut of a long index name on MySQL 9.7.2. The engines agree on every
-// rule here except the two [ClauseIndexNamesKey] and [IsUnnamedKeyIndexName]
-// state. The package speaks for a dialect whose descriptor states
-// descriptor.ForeignKeyNamingTableNumbered as its ForeignKeyNaming, and a
-// caller reads the descriptor before it asks the package.
+// and the cut of a long index name on MySQL 9.7.2. The package speaks for a
+// dialect whose descriptor states descriptor.ForeignKeyNamingTableNumbered as
+// its ForeignKeyNaming, and a caller reads the descriptor before it asks the
+// package. Where the engines of that naming differ, the descriptor states the
+// difference, and the caller passes what it states: the ForeignKeyNameRules,
+// the IdentifierLimit and the IndexNaming's BaseBytes. Whether the name
+// written between FOREIGN KEY and its columns names the key is the parser's
+// to read, from Grammar.Keys.ForeignKeyIndexNameNamesKey.
 //
 // MariaDB changed the name at 12.1 and kept the numbering. Measured on
 // 10.11.19, 11.4.13, 11.8.9 and 12.0.2, an unnamed key is `<table>_ibfk_<n>`;
@@ -34,38 +37,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 )
 
 // foreignKeyLabel sits between a table's name and the number of a foreign key
 // the server named.
 const foreignKeyLabel = "_ibfk_"
-
-// IndexBaseBytes is how much of a column name MySQL keeps before the `_<n>` it
-// appends to an index name that is taken: 61 bytes, whatever the suffix costs.
-// Measured on MySQL 9.7.2, a 64-character column yields a 63-character `_2`
-// and a 64-character `_10`. MariaDB does not cut the name; see
-// [IsUnnamedKeyIndexName].
-const IndexBaseBytes = 61
-
-// ClauseIndexNamesKey reports whether the identifier the MySQL family allows
-// between FOREIGN KEY and its column list names the key itself on dialect.
-//
-// The two engines disagree. Measured, `FOREIGN KEY idx_c_p (p_id) REFERENCES
-// p(id)` with no CONSTRAINT symbol, in CREATE TABLE and in ALTER TABLE ... ADD:
-//
-//	engine          key          index
-//	MySQL 8.4.11    c_ibfk_1     idx_c_p
-//	MySQL 26.7.0    c_ibfk_1     idx_c_p
-//	MariaDB 11.8.9  idx_c_p      idx_c_p
-//
-// So on MariaDB the identifier is the key's name, and on MySQL it names only
-// the index the server builds for the key, which is then named like any other
-// unnamed key. With a symbol, `CONSTRAINT sym FOREIGN KEY idx_c_p (p_id)`, both
-// engines name the key and its index `sym` and keep nothing of `idx_c_p`.
-func ClauseIndexNamesKey(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.MariaDB
-}
 
 // ForeignKey answers the name the server gives the foreign key numbered n of
 // table: `<table>_ibfk_<n>`, with the table spelled as it was declared.
@@ -102,14 +79,16 @@ const (
 )
 
 // ForeignKeyNameLimit answers the longest name, in characters, that a server
-// of dialect keeps as it derived it for an unnamed foreign key the statement
-// declares.
+// keeps as it derived it for an unnamed foreign key the statement declares:
+// the CreateTableMaxChars of rules in CREATE TABLE where rules state one, and
+// otherwise the Max of limit, the dialect's IdentifierLimit, which a
+// descriptor of this naming states in characters.
 //
 // MySQL refuses a longer name in either statement with `ERROR 1059 (42000):
-// Identifier name ... is too long`. MariaDB through 12.0 refuses a name of
-// [MaxIdentifierChars] characters in CREATE TABLE with the same error, and in
-// ALTER TABLE cuts a longer name to MaxIdentifierChars without a warning.
-// Measured over a utf8mb4 connection, with the length of the derived name:
+// Identifier name ... is too long`. MariaDB through 12.0 refuses a name of 64
+// characters, its identifier limit, in CREATE TABLE with the same error, and
+// in ALTER TABLE cuts a longer name to 64 without a warning. Measured over a
+// utf8mb4 connection, with the length of the derived name:
 //
 //	statement                     name  MySQL 8.4.11, 26.7.0  MariaDB 11.8.9
 //	CREATE TABLE, 56-char table   63    kept                  kept
@@ -128,11 +107,11 @@ const (
 // write the key's number instead of this name and keep the document; the
 // reader cannot tell the lines apart, and the refusal holds on those lines
 // too.
-func ForeignKeyNameLimit(dialect string, statement Statement) int {
-	if platform.NormalizeDialect(dialect) == platform.MariaDB && statement == CreateTable {
-		return MaxIdentifierChars - 1
+func ForeignKeyNameLimit(rules descriptor.ForeignKeyNameRules, limit descriptor.IdentifierLimit, statement Statement) int {
+	if statement == CreateTable && rules.CreateTableMaxChars != 0 {
+		return rules.CreateTableMaxChars
 	}
-	return MaxIdentifierChars
+	return limit.Max
 }
 
 // ForeignKeyNumber answers the number of a foreign key name ALTER TABLE counts
@@ -169,9 +148,10 @@ func IsForeignKeyName(table, name string) bool {
 	return ok
 }
 
-// IsNumberedForeignKeyName reports whether name is one MariaDB 12.1 and later
-// give a foreign key left unnamed: a positive number written without a leading
-// zero, which is the only way the server writes it.
+// IsNumberedForeignKeyName reports whether name is one a server whose rules
+// state BareNumbers gives a foreign key left unnamed: a positive number
+// written without a leading zero, which is the only way the server writes it.
+// MariaDB 12.1 and later name a key so.
 //
 // Those lines number unnamed keys by the rules [ForeignKey] and
 // [NextForeignKeyNumber] state and write only the number. Measured on 12.1.2,
@@ -188,17 +168,17 @@ func IsForeignKeyName(table, name string) bool {
 // the other. Unlike the older scheme, the name is the table's own: an
 // unnamed key of `c` beside `CONSTRAINT c_ibfk_1` on another table, or on `c`
 // itself, is accepted.
-func IsNumberedForeignKeyName(dialect, name string) bool {
-	return platform.NormalizeDialect(dialect) == platform.MariaDB && isNumber(name)
+func IsNumberedForeignKeyName(rules descriptor.ForeignKeyNameRules, name string) bool {
+	return rules.BareNumbers && isNumber(name)
 }
 
-// IsServerForeignKeyName reports whether name is one the server of dialect
-// could have given a foreign key of table that the statement left unnamed, in
-// either scheme the package describes. It answers for a server that names
-// unnamed keys by this package's rules; the caller asks the dialect's
-// descriptor whether its server does.
-func IsServerForeignKeyName(dialect, table, name string) bool {
-	return IsForeignKeyName(table, name) || IsNumberedForeignKeyName(dialect, name)
+// IsServerForeignKeyName reports whether name is one a server with rules could
+// have given a foreign key of table that the statement left unnamed, in either
+// scheme the package describes. It answers for a server that names unnamed
+// keys by this package's rules; the caller asks the dialect's descriptor
+// whether its server does, and passes the descriptor's ForeignKeyNameRules.
+func IsServerForeignKeyName(rules descriptor.ForeignKeyNameRules, table, name string) bool {
+	return IsForeignKeyName(table, name) || IsNumberedForeignKeyName(rules, name)
 }
 
 // NextForeignKeyNumber answers the number ALTER TABLE gives the first unnamed
@@ -240,10 +220,13 @@ func NextForeignKeyNumber(table string, held []string) int {
 // MariaDB 11.8.9: `FOREIGN KEY (p_id)` builds `p_id`, `FOREIGN KEY (a, b)`
 // builds `a`, and a table already holding an index called `p_id` gets `p_id_2`.
 // MySQL cuts the column's name to 61 bytes before the number, and MariaDB does
-// not cut it, so both spellings are the server's. A key with a name builds an
-// index under the key's name instead. same decides when two names are one,
-// because the server compares index names without case.
-func IsUnnamedKeyIndexName(column, index string, same func(a, b string) bool) bool {
+// not cut it; see [IndexName]. baseBytes are the cuts to accept, each one an
+// IndexNaming.BaseBytes, and the whole name is accepted beside them. A caller
+// passes every cut its family states, because a database one engine of the
+// family built can be read on another. A key with a name builds an index under
+// the key's name instead. same decides when two names are one, because the
+// server compares index names without case.
+func IsUnnamedKeyIndexName(baseBytes []int, column, index string, same func(a, b string) bool) bool {
 	if column == "" {
 		return false
 	}
@@ -254,41 +237,48 @@ func IsUnnamedKeyIndexName(column, index string, same func(a, b string) bool) bo
 	if cut < 0 || !isNumber(index[cut+1:]) || index[cut+1:] == "1" {
 		return false
 	}
-	return same(index[:cut], column) || same(index[:cut], indexBase(column))
+	if same(index[:cut], column) {
+		return true
+	}
+	for _, bytes := range baseBytes {
+		if same(index[:cut], indexBase(column, bytes)) {
+			return true
+		}
+	}
+	return false
 }
 
-// IndexName answers the name a server of dialect gives an index it names after
-// base: base itself where no index of the table holds it, and otherwise base
+// IndexName answers the name a server gives an index it names after base:
+// base itself where no index of the table holds it, and otherwise base
 // followed by `_2`, `_3` and on, the first that is free. taken reports whether
 // the table holds a name, and compares as the server compares index names,
-// without case.
+// without case. baseBytes is the dialect's IndexNaming.BaseBytes: the bytes of
+// base the server keeps before the number, or zero to keep base whole.
 //
-// MySQL cuts base to [IndexBaseBytes] bytes before the number, on a character
-// boundary; MariaDB keeps it whole. Measured on MySQL 9.7.2, a 64-character
-// column yields a 63-character `_2` and a 64-character `_10`. The server cuts
-// inside a character where the byte count falls there, and then refuses the name
-// it built; this cut stops before the character, so the name is one the server
+// MySQL cuts base to 61 bytes before the number, on a character boundary;
+// MariaDB keeps it whole. Measured on MySQL 9.7.2, a 64-character column
+// yields a 63-character `_2` and a 64-character `_10`. The server cuts inside a
+// character where the byte count falls there, and then refuses the name it
+// built; this cut stops before the character, so the name is one the server
 // accepts. The SQL reader names every index the server names by this, and the
 // comparison names a column's own UNIQUE by it, so both answer the same.
-func IndexName(dialect, base string, taken func(string) bool) string {
+func IndexName(baseBytes int, base string, taken func(string) bool) string {
 	candidate := base
-	prefix := base
-	if platform.NormalizeDialect(dialect) == platform.MySQL {
-		prefix = indexBase(base)
-	}
+	prefix := indexBase(base, baseBytes)
 	for suffix := 2; taken(candidate); suffix++ {
 		candidate = prefix + "_" + strconv.Itoa(suffix)
 	}
 	return candidate
 }
 
-// indexBase is the part of a column name MySQL keeps before it appends a
-// number, cut on a character boundary.
-func indexBase(column string) string {
-	if len(column) <= IndexBaseBytes {
+// indexBase is the part of a column name a server keeps before it appends a
+// number: its first bytes, cut on a character boundary, or the whole name
+// where bytes is zero or the name fits in that many bytes.
+func indexBase(column string, bytes int) string {
+	if bytes <= 0 || len(column) <= bytes {
 		return column
 	}
-	cut := IndexBaseBytes
+	cut := bytes
 	for cut > 0 && !utf8.RuneStart(column[cut]) {
 		cut--
 	}

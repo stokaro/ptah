@@ -22,7 +22,8 @@ import (
 //     and MariaDB; normalizeGrantee read PUBLIC through roleName on the
 //     PostgreSQL family.
 //   - namingFor named indexes on MySQL (64 bytes, `functional_index`) and
-//     MariaDB (64 bytes, a descending key covers a foreign key); DROP INDEX
+//     MariaDB (64 bytes, a descending key covers a foreign key), and
+//     mysqlname.IndexName cut the base to 61 bytes on MySQL alone; DROP INDEX
 //     and MODIFY read a UNIQUE as an index on both; primaryKeyIndexName named
 //     an unnamed primary key `<table>_pkey` on the PostgreSQL family.
 //   - the CHECK naming was MySQL's `<table>_chk_<n>` and MariaDB's column
@@ -57,9 +58,11 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: "plpgsql"},
 		},
 		{
-			dialect:     platform.MySQL,
-			names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
-			indexNaming: descriptor.IndexNaming{MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true},
+			dialect: platform.MySQL,
+			names:   descriptor.Names{Lookup: "unicode_case_insensitive"},
+			indexNaming: descriptor.IndexNaming{
+				MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
+			},
 			checkNaming: descriptor.CheckNamingTableNumbered,
 			columns:     descriptor.Columns{CheckOwnColumnOnly: true},
 		},

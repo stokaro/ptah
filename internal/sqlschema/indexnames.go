@@ -108,9 +108,9 @@ func (n indexNames) claim(name string) {
 // off documentation. A family-wide rule is what produced the defect this
 // replaces: the two agree on the namespace and disagree on the length.
 type engineIndexNaming struct {
-	// dialect is the engine, which [mysqlname.IndexName] reads for how much of
-	// a base name survives before a `_N` suffix.
-	dialect string
+	// baseBytes is the descriptor's IndexNaming.BaseBytes: how much of a base
+	// name survives before a `_N` suffix, which [mysqlname.IndexName] reads.
+	baseBytes int
 	// maxBytes is the longest index name the engine accepts.
 	maxBytes int
 	// functionalBase is the name the engine gives an index whose first key
@@ -572,7 +572,7 @@ func derive(
 // firstFree is the first name of the server's sequence for column that nothing
 // claimed holds; see [mysqlname.IndexName].
 func firstFree(claimed indexNames, column string, naming engineIndexNaming) string {
-	return mysqlname.IndexName(naming.dialect, column, claimed.taken)
+	return mysqlname.IndexName(naming.baseBytes, column, claimed.taken)
 }
 
 // namingFor answers which engine's rules apply, and whether any do: the
@@ -592,7 +592,7 @@ func namingFor(dialect string) (engineIndexNaming, bool) {
 		return engineIndexNaming{}, false
 	}
 	return engineIndexNaming{
-		dialect:          facts.name,
+		baseBytes:        facts.indexNaming.BaseBytes,
 		maxBytes:         facts.indexNaming.MaxBytes,
 		functionalBase:   facts.indexNaming.FunctionalBase,
 		descendingCovers: facts.indexNaming.DescendingCovers,

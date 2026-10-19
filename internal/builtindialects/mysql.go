@@ -123,8 +123,13 @@ func mysql() descriptor.Dialect {
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
-		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true},
+		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
+		// A name an index takes after a column keeps 61 bytes of the column
+		// before `_2` and on: measured on 9.7.2, a 64-character column yields a
+		// 63-character `_2` and a 64-character `_10`.
+		IndexNaming: descriptor.IndexNaming{
+			MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
+		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
 		Columns:     descriptor.Columns{CheckOwnColumnOnly: true},
 
@@ -281,6 +286,11 @@ func mysql() descriptor.Dialect {
 		// Reach: the constructs of the MySQL family that reach outside the
 		// database, which a scan refuses on every engine.
 		Reach: descriptor.Reach{Everywhere: mysqlEverywhere()},
+
+		// Foreign key name rules: none beyond the naming. Measured on 8.4.11
+		// and 26.7.0, CREATE TABLE and ALTER TABLE both keep a derived name of
+		// 64 characters and answer ERROR 1059 to one of 65, and an unnamed key
+		// is never named by its number alone.
 	}
 }
 

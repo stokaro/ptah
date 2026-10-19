@@ -2,6 +2,7 @@ package columnkey_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -19,8 +20,10 @@ func takenNames(names ...string) func(string) bool {
 // Each row is the name the server gave the key of `x int UNIQUE` on table c,
 // measured on MySQL 8.4.11, MariaDB 11.8.9 and PostgreSQL 18.6. A name another
 // object holds moves the key to the next number: `_2` on MySQL and MariaDB,
-// `1` on PostgreSQL.
+// `1` on PostgreSQL. Before the number MySQL keeps 61 bytes of a longer
+// column, measured on 9.7.2, and MariaDB keeps the whole column.
 func TestName_HappyPath(t *testing.T) {
+	long := strings.Repeat("x", 64)
 	tests := []struct {
 		name    string
 		dialect string
@@ -34,6 +37,14 @@ func TestName_HappyPath(t *testing.T) {
 		{
 			name: "MySQL takes the next number when the name is held", dialect: platform.MySQL, table: "c", column: "x",
 			taken: takenNames("x", "x_2"), want: "x_3",
+		},
+		{
+			name: "MySQL cuts a long column before the number", dialect: platform.MySQL, table: "c", column: long,
+			taken: takenNames(long), want: long[:61] + "_2",
+		},
+		{
+			name: "MariaDB keeps a long column whole before the number", dialect: platform.MariaDB, table: "c", column: long[:62],
+			taken: takenNames(long[:62]), want: long[:62] + "_2",
 		},
 		{name: "PostgreSQL names the key after the table and the column", dialect: platform.Postgres, table: "c", column: "x", want: "c_x_key"},
 		{

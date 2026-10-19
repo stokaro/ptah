@@ -21,8 +21,12 @@ type readingFacts struct {
 	defaultSchema    string
 	constraintNaming descriptor.ConstraintNaming
 	foreignKeyNaming descriptor.ForeignKeyNaming
-	columns          descriptor.Columns
-	statements       descriptor.Statements
+	// foreignKeyNameRules and identifierLimit bound the names the server
+	// keeps for an unnamed foreign key and an unnamed CHECK.
+	foreignKeyNameRules descriptor.ForeignKeyNameRules
+	identifierLimit     descriptor.IdentifierLimit
+	columns             descriptor.Columns
+	statements          descriptor.Statements
 }
 
 // readingFactsCache keeps each dialect name's facts once read. A read asks
@@ -53,11 +57,13 @@ func factsOf(sourcePlatform string) readingFacts {
 		checkNaming: described.CheckNaming,
 		selection:   described.Schemas.Selection,
 
-		defaultSchema:    described.DefaultSchema,
-		constraintNaming: described.ConstraintNaming,
-		foreignKeyNaming: described.ForeignKeyNaming,
-		columns:          described.Columns,
-		statements:       described.Statements,
+		defaultSchema:       described.DefaultSchema,
+		constraintNaming:    described.ConstraintNaming,
+		foreignKeyNaming:    described.ForeignKeyNaming,
+		foreignKeyNameRules: described.ForeignKeyNameRules,
+		identifierLimit:     described.IdentifierLimit,
+		columns:             described.Columns,
+		statements:          described.Statements,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

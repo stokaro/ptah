@@ -296,6 +296,14 @@ type Dialect struct {
 	// Migration states how migration files are read, replayed and generated
 	// for the engine; see migration.go.
 	Migration Migration `json:"migration,omitzero"`
+
+	// Foreign key name rules: what internal/sqlschema and the comparison read
+	// beside ForeignKeyNaming; see names.go.
+
+	// ForeignKeyNameRules states where the server keeps other names for an
+	// unnamed foreign key than another server of the same ForeignKeyNaming.
+	// It is empty where ForeignKeyNaming is.
+	ForeignKeyNameRules ForeignKeyNameRules `json:"foreign_key_name_rules,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and

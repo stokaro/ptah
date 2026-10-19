@@ -13,7 +13,8 @@ import (
 )
 
 // pairNumberedForeignKeys lets a foreign key MariaDB 12.1 or later named `<n>`
-// answer for the key a schema file left unnamed.
+// answer for the key a schema file left unnamed, on a dialect whose
+// descriptor's ForeignKeyNameRules state BareNumbers.
 //
 // The SQL reader names an unnamed key of the MySQL family `<table>_ibfk_<n>`,
 // the name MySQL and MariaDB through 12.0 give it; see [mysqlname.ForeignKey].
@@ -43,8 +44,9 @@ func pairNumberedForeignKeys(
 	desired := unmatchedForeignKeys(genConstraints, dbConstraints, func(constraint schemamodel.Constraint) bool {
 		return mysqlname.IsForeignKeyName(bareTableName(constraint.Table), constraint.Name)
 	})
+	rules := foreignKeyNameRulesOf(dialect)
 	numbered := unmatchedForeignKeys(dbConstraints, genConstraints, func(constraint catalog.Constraint) bool {
-		return mysqlname.IsNumberedForeignKeyName(dialect, constraint.Name)
+		return mysqlname.IsNumberedForeignKeyName(rules, constraint.Name)
 	})
 	for _, want := range desired {
 		for i, have := range numbered {

@@ -55,6 +55,11 @@ type IndexNaming struct {
 	// PrimaryKeySuffix names the index behind a primary key the file leaves
 	// unnamed `<table>_<suffix>`, such as "pkey". Empty leaves it unnamed.
 	PrimaryKeySuffix string `json:"primary_key_suffix,omitempty"`
+	// BaseBytes is how much of the name an index is named after, in bytes,
+	// the server keeps before the `_2` and on it appends where the name is
+	// held, cut before a character the count would split. Zero keeps the
+	// name whole.
+	BaseBytes int `json:"base_bytes,omitempty"`
 }
 
 // CheckNaming is how a server names a CHECK a schema file leaves unnamed.
@@ -81,7 +86,8 @@ type ConstraintNaming string
 const ConstraintNamingTableColumnsSuffix ConstraintNaming = "table-columns-suffix"
 
 // ForeignKeyNaming is how a server names a foreign key a schema file leaves
-// unnamed, and the index it builds for the key.
+// unnamed, and the index it builds for the key. [ForeignKeyNameRules] states
+// where servers of one naming keep different names.
 type ForeignKeyNaming string
 
 // ForeignKeyNamingTableNumbered names an unnamed foreign key
@@ -90,6 +96,22 @@ type ForeignKeyNaming string
 // key's first column by the rule [IndexNaming] states: the MySQL family's
 // naming, as internal/mysqlname measures it.
 const ForeignKeyNamingTableNumbered ForeignKeyNaming = "table-numbered"
+
+// ForeignKeyNameRules states where servers that name an unnamed foreign key
+// by the same [ForeignKeyNaming] keep different names for it. The zero value
+// keeps every derived name up to the dialect's IdentifierLimit and reads only
+// the names the naming gives.
+type ForeignKeyNameRules struct {
+	// CreateTableMaxChars is the longest derived name, in characters, that
+	// CREATE TABLE keeps for an unnamed key. Zero means the dialect's
+	// IdentifierLimit, which is the longest name ALTER TABLE keeps.
+	CreateTableMaxChars int `json:"create_table_max_chars,omitempty"`
+	// BareNumbers reports that some release lines of the server name an
+	// unnamed key by its number alone, `<n>`, where the naming gives
+	// `<table>_ibfk_<n>`. A comparison reads a database key named so as the
+	// key a schema file left unnamed.
+	BareNumbers bool `json:"bare_numbers,omitempty"`
+}
 
 // Columns states how a server reads a column definition.
 type Columns struct {
@@ -169,22 +191,57 @@ func (d Dialect) validateNames() error {
 	if d.IndexNaming.MaxBytes < 0 {
 		return fmt.Errorf("%w: dialect %q: index naming max bytes %d is negative", ErrInvalidDescriptor, d.Name, d.IndexNaming.MaxBytes)
 	}
+	if err := d.validateIndexBaseBytes(); err != nil {
+		return err
+	}
 	if naming := d.ConstraintNaming; naming != "" && naming != ConstraintNamingTableColumnsSuffix {
 		return fmt.Errorf("%w: dialect %q: constraint naming %q is not %q", ErrInvalidDescriptor, d.Name, naming, ConstraintNamingTableColumnsSuffix)
 	}
 	if naming := d.CheckNaming; naming != "" && !slices.Contains(CheckNamings(), naming) {
 		return fmt.Errorf("%w: dialect %q: check naming %q is not one of %q", ErrInvalidDescriptor, d.Name, naming, CheckNamings())
 	}
+	if d.CheckNaming == CheckNamingTableNumbered && !d.IdentifierLimit.countsCharacters() {
+		return fmt.Errorf("%w: dialect %q: check naming %q refuses a derived name longer than the identifier limit "+
+			"in characters, and the identifier limit states no length in characters",
+			ErrInvalidDescriptor, d.Name, d.CheckNaming)
+	}
 	return d.validateForeignKeyNaming()
+}
+
+// validateIndexBaseBytes checks IndexNaming.BaseBytes. A cut name needs room
+// for the suffix the server appends to it, so the cut stays below the longest
+// index name.
+func (d Dialect) validateIndexBaseBytes() error {
+	naming := d.IndexNaming
+	switch {
+	case naming.BaseBytes < 0:
+		return fmt.Errorf("%w: dialect %q: index naming base bytes %d is negative", ErrInvalidDescriptor, d.Name, naming.BaseBytes)
+	case naming.BaseBytes > 0 && naming.BaseBytes >= naming.MaxBytes:
+		return fmt.Errorf("%w: dialect %q: index naming base bytes %d leaves no room for a suffix within max bytes %d",
+			ErrInvalidDescriptor, d.Name, naming.BaseBytes, naming.MaxBytes)
+	}
+	return nil
+}
+
+// countsCharacters reports whether the limit states a length in characters.
+// The unit is spelled as core/platform/capability spells IdentifierCharacters.
+func (l IdentifierLimit) countsCharacters() bool {
+	return l.Max > 0 && l.Unit == "characters"
 }
 
 // validateForeignKeyNaming checks ForeignKeyNaming and the fields it depends
 // on. A dialect that names a foreign key here does not name it again through
 // ConstraintNaming, and the index it builds for the key is named by
 // IndexNaming, so a reader would ignore half of a naming stated without it.
+// The longest derived name is counted in characters against the
+// IdentifierLimit, and ForeignKeyNameRules refine this naming alone.
 func (d Dialect) validateForeignKeyNaming() error {
 	naming := d.ForeignKeyNaming
 	if naming == "" {
+		if d.ForeignKeyNameRules != (ForeignKeyNameRules{}) {
+			return fmt.Errorf("%w: dialect %q: foreign key name rules are stated, and no foreign key naming is",
+				ErrInvalidDescriptor, d.Name)
+		}
 		return nil
 	}
 	if naming != ForeignKeyNamingTableNumbered {
@@ -198,6 +255,15 @@ func (d Dialect) validateForeignKeyNaming() error {
 	if d.IndexNaming.MaxBytes == 0 {
 		return fmt.Errorf("%w: dialect %q: foreign key naming %q names the index a key builds, and the index naming states no rule",
 			ErrInvalidDescriptor, d.Name, naming)
+	}
+	if !d.IdentifierLimit.countsCharacters() {
+		return fmt.Errorf("%w: dialect %q: foreign key naming %q refuses a derived name longer than the identifier limit "+
+			"in characters, and the identifier limit states no length in characters",
+			ErrInvalidDescriptor, d.Name, naming)
+	}
+	if limit := d.ForeignKeyNameRules.CreateTableMaxChars; limit < 0 || limit > d.IdentifierLimit.Max {
+		return fmt.Errorf("%w: dialect %q: foreign key name rules: CREATE TABLE max chars %d is not between 0 and the identifier limit %d",
+			ErrInvalidDescriptor, d.Name, limit, d.IdentifierLimit.Max)
 	}
 	return nil
 }

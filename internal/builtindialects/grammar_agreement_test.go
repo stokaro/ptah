@@ -42,7 +42,9 @@ import (
 //   - readsKeyOptions, readKeyVisibility, the bare UNIQUE name, the FOREIGN KEY
 //     index name and parseNullsDistinctClause read the MySQL family; MySQL
 //     refused IGNORED and NOT IGNORED, MariaDB INVISIBLE; parseFunctionalKeyPart
-//     read MySQL alone.
+//     read MySQL alone; foreignKeyBackingIndex, through
+//     mysqlname.ClauseIndexNamesKey, read the FOREIGN KEY index name as the
+//     key's own on MariaDB alone.
 //   - routineParser read the MySQL family's routines, SQL Server's and the
 //     PostgreSQL family's, and isPostgresRoutineDialect read the PostgreSQL
 //     family's DO blocks, routine bodies, string defaults, and trigger WHEN
@@ -127,9 +129,10 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 				Refused: []string{"INVISIBLE"},
 				Refusal: "it is MySQL's clause, and MariaDB 11.8.9 answers ERROR 1064; MariaDB spells it IGNORED",
 			},
-			BareUniqueName:       true,
-			ForeignKeyIndexName:  true,
-			RefusesNullsDistinct: true,
+			BareUniqueName:              true,
+			ForeignKeyIndexName:         true,
+			ForeignKeyIndexNameNamesKey: true,
+			RefusesNullsDistinct:        true,
 		},
 		AlterTable: descriptor.AlterTableGrammar{
 			AddIndex: true, RenameIndex: true, Modify: descriptor.ModifyDefinition, ChecksCapabilities: true, ColumnGuards: true,

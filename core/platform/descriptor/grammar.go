@@ -189,6 +189,11 @@ type KeyGrammar struct {
 	// ForeignKeyIndexName reports that FOREIGN KEY may be followed by a name
 	// before its column list, as `FOREIGN KEY ix (a)`.
 	ForeignKeyIndexName bool `json:"foreign_key_index_name,omitempty"`
+	// ForeignKeyIndexNameNamesKey reports that the name ForeignKeyIndexName
+	// reads is the key's own where no CONSTRAINT symbol names the key, so the
+	// key and the index it builds both take it. Without it the name is the
+	// index's alone, and the key is named as any unnamed key.
+	ForeignKeyIndexNameNamesKey bool `json:"foreign_key_index_name_names_key,omitempty"`
 	// FunctionalParts reports that a key part may be an expression in
 	// parentheses, as `KEY k ((a + 1))`.
 	FunctionalParts bool `json:"functional_parts,omitempty"`
@@ -416,6 +421,9 @@ func validateKeyGrammar(grammar Grammar) error {
 	}
 	if (len(keys.Visibility.Refused) == 0) != (keys.Visibility.Refusal == "") {
 		return errors.New("a refused visibility clause and its refusal are set together")
+	}
+	if keys.ForeignKeyIndexNameNamesKey && !keys.ForeignKeyIndexName {
+		return errors.New("a foreign key index name that names the key is stated, and no foreign key index name is read")
 	}
 	return nil
 }

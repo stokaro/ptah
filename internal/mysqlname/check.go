@@ -10,13 +10,6 @@ import (
 // named.
 const checkLabel = "_chk_"
 
-// MaxIdentifierChars is the longest name MySQL and MariaDB keep, counted in
-// characters. MySQL does not shorten a name it derives past it: measured on
-// 8.4.11 and 26.7.0, an unnamed CHECK on a 59-character table is `ERROR 1059
-// (42000): Identifier name ... is too long`, and on a 58-character table it is
-// accepted.
-const MaxIdentifierChars = 64
-
 // Check answers the name MySQL gives the CHECK numbered n of table:
 // `<table>_chk_<n>`, with the table spelled as it was declared.
 //
@@ -29,7 +22,10 @@ const MaxIdentifierChars = 64
 // The server does not move a derived name out of the way of another CHECK. A
 // CHECK anywhere in the database already called the derived name, compared
 // without case and written before or after, is `ERROR 3822 (HY000): Duplicate
-// check constraint name`. Measured on MySQL 8.4.11 and 26.7.0.
+// check constraint name`. Nor does it shorten a derived name past its
+// identifier limit, 64 characters: an unnamed CHECK on a 59-character table is
+// `ERROR 1059 (42000): Identifier name ... is too long`, and on a 58-character
+// table it is accepted. Measured on MySQL 8.4.11 and 26.7.0.
 func Check(table string, n uint32) string {
 	return table + checkLabel + strconv.FormatUint(uint64(n), 10)
 }
