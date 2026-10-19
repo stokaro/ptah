@@ -99,11 +99,11 @@ func TestScanner_HappyPath(t *testing.T) {
 		{
 			// "x"pt, "x"pb, "x"pv and "x"p each answered one value.
 			name:  "a two-letter type suffix belongs to the literal",
-			input: `"x"pt "x"PB "x"p`,
+			input: `"x"pt "x"PB "x"p "x"pv`,
 			want: []yqlToken{
 				{lexer.TokenString, `"x"pt`}, {lexer.TokenWhitespace, " "},
 				{lexer.TokenString, `"x"PB`}, {lexer.TokenWhitespace, " "},
-				{lexer.TokenString, `"x"p`},
+				{lexer.TokenString, `"x"p`}, {lexer.TokenWhitespace, " "}, {lexer.TokenString, `"x"pv`},
 			},
 		},
 		{
