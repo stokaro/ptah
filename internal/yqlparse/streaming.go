@@ -7,6 +7,7 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 	"ptah.run/internal/tableref"
 )
 
@@ -42,7 +43,7 @@ func (p *parser) streamingQuery(replace bool) *ast.ExtensionStatement {
 				pool, ok := stringLiteral(value, "String")
 				literal := newParser(value)
 				if len(literal.tokens) == 1 && literal.tokens[0].Type == lexer.TokenIdentifier {
-					pool, ok = lexer.YQLIdentifierValue(value)
+					pool, ok = yql.IdentifierValue(value)
 				}
 				if !ok || pool == "" || strings.HasPrefix(pool, "$") {
 					p.failf("streaming query resource_pool requires a literal name")

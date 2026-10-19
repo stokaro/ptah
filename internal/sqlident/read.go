@@ -3,7 +3,7 @@ package sqlident
 import (
 	"strings"
 
-	"ptah.run/internal/lexer"
+	"ptah.run/internal/dialectlexer"
 )
 
 // NamesArePaths reports whether dialect names an object by one path, as
@@ -15,17 +15,20 @@ func NamesArePaths(dialect string) bool {
 }
 
 // ReadName reads written, one identifier of dialect, into the name it denotes
-// by the dialect's own quoting, and reports whether it did. On YDB that is
-// YQL's quoting: a backticked name with its backslash escapes decoded, or an
-// unquoted name as written, so ReadName undoes [Quote] there. Any other dialect
-// returns false, and so does text that is not one YQL identifier, such as an
-// empty one or one with text after its closing backtick; a caller reads those
-// by the SQL standard's quoting.
+// by the dialect's own quoting, and reports whether it did. A dialect that
+// names an object by one path is read by the lexer of its own its descriptor
+// names (lexer.Scanner.IdentifierValue): on YDB that is YQL's quoting, a
+// backticked name with its backslash escapes decoded or an unquoted name as
+// written, so ReadName undoes [Quote] there. Any other dialect returns false,
+// and so does text that is not one identifier of that lexer, such as an empty
+// one or one with text after its closing quote; a caller reads those by the
+// SQL standard's quoting.
 func ReadName(dialect, written string) (string, bool) {
-	if !NamesArePaths(dialect) {
+	scanner := dialectlexer.Options(dialect).Scanner
+	if !NamesArePaths(dialect) || scanner == nil {
 		return "", false
 	}
-	return lexer.YQLIdentifierValue(written)
+	return scanner.IdentifierValue(written)
 }
 
 // SplitPath splits a path name, as a dialect [NamesArePaths] reports writes

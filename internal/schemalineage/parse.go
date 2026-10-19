@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 	"ptah.run/internal/tableref"
 )
 
@@ -177,7 +178,7 @@ type sourceRef struct {
 // and a table. The table goes by its Ptah name, its directory as the schema,
 // and the path stays the name a column may be qualified with.
 func ydbSource(token lexer.Token) sourceRef {
-	value, ok := lexer.YQLIdentifierValue(token.Value)
+	value, ok := yql.IdentifierValue(token.Value)
 	if !ok {
 		value = unquote(token.Value)
 	}

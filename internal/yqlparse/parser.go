@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 )
 
 type parser struct {
@@ -79,7 +80,7 @@ func (p *parser) failf(format string, args ...any) {
 }
 func (p *parser) identifier() string {
 	token := p.peek()
-	name, ok := lexer.YQLIdentifierValue(token.Value)
+	name, ok := yql.IdentifierValue(token.Value)
 	if token.Type != lexer.TokenIdentifier || !ok || name == "" || strings.HasPrefix(name, "$") {
 		p.failf("expected an identifier")
 		return ""
@@ -136,7 +137,7 @@ func scalar(value string) string {
 	}
 	return value
 }
-func decodedName(value string) string { name, _ := lexer.YQLIdentifierValue(value); return name }
+func decodedName(value string) string { name, _ := yql.IdentifierValue(value); return name }
 
 func (p *parser) options() map[string]string {
 	return p.optionsUsing(func(string) string { return p.expression() })

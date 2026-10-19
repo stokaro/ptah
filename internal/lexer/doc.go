@@ -46,6 +46,16 @@
 //		fmt.Printf("Token: %s, Value: %s\n", token.Type, token.Value)
 //	}
 //
+// # A lexer of an engine's own
+//
+// This package holds the shared rules and no engine's own lexer. An engine
+// whose text those rules cannot read, as YDB's YQL, brings a [Scanner], and
+// a [Lexer] built with [Options.Scanner] set returns the scanner's tokens.
+// [StringValue] asks the scanner too. internal/lexerext declares the services
+// that bring a scanner, and internal/dialectlexer sets one for a dialect whose
+// descriptor names a lexer of its own, so a reader of the dialect's text gets
+// that lexer's tokens without naming it.
+//
 // # Integration with Ptah
 //
 // The lexer integrates with other Ptah components:
