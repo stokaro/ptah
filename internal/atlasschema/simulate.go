@@ -10,7 +10,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -20,6 +19,8 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -574,13 +575,13 @@ func guardRehearsalBaseline(statements []string, info catalog.ServerInfo) error 
 
 // statementExcerpt is the first line of a statement that is not a comment,
 // cut to a length an error message can carry, so a refusal names what it
-// refused. A `--!` line of a text read with the YQL lexer, YDB's, is a
-// translation setting rather than a comment, and the guard refuses it, so it is
-// the excerpt. A statement holding only comments is excerpted by its first
-// line.
+// refused. A `--` line whose first token the dialect's lexer reads as
+// lexer.TokenUnknown, as YQL's lexer reads a `--!` translation setting, is
+// not a comment, and the guard refuses it, so it is the excerpt. A statement
+// holding only comments is excerpted by its first line.
 func statementExcerpt(statement, dialect string) string {
 	const limit = 80
-	settings := described(dialect).Lexical.Lexer == descriptor.LexerYQL
+	options := dialectlexer.Options(dialect)
 	excerpt := ""
 	for line := range strings.SplitSeq(statement, "\n") {
 		line = strings.TrimSpace(line)
@@ -590,8 +591,7 @@ func statementExcerpt(statement, dialect string) string {
 		if excerpt == "" {
 			excerpt = line
 		}
-		setting := settings && strings.HasPrefix(line, "--!")
-		if !strings.HasPrefix(line, "--") || setting {
+		if !strings.HasPrefix(line, "--") || readsAsSetting(line, options) {
 			excerpt = line
 			break
 		}
@@ -600,6 +600,14 @@ func statementExcerpt(statement, dialect string) string {
 		return string(runes[:limit]) + "..."
 	}
 	return excerpt
+}
+
+// readsAsSetting reports whether the first token of line, read as the head of
+// a text under options, is a TokenUnknown: a setting the server reads, rather
+// than a comment. The shared rules read every `--` line as a comment or as an
+// operator, so only a lexer of an engine's own answers true.
+func readsAsSetting(line string, options lexer.Options) bool {
+	return lexer.NewLexerWithOptions(line, options).NextToken().Type == lexer.TokenUnknown
 }
 
 // nameColumnSequencesAsTarget renames each sequence a dev column owns to the

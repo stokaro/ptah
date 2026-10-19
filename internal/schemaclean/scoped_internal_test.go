@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dbreset"
 )
@@ -32,6 +33,9 @@ func acmeDialect() descriptor.Dialect {
 	}
 }
 
+// transactionalDDL is a server that rolls schema changes back as a unit.
+var transactionalDDL = capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true})
+
 // TestScopedExecution_BeforeRegistration is the control: a registry that
 // does not hold the engine answers the zero descriptor, which runs no scoped
 // plan and names no savepoint.
@@ -41,16 +45,17 @@ func TestScopedExecution_BeforeRegistration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	described, found := registry.Lookup("acme")
 
-	savepoint, scoped := scopedExecution(described)
+	run, scoped := scopedExecution(described, transactionalDDL)
 
 	c.Assert(found, qt.IsFalse)
 	c.Assert(scoped, qt.IsFalse)
-	c.Assert(savepoint, qt.Equals, savepointStatements{})
+	c.Assert(run, qt.Equals, scopedRun{})
 }
 
 // TestScopedExecution_AfterRegistration registers the engine and runs a
-// scoped plan whose first drop is refused once: each drop is bracketed in the
-// engine's own savepoint spelling, and no release is sent.
+// scoped plan whose first drop is refused once on a server that rolls schema
+// changes back as a unit: each drop is bracketed in the engine's own
+// savepoint spelling, and no release is sent.
 func TestScopedExecution_AfterRegistration(t *testing.T) {
 	c := qt.New(t)
 	registry, err := descriptor.NewRegistry(acmeDialect())
@@ -59,8 +64,9 @@ func TestScopedExecution_AfterRegistration(t *testing.T) {
 	c.Assert(found, qt.IsTrue)
 	tx := &cleanupRetryTransaction{failQuery: `DROP VIEW "a_base"`, remainingFailures: 1}
 
-	savepoint, scoped := scopedExecution(described)
-	err = applyScopedPlanChanges(t.Context(), tx, savepoint, []Change{
+	run, scoped := scopedExecution(described, transactionalDDL)
+	c.Assert(run.held, qt.IsTrue)
+	err = applyScopedPlanChanges(t.Context(), tx, run.savepoint, []Change{
 		{Type: ObjectTypeView, Name: "a_base", Cmd: `DROP VIEW "a_base"`},
 		{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW "z_child"`},
 	})
@@ -76,6 +82,98 @@ func TestScopedExecution_AfterRegistration(t *testing.T) {
 		"SAVE TRANSACTION ptah_scoped_cleanup_object",
 		`DROP VIEW "a_base"`,
 	})
+}
+
+// TestScopedExecution_WithoutTransactionalDDL runs the registered engine's
+// scoped plan on a server that commits each schema change as it runs: the
+// plan stays scoped, and its drops are not held in a transaction and name no
+// savepoint. A set that does not answer the key is read the same way.
+func TestScopedExecution_WithoutTransactionalDDL(t *testing.T) {
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+	}{
+		{name: "the server commits each schema change", caps: capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: false})},
+		{name: "the set does not answer the key", caps: capability.Capabilities{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			registry, err := descriptor.NewRegistry(acmeDialect())
+			c.Assert(err, qt.IsNil)
+			described, found := registry.Lookup("acme")
+			c.Assert(found, qt.IsTrue)
+
+			run, scoped := scopedExecution(described, test.caps)
+
+			c.Assert(scoped, qt.IsTrue)
+			c.Assert(run, qt.Equals, scopedRun{})
+		})
+	}
+}
+
+// TestApplyUnheldScopedPlanChanges_HappyPath drops a view that another
+// selected view reads, on a server that commits each drop: the refused drop
+// is sent again once the view that reads it is gone, and no savepoint is
+// sent.
+func TestApplyUnheldScopedPlanChanges_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	executor := &cleanupRetryTransaction{failQuery: `DROP VIEW "a_base"`, remainingFailures: 1}
+
+	err := applyUnheldScopedPlanChanges(t.Context(), executor, []Change{
+		{Type: ObjectTypeView, Name: "a_base", Cmd: `DROP VIEW "a_base"`},
+		{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW "z_child"`},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(executor.queries, qt.DeepEquals, []string{
+		`DROP VIEW "a_base"`,
+		`DROP VIEW "z_child"`,
+		`DROP VIEW "a_base"`,
+	})
+}
+
+// TestApplyUnheldScopedPlanChanges_FailurePath ends a plan whose drop the
+// server keeps refusing. The drops the server accepted before the refusal
+// stay, so the error names them in the order they ran, or says there are
+// none.
+func TestApplyUnheldScopedPlanChanges_FailurePath(t *testing.T) {
+	const refused = `drop schema object view "a_base": selected dependent still exists\n` +
+		`the server commits each drop as it runs; dropped before the failure: `
+	tests := []struct {
+		name        string
+		changes     []Change
+		wantErr     string
+		wantQueries []string
+	}{
+		{
+			name:        "the first drop is refused",
+			changes:     []Change{{Type: ObjectTypeView, Name: "a_base", Cmd: `DROP VIEW "a_base"`}},
+			wantErr:     refused + `nothing`,
+			wantQueries: []string{`DROP VIEW "a_base"`},
+		},
+		{
+			name: "drops ran before the refusal",
+			changes: []Change{
+				{Type: ObjectTypeView, Name: "a_base", Cmd: `DROP VIEW "a_base"`},
+				{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW "z_child"`},
+				{Type: ObjectTypeTable, Name: "t", Cmd: `DROP TABLE "t"`},
+			},
+			wantErr:     refused + `view "z_child", table "t"`,
+			wantQueries: []string{`DROP VIEW "a_base"`, `DROP VIEW "z_child"`, `DROP TABLE "t"`, `DROP VIEW "a_base"`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			executor := &cleanupRetryTransaction{failQuery: `DROP VIEW "a_base"`, remainingFailures: 9}
+
+			err := applyUnheldScopedPlanChanges(t.Context(), executor, test.changes)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(executor.queries, qt.DeepEquals, test.wantQueries)
+		})
+	}
 }
 
 // acmeDependentsWriter is the engine's writer, which lists the dependents of

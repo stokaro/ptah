@@ -97,7 +97,7 @@ finding is one of the two packages and one owner family it links through any
 chain of imports. The count is zero.
 
 YQL is not written in the shared grammar, and the parser refuses a YDB
-document. Two seams carry it, and both are plugin debt under
+document. The seams below carry it, and each is plugin debt under
 [#4204](https://github.com/stokaro/ptah/issues/4204):
 
 - The YDB owner, `internal/ydbsql`, reads YQL with the `Grammar` slot of
@@ -114,6 +114,12 @@ document. Two seams carry it, and both are plugin debt under
   parser of the lexer the dialect's descriptor names (`internal/syntaxext`).
   The parser runs in process. Whether a grammar owner also serves syntax trees
   over the protocol, and in what form, is not decided yet.
+- A reader of SQL text, such as the statement splitter, the reach scan or the
+  dependency order of views, lexes a YDB document with the scanner of the
+  lexer the dialect's descriptor names (`internal/lexerext`), which
+  `internal/dialectlexer` sets in the lexer's options. `internal/lexer` holds
+  no YQL rule. The scanner runs in process and returns a token stream, which
+  is the shape a provider could serve over the protocol.
 
 A DO block that declares roles is read by the reader of the procedural
 language the dialect's descriptor names (`Statements.DoBlocks`), which

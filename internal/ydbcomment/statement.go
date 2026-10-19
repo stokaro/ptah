@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/yqlservice"
 )
@@ -217,6 +218,6 @@ func name(token lexer.Token) (string, bool) {
 	if token.Type != lexer.TokenIdentifier || strings.HasPrefix(token.Value, "$") {
 		return "", false
 	}
-	value, ok := lexer.YQLIdentifierValue(token.Value)
+	value, ok := yql.IdentifierValue(token.Value)
 	return value, ok && value != ""
 }
