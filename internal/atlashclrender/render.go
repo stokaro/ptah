@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -112,16 +113,18 @@ type Options struct {
 	// zero value knows the common kinds alone.
 	CoverageVocabulary coverage.Vocabulary
 	// Dialect writes a column type that dialect's Atlas HCL schema does not
-	// model as a sql() call. Empty writes every column type as the IR spells
-	// it.
+	// model as a sql() call. It is any spelling platform.NormalizeDialect
+	// folds, such as "pgx" for PostgreSQL. Empty, or a dialect the registry
+	// does not hold, writes every column type as the IR spells it.
 	//
-	// The dialect matters only for that decision. A caller whose schema came
-	// out of HCL leaves it empty: the raw-SQL marker the parser set is
-	// already right, and re-deciding it from the type name would
-	// second-guess the author. A caller whose schema came out of a database
-	// names it: an inspected type carries no record of how it was written,
-	// and some of them have to be written as a sql() call to be readable at
-	// all.
+	// The dialect also decides whether a key column is NOT NULL on its own,
+	// and which blocks [RenderInspectedForAtlasCLI] leaves out. A caller
+	// whose schema came out of HCL leaves it empty: the raw-SQL marker the
+	// parser set is already right, and re-deciding it from the type name
+	// would second-guess the author. A caller whose schema came out of a
+	// database names it: an inspected type carries no record of how it was
+	// written, and some of them have to be written as a sql() call to be
+	// readable at all.
 	Dialect string
 	// Target is the one target the document is written for, empty for a
 	// document written for none. An owner's block scoped to exactly that
@@ -188,7 +191,11 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
-	dialect := opts.Dialect
+	// Folded once, here, so every rule below answers for the dialect rather
+	// than for one of its spellings: the refused blocks are keyed by
+	// canonical name, and `pgx` or ` POSTGRES ` must leave them out as
+	// `postgres` does.
+	dialect := platform.NormalizeDialect(opts.Dialect)
 	// Nor for a key that defers its check. Atlas writes a UNIQUE as a unique
 	// index, which cannot defer, and has no deferral on a primary key.
 	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {
