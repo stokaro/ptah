@@ -475,8 +475,9 @@ func (d Dialect) validate() error {
 	if err := d.validateReach(); err != nil {
 		return err
 	}
-	return d.validateGrammar()
-
+	if err := d.validateGrammar(); err != nil {
+		return err
+	}
 	if err := d.validateCleanCheck(); err != nil {
 		return err
 	}
