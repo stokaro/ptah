@@ -205,7 +205,3 @@ func normalizeMigrationLockName(name string) string {
 	}
 	return migrationAdvisoryLockName
 }
-
-func postgresMigrationLockKey(name string) int64 {
-	return dblock.PostgresKey(normalizeMigrationLockName(name))
-}

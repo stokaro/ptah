@@ -20,7 +20,7 @@ import (
 
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/clirun"
-	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -50,7 +50,7 @@ func TestCompatSchemaApplyStopsWhenItsLockSessionEndsE2E(t *testing.T) {
 
 	c.Assert(waitForText(&stdout, "Type 'YES' to confirm", time.Minute), qt.IsTrue,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
-	key := strconv.FormatInt(dblock.PostgresKey(atlasschema.ApplyLockName), 10)
+	key := strconv.FormatInt(pglock.Key(atlasschema.ApplyLockName), 10)
 	execOnServer(c, ctx, dbURL, "SELECT pg_terminate_backend(pid) FROM pg_locks "+
 		"WHERE locktype = 'advisory' AND granted AND objid::bigint = "+key)
 	execOnServer(c, ctx, dbURL, "SELECT pg_try_advisory_lock("+key+")")

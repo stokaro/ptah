@@ -76,7 +76,6 @@ func mysql() descriptor.Dialect {
 		RevisionTable:   mysqlFamilyRevisionTable(),
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionDatabase},
-		Lock:    descriptor.Lock{Protocol: descriptor.LockGetLock},
 		// String literals process C-style backslash escapes by default, so a
 		// backslash in a value is doubled, and a boolean is the TINYINT(1) the
 		// family creates it as. Neither engine's DATETIME literal accepts an

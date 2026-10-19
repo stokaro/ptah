@@ -12,6 +12,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +21,44 @@ import (
 
 	"ptah.run/internal/dbschema/dbtest"
 )
+
+// fakeClock is a clock the test moves.
+type fakeClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (f *fakeClock) Now() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.now
+}
+
+func (f *fakeClock) advance(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.now = f.now.Add(d)
+}
+
+// closesWithin reports whether ch closes within limit.
+func closesWithin(ch <-chan struct{}, limit time.Duration) bool {
+	select {
+	case <-ch:
+		return true
+	case <-time.After(limit):
+		return false
+	}
+}
+
+// closed reports whether ch is closed.
+func closed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
 
 // fakeSession answers a ping with err, and counts pings and unlocks.
 type fakeSession struct {
@@ -70,10 +109,10 @@ func TestSessionHold_HappyPath(t *testing.T) {
 			hold, session, clock := newFakeSessionHold()
 			clock.advance(test.elapsed)
 
-			c.Assert(hold.held(), qt.IsTrue)
-			c.Assert(closed(hold.lost()), qt.IsFalse)
+			c.Assert(hold.Held(), qt.IsTrue)
+			c.Assert(closed(hold.Lost()), qt.IsFalse)
 			c.Assert(session.pings.Load(), qt.Equals, test.wantPings)
-			c.Assert(hold.held(), qt.IsTrue)
+			c.Assert(hold.Held(), qt.IsTrue)
 			c.Assert(session.pings.Load(), qt.Equals, test.wantPings)
 		})
 	}
@@ -89,8 +128,8 @@ func TestSessionHold_FailurePath(t *testing.T) {
 
 		hold.check()
 
-		c.Assert(closed(hold.lost()), qt.IsTrue)
-		c.Assert(hold.held(), qt.IsFalse)
+		c.Assert(closed(hold.Lost()), qt.IsTrue)
+		c.Assert(hold.Held(), qt.IsFalse)
 	})
 	t.Run("the holder asks a session that stopped answering", func(t *testing.T) {
 		c := qt.New(t)
@@ -98,8 +137,8 @@ func TestSessionHold_FailurePath(t *testing.T) {
 		session.fail(driver.ErrBadConn)
 		clock.advance(sessionCheckInterval + time.Millisecond)
 
-		c.Assert(hold.held(), qt.IsFalse)
-		c.Assert(closed(hold.lost()), qt.IsTrue)
+		c.Assert(hold.Held(), qt.IsFalse)
+		c.Assert(closed(hold.Lost()), qt.IsTrue)
 		c.Assert(session.pings.Load(), qt.Equals, int64(1))
 	})
 }
@@ -117,8 +156,8 @@ func TestSessionHold_Release(t *testing.T) {
 	session.fail(driver.ErrBadConn)
 	hold.check()
 	clock.advance(time.Hour)
-	c.Assert(hold.held(), qt.IsTrue)
-	c.Assert(closed(hold.lost()), qt.IsFalse)
+	c.Assert(hold.Held(), qt.IsTrue)
+	c.Assert(closed(hold.Lost()), qt.IsFalse)
 }
 
 // A lock whose session ended has nothing to give back: its release sends no
@@ -145,7 +184,7 @@ func TestSessionHold_WatchReportsALoss(t *testing.T) {
 
 	session.fail(driver.ErrBadConn)
 
-	c.Assert(closesWithin(hold.lost(), 5*sessionCheckInterval), qt.IsTrue)
+	c.Assert(closesWithin(hold.Lost(), 5*sessionCheckInterval), qt.IsTrue)
 	c.Assert(session.pings.Load() >= 1, qt.IsTrue)
 }
 
@@ -223,4 +262,18 @@ func TestLock_Settle(t *testing.T) {
 			c.Assert(IsLost(got), qt.Equals, test.wantLost)
 		})
 	}
+}
+
+// A lock that reports no loss, such as one WithLockSession took, answers none
+// of Done, Err and the context Guard returns.
+func TestLock_WithoutALossToReport(t *testing.T) {
+	c := qt.New(t)
+	lock := &Lock{name: "ptah_migrate", dialect: "postgres", release: func(context.Context) error { return nil }}
+	guarded, stop := lock.Guard(context.Background())
+
+	c.Assert(lock.Done(), qt.IsNil)
+	c.Assert(lock.Err(), qt.IsNil)
+	c.Assert(guarded.Err(), qt.IsNil)
+	stop()
+	c.Assert(context.Cause(guarded), qt.Equals, context.Canceled)
 }

@@ -17,7 +17,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
-	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -120,12 +120,12 @@ func holdApplyLockSession(c *qt.C, dbURL string) *sql.Conn {
 	session, err := holder.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
-	_, err = session.ExecContext(ctx, "SELECT pg_advisory_lock($1)", dblock.PostgresKey(atlasschema.ApplyLockName))
+	_, err = session.ExecContext(ctx, "SELECT pg_advisory_lock($1)", pglock.Key(atlasschema.ApplyLockName))
 	c.Assert(err, qt.IsNil)
 	return session
 }
 
 func releaseApplyLockSession(c *qt.C, session *sql.Conn) {
 	c.Helper()
-	_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", dblock.PostgresKey(atlasschema.ApplyLockName))
+	_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", pglock.Key(atlasschema.ApplyLockName))
 }

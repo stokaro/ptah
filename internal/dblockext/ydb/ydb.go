@@ -1,4 +1,27 @@
-package dblock
+// Package ydb takes YDB's lock for internal/dblock: a semaphore on a
+// coordination node, held by a coordination session of its own rather than by
+// any SQL session.
+//
+// YQL has no advisory lock. A coordination-node semaphore acquired
+// exclusively by a session is the closest YDB has: another session that asks
+// for it waits in line, and the server releases it when the session ends,
+// whether the holder released it or died. Measured through ydb-go-sdk v3.153.2
+// on YDB 26.2.1.14, with the session settings below: a second session waiting
+// on a held semaphore acquired it at once when the first released it, 10.0
+// seconds after the holder's process was killed, and 16.4 to 16.6 seconds
+// after the holder's process was stopped, the session timeout being ten.
+//
+// The semaphores live on one coordination node at the root of the database,
+// ydbschema.LockNode: one semaphore per lock name. The node is created by the
+// first run that takes a lock and kept. It holds no data: each semaphore is
+// ephemeral, so the server deletes it when the last session holding or
+// waiting for it is gone. Dropping the node while no Ptah run is active is
+// safe, and the next run creates it again. It sits at the root rather than
+// under a dot-directory, which belong to the server and which Ptah never
+// writes, and it is shared by every lock name, as an advisory lock's key space
+// is shared by the database on the other engines. The schema reader leaves it
+// out of every schema it reads.
+package ydb
 
 import (
 	"context"
@@ -15,30 +38,18 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination/options"
 
+	"ptah.run/core/platform"
+	"ptah.run/internal/dblockext"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
-// YDBLockNode is the coordination node, at the root of a YDB database, whose
-// semaphores are Ptah's locks: one semaphore per lock name.
-//
-// YQL has no advisory lock. A coordination-node semaphore acquired
-// exclusively by a session is the closest YDB has: another session that asks
-// for it waits in line, and the server releases it when the session ends,
-// whether the holder released it or died. Measured through ydb-go-sdk v3.153.2
-// on YDB 26.2.1.14, with the session settings below: a second session waiting
-// on a held semaphore acquired it at once when the first released it, 10.0
-// seconds after the holder's process was killed, and 16.4 to 16.6 seconds
-// after the holder's process was stopped, the session timeout being ten.
-//
-// The node is created by the first run that takes a lock and kept. It holds no
-// data: each semaphore is ephemeral, so the server deletes it when the last
-// session holding or waiting for it is gone. Dropping the node while no Ptah
-// run is active is safe, and the next run creates it again. It sits at the
-// root rather than under a dot-directory, which belong to the server and which
-// Ptah never writes, and it is shared by every lock name, as an advisory lock's
-// key space is shared by the database on the other engines. The schema reader
-// leaves it out of every schema it reads.
-const YDBLockNode = ydbschema.LockNode
+// Services returns YDB's lock.
+func Services() dblockext.Services {
+	return dblockext.Services{
+		Dialects: []string{platform.YDB},
+		Separate: semaphore{},
+	}
+}
 
 // The settings of the coordination session that holds a lock.
 //
@@ -72,41 +83,24 @@ const (
 // node but not use it waited on it without end.
 const ydbSessionStartTimeout = 10 * time.Second
 
-// lockNodeMissing says what acquiring a YDB lock does when the coordination
-// node it lives on does not exist.
-type lockNodeMissing int
-
-const (
-	// createLockNode creates the node and takes the lock.
-	createLockNode lockNodeMissing = iota
-	// skipTheLock creates nothing and takes no lock, for a run that writes
-	// nothing: no run that took a lock has used the database, so there is
-	// nobody to wait for.
-	skipTheLock
-)
-
 // ydbLockSessionDescription is how the session that holds a lock names itself
 // to the server, so an operator who describes the semaphore sees whose it is.
 const ydbLockSessionDescription = "ptah"
 
-// acquireYDBLock takes the semaphore name on Ptah's coordination node through
-// the SDK driver behind pool.
+type semaphore struct{}
+
+// Acquire takes the semaphore request names on Ptah's coordination node
+// through the SDK driver behind pool.
 //
 // A positive timeout bounds the wait in the server's queue, a zero one waits
 // until ctx ends, and a negative one does not wait. The semaphore is exclusive
 // and ephemeral, held by a coordination session of its own rather than by any
 // SQL session.
 //
-// When the node does not exist, missing says whether to create it or to take
-// no lock, in which case the hold is nil.
-func acquireYDBLock(
-	ctx context.Context,
-	pool connOpener,
-	dialect,
-	name string,
-	timeout time.Duration,
-	missing lockNodeMissing,
-) (*ydbHold, error) {
+// When the node does not exist, a preview takes no lock and creates nothing:
+// no run that took a lock has used the database, so there is nobody to wait
+// for. Every other request creates the node.
+func (semaphore) Acquire(ctx context.Context, pool dblockext.Pool, request dblockext.Request) (dblockext.Hold, error) {
 	session, err := pool.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -118,23 +112,21 @@ func acquireYDBLock(
 	if err != nil {
 		return nil, fmt.Errorf("reach the YDB coordination service: %w", err)
 	}
-	return acquireYDBSemaphore(ctx, sdk, dialect, name, timeout, missing)
+	hold, err := acquireYDBSemaphore(ctx, sdk, request)
+	if hold == nil {
+		// A nil *ydbHold in the interface would read as a lock.
+		return nil, err
+	}
+	return hold, nil
 }
 
-func acquireYDBSemaphore(
-	ctx context.Context,
-	sdk *ydbsdk.Driver,
-	dialect,
-	name string,
-	timeout time.Duration,
-	missing lockNodeMissing,
-) (*ydbHold, error) {
-	node := path.Join(sdk.Name(), YDBLockNode)
+func acquireYDBSemaphore(ctx context.Context, sdk *ydbsdk.Driver, request dblockext.Request) (*ydbHold, error) {
+	node := path.Join(sdk.Name(), ydbschema.LockNode)
 	exists, err := ydbLockNodeExists(ctx, sdk, node)
 	if err != nil {
 		return nil, err
 	}
-	if !exists && missing == skipTheLock {
+	if !exists && request.Preview {
 		return nil, nil
 	}
 	if !exists {
@@ -156,17 +148,17 @@ func acquireYDBSemaphore(
 	if err != nil {
 		return nil, err
 	}
-	lease, err := session.AcquireSemaphore(ctx, name, coordination.Exclusive,
-		options.WithEphemeral(true), ydbAcquireTimeout(timeout))
+	lease, err := session.AcquireSemaphore(ctx, request.Name, coordination.Exclusive,
+		options.WithEphemeral(true), ydbAcquireTimeout(request.Timeout))
 	if err != nil {
 		closeErr := ydbschema.WithoutStackFrames(session.Close(context.WithoutCancel(ctx)))
 		if errors.Is(err, coordination.ErrAcquireTimeout) {
-			return nil, errors.Join(&TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}, closeErr)
+			return nil, errors.Join(request.Held, closeErr)
 		}
 		return nil, errors.Join(fmt.Errorf("acquire the YDB semaphore %q on %s: %w",
-			name, node, ydbschema.WithoutStackFrames(err)), closeErr)
+			request.Name, node, ydbschema.WithoutStackFrames(err)), closeErr)
 	}
-	return newYDBHold(session, lease, name, time.Now), nil
+	return newYDBHold(session, lease, request.Name, time.Now), nil
 }
 
 // openYDBLockSession opens the coordination session that holds a lock, and
@@ -252,7 +244,7 @@ type semaphoreLease interface {
 // session still owns the semaphore, and records when an answer that it does
 // was asked for. The lock is lost when the server answers that it does not,
 // when the SDK ends the lease, or when no such answer is younger than
-// ydbHoldValidity -- which [ydbHold.held] also checks itself, so a holder that
+// ydbHoldValidity -- which [ydbHold.Held] also checks itself, so a holder that
 // was stopped and resumes learns it before the watch has run again.
 type ydbHold struct {
 	session semaphoreSession
@@ -287,13 +279,13 @@ func newYDBHold(session semaphoreSession, lease semaphoreLease, name string, now
 	return hold
 }
 
-// lost returns a channel that is closed when the lock is lost.
-func (h *ydbHold) lost() <-chan struct{} { return h.lostCh }
+// Lost returns a channel that is closed when the lock is lost.
+func (h *ydbHold) Lost() <-chan struct{} { return h.lostCh }
 
-// held reports whether the lock may still be held: it has not been lost, and
+// Held reports whether the lock may still be held: it has not been lost, and
 // the last answer that it is held is younger than ydbHoldValidity. A released
 // lock reads as held, since it was not taken away.
-func (h *ydbHold) held() bool {
+func (h *ydbHold) Held() bool {
 	if h.released.Load() {
 		return true
 	}
@@ -333,7 +325,7 @@ func (h *ydbHold) watch(ctx context.Context) {
 			return
 		case <-ticker.C:
 			h.check(ctx)
-			if ctx.Err() == nil && !h.held() {
+			if ctx.Err() == nil && !h.Held() {
 				return
 			}
 		}
@@ -364,7 +356,7 @@ func (h *ydbHold) check(ctx context.Context) {
 	h.markLost()
 }
 
-// release gives the semaphore back and ends the session that held it.
+// Release gives the semaphore back and ends the session that held it.
 //
 // Lease.Release takes no context, so ctx cannot bound it by itself. The lease
 // is released on a goroutine, and when ctx ends first the session is closed,
@@ -373,8 +365,8 @@ func (h *ydbHold) check(ctx context.Context) {
 // nothing to give back, and its release only ends the session: measured on
 // 26.2.1.14, giving back a lease the server had taken waited until the release
 // context ended.
-func (h *ydbHold) release(ctx context.Context) error {
-	wasHeld := h.held()
+func (h *ydbHold) Release(ctx context.Context) error {
+	wasHeld := h.Held()
 	h.released.Store(true)
 	h.stopWatch()
 	<-h.watching

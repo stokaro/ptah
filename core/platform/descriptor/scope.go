@@ -76,41 +76,6 @@ func RoleScopes() []RoleScope {
 	return []RoleScope{RoleScopeReferenced, RoleScopeUserMade}
 }
 
-// Lock states how an engine holds the session-scoped advisory lock that
-// serializes schema-changing runs. The zero value is an engine that offers
-// none: a lock taken there is a no-op the caller can see.
-type Lock struct {
-	// Protocol is how the lock is taken and released.
-	Protocol LockProtocol `json:"protocol,omitempty"`
-	// UnboundedWaitSeconds is the timeout a wait without limit sends, in
-	// seconds, on an engine that refuses the protocol's own spelling of
-	// "wait forever". Zero means the engine takes that spelling. It is
-	// read only for LockGetLock and is never negative.
-	UnboundedWaitSeconds int64 `json:"unbounded_wait_seconds,omitempty"`
-}
-
-// LockProtocol is how an engine's advisory lock is taken and released.
-type LockProtocol string
-
-const (
-	// LockPostgresAdvisory is pg_try_advisory_lock, polled until the wait
-	// ends, and pg_advisory_unlock.
-	LockPostgresAdvisory LockProtocol = "pg-advisory"
-	// LockGetLock is GET_LOCK with a timeout in seconds, and RELEASE_LOCK.
-	LockGetLock LockProtocol = "get-lock"
-	// LockAppLock is sp_getapplock with a session owner, and
-	// sp_releaseapplock.
-	LockAppLock LockProtocol = "app-lock"
-	// LockCoordinationSemaphore is an ephemeral semaphore on a coordination
-	// node, held by a coordination session of its own.
-	LockCoordinationSemaphore LockProtocol = "coordination-semaphore"
-)
-
-// LockProtocols returns every declared lock protocol.
-func LockProtocols() []LockProtocol {
-	return []LockProtocol{LockPostgresAdvisory, LockGetLock, LockAppLock, LockCoordinationSemaphore}
-}
-
 // validateScope checks the fields declared in this file.
 func (d Dialect) validateScope() error {
 	if d.Schemas.Selection != "" && !slices.Contains(SchemaSelections(), d.Schemas.Selection) {
@@ -124,14 +89,6 @@ func (d Dialect) validateScope() error {
 	if d.Roles.OutOfScope != "" && !slices.Contains(RoleScopes(), d.Roles.OutOfScope) {
 		return fmt.Errorf("%w: dialect %q: role scope %q is not one of %q",
 			ErrInvalidDescriptor, d.Name, d.Roles.OutOfScope, RoleScopes())
-	}
-	if d.Lock.Protocol != "" && !slices.Contains(LockProtocols(), d.Lock.Protocol) {
-		return fmt.Errorf("%w: dialect %q: lock protocol %q is not one of %q",
-			ErrInvalidDescriptor, d.Name, d.Lock.Protocol, LockProtocols())
-	}
-	if d.Lock.UnboundedWaitSeconds < 0 || (d.Lock.UnboundedWaitSeconds != 0 && d.Lock.Protocol != LockGetLock) {
-		return fmt.Errorf("%w: dialect %q: an unbounded wait of %d seconds needs the %q protocol and a positive value",
-			ErrInvalidDescriptor, d.Name, d.Lock.UnboundedWaitSeconds, LockGetLock)
 	}
 	seen := make(map[string]bool, len(d.URLValuedParameters))
 	for _, parameter := range d.URLValuedParameters {

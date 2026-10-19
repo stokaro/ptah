@@ -14,7 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
-	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 )
 
 func TestEffectiveApplyLockName(t *testing.T) {
@@ -60,7 +60,7 @@ func TestAcquireApplyLock_RecordsRequestedName(t *testing.T) {
 			c.Assert(lock.Name(), qt.Equals, test.want)
 			// The recorded name is the one the dialect-specific acquisition
 			// would use, so the PostgreSQL-family key follows from it.
-			c.Assert(dblock.PostgresKey(lock.Name()), qt.Equals, dblock.PostgresKey(test.want))
+			c.Assert(pglock.Key(lock.Name()), qt.Equals, pglock.Key(test.want))
 			c.Assert(lock.Release(), qt.IsNil)
 		})
 	}
@@ -84,8 +84,8 @@ func TestAcquireApplyLock_DistinctNamesGetDistinctKeys(t *testing.T) {
 	// That is the whole function of --lock-name, so pin that the names map to
 	// different advisory-lock keys rather than collapsing.
 	c.Assert(
-		dblock.PostgresKey(atlasschema.EffectiveApplyLockName("atlas_migrate_execute")),
+		pglock.Key(atlasschema.EffectiveApplyLockName("atlas_migrate_execute")),
 		qt.Not(qt.Equals),
-		dblock.PostgresKey(atlasschema.EffectiveApplyLockName("")),
+		pglock.Key(atlasschema.EffectiveApplyLockName("")),
 	)
 }

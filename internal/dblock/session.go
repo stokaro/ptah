@@ -9,8 +9,8 @@ import (
 
 // How a lock held on a session of its own reports a loss.
 //
-// A PostgreSQL, MySQL, MariaDB or SQL Server advisory lock belongs to the
-// session that took it, and the server releases it when that session ends.
+// A session lock (dblockext.SessionLock), such as an advisory lock, belongs to
+// the session that took it, and the server releases it when that session ends.
 // [Acquire] takes the lock on a session of its own and leaves the work to the
 // pool, so the end of that session does not reach the work: measured on
 // PostgreSQL 18 and MySQL 8.4, a migration whose lock session was ended with
@@ -87,13 +87,13 @@ func newIdleSessionHold(ping, unlock func(context.Context) error, now func() tim
 	}
 }
 
-// lost returns a channel that is closed when the lock is lost.
-func (h *sessionHold) lost() <-chan struct{} { return h.lostCh }
+// Lost returns a channel that is closed when the lock is lost.
+func (h *sessionHold) Lost() <-chan struct{} { return h.lostCh }
 
-// held reports whether the lock may still be held: it has not been lost, and
+// Held reports whether the lock may still be held: it has not been lost, and
 // the session answered within the last sessionCheckInterval or answers now.
 // A released lock reads as held, since it was not taken away.
-func (h *sessionHold) held() bool {
+func (h *sessionHold) Held() bool {
 	h.mu.Lock()
 	released, confirmed := h.released, h.confirmed
 	h.mu.Unlock()
@@ -168,7 +168,7 @@ func (h *sessionHold) check() {
 // release stops the watch and gives the lock back. A lock already lost has
 // nothing to give back, and its release answers errSessionEnded.
 func (h *sessionHold) release(ctx context.Context) error {
-	wasHeld := h.held()
+	wasHeld := h.Held()
 	h.mu.Lock()
 	h.released = true
 	h.mu.Unlock()

@@ -1,9 +1,16 @@
 // Package dblock acquires dialect-aware, session-scoped database advisory
 // locks used to serialize schema-mutating operations such as migration runs
-// and Atlas schema apply. On YDB, which has no SQL advisory lock, the lock is a
-// semaphore on a coordination node; see [YDBLockNode]. Dialects without either
-// acquire an explicit no-op lock, so callers make a capability decision through
-// [Lock.Supported] instead of failing or silently diverging per dialect.
+// and Atlas schema apply.
+//
+// An engine's lock service (internal/dblockext) supplies the statements or SDK
+// calls that take and give back its lock, and dblock owns the rest: the
+// session the lock lives on, the watch that reports a lost lock, the timeout
+// and loss errors, and what happens to a session after a failed acquisition.
+// The services of the engines Ptah ships are listed by
+// internal/dblockext/builtin, and [Register] adds those of an engine it does
+// not ship. A dialect without a lock service acquires an explicit no-op lock,
+// so callers make a capability decision through [Lock.Supported] instead of
+// failing or silently diverging per dialect.
 package dblock
 
 import (
@@ -12,19 +19,19 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"math"
+	"maps"
+	"reflect"
 	"strings"
+	"sync"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dblockext"
+	"ptah.run/internal/dblockext/builtin"
 	"ptah.run/internal/envbool"
 )
-
-// postgresLockPollInterval is how often a pg-advisory wait asks again.
-const postgresLockPollInterval = 25 * time.Millisecond
 
 // DefaultReleaseTimeout bounds the deferred release of an advisory lock so a
 // canceled command still returns its dedicated session connection promptly.
@@ -61,25 +68,88 @@ func IsTimeout(err error) bool {
 	return errors.As(err, &target)
 }
 
-// lockOf is how dialect's descriptor says its lock is held. The descriptor is
-// the one declaration two readers need: [Supported] asks whether this target
-// locks, and [SupportedDialects] asks which targets do, so a caller refusing a
-// lock request can name the alternatives.
+// ErrInvalidRegistration identifies lock services [Register] refuses.
+var ErrInvalidRegistration = errors.New("invalid lock service registration")
+
+// registered holds the lock services [Register] added. The built-in ones are
+// never in it.
+var registered = struct {
+	mu       sync.RWMutex
+	services map[string]dblockext.Services
+}{services: make(map[string]dblockext.Services)}
+
+// Register adds the lock services of dialects Ptah does not ship, for the
+// composition root of a program that selects such a dialect. Each dialect is
+// the canonical name of a dialect the process registry describes
+// (platform.Register), and no other lock service serves it. Each Services
+// value takes a lock, through Session or Separate and not both, and an
+// Exclusion check goes with a Session lock only. Every refusal wraps
+// [ErrInvalidRegistration], and on a refusal nothing is added.
 //
-// The descriptor names a protocol rather than a capability because what it
-// selects is code: each protocol has an arm in [acquireOnSession] that takes
-// the lock the way the engine offers one. The coordination semaphore is YDB's,
-// held on a coordination node rather than by an SQL session. A dialect the
-// registry does not know offers none.
-func lockOf(dialect string) descriptor.Lock {
-	described, _ := platform.Lookup(dialect)
-	return described.Lock
+// Registration only adds, and lasts for the rest of the process. Register is
+// safe for concurrent use, with itself and with every reader.
+func Register(services ...dblockext.Services) error {
+	registered.mu.Lock()
+	defer registered.mu.Unlock()
+	added := make(map[string]dblockext.Services)
+	for _, served := range services {
+		if err := validServices(served); err != nil {
+			return err
+		}
+		for _, dialect := range served.Dialects {
+			if dialect == "" || platform.NormalizeDialect(dialect) != dialect {
+				return fmt.Errorf("%w: %q is not the canonical name of a described dialect",
+					ErrInvalidRegistration, dialect)
+			}
+			_, again := added[dialect]
+			_, taken := registered.services[dialect]
+			if again || taken || builtin.Lookup(dialect).Locks() {
+				return fmt.Errorf("%w: dialect %q already has a lock service", ErrInvalidRegistration, dialect)
+			}
+			added[dialect] = served
+		}
+	}
+	maps.Copy(registered.services, added)
+	return nil
+}
+
+// validServices refuses services no lock can be taken through.
+func validServices(served dblockext.Services) error {
+	switch {
+	case len(served.Dialects) == 0:
+		return fmt.Errorf("%w: the services name no dialect", ErrInvalidRegistration)
+	case !served.Locks():
+		return fmt.Errorf("%w: the services of %q take no lock", ErrInvalidRegistration, served.Dialects)
+	case served.Session != nil && served.Separate != nil:
+		return fmt.Errorf("%w: the services of %q take a session lock and a separate one",
+			ErrInvalidRegistration, served.Dialects)
+	case served.Exclusion != nil && served.Session == nil:
+		return fmt.Errorf("%w: the services of %q check the exclusion of a lock no session holds",
+			ErrInvalidRegistration, served.Dialects)
+	default:
+		return nil
+	}
+}
+
+// servicesOf returns the lock services of the dialect a spelling selects: a
+// built-in one, one [Register] added, or the zero Services, which take no lock.
+// It is the one answer to whether a dialect locks: [Supported] and
+// [SupportedDialects] ask it before anything is connected, and the
+// acquisition takes the lock through what it returns.
+func servicesOf(dialect string) dblockext.Services {
+	canonical := platform.NormalizeDialect(dialect)
+	if served := builtin.Lookup(canonical); served.Locks() {
+		return served
+	}
+	registered.mu.RLock()
+	defer registered.mu.RUnlock()
+	return registered.services[canonical]
 }
 
 // Supported reports whether dialect has session-scoped advisory-lock
 // semantics. [Acquire] returns a no-op lock on unsupported dialects.
 func Supported(dialect string) bool {
-	return lockOf(dialect).Protocol != ""
+	return servicesOf(dialect).Locks()
 }
 
 // SupportedDialects returns the canonical dialect names whose targets take a
@@ -88,7 +158,7 @@ func Supported(dialect string) bool {
 func SupportedDialects() []string {
 	var supported []string
 	for _, dialect := range platform.Dialects().Dialects() {
-		if dialect.Lock.Protocol != "" {
+		if servicesOf(dialect.Name).Locks() {
 			supported = append(supported, dialect.Name)
 		}
 	}
@@ -111,8 +181,8 @@ type Lock struct {
 // holding is what a lock the server can take away from its holder offers: a
 // channel closed when it is lost, and whether it may still be held.
 type holding interface {
-	lost() <-chan struct{}
-	held() bool
+	Lost() <-chan struct{}
+	Held() bool
 }
 
 // LostError reports that the server took a held lock away from its holder,
@@ -133,22 +203,6 @@ func IsLost(err error) bool {
 	return errors.As(err, &target)
 }
 
-type queryRower interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-type ambiguousAcquisitionError struct {
-	err error
-}
-
-func (e *ambiguousAcquisitionError) Error() string {
-	return e.err.Error()
-}
-
-func (e *ambiguousAcquisitionError) Unwrap() error {
-	return e.err
-}
-
 // Supported reports whether the lock is backed by a real database lock, as
 // opposed to the no-op lock acquired on dialects without advisory locks.
 func (l *Lock) Supported() bool {
@@ -157,9 +211,9 @@ func (l *Lock) Supported() bool {
 
 // Done returns a channel that is closed when the server takes the lock away
 // from its holder. A lock [Acquire] took reports a loss: it belongs to a
-// session of its own -- a coordination session on YDB, a database session on
-// every other dialect -- which can end while the work it guards goes on over
-// other sessions. A lock [WithLockSession] took returns nil, a channel that
+// session of its own -- a database session from the pool, or a session the
+// engine's lock service opens apart from the pool -- which can end while the
+// work it guards goes on over other sessions. A lock [WithLockSession] took returns nil, a channel that
 // never closes: the work runs on the session that holds the lock, so the end
 // of that session fails the work itself. So does a no-op lock. A release is
 // not a loss and closes nothing.
@@ -167,20 +221,20 @@ func (l *Lock) Done() <-chan struct{} {
 	if l == nil || l.holding == nil {
 		return nil
 	}
-	return l.holding.lost()
+	return l.holding.Lost()
 }
 
 // Err returns a [LostError] once the lock has been taken away, and nil while
 // it may still be held, after it was released, and for a lock that reports no
 // loss (see [Lock.Done]).
 //
-// The answer is current, not the last one a background check saw. On YDB a
-// lock whose holder has not heard the server confirm it for half the session
-// timeout reads as lost; on every other dialect a session that has not
-// answered for a second is asked again before Err answers. A holder that was
-// stopped and resumes learns of a loss here before it does anything else.
+// The answer is current, not the last one a background check saw. A database
+// session that has not answered for a second is asked again before Err
+// answers, and a lock held by a session the engine's lock service opens is
+// judged by that service's own rule. A holder that was stopped and resumes
+// learns of a loss here before it does anything else.
 func (l *Lock) Err() error {
-	if l == nil || l.holding == nil || l.holding.held() {
+	if l == nil || l.holding == nil || l.holding.Held() {
 		return nil
 	}
 	return &LostError{Dialect: l.dialect, Name: l.name}
@@ -239,9 +293,9 @@ func (l *Lock) Settle(subject, work string, workErr error) error {
 // caller on a dialect without advisory locks can still report which lock it
 // would have taken. A nil lock reports the empty string.
 //
-// This is the value the dialect-specific acquisition actually used: the
-// PostgreSQL-family key is [PostgresKey] of it, MySQL, MariaDB and SQL Server
-// pass it to the server verbatim, and YDB names the semaphore with it.
+// This is the value the engine's lock service actually received: the service
+// passes it to the server verbatim, names the lock's object with it, or
+// derives a key from it.
 func (l *Lock) Name() string {
 	if l == nil {
 		return ""
@@ -277,9 +331,10 @@ func (l *Lock) Release(ctx context.Context) error {
 
 // WithLockSession pins one physical database session, acquires name on that
 // session, and runs use with the same session. The original pool is retained
-// only as the independent PostgreSQL exclusion witness. Dialects without
-// advisory-lock semantics still pin the callback session and receive an
-// explicit no-op lock.
+// only for the lock service: a second session from it is the witness of an
+// exclusion check, and a lock held apart from the pool is taken through it.
+// Dialects without advisory-lock semantics still pin the callback session and
+// receive an explicit no-op lock.
 //
 // The lock is released before the pinned session is discarded. Callback and
 // release errors are returned separately so a command can preserve the
@@ -301,10 +356,10 @@ func WithLockSession(
 
 // WithPreviewLockSession is [WithLockSession] for a run that writes nothing,
 // such as a dry run: it takes the lock only where taking it writes nothing
-// either. A YDB lock lives on a coordination node the first locking run
-// creates, so a preview takes it when the node exists and otherwise runs with
-// a no-op lock and creates nothing; no run that took a lock has used that
-// database, so there is nobody to wait for.
+// either. A lock whose service would first have to create the object it lives
+// on, such as YDB's coordination node, is not taken while that object is
+// missing, and the run gets a no-op lock: no run that took a lock has used
+// that database, so there is nobody to wait for.
 func WithPreviewLockSession(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -370,7 +425,7 @@ func acquireSessionLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, createLockNode)
+	return acquireOnSession(ctx, session, witness, dialect, name, timeout, false)
 }
 
 func acquirePreviewLock(
@@ -381,7 +436,15 @@ func acquirePreviewLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, skipTheLock)
+	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
+}
+
+// Connection is the database [Acquire] takes a lock on: a pool that names the
+// dialect of the server it reaches and hands out a session of its own.
+// *dbschema.DatabaseConnection satisfies it.
+type Connection interface {
+	Info() catalog.ServerInfo
+	Conn(ctx context.Context) (*sql.Conn, error)
 }
 
 // Acquire takes the dialect-specific session advisory lock named name on a
@@ -392,11 +455,11 @@ func acquirePreviewLock(
 // [Lock.Supported].
 func Acquire(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
-	if conn == nil {
+	if isNil(conn) {
 		return nil, errors.New("advisory locking requires database connection")
 	}
 	name = strings.TrimSpace(name)
@@ -404,13 +467,14 @@ func Acquire(
 		return nil, errors.New("advisory lock name must not be empty")
 	}
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
-	if !Supported(dialect) {
+	services := servicesOf(dialect)
+	if !services.Locks() {
 		return &Lock{name: name}, nil
 	}
-	if lockOf(dialect).Protocol == descriptor.LockCoordinationSemaphore {
-		// The semaphore belongs to a coordination session of its own, so
-		// the lock holds no SQL session from the pool.
-		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, createLockNode)
+	if services.Separate != nil {
+		// The lock belongs to a session the service opens itself, so it
+		// holds no database session from the pool.
+		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, false)
 	}
 
 	session, err := conn.Conn(ctx)
@@ -418,7 +482,7 @@ func Acquire(
 		return nil, err
 	}
 
-	lock, acquireErr := acquireOnSession(ctx, session, conn, dialect, name, timeout, createLockNode)
+	lock, acquireErr := acquireOnSession(ctx, session, conn, dialect, name, timeout, false)
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
@@ -429,45 +493,54 @@ func Acquire(
 	return lock, nil
 }
 
-// acquireOnSession takes the lock dialect offers. missing says what to do
-// when the state the lock lives on does not exist; only YDB's lock lives on
-// any.
+// isNil reports whether conn is nil or holds a nil pointer, such as a nil
+// *dbschema.DatabaseConnection, which has no Info to read.
+func isNil(conn Connection) bool {
+	if conn == nil {
+		return true
+	}
+	value := reflect.ValueOf(conn)
+	return value.Kind() == reflect.Pointer && value.IsNil()
+}
+
+// acquireOnSession takes the lock dialect's service offers: on session when
+// it is a session lock, and through witness when the service holds it apart
+// from the pool. preview marks a run that writes nothing (see
+// [WithPreviewLockSession]).
 func acquireOnSession(
 	ctx context.Context,
-	session queryRower,
-	witness connOpener,
+	session dblockext.Session,
+	witness dblockext.Pool,
 	dialect,
 	name string,
 	timeout time.Duration,
-	missing lockNodeMissing,
+	preview bool,
 ) (*Lock, error) {
 	lock := &Lock{name: name, dialect: dialect}
-	protocol := lockOf(dialect)
-	if protocol.Protocol == "" {
-		return lock, nil
+	services := servicesOf(dialect)
+	request := dblockext.Request{
+		Dialect: dialect,
+		Name:    name,
+		Timeout: timeout,
+		Preview: preview,
+		Held:    &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout},
 	}
 
 	var acquireErr error
-	switch protocol.Protocol {
-	case descriptor.LockPostgresAdvisory:
-		lock.release = releasePostgresLock(session, dialect, name)
-		acquireErr = acquirePostgresLock(ctx, session, dialect, name, timeout)
-		if acquireErr == nil {
-			if verifyErr := verifyPostgresLockExcludes(ctx, witness, dialect, name); verifyErr != nil {
-				acquireErr = &ambiguousAcquisitionError{err: verifyErr}
+	switch {
+	case services.Session != nil:
+		lock.release = func(ctx context.Context) error { return services.Session.Release(ctx, session, request) }
+		acquireErr = services.Session.Acquire(ctx, session, request)
+		if acquireErr == nil && services.Exclusion != nil {
+			if verifyErr := verifyExcludes(ctx, services.Exclusion, witness, request); verifyErr != nil {
+				acquireErr = &dblockext.AmbiguousError{Err: verifyErr}
 			}
 		}
-	case descriptor.LockGetLock:
-		lock.release = releaseMySQLLock(session, name)
-		acquireErr = acquireMySQLLock(ctx, session, dialect, name, timeout)
-	case descriptor.LockAppLock:
-		lock.release = releaseSQLServerLock(session, name)
-		acquireErr = acquireSQLServerLock(ctx, session, dialect, name, timeout)
-	case descriptor.LockCoordinationSemaphore:
-		var hold *ydbHold
-		hold, acquireErr = acquireYDBLock(ctx, witness, dialect, name, timeout, missing)
+	case services.Separate != nil:
+		var hold dblockext.Hold
+		hold, acquireErr = services.Separate.Acquire(ctx, witness, request)
 		if hold != nil {
-			lock.release = hold.release
+			lock.release = hold.Release
 			lock.holding = hold
 		}
 	}
@@ -477,7 +550,8 @@ func acquireOnSession(
 	return lock, nil
 }
 
-// AllowUnverifiedLock lets an operator run without the exclusion check below.
+// AllowUnverifiedLock lets an operator run without an engine's exclusion
+// check (dblockext.ExclusionCheck).
 //
 // It is an opt-out from a refusal, not from the lock: the lock is still taken,
 // and what is skipped is the proof that it excludes anybody. Set it only where
@@ -485,41 +559,16 @@ func acquireOnSession(
 // transaction pooler will both believe they hold it.
 var AllowUnverifiedLock = envbool.New("PTAH_ALLOW_UNVERIFIED_MIGRATION_LOCK", false, envbool.Gated)
 
-// connOpener is the part of a pool this check needs: a second connection.
-//
-// An interface rather than the connection type, so the check can be exercised
-// against a fake server. Both *sql.DB and the live connection satisfy it.
-type connOpener interface {
-	Conn(ctx context.Context) (*sql.Conn, error)
-}
-
-// verifyPostgresLockExcludes proves the lock just taken actually excludes
-// somebody else, and refuses the run when it does not.
-//
-// A PostgreSQL advisory lock is SESSION-scoped, and a transaction pooler hands
-// a client whichever backend is free between transactions. So a second client
-// can be handed the SAME backend the first one locked on, where the lock is
-// reentrant and answers true again. Measured through PgBouncer 1.25.2 in
-// transaction mode, two independent client connections and the same key:
-//
-//	first handle         acquired=true  backend=113
-//	second handle        acquired=true  backend=113
-//	first handle again   acquired=true  backend=113
-//
-// Every attempt succeeded and every one landed on backend 113. So the lock is
-// not merely weakened there -- it excludes nothing at all, and two concurrent
-// migration runs would both believe they held it. It fails OPEN, which is why
-// this is a refusal rather than a warning (stokaro/ptah#1029).
-//
-// The check asks the property rather than identifying the proxy. Ptah does not
-// need to know what sits in front of the database; it needs to know whether the
-// lock it just took keeps anybody out, and that is one query from a second
-// connection. On a direct server the second attempt answers false and the check
-// costs a round trip.
-func verifyPostgresLockExcludes(
+// verifyExcludes runs check on a lock just taken, and refuses the run when
+// the lock excludes nobody, unless [AllowUnverifiedLock] accepts the risk. A
+// lock that excludes nobody fails OPEN -- two runs would both believe they
+// held it -- which is why this is a refusal rather than a warning
+// (stokaro/ptah#1029).
+func verifyExcludes(
 	ctx context.Context,
-	pool connOpener,
-	dialect, name string,
+	check dblockext.ExclusionCheck,
+	pool dblockext.Pool,
+	request dblockext.Request,
 ) error {
 	allowed, err := AllowUnverifiedLock.Resolve()
 	if err != nil {
@@ -528,239 +577,15 @@ func verifyPostgresLockExcludes(
 	if allowed {
 		return nil
 	}
-
-	witness, err := pool.Conn(ctx)
-	if err != nil {
-		// A pool that cannot hand out a second connection cannot answer the
-		// question. Refusing on that would fail every single-connection
-		// topology, so the lock stands and the caller is not told a story
-		// about it.
-		return nil
-	}
-	defer func() { _ = witness.Close() }()
-
-	var acquiredAgain bool
-	if err := witness.QueryRowContext(
-		ctx,
-		"SELECT pg_try_advisory_lock($1)",
-		PostgresKey(name),
-	).Scan(&acquiredAgain); err != nil {
-		// The witness could not ask. That is not evidence of a broken lock.
-		return nil
-	}
-	if !acquiredAgain {
-		return nil
-	}
-
-	// The witness got the same lock, so nothing is excluded. Give its own claim
-	// back before refusing, or the backend keeps a lock nobody will release.
-	var released bool
-	_ = witness.QueryRowContext(
-		context.WithoutCancel(ctx),
-		"SELECT pg_advisory_unlock($1)",
-		PostgresKey(name),
-	).Scan(&released)
-
-	return fmt.Errorf(
-		"%s advisory lock %q excludes nothing on this connection: a second connection took the same "+
-			"lock, which is what a transaction-pooling proxy such as PgBouncer produces -- it hands both "+
-			"clients one backend session, where the lock is reentrant. Two runs would both believe they "+
-			"held it. Connect to the database directly for schema-mutating commands, or set %s=1 to accept "+
-			"the risk",
-		dialect, name, AllowUnverifiedLock.Name())
-}
-
-// PostgresKey returns the 64-bit pg_advisory_lock key derived from name.
-func PostgresKey(name string) int64 {
-	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(name))
-	return int64(hash.Sum32())
-}
-
-func acquirePostgresLock(
-	ctx context.Context,
-	conn queryRower,
-	dialect, name string,
-	timeout time.Duration,
-) error {
-	lockCtx := ctx
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		lockCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-
-	ticker := time.NewTicker(postgresLockPollInterval)
-	defer ticker.Stop()
-	for {
-		var acquired bool
-		if err := conn.QueryRowContext(
-			lockCtx,
-			"SELECT pg_try_advisory_lock($1)",
-			PostgresKey(name),
-		).Scan(&acquired); err != nil {
-			return &ambiguousAcquisitionError{
-				err: postgresLockWaitError(ctx, lockCtx, dialect, name, timeout, err),
-			}
-		}
-		if acquired {
-			return nil
-		}
-		if timeout < 0 {
-			return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
-		}
-
-		select {
-		case <-lockCtx.Done():
-			return postgresLockWaitError(
-				ctx,
-				lockCtx,
-				dialect,
-				name,
-				timeout,
-				lockCtx.Err(),
-			)
-		case <-ticker.C:
-		}
-	}
-}
-
-func postgresLockWaitError(
-	ctx,
-	lockCtx context.Context,
-	dialect,
-	name string,
-	timeout time.Duration,
-	fallback error,
-) error {
-	if timeout > 0 &&
-		errors.Is(lockCtx.Err(), context.DeadlineExceeded) &&
-		ctx.Err() == nil {
-		return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
-	}
-	return fallback
-}
-
-func releasePostgresLock(conn queryRower, dialect, name string) func(context.Context) error {
-	return func(ctx context.Context) error {
-		var released bool
-		if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", PostgresKey(name)).Scan(&released); err != nil {
-			return err
-		}
-		if !released {
-			return fmt.Errorf("%s advisory lock was not held", dialect)
-		}
-		return nil
-	}
-}
-
-func acquireMySQLLock(ctx context.Context, conn queryRower, dialect, name string, timeout time.Duration) error {
-	timeoutSeconds := mySQLLockTimeoutSeconds(dialect, timeout)
-
-	var acquired sql.NullInt64
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, timeoutSeconds).Scan(&acquired); err != nil {
-		return &ambiguousAcquisitionError{err: err}
-	}
-	if !acquired.Valid {
-		return fmt.Errorf("GET_LOCK(%q) returned NULL", name)
-	}
-	if acquired.Int64 == 0 {
-		return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
+	if err := check.Excludes(ctx, pool, request); err != nil {
+		return fmt.Errorf("%w. Connect to the database directly for schema-mutating commands, or set %s=1 "+
+			"to accept the risk", err, AllowUnverifiedLock.Name())
 	}
 	return nil
 }
 
-func releaseMySQLLock(conn queryRower, name string) func(context.Context) error {
-	return func(ctx context.Context) error {
-		var released sql.NullInt64
-		if err := conn.QueryRowContext(ctx, "SELECT RELEASE_LOCK(?)", name).Scan(&released); err != nil {
-			return err
-		}
-		if !released.Valid {
-			return fmt.Errorf("mysql advisory lock was not held")
-		}
-		if released.Int64 == 0 {
-			return fmt.Errorf("mysql advisory lock was not released")
-		}
-		return nil
-	}
-}
-
-func acquireSQLServerLock(ctx context.Context, conn queryRower, dialect, name string, timeout time.Duration) error {
-	timeoutMilliseconds := sqlServerLockTimeoutMilliseconds(timeout)
-
-	var result int
-	if err := conn.QueryRowContext(ctx, `
-DECLARE @result INT;
-EXEC @result = sys.sp_getapplock
-    @Resource = @p1,
-    @LockMode = 'Exclusive',
-    @LockOwner = 'Session',
-    @LockTimeout = @p2;
-SELECT @result;`, name, timeoutMilliseconds).Scan(&result); err != nil {
-		return &ambiguousAcquisitionError{err: err}
-	}
-	if result >= 0 {
-		return nil
-	}
-	if result == -1 {
-		return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
-	}
-	return fmt.Errorf("sqlserver sp_getapplock(%q) failed with return code %d", name, result)
-}
-
-func releaseSQLServerLock(conn queryRower, name string) func(context.Context) error {
-	return func(ctx context.Context) error {
-		var result int
-		if err := conn.QueryRowContext(ctx, `
-DECLARE @result INT;
-EXEC @result = sys.sp_releaseapplock
-    @Resource = @p1,
-    @LockOwner = 'Session';
-SELECT @result;`, name).Scan(&result); err != nil {
-			return err
-		}
-		if result < 0 {
-			return fmt.Errorf("sqlserver sp_releaseapplock(%q) failed with return code %d", name, result)
-		}
-		return nil
-	}
-}
-
-// mySQLLockTimeoutSeconds is the GET_LOCK timeout a wait of timeout sends: a
-// positive one rounded up to whole seconds, zero for a negative one, which
-// does not wait, and for a zero one, which waits without limit, the
-// descriptor's unbounded wait where the engine refuses GET_LOCK's own
-// negative spelling of it, as MariaDB does.
-func mySQLLockTimeoutSeconds(dialect string, timeout time.Duration) float64 {
-	if timeout > 0 {
-		return math.Ceil(timeout.Seconds())
-	}
-	if timeout < 0 {
-		return 0
-	}
-	if unbounded := lockOf(dialect).UnboundedWaitSeconds; unbounded > 0 {
-		return float64(unbounded)
-	}
-	return -1
-}
-
-func sqlServerLockTimeoutMilliseconds(timeout time.Duration) int {
-	if timeout < 0 {
-		return 0
-	}
-	if timeout == 0 {
-		return -1
-	}
-	milliseconds := math.Ceil(float64(timeout) / float64(time.Millisecond))
-	if milliseconds > math.MaxInt32 {
-		return math.MaxInt32
-	}
-	return int(milliseconds)
-}
-
 func closeAfterFailedAcquisition(conn *sql.Conn, acquireErr error) error {
-	if _, ok := errors.AsType[*ambiguousAcquisitionError](acquireErr); ok {
+	if _, ok := errors.AsType[*dblockext.AmbiguousError](acquireErr); ok {
 		return errors.Join(acquireErr, discardConnection(conn))
 	}
 	return errors.Join(acquireErr, conn.Close())
