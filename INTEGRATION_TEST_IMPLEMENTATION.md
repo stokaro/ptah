@@ -61,7 +61,7 @@ All scenarios from the original plan have been implemented:
 - ✅ Launch two migrate up processes in parallel
 - ✅ Verify at least one runner succeeds and the final migration state is consistent
 - ✅ `migrate up` runs under a session-scoped advisory lock named `ptah_migrate`, so a second runner waits instead of interleaving; `--lock-timeout` bounds that wait and a runner that gives up reports a lock timeout rather than a partial apply
-- ⚠️ The lock is real on PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server. `internal/dblock.Supported` is the list, and every dialect outside it takes a no-op lock, so a deployment there still has to enforce a single runner outside Ptah
+- ⚠️ The lock is real on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server and YDB, where it is a coordination-node semaphore. `internal/dblock.Supported` is the list, and every dialect outside it takes a no-op lock, so a deployment there still has to enforce a single runner outside Ptah
 
 #### Partial Failure Recovery ✅
 - ✅ Handle multi-step migration with intentional failure
