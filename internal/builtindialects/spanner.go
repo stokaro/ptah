@@ -167,6 +167,20 @@ func spanner() descriptor.Dialect {
 		// --qualifier` writes one, would need on Spanner.
 		QualifierRefusal: "Spanner renders through the PostgreSQL path but has no live coverage at all " +
 			"(stokaro/ptah#942), so a qualified plan could not be shown to apply",
+
+		// System schemas: what internal/pgsystemschema reads. Spanner lists
+		// spanner_sys in pg_namespace beside public, measured on the PGAdapter
+		// emulator v0.55.3, and it is the server's own, so a read leaves it
+		// out. Neither schema can be created: `CREATE SCHEMA IF NOT EXISTS
+		// "public"` is refused with `Schema name not valid: public`, measured
+		// on v0.55.2, and the IF NOT EXISTS does not help because the refusal
+		// is about the name (stokaro/ptah#2072). `public` holds the user's own
+		// tables, and `ptah schema inspect` writes a `schema "public"` block
+		// for it, so a document may declare it.
+		SystemSchemas: descriptor.SystemSchemas{
+			Catalog:  []string{"spanner_sys"},
+			Implicit: []string{"public", "spanner_sys"},
+		},
 	}
 }
 

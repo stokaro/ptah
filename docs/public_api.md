@@ -4822,6 +4822,10 @@ in place of a dialect's name:
 - `SchemaAttributesQuery`: the catalog query that reads a schema's character
   set and collation, and `QualifierRefusal`: why a schema qualifier does not
   rewrite a planned migration on the engine.
+- `SystemSchemas`: the schemas a PostgreSQL-family engine owns beyond
+  information_schema and the pg_ namespaces every member owns: the ones a
+  realm read leaves out, the ones a schema document may not hold, and the
+  ones every database holds that a migration never creates.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,

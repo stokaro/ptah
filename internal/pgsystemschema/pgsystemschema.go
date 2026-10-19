@@ -1,9 +1,11 @@
 // Package pgsystemschema answers, from a schema NAME alone, which namespaces a
 // PostgreSQL-family server owns rather than the user, and renders the
-// predicate a realm read keeps the user's schemas with. PostgreSQL,
-// CockroachDB, YugabyteDB and the Spanner PostgreSQL interface share a reader
-// but not an identical set of system namespaces, so the dialect decides the
-// set.
+// predicate a realm read keeps the user's schemas with. Every member of the
+// family owns information_schema and the pg_ namespaces, which this package
+// holds. A member that owns more states them in its dialect descriptor
+// (descriptor.SystemSchemas), and the answers here take the base set plus
+// what the descriptor states, so an engine adds its schemas without editing
+// this package.
 //
 // It is a leaf on purpose. The question is about names and dialects, so it
 // needs neither a connection nor a database URL, and the packages that render
@@ -15,13 +17,25 @@ package pgsystemschema
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/sqlident"
 )
+
+// stated is the schemas each dialect's descriptor adds to the base set. The
+// answers are asked for each schema name a document or a plan holds, so they
+// are derived once per descriptor rather than copied out of the registry for
+// every name.
+var stated = descriptortable.New(func(described descriptor.Dialect) descriptor.SystemSchemas {
+	return described.SystemSchemas
+})
 
 // PostgresDescribedSchemasPredicate is the realm predicate a DESCRIPTION uses:
 // [PostgresNonSystemSchemasPredicate] plus the schemas an extension owns.
@@ -73,26 +87,17 @@ func PostgresDescribedSchemasPredicate(dialect string, caps capability.Capabilit
 
 // PostgresNonSystemSchemasPredicate returns the WHERE predicate that keeps the
 // schemas a PostgreSQL-family realm describes and drops the server's own, over
-// a `pg_namespace n`.
+// a `pg_namespace n`: information_schema, the pg_ namespaces, and the catalog
+// schemas the dialect's descriptor states (descriptor.SystemSchemas.Catalog),
+// in the order it states them.
 //
 // The ESCAPE clause matters: in LIKE, `_` matches any single character, so an
 // unescaped 'pg\_%' would also hide a user schema named `pgapp` and describe
 // less of the database than is there.
-//
-// The predicate is derived from the normalized dialect because PostgreSQL,
-// CockroachDB and YugabyteDB share a reader but not an identical system
-// namespace set. CockroachDB exposes crdb_internal through the PostgreSQL
-// catalog surface, but its virtual relations are not ordinary user tables and
-// PostgreSQL readers cannot inspect them as comparison input. Spanner lists
-// spanner_sys in pg_namespace beside public, measured on the PGAdapter
-// emulator v0.55.3, and it is the server's own.
 func PostgresNonSystemSchemasPredicate(dialect string) string {
 	predicates := []string{`n.nspname <> 'information_schema'`}
-	switch platform.NormalizeDialect(dialect) {
-	case platform.CockroachDB:
-		predicates = append(predicates, `n.nspname <> 'crdb_internal'`)
-	case platform.Spanner:
-		predicates = append(predicates, `n.nspname <> 'spanner_sys'`)
+	for _, schema := range stated.Get(dialect).Catalog {
+		predicates = append(predicates, `n.nspname <> `+sqlident.StringLiteral(schema))
 	}
 	predicates = append(predicates, `n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`)
 	return strings.Join(predicates, `
@@ -109,34 +114,27 @@ func IsPostgresSystemSchema(name string) bool {
 }
 
 // IsPostgresFamilySystemSchema reports whether name is owned by the concrete
-// PostgreSQL-family target. CockroachDB adds crdb_internal to PostgreSQL's
-// common catalog namespaces. Matching remains exact so a quoted lookalike such
-// as "CRDB_INTERNAL" is still a user identifier.
+// PostgreSQL-family target: a name [IsPostgresSystemSchema] reports, or one
+// the dialect's descriptor reserves (descriptor.SystemSchemas.Reserved).
+// Matching remains exact so a quoted lookalike in another case is still a
+// user identifier.
 func IsPostgresFamilySystemSchema(dialect, name string) bool {
-	return IsPostgresSystemSchema(name) ||
-		platform.NormalizeDialect(dialect) == platform.CockroachDB && name == "crdb_internal"
+	return IsPostgresSystemSchema(name) || slices.Contains(stated.Get(dialect).Reserved, name)
 }
 
 // IsUncreatableSchema reports whether the target owns name and will not create
-// it, so a migration has to put objects into it without asking for it first.
+// it, so a migration has to put objects into it without asking for it first:
+// a name [IsPostgresFamilySystemSchema] reports, or one the dialect's
+// descriptor states every database holds (descriptor.SystemSchemas.Implicit).
 //
 // It is deliberately wider than [IsPostgresFamilySystemSchema] and used for a
-// narrower thing. Spanner's `public` is not a catalog namespace -- it holds the
-// user's own tables -- but it is implicit there and cannot be created:
-// `CREATE SCHEMA IF NOT EXISTS "public"` is refused with `Schema name not
-// valid: public`, measured on the PGAdapter emulator v0.55.2, and the IF NOT
-// EXISTS does not help because the refusal is about the name rather than the
-// existence. A document that DECLARES `schema "public"` is still accepted:
-// `ptah schema inspect` writes exactly that block against Spanner, and refusing
-// to read back what Ptah wrote would be the worse fault.
+// narrower thing. An implicit schema need not be a catalog namespace: it may
+// hold the user's own tables, as Spanner's `public` does. A document that
+// DECLARES such a schema is still accepted, because a schema read writes
+// exactly that block, and refusing to read back what Ptah wrote would be the
+// worse fault.
 func IsUncreatableSchema(dialect, name string) bool {
-	if IsPostgresFamilySystemSchema(dialect, name) {
-		return true
-	}
-	if platform.NormalizeDialect(dialect) != platform.Spanner {
-		return false
-	}
-	return name == "public" || name == "spanner_sys"
+	return IsPostgresFamilySystemSchema(dialect, name) || slices.Contains(stated.Get(dialect).Implicit, name)
 }
 
 // ValidateDeclaredPostgresSystemSchemas refuses schema declarations that ask a
