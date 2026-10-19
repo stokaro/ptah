@@ -3,6 +3,7 @@ package descriptor
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // SystemSchemas states the schemas a PostgreSQL-family engine owns beyond
@@ -10,9 +11,11 @@ import (
 // namespaces, which internal/pgsystemschema holds. The reader takes that base
 // set and adds these lists. The zero value adds nothing, as on PostgreSQL.
 //
-// A name is matched exactly, so a quoted lookalike in another case is a
-// schema of the user's. A schema may be in more than one list, since each
-// list states one thing a reader does with it.
+// A name in Catalog, Reserved or Implicit is matched exactly, so a quoted
+// lookalike in another case is a schema of the user's unless the engine
+// states otherwise in ReservedPrefixes or ReservedCaseVariants. A schema may
+// be in more than one list, since each list states one thing a reader does
+// with it.
 type SystemSchemas struct {
 	// Catalog are the schemas that hold the server's own catalog, which a
 	// realm read leaves out of a description.
@@ -27,12 +30,23 @@ type SystemSchemas struct {
 	// server refuses to create, so a migration places objects in them without
 	// creating them first. A document may declare one.
 	Implicit []string `json:"implicit,omitempty"`
+	// ReservedPrefixes are the prefixes of the schema names the server
+	// refuses to create, matched with their case: a schema whose name starts
+	// with one is reserved, as one in Reserved is. The pg_ prefix is reserved
+	// on every member of the family and is not stated here.
+	ReservedPrefixes []string `json:"reserved_prefixes,omitempty"`
+	// ReservedCaseVariants are the names the server refuses to create in a
+	// spelling of another case: a schema whose name equals one when case is
+	// ignored, and is not spelled the same, is reserved. The spelling stated
+	// here is what the base set and the other lists say it is, so a variant of
+	// an implicit schema is reserved while the implicit schema is not.
+	ReservedCaseVariants []string `json:"reserved_case_variants,omitempty"`
 }
 
-// validateSystemSchemas checks that every system schema has a name, that no
-// list names one twice, and that no schema is both reserved and implicit:
-// a reserved schema is never created, so the implicit entry would say
-// nothing.
+// validateSystemSchemas checks that every system schema and prefix has a
+// name, that no list names one twice, and that no implicit schema is
+// reserved, by name or by prefix: a reserved schema is never created, so the
+// implicit entry would say nothing.
 func (d Dialect) validateSystemSchemas() error {
 	lists := []struct {
 		name    string
@@ -41,6 +55,8 @@ func (d Dialect) validateSystemSchemas() error {
 		{"catalog", d.SystemSchemas.Catalog},
 		{"reserved", d.SystemSchemas.Reserved},
 		{"implicit", d.SystemSchemas.Implicit},
+		{"reserved prefix", d.SystemSchemas.ReservedPrefixes},
+		{"reserved case variant", d.SystemSchemas.ReservedCaseVariants},
 	}
 	for _, list := range lists {
 		for i, schema := range list.schemas {
@@ -56,6 +72,12 @@ func (d Dialect) validateSystemSchemas() error {
 		if slices.Contains(d.SystemSchemas.Reserved, schema) {
 			return fmt.Errorf("%w: dialect %q: system schema %q is both reserved and implicit; a reserved schema is never created",
 				ErrInvalidDescriptor, d.Name, schema)
+		}
+		for _, prefix := range d.SystemSchemas.ReservedPrefixes {
+			if strings.HasPrefix(schema, prefix) {
+				return fmt.Errorf("%w: dialect %q: implicit system schema %q starts with reserved prefix %q; a reserved schema is never created",
+					ErrInvalidDescriptor, d.Name, schema, prefix)
+			}
 		}
 	}
 	return nil

@@ -9,15 +9,18 @@ import (
 )
 
 // TestNewRegistry_SystemSchemas_HappyPath accepts a schema in more than one
-// list, since each list states one thing a reader does with it, and keeps the
-// lists as stated.
+// list, since each list states one thing a reader does with it, a reserved
+// schema that starts with a reserved prefix, and an implicit schema whose
+// spellings in other cases are reserved, and keeps the lists as stated.
 func TestNewRegistry_SystemSchemas_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	described := head("alpha")
 	described.SystemSchemas = descriptor.SystemSchemas{
-		Catalog:  []string{"alpha_catalog", "alpha_sys"},
-		Reserved: []string{"alpha_catalog"},
-		Implicit: []string{"public", "alpha_sys"},
+		Catalog:              []string{"alpha_catalog", "alpha_sys"},
+		Reserved:             []string{"alpha_catalog"},
+		Implicit:             []string{"public", "alpha_sys"},
+		ReservedPrefixes:     []string{"alpha_cat"},
+		ReservedCaseVariants: []string{"public", "alpha_sys"},
 	}
 
 	registry, err := descriptor.NewRegistry(described)
@@ -53,6 +56,27 @@ func TestNewRegistry_SystemSchemas_FailurePath(t *testing.T) {
 			name:    "a schema named twice in one list",
 			schemas: descriptor.SystemSchemas{Catalog: []string{"alpha_sys", "other", "alpha_sys"}},
 			wantErr: `invalid dialect descriptor: dialect "alpha": catalog system schema "alpha_sys" is named twice`,
+		},
+		{
+			name:    "an empty reserved prefix",
+			schemas: descriptor.SystemSchemas{ReservedPrefixes: []string{""}},
+			wantErr: `invalid dialect descriptor: dialect "alpha": an empty reserved prefix system schema`,
+		},
+		{
+			name:    "an empty reserved case variant",
+			schemas: descriptor.SystemSchemas{ReservedCaseVariants: []string{"public", ""}},
+			wantErr: `invalid dialect descriptor: dialect "alpha": an empty reserved case variant system schema`,
+		},
+		{
+			name:    "a reserved prefix named twice",
+			schemas: descriptor.SystemSchemas{ReservedPrefixes: []string{"alpha_", "alpha_"}},
+			wantErr: `invalid dialect descriptor: dialect "alpha": reserved prefix system schema "alpha_" is named twice`,
+		},
+		{
+			name:    "an implicit schema with a reserved prefix",
+			schemas: descriptor.SystemSchemas{ReservedPrefixes: []string{"alpha_"}, Implicit: []string{"public", "alpha_sys"}},
+			wantErr: `invalid dialect descriptor: dialect "alpha": implicit system schema "alpha_sys" starts with reserved prefix "alpha_"; ` +
+				`a reserved schema is never created`,
 		},
 		{
 			name:    "a reserved schema that is also implicit",

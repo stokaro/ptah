@@ -183,10 +183,27 @@ func spanner() descriptor.Dialect {
 		// But `public` holds the user's own tables, and `ptah schema inspect`
 		// writes a `schema "public"` block for it, so a document may declare
 		// it.
+		//
+		// The server refuses more names than it lists, measured on v0.56.1.
+		// `CREATE SCHEMA` refuses every name that starts with `spanner_` or
+		// `pg_` in lower case (`spanner_x`, `"spanner_"`), and accepts
+		// `"SPANNER_X"` and `"PG_X"`. It refuses `spanner` and `"default"`
+		// with `Schema name not valid`, and a table placed in either with
+		// `Schema not found`, although `spanner.farm_fingerprint` answers.
+		// It refuses those two, `information_schema`, `pg_catalog`, `public`
+		// and `spanner_sys` in every other case too (`"SPANNER_SYS"`,
+		// `"Public"`, `"Pg_Catalog"`), and a table placed in `"PUBLIC"` is
+		// refused with `Schema not found: PUBLIC`, so a variant names no
+		// schema. `"PG_TOAST"`, `"SPANNER_"`, `"select"`, `spannerx` and
+		// `crdb_internal` are created.
 		SystemSchemas: descriptor.SystemSchemas{
-			Catalog:  []string{"spanner_sys"},
-			Reserved: []string{"spanner_sys"},
-			Implicit: []string{"public"},
+			Catalog:          []string{"spanner_sys"},
+			Reserved:         []string{"spanner_sys", "spanner", "default"},
+			Implicit:         []string{"public"},
+			ReservedPrefixes: []string{"spanner_"},
+			ReservedCaseVariants: []string{
+				"default", "information_schema", "pg_catalog", "public", "spanner", "spanner_sys",
+			},
 		},
 
 		// Migrations: the engine's reading decides a migration file's

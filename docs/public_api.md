@@ -4825,7 +4825,10 @@ in place of a dialect's name:
 - `SystemSchemas`: the schemas a PostgreSQL-family engine owns beyond
   information_schema and the pg_ namespaces every member owns: the ones a
   realm read leaves out, the ones a schema document may not hold, and the
-  ones every database holds that a migration never creates.
+  ones every database holds that a migration never creates. Beside the
+  names, it states the name prefixes a document may not hold, and the
+  names whose spellings in another case it may not hold, where the server
+  refuses to create them.
 - `Migration`: whether the engine's reading decides the directives of a
   migration file whose dialect is unknown, the session settings a migration
   replay restores, and whether a value added to an existing enum type has to
