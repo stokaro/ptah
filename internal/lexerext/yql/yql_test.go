@@ -28,17 +28,20 @@ func yqlTokens(input string) []yqlToken {
 	return tokens
 }
 
-// everyToken lexes input with the YQL scanner through its EOF token.
+// everyToken lexes input through EOF, allowing at most one token per byte
+// plus EOF. A scanner that stops advancing returns finite evidence for the
+// assertions instead of hanging the suite.
 func everyToken(input string) []lexer.Token {
 	l := lexer.NewLexerWithOptions(input, lexer.Options{Scanner: yql.Scanner{}})
 	var tokens []lexer.Token
-	for {
+	for range len(input) + 1 {
 		token := l.NextToken()
 		tokens = append(tokens, token)
 		if token.Type == lexer.TokenEOF {
 			return tokens
 		}
 	}
+	return tokens
 }
 
 // Each row is measured on YDB 26.2.1.14 through the ydb CLI, or read from the
