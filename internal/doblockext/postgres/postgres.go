@@ -1,16 +1,52 @@
-package sqlschema
+// Package postgres reads the roles a PostgreSQL DO block declares in a schema
+// file. The block is a bounded subset of PL/pgSQL: nested BEGIN blocks, NULL,
+// CREATE ROLE, and IF conditions on whether a role exists, written against
+// pg_catalog.pg_roles. What it holds is PostgreSQL's: the catalog a condition
+// reads, the options a CREATE ROLE takes, the 63-byte limit on a role name,
+// and the role names the server reserves (internal/pgreservedrole). A
+// dialect's descriptor selects it by naming descriptor.DoBlocksPLpgSQL.
+package postgres
 
 import (
 	"fmt"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/doblockext"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/pgreservedrole"
 )
+
+// Services returns the DO-block services of PL/pgSQL.
+func Services() doblockext.Services {
+	return doblockext.Services{Languages: []string{descriptor.DoBlocksPLpgSQL}, Label: "PL/pgSQL", Roles: reader{}}
+}
+
+// reader reads a DO block with [roleBootstrap].
+type reader struct{}
+
+// Roles interprets the block's body against the roles the request declares.
+func (reader) Roles(request doblockext.Request) ([]schemamodel.Role, error) {
+	p := roleBootstrap{sql: request.Body, roles: make(map[string]bool), dialect: request.Dialect, record: request.Role}
+	for _, name := range request.Declared {
+		p.roles[name] = true
+	}
+	if err := p.tokenize(); err != nil {
+		return nil, err
+	}
+	if err := p.block(bootstrapApply, 0); err != nil {
+		return nil, err
+	}
+	p.take(";")
+	if p.pos != len(p.tokens) {
+		return nil, p.unsupported("unexpected text after END")
+	}
+	return p.created, nil
+}
 
 // bootstrapMode separates syntax validation from applying selected declarations.
 // Every branch is parsed; only the selected branch contributes role state.
@@ -33,44 +69,8 @@ type roleBootstrap struct {
 	pos     int
 	roles   map[string]bool
 	created []schemamodel.Role
-}
-
-func appendRoleBootstrap(
-	database *schemamodel.Database, document *Document, block *ast.PostgresDoBlockNode, dialect string,
-) error {
-	// The block is read as the source dialect's, or for a read with no
-	// dialect as the dialect whose descriptor names a DO-block language.
-	reader := factsOf(dialect)
-	if dialect == "" {
-		reader = factsOf(factsOfRegistry().doBlockReader)
-	}
-	if reader.statements.DoBlocks == "" {
-		return fmt.Errorf("%w: procedural role declarations require PostgreSQL", ErrUnmodeledStatement)
-	}
-	if block.Language != "" && !strings.EqualFold(block.Language, reader.statements.DoBlocks) {
-		return fmt.Errorf("%w: desired-state DO blocks require the supported PL/pgSQL role-bootstrap form", ErrUnmodeledStatement)
-	}
-	p := roleBootstrap{sql: block.Body.SQL, roles: make(map[string]bool), dialect: reader.name}
-	for _, role := range database.Roles {
-		p.roles[role.Name] = true
-	}
-	if document.base != nil {
-		for _, role := range document.base.Roles {
-			p.roles[role.Name] = true
-		}
-	}
-	if err := p.tokenize(); err != nil {
-		return err
-	}
-	if err := p.block(bootstrapApply, 0); err != nil {
-		return err
-	}
-	p.take(";")
-	if p.pos != len(p.tokens) {
-		return p.unsupported("unexpected text after END")
-	}
-	database.Roles = append(database.Roles, p.created...)
-	return nil
+	// record records a CREATE ROLE as the schema reader does.
+	record func(*ast.CreateRoleNode) schemamodel.Role
 }
 
 func (p *roleBootstrap) unsupported(reason string) error {
@@ -78,8 +78,8 @@ func (p *roleBootstrap) unsupported(reason string) error {
 	if p.pos < len(p.tokens) {
 		position = p.tokens[p.pos].Start
 	}
-	return fmt.Errorf("%w: desired-state DO block at body byte %d: %s; use supported role-bootstrap declarations or an explicit migration",
-		ErrUnmodeledStatement, position, reason)
+	return fmt.Errorf("desired-state DO block at body byte %d: %s; use supported role-bootstrap declarations or an explicit migration",
+		position, reason)
 }
 
 // take compares token spelling, never fragments inside a string or quoted
@@ -270,7 +270,7 @@ func (p *roleBootstrap) createRole() (*schemamodel.Role, error) {
 	if !ok {
 		return nil, p.unsupported("expected CREATE ROLE")
 	}
-	role := toRole(node, p.dialect)
+	role := p.record(node)
 	if role.Name == "" || len(role.Name) > 63 || pgreservedrole.Is(role.Name) {
 		return nil, p.unsupported("CREATE ROLE must name an application role of 1 to 63 bytes")
 	}

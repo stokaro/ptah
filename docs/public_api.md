@@ -4807,6 +4807,13 @@ in place of a dialect's name:
   `ForeignKeyNaming`: how the server resolves a name a schema file writes, and
   the names it gives the indexes, CHECKs, constraints and foreign keys the
   file leaves unnamed.
+- `Statements` and `TableOptions`: how the server reads the role and table
+  statements a schema file writes. `Statements.DoBlocks` names the procedural
+  language of a DO block that declares roles, one of `DoBlockLanguages`, such
+  as `DoBlocksPLpgSQL`; a registry refuses any other value, and the SQL reader
+  reads the block with that language's reader. `TableOptions` are the options
+  after a CREATE TABLE that set a property of the engine's own group, and no
+  other group.
 - `URLs`: how a database URL of the engine is read and compared before
   anything is connected: the port a URL that names none reaches, the dialect
   its URLs are compared as, a grammar beyond the one `net/url` reads, and the

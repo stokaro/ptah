@@ -29,6 +29,8 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": index naming max bytes -1 is negative`},
 		{name: "an undeclared constraint naming", dialect: with(func(d *descriptor.Dialect) { d.ConstraintNaming = "numbered" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": constraint naming "numbered" is not "table-columns-suffix"`},
+		{name: "an undeclared DO-block language", dialect: with(func(d *descriptor.Dialect) { d.Statements.DoBlocks = "plv8" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": DO-block language "plv8" is not one of \["plpgsql"\]`},
 		{name: "a table option without a property", dialect: with(func(d *descriptor.Dialect) {
 			d.TableOptions = []descriptor.TableOption{{Option: "STRICT"}}
 		}),

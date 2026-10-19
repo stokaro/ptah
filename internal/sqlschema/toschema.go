@@ -303,12 +303,13 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	if sourcePlatform != "" {
 		tableSchema.Overrides = make(map[string]map[string]string)
 
-		// Store platform-specific options as overrides
+		// Store platform-specific options as overrides. ENGINE is the table's
+		// engine, and an option a dialect's TableOptions state is that
+		// dialect's, stated below.
 		platformOverrides := make(map[string]string)
+		owned := factsOfRegistry().ownedOptions
 		for key, value := range table.Options {
-			switch key {
-			case "ENGINE", "STRICT", "WITHOUT_ROWID":
-			default:
+			if key != "ENGINE" && !owned[key] {
 				platformOverrides[strings.ToLower(key)] = value
 			}
 		}
@@ -328,8 +329,8 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		}
 	}
 
-	// STRICT and WITHOUT ROWID are the SQLite owner's, which reads them from
-	// the table's sqlite platform properties.
+	// An option a dialect's TableOptions state is a property of that
+	// dialect's group, where its owner reads it.
 	tableSchema.Overrides = tableOptionProperties(tableSchema.Overrides, table.Options)
 	return tableSchema
 }

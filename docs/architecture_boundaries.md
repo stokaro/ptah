@@ -115,6 +115,14 @@ document. Two seams carry it, and both are plugin debt under
   The parser runs in process. Whether a grammar owner also serves syntax trees
   over the protocol, and in what form, is not decided yet.
 
+A DO block that declares roles is read by the reader of the procedural
+language the dialect's descriptor names (`Statements.DoBlocks`), which
+`internal/doblockext/builtin` looks up. PostgreSQL's PL/pgSQL reader is
+`internal/doblockext/postgres`. The SQL reader keeps what every language
+shares: which dialect a block is read as, the roles the file declared before
+it, and how a CREATE ROLE is recorded. The reader runs in process, like the
+YQL parser.
+
 The tables the shared conversion reads for the YDB owner carry YDB names: one
 path in backticks, where a dot is part of the name. The reader asks
 `internal/sqlident`, the helper that also quotes and qualifies a name, how a
