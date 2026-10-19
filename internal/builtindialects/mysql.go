@@ -209,6 +209,44 @@ func mysql() descriptor.Dialect {
 			DockerDrivers: []string{"mysql"},
 			HCL:           mysqlFamilyAtlasHCL(),
 		},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// MySQL 8.4 keeps the last [NOT] ENFORCED after a CHECK and takes none
+		// after a foreign key, and records MATCH FULL and PARTIAL without
+		// enforcing either. A column CONSTRAINT precedes a CHECK alone, in a
+		// MODIFY too, and a MODIFY takes no REFERENCES (stokaro/ptah#3745,
+		// #3759). What a column-level REFERENCES builds depends on the release
+		// (stokaro/ptah#3760). Index keywords, options, the bare UNIQUE name,
+		// the FOREIGN KEY index name and functional key parts are the family's
+		// table body; MariaDB has no functional key parts.
+		Grammar: descriptor.Grammar{
+			Columns: descriptor.ColumnGrammar{
+				ReferencesRefusal: "MySQL 8.4 builds nothing from the clause, while MySQL 9.7 and 26.7 build a " +
+					"foreign key and its index, and the SQL file is read without the server version, so Ptah " +
+					"refuses the clause rather than guess which schema it declares; write a table-level FOREIGN " +
+					"KEY clause, which every MySQL line builds",
+				Constraint:              descriptor.ColumnConstraint{Define: descriptor.ConstraintKindCheck, Modify: descriptor.ConstraintKindCheck},
+				ModifyRefusesReferences: true,
+			},
+			Constraints: descriptor.ConstraintGrammar{
+				Enforcement:    descriptor.Enforcement{Checks: true},
+				Match:          descriptor.Match{Clause: true, Partial: true},
+				Deferral:       descriptor.Deferral{Refusal: mysqlFamilyDeferralRefusal},
+				SymbolOptional: true,
+			},
+			Keys: descriptor.KeyGrammar{
+				IndexKeywords: []string{"KEY", "INDEX", "FULLTEXT", "SPATIAL"},
+				Options:       true,
+				Visibility: descriptor.KeyVisibility{
+					Refused: []string{"IGNORED", "NOT IGNORED"},
+					Refusal: "it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064",
+				},
+				BareUniqueName:       true,
+				ForeignKeyIndexName:  true,
+				FunctionalParts:      true,
+				RefusesNullsDistinct: true,
+			},
+		},
 	}
 }
 
@@ -292,3 +330,8 @@ func mysqlFamilyAtlasHCL() descriptor.AtlasHCL {
 		IndexProperties:  []string{"parser"},
 	}
 }
+
+// mysqlFamilyDeferralRefusal is why MySQL and MariaDB refuse every deferral
+// clause, which neither engine reads.
+const mysqlFamilyDeferralRefusal = "MySQL and MariaDB have no deferrable constraints, and MySQL 8.4 and " +
+	"MariaDB 11.8 answer ERROR 1064 to the clause"

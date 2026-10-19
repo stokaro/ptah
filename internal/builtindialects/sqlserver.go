@@ -164,6 +164,12 @@ END`,
 		// docker://sqlserver with "unknown driver".
 		URLs:  descriptor.URLs{DefaultPort: 1433},
 		Atlas: descriptor.Atlas{DockerDrivers: []string{"sqlserver"}},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// A table body declares an index with INDEX, and reserves KEY.
+		Grammar: descriptor.Grammar{
+			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
+		},
 	}
 }
 

@@ -72,6 +72,9 @@ type Parser struct {
 
 	dialect      string
 	capabilities capability.Capabilities
+	// target is what the dialect's descriptor says about its DDL grammar;
+	// see [grammarOf].
+	target targetGrammar
 
 	// modifyColumn is set while the column definition of an ALTER TABLE ...
 	// MODIFY is read. The MySQL family takes a narrower column grammar there
@@ -135,6 +138,7 @@ func NewParser(input string, opts ...Option) *Parser {
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.target = grammarOf(p.dialect)
 	p.lexer = lexer.NewLexerWithOptions(normalized, lexerOptions(p.dialect))
 	p.advance() // Load the first token
 	return p
@@ -2051,10 +2055,10 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 	// naming a column the body declares later (`KEYY k (b), b INT`) is caught by
 	// that one. Measured: moving the call inside the loop changes no test.
 	// It is one pass over the columns rather than one per element.
-	if err := refuseTableElementTypo(table, p.dialect, p.current.Start); err != nil {
+	if err := refuseTableElementTypo(table, p.target, p.current.Start); err != nil {
 		return err
 	}
-	return refuseMySQLColumnCheckReferences(table, p.columnChecks, p.dialect)
+	return refuseMySQLColumnCheckReferences(table, p.columnChecks, p.target)
 }
 
 // parseCreateTableSuffix reads everything after the column list: table options
@@ -2259,11 +2263,8 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 		column.SetCheckName(name)
 		return nil
 	}
-	if platform.NormalizeDialect(p.dialect) == platform.MariaDB {
-		return fmt.Errorf(
-			"column %s carries a second CHECK at position %d: MariaDB accepts one CHECK on a column and "+
-				"answers ERROR 1064 (42000) to the second; write it at table level",
-			column.Name, position)
+	if refusal := p.target.grammar.Columns.SecondCheckRefusal; refusal != "" {
+		return fmt.Errorf("column %s carries a second CHECK at position %d: %s", column.Name, position, refusal)
 	}
 	if table == nil {
 		return fmt.Errorf(
@@ -2275,8 +2276,9 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 	return nil
 }
 
-// refuseColumnReferences refuses a column-level REFERENCES clause under the
-// mysql dialect, and answers nil for every other dialect.
+// refuseColumnReferences refuses a column-level REFERENCES clause where the
+// dialect's descriptor refuses it, as the mysql dialect's does, and answers nil
+// for every other dialect.
 //
 // What MySQL builds from the clause depends on the server version, and the
 // reader does not know the version: internal/sqlschema reads a SQL schema file
@@ -2314,27 +2316,21 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 // The returned error satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature])
 // and errors.As against *[ptaherr.CapabilityError].
 func (p *Parser) refuseColumnReferences() error {
-	if platform.NormalizeDialect(p.dialect) != platform.MySQL {
+	refusal := p.target.grammar.Columns.ReferencesRefusal
+	if refusal == "" {
 		return nil
 	}
 	return &ptaherr.CapabilityError{
-		Dialect: platform.MySQL,
+		Dialect: p.dialect,
 		Feature: "column-level REFERENCES without a server version",
 		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf(
-			"a column-level REFERENCES clause at position %d: MySQL 8.4 builds nothing from the "+
-				"clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and the SQL "+
-				"file is read without the server version, so Ptah refuses the clause rather than "+
-				"guess which schema it declares; write a table-level FOREIGN KEY clause, which "+
-				"every MySQL line builds",
-			p.current.Start,
-		),
+		Message: fmt.Sprintf("a column-level REFERENCES clause at position %d: %s", p.current.Start, refusal),
 	}
 }
 
 // refuseModifyReferences refuses a REFERENCES clause in the column definition
-// of an ALTER TABLE ... MODIFY on the MySQL family, and answers nil everywhere
-// else.
+// of an ALTER TABLE ... MODIFY where the dialect's MODIFY takes none, as the
+// MySQL family's takes none, and answers nil everywhere else.
 //
 // Measured on MySQL 8.4.11, 9.7.2 and 26.7.0 and on MariaDB 10.11.19, 11.8.9
 // and 12.3.3, after `CREATE TABLE c (id int, a int)`: `ALTER TABLE c MODIFY a
@@ -2346,7 +2342,7 @@ func (p *Parser) refuseColumnReferences() error {
 // The spellings with CONSTRAINT in front are refuseMySQLColumnConstraint's,
 // which knows what each engine takes CONSTRAINT before in a MODIFY.
 func (p *Parser) refuseModifyReferences() error {
-	if _, family := mysqlColumnConstraintKinds[p.dialect]; !family || !p.modifyColumn {
+	if !p.target.grammar.Columns.ModifyRefusesReferences || !p.modifyColumn {
 		return nil
 	}
 	return fmt.Errorf(
@@ -2979,9 +2975,10 @@ func (p *Parser) parseColumnDefinitionAfterName(table *ast.CreateTableNode, colu
 	if table != nil {
 		table.AddColumn(column)
 	}
-	if p.dialect == platform.ClickHouse && !chtype.AdmitsNull(columnType) {
+	if p.target.nullableTypes && !chtype.AdmitsNull(columnType) {
 		// ClickHouse inverts SQL's default: a bare type is NOT NULL, and
-		// nullability is spelled in the type as Nullable(T). Reading a column
+		// nullability is spelled in the type as Nullable(T), which its
+		// descriptor states as Comparison.NullableTypes. Reading a column
 		// the ClickHouse renderer wrote -- which omits NOT NULL for exactly
 		// that reason -- as nullable is what stopped `a Int32` from being
 		// usable as a sorting key on the way back in (stokaro/ptah#1571).
@@ -3351,7 +3348,7 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	// PostgreSQL's current-time keywords are expressions without an empty
 	// argument list. CURRENT_TIMESTAMP() is invalid there. A precision such
 	// as CURRENT_TIMESTAMP(3) was already read by parseDefaultFunctionCall.
-	if platform.IsPostgresFamily(p.dialect) && slices.Contains([]string{
+	if p.target.grammar.Columns.CurrentTimeKeywords && slices.Contains([]string{
 		"CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIMESTAMP", "LOCALTIME",
 	}, upperValue) {
 		return &ast.DefaultValue{Expression: value}, nil
@@ -3719,7 +3716,7 @@ func (p *Parser) handleTableConstraintUnique(constraint *ast.ConstraintNode) err
 	// a MariaDB fixture that parses with no dialect at all. After KEY or INDEX
 	// no dialect puts a keyword there, so that name is read whatever the
 	// document was declared as, exactly as before.
-	if (keyworded || p.isMySQLFamilyDialect()) && p.currentIsUniqueName() {
+	if (keyworded || p.target.grammar.Keys.BareUniqueName) && p.currentIsUniqueName() {
 		constraint.Name = p.current.Value
 		p.advance()
 		p.skipWhitespace()
@@ -3728,17 +3725,6 @@ func (p *Parser) handleTableConstraintUnique(constraint *ast.ConstraintNode) err
 	constraint.Type = ast.UniqueConstraint
 
 	return nil
-}
-
-// isMySQLFamilyDialect reports whether this parse is reading MySQL-family
-// grammar, where a bare name may follow UNIQUE.
-func (p *Parser) isMySQLFamilyDialect() bool {
-	switch platform.NormalizeDialect(p.dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
 }
 
 // uniqueClauseKeywords are the words that may stand where a unique key's name
@@ -3847,7 +3833,7 @@ func (p *Parser) readForeignKeyIndexName() error {
 		return nil
 	}
 	name := p.current.Value
-	if !isMySQLFamilyDialect(p.dialect) {
+	if !p.target.grammar.Keys.ForeignKeyIndexName {
 		return fmt.Errorf(
 			"an index name after FOREIGN KEY at position %d is the MySQL family's alone; "+
 				"%s has no such syntax, so write the key as FOREIGN KEY (columns) and "+
@@ -4309,7 +4295,7 @@ func describeConstraintKind(kind ast.ConstraintType) string {
 // dialect-neutral document is one meant to render anywhere, and this renders on
 // one engine.
 func (p *Parser) parseFunctionalKeyPart() (ast.ConstraintColumn, error) {
-	if p.dialect != platform.MySQL {
+	if !p.target.grammar.Keys.FunctionalParts {
 		return ast.ConstraintColumn{}, fmt.Errorf(
 			"a functional key part at position %d is MySQL's alone; %s has no such syntax",
 			p.current.Start, describeFunctionalKeyDialect(p.dialect))
@@ -5373,7 +5359,7 @@ func (p *Parser) parseValidateConstraintOperation() (ast.AlterOperation, error) 
 	if err := p.expect(lexer.TokenIdentifier, "CONSTRAINT"); err != nil {
 		return nil, fmt.Errorf("expected CONSTRAINT after VALIDATE: %w", err)
 	}
-	if !takesNotValid(p.dialect) {
+	if !p.target.takesNotValid() {
 		return nil, fmt.Errorf("VALIDATE CONSTRAINT at position %d: the %s dialect takes no VALIDATE CONSTRAINT",
 			start, dialectName(p.dialect))
 	}
@@ -5646,8 +5632,9 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 // PRIMARY, UNIQUE, FOREIGN, CHECK and EXCLUDE are reserved wherever Ptah
 // renders, so no column can be named after them and no dialect has to be asked.
 //
-// Each dialect Ptah names answers from its own grammar. An engine with no table
-// element opening with the word can only mean a column, and reading an index
+// Each dialect answers from its own grammar, which its descriptor states as
+// Keys.IndexKeywords. An engine with no table element opening with the word
+// can only mean a column, and reading an index
 // there fails in one of two ways. `key text` is refused at the type. Worse,
 // `spatial nvarchar(32)` has the shape of `SPATIAL name (cols)`, so it parses
 // without an error as an index named after the type over a column named `32`,
@@ -5688,15 +5675,14 @@ func (p *Parser) tableBodyReadsKeywordAsIndex(keyword string) bool {
 	default:
 		return true
 	}
-	switch p.dialect {
-	case platform.Postgres, platform.YugabyteDB, platform.Spanner, platform.ClickHouse:
+	keys := p.target.grammar.Keys
+	switch {
+	case !p.target.known:
+		return true
+	case !slices.Contains(keys.IndexKeywords, keyword):
 		return false
-	case platform.SQLite, platform.Oracle:
-		return keyword == "INDEX"
-	case platform.SQLServer:
-		return keyword == "INDEX" || keyword == "KEY"
-	case platform.CockroachDB:
-		return keyword == "INDEX" && p.indexKeywordOpensColumnList()
+	case keys.IndexKeywordsNeedColumns:
+		return p.indexKeywordOpensColumnList()
 	default:
 		return true
 	}
@@ -6313,7 +6299,7 @@ func (p *Parser) parseNullsDistinctClause() (*bool, error) {
 	// keyword alone: MySQL and MariaDB both accept NULLS as an index name, so
 	// `CONSTRAINT uq UNIQUE NULLS (a)` is a table they create. Firing here
 	// leaves that spelling to whatever the name grammar makes of it.
-	if isMySQLFamilyDialect(p.dialect) {
+	if p.target.grammar.Keys.RefusesNullsDistinct {
 		return nil, nullsdistinct.Refuse(p.dialect, nullsdistinct.Clause(nullsDistinct))
 	}
 	return &nullsDistinct, nil

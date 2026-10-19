@@ -129,6 +129,25 @@ func sqlite() descriptor.Dialect {
 				ColumnTypes:     sqliteAtlasColumnTypes(),
 			},
 		},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// SQLite 3.51 accepts MATCH and records NONE, takes a deferral clause
+		// after a foreign key alone and INITIALLY only after [NOT] DEFERRABLE,
+		// and reserves INDEX in a table body.
+		Grammar: descriptor.Grammar{
+			Constraints: descriptor.ConstraintGrammar{
+				Match: descriptor.Match{
+					Clause: true,
+					Refusal: "SQLite 3.51 accepts the clause and records NONE, so the key it builds is MATCH " +
+						"SIMPLE; declare the key without the clause",
+				},
+				Deferral: descriptor.Deferral{
+					KeyRefusal:           "SQLite takes one only after a foreign key",
+					LoneInitiallyRefusal: "SQLite takes it only after [NOT] DEFERRABLE",
+				},
+			},
+			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		},
 	}
 }
 

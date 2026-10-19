@@ -2,10 +2,10 @@ package parser
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/lexer"
@@ -23,8 +23,8 @@ type enforcement struct {
 // refuses a second one, `ENFORCED NOT ENFORCED` and `NOT ENFORCED NOT
 // ENFORCED` alike, and MySQL 8.4 keeps the last: `CHECK (a > 0) NOT ENFORCED
 // ENFORCED` reads back ENFORCED `YES`.
-func (e *enforcement) record(dialect string, notEnforced bool, start int) error {
-	if e.written && takesOneEnforcement(dialect) {
+func (e *enforcement) record(target targetGrammar, notEnforced bool, start int) error {
+	if e.written && target.takesOneEnforcement() {
 		return fmt.Errorf("NOT ENFORCED or ENFORCED at position %d: a constraint takes one of them, and "+
 			"PostgreSQL 18.6 answers `multiple ENFORCED/NOT ENFORCED clauses not allowed`", start)
 	}
@@ -36,13 +36,8 @@ func (e *enforcement) record(dialect string, notEnforced bool, start int) error 
 // takesOneEnforcement reports whether the dialect refuses a second
 // enforcement clause after one constraint. A document read with no dialect
 // takes PostgreSQL's rule, the stricter one.
-func takesOneEnforcement(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case "", platform.Postgres:
-		return true
-	default:
-		return false
-	}
+func (t targetGrammar) takesOneEnforcement() bool {
+	return !t.known || t.grammar.Constraints.Enforcement.Once
 }
 
 // readConstraintAttributes reads `ENFORCED`, `NOT ENFORCED` and `NOT VALID`
@@ -97,12 +92,13 @@ func (p *Parser) nextIsWord(word string) bool {
 // takesEnforced reports whether the dialect takes `[NOT] ENFORCED` after a
 // constraint of kind. A document read with no dialect takes what any of them
 // does.
-func takesEnforced(dialect, kind string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case "", platform.Postgres:
-		return kind == checkElement || kind == foreignKeyElement
-	case platform.MySQL:
-		return kind == checkElement
+func (t targetGrammar) takesEnforced(kind string) bool {
+	enforcement := t.grammar.Constraints.Enforcement
+	switch kind {
+	case checkElement:
+		return !t.known || enforcement.Checks
+	case foreignKeyElement:
+		return !t.known || enforcement.ForeignKeys
 	default:
 		return false
 	}
@@ -112,17 +108,17 @@ func takesEnforced(dialect, kind string) bool {
 // constraint of kind into enforced, and refuses it where the dialect takes
 // none there.
 func (p *Parser) readEnforcement(kind, clause string, start int, enforced *enforcement) error {
-	if err := refuseEnforcement(p.dialect, kind, clause, start); err != nil {
+	if err := p.refuseEnforcement(kind, clause, start); err != nil {
 		return err
 	}
-	return enforced.record(p.dialect, clause == "NOT ENFORCED", start)
+	return enforced.record(p.target, clause == "NOT ENFORCED", start)
 }
 
 // refuseEnforcement refuses clause after a constraint of kind where the
 // dialect does not take it. The key message is PostgreSQL's own.
-func refuseEnforcement(dialect, kind, clause string, start int) error {
+func (p *Parser) refuseEnforcement(kind, clause string, start int) error {
 	switch {
-	case takesEnforced(dialect, kind):
+	case p.target.takesEnforced(kind):
 		return nil
 	case kind == primaryKeyElement || kind == uniqueElement:
 		return fmt.Errorf("%s at position %d: %s constraints cannot be marked %s", clause, start, kind, clause)
@@ -130,7 +126,7 @@ func refuseEnforcement(dialect, kind, clause string, start int) error {
 		return fmt.Errorf("%s at position %d: an index takes no %s clause", clause, start, clause)
 	default:
 		return fmt.Errorf("%s at position %d: the %s dialect takes no %s clause after a %s",
-			clause, start, dialectName(dialect), clause, kind)
+			clause, start, dialectName(p.dialect), clause, kind)
 	}
 }
 
@@ -144,7 +140,7 @@ func (p *Parser) readNotValid(kind string, start int) error {
 		return fmt.Errorf("NOT VALID at position %d: %s constraints cannot be marked NOT VALID", start, kind)
 	case kind != checkElement && kind != foreignKeyElement:
 		return fmt.Errorf("NOT VALID at position %d: an index takes no NOT VALID clause", start)
-	case !takesNotValid(p.dialect):
+	case !p.target.takesNotValid():
 		return fmt.Errorf("NOT VALID at position %d: the %s dialect takes no NOT VALID clause", start, dialectName(p.dialect))
 	default:
 		p.addedNotValid = p.addingConstraint
@@ -153,16 +149,11 @@ func (p *Parser) readNotValid(kind string, start int) error {
 }
 
 // takesNotValid reports whether the dialect takes `NOT VALID` after a CHECK or
-// a foreign key and `VALIDATE CONSTRAINT` to complete it. PostgreSQL 18.6,
-// CockroachDB v26.3.2 and YugabyteDB 2026.1.2 take both. A document read with
-// no dialect takes what any of them does.
-func takesNotValid(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case "", platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return true
-	default:
-		return false
-	}
+// a foreign key and `VALIDATE CONSTRAINT` to complete it, as PostgreSQL 18.6,
+// CockroachDB v26.3.2 and YugabyteDB 2026.1.2 do. A document read with no
+// dialect takes what any of them does.
+func (t targetGrammar) takesNotValid() bool {
+	return !t.known || t.grammar.Constraints.NotValid
 }
 
 // dialectName names the dialect a document is read as.
@@ -260,7 +251,7 @@ func (p *Parser) readMatchType() (string, error) {
 		return "", nil
 	}
 	start := p.current.Start
-	if !takesMatch(p.dialect) {
+	if !p.target.takesMatch() {
 		return "", fmt.Errorf("MATCH at position %d: the %s dialect takes no MATCH clause", start, dialectName(p.dialect))
 	}
 	p.advance()
@@ -271,7 +262,7 @@ func (p *Parser) readMatchType() (string, error) {
 		p.advance()
 		return "", nil
 	case "FULL", "PARTIAL":
-		if err := refuseMatchType(p.dialect, matchType, start); err != nil {
+		if err := p.refuseMatchType(matchType, start); err != nil {
 			return "", err
 		}
 		p.advance()
@@ -284,34 +275,25 @@ func (p *Parser) readMatchType() (string, error) {
 // refuseMatchType refuses a MATCH type the dialect's server does not build,
 // and answers nil for one it does. A document read with no dialect takes what
 // any of them does.
-func refuseMatchType(dialect, matchType string, start int) error {
-	switch platform.NormalizeDialect(dialect) {
-	case "", platform.MySQL:
+func (p *Parser) refuseMatchType(matchType string, start int) error {
+	match := p.target.grammar.Constraints.Match
+	switch {
+	case !p.target.known:
 		return nil
-	case platform.MariaDB:
-		return fmt.Errorf("MATCH %s at position %d: MariaDB 11.8.9 accepts the clause and records NONE, so the key "+
-			"it builds is MATCH SIMPLE; declare the key without the clause", matchType, start)
-	case platform.SQLite:
-		return fmt.Errorf("MATCH %s at position %d: SQLite 3.51 accepts the clause and records NONE, so the key "+
-			"it builds is MATCH SIMPLE; declare the key without the clause", matchType, start)
-	}
-	if matchType == "PARTIAL" {
+	case match.Refusal != "":
+		return fmt.Errorf("MATCH %s at position %d: %s", matchType, start, match.Refusal)
+	case matchType == "PARTIAL" && !match.Partial:
 		return fmt.Errorf("MATCH PARTIAL at position %d: the %s dialect's server does not implement it, and "+
-			"PostgreSQL 18.6 answers `MATCH PARTIAL not yet implemented`", start, dialectName(dialect))
+			"PostgreSQL 18.6 answers `MATCH PARTIAL not yet implemented`", start, dialectName(p.dialect))
+	default:
+		return nil
 	}
-	return nil
 }
 
 // takesMatch reports whether the dialect takes a MATCH clause after
-// REFERENCES.
-func takesMatch(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case "", platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
-		platform.MySQL, platform.MariaDB, platform.SQLite:
-		return true
-	default:
-		return false
-	}
+// REFERENCES. A document read with no dialect does.
+func (t targetGrammar) takesMatch() bool {
+	return !t.known || t.grammar.Constraints.Match.Clause
 }
 
 // readKeyOptions reads the options after a key's parts, in any order. kind is
@@ -505,20 +487,18 @@ func (p *Parser) atVisibilityWord(keyword string) bool {
 
 // readKeyVisibility reads whether the optimizer uses the index. MySQL spells
 // it `VISIBLE | INVISIBLE` and MariaDB `NOT IGNORED | IGNORED`; each engine
-// answers ERROR 1064 to the other's word for the hidden index, and both refuse
-// a hidden primary key. A document read with no dialect takes either word.
+// answers ERROR 1064 to the other's word for the hidden index, which its
+// descriptor refuses, and both refuse a hidden primary key. A document read
+// with no dialect takes either word.
 func (p *Parser) readKeyVisibility(kind, keyword string, start int) error {
-	dialect := platform.NormalizeDialect(p.dialect)
 	clause := keyword
 	if keyword == "NOT" {
 		clause = "NOT IGNORED"
 	}
+	visibility := p.target.grammar.Keys.Visibility
 	switch {
-	case (clause == "IGNORED" || clause == "NOT IGNORED") && dialect == platform.MySQL:
-		return fmt.Errorf("%s at position %d: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064", clause, start)
-	case clause == "INVISIBLE" && dialect == platform.MariaDB:
-		return fmt.Errorf("INVISIBLE at position %d: it is MySQL's clause, and MariaDB 11.8.9 answers ERROR 1064; "+
-			"MariaDB spells it IGNORED", start)
+	case slices.Contains(visibility.Refused, clause):
+		return fmt.Errorf("%s at position %d: %s", clause, start, visibility.Refusal)
 	case clause == "INVISIBLE" && kind == primaryKeyElement:
 		return fmt.Errorf("INVISIBLE at position %d: MySQL 8.4.11 answers ERROR 3522, "+
 			"a primary key index cannot be invisible", start)
@@ -538,7 +518,7 @@ func (p *Parser) readKeyVisibility(kind, keyword string, start int) error {
 // readsKeyOptions reports whether the document's dialect has the MySQL
 // family's index options. A document read with no dialect does.
 func (p *Parser) readsKeyOptions() bool {
-	return p.dialect == "" || p.isMySQLFamilyDialect()
+	return p.dialect == "" || p.target.grammar.Keys.Options
 }
 
 // readKeyMethod reads `USING BTREE | HASH` after a key's parts.

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lexer"
 )
 
@@ -30,8 +30,8 @@ type deferral struct {
 	notDeferrable bool
 	// written is whether any clause was.
 	written bool
-	// dialect is the grammar the clauses were read with.
-	dialect string
+	// grammar is how the dialect the clauses were read with reads them.
+	grammar descriptor.Deferral
 }
 
 // defersChecks reports whether the constraint may have its check put off to
@@ -47,12 +47,13 @@ func (d deferral) defersChecks() bool {
 // NOT DEFERRABLE, and reads INITIALLY DEFERRED alone as deferrable. It leaves
 // the cursor where it is when no clause is there.
 //
-// MySQL 8.4 and MariaDB 11.8 answer ERROR 1064 to every one of the clauses,
-// NOT DEFERRABLE included, CockroachDB v26.3.2 answers `unimplemented: this
-// syntax` or a syntax error to each of them, and SQLite 3.51 refuses an
-// INITIALLY that no DEFERRABLE comes before, so those are refused here too.
+// An engine that has none refuses every clause, NOT DEFERRABLE included: MySQL
+// 8.4 and MariaDB 11.8 answer ERROR 1064, and CockroachDB v26.3.2 answers
+// `unimplemented: this syntax` or a syntax error. SQLite 3.51 refuses an
+// INITIALLY that no DEFERRABLE comes before. The dialect's descriptor states
+// each refusal; see [descriptor.Deferral].
 func (p *Parser) parseDeferral() (deferral, error) {
-	result := deferral{dialect: platform.NormalizeDialect(p.dialect)}
+	result := deferral{grammar: p.target.grammar.Constraints.Deferral}
 	for {
 		p.skipWhitespace()
 		start := p.current.Start
@@ -80,19 +81,8 @@ func (p *Parser) parseDeferral() (deferral, error) {
 		if !result.written {
 			result.written, result.start = true, start
 		}
-		if isMySQLFamilyDialect(result.dialect) {
-			return deferral{}, fmt.Errorf(
-				"deferral clause at position %d: MySQL and MariaDB have no deferrable constraints, "+
-					"and MySQL 8.4 and MariaDB 11.8 answer ERROR 1064 to the clause",
-				result.start,
-			)
-		}
-		if result.dialect == platform.CockroachDB {
-			return deferral{}, fmt.Errorf(
-				"deferral clause at position %d: CockroachDB has no deferrable constraints, "+
-					"and v26.3.2 refuses the clause, NOT DEFERRABLE included",
-				result.start,
-			)
+		if refusal := result.grammar.Refusal; refusal != "" {
+			return deferral{}, fmt.Errorf("deferral clause at position %d: %s", result.start, refusal)
 		}
 	}
 }
@@ -106,8 +96,8 @@ func (p *Parser) nextIsDeferrable() bool {
 // parseInitially reads `INITIALLY DEFERRED | IMMEDIATE` and answers the timing.
 func (p *Parser) parseInitially(sofar deferral) (string, error) {
 	start := p.current.Start
-	if sofar.dialect == platform.SQLite && !sofar.written {
-		return "", fmt.Errorf("INITIALLY at position %d: SQLite takes it only after [NOT] DEFERRABLE", start)
+	if refusal := sofar.grammar.LoneInitiallyRefusal; refusal != "" && !sofar.written {
+		return "", fmt.Errorf("INITIALLY at position %d: %s", start, refusal)
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -160,14 +150,14 @@ func (d deferral) applyToForeignKey(reference *ast.ForeignKeyRef) {
 }
 
 // applyToKey carries the clauses onto the PRIMARY KEY, UNIQUE or EXCLUDE of
-// kind they follow, and refuses them where the dialect takes none there:
+// kind they follow, and refuses them where the dialect takes none there, as
 // SQLite takes a deferral clause after a foreign key alone.
 func (d deferral) applyToKey(constraint *ast.ConstraintNode, kind string) error {
 	switch {
 	case !d.written:
 		return nil
-	case d.dialect == platform.SQLite:
-		return fmt.Errorf("deferral clause at position %d: SQLite takes one only after a foreign key, not after %s", d.start, kind)
+	case d.grammar.KeyRefusal != "":
+		return fmt.Errorf("deferral clause at position %d: %s, not after %s", d.start, d.grammar.KeyRefusal, kind)
 	default:
 		constraint.Deferrable = d.deferrable
 		constraint.Initially = d.initially
@@ -183,8 +173,8 @@ func (d deferral) refuseOnCheck() error {
 	switch {
 	case !d.written:
 		return nil
-	case d.dialect == platform.SQLite:
-		return fmt.Errorf("deferral clause at position %d: SQLite takes one only after a foreign key, not after CHECK", d.start)
+	case d.grammar.KeyRefusal != "":
+		return fmt.Errorf("deferral clause at position %d: %s, not after %s", d.start, d.grammar.KeyRefusal, checkElement)
 	case d.defersChecks():
 		return fmt.Errorf("deferral clause at position %d: CHECK constraints cannot be marked DEFERRABLE", d.start)
 	default:

@@ -4850,6 +4850,12 @@ outside the database:
   plan and check-assertion scans refuse under the construct the descriptor
   names.
 
+A descriptor also states, in `Grammar`, how the shared DDL parser reads the
+engine's table bodies: which words open an index, and which clauses may follow
+a column (`Columns`), a constraint (`Constraints`) or a key (`Keys`). A
+refusal the engine answers in its own words is a sentence of the descriptor,
+which the parser writes after the position of the construct it refuses.
+
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:
 

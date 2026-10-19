@@ -189,6 +189,20 @@ func postgres() descriptor.Dialect {
 				ColumnTypes:   postgresAtlasColumnTypes(),
 			},
 		},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// PostgreSQL 18.6 takes [NOT] ENFORCED after a CHECK or a foreign key,
+		// one per constraint, NOT VALID with VALIDATE CONSTRAINT, MATCH FULL,
+		// and answers `MATCH PARTIAL not yet implemented`. The current-time
+		// words are keywords: CURRENT_TIMESTAMP() is refused.
+		Grammar: descriptor.Grammar{
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+			Constraints: descriptor.ConstraintGrammar{
+				Enforcement: descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
+				NotValid:    true,
+				Match:       descriptor.Match{Clause: true},
+			},
+		},
 	}
 }
 

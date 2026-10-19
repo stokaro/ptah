@@ -151,6 +151,12 @@ END;`,
 		// does not read q'[...]' literals, so a scan refuses one.
 		Lexical: descriptor.Lexical{AlternativeQuoting: true},
 		Reach:   oracleReach(),
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// Oracle reserves INDEX in a table body (ORA-03050).
+		Grammar: descriptor.Grammar{
+			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		},
 	}
 }
 
