@@ -137,7 +137,7 @@ func TestPostgresFamilyScopedExecutionRetriesSelectedDependencies(t *testing.T) 
 		{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW IF EXISTS "z_child" RESTRICT`},
 	}
 
-	err := applyPostgresFamilyPlanChanges(t.Context(), tx, changes)
+	err := applyScopedPlanChanges(t.Context(), tx, scopedSavepoint(describedOf("postgres")), changes)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tx.queries, qt.DeepEquals, []string{

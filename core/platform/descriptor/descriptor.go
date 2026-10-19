@@ -304,6 +304,12 @@ type Dialect struct {
 	// unnamed foreign key than another server of the same ForeignKeyNaming.
 	// It is empty where ForeignKeyNaming is.
 	ForeignKeyNameRules ForeignKeyNameRules `json:"foreign_key_name_rules,omitzero"`
+
+	// Transactions: what migration/seeder and internal/schemaclean read.
+
+	// Savepoint is how the engine spells a savepoint inside a transaction;
+	// see savepoint.go. The zero value is an engine with no savepoint.
+	Savepoint Savepoint `json:"savepoint,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and
@@ -516,6 +522,9 @@ func (d Dialect) validate() error {
 		return err
 	}
 	if err := d.validateMigration(); err != nil {
+		return err
+	}
+	if err := d.validateCleanup(); err != nil {
 		return err
 	}
 	return nil

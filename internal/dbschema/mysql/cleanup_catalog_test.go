@@ -1,7 +1,10 @@
 package mysql_test
 
 import (
+	"context"
 	"database/sql/driver"
+	"errors"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -83,4 +86,77 @@ func TestCleanupCatalog_OrdersAndLocksNothing(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(depths, qt.IsNil)
 	c.Assert(strategy.LockRelations(c.Context(), nil, []dbreset.Relation{{Name: "users"}}), qt.IsNil)
+}
+
+// serverLister is what a whole-server cleanup asks of the catalog strategy,
+// beside the reads every strategy answers.
+type serverLister interface {
+	ServerObjects(ctx context.Context, q dbreset.Querier) ([]dbreset.CleanupObject, error)
+}
+
+// serverRows answers the user-database read with databases and the
+// cross-database foreign key read with keys, failing the read whose query
+// holds failOn.
+func serverRows(failOn string, databases, keys [][]driver.Value) dbtest.QueryHandler {
+	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case failOn != "" && strings.Contains(query, failOn):
+			return dbtest.QueryResult{}, errors.New("access denied")
+		case strings.Contains(query, "information_schema.SCHEMATA"):
+			return dbtest.QueryResult{Columns: []string{"SCHEMA_NAME"}, Rows: databases}, nil
+		default:
+			return dbtest.QueryResult{Columns: []string{"TABLE_SCHEMA", "TABLE_NAME", "CONSTRAINT_NAME"}, Rows: keys}, nil
+		}
+	}
+}
+
+// TestCleanupCatalog_ServerObjects_HappyPath pins what a cleanup of a whole
+// server drops: the foreign keys between databases first, then each user
+// database as a schema.
+func TestCleanupCatalog_ServerObjects_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(c, serverRows("",
+		[][]driver.Value{{"r1"}, {"r4"}},
+		[][]driver.Value{{"r4", "z", "zfk"}},
+	))
+	server, ok := mysql.NewMySQLWriter(nil, "", platform.MySQL).CleanupCatalog().(serverLister)
+	c.Assert(ok, qt.IsTrue)
+
+	objects, err := server.ServerObjects(c.Context(), db.SQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []dbreset.CleanupObject{
+		{Kind: "foreign_key", Schema: "r4", Table: "z", Name: "zfk"},
+		{Kind: "schema", Schema: "r1", Name: "r1"},
+		{Kind: "schema", Schema: "r4", Name: "r4"},
+	})
+}
+
+// TestCleanupCatalog_ServerObjects_FailurePath names the read that failed.
+// The databases are read first, so when both reads fail the databases are
+// named.
+func TestCleanupCatalog_ServerObjects_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		failOn  string
+		wantErr string
+	}{
+		{name: "the databases", failOn: "information_schema.SCHEMATA", wantErr: `inspect cleanup databases: .*access denied`},
+		{name: "the foreign keys", failOn: "information_schema.KEY_COLUMN_USAGE",
+			wantErr: `inspect cleanup foreign keys between databases: .*access denied`},
+		{name: "both, the databases read first", failOn: "information_schema.", wantErr: `inspect cleanup databases: .*access denied`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(c, serverRows(test.failOn, [][]driver.Value{{"r1"}}, nil))
+			server, ok := mysql.NewMySQLWriter(nil, "", platform.MariaDB).CleanupCatalog().(serverLister)
+			c.Assert(ok, qt.IsTrue)
+
+			objects, err := server.ServerObjects(c.Context(), db.SQL)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(objects, qt.IsNil)
+		})
+	}
 }

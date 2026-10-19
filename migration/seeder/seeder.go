@@ -275,7 +275,7 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 			described.Name)
 	}
 	if opts.Idempotent && !described.Seeds.ByOwner &&
-		(!described.Seeds.Transactional || described.Seeds.Savepoint.Create == "") {
+		(!described.Seeds.Transactional || described.Savepoint.Create == "") {
 		return nil, fmt.Errorf("--idempotent is not supported for %s seeds because transactions and savepoints are unavailable", described.Name)
 	}
 	if err := ensureSafeTarget(ctx, conn, opts); err != nil {
@@ -612,7 +612,7 @@ type seedSavepoint struct {
 }
 
 // savepointStatements names those statements for a dialect, from the keywords
-// its descriptor states (descriptor.Seeds.Savepoint).
+// its descriptor states (descriptor.Dialect.Savepoint).
 //
 // Two engines do not take the portable spelling, and `ptah seed --idempotent`
 // failed on the first seed file for both (stokaro/ptah#3330): SQL Server
@@ -623,7 +623,7 @@ type seedSavepoint struct {
 func savepointStatements(dialect string) seedSavepoint {
 	const name = "ptah_seed_file"
 	described, _ := platform.Lookup(dialect)
-	keywords := described.Seeds.Savepoint
+	keywords := described.Savepoint
 	statement := func(keyword string) string {
 		if keyword == "" {
 			return ""

@@ -91,6 +91,16 @@ func (v *DesiredExtension) Copy() *DesiredExtension {
 // Clone returns an independent observation.
 func (v *ObservedExtension) Clone() schemaext.Value { return v.Copy() }
 
+// InstalledSchema is the schema pg_extension reports the extension installed
+// in; see [schemaext.SchemaInstallation]. An extension belongs to the whole
+// database, so its identity names no schema.
+func (v *ObservedExtension) InstalledSchema() string {
+	if v == nil {
+		return ""
+	}
+	return v.Schema
+}
+
 // Copy is [ObservedExtension.Clone] without the interface. It shares no
 // comment or member list with v, and a nil receiver returns nil.
 func (v *ObservedExtension) Copy() *ObservedExtension {

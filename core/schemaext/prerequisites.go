@@ -36,6 +36,19 @@ type SchemaPlacement interface {
 	PlacementSchema(subject objectidentity.ID) string
 }
 
+// SchemaInstallation is an observed feature value of an object that belongs
+// to the whole database while the database installed it into one schema, as
+// PostgreSQL installs an extension. A host whose work is confined to one
+// schema, such as a cleanup that drops only the objects of its own schema,
+// reasons only about the objects installed in that schema: one installed in
+// another schema is outside its reach, not an object it leaves behind.
+//
+// InstalledSchema is the schema the database reports the object installed
+// in.
+type SchemaInstallation interface {
+	InstalledSchema() string
+}
+
 // Requirer is a desired feature value that cannot exist without other
 // objects, such as a TimescaleDB hypertable, which needs the timescaledb
 // extension. Requires names those objects under a common kind, such as

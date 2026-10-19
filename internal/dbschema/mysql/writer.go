@@ -595,7 +595,7 @@ func dropServerDatabases(ctx context.Context, conn *sql.Conn) error {
 
 // serverUserDatabases lists the user databases the session sees.
 func serverUserDatabases(ctx context.Context, conn *sql.Conn) ([]string, error) {
-	rows, err := conn.QueryContext(ctx, mysqlsystemdb.MySQLUserDatabasesQuery())
+	rows, err := conn.QueryContext(ctx, userDatabasesQuery())
 	if err != nil {
 		return nil, fmt.Errorf("mysql: list the dev server's databases: %w", err)
 	}
@@ -617,7 +617,7 @@ func serverUserDatabases(ctx context.Context, conn *sql.Conn) ([]string, error) 
 // serverCrossDatabaseForeignKeys lists the foreign keys between databases,
 // each as database, table and name.
 func serverCrossDatabaseForeignKeys(ctx context.Context, conn *sql.Conn) ([][3]string, error) {
-	rows, err := conn.QueryContext(ctx, mysqlsystemdb.MySQLCrossDatabaseForeignKeysQuery())
+	rows, err := conn.QueryContext(ctx, crossDatabaseForeignKeysQuery())
 	if err != nil {
 		return nil, fmt.Errorf("mysql: list foreign keys between the dev server's databases: %w", err)
 	}

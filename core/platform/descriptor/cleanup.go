@@ -1,5 +1,7 @@
 package descriptor
 
+import "fmt"
+
 // Cleanup states what a cleanup of a development database destroys on an
 // engine and how it spells the statements, which internal/schemaclean reads,
 // and where the engine's writer lists from its catalog what the schema reader
@@ -45,7 +47,9 @@ type Cleanup struct {
 	WriterListing bool `json:"writer_listing,omitempty"`
 	// SchemaScoped reports that the writer drops only the objects of its own
 	// schema, DefaultSchema when none is configured, and runs a scoped plan in
-	// one transaction.
+	// one transaction, each drop under a savepoint, so a refused drop is
+	// retried once the drops after it are done. A schema-scoped dialect
+	// states the savepoint's Create and Rollback (Dialect.Savepoint).
 	SchemaScoped bool `json:"schema_scoped,omitempty"`
 	// Restrict reports that a drop refuses dependents: DROP TABLE, DROP
 	// VIEW and DROP SEQUENCE end with RESTRICT, and a routine is dropped by
@@ -64,4 +68,13 @@ type Cleanup struct {
 	// ViewsFirst reports that the writer drops views before the foreign keys
 	// and tables they read, and routines after the tables.
 	ViewsFirst bool `json:"views_first,omitempty"`
+}
+
+// validateCleanup checks the fields declared in this file.
+func (d Dialect) validateCleanup() error {
+	if d.Cleanup.SchemaScoped && (d.Savepoint.Create == "" || d.Savepoint.Rollback == "") {
+		return fmt.Errorf("%w: dialect %q: a schema-scoped cleanup retries a refused drop under a savepoint, so the dialect states how a savepoint is created and rolled back",
+			ErrInvalidDescriptor, d.Name)
+	}
+	return nil
 }
