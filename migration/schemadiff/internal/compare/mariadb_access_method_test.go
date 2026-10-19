@@ -60,7 +60,7 @@ func TestIndexes_MariaDBAccessMethod_FailurePath(t *testing.T) {
 			desired, current := accessMethodPair(test.desiredType, test.reportedType)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, current, diff, platform.MariaDB)
+			compare.IndexesWithDialect(desired, current, diff, platform.MariaDB, builtinRules(c, platform.MariaDB))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, want)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, want)
@@ -93,7 +93,7 @@ func TestIndexes_MariaDBAccessMethod_HappyPath(t *testing.T) {
 			desired, current := accessMethodPair(test.desiredType, test.reportedType)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, current, diff, test.dialect)
+			compare.IndexesWithDialect(desired, current, diff, test.dialect, builtinRules(c, test.dialect))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)

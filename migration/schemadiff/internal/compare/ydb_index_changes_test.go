@@ -21,7 +21,7 @@ func compareYDBIndexes(desired []schemamodel.Index, database []catalog.Index, ca
 	compare.IndexesWithSemantics(
 		&schemamodel.Database{Indexes: desired},
 		&catalog.Database{Indexes: database},
-		diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, caps, ydbcomparison.Rules().Indexes,
+		diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, caps, ydbcomparison.Rules(),
 	)
 	return diff
 }
@@ -29,14 +29,14 @@ func compareYDBIndexes(desired []schemamodel.Index, database []catalog.Index, ca
 // columnsWithYDBRules is [compare.ColumnsWithDialect] with the column rules
 // the built-in runtime registers for YDB.
 func columnsWithYDBRules(desired schemamodel.Field, current catalog.Column, dialect string) difftypes.ColumnDiff {
-	return compare.ColumnsWithRules(desired, current, dialect, ydbcomparison.Rules().Columns)
+	return compare.ColumnsWithRules(desired, current, dialect, ydbcomparison.Rules())
 }
 
 // indexesWithYDBRules is [compare.IndexesWithDialect] with the index rules the
 // built-in runtime registers for YDB.
 func indexesWithYDBRules(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
 	compare.IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil,
-		capability.ForDialect(dialect), ydbcomparison.Rules().Indexes)
+		capability.ForDialect(dialect), ydbcomparison.Rules())
 }
 
 // namedIndex renames one of the indexes ydbDeclaredIndex and ydbIndex build.
@@ -75,7 +75,7 @@ func TestIndexes_YDBPairsARenamedIndex(t *testing.T) {
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(compare.IndexRenames(&schemamodel.Database{Indexes: desired}, &catalog.Database{Indexes: database},
-		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), ydbcomparison.Rules().Indexes), qt.DeepEquals, want)
+		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), ydbcomparison.Rules()), qt.DeepEquals, want)
 }
 
 // TestIndexes_YDBPairsEqualRenamesInNameOrder pairs two equal indexes renamed
@@ -149,7 +149,7 @@ func TestIndexes_PostgresRecordsNoYDBIndexChange(t *testing.T) {
 			{Name: "old", TableName: "t", Columns: []string{"a"}},
 			{Name: "kept", TableName: "t", Columns: []string{"b"}},
 		}},
-		diff, platform.Postgres,
+		diff, platform.Postgres, builtinRules(c, platform.Postgres),
 	)
 
 	c.Assert(diff.IndexesRenamed, qt.HasLen, 0)

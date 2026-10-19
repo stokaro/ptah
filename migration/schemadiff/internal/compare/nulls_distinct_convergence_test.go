@@ -53,7 +53,7 @@ func TestIndexes_NullsDistinctConvergence_HappyPath(t *testing.T) {
 			desired, current := nullsDistinctIndexes(test.desired, test.current)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, current, diff, "postgres")
+			compare.IndexesWithDialect(desired, current, diff, "postgres", builtinRules(c, "postgres"))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
@@ -83,7 +83,7 @@ func TestIndexes_NullsDistinctConvergence_FailurePath(t *testing.T) {
 			desired, current := nullsDistinctIndexes(test.desired, test.current)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, current, diff, "postgres")
+			compare.IndexesWithDialect(desired, current, diff, "postgres", builtinRules(c, "postgres"))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, want)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, want)

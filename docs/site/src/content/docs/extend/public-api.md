@@ -49,7 +49,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
-| `core/schemacomparison` | Target rules the shared comparison reads columns, index options, view queries and omitted routine attributes through. |
+| `core/schemacomparison` | Target rules the shared comparison reads columns, index definitions and predicates, foreign key indexes, generated expressions, view queries and omitted routine attributes through. |
 | `core/schemapreparation` | Selected column-key and facet resolution with independent source and prepared captures. |
 | `core/schemaext` | Typed feature values, source coverage, explicit codecs, dependency captures, and conservative effects. |
 | `core/schemaprojection` | Target-owned CREATE defaults, constraint effects, and table-state predictions. |
@@ -370,6 +370,17 @@ omitted value as the target's: plpgsql and the caller's rights on the
 PostgreSQL family, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle, the
 definer's rights on MySQL, MariaDB and Oracle and the caller's on SQL Server. A
 nil member keeps the shared rule.
+
+The index members say what makes two indexes one. `Indexes` compares an index's
+kind and build settings beside the uniqueness and keys the shared comparison
+reads, and `IndexDefinitions` decides alone for a target whose index has no
+uniqueness or whose key is one expression, as on ClickHouse; a target that
+registers neither has its indexes compared by name. `IndexPredicates` removes
+what a catalog adds to a stored predicate, such as the brackets SQL Server
+writes around every name. `ForeignKeyIndexes` finds the index a server builds
+for a foreign key, as MySQL, MariaDB and Spanner do, so a plan never drops it.
+`GeneratedExpressions` gives a generated column's expression the spelling a
+declaration and the catalog share.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
 files used as current state. It predicts CREATE defaults and column keys.

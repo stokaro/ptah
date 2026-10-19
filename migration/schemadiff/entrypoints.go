@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -23,7 +24,9 @@ import (
 
 // Compare compares ordinary relational state without target normalization.
 // Feature state requires an explicit target through CompareWithDialect or
-// CompareWithOptions. Failures and incomplete results return no diff.
+// CompareWithOptions. With no target it assumes no target's capabilities, so
+// what a capability gates, such as a comment or a role membership, is not
+// compared. Failures and incomplete results return no diff.
 func Compare(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	return CompareWithOptions(ctx, desired, current, nil, runtime)
 }
@@ -185,7 +188,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// read and a read of one database both describe tables, and only the
 	// first describes the databases (stokaro/ptah#3789).
 	merged.ServerSchemas = merged.ServerSchemas || info.WholeServer
-	if merged.ServerSchemas && isMySQLFamilyComparison(info.Dialect) {
+	if merged.ServerSchemas && comparesServerDatabases(info.Dialect) {
 		if err := compare.RequireServerDatabases(desired); err != nil {
 			return nil, Diagnostics{}, err
 		}
@@ -209,7 +212,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// the comparison itself does.
 	caps := info.Capabilities
 	if caps.Len() == 0 {
-		caps = comparisonCapabilities(info.Dialect)
+		caps = capability.ForDialect(info.Dialect)
 	}
 	rules, err := runtime.ComparisonRules(info.Dialect)
 	if err != nil {

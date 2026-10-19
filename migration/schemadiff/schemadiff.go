@@ -66,7 +66,10 @@ func CompareReportingUndecidedAdditions(
 // with the target's capabilities, which decide what the comparison can expect
 // a read to report. Nil takes the dialect's default preset, which is all an
 // offline comparison has; a live one passes what the server's version
-// resolved to, because two releases of one engine can answer differently.
+// resolved to, because two releases of one engine can answer differently. A
+// comparison that names no dialect has no target, so it assumes no target's
+// capabilities, as it reads no target's identifier rules, descriptor facts or
+// comparison rules.
 // defaultIntSize is [catalog.ServerInfo.DefaultIntSize], 0 where no connection
 // read it.
 func compareReportingUndecidedAdditions(
@@ -89,7 +92,7 @@ func compareReportingUndecidedAdditions(
 		return nil, Diagnostics{}, err
 	}
 	if caps.Len() == 0 {
-		caps = comparisonCapabilities(opts.Dialect)
+		caps = capability.ForDialect(opts.Dialect)
 	}
 	// The rules the target gives the shared comparison; a comparison without
 	// a target has none.
@@ -118,7 +121,7 @@ func compareReportingUndecidedAdditions(
 	// The feature comparison runs before the index comparison, and reads a
 	// renamed index under the name the plan gives it.
 	prepared, err := prepareComparisonTables(ctx, desired, database,
-		compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules.Indexes),
+		compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules),
 		opts.Dialect, identifierSemantics, caps, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -137,9 +140,9 @@ func compareReportingUndecidedAdditions(
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database)
 
-	// Compare the databases of a whole MySQL-family server, before what is in
-	// them; see [config.CompareOptions.ServerSchemas].
-	if opts.ServerSchemas && isMySQLFamilyComparison(opts.Dialect) {
+	// Compare the databases of a whole server, before what is in them, on a
+	// target that compares them; see [config.CompareOptions.ServerSchemas].
+	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
 		compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics)
 	}
 
@@ -152,11 +155,12 @@ func compareReportingUndecidedAdditions(
 		identifierSemantics,
 		cov,
 		compare.TableContext{
-			Prepared:       prepared.bySubject,
-			Generated:      opts.GeneratedExpressions,
-			Columns:        opts.ColumnSpellings,
-			DefaultIntSize: defaultIntSize,
-			ColumnRules:    rules.Columns,
+			Prepared:             prepared.bySubject,
+			Generated:            opts.GeneratedExpressions,
+			Columns:              opts.ColumnSpellings,
+			DefaultIntSize:       defaultIntSize,
+			ColumnRules:          rules.Columns,
+			GeneratedExpressions: rules.GeneratedExpressions,
 		},
 		caps,
 	)
@@ -174,7 +178,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(
-		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules.Indexes,
+		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules,
 	)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
@@ -258,17 +262,6 @@ func compareReportingUndecidedAdditions(
 		return nil, Diagnostics{}, err
 	}
 	return diff, Diagnostics{Common: undecided, Features: featureResult.Undecided}, nil
-}
-
-// comparisonCapabilities is the capability set a comparison without a live
-// server assumes: the dialect's default preset, and PostgreSQL's where the
-// dialect is not named, which is what every comparator here takes an unnamed
-// dialect to mean.
-func comparisonCapabilities(dialect string) capability.Capabilities {
-	if dialect == "" {
-		return capability.ForDialect(platform.Postgres)
-	}
-	return capability.ForDialect(dialect)
 }
 
 func normalizeInlineEnumsForCompare(
@@ -484,15 +477,11 @@ func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime
 	return result.Err(target)
 }
 
-// isMySQLFamilyComparison reports whether dialect names MySQL or MariaDB, the
-// dialects whose schemas are databases.
-func isMySQLFamilyComparison(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
+// comparesServerDatabases reports whether a comparison of a whole server of
+// dialect compares the server's databases, as the dialect's descriptor states.
+func comparesServerDatabases(dialect string) bool {
+	described, _ := platform.Lookup(dialect)
+	return described.Comparison.ServerDatabases
 }
 
 // targetInputs are what a comparison for a selected target compares: both

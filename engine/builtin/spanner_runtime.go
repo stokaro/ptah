@@ -19,9 +19,12 @@ import (
 // The Spanner row deletion policy is a table facet, and a change stream is
 // state the read records and does not describe.
 func registerSpannerServices(provider *engine.Provider, target string) {
-	// The shared comparison reads a Spanner index's whole definition through
-	// Spanner's own rules.
-	provider.Targets[0].Comparison.Indexes = spannercomparison.Rules().Indexes
+	// The shared comparison reads a Spanner index's whole definition, and
+	// finds the index Spanner built for a foreign key, through Spanner's own
+	// rules.
+	rules := spannercomparison.Rules()
+	provider.Targets[0].Comparison.Indexes = rules.Indexes
+	provider.Targets[0].Comparison.ForeignKeyIndexes = rules.ForeignKeyIndexes
 	provider.Annotations = append(provider.Annotations, spannersource.Annotations())
 	provider.YAML = append(provider.YAML, spannersource.YAML())
 	provider.SQL = append(provider.SQL, spannersource.SQL())

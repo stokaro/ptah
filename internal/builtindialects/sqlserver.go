@@ -137,6 +137,8 @@ END`,
 			ExpressionProbes:       "sys-catalog",
 			DefaultGeneratedKind:   "PERSISTED",
 			AutoIncrementFlag:      true,
+			// An index renamed only in case is rebuilt under the declared spelling.
+			RespelledIndexReplaced: true,
 		},
 
 		// An enum column is NVARCHAR(255) with a CHECK over the bracketed

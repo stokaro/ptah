@@ -107,4 +107,16 @@ type Comparison struct {
 	// DefaultGeneratedKind is the storage a generated column declared
 	// without one gets, such as "STORED". Empty means it has no default.
 	DefaultGeneratedKind string `json:"default_generated_kind,omitempty"`
+	// ServerDatabases reports that a comparison of a whole server compares
+	// the databases it holds as well as the objects in them: a database only
+	// the declaration holds is created, one only the server holds is
+	// dropped, and a declared character set or collation that differs is
+	// changed. Such a comparison requires the declaration to state its
+	// databases.
+	ServerDatabases bool `json:"server_databases,omitempty"`
+	// RespelledIndexReplaced reports that an index whose catalog name the
+	// name rules read as the declared name, but which is spelled otherwise,
+	// such as in another case, is dropped and created under the declared
+	// spelling rather than kept.
+	RespelledIndexReplaced bool `json:"respelled_index_replaced,omitempty"`
 }

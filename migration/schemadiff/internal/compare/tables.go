@@ -129,6 +129,9 @@ type TableContext struct {
 	DefaultIntSize int
 	// ColumnRules are the target's column rules, nil where it registers none.
 	ColumnRules schemacomparison.Columns
+	// GeneratedExpressions reads a generated column's expression on the
+	// target, nil where it registers no rule for it.
+	GeneratedExpressions schemacomparison.GeneratedExpressions
 }
 
 // TablesAndColumnsWithTableContext is [TablesAndColumnsWithSemantics] told

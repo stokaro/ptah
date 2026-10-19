@@ -35,7 +35,7 @@ func TestIndexes_FeatureBackingIndex(t *testing.T) {
 				{Name: "guard_index", TableName: "other_widget", Columns: []string{"room"}},
 			}}
 			diff := &difftypes.SchemaDiff{}
-			compare.IndexesWithDialect(&schemamodel.Database{Indexes: test.desired}, live, diff, "postgres")
+			compare.IndexesWithDialect(&schemamodel.Database{Indexes: test.desired}, live, diff, "postgres", builtinRules(c, "postgres"))
 			c.Assert(diff.IndexAdditions(), qt.HasLen, test.additions)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, test.removals)
 		})

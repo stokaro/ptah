@@ -152,7 +152,7 @@ func TestIndexes_TableQualifiedReplacement(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(test.desired, test.database, diff, "postgres")
+			compare.IndexesWithDialect(test.desired, test.database, diff, "postgres", builtinRules(c, "postgres"))
 
 			want := []difftypes.IndexRef{
 				{Name: "idx_shared_lookup", TableName: "accounts"},
@@ -233,7 +233,7 @@ func TestIndexesWithDialect_CaseInsensitiveIdentityHasNoDiff(t *testing.T) {
 			database := &catalog.Database{Indexes: []catalog.Index{test.database}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, test.dialect)
+			compare.IndexesWithDialect(desired, database, diff, test.dialect, builtinRules(c, test.dialect))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
@@ -264,7 +264,7 @@ func TestIndexesWithDialect_CaseInsensitiveReplacementPreservesRawSpelling(t *te
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.IndexesWithDialect(desired, database, diff, "sqlite")
+	compare.IndexesWithDialect(desired, database, diff, "sqlite", builtinRules(c, "sqlite"))
 
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "IDX_Users_Active", TableName: "Tenant.Users"},
