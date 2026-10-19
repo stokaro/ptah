@@ -20,7 +20,6 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/dburlext"
@@ -311,7 +310,7 @@ func loadSchemaDirEntry(
 		// applies the format limits itself. A directory entry that skipped
 		// them would be the one route where the round trip is still
 		// destructive.
-		return withFormatLimits(db, resolved, opts.Dialect), statements, nil
+		return withFormatLimits(db, resolved, opts.CoverageVocabulary), statements, nil
 	}
 	db, err := loadSchemaFile(resolved, opts)
 	if err != nil {
@@ -344,7 +343,7 @@ func loadSchemaFile(resolved string, opts Options) (*schemamodel.Database, error
 	if err != nil {
 		return nil, err
 	}
-	return withFormatLimits(database, resolved, opts.Dialect), nil
+	return withFormatLimits(database, resolved, opts.CoverageVocabulary), nil
 }
 
 // yamlOnlyExtensions are the extensions [withFormatLimits] treats as the YAML
@@ -360,7 +359,13 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 // invented during parsing would appear as a `ptah:not-described` header nobody
 // wrote.
 //
-// Each rule is a measurement of the surface rather than a reading of its
+// An owner's coverage kinds come from the owner. It states, with the kinds it
+// registers, which of them a format has no spelling for, and the load reads
+// that statement from its vocabulary ([coverage.Vocabulary.FormatLimits]). A
+// load whose vocabulary does not select an owner records none of that owner's
+// kinds.
+//
+// Each rule here is a measurement of the surface rather than a reading of its
 // documentation:
 //
 //   - Only `.sql` has CREATE VIRTUAL TABLE. The SQLite owner's coverage says
@@ -380,12 +385,6 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     type or a range. A YAML schema declaring one table was measured planning
 //     `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s against a database
 //     holding one of each.
-//   - HCL and DBML have no spelling for a table's row deletion policy or for a
-//     YDB changefeed, which a Go schema and a YAML schema have, and Spanner's
-//     SQL has for a policy. Measured on YDB 26.2.1.14, a TTL table inspected
-//     through `ptah-compat schema inspect` and applied back from that HCL
-//     planned `ALTER TABLE ... RESET (TTL)`, and an HCL or a DBML document
-//     declaring a table that carries a changefeed planned `DROP CHANGEFEED`.
 //   - YAML, Go, and YQL schemas express a YDB topic. HCL and DBML cannot,
 //     and SQL without the YDB dialect cannot either. Those sources must not
 //     request DROP TOPIC by omission.
@@ -413,14 +412,13 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     table, an async replication and a transfer are the same: YAML, YQL and
 //     a Go schema declare them, and the other formats make no claim about
 //     their namespaces.
-func withFormatLimits(database *schemamodel.Database, resolved, dialect string) *schemamodel.Database {
+func withFormatLimits(database *schemamodel.Database, resolved string, vocabulary coverage.Vocabulary) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
-	if extension == dirHCLExtension || extension == dbmlExtension {
-		database.NotDescribed = database.NotDescribed.With(
-			unsupportedByFormat(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL)...)
+	if owned := vocabulary.FormatLimits(documentFormats[extension]); len(owned) > 0 {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(owned...)...)
 	}
 	if slices.Contains(yamlOnlyExtensions, extension) {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
@@ -430,6 +428,16 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
 	}
 	return database
+}
+
+// documentFormats maps a document's extension to the format an owner states
+// its limits for.
+var documentFormats = map[string]coverage.Format{
+	dirHCLExtension: coverage.FormatHCL,
+	dbmlExtension:   coverage.FormatDBML,
+	".yaml":         coverage.FormatYAML,
+	".yml":          coverage.FormatYAML,
+	dirSQLExtension: coverage.FormatSQL,
 }
 
 // dbmlExtension is the one a DBML document carries.
@@ -777,7 +785,7 @@ func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, d
 		if err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, document); err != nil {
 			return err
 		}
-		withFormatLimits(merged, resolved, opts.Dialect)
+		withFormatLimits(merged, resolved, opts.CoverageVocabulary)
 		return nil
 	}
 	db, err := LoadPath(resolved, opts)

@@ -201,10 +201,11 @@ func New() (*engine.Runtime, error) {
 			provider.Selections = append(provider.Selections, ydbsource.Selections())
 			provider.SQL = append(provider.SQL, ydbsql.SQL())
 			// The YDB state a read records and does not describe: what a
-			// document's header may name, and what the owner consults in
-			// process and no document names.
+			// document's header may name, what the owner consults in process
+			// and no document names, and what a format cannot spell.
 			provider.CoverageKinds = append(provider.CoverageKinds, ydbschema.CoverageKinds()...)
 			provider.ProcessCoverageKinds = append(provider.ProcessCoverageKinds, ydbschema.ProcessCoverageKinds()...)
+			provider.CoverageFormatLimits = append(provider.CoverageFormatLimits, ydbschema.CoverageFormatLimits()...)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

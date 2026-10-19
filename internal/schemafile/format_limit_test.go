@@ -36,16 +36,17 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 	}{
 		{
 			// HCL has the synonym and extended_property blocks
-			// (stokaro/ptah#1031), and their owners' coverage says so -- and it still cannot
-			// name a table's row deletion policy, a changefeed, or a YDB
-			// resource pool or classifier. A secret, a topic, an external
-			// object, an async replication, a transfer, a column family and a
-			// SQLite virtual table are owned features the format makes no
-			// claim about.
-			name:     "HCL cannot name a TTL, a changefeed, a resource pool or classifier",
+			// (stokaro/ptah#1031), and their owners' coverage says so. It
+			// carries a TTL as the YDB owner's platform properties, and it
+			// cannot name a changefeed or a column-oriented table. A secret, a
+			// topic, a resource pool or classifier, an external object, an
+			// async replication, a transfer, a column family and a SQLite
+			// virtual table are owned features the format makes no claim
+			// about.
+			name:     "HCL cannot name a changefeed or a column table",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want:     unsupportedRecords(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL),
+			want:     unsupportedRecords(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable),
 		},
 		{
 			// The control on the common families. Synonyms, extended
@@ -57,12 +58,11 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			want:     nil,
 		},
 		{
-			// YAML expresses the fewest families of the three, and the row is
-			// what keeps the HCL narrowing from being read as "the loader no
-			// longer records these kinds anywhere". It has keys for a row
-			// deletion policy, a changefeed and a column family, as `.sql` has
-			// Spanner's policy clause, so both rows are the control on the TTL,
-			// changefeed and column family records HCL and DBML carry.
+			// YAML expresses the fewest common families of the three. It has
+			// keys for a row deletion policy, a changefeed and a column
+			// family, as `.sql` has Spanner's policy clause, so both rows are
+			// the control on the changefeed, column table and TTL records HCL
+			// and DBML carry.
 			name:     "YAML cannot name four families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
@@ -95,7 +95,46 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+			runtime := builtintest.Runtime()
+			database, err := schemafile.LoadPath(path, schemafile.Options{
+				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), CoverageVocabulary: runtime.CoverageVocabulary(),
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// An owner's kinds a format cannot spell come from the owner, through the
+// vocabulary the load is given. A load whose vocabulary does not select the
+// YDB owner records the common limits of its format and none of the YDB
+// kinds: no comparison of that run reads them, and the HCL writer refuses a
+// record its vocabulary cannot name.
+func TestAFormatRecordsNoKindOfAnOwnerTheLoadDidNotSelect(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		contents string
+		want     []coverage.Object
+	}{
+		{name: "HCL", file: "schema.hcl", contents: "schema \"main\" {\n}\n", want: nil},
+		{
+			name: "DBML", file: "schema.dbml", contents: "Table users {\n  id integer [pk]\n}\n",
+			want: unsupportedRecords(
+				coverage.Composite, coverage.Domain, coverage.Extension,
+				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(t.TempDir(), test.file)
+			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
+			runtime := builtintest.Runtime()
+
+			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)

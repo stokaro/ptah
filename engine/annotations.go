@@ -42,19 +42,33 @@ func (r *Runtime) registerAnnotations(providers []Provider) error {
 	return nil
 }
 
-// registerCoverageKinds freezes every provider's coverage kinds and
-// in-process coverage kinds into the runtime's vocabulary. Two providers
-// claiming one kind, a provider claiming a common kind, and a kind registered
-// both ways are refused.
+// registerCoverageKinds freezes every provider's coverage kinds, in-process
+// coverage kinds and format limits into the runtime's vocabulary. Two
+// providers claiming one kind, a provider claiming a common kind, a kind
+// registered both ways, and a format limit on a kind the provider does not
+// register are refused.
 func (r *Runtime) registerCoverageKinds(providers []Provider) error {
 	var kinds, process []coverage.Kind
+	var limits []coverage.FormatLimit
 	for _, provider := range providers {
 		kinds = append(kinds, provider.CoverageKinds...)
 		process = append(process, provider.ProcessCoverageKinds...)
+		for _, limit := range provider.CoverageFormatLimits {
+			for _, kind := range limit.Kinds {
+				if !slices.Contains(provider.CoverageKinds, kind) {
+					return fmt.Errorf("%w: provider %q states a %s format limit on coverage kind %q, which it does not register",
+						ErrInvalidRegistration, provider.ID, limit.Format, kind)
+				}
+			}
+			limits = append(limits, limit)
+		}
 	}
 	vocabulary, err := coverage.NewVocabulary(kinds...)
 	if err == nil {
 		vocabulary, err = vocabulary.WithProcess(process...)
+	}
+	if err == nil {
+		vocabulary, err = vocabulary.WithFormatLimits(limits...)
 	}
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)

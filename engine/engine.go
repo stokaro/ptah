@@ -108,6 +108,13 @@ type Provider struct {
 	// neither way is refused. A kind is registered once, and never as a
 	// CoverageKinds kind or a common kind.
 	ProcessCoverageKinds []coverage.Kind
+	// CoverageFormatLimits state which of the provider's CoverageKinds a
+	// document format has no spelling for, such as a YDB changefeed in HCL.
+	// A document in that format records each one as not described, so its
+	// silence about one is not read as a request to remove it; see
+	// [coverage.Vocabulary.FormatLimits]. A kind is one the provider registers
+	// in CoverageKinds, stated once per format.
+	CoverageFormatLimits []coverage.FormatLimit
 	// CoverageLimits map not-described kinds onto the provider's named-object
 	// models, so a description that declines a kind, such as a document whose
 	// header says it does not describe policies, does not describe the

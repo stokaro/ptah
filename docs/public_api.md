@@ -3842,6 +3842,22 @@ an in-process kind out, and refuses a record of a kind its vocabulary does not
 know at all rather than leave it out. Leaving it out would describe the
 database as complete where the read was not.
 
+An owner states which of its kinds a document format has no spelling for in
+`engine.Provider.CoverageFormatLimits`, as `coverage.FormatLimit` values: a
+`coverage.Format` (`FormatHCL`, `FormatDBML`, `FormatYAML` or `FormatSQL`) and
+the kinds. Each kind must be one the provider registers in `CoverageKinds`.
+`Vocabulary.WithFormatLimits` adds the statements, and refuses an unknown
+format, a common kind, a kind the vocabulary does not accept and a kind stated
+twice for one format. `Vocabulary.FormatLimits` returns the kinds for one
+format, sorted.
+
+A schema document loader records each of them as not described,
+with the reason `unsupported` and the provenance `derived-from-fact`, so a
+document's silence about one is not read as a request to remove it.
+`ydbschema.CoverageFormatLimits` states that HCL and DBML cannot spell a
+changefeed or a column table, and that DBML cannot spell a TTL. A run whose vocabulary does not select an
+owner records none of that owner's kinds.
+
 `coverage.DecodeHeader` takes the vocabulary and an explicit `HeaderExtension`
 callback, or nil for the vocabulary only. The callback receives validated
 directives outside the vocabulary and records them in the owning feature's
