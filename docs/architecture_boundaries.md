@@ -129,9 +129,11 @@ shares: which dialect a block is read as, the roles the file declared before
 it, and how a CREATE ROLE is recorded. The reader runs in process, like the
 YQL parser.
 
-Routine headers are converted by `internal/routineext` services, selected by
+Routine headers are parsed and converted by `internal/routineext` services, selected by
 the source dialect's `Grammar.Routines.Body`. The PostgreSQL, MySQL, and SQL
-Server owners interpret their own options and retain their refusal messages.
+Server owners read their statement boundaries, headers, and options and retain
+their refusal messages. The shared parser supplies its cursor and time budget
+and validates the owner claims after parsing.
 The shared SQL reader normalizes the destination name and adds its refusal
 sentinel to an owner's error. The service boundary is in-process; the public
 provider protocol remains part of #4204.

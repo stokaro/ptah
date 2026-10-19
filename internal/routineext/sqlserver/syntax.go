@@ -1,4 +1,4 @@
-package parser
+package sqlserver
 
 import (
 	"fmt"
@@ -6,24 +6,25 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/sqlext"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/routineext"
+	"ptah.run/internal/sqlcompound"
 )
 
-func (p *Parser) parseCreateSQLServerRoutineStatement(statementStart int, kind ast.RoutineKind) (ast.Node, error) {
+func parseRoutine(p routineext.Cursor, statementStart int, kind ast.RoutineKind) (ast.Node, error) {
 	mode := sqlServerRoutineKeepTopLevelSemicolon
 	if kind == ast.RoutineKindFunction {
 		mode = sqlServerRoutineStopAtTopLevelSemicolon
 	}
-	sql, err := p.collectRawSQLServerRoutine(statementStart, mode)
+	sql, err := collect(p, statementStart, mode)
 	if err != nil {
 		return nil, err
 	}
-	routine, options, err := parseSQLServerRoutineSQL(sql, p.dialect, kind)
+	routine, options, err := parseSQLServerRoutineSQL(sql, p.Dialect(), kind)
 	if err != nil {
 		return nil, err
 	}
-	p.claimOwnerRoutineOptions(routine, options, statementStart+leadingSpace(p.input[statementStart:]))
+	p.ClaimOptions(routine, options, statementStart+leadingSpace(p.Input()[statementStart:]))
 	return routine, nil
 }
 
@@ -33,7 +34,7 @@ func leadingSpace(text string) int {
 	return len(text) - len(strings.TrimLeft(text, " \t\r\n"))
 }
 
-func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.RoutineNode, []routineOptionSpan, error) {
+func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.RoutineNode, []routineext.OptionSpan, error) {
 	tokens := newSQLServerRoutineTokenizer(sql).tokens()
 	routine := ast.NewRoutine(sql, dialect, kind)
 	asIdx := findSQLServerRoutineBodyBoundary(tokens, kind)
@@ -43,60 +44,17 @@ func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.R
 	}
 	routine.Name, routine.Parameters, routine.Returns = parseSQLServerRoutineHeader(sql, tokens, kind, headerEnd)
 	for _, option := range options {
-		routine.Options = append(routine.Options, ast.RoutineOption{Text: option.text})
+		routine.Options = append(routine.Options, ast.RoutineOption{Text: option.Text})
 	}
 	routine.Body = parseSQLServerRoutineBody(sql, tokens, asIdx)
 	return routine, options, nil
-}
-
-// routineOptionSpan is one option of a routine header: its normalized text,
-// the words an owner's pattern is matched against, its source text and where
-// that starts in the statement.
-type routineOptionSpan struct {
-	text, source string
-	words        []string
-	start        int
-}
-
-// claimOwnerRoutineOptions offers each option of a routine header to the
-// owners whose patterns stand at [sqlext.RoutineOption], and records the
-// claims for the owners to read once the document is parsed. The claims of
-// one routine share its number, so an owner combines them into one facet. An option an
-// owner claims is marked read, and the facets its owner reads join the
-// routine's.
-func (p *Parser) claimOwnerRoutineOptions(routine *ast.RoutineNode, options []routineOptionSpan, offset int) {
-	candidates := p.owners.Candidates(p.dialect, sqlext.RoutineOption)
-	p.definitions++
-	for i, option := range options {
-		for _, candidate := range candidates {
-			if !candidate.Matches(option.words) {
-				continue
-			}
-			p.ownerClaims = append(p.ownerClaims, ownerClaim{
-				match: sqlext.Match{Candidate: candidate, Claim: sqlext.Claim{
-					Pattern: candidate.Pattern.Name, Site: sqlext.RoutineOption, Subject: routine.Name,
-					Text: option.source, Definition: p.definitions, Offset: offset + option.start,
-				}},
-				apply: func(value sqlext.Value) error {
-					merged, err := routine.Facets.Merge(value.Facets)
-					if err != nil {
-						return fmt.Errorf("%s %s: %w", routine.Kind, routine.Name, err)
-					}
-					routine.Facets = merged
-					routine.Options[i].Read = true
-					return nil
-				},
-			})
-			break
-		}
-	}
 }
 
 // parseSQLServerRoutineOptions reads what a routine header writes between its
 // signature and the AS that opens its body: a WITH list, such as `WITH
 // RECOMPILE, EXECUTE AS OWNER`, and FOR REPLICATION. It returns where the
 // signature ends and each option. A header with neither ends at asIdx.
-func parseSQLServerRoutineOptions(sql string, tokens []lexer.Token, kind ast.RoutineKind, asIdx int) (headerEnd int, options []routineOptionSpan, err error) {
+func parseSQLServerRoutineOptions(sql string, tokens []lexer.Token, kind ast.RoutineKind, asIdx int) (headerEnd int, options []routineext.OptionSpan, err error) {
 	if asIdx == -1 {
 		return -1, nil, nil
 	}
@@ -136,8 +94,8 @@ func parseSQLServerRoutineOptions(sql string, tokens []lexer.Token, kind ast.Rou
 		}
 	}
 	if forIdx != -1 {
-		options = append(options, routineOptionSpan{text: "FOR REPLICATION", source: "FOR REPLICATION",
-			words: []string{"FOR", "REPLICATION"}, start: tokens[forIdx].Start})
+		options = append(options, routineext.OptionSpan{Text: "FOR REPLICATION", Source: "FOR REPLICATION",
+			Words: []string{"FOR", "REPLICATION"}, Start: tokens[forIdx].Start})
 	}
 	return headerEnd, options, nil
 }
@@ -154,18 +112,18 @@ func sqlServerRoutineSignatureStart(tokens []lexer.Token, kind ast.RoutineKind) 
 
 // sqlServerRoutineOptionList splits the WITH list between start and end at its
 // commas.
-func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int) ([]routineOptionSpan, error) {
-	var options []routineOptionSpan
-	var current routineOptionSpan
+func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int) ([]routineext.OptionSpan, error) {
+	var options []routineext.OptionSpan
+	var current routineext.OptionSpan
 	first, last := -1, -1
 	flush := func() error {
-		if len(current.words) == 0 {
+		if len(current.Words) == 0 {
 			return fmt.Errorf("SQL Server routine WITH list contains an empty option")
 		}
-		current.source = sql[tokens[first].Start:tokens[last].End]
-		current.start = tokens[first].Start
+		current.Source = sql[tokens[first].Start:tokens[last].End]
+		current.Start = tokens[first].Start
 		options = append(options, current)
-		current, first, last = routineOptionSpan{}, -1, -1
+		current, first, last = routineext.OptionSpan{}, -1, -1
 		return nil
 	}
 	for i := start; i < end; i++ {
@@ -183,12 +141,12 @@ func sqlServerRoutineOptionList(sql string, tokens []lexer.Token, start, end int
 			first = i
 		}
 		last = i
-		current.words = append(current.words, tok.Value)
+		current.Words = append(current.Words, tok.Value)
 		word := strings.ToUpper(tok.Value)
 		if tok.Type == lexer.TokenString {
 			word = tok.Value
 		}
-		current.text = strings.TrimSpace(current.text + " " + word)
+		current.Text = strings.TrimSpace(current.Text + " " + word)
 	}
 	if err := flush(); err != nil {
 		return nil, err
@@ -451,4 +409,134 @@ func sqlServerRoutinePreviousSignificantIsOperator(tokens []lexer.Token, idx int
 
 func isSQLServerRoutineTrivia(tok lexer.Token) bool {
 	return tok.Type == lexer.TokenWhitespace || tok.Type == lexer.TokenComment
+}
+
+func skipSQLServerBracketedIdentifier(p routineext.Cursor) {
+	p.Advance()
+	for !p.AtEnd() {
+		if p.Current().MatchOperatorValue("]") {
+			p.Advance()
+			if p.Current().MatchOperatorValue("]") {
+				p.Advance()
+				continue
+			}
+			return
+		}
+		p.Advance()
+	}
+}
+
+func collect(p routineext.Cursor, statementStart int, semicolonMode sqlServerRoutineSemicolonMode) (string, error) {
+	blockDepth := 0
+	caseDepth := 0
+	for !p.AtEnd() {
+		if err := p.CheckTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.Current().MatchOperatorValue("[") {
+			skipSQLServerBracketedIdentifier(p)
+			continue
+		}
+
+		if p.Current().Type == lexer.TokenSemicolon &&
+			blockDepth == 0 &&
+			semicolonMode == sqlServerRoutineStopAtTopLevelSemicolon {
+			sql := p.Statement(statementStart)
+			p.Advance()
+			return sql, nil
+		}
+		if p.BatchSeparator() && blockDepth == 0 {
+			sql := p.Fragment(statementStart, p.Current().Start)
+			p.Advance()
+			return sql, nil
+		}
+
+		if p.Current().Type == lexer.TokenIdentifier && !p.Previous().MatchOperatorValue("@") {
+			nextValue := sqlServerRawRoutineNextSignificantValue(p.Input(), p.Current().End)
+			if complete := trackSQLServerRawRoutineKeyword(strings.ToUpper(p.Current().Value), nextValue, &blockDepth, &caseDepth); complete {
+				end := p.Current().End
+				p.Advance()
+				return p.Fragment(statementStart, end), nil
+			}
+		}
+		p.Advance()
+	}
+
+	if blockDepth > 0 {
+		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.Current().Start)
+	}
+	return p.Fragment(statementStart, p.Previous().End), nil
+}
+
+func trackSQLServerRawRoutineKeyword(keyword, nextValue string, blockDepth, caseDepth *int) bool {
+	switch keyword {
+	case "BEGIN":
+		if !sqlcompound.SQLServerBeginOpensBlock(nextValue) {
+			return false
+		}
+		(*blockDepth)++
+	case "CASE":
+		(*caseDepth)++
+	case "END":
+		if !sqlcompound.SQLServerEndClosesBlock(nextValue) {
+			return false
+		}
+		if *caseDepth > 0 {
+			(*caseDepth)--
+		} else if *blockDepth > 0 {
+			(*blockDepth)--
+			return *blockDepth == 0
+		}
+	}
+	return false
+}
+
+func sqlServerRawRoutineNextSignificantValue(input string, pos int) string {
+	if pos >= len(input) {
+		return ""
+	}
+	l := lexer.NewLexerWithOptions(input[pos:], lexer.Options{
+		BracketIdentifiers:  true,
+		DisableHashComments: true,
+	})
+	for {
+		tok := l.NextToken()
+		switch tok.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment:
+			continue
+		case lexer.TokenEOF:
+			return ""
+		default:
+			return strings.ToUpper(tok.Value)
+		}
+	}
+}
+
+type sqlServerRoutineSemicolonMode int
+
+const (
+	sqlServerRoutineStopAtTopLevelSemicolon sqlServerRoutineSemicolonMode = iota
+	sqlServerRoutineKeepTopLevelSemicolon
+)
+
+// Raw collects the permissive PROC form, stopping at a top-level terminator.
+func Raw(p routineext.Cursor, start int) (string, error) {
+	return collect(p, start, sqlServerRoutineStopAtTopLevelSemicolon)
+}
+
+type syntax struct{}
+
+func (syntax) Create(p routineext.Cursor, target string, statementStart int) (ast.Node, error) {
+	switch target {
+	case "FUNCTION":
+		return parseRoutine(p, statementStart, ast.RoutineKindFunction)
+	case "PROC", "PROCEDURE":
+		return parseRoutine(p, statementStart, ast.RoutineKindProcedure)
+	}
+	return p.Fallback(target, statementStart)
+}
+
+func (syntax) Definer(p routineext.Cursor, statementStart int) (ast.Node, error) {
+	return p.DefinerFallback(statementStart)
 }

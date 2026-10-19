@@ -10,9 +10,9 @@ import (
 	"ptah.run/internal/routineext"
 )
 
-// Services returns the grammars and conversion this owner supplies.
+// Services returns the grammars, header reader, and conversion this owner supplies.
 func Services() routineext.Services {
-	return routineext.Services{Grammars: []string{descriptor.RoutineTransactSQL}, Converter: converter{}}
+	return routineext.Services{Grammars: []string{descriptor.RoutineTransactSQL}, Converter: converter{}, Syntax: syntax{}, ReplacesWithAlter: true}
 }
 
 type converter struct{}

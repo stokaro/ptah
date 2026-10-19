@@ -172,12 +172,12 @@ p := parser.NewParser(
 )
 ```
 
-Dialect-specific routine bodies are handled behind parser strategies. Generic
-mode stays best-effort; dialect mode can use a routine boundary detector that is
-specific to the selected SQL family without turning the generic DDL parser into
-a stored-procedure sub-language parser.
+Routine grammar services in `internal/routineext` read headers and statement
+boundaries. The shared parser lends them its token cursor, timeout checks, and
+owner-claim pass. Generic mode stays best-effort; dialect mode uses the selected
+grammar's boundary detector. Body statements remain the routine body reader's responsibility.
 
-MySQL and MariaDB dialect mode parses a routine header into
+The MySQL grammar owner parses a routine header into
 `ast.RoutineNode` and keeps the body as its text. This package does not
 split a MySQL body into statements. The MySQL owner does
 (`dialect/mysql/mysqlroutine`), through the runtime's routine body reader

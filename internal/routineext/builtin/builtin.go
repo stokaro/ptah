@@ -4,6 +4,7 @@
 package builtin
 
 import (
+	"ptah.run/core/ast"
 	"ptah.run/internal/routineext"
 	"ptah.run/internal/routineext/mysql"
 	"ptah.run/internal/routineext/postgres"
@@ -28,3 +29,23 @@ func index(all ...routineext.Services) map[string]routineext.Services {
 // Lookup returns the services of a named descriptor.RoutineGrammar.Body,
 // or zero services when no owner serves that grammar.
 func Lookup(grammar string) routineext.Services { return services[grammar] }
+
+// Raw reads the permissive routine forms used when no owner grammar is
+// selected. This product default deliberately combines the shipped grammars.
+func Raw(cursor routineext.Cursor, start int, target string) (ast.Node, error) {
+	var sql string
+	var err error
+	if target == "PROC" {
+		sql, err = sqlserver.Raw(cursor, start)
+	} else {
+		sql, err = mysql.Collect(cursor, start)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewRawSQL(sql), nil
+}
+
+// EndsSetting is the quoted-header SET boundary the permissive function
+// reader shares with the quoted routine owner.
+func EndsSetting(value string) bool { return postgres.EndsSetting(value) }
