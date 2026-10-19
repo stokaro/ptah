@@ -1,6 +1,7 @@
 package builtindialects_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -74,11 +75,12 @@ func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 // first reader is the one whose markers the others are checked against.
 func TestDescriptors_DirectivesWithoutDialectInRegistryOrder(t *testing.T) {
 	c := qt.New(t)
-	var readers []string
-	for _, dialect := range builtindialects.Descriptors() {
-		if dialect.Migration.DirectivesWithoutDialect {
-			readers = append(readers, dialect.Name)
-		}
+	described := slices.DeleteFunc(builtindialects.Descriptors(), func(dialect descriptor.Dialect) bool {
+		return !dialect.Migration.DirectivesWithoutDialect
+	})
+	readers := make([]string, 0, len(described))
+	for _, dialect := range described {
+		readers = append(readers, dialect.Name)
 	}
 	c.Assert(readers, qt.DeepEquals, []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.SQLite,
