@@ -12,9 +12,9 @@ import (
 	"ptah.run/internal/txrequire"
 )
 
-// autocommitNodes are the planned nodes NodeRequiresAutocommit decides: one
+// plannedNodes are the planned nodes NodeRequiresAutocommit decides: one
 // of each kind it routes out, and its neighbor that stays in the file.
-var autocommitNodes = map[string]ast.Node{
+var plannedNodes = map[string]ast.Node{
 	"concurrent index":  &ast.IndexNode{Name: "idx", Concurrently: true},
 	"plain index":       &ast.IndexNode{Name: "idx"},
 	"concurrent drop":   &ast.DropIndexNode{Name: "idx", Concurrently: true},
@@ -55,7 +55,7 @@ func TestNodeRequiresAutocommit_AgreesWithTheRetiredFamilySwitch(t *testing.T) {
 	c.Assert(platform.Dialects().Dialects(), qt.HasLen, len(routedOut))
 	for _, spelling := range platform.DialectSpellings() {
 		for _, written := range []string{spelling, " " + spelling + " ", strings.ToUpper(spelling)} {
-			for name, node := range autocommitNodes {
+			for name, node := range plannedNodes {
 				t.Run(written+"/"+name, func(t *testing.T) {
 					c := qt.New(t)
 					want, found := routedOut[platform.NormalizeDialect(spelling)]
@@ -70,7 +70,7 @@ func TestNodeRequiresAutocommit_AgreesWithTheRetiredFamilySwitch(t *testing.T) {
 // An empty or unknown dialect states nothing, so every node stays in the file.
 func TestNodeRequiresAutocommit_NoDialect(t *testing.T) {
 	for _, dialect := range []string{"", "nonesuch"} {
-		for name, node := range autocommitNodes {
+		for name, node := range plannedNodes {
 			t.Run(dialect+"/"+name, func(t *testing.T) {
 				c := qt.New(t)
 				c.Assert(txrequire.NodeRequiresAutocommit(dialect, node), qt.IsFalse)
