@@ -24,7 +24,8 @@ func appendRoleBootstrap(
 	}
 	services := doBlockServices(reader.statements.DoBlocks)
 	if services.Roles == nil {
-		return fmt.Errorf("%w: procedural role declarations require one of the dialects %q", ErrUnmodeledStatement, registry.doBlockReaders)
+		return fmt.Errorf("%w: procedural role declarations require a dialect that reads DO blocks: %s",
+			ErrUnmodeledStatement, strings.Join(registry.doBlockReaders, ", "))
 	}
 	if block.Language != "" && !strings.EqualFold(block.Language, reader.statements.DoBlocks) {
 		return fmt.Errorf("%w: desired-state DO blocks require the supported %s role-bootstrap form", ErrUnmodeledStatement, services.Label)

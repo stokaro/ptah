@@ -49,7 +49,7 @@ func TestRegister_ReadsTheDoBlocksOfAnEngineNobodyShips(t *testing.T) {
 	c.Assert(database.Roles, qt.HasLen, 0)
 	database, _, err = sqlschema.Read([]byte(block), platform.CockroachDB)
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-	c.Assert(err, qt.ErrorMatches, `.*: procedural role declarations require one of the dialects \["postgres"\]`)
+	c.Assert(err, qt.ErrorMatches, `.*: procedural role declarations require a dialect that reads DO blocks: postgres`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 
 	untargeted := sqlext.GrammarRequest{Files: []sqlext.SourceFile{{Path: "roles.sql", Text: block}}}
@@ -70,7 +70,7 @@ func TestRegister_ReadsTheDoBlocksOfAnEngineNobodyShips(t *testing.T) {
 	c.Assert(result.Database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
 	database, _, err = sqlschema.Read([]byte(block), platform.CockroachDB)
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-	c.Assert(err, qt.ErrorMatches, `.*: procedural role declarations require one of the dialects \["postgres" "bootstrapping"\]`)
+	c.Assert(err, qt.ErrorMatches, `.*: procedural role declarations require a dialect that reads DO blocks: postgres, bootstrapping`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }
 

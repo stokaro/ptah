@@ -25,7 +25,7 @@ func TestRoleBootstrap_RefusalText(t *testing.T) {
 			name:    "a dialect whose grammar has DO blocks and whose descriptor names no language",
 			sql:     `DO $$ BEGIN CREATE ROLE reader; END $$;`,
 			dialect: "cockroachdb",
-			wantErr: `the schema model has no place for this statement: procedural role declarations require one of the dialects \["postgres"\]`,
+			wantErr: `the schema model has no place for this statement: procedural role declarations require a dialect that reads DO blocks: postgres`,
 		},
 		{
 			name:    "another language",
