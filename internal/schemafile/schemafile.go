@@ -3,6 +3,7 @@ package schemafile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -956,7 +957,9 @@ func SourceRoot(dialect, raw string) (string, error) {
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "", err
+		// url.Parse repeats the URL in its error, and the URL may carry a
+		// password.
+		return "", errors.New("the URL does not parse")
 	}
 	root, err := reader.Root(parsed)
 	return root.Path, err

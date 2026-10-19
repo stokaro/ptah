@@ -63,6 +63,14 @@ func TestSourceRoot_FailurePath(t *testing.T) {
 			rawURL:  "ydb:///local",
 			wantErr: `a YDB URL needs a host: write ydb://host:2136/database`,
 		},
+		{
+			// url.Parse repeats the URL in its error; the refusal must not
+			// carry the password.
+			name:    "a URL that does not parse",
+			dialect: platform.YDB,
+			rawURL:  "ydb://user:s3cret@exa mple:2136/local",
+			wantErr: `the URL does not parse`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
