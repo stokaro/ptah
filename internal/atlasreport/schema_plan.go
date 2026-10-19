@@ -30,7 +30,8 @@ type SchemaPlan struct {
 	Name string
 	// Dialect is the target dialect the statements were rendered for. It is
 	// empty for a plan read back from the Atlas `.plan.hcl` format, which has
-	// no field for it.
+	// no field for it. The `sql` helper reads the statements as this dialect
+	// when it indents them.
 	Dialect string
 	// From and To are the plan's source and desired-state fingerprints, the
 	// same two values the plan file records.
@@ -153,7 +154,7 @@ func (r SchemaPlan) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) == 0 || indent[0] == "" || text == "" {
 		return text, nil
 	}
-	return schemaIndentSQL(text, indent[0]), nil
+	return schemaIndentSQL(r.Dialect, text, indent[0]), nil
 }
 
 func schemaPlanSQL(result SchemaPlan, indent ...string) (string, error) {

@@ -488,7 +488,9 @@ func diffResolvedStates(
 			return atlasreport.SchemaDiff{}, nil, fmt.Errorf("generate schema diff SQL: %w", err)
 		}
 	}
-	return atlasreport.NewSchemaDiff(from, to, statements), diff, nil
+	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
+		Dialect: dialect, From: from, To: to, Statements: statements,
+	}), diff, nil
 }
 
 // compareDiffSides runs the comparison on conn when there is one, and offline

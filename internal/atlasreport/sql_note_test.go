@@ -30,11 +30,11 @@ func TestSQLTemplate_ANoteWithNothingAfterItEndsWithoutASemicolon(t *testing.T) 
 
 	var migrateDiff bytes.Buffer
 	c.Assert(atlasreport.WriteMigrateDiff(&migrateDiff, atlasreport.NormalizeMigrateDiffFormat(""),
-		atlasreport.NewSchemaDiff(nil, nil, statements)), qt.IsNil)
+		atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: statements})), qt.IsNil)
 	c.Assert(migrateDiff.String(), qt.Equals, want)
 
 	var schemaDiff bytes.Buffer
-	c.Assert(atlasreport.WriteSchemaDiff(t.Context(), &schemaDiff, `{{ sql . "  " }}`, atlasreport.NewSchemaDiff(nil, nil, statements), schemaext.Registry{}), qt.IsNil)
+	c.Assert(atlasreport.WriteSchemaDiff(t.Context(), &schemaDiff, `{{ sql . "  " }}`, atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: statements}), schemaext.Registry{}), qt.IsNil)
 	c.Assert(schemaDiff.String(), qt.Equals, want)
 
 	apply, err := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Statements: statements}).MarshalSQL("  ")

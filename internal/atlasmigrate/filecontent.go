@@ -191,7 +191,7 @@ func renderMigrationFileContent(
 	if err != nil {
 		return MigrationFileContent{}, err
 	}
-	sql, err := renderMigrationDiffSQL(statements, format)
+	sql, err := renderMigrationDiffSQL(dialect, statements, format)
 	if err != nil {
 		return MigrationFileContent{}, err
 	}
@@ -213,6 +213,7 @@ func renderMigrationFileContent(
 // no rollback half.
 func attachReversePlan(
 	contents []MigrationFileContent,
+	dialect string,
 	reverse []string,
 	format string,
 	requiresNoTransaction bool,
@@ -220,7 +221,7 @@ func attachReversePlan(
 	if len(contents) == 0 || len(reverse) == 0 {
 		return contents, nil
 	}
-	sql, err := renderMigrationDiffSQL(reverse, format)
+	sql, err := renderMigrationDiffSQL(dialect, reverse, format)
 	if err != nil {
 		return nil, err
 	}

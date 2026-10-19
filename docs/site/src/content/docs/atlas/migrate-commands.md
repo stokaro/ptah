@@ -911,7 +911,9 @@ supported `diff` policy from `atlas.hcl`.
 
 The `sql` template helper indents SQL outside quoted tokens. It preserves
 line breaks and whitespace inside string literals, quoted identifiers, and
-dollar-quoted routine bodies, so formatting does not change stored values.
+dollar-quoted routine bodies, so formatting does not change stored values. It
+reads the statements by the quoting rules of the dev database's engine: a
+bracketed name is quoted on SQL Server, and `@@...@@` is a string on YDB.
 
 Ptah snapshots the desired schema first, cleans the dev database, and replays
 the migration directory into it. It compares the replayed state to the
