@@ -160,7 +160,7 @@ func (c ReachConstruct) validate() error {
 		return errors.New("states no part a statement could match")
 	}
 	if len(c.PathOption) != 0 && len(c.PathOption) != 2 {
-		return fmt.Errorf("states a path option of %d keywords rather than two", len(c.PathOption))
+		return fmt.Errorf("states a path option %q, which is not two keywords", c.PathOption)
 	}
 	for _, word := range words {
 		if word == "" || strings.ToUpper(word) != word {
