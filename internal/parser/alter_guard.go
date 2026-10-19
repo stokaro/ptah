@@ -3,7 +3,6 @@ package parser
 import (
 	"fmt"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 )
 
@@ -37,14 +36,17 @@ import (
 // where that set answers them and of the dialect's default where it does not,
 // so a guard Ptah writes for a target is one it reads for that target. No key
 // names the column guards, which no MySQL line takes and no MySQL-family
-// renderer writes, so the dialect decides those.
+// renderer writes, so the dialect's descriptor decides those. A dialect whose
+// descriptor does not check these clauses against capabilities reads every
+// guard; see descriptor.AlterTableGrammar.
 
 // refuseAlterGuard refuses the existence guard written at position in an ALTER
-// TABLE clause on a MySQL-family target that does not take it, and answers nil
-// everywhere else. key is the capability that says whether the target takes
-// the guard, or empty for a column guard, which MySQL refuses and MariaDB takes.
+// TABLE clause on a target that checks it, as the MySQL family does, and does
+// not take it, and answers nil everywhere else. key is the capability that
+// says whether the target takes the guard, or empty for a column guard, which
+// MySQL refuses and MariaDB takes.
 func (p *Parser) refuseAlterGuard(guard, clause string, key capability.Capability, position int) error {
-	if !isMySQLFamilyDialect(p.dialect) || p.takesAlterGuard(key) {
+	if !p.target.grammar.AlterTable.ChecksCapabilities || p.takesAlterGuard(key) {
 		return nil
 	}
 	return fmt.Errorf(
@@ -53,11 +55,11 @@ func (p *Parser) refuseAlterGuard(guard, clause string, key capability.Capabilit
 		guard, position, clause, p.dialect, guard, clause)
 }
 
-// takesAlterGuard answers whether this parser's MySQL-family target takes the
-// existence guard key names, or a column guard when key is empty.
+// takesAlterGuard answers whether this parser's target takes the existence
+// guard key names, or a column guard when key is empty.
 func (p *Parser) takesAlterGuard(key capability.Capability) bool {
 	if key == "" {
-		return p.dialect == platform.MariaDB
+		return p.target.grammar.AlterTable.ColumnGuards
 	}
 	return p.targetHas(key)
 }

@@ -218,7 +218,8 @@ func mysql() descriptor.Dialect {
 		// #3759). What a column-level REFERENCES builds depends on the release
 		// (stokaro/ptah#3760). Index keywords, options, the bare UNIQUE name,
 		// the FOREIGN KEY index name and functional key parts are the family's
-		// table body; MariaDB has no functional key parts.
+		// table body; MariaDB has no functional key parts. MySQL takes no IF
+		// [NOT] EXISTS on a column (stokaro/ptah#3877).
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{
 				ReferencesRefusal: "MySQL 8.4 builds nothing from the clause, while MySQL 9.7 and 26.7 build a " +
@@ -245,6 +246,17 @@ func mysql() descriptor.Dialect {
 				ForeignKeyIndexName:  true,
 				FunctionalParts:      true,
 				RefusesNullsDistinct: true,
+			},
+			AlterTable: descriptor.AlterTableGrammar{
+				AddIndex:           true,
+				RenameIndex:        true,
+				Modify:             descriptor.ModifyDefinition,
+				ChecksCapabilities: true,
+			},
+			Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+			Routines: descriptor.RoutineGrammar{
+				Body:                 descriptor.RoutineCompoundStatement,
+				TriggerStatementBody: true,
 			},
 		},
 	}

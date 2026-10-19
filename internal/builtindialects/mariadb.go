@@ -205,7 +205,8 @@ func mariaDB() descriptor.Dialect {
 		// MariaDB 11.8 takes no [NOT] ENFORCED, accepts MATCH and records
 		// NONE, takes one CHECK on a column, and takes a column CONSTRAINT
 		// before REFERENCES alone and before nothing in a MODIFY
-		// (stokaro/ptah#3745, #3759). It spells a hidden index IGNORED.
+		// (stokaro/ptah#3745, #3759). It spells a hidden index IGNORED, and
+		// takes IF [NOT] EXISTS on a column (stokaro/ptah#3877).
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{
 				SecondCheckRefusal: "MariaDB accepts one CHECK on a column and answers ERROR 1064 (42000) to the " +
@@ -232,6 +233,18 @@ func mariaDB() descriptor.Dialect {
 				BareUniqueName:       true,
 				ForeignKeyIndexName:  true,
 				RefusesNullsDistinct: true,
+			},
+			AlterTable: descriptor.AlterTableGrammar{
+				AddIndex:           true,
+				RenameIndex:        true,
+				Modify:             descriptor.ModifyDefinition,
+				ChecksCapabilities: true,
+				ColumnGuards:       true,
+			},
+			Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+			Routines: descriptor.RoutineGrammar{
+				Body:                 descriptor.RoutineCompoundStatement,
+				TriggerStatementBody: true,
 			},
 		},
 	}

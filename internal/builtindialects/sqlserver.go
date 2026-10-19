@@ -166,9 +166,14 @@ END`,
 		Atlas: descriptor.Atlas{DockerDrivers: []string{"sqlserver"}},
 
 		// Grammar: how the shared DDL parser reads the engine's DDL.
-		// A table body declares an index with INDEX, and reserves KEY.
+		// A table body declares an index with INDEX, and reserves KEY. DROP
+		// INDEX t.idx is the backward-compatible spelling of DROP INDEX idx ON
+		// t, and ALTER COLUMN states a whole definition.
 		Grammar: descriptor.Grammar{
-			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
+			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
+			Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
+			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
+			Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineTransactSQL},
 		},
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 )
 
@@ -81,7 +80,7 @@ func (p *Parser) readTableElementOptions(constraint *ast.ConstraintNode, kind, p
 		// its setting of the key, as it is of an index.
 		p.keyOptions.hold(&constraint.Facets, "primary key")
 	}
-	if p.dialect != platform.CockroachDB || kind != indexElement {
+	if !p.target.grammar.Indexes.TrailingVisibility || kind != indexElement {
 		return nil
 	}
 	_, err := p.cockroachVisibilityAt()

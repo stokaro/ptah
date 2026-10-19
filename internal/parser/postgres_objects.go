@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 )
 
@@ -212,7 +211,7 @@ func (p *Parser) parseCreateRoleIfNotExists() error {
 	if !p.current.MatchIdentifierValue("IF") {
 		return nil
 	}
-	if p.dialect != "" && !isMySQLFamilyDialect(p.dialect) {
+	if p.dialect != "" && !p.target.grammar.Statements.RoleIfNotExists {
 		return fmt.Errorf("CREATE ROLE IF NOT EXISTS at position %d: %s takes no IF NOT EXISTS on CREATE ROLE",
 			p.current.Start, p.dialect)
 	}
@@ -353,7 +352,7 @@ func (p *Parser) parseGrantTargets() ([]grantTarget, error) {
 	targets := []grantTarget{target}
 	p.skipWhitespace()
 	for p.current.MatchOperatorValue(",") {
-		if p.dialect != "" && !platform.IsPostgresFamily(p.dialect) {
+		if p.dialect != "" && !p.target.grammar.Statements.GrantTargetLists {
 			return nil, fmt.Errorf("GRANT target lists are not supported for %s at position %d", p.dialect, p.current.Start)
 		}
 		p.advance()

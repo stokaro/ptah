@@ -194,13 +194,21 @@ func postgres() descriptor.Dialect {
 		// PostgreSQL 18.6 takes [NOT] ENFORCED after a CHECK or a foreign key,
 		// one per constraint, NOT VALID with VALIDATE CONSTRAINT, MATCH FULL,
 		// and answers `MATCH PARTIAL not yet implemented`. The current-time
-		// words are keywords: CURRENT_TIMESTAMP() is refused.
+		// words are keywords: CURRENT_TIMESTAMP() is refused. The server stores
+		// one spelling of a string default, ALTER INDEX renames an index, and
+		// a routine's body is a string constant in a LANGUAGE.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
 				Enforcement: descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
 				NotValid:    true,
 				Match:       descriptor.Match{Clause: true},
+			},
+			Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
+			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+			Routines: descriptor.RoutineGrammar{
+				Body:              descriptor.RoutineQuotedBody,
+				TriggerConditions: true,
 			},
 		},
 	}

@@ -48,6 +48,31 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			FunctionalParts:      true,
 			RefusesNullsDistinct: true,
 		},
+		Indexes: descriptor.IndexGrammar{
+			TrailingVisibility: true,
+			Alter:              descriptor.AlterIndexVisibility,
+			DropNamesTable:     true,
+		},
+		AlterTable: descriptor.AlterTableGrammar{
+			AddIndex:              true,
+			RenameIndex:           true,
+			Modify:                descriptor.ModifyOther,
+			AlterColumnDefinition: true,
+			ChecksCapabilities:    true,
+			ColumnGuards:          true,
+		},
+		Statements: descriptor.StatementGrammar{
+			UseSelectsDatabase: true,
+			Extensions:         true,
+			UserTypes:          true,
+			GrantTargetLists:   true,
+			RoleIfNotExists:    true,
+		},
+		Routines: descriptor.RoutineGrammar{
+			Body:                 descriptor.RoutineTransactSQL,
+			TriggerConditions:    true,
+			TriggerStatementBody: true,
+		},
 	}
 
 	registry, err := descriptor.NewRegistry(described)
@@ -148,6 +173,21 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "a visibility refusal without a refused clause",
 			dialect: with(func(g *descriptor.Grammar) { g.Keys.Visibility.Refusal = "alpha hides nothing" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a refused visibility clause and its refusal are set together`,
+		},
+		{
+			name:    "an undeclared ALTER INDEX grammar",
+			dialect: with(func(g *descriptor.Grammar) { g.Indexes.Alter = "set-tablespace" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: ALTER INDEX grammar "set-tablespace" is not one of .*`,
+		},
+		{
+			name:    "an undeclared MODIFY grammar",
+			dialect: with(func(g *descriptor.Grammar) { g.AlterTable.Modify = "replace" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: MODIFY grammar "replace" is not one of .*`,
+		},
+		{
+			name:    "an undeclared routine body grammar",
+			dialect: with(func(g *descriptor.Grammar) { g.Routines.Body = "plpgsql" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: routine body grammar "plpgsql" is not one of .*`,
 		},
 	}
 	for _, test := range tests {

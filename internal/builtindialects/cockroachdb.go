@@ -177,9 +177,10 @@ func cockroachDB() descriptor.Dialect {
 		// Grammar: how the shared DDL parser reads the engine's DDL.
 		// v26.3.2 takes NOT VALID and MATCH FULL, refuses every deferral
 		// clause, and reads INDEX in a table body as an index only before a
-		// column list.
+		// column list. An index may end with its visibility, which ALTER
+		// INDEX table@index changes.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
 				NotValid: true,
 				Match:    descriptor.Match{Clause: true},
@@ -187,7 +188,13 @@ func cockroachDB() descriptor.Dialect {
 					Refusal: "CockroachDB has no deferrable constraints, and v26.3.2 refuses the clause, NOT DEFERRABLE included",
 				},
 			},
-			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
+			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
+			Indexes:    descriptor.IndexGrammar{TrailingVisibility: true, Alter: descriptor.AlterIndexVisibility},
+			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+			Routines: descriptor.RoutineGrammar{
+				Body:              descriptor.RoutineQuotedBody,
+				TriggerConditions: true,
+			},
 		},
 	}
 }

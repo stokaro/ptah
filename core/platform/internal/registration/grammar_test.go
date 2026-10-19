@@ -18,11 +18,14 @@ import (
 func TestRegister_DescribesTheDDLGrammarOfAnEngineNobodyShips(t *testing.T) {
 	const twoChecks = "CREATE TABLE t (a int CHECK (a > 0) CHECK (a < 10));"
 	const deferred = "CREATE TABLE t (id int PRIMARY KEY, p int REFERENCES t (id) DEFERRABLE);"
+	const modify = "ALTER TABLE t MODIFY a bigint;"
 	c := qt.New(t)
 	_, err := parser.NewParser(twoChecks, parser.WithDialect("grammardb")).Parse()
 	c.Assert(err, qt.IsNil)
 	_, err = parser.NewParser(deferred, parser.WithDialect("grammardb")).Parse()
 	c.Assert(err, qt.IsNil)
+	_, err = parser.NewParser(modify, parser.WithDialect("grammardb")).Parse()
+	c.Assert(err, qt.ErrorMatches, `MODIFY at position 14 in ALTER TABLE: grammardb has no MODIFY clause; .*`)
 
 	engine := described("grammar", "", "grammardb")
 	engine.Grammar = descriptor.Grammar{
@@ -30,6 +33,7 @@ func TestRegister_DescribesTheDDLGrammarOfAnEngineNobodyShips(t *testing.T) {
 		Constraints: descriptor.ConstraintGrammar{
 			Deferral: descriptor.Deferral{Refusal: "grammar has no deferrable constraints"},
 		},
+		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyDefinition},
 	}
 	c.Assert(platform.Register(engine), qt.IsNil)
 
@@ -40,4 +44,7 @@ func TestRegister_DescribesTheDDLGrammarOfAnEngineNobodyShips(t *testing.T) {
 	statements, err = parser.NewParser(deferred, parser.WithDialect("grammardb")).Parse()
 	c.Assert(err, qt.ErrorMatches, `deferral clause at position 60: grammar has no deferrable constraints`)
 	c.Assert(statements, qt.IsNil)
+	statements, err = parser.NewParser(modify, parser.WithDialect("grammardb")).Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 }

@@ -22,6 +22,9 @@ type targetGrammar struct {
 	// checkOwnColumnOnly is the descriptor's Columns.CheckOwnColumnOnly: a
 	// CHECK written on a column may name that column alone.
 	checkOwnColumnOnly bool
+	// family is the descriptor's Family, whose head's string rules a routine
+	// of the quoted-body grammar is read with.
+	family string
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -33,6 +36,7 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		grammar:            described.Grammar,
 		nullableTypes:      described.Comparison.NullableTypes,
 		checkOwnColumnOnly: described.Columns.CheckOwnColumnOnly,
+		family:             described.Family,
 	}
 })
 
