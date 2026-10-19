@@ -203,9 +203,15 @@ To preserve an extension already installed in a
 server-owned namespace without requesting `CREATE SCHEMA`, write the placement
 as a string, for example `schema = "pg_catalog"`, and omit the schema block.
 Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
-`crdb_internal` namespace, and Spanner its exact `spanner_sys`. Quoted
-lookalikes such as `schema "PG_CATALOG" {}` or `schema "CRDB_INTERNAL" {}`
-remain user schemas.
+`crdb_internal` namespace. Quoted lookalikes such as `schema "PG_CATALOG" {}`
+or `schema "CRDB_INTERNAL" {}` remain user schemas.
+
+Spanner refuses the schema names its server refuses to create: `spanner_sys`,
+`spanner`, `default`, every name that starts with `spanner_` in lower case, and
+any spelling in another case of `public`, `information_schema`, `pg_catalog`,
+`spanner_sys`, `spanner` or `default`, such as `schema "Public" {}`. It accepts
+`schema "public" {}`, and `schema "SPANNER_APP" {}` and `schema "PG_TOAST" {}`,
+which the server creates.
 
 The `extension.schema` attribute accepts an HCL string template or an exact
 one-name schema traversal such as `schema.extensions` or

@@ -52,6 +52,8 @@ var everyMember = descriptortable.NewIndex(func(dialects []descriptor.Dialect) d
 		union.Catalog = appendMissing(union.Catalog, described.SystemSchemas.Catalog)
 		union.Reserved = appendMissing(union.Reserved, described.SystemSchemas.Reserved)
 		union.Implicit = appendMissing(union.Implicit, described.SystemSchemas.Implicit)
+		union.ReservedPrefixes = appendMissing(union.ReservedPrefixes, described.SystemSchemas.ReservedPrefixes)
+		union.ReservedCaseVariants = appendMissing(union.ReservedCaseVariants, described.SystemSchemas.ReservedCaseVariants)
 	}
 	return union
 })
@@ -153,11 +155,22 @@ func IsPostgresSystemSchema(name string) bool {
 
 // IsPostgresFamilySystemSchema reports whether name is owned by the concrete
 // PostgreSQL-family target: a name [IsPostgresSystemSchema] reports, or one
-// the dialect's descriptor reserves (descriptor.SystemSchemas.Reserved).
-// Matching remains exact so a quoted lookalike in another case is still a
-// user identifier.
+// the dialect's descriptor reserves (descriptor.SystemSchemas): by name, by
+// prefix, or as a spelling in another case of a name the server refuses in
+// every case. Matching is otherwise exact, so a quoted lookalike in another
+// case is still a user identifier.
 func IsPostgresFamilySystemSchema(dialect, name string) bool {
-	return IsPostgresSystemSchema(name) || slices.Contains(added(dialect).Reserved, name)
+	if IsPostgresSystemSchema(name) {
+		return true
+	}
+	schemas := added(dialect)
+	return slices.Contains(schemas.Reserved, name) ||
+		slices.ContainsFunc(schemas.ReservedPrefixes, func(prefix string) bool {
+			return strings.HasPrefix(name, prefix)
+		}) ||
+		slices.ContainsFunc(schemas.ReservedCaseVariants, func(stated string) bool {
+			return name != stated && strings.EqualFold(name, stated)
+		})
 }
 
 // IsUncreatableSchema reports whether the target owns name and will not create

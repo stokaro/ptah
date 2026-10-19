@@ -135,6 +135,21 @@ func TestIsPostgresFamilySystemSchemaAddsTheReservedSchemas(t *testing.T) {
 		{name: "any member owns Spanner's catalog", dialect: pgsystemschema.AnyMember, schema: "spanner_sys", want: true},
 		{name: "any member leaves public to the user", dialect: pgsystemschema.AnyMember, schema: "public", want: false},
 		{name: "any member owns the common catalog", dialect: pgsystemschema.AnyMember, schema: "information_schema", want: true},
+		{name: "Spanner owns spanner", dialect: "spanner", schema: "spanner", want: true},
+		{name: "Spanner owns default", dialect: "spanner", schema: "default", want: true},
+		{name: "Spanner's reserved prefix", dialect: "spanner", schema: "spanner_app", want: true},
+		{name: "Spanner's prefix keeps its case", dialect: "spanner", schema: "SPANNER_APP", want: false},
+		{name: "Spanner's prefix is a prefix", dialect: "spanner", schema: "spannerx", want: false},
+		{name: "a variant of Spanner's catalog", dialect: "spanner", schema: "SPANNER_SYS", want: true},
+		{name: "a variant of Spanner's public", dialect: "spanner", schema: "Public", want: true},
+		{name: "a variant of the information schema on Spanner", dialect: "spanner", schema: "INFORMATION_SCHEMA", want: true},
+		{name: "a variant of pg_catalog on Spanner", dialect: "spanner", schema: "Pg_Catalog", want: true},
+		{name: "a variant of another pg_ schema on Spanner", dialect: "spanner", schema: "PG_TOAST", want: false},
+		{name: "a variant of default on Spanner", dialect: "spanner", schema: "DEFAULT", want: true},
+		{name: "PostgreSQL leaves Spanner's prefix to the user", dialect: "postgres", schema: "spanner_app", want: false},
+		{name: "PostgreSQL leaves a variant of the information schema to the user", dialect: "postgres", schema: "INFORMATION_SCHEMA", want: false},
+		{name: "any member owns Spanner's prefix", dialect: pgsystemschema.AnyMember, schema: "spanner_app", want: true},
+		{name: "any member refuses a variant of public", dialect: pgsystemschema.AnyMember, schema: "PUBLIC", want: true},
 	}
 
 	for _, test := range tests {
@@ -160,6 +175,10 @@ func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing
 		{name: "information schema", dialect: "spanner", schema: "information_schema"},
 		{name: "CockroachDB internal", dialect: "cockroachdb", schema: "crdb_internal"},
 		{name: "Spanner's catalog", dialect: "spanner", schema: "spanner_sys"},
+		{name: "Spanner's reserved prefix", dialect: "spanner", schema: "spanner_app"},
+		{name: "Spanner's own name", dialect: "spanner", schema: "spanner"},
+		{name: "a variant of Spanner's catalog", dialect: "spanner", schema: "SPANNER_SYS"},
+		{name: "a variant of Spanner's public", dialect: "spanner", schema: "Public"},
 	}
 
 	for _, test := range tests {
@@ -187,6 +206,8 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 		{name: "CockroachDB namespace on PostgreSQL", dialect: "postgres", schema: "crdb_internal"},
 		{name: "Spanner's catalog on PostgreSQL", dialect: "postgres", schema: "spanner_sys"},
 		{name: "Spanner's public", dialect: "spanner", schema: "public"},
+		{name: "Spanner's prefix in another case", dialect: "spanner", schema: "SPANNER_APP"},
+		{name: "Spanner's prefix on PostgreSQL", dialect: "postgres", schema: "spanner_app"},
 		{name: "non PostgreSQL target", dialect: "mysql", schema: "pg_catalog"},
 	}
 
@@ -206,7 +227,9 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 // tables -- and it still cannot be created. Measured on the PGAdapter emulator
 // v0.55.2, `CREATE SCHEMA IF NOT EXISTS "public"` is refused with
 // `Schema name not valid: public`, and the IF NOT EXISTS does not help because
-// the refusal is about the name (stokaro/ptah#2072).
+// the refusal is about the name (stokaro/ptah#2072). Measured on v0.56.1,
+// `CREATE SCHEMA "PUBLIC"` is refused the same way, and `PUBLIC` names no
+// schema a table can be placed in.
 func TestIsUncreatableSchemaCoversTheNamesATargetOwns(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -221,7 +244,8 @@ func TestIsUncreatableSchemaCoversTheNamesATargetOwns(t *testing.T) {
 		{name: "CockroachDB creates public", dialect: "cockroachdb", schema: "public", want: false},
 		{name: "the common catalog is owned everywhere", dialect: "spanner", schema: "pg_catalog", want: true},
 		{name: "Cockroach internal is still owned", dialect: "cockroachdb", schema: "crdb_internal", want: true},
-		{name: "a quoted lookalike is a user schema", dialect: "spanner", schema: "PUBLIC", want: false},
+		{name: "Spanner refuses a variant of public", dialect: "spanner", schema: "PUBLIC", want: true},
+		{name: "a quoted lookalike is a user schema", dialect: "postgres", schema: "PUBLIC", want: false},
 	}
 
 	for _, test := range tests {
