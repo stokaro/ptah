@@ -2,15 +2,21 @@
 /**
  * The search button. Registered in astro.config.mjs as the override of
  * Starlight's Search; it renders the default component and one inline script
- * that puts the shortcut hint into the button's accessible name.
+ * that makes the button's accessible name contain its visible text.
  *
  * Upstream labels the button "Search documentation" and also shows the
  * shortcut ("Ctrl K", or the command key on Apple platforms) as visible text.
  * WCAG 2.5.3 wants the accessible name to contain the visible text, and axe
- * 4.14 reports `label-content-name-mismatch` on the button while it does not.
- * The hint is platform-dependent and Starlight sets it in its own inline
- * script, which runs before this one, so the name is built here from what the
- * button shows.
+ * 4.14 checks it with `label-content-name-mismatch`. axe reads the visible
+ * text as the button's text nodes in order, and upstream writes the label and
+ * each key with no whitespace between them, so the text it compares is
+ * "Search documentationCtrlK", and the button shows the words run together
+ * the same way. The script puts a space before the shortcut and between its
+ * keys, so the button reads "Search documentation Ctrl K" on screen, and
+ * names it with the same words. The hint is platform-dependent and Starlight
+ * sets it in its own inline script, which runs before this one, so the name
+ * is built here from what the button shows. scripts/check-accessibility.mjs
+ * measures both hints.
  */
 import Default from '@astrojs/starlight/components/Search.astro';
 ---
@@ -22,11 +28,17 @@ import Default from '@astrojs/starlight/components/Search.astro';
 		var button = document.querySelector('site-search button[data-open-modal]');
 		if (!button) return;
 		var label = button.getAttribute('aria-label');
-		var keys = Array.prototype.map
-			.call(button.querySelectorAll('kbd kbd'), function (key) {
-				return key.textContent;
-			})
-			.join(' ');
-		if (label && keys) button.setAttribute('aria-label', label + ' ' + keys);
+		var hint = button.querySelector(':scope > kbd');
+		if (!label || !hint) return;
+		var keys = Array.prototype.slice.call(hint.querySelectorAll(':scope > kbd'));
+		if (keys.length === 0) return;
+		hint.before(' ');
+		keys.slice(1).forEach(function (key) {
+			key.before(' ');
+		});
+		var words = keys.map(function (key) {
+			return key.textContent;
+		});
+		button.setAttribute('aria-label', label + ' ' + words.join(' '));
 	})();
 </script>
