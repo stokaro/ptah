@@ -19,6 +19,10 @@ import (
 // constants on PostgreSQL alone; the -- rule and the executable comments of
 // MySQL and MariaDB; the YQL lexer alone on YDB; and SQL-standard strings on
 // every dialect the shared lexer reads.
+//
+// SQLite differs from the switch, deliberately: its descriptor states
+// bracketed names, which the switch did not give it, and which SQLite 3.51
+// reads (see internal/builtindialects/sqlite.go).
 var switchAnswers = map[string]lexer.Options{
 	platform.Postgres: {
 		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true,
@@ -35,7 +39,7 @@ var switchAnswers = map[string]lexer.Options{
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMariaDB,
 	},
 	platform.ClickHouse: {StandardStrings: true, BackslashEscapes: true},
-	platform.SQLite:     {StandardStrings: true},
+	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true},
 	platform.SQLServer:  {StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true},
 	platform.Oracle:     {StandardStrings: true},
 	platform.YDB:        {YQL: true},

@@ -149,16 +149,26 @@ func (t *virtualTokens) advance() {
 }
 
 // skipSpace steps over whitespace, comments, and the version-guarded spans
-// the frontend steps over too.
+// the frontend steps over too. It stops at a bracketed name the lexer found
+// no closing bracket for, which [virtualTokens.identifier] refuses.
 func (t *virtualTokens) skipSpace() {
 	for {
-		switch t.current().Type {
-		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
+		switch current := t.current(); {
+		case current.Type == lexer.TokenWhitespace, current.Type == lexer.TokenComment:
+			t.advance()
+		case current.Type == lexer.TokenUnknown && !unterminatedBracket(current):
 			t.advance()
 		default:
 			return
 		}
 	}
+}
+
+// unterminatedBracket reports whether token is a bracketed name the lexer
+// found no closing bracket for: under SQLite's lexer a bracketed name is one
+// token, and one that runs to the end of the text is an unknown one.
+func unterminatedBracket(token lexer.Token) bool {
+	return token.Type == lexer.TokenUnknown && strings.HasPrefix(token.Value, "[")
 }
 
 // position is where token stands in the document.
@@ -261,9 +271,14 @@ func (t *virtualTokens) qualifiedIdentifier(label string) (string, error) {
 }
 
 // identifier reads one name part: a word, a double-quoted name, or a
-// bracketed one.
+// bracketed one. SQLite's lexer reads a bracketed name as one identifier; a
+// document of no target is read by the neutral lexer, which reads the
+// brackets as operators, so [virtualTokens.bracketed] joins the name.
 func (t *virtualTokens) identifier() (string, error) {
 	current := t.current()
+	if unterminatedBracket(current) {
+		return "", fmt.Errorf("unterminated bracketed identifier at position %d", t.position(current))
+	}
 	if current.MatchOperatorValue("[") {
 		return t.bracketed()
 	}

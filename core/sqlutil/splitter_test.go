@@ -595,6 +595,35 @@ CREATE TABLE [next] ([id] int);`
 	})
 }
 
+// TestSplitSQLStatementsForDialect_SQLiteBracketIdentifierIsAtomic: SQLite
+// quotes a name with brackets, and SQLite 3.51 creates every table below, so
+// nothing between the brackets ends a statement or opens a comment or a
+// string, whichever spelling names the dialect.
+func TestSplitSQLStatementsForDialect_SQLiteBracketIdentifierIsAtomic(t *testing.T) {
+	input := "CREATE TABLE [a;b] ([c--d] INTEGER);\nCREATE TABLE [it's/*x] ([e] INTEGER);\nSELECT 1;"
+	for _, dialect := range []string{"sqlite", "sqlite3", "libsql"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := sqlutil.SplitSQLStatementsForDialect(input, dialect)
+
+			c.Assert(result, qt.DeepEquals, []string{
+				"CREATE TABLE [a;b] ([c--d] INTEGER)",
+				"CREATE TABLE [it's/*x] ([e] INTEGER)",
+				"SELECT 1",
+			})
+		})
+	}
+}
+
+func TestStripCommentsForDialect_SQLitePreservesBracketIdentifier(t *testing.T) {
+	c := qt.New(t)
+
+	result := sqlutil.StripCommentsForDialect("CREATE TABLE [a--b] (x INTEGER); -- outside", "sqlite")
+
+	c.Assert(result, qt.Equals, "CREATE TABLE [a--b] (x INTEGER); ")
+}
+
 func TestStripCommentsForDialect_SQLServerPreservesBracketIdentifier(t *testing.T) {
 	c := qt.New(t)
 

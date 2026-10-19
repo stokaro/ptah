@@ -25,12 +25,15 @@ import (
 //     lexer.
 //   - internal/sqlreach refused Oracle's alternative-quoted literals.
 //
-// One difference is deliberate. MySQL and MariaDB state their # comments and
-// their string escapes, so the body scanner of internal/deporder reads both
-// on these two, where its switch read neither. The shared lexer read both
-// there already. The measurement is in the descriptors' comments, and
+// Where a descriptor differs from the switches, it does so deliberately,
+// with a measurement in its comment. MySQL and MariaDB state their # comments
+// and their string escapes, so the body scanner of internal/deporder reads
+// both on these two, where its switch read neither; the shared lexer read
+// both there already, and
 // TestViewLikesForCreateForDialect_MySQLFamilyStringsAndComments in
-// internal/deporder is the effect.
+// internal/deporder is the effect. SQLite states bracketed names, which no
+// switch gave it, so a name such as [a;b] is one token wherever SQLite text
+// is lexed.
 func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	postgresFamily := descriptor.Lexical{EscapeStrings: true}
 	want := map[string]descriptor.Lexical{
@@ -49,7 +52,7 @@ func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		platform.ClickHouse: {
 			LineComments: []string{"#", "//"}, BackslashEscapes: true, IdentifierBackslashEscapes: true,
 		},
-		platform.SQLite:    {},
+		platform.SQLite:    {BracketIdentifiers: true},
 		platform.SQLServer: {BracketIdentifiers: true, HashNames: true},
 		platform.Oracle:    {AlternativeQuoting: true},
 		platform.YDB:       {Lexer: descriptor.LexerYQL},
