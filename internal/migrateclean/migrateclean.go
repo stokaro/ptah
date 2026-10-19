@@ -36,13 +36,12 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
-	"ptah.run/internal/mysqlsystemdb"
-	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaselection"
 )
 
@@ -62,10 +61,10 @@ const (
 // Governs reports whether the not-clean gate is enforced for a dialect: whether
 // its descriptor states CleanCheck.Adoption.
 //
-// The set is the dialects the gate was measured on, not the set the catalog
-// probes below could be written for, and each descriptor records the
-// measurement. A dialect answers "no" until somebody runs the pinned binary
-// against it and records what it does, because the cost of guessing is
+// The set is the dialects the gate was measured on, not the set whose catalog
+// could be read, and each descriptor records the measurement. A dialect
+// answers "no" until somebody runs the pinned binary against it and records
+// what it does, because the cost of guessing is
 // asymmetric: guessing "enforce" turns every existing run on that dialect into
 // a refusal the other implementation may never make, which is the drop-in
 // regression the compatibility policy forbids outright.
@@ -181,36 +180,20 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs fun
 		return inspectRealm(ctx, conn, scope)
 	}
 	engine := described(dialect)
-	query, args := tableProbe(engine, conn.Info().Capabilities, scope.Schema)
-	if query == "" {
-		// governs said yes and this function has no probe for it. Reporting a
-		// clean database would be a gate that passes without running, so it
-		// fails loudly instead.
-		return Scope{}, fmt.Errorf("clean check has no catalog probe for dialect %q", dialect)
-	}
-	rows, err := conn.QueryContext(ctx, query, args...)
+	tables, err := scopeTables(ctx, conn.SchemaWriter(), conn, conn.Info().Capabilities, dialect, engine, scope.Schema)
 	if err != nil {
-		return Scope{}, fmt.Errorf("clean check: %w", err)
+		return Scope{}, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		schema, name, scanErr := scanProbeRow(engine.Schemas.Selection, rows)
-		if scanErr != nil {
-			return Scope{}, fmt.Errorf("clean check: %w", scanErr)
-		}
+	for _, table := range tables {
 		// The schema comes back with the rows so the refusal names the schema
 		// the probe really read rather than the one the connection reported.
 		// Reaching this path means the URL pinned a schema, and the two agree
 		// there; naming the read one anyway keeps a message from ever
 		// describing a schema the probe did not look in.
-		if schema != "" {
-			scope.Schema = schema
+		if table.Schema != "" {
+			scope.Schema = table.Schema
 		}
-		scope.Tables = append(scope.Tables, name)
-	}
-	if err := rows.Err(); err != nil {
-		return Scope{}, fmt.Errorf("clean check: %w", err)
+		scope.Tables = append(scope.Tables, table.Name)
 	}
 	// An engine whose descriptor states CleanCheck.CatalogOrder keeps the
 	// catalog's order, which the probe reads: a dev refusal names the first
@@ -267,50 +250,139 @@ func inspectRealm(
 	conn *dbschema.DatabaseConnection,
 	scope Scope,
 ) (Scope, error) {
-	query := realmProbe(described(scope.Dialect), scope.Dialect, conn.Info().Capabilities)
-	if query == "" {
-		// The caller's dialect predicate said yes, the connection selected
-		// realm scope, and this function has no probe for it. Reporting a
-		// clean database would be a gate that passes without running, so it
-		// fails loudly instead.
-		return Scope{}, fmt.Errorf(
-			"clean check has no realm-scope catalog probe for dialect %q", scope.Dialect,
-		)
+	schemas, err := realmSchemas(ctx, conn.SchemaWriter(), conn, conn.Info().Capabilities, scope.Dialect)
+	if err != nil {
+		return Scope{}, err
 	}
 	scope.Realm = true
-	rows, err := conn.QueryContext(ctx, query)
-	if err != nil {
-		return Scope{}, fmt.Errorf("clean check: %w", err)
+	scope.Schemas = schemas
+	return scope, nil
+}
+
+// realmSchemas reads every schema of the realm with the base tables it holds,
+// through the scope catalog writer offers, running its read on q with the
+// session's capabilities caps. The schemas are in byte order, and so are the
+// tables of each.
+func realmSchemas(
+	ctx context.Context,
+	writer catalog.SchemaWriter,
+	q dbreset.Querier,
+	caps capability.Capabilities,
+	dialect string,
+) ([]RealmSchema, error) {
+	scoped := writerScopeCatalog(writer)
+	if scoped == nil {
+		// The caller's dialect predicate said yes, the connection selected
+		// realm scope, and its writer offers no catalog to read the realm
+		// through. Reporting a clean database would be a gate that passes
+		// without running, so it fails loudly instead.
+		return nil, fmt.Errorf("clean check has no realm-scope catalog probe for dialect %q", dialect)
 	}
-	defer func() { _ = rows.Close() }()
+	rows, err := scoped.Realm(ctx, q, caps)
+	if err != nil {
+		return nil, fmt.Errorf("clean check: %w", err)
+	}
 
 	tables := make(map[string][]string)
-	for rows.Next() {
-		var schema, table string
-		if scanErr := rows.Scan(&schema, &table); scanErr != nil {
-			return Scope{}, fmt.Errorf("clean check: %w", scanErr)
-		}
-		// The left join yields one row per schema even when it holds no table,
+	for _, row := range rows {
+		// The catalog lists a schema that holds no table once, with no name,
 		// which is the whole point at this scope: an EMPTY schema refuses.
-		if table == "" {
-			if _, seen := tables[schema]; !seen {
-				tables[schema] = nil
+		if row.Name == "" {
+			if _, seen := tables[row.Schema]; !seen {
+				tables[row.Schema] = nil
 			}
 			continue
 		}
-		tables[schema] = append(tables[schema], table)
+		tables[row.Schema] = append(tables[row.Schema], row.Name)
 	}
-	if err := rows.Err(); err != nil {
-		return Scope{}, fmt.Errorf("clean check: %w", err)
-	}
+	var schemas []RealmSchema
 	for name, held := range tables {
 		slices.Sort(held)
-		scope.Schemas = append(scope.Schemas, RealmSchema{Name: name, Tables: held})
+		schemas = append(schemas, RealmSchema{Name: name, Tables: held})
 	}
-	slices.SortFunc(scope.Schemas, func(a, b RealmSchema) int {
+	slices.SortFunc(schemas, func(a, b RealmSchema) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	return scope, nil
+	return schemas, nil
+}
+
+// scopeCatalogWriter is a writer that offers what its engine's catalog answers
+// about the schemas and tables a connection reaches; see [dbreset.ScopeCatalog].
+type scopeCatalogWriter interface {
+	ScopeCatalog() dbreset.ScopeCatalog
+}
+
+// writerScopeCatalog returns the scope catalog writer offers, or nil where it
+// is not a [scopeCatalogWriter] or offers none.
+func writerScopeCatalog(writer catalog.SchemaWriter) dbreset.ScopeCatalog {
+	offering, ok := writer.(scopeCatalogWriter)
+	if !ok {
+		return nil
+	}
+	return offering.ScopeCatalog()
+}
+
+// scopeTables reads the base tables in the gate's schema scope: schema, or
+// the schema the session lands in when it is empty, which the session
+// defaults the way the engine defaults it rather than to a literal. The read
+// runs on q with the session's capabilities caps.
+//
+// The check reads one catalog, in this order. The scope catalog writer offers
+// comes first: an engine whose URL selects a schema is read through it, since
+// its query binds the schema the URL pinned. Otherwise the dialect's
+// CleanCheck.Tables query is read, which binds nothing, for an engine whose
+// URL selects no schema. A dialect never has both: the descriptor refuses a
+// Tables query where the URL selects a schema, and each writer that offers a
+// catalog serves only such dialects. A dialect with neither is an error
+// rather than a clean database.
+func scopeTables(
+	ctx context.Context,
+	writer catalog.SchemaWriter,
+	q dbreset.Querier,
+	caps capability.Capabilities,
+	dialect string,
+	engine descriptor.Dialect,
+	schema string,
+) ([]dbreset.ScopeTable, error) {
+	if scoped := writerScopeCatalog(writer); scoped != nil {
+		tables, err := scoped.Tables(ctx, q, caps, schema)
+		if err != nil {
+			return nil, fmt.Errorf("clean check: %w", err)
+		}
+		return tables, nil
+	}
+	return describedTables(ctx, q, dialect, engine)
+}
+
+// describedTables reads the base tables through the dialect's
+// CleanCheck.Tables query.
+func describedTables(
+	ctx context.Context, q dbreset.Querier, dialect string, engine descriptor.Dialect,
+) ([]dbreset.ScopeTable, error) {
+	if engine.CleanCheck.Tables == "" {
+		// governs said yes and the dialect states no probe. Reporting a clean
+		// database would be a gate that passes without running, so it fails
+		// loudly instead.
+		return nil, fmt.Errorf("clean check has no catalog probe for dialect %q", dialect)
+	}
+	rows, err := q.QueryContext(ctx, engine.CleanCheck.Tables)
+	if err != nil {
+		return nil, fmt.Errorf("clean check: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var tables []dbreset.ScopeTable
+	for rows.Next() {
+		schema, name, scanErr := scanProbeRow(engine.Schemas.Selection, rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("clean check: %w", scanErr)
+		}
+		tables = append(tables, dbreset.ScopeTable{Schema: schema, Name: name})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("clean check: %w", err)
+	}
+	return tables, nil
 }
 
 // Refusal returns the pinned binary's refusal when the scope holds something
@@ -514,15 +586,14 @@ func revisionTableInScope(dialect, connectedSchema, revisionTable, revisionsSche
 	return ""
 }
 
-// probeRow is the row shape scanProbeRow reads. It exists so the two-column and
-// one-column probes can share one scanning path.
+// probeRow is the row shape scanProbeRow reads.
 type probeRow interface {
 	Scan(dest ...any) error
 }
 
-// scanProbeRow reads one row of a table probe: the table's schema and name, or
-// its name alone on an engine with one namespace, whose probe selects no
-// schema.
+// scanProbeRow reads one row of a CleanCheck.Tables query: the table's schema
+// and name, or its name alone on an engine with one namespace, whose query
+// selects no schema.
 func scanProbeRow(selection descriptor.SchemaSelection, row probeRow) (schema, name string, err error) {
 	if selection == descriptor.SchemaSelectionSingle {
 		if err := row.Scan(&name); err != nil {
@@ -534,136 +605,4 @@ func scanProbeRow(selection descriptor.SchemaSelection, row probeRow) (schema, n
 		return "", "", err
 	}
 	return schema, name, nil
-}
-
-// tableProbe builds the catalog query that lists the base tables inside the
-// gate's scope.
-//
-// The scope is the connection's own schema, defaulted the way each dialect's
-// session defaults it rather than to a literal, so a URL that pins no schema is
-// asked about the schema its statements would really land in.
-//
-// An engine whose URL selects a schema is read through the catalog its
-// selection names, as [schemaselection.RealmSchemas] reads its realm: a
-// search-path engine through PostgreSQL's pg_class, and a database-selecting
-// one through MySQL's information_schema. Each binds the connected schema.
-// Every other engine states its query as CleanCheck.Tables, which binds
-// nothing.
-//
-// An engine that states no query returns an empty one rather than falling
-// through to another dialect's catalog; Inspect turns that into an error.
-func tableProbe(engine descriptor.Dialect, caps capability.Capabilities, schema string) (string, []any) {
-	switch engine.Schemas.Selection {
-	case descriptor.SchemaSelectionDatabase:
-		return `
-			SELECT table_schema, table_name
-			FROM information_schema.tables
-			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
-			  AND table_type = 'BASE TABLE'
-			ORDER BY table_name`, []any{schema}
-	case descriptor.SchemaSelectionSearchPath:
-		// relkind 'r' and 'p' are ordinary and partitioned tables. Views,
-		// sequences, materialized views and indexes are excluded on purpose:
-		// measured on PostgreSQL 17, a database holding only a view or only a
-		// sequence applies at exit 0. postgresUserTable says which tables of
-		// those the binary does not count.
-		return `
-			SELECT n.nspname, c.relname
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = COALESCE(NULLIF($1, ''), current_schema())
-			  AND c.relkind IN ('r', 'p')
-			  AND ` + postgresUserTable(caps) + `
-			ORDER BY c.relname`, []any{schema}
-	default:
-		return engine.CleanCheck.Tables, nil
-	}
-}
-
-// realmProbe builds the catalog query that lists every schema of the realm with
-// the base tables it holds.
-//
-// The LEFT JOIN is the point: a schema with no table still comes back, because
-// at this scope an empty schema is enough to refuse. The relkind filter rides on
-// the join rather than the WHERE clause for the same reason — moving it down
-// would drop exactly the empty schemas the gate exists to see.
-//
-// The probe is the one the engine's schema selection names, as
-// [schemaselection.RealmSchemas] chooses its own. On a database-selecting
-// engine, MySQL's model, the realm is a whole server, reached through a URL
-// that names no database, and its schemas are the user databases; see
-// [mysqlsystemdb.MySQLUserDatabasesPredicate]. A view is not a table there
-// either. A search-path engine's realm is the schemas of one database, read
-// through PostgreSQL's catalog. An engine whose URL selects no realm has no
-// probe.
-func realmProbe(engine descriptor.Dialect, dialect string, caps capability.Capabilities) string {
-	switch engine.Schemas.Selection {
-	case descriptor.SchemaSelectionDatabase:
-		return `
-		SELECT s.SCHEMA_NAME, COALESCE(t.TABLE_NAME, '')
-		FROM information_schema.SCHEMATA s
-		LEFT JOIN information_schema.TABLES t
-		  ON t.TABLE_SCHEMA = s.SCHEMA_NAME
-		 AND t.TABLE_TYPE = 'BASE TABLE'
-		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("s.SCHEMA_NAME") + `
-		ORDER BY s.SCHEMA_NAME, t.TABLE_NAME`
-	case descriptor.SchemaSelectionSearchPath:
-	default:
-		return ""
-	}
-	// Which schemas belong to the realm is
-	// [pgsystemschema.PostgresDescribedSchemasPredicate], shared so this gate
-	// and `schema inspect` cannot disagree about it. It leaves out a schema
-	// an extension created, and everything in it: measured, the binary applies
-	// against a schema an extension owns even while that schema holds a table
-	// the user created. What this probe adds is the tables, which the gate
-	// needs and inspection does not.
-	return `
-		SELECT n.nspname, COALESCE(c.relname, '')
-		FROM pg_namespace n
-		LEFT JOIN pg_class c
-		  ON c.relnamespace = n.oid
-		 AND c.relkind IN ('r', 'p')
-		 AND ` + postgresUserTable(caps) + `
-		WHERE ` + pgsystemschema.PostgresDescribedSchemasPredicate(dialect, caps) + `
-		ORDER BY n.nspname, c.relname`
-}
-
-// postgresUserTable returns the predicate over a `pg_class c` that keeps the
-// tables the pinned binary counts, which is fewer than every table in the
-// catalog. Measured against v1.3.0 on PostgreSQL 18 with its inspector's own
-// table query as the reference:
-//
-//   - A table an extension owns is not counted. TimescaleDB keeps its catalog
-//     in tables of its own and PostGIS puts spatial_ref_sys in `public`, and
-//     the binary applies against either database. A table the user adds to an
-//     extension with ALTER EXTENSION ... ADD TABLE reads the same way, which
-//     is what makes the rule testable on a server with no such extension.
-//   - A partition is not counted. Its parent is, where the parent lives: with
-//     the parent in `extra` and the partition in `public`, a URL that pins
-//     `search_path=public` applies at exit 0.
-//
-// Both change which table a schema-scope refusal names as well as whether it
-// refuses, because the refusal names the first counted table by name.
-//
-// The partition arm is `IS NOT TRUE` rather than `NOT`: CockroachDB answers
-// NULL for relispartition on every table, measured on 26.2, and `NOT NULL`
-// would leave out every table there, so a dev database holding one would read
-// as clean and be reset.
-//
-// The extension arm reads pg_depend and is gated on
-// [capability.CatalogDependencies] for the reason
-// [pgsystemschema.PostgresDescribedSchemasPredicate] gives.
-func postgresUserTable(caps capability.Capabilities) string {
-	predicate := `c.relispartition IS NOT TRUE`
-	if !caps.Has(capability.CatalogDependencies) {
-		return predicate
-	}
-	return predicate + `
-			  AND NOT EXISTS (
-			        SELECT 1
-			        FROM pg_depend d
-			        WHERE d.classid = 'pg_class'::regclass
-			          AND d.objid = c.oid
-			          AND d.deptype = 'e')`
 }

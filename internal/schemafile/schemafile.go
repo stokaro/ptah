@@ -3,6 +3,7 @@ package schemafile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -22,13 +23,14 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
+	"ptah.run/internal/dburlext"
+	urlservices "ptah.run/internal/dburlext/builtin"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemamerge"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
-	"ptah.run/internal/ydburl"
 )
 
 // Options configures schema file loading.
@@ -862,16 +864,18 @@ func readSQLFile(
 	return &db, statements, nil
 }
 
-// sourceDatabasePath returns the database root a YDB document's absolute paths
+// sourceDatabasePath returns the database root a document's absolute paths
 // are read against: the one opts.DatabaseURL names, or empty without one or
-// for another dialect.
+// for a dialect whose documents name no root; see [RootReader]. A URL that
+// names no root is refused in the words of the dialect's root reader.
 func sourceDatabasePath(opts Options) (string, error) {
-	if described, _ := platform.Lookup(opts.Dialect); !described.Conversion.DatabaseRootPaths || opts.DatabaseURL == "" {
-		return "", nil
+	reader, err := RootReader(opts.Dialect)
+	if err != nil || reader == nil || opts.DatabaseURL == "" {
+		return "", err
 	}
-	root, err := YDBSourceRoot(opts.DatabaseURL)
+	root, err := SourceRoot(opts.Dialect, opts.DatabaseURL)
 	if err != nil {
-		return "", fmt.Errorf("YDB source context requires a valid YDB database or Docker dev URL")
+		return "", reader.SourceRefusal()
 	}
 	return root, nil
 }
@@ -914,20 +918,59 @@ func ignoredScopeClause(scope string) string {
 	return " in " + scope
 }
 
-// YDBSourceRoot returns the database root a YDB connection or Docker dev URL
-// names, excluding a temporary dev realm. Source validation precedes
-// provisioning: parsing the declaration starts no container.
-func YDBSourceRoot(raw string) (string, error) {
+// RootReader returns the reader of the database root a URL of dialect names
+// (dburlext.Services.Roots), for a dialect whose descriptor states that its
+// schema documents name objects by absolute paths under that root
+// (descriptor.Conversion.DatabaseRootPaths). Any other dialect has no root
+// and answers nil. A dialect that states it and that no service reads a root
+// for is refused, rather than having its URLs read as another engine's.
+func RootReader(dialect string) (dburlext.RootReader, error) {
+	if described, _ := platform.Lookup(dialect); !described.Conversion.DatabaseRootPaths {
+		return nil, nil
+	}
+	reader := urlservices.Lookup(dialect).Roots
+	if reader == nil {
+		return nil, fmt.Errorf("dialect %q names objects under a database root, and no service reads the root its URLs name", dialect)
+	}
+	return reader, nil
+}
+
+// SourceRoot returns the database root raw names, excluding a dev realm: a
+// connection URL of dialect, or a Docker dev URL, whose engine reads the root
+// it names. Source validation precedes provisioning: parsing the declaration
+// starts no container. An error does not repeat raw.
+func SourceRoot(dialect, raw string) (string, error) {
 	if devdocker.IsURL(raw) {
 		spec, err := devdocker.Parse(raw)
 		if err != nil {
 			return "", err
 		}
-		if described, _ := platform.Lookup(spec.Dialect); !described.Conversion.DatabaseRootPaths {
-			return "", fmt.Errorf("source context is not YDB")
+		reader, err := rootReaderOf(spec.Dialect)
+		if err != nil {
+			return "", err
 		}
-		return "/" + strings.Trim(spec.Database, "/"), nil
+		return reader.DatabaseRoot(spec.Database), nil
 	}
-	parsed, err := ydburl.Parse(raw)
-	return parsed.Database, err
+	reader, err := rootReaderOf(dialect)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		// url.Parse repeats the URL in its error, and the URL may carry a
+		// password.
+		return "", errors.New("the URL does not parse")
+	}
+	root, err := reader.Root(parsed)
+	return root.Path, err
+}
+
+// rootReaderOf is [RootReader] for a URL that has to name a root: a dialect
+// with none is refused.
+func rootReaderOf(dialect string) (dburlext.RootReader, error) {
+	reader, err := RootReader(dialect)
+	if err == nil && reader == nil {
+		return nil, fmt.Errorf("dialect %q names no database root a schema document can be read against", dialect)
+	}
+	return reader, err
 }

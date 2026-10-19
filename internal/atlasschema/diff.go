@@ -389,7 +389,7 @@ func diffResolvedStates(
 		return atlasreport.SchemaDiff{}, nil, fromErr
 	}
 
-	if err := setYDBDiffRoot(dialect, opts.DevURL, fromSide.database); err != nil {
+	if err := setDiffRoot(dialect, opts.DevURL, fromSide.database); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	compareOpts := config.DefaultCompareOptions()
@@ -1079,14 +1079,17 @@ func sourceDatabaseURL(devURL string, sets ...atlassource.Set) string {
 // as comparison context, never as part of the portable desired schema.
 //
 // The engines this applies to name objects by absolute paths under a database
-// root, as their descriptors state with Conversion.DatabaseRootPaths: YDB's.
-func setYDBDiffRoot(dialect, devURL string, current *catalog.Database) error {
-	if !described(dialect).Conversion.DatabaseRootPaths || current.DatabasePath != "" || devURL == "" {
-		return nil
+// root, and the root is the one their root reader reads from the dev URL; see
+// [schemafile.RootReader]. A dev URL that names none is refused in the
+// reader's words.
+func setDiffRoot(dialect, devURL string, current *catalog.Database) error {
+	reader, err := schemafile.RootReader(dialect)
+	if err != nil || reader == nil || current.DatabasePath != "" || devURL == "" {
+		return err
 	}
-	root, err := schemafile.YDBSourceRoot(devURL)
+	root, err := schemafile.SourceRoot(dialect, devURL)
 	if err != nil {
-		return fmt.Errorf("YDB diff requires a valid database or Docker dev URL")
+		return reader.DiffRefusal()
 	}
 	current.DatabasePath = root
 	return nil

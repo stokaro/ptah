@@ -1,9 +1,10 @@
 // Package dburlext declares what an engine does differently with a database
 // URL before anything is connected: which servers and which database the URL
-// selects, whether two of its URLs address one database, and how a URL is
-// renamed to another database. internal/atlasurl answers those questions
-// through these services, so it names no engine, and internal/dburlext/builtin
-// lists the services of the engines Ptah ships.
+// selects, whether two of its URLs address one database, how a URL is renamed
+// to another database, and which database root a URL names. internal/atlasurl
+// answers the first three through these services, and internal/schemafile and
+// internal/atlasschema the last, so none of them names an engine.
+// internal/dburlext/builtin lists the services of the engines Ptah ships.
 //
 // What an engine only states about its URLs, such as its default port or the
 // dialect its URLs are compared as, is descriptor data instead
@@ -33,6 +34,11 @@ type Services struct {
 	Databases DatabaseComparer
 	// Rename renames the database a URL names. Nil replaces the URL's path.
 	Rename Renamer
+	// Roots reads the database root a URL names, for an engine whose schema
+	// documents name objects by absolute paths under that root
+	// (descriptor.Conversion.DatabaseRootPaths). Nil means the engine names
+	// no root.
+	Roots RootReader
 }
 
 // Endpoint is one server a URL may reach.
@@ -80,4 +86,30 @@ type Renamer interface {
 	// Rename returns parsed addressing the database name instead, or an
 	// error refusing the rename. It does not change parsed.
 	Rename(parsed *url.URL, name string) (string, error)
+}
+
+// DatabaseRoot is the database root a URL names, and the dev realm it names
+// beneath that root.
+type DatabaseRoot struct {
+	// Path is the absolute path of the database root, without the realm.
+	Path string
+	// Realm is the dev realm the URL names under the root, or empty for none.
+	Realm string
+}
+
+// RootReader reads the database root a URL of one engine names, and says in
+// the engine's words why one could not be read.
+type RootReader interface {
+	// Root reads the database root parsed names. An error refuses parsed in
+	// words that do not repeat it, since it may carry a password.
+	Root(parsed *url.URL) (DatabaseRoot, error)
+	// DatabaseRoot returns the root of the database a Docker dev URL names by
+	// name.
+	DatabaseRoot(name string) string
+	// SourceRefusal is the error that refuses the URL a schema document is
+	// read against when no root could be read from it.
+	SourceRefusal() error
+	// DiffRefusal is the error that refuses the dev URL of a diff between two
+	// schema documents when no root could be read from it.
+	DiffRefusal() error
 }

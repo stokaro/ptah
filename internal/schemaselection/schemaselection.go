@@ -26,12 +26,12 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/mysqlsystemdb"
-	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/dbreset"
 )
 
 // searchPathParam is the PostgreSQL-family query parameter that restricts a
@@ -214,66 +214,53 @@ func URLScope(rawURL string) (scope string, limited bool) {
 	}
 }
 
-// RowsQuerier is the part of *sql.DB and dbschema.DatabaseConnection
-// [RealmSchemas] needs.
-type RowsQuerier interface {
+// RealmConnection is the part of dbschema.DatabaseConnection [RealmSchemas]
+// needs: the connection the read runs on, and the writer whose catalog lists
+// the realm. Taking the narrow interface keeps this package off the connection
+// layer, which is what would otherwise import it back.
+type RealmConnection interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	SchemaWriter() catalog.SchemaWriter
+}
+
+// scopeCatalogWriter is a writer that offers what its engine's catalog answers
+// about the schemas a connection reaches; see [dbreset.ScopeCatalog].
+type scopeCatalogWriter interface {
+	ScopeCatalog() dbreset.ScopeCatalog
 }
 
 // RealmSchemas returns every schema a realm-scoped run describes, sorted in
-// byte order.
+// byte order. The schemas are the ones the scope catalog of q's writer lists
+// (dbreset.ScopeCatalog.RealmSchemas), and caps are the capabilities q's
+// session resolved.
 //
 // The sort is Go's rather than the server's ORDER BY, which is
 // collation-dependent: measured on PostgreSQL 17 with schemas "Zed" and "app"
 // present, the pinned binary walks "Zed" first, which is byte order and not
 // what this database's default collation returns.
 //
-// A dialect with no probe is an error rather than an empty list. Answering
-// "no schemas" would let a caller describe an empty database where the server
-// holds one, which is the failure stokaro/ptah#1264 is about. PostgreSQL
-// reaches realm scope through [Realm] with a URL that pins no search_path, and
-// MySQL and MariaDB with one that names no database; each has a probe.
-//
-// A MySQL-family realm is the server's user databases. The pinned community
-// binary v1.3.0 describes the same set: measured on MySQL 8.4.11 and MariaDB
-// 11.8.9, `schema inspect` against a URL naming no database lists every
-// database but information_schema, mysql, performance_schema and sys.
+// A dialect whose writer offers no scope catalog is an error rather than an
+// empty list. Answering "no schemas" would let a caller describe an empty
+// database where the server holds one, which is the failure stokaro/ptah#1264
+// is about. PostgreSQL reaches realm scope through [Realm] with a URL that
+// pins no search_path, and MySQL and MariaDB with one that names no database;
+// the writer of each offers a catalog.
 func RealmSchemas(
 	ctx context.Context,
 	dialect string,
 	caps capability.Capabilities,
-	q RowsQuerier,
+	q RealmConnection,
 ) ([]string, error) {
-	var query string
-	switch schemasOf(dialect).Selection {
-	case descriptor.SchemaSelectionSearchPath:
-		query = `
-		SELECT n.nspname
-		FROM pg_namespace n
-		WHERE ` + pgsystemschema.PostgresDescribedSchemasPredicate(dialect, caps)
-	case descriptor.SchemaSelectionDatabase:
-		query = `
-		SELECT SCHEMA_NAME
-		FROM information_schema.SCHEMATA
-		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("SCHEMA_NAME")
-	default:
+	offering, ok := q.SchemaWriter().(scopeCatalogWriter)
+	var scoped dbreset.ScopeCatalog
+	if ok {
+		scoped = offering.ScopeCatalog()
+	}
+	if scoped == nil {
 		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
 	}
-	rows, err := q.QueryContext(ctx, query)
+	names, err := scoped.RealmSchemas(ctx, q, caps)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var names []string
-	for rows.Next() {
-		var name string
-		if scanErr := rows.Scan(&name); scanErr != nil {
-			return nil, fmt.Errorf("failed to list realm schemas: %w", scanErr)
-		}
-		names = append(names, name)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
 	}
 	slices.Sort(names)

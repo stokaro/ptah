@@ -4832,7 +4832,8 @@ in place of a dialect's name:
 - `CleanCheck`: how Ptah tells whether a database holds anything before
   `migrate apply` adopts it or a dev database is reset: which of the two
   checks govern the engine, the catalog query that lists its tables where its
-  URL selects no schema, and how a refusal names what it found.
+  URL selects no schema (where it selects one, the engine's schema writer
+  reads them), and how a refusal names what it found.
 - `SchemaAttributesQuery`: the catalog query that reads a schema's character
   set and collation, and `QualifierRefusal`: why a schema qualifier does not
   rewrite a planned migration on the engine.
