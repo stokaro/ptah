@@ -1,4 +1,4 @@
-# SQL Parser
+# SQL parser
 
 This package provides a SQL DDL (Data Definition Language) parser that converts SQL tokens into Abstract Syntax Tree (AST) nodes. The parser is designed to work with the Ptah schema management system and supports multiple SQL dialects.
 
@@ -103,7 +103,7 @@ schema that Ptah can diff or render.
 
 ## Usage
 
-### Basic Usage
+### Basic usage
 
 ```go
 package main
@@ -138,7 +138,7 @@ the descriptor's `Grammar.Routines.Body` selects its grammar. `Options` keeps
 header clauses in source order, with `Read` recording those a syntax owner
 consumes into `Facets`. All routine bodies use `ast.RoutineBody`.
 
-### Dialect-Aware Parsing
+### Dialect-aware parsing
 
 `parser.NewParser(sql)` keeps the compatibility-oriented best-effort behavior
 used by existing callers. When the target SQL family is known, pass an explicit
@@ -221,7 +221,7 @@ structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit it
 SQL through the raw-SQL visitor contract, while parser consumers can still
 distinguish it from arbitrary raw SQL.
 
-### Owner Syntax
+### Owner syntax
 
 The parser reads the grammar every target shares. A feature owner adds its own
 syntax through `ptah.run/core/sqlext`, and `WithSQL` selects the owners a parse
@@ -233,7 +233,7 @@ hands every span to its owner in one call and applies what the owner returns.
 ClickHouse's data-skipping index and a materialized view's `REFRESH` clause
 are read this way. Without `WithSQL` the parse reads the shared grammar alone.
 
-### Parsing Multiple Statements
+### Parsing multiple statements
 
 ```go
 sql := `
@@ -247,7 +247,7 @@ statements, err := parser.Parse()
 // statements.Statements will contain 3 AST nodes
 ```
 
-### Working with AST Nodes
+### Working with AST nodes
 
 ```go
 for _, stmt := range statements.Statements {
@@ -265,14 +265,14 @@ for _, stmt := range statements.Statements {
 }
 ```
 
-## Supported SQL Syntax
+## Supported SQL syntax
 
-### Column Types
+### Column types
 - Basic types: `INTEGER`, `VARCHAR(255)`, `TEXT`, `TIMESTAMP`
 - Parameterized types: `DECIMAL(10,2)`, `CHAR(50)`
 - Complex types: `ENUM('value1', 'value2')`
 
-### Column Constraints
+### Column constraints
 - `PRIMARY KEY`
 - `NOT NULL` / `NULL`
 - `UNIQUE`
@@ -285,14 +285,14 @@ PostgreSQL time keywords such as `CURRENT_TIMESTAMP` remain expressions without
 added parentheses. Explicit precision, such as `CURRENT_TIMESTAMP(3)`, is kept.
 `DEFAULT NULL` is a SQL expression; `DEFAULT 'NULL'` is a string literal.
 
-### Table Constraints
+### Table constraints
 - `PRIMARY KEY (column1, column2)`
 - `UNIQUE (column1, column2)`
 - `FOREIGN KEY (column) REFERENCES table(column)`
 - `CHECK (expression)`
 - `CONSTRAINT name PRIMARY KEY (columns)`
 
-### Table Options
+### Table options
 - `ENGINE=InnoDB`
 - `CHARSET=utf8mb4` / `CHARACTER SET=utf8mb4`
 - `COLLATE=utf8mb4_unicode_ci`
@@ -325,14 +325,14 @@ The parser follows a recursive descent parsing approach:
 3. **Error Handling**: Provides detailed error messages with position information
 4. **Whitespace Handling**: Automatically skips whitespace and comments
 
-### Key Components
+### Key components
 
 - `Parser`: Main parser struct that manages token stream
 - `Parse()`: Entry point that returns a `StatementList`
 - Statement parsers: `parseCreateTable()`, `parseAlterTable()`, etc.
 - Helper parsers: `parseColumnDefinition()`, `parseConstraint()`, etc.
 
-## Error Handling
+## Error handling
 
 The parser provides detailed error messages including:
 - Expected vs actual token types
@@ -382,7 +382,7 @@ Current limitations include:
   supported routine forms while preserving expression internals as raw SQL;
   unsupported routine body shapes fall back to typed opaque routines or raw SQL.
 
-## Future Enhancements
+## Future enhancements
 
 Planned improvements:
 - Enhanced expression parsing
