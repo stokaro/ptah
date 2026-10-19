@@ -3,6 +3,8 @@ package descriptor
 import (
 	"fmt"
 	"slices"
+	"strings"
+	"unicode"
 )
 
 // Names states how a server resolves a name a schema file writes. Each field
@@ -158,6 +160,14 @@ type TableOption struct {
 	// Option is the option as the parser reports it, such as "STRICT" or
 	// "WITHOUT_ROWID".
 	Option string `json:"option"`
+	// Words are the words that spell the option, in order and without a
+	// value, such as WITHOUT ROWID. The parser reads them in any case as the
+	// option set to true, among the table options of every dialect, because
+	// a file is also parsed with no dialect. A word the shared table-option
+	// grammar reads itself, such as ENGINE or WITH, is read as that
+	// grammar's. Empty means another grammar reports the option, such as a
+	// storage parameter of a WITH clause.
+	Words []string `json:"words,omitempty"`
 	// Property is the property of the dialect's own group the option sets to
 	// true, such as "strict".
 	Property string `json:"property"`
@@ -183,10 +193,8 @@ func (d Dialect) validateNames() error {
 		return fmt.Errorf("%w: dialect %q: DO-block language %q is not one of %q",
 			ErrInvalidDescriptor, d.Name, language, DoBlockLanguages())
 	}
-	for _, option := range d.TableOptions {
-		if option.Option == "" || option.Property == "" {
-			return fmt.Errorf("%w: dialect %q: table option %+v names no option or no property", ErrInvalidDescriptor, d.Name, option)
-		}
+	if err := d.validateTableOptions(); err != nil {
+		return err
 	}
 	if d.IndexNaming.MaxBytes < 0 {
 		return fmt.Errorf("%w: dialect %q: index naming max bytes %d is negative", ErrInvalidDescriptor, d.Name, d.IndexNaming.MaxBytes)
@@ -206,6 +214,24 @@ func (d Dialect) validateNames() error {
 			ErrInvalidDescriptor, d.Name, d.CheckNaming)
 	}
 	return d.validateForeignKeyNaming()
+}
+
+// validateTableOptions checks TableOptions: each names an option and a
+// property, and each word that spells one is a single word.
+func (d Dialect) validateTableOptions() error {
+	for _, option := range d.TableOptions {
+		if option.Option == "" || option.Property == "" {
+			return fmt.Errorf("%w: dialect %q: table option {Option:%s Property:%s} names no option or no property",
+				ErrInvalidDescriptor, d.Name, option.Option, option.Property)
+		}
+		for _, word := range option.Words {
+			if word == "" || strings.ContainsFunc(word, unicode.IsSpace) {
+				return fmt.Errorf("%w: dialect %q: table option %q is spelled with %q, which is not one word",
+					ErrInvalidDescriptor, d.Name, option.Option, word)
+			}
+		}
+	}
+	return nil
 }
 
 // validateIndexBaseBytes checks IndexNaming.BaseBytes. A cut name needs room

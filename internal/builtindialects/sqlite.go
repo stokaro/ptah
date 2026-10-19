@@ -89,8 +89,8 @@ func sqlite() descriptor.Dialect {
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
 		TableOptions: []descriptor.TableOption{
-			{Option: "STRICT", Property: "strict"},
-			{Option: "WITHOUT_ROWID", Property: "without_rowid"},
+			{Option: "STRICT", Words: []string{"STRICT"}, Property: "strict"},
+			{Option: "WITHOUT_ROWID", Words: []string{"WITHOUT", "ROWID"}, Property: "without_rowid"},
 		},
 
 		// Dev databases. The database is a file, named by its identity on disk.

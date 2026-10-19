@@ -673,7 +673,7 @@ func appendStatement(
 		database.Sequences = append(database.Sequences, toSequence(node, sourcePlatform))
 	case *ast.CreateRoleNode:
 		return appendCreateRole(database, document, node, sourcePlatform)
-	case *ast.PostgresDoBlockNode:
+	case *ast.DoBlockNode:
 		return appendRoleBootstrap(database, document, node, sourcePlatform)
 	case *ast.RawSQLNode:
 		// Raw statements do not declare modeled schema objects. Procedural

@@ -55,7 +55,7 @@ func (p *Parser) parsePostgresDoStatement(statementStart int) (ast.Node, error) 
 		return nil, err
 	}
 
-	block := ast.NewPostgresDoBlock(sql)
+	block := ast.NewDoBlock(sql)
 	body, language, err := parsePostgresDoBlockSQL(sql, p.postgresRoutineLexerOptions())
 	if err != nil {
 		return nil, err

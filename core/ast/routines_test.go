@@ -57,27 +57,27 @@ func TestMySQLRoutineNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"MySQLRoutine:CREATE PROCEDURE p() SELECT 1;"})
 }
 
-func TestNewPostgresDoBlock(t *testing.T) {
+func TestNewDoBlock(t *testing.T) {
 	c := qt.New(t)
 
-	block := ast.NewPostgresDoBlock(" DO $$ BEGIN RAISE NOTICE 'x'; END $$; ")
+	block := ast.NewDoBlock(" DO $$ BEGIN RAISE NOTICE 'x'; END $$; ")
 
 	c.Assert(block.SQL, qt.Equals, "DO $$ BEGIN RAISE NOTICE 'x'; END $$;")
 	c.Assert(block.Language, qt.Equals, "")
 	c.Assert(block.Body.SQL, qt.Equals, "")
 }
 
-func TestPostgresDoBlockNode_AcceptHandsTheVisitorTheBlock(t *testing.T) {
+func TestDoBlockNode_AcceptHandsTheVisitorTheBlock(t *testing.T) {
 	c := qt.New(t)
 
-	block := ast.NewPostgresDoBlock(" DO $$ BEGIN PERFORM 1; END $$; ")
+	block := ast.NewDoBlock(" DO $$ BEGIN PERFORM 1; END $$; ")
 	visitor := &MockVisitor{}
 
 	err := block.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(block.SQL, qt.Equals, "DO $$ BEGIN PERFORM 1; END $$;")
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"PostgresDoBlock:DO $$ BEGIN PERFORM 1; END $$;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"DoBlock:DO $$ BEGIN PERFORM 1; END $$;"})
 }
 
 func TestNewPostgresRoutine(t *testing.T) {

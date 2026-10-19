@@ -804,3 +804,10 @@ v0.13.0 ptah.run/config
 v0.13.0 ptah.run/migration/datadiff
 v0.13.0 ptah.run/engine
 v0.13.0 ptah.run/migration/generator
+
+# #4692 renames ast.PostgresDoBlockNode to ast.DoBlockNode and
+# NewPostgresDoBlock to NewDoBlock, without aliases. The node is a DO
+# statement, which more than one engine writes, and the shared AST names the
+# construct rather than one engine. The fields are unchanged. Pre-v1, so no
+# compatibility is owed.
+v0.13.0 ptah.run/core/ast

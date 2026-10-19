@@ -7,13 +7,14 @@ import (
 	"ptah.run/core/schemaext"
 )
 
-// PostgresDoBlockNode represents a PostgreSQL DO statement parsed through the
-// dialect-specific routine layer.
-type PostgresDoBlockNode struct {
+// DoBlockNode is a DO statement: an anonymous code block in a procedural
+// language, which the server runs once and does not store.
+type DoBlockNode struct {
 	// SQL is the complete executable DO statement.
 	SQL string
-	// Language stores the optional LANGUAGE clause. Empty means PostgreSQL's
-	// default plpgsql language.
+	// Language is the block's procedural language in lower case: the
+	// LANGUAGE clause the block writes, or the default the reader assumes
+	// where it writes none. Empty means no language is known.
 	Language string
 	// Body is the parsed anonymous routine body.
 	Body PostgresRoutineBody
@@ -178,9 +179,10 @@ func (n *MySQLRoutineNode) SetCharacteristics(characteristics []string) *MySQLRo
 // node rather than being handed a substitute carrying only the text.
 func (n *MySQLRoutineNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// NewPostgresDoBlock creates a PostgreSQL DO block node.
-func NewPostgresDoBlock(sql string) *PostgresDoBlockNode {
-	return &PostgresDoBlockNode{SQL: strings.TrimSpace(sql)}
+// NewDoBlock creates a DO block node for the statement sql, trimmed of
+// surrounding space, with no language and no body.
+func NewDoBlock(sql string) *DoBlockNode {
+	return &DoBlockNode{SQL: strings.TrimSpace(sql)}
 }
 
 // NewPostgresRoutine creates a PostgreSQL routine node.
@@ -196,7 +198,7 @@ func NewPostgresRoutine(sql, dialect string, kind RoutineKind) *PostgresRoutineN
 //
 // A routine is a complete statement, so a renderer reads the SQL out of this
 // node rather than being handed a substitute carrying only the text.
-func (n *PostgresDoBlockNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+func (n *DoBlockNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // Accept hands the visitor this node.
 //

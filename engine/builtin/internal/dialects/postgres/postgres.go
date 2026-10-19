@@ -430,7 +430,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderRoutineSQL(n.SQL)
 	case *ast.OpaqueRoutineNode:
 		return r.renderRoutineSQL(n.SQL)
-	case *ast.PostgresDoBlockNode:
+	case *ast.DoBlockNode:
 		return r.renderRoutineSQL(n.SQL)
 	case *ast.PostgresRoutineNode:
 		return r.renderRoutineSQL(n.SQL)

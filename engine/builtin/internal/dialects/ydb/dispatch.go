@@ -156,7 +156,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.keyed(capability.Functions, "routine", "a MySQL routine")
 	case *ast.OpaqueRoutineNode:
 		return r.keyed(capability.Functions, "routine", "a routine")
-	case *ast.PostgresDoBlockNode:
+	case *ast.DoBlockNode:
 		return refuseFact("a PostgreSQL DO block", "YQL has no anonymous code block in DDL")
 	case *ast.PostgresRoutineNode:
 		return r.keyed(capability.Functions, "routine", "a PostgreSQL routine")

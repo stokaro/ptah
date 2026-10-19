@@ -44,8 +44,8 @@ func TestVisitNode_ARoutineBodyReachesTheOutputVerbatim(t *testing.T) {
 			want: "CREATE FUNCTION plus_one AS (x) -> x + 1;\n",
 		},
 		{
-			kind: "PostgresDoBlockNode",
-			node: &ast.PostgresDoBlockNode{SQL: "DO $$ BEGIN END $$;"},
+			kind: "DoBlockNode",
+			node: &ast.DoBlockNode{SQL: "DO $$ BEGIN END $$;"},
 			want: "DO $$ BEGIN END $$;\n",
 		},
 		{

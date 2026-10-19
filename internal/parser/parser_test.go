@@ -508,7 +508,7 @@ CREATE INDEX idx_users_name ON users (name);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	block, ok := statements.Statements[0].(*ast.PostgresDoBlockNode)
+	block, ok := statements.Statements[0].(*ast.DoBlockNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(block.SQL, qt.Contains, "DO $do$")
 	c.Assert(block.Language, qt.Equals, "plpgsql")

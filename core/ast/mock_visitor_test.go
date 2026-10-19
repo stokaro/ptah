@@ -127,7 +127,7 @@ func mockNodeName(node ast.Node) string {
 		return n.SQL
 	case *ast.OpaqueRoutineNode:
 		return n.SQL
-	case *ast.PostgresDoBlockNode:
+	case *ast.DoBlockNode:
 		return n.SQL
 	case *ast.PostgresRoutineNode:
 		return n.SQL
