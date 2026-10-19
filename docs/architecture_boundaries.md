@@ -97,7 +97,7 @@ finding is one of the two packages and one owner family it links through any
 chain of imports. The count is zero.
 
 YQL is not written in the shared grammar, and the parser refuses a YDB
-document. Two seams carry it, and both are plugin debt under
+document. The seams below carry it, and each is plugin debt under
 [#4204](https://github.com/stokaro/ptah/issues/4204):
 
 - The YDB owner, `internal/ydbsql`, reads YQL with the `Grammar` slot of
@@ -114,6 +114,12 @@ document. Two seams carry it, and both are plugin debt under
   parser of the lexer the dialect's descriptor names (`internal/syntaxext`).
   The parser runs in process. Whether a grammar owner also serves syntax trees
   over the protocol, and in what form, is not decided yet.
+- A reader of SQL text, such as the statement splitter, the reach scan or the
+  dependency order of views, lexes a YDB document with the scanner of the
+  lexer the dialect's descriptor names (`internal/lexerext`), which
+  `internal/dialectlexer` sets in the lexer's options. `internal/lexer` holds
+  no YQL rule. The scanner runs in process and returns a token stream, which
+  is the shape a provider could serve over the protocol.
 
 A DO block that declares roles is read by the reader of the procedural
 language the dialect's descriptor names (`Statements.DoBlocks`), which
@@ -122,6 +128,15 @@ language the dialect's descriptor names (`Statements.DoBlocks`), which
 shares: which dialect a block is read as, the roles the file declared before
 it, and how a CREATE ROLE is recorded. The reader runs in process, like the
 YQL parser.
+
+Routine headers are parsed and converted by `internal/routineext` services, selected by
+the source dialect's `Grammar.Routines.Body`. The PostgreSQL, MySQL, and SQL
+Server owners read their statement boundaries, headers, and options and retain
+their refusal messages. The shared parser supplies its cursor and time budget
+and validates the owner claims after parsing.
+The shared SQL reader normalizes the destination name and adds its refusal
+sentinel to an owner's error. The service boundary is in-process; the public
+provider protocol remains part of #4204.
 
 The tables the shared conversion reads for the YDB owner carry YDB names: one
 path in backticks, where a dot is part of the name. The reader asks
@@ -138,7 +153,6 @@ dialect needs, whatever owners a load selects:
 | `internal/mysqlcheck` | Whether a column CHECK names another column, which MySQL refuses. |
 | `internal/mysqlindex` | The access method a `USING` clause asks for. |
 | `internal/mysqlname` | The names MySQL and MariaDB give an unnamed foreign key, CHECK or key index. |
-| `internal/mysqlroutine` | The security and volatility a routine's characteristics state. |
 | `internal/pgname` | The names PostgreSQL gives an unnamed constraint. |
 | `internal/pgprivilege` | The privileges `ALL` names in a GRANT or REVOKE. |
 

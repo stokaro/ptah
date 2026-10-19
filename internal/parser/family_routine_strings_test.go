@@ -37,7 +37,7 @@ func TestParse_FamilyMemberRoutineBodies_HappyPath(t *testing.T) {
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(statements.Statements, qt.HasLen, 1)
-				routine, ok := statements.Statements[0].(*ast.PostgresRoutineNode)
+				routine, ok := statements.Statements[0].(*ast.RoutineNode)
 				c.Assert(ok, qt.IsTrue)
 				c.Assert(routine.Body.SQL, qt.Equals, "SELECT 1")
 			})

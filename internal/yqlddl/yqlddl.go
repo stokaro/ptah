@@ -29,6 +29,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 )
 
 // Kind is what a statement is.
@@ -445,7 +446,7 @@ func TablesRead(tokens []lexer.Token) []string {
 		if i+2 < len(tokens) && tokens[i+2].MatchOperatorValue("(") {
 			continue
 		}
-		if name, ok := lexer.YQLIdentifierValue(tokens[i+1].Value); ok {
+		if name, ok := yql.IdentifierValue(tokens[i+1].Value); ok {
 			tables = append(tables, name)
 		}
 	}
@@ -901,7 +902,7 @@ func readName(tokens []lexer.Token) (string, []lexer.Token) {
 	if isNamedExpression(tokens[0]) {
 		return "", tokens[1:]
 	}
-	name, ok := lexer.YQLIdentifierValue(tokens[0].Value)
+	name, ok := yql.IdentifierValue(tokens[0].Value)
 	if !ok {
 		return "", tokens[1:]
 	}

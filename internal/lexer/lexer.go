@@ -135,36 +135,13 @@ type Options struct {
 	// by default for MySQL-compatible and dialect-neutral input.
 	DisableHashComments bool
 
-	// YQL reads YDB's query language in its default lexer mode, the one the
-	// YDB documentation calls C++ mode. It replaces the string, quoting and
-	// comment rules the fields above select, which it does not consult:
-	//
-	//   - '...' and "..." are both string literals. A backslash escapes the
-	//     next character, and a doubled quote is not an escape: 'a''b' is two
-	//     literals, so 'a\'' ends after the escaped quote.
-	//   - A type suffix written against a literal belongs to it: s, u, y, j,
-	//     p, pt, pb or pv, in either case, so "x"u is one Utf8 literal.
-	//   - @@...@@ is a multiline string literal. Its text is taken as written,
-	//     and @@@@ inside it stands for @@.
-	//   - `...` is an identifier, where a backslash escapes the next character
-	//     and a doubled backtick stands for one.
-	//   - -- starts a line comment and /* a block comment, which does not nest.
-	//     # is not a comment.
-	//   - $name is a named expression or a parameter, never a dollar-quoted
-	//     string.
-	//   - A -- comment starting with ! at the head of the text, before any
-	//     other token, is a translation setting such as --!ansi_lexer or
-	//     --!syntax_v1. The server reads it before the query, so it is emitted
-	//     as TokenUnknown, as an executable comment is, and a caller that
-	//     removes comments keeps it.
-	//
-	// These rules come from the YQL grammar (SQLv1Antlr4.g.in: STRING_VALUE,
-	// ID_QUOTED, COMMENT) and were measured on YDB 26.2.1.14. The ANSI lexer
-	// mode that --!ansi_lexer selects is not modeled: under it "..." is an
-	// identifier, a doubled quote is an escape, a backslash is an ordinary
-	// character, and block comments nest. A caller that has to agree with
-	// the server about the text refuses the setting instead.
-	YQL bool
+	// Scanner is a lexer of an engine's own. When it is set, it reads the
+	// text in place of every rule the fields above select, which it does not
+	// consult, and [StringValue] asks it for the text of a string.
+	// internal/dialectlexer sets it for a dialect whose descriptor names such
+	// a lexer, from the service internal/lexerext serves for that lexer. Nil
+	// reads the text by the shared rules.
+	Scanner Scanner
 }
 
 // ExecutableCommentStyle selects a database family's executable-comment
@@ -183,10 +160,8 @@ type Lexer struct {
 	pos   int
 	start int
 	opts  Options
-	// pastHead records that a token other than whitespace or a translation
-	// setting has been emitted, which ends the head of a YQL text where the
-	// server reads its translation settings.
-	pastHead bool
+	// own reads the text when opts.Scanner is set, and is nil otherwise.
+	own TokenReader
 }
 
 type stringBackslashMode uint8
@@ -209,21 +184,30 @@ func NewLexer(input string) *Lexer {
 // NewLexerWithOptions creates a new SQL lexer with explicit scanning options.
 // NewLexerWithOptions(input, Options{}) is identical to NewLexer(input).
 func NewLexerWithOptions(input string, opts Options) *Lexer {
-	return &Lexer{
+	l := &Lexer{
 		input: input,
 		pos:   0,
 		start: 0,
 		opts:  opts,
 	}
+	if opts.Scanner != nil {
+		l.own = opts.Scanner.Scan(input, 0, true)
+	}
+	return l
 }
 
 // Range returns a lexer over the input between start and end, with this
 // lexer's options. Its tokens report positions in the whole input, so a
 // reader can scan text inside one token, such as the body of an executable
 // comment, and still name positions in the document. The range is read as
-// text after the head of the input, where YQL reads no translation setting.
+// text after the head of the input, so a [Scanner] reads no setting there
+// that only the head of a text may carry.
 func (l *Lexer) Range(start, end int) *Lexer {
-	return &Lexer{input: l.input[:end], pos: start, start: start, opts: l.opts, pastHead: true}
+	ranged := &Lexer{input: l.input[:end], pos: start, start: start, opts: l.opts}
+	if l.opts.Scanner != nil {
+		ranged.own = l.opts.Scanner.Scan(ranged.input, start, false)
+	}
+	return ranged
 }
 
 // peek returns the character at the current position without advancing
@@ -292,13 +276,14 @@ func (l *Lexer) emit(tokenType TokenType) Token {
 
 // NextToken returns the next token from the input
 func (l *Lexer) NextToken() Token {
-	if l.opts.YQL {
-		return l.nextYQLToken()
+	if l.own != nil {
+		return l.own.NextToken()
 	}
 	return l.nextSQLToken()
 }
 
-// nextSQLToken is NextToken for every mode but [Options.YQL].
+// nextSQLToken is NextToken by the shared rules, for every lexer without an
+// [Options.Scanner].
 func (l *Lexer) nextSQLToken() Token {
 	for {
 		ch := l.peek()

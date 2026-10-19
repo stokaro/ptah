@@ -1,98 +1,54 @@
 package parser
 
 import (
-	"fmt"
-
 	"ptah.run/core/ast"
-	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/routineext"
+	routinebuiltin "ptah.run/internal/routineext/builtin"
 )
 
-type routineParser interface {
-	parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error)
-	parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error)
+func (p *Parser) routineServices() routineext.Services {
+	return routinebuiltin.Lookup(p.target.grammar.Routines.Body)
 }
 
-// routineParser answers the reader of the routine grammar the dialect's
-// descriptor names, and the best-effort one where it names none.
-func (p *Parser) routineParser() routineParser {
-	switch p.target.grammar.Routines.Body {
-	case descriptor.RoutineCompoundStatement:
-		return mysqlFamilyRoutineParser{}
-	case descriptor.RoutineTransactSQL:
-		return sqlServerRoutineParser{}
-	case descriptor.RoutineQuotedBody:
-		return postgresRoutineParser{}
-	default:
-		return compatibilityRoutineParser{}
-	}
+// routineCursor lends a grammar owner the shared token stream. Claims remain
+// with the document so all owners run through the same validation and facets.
+type routineCursor struct{ parser *Parser }
+
+func (c routineCursor) Input() string   { return c.parser.input }
+func (c routineCursor) Dialect() string { return c.parser.dialect }
+func (c routineCursor) FamilyOptions() lexer.Options {
+	return dialectlexer.Options(c.parser.target.family)
+}
+func (c routineCursor) Current() *lexer.Token      { return &c.parser.current }
+func (c routineCursor) Previous() *lexer.Token     { return &c.parser.previous }
+func (c routineCursor) AtEnd() bool                { return c.parser.isAtEnd() }
+func (c routineCursor) Advance()                   { c.parser.advance() }
+func (c routineCursor) CheckTimeout() error        { return c.parser.checkTimeout() }
+func (c routineCursor) Statement(start int) string { return c.parser.rawStatement(start) }
+func (c routineCursor) Fragment(start, end int) string {
+	return c.parser.rawStatementFragment(start, end)
+}
+func (c routineCursor) Function(start int) (ast.Node, error) {
+	return c.parser.parseCreateFunction(start)
+}
+func (c routineCursor) Fallback(target string, start int) (ast.Node, error) {
+	return c.parser.parseRoutineBestEffort(target, start)
+}
+func (c routineCursor) DefinerFallback(start int) (ast.Node, error) {
+	return c.parser.parseCreateDefinerRoutineBestEffort(start)
+}
+func (c routineCursor) BatchSeparator() bool { return c.parser.isCurrentSQLServerGoBatchSeparator() }
+func (c routineCursor) ClaimOptions(node *ast.RoutineNode, spans []routineext.OptionSpan, offset int) {
+	c.parser.claimOwnerRoutineOptions(node, spans, offset)
 }
 
-// isSQLServerRoutineDialect reports whether the dialect writes SQL Server's
-// routine grammar, where CREATE OR ALTER replaces a routine.
-func (p *Parser) isSQLServerRoutineDialect() bool {
-	return p.target.grammar.Routines.Body == descriptor.RoutineTransactSQL
-}
-
-type compatibilityRoutineParser struct{}
-
-func (compatibilityRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
+func (p *Parser) parseRoutineBestEffort(target string, start int) (ast.Node, error) {
 	switch target {
-	case "PROCEDURE":
-		return p.parseCreateRawRoutineStatement(statementStart)
-	case "PROC":
-		return p.parseCreateRawSQLServerRoutine(statementStart)
-	}
-	return p.parseCreateFunction(statementStart)
-}
-
-func (compatibilityRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error) {
-	return p.parseCreateDefinerRoutineBestEffort(statementStart)
-}
-
-type mysqlFamilyRoutineParser struct{}
-
-func (mysqlFamilyRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
-	if target == "PROCEDURE" {
-		return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindProcedure)
-	}
-	if target == "PROC" {
-		return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
-	}
-	return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindFunction)
-}
-
-func (mysqlFamilyRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error) {
-	for !p.isAtEnd() {
-		if err := p.checkTimeout(); err != nil {
-			return nil, err
-		}
-		switch {
-		case p.current.MatchIdentifierValue("FUNCTION"):
-			return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindFunction)
-		case p.current.MatchIdentifierValue("PROCEDURE"):
-			return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindProcedure)
-		case p.current.Type == lexer.TokenSemicolon:
-			return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
-		default:
-			p.advance()
-		}
-	}
-	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
-}
-
-type sqlServerRoutineParser struct{}
-
-func (sqlServerRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
-	switch target {
-	case "FUNCTION":
-		return p.parseCreateSQLServerRoutineStatement(statementStart, ast.RoutineKindFunction)
 	case "PROC", "PROCEDURE":
-		return p.parseCreateSQLServerRoutineStatement(statementStart, ast.RoutineKindProcedure)
+		return routinebuiltin.Raw(routineCursor{p}, start, target)
+	default:
+		return p.parseCreateFunction(start)
 	}
-	return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
-}
-
-func (sqlServerRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error) {
-	return compatibilityRoutineParser{}.parseCreateDefinerRoutine(p, statementStart)
 }

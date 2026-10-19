@@ -52,19 +52,3 @@ func TestLexer_Range_KeepsTheOptions(t *testing.T) {
 	c.Assert(token.Type, qt.Equals, lexer.TokenUnknown)
 	c.Assert(token.Value, qt.Equals, "/*!50100 b */")
 }
-
-// TestLexer_Range_IsNotTheHeadOfTheInput establishes that a range is read as
-// text after the head of its input: a YQL translation setting there is an
-// ordinary comment, where the same text at the head of the input is one.
-func TestLexer_Range_IsNotTheHeadOfTheInput(t *testing.T) {
-	c := qt.New(t)
-	input := "--!syntax_v1\nSELECT 1"
-	outer := lexer.NewLexerWithOptions(input, lexer.Options{YQL: true})
-
-	head := lexer.NewLexerWithOptions(input, lexer.Options{YQL: true}).NextToken()
-	inRange := outer.Range(0, len(input)).NextToken()
-
-	c.Assert(head.Type, qt.Equals, lexer.TokenUnknown)
-	c.Assert(inRange.Type, qt.Equals, lexer.TokenComment)
-	c.Assert(inRange.Value, qt.Equals, "--!syntax_v1")
-}

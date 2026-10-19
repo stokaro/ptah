@@ -4879,7 +4879,8 @@ in place of a dialect's name:
   commit before a statement uses it.
 - `Savepoint`: how the engine spells a savepoint inside a transaction.
   `migration/seeder` brackets each seed file in one, and a schema-scoped
-  cleanup each drop. A registry refuses a descriptor whose cleanup is
+  cleanup each drop on a server that rolls schema changes back as a unit
+  (`capability.TransactionalDDL`). A registry refuses a descriptor whose cleanup is
   schema-scoped (`Cleanup.SchemaScoped`) and whose savepoint names no way to
   create one or roll back to it.
 
@@ -4917,7 +4918,9 @@ outside the database:
 
 - `Lexical`: how the shared SQL lexer tokenizes the engine's text, or the
   lexer of its own it is read with, and how a routine or view body is
-  scanned;
+  scanned. A lexer of an engine's own is a service of the engine, not a rule
+  of the shared lexer: every reader of the engine's text gets that lexer's
+  tokens;
 - `Reach`: the constructs of the engine's grammar that reach outside the
   database a statement is sent to, which the plan and check-assertion scans
   refuse under the construct the descriptor names. Its call families, such as
@@ -5100,3 +5103,19 @@ reviewed change:
 
 Do not weaken the CI checks, broaden exclusions, or silently remove packages
 from the stable list to hide an API change.
+
+### Routine AST and DO-block language
+
+`ast.RoutineNode` keeps a parsed function or procedure's complete SQL and
+recovered header. `Dialect` names the normalized source dialect. Its
+`Grammar.Routines.Body` selects the grammar that reads the header. `Options`
+keeps header clauses in source order; `RoutineOption.Read` reports that a
+syntax owner consumed a clause into `Facets`. `ast.RoutineBody` carries the
+body text, its delimiter, and its language where known. Renderers emit the
+node's complete SQL.
+
+`Grammar.Routines.DefaultDoBlockLanguage` states the language of a DO block
+that omits `LANGUAGE`. It is valid only with the quoted-body routine grammar.
+An explicit `LANGUAGE` clause takes precedence. An empty default means that
+the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
+Spanner state `plpgsql`.

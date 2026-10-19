@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/revisiontable"
 )
@@ -31,16 +32,17 @@ func TestVersionLiteral_YDB(t *testing.T) {
 	}
 }
 
-// The literal reads back as the value under the lexer's own YQL rules, so the
-// revision a statement names is the one it was given, whatever it holds.
+// The literal reads back as the value under the lexer the dialect is read
+// with, YQL's, so the revision a statement names is the one it was given,
+// whatever it holds.
 func TestVersionLiteral_YDBReadsBackUnderTheYQLLexer(t *testing.T) {
 	for _, value := range []string{"20260103120000", `a\b'c"d`, "a\nb", "@@x@@", `\'`, "ü"} {
 		c := qt.New(t)
 		literal := revisiontable.VersionLiteral("ydbs", value)
 
-		l := lexer.NewLexerWithOptions(literal, lexer.Options{YQL: true})
+		l := lexer.NewLexerWithOptions(literal, dialectlexer.Options("ydbs"))
 		token := l.NextToken()
-		text, ok := lexer.StringValue(token.Value, lexer.Options{YQL: true})
+		text, ok := lexer.StringValue(token.Value, dialectlexer.Options("ydbs"))
 
 		c.Assert(token, qt.Equals, lexer.Token{Type: lexer.TokenString, Value: literal, Start: 0, End: len(literal)})
 		c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)

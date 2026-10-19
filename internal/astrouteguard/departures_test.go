@@ -12,7 +12,8 @@ import (
 // TestAccount_EveryBaselineKindIsDeclaredOrDeparted is the floor the extraction
 // cannot lower. Each node kind core/ast held when the extraction began is either
 // still declared or recorded with the owner payloads that carry its operations,
-// and each of those payloads is a type the owner packages declare.
+// and each of those payloads is a type the owner packages declare. A kind
+// merged into another core/ast kind names that kind, which core/ast declares.
 func TestAccount_EveryBaselineKindIsDeclaredOrDeparted(t *testing.T) {
 	c := qt.New(t)
 	root, err := astrouteguard.ModuleRoot()
@@ -23,6 +24,10 @@ func TestAccount_EveryBaselineKindIsDeclaredOrDeparted(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	accounting := astrouteguard.Account(astrouteguard.Baseline(), astrouteguard.Departures(), nodes)
+	successors := slices.Clone(payloads)
+	for _, node := range nodes {
+		successors = append(successors, astrouteguard.ExtensionKind{Package: "ptah.run/core/ast", Name: node.Name})
+	}
 
 	c.Assert(accounting.Unaccounted, qt.HasLen, 0, qt.Commentf(
 		"these node kinds left core/ast without a record of where their operations went; "+
@@ -30,7 +35,8 @@ func TestAccount_EveryBaselineKindIsDeclaredOrDeparted(t *testing.T) {
 	c.Assert(accounting.Invalid, qt.HasLen, 0)
 	c.Assert(accounting.Departed, qt.Not(qt.HasLen), 0)
 	for _, successor := range accounting.Successors() {
-		c.Assert(payloads, qt.Contains, successor, qt.Commentf("a departure names %s, which no owner package declares as a payload", successor))
+		c.Assert(successors, qt.Contains, successor, qt.Commentf(
+			"a departure names %s, which no owner package declares as a payload and core/ast does not declare", successor))
 	}
 }
 

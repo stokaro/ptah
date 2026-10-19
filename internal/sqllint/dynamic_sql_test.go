@@ -22,8 +22,8 @@ import (
 // every routine, or on every dialect, would pass a fixture set containing only
 // the first row.
 //
-// Both PostgreSQL node types are here because a routine reaches the linter as
-// one of two: a procedure as PostgresRoutineNode, a function as
+// Both node types of the quoted-body grammar are here because a routine
+// reaches the linter as one of two: a procedure as RoutineNode, a function as
 // CreateFunctionNode with its body in RoutineBody. Covering one and calling the
 // other unparsed is the mistake this file exists to prevent.
 func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
@@ -62,7 +62,7 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 		},
 		{
 			// A function arrives as a DIFFERENT node than a procedure --
-			// CreateFunctionNode rather than PostgresRoutineNode -- and its
+			// CreateFunctionNode rather than RoutineNode -- and its
 			// body is recorded in RoutineBody by attachPostgresFunctionBody.
 			// Reading only the procedure node left every function unexamined
 			// while looking like a parser limitation, which is what an earlier

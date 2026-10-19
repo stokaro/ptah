@@ -1,4 +1,4 @@
-package parser
+package mysql
 
 import (
 	"fmt"
@@ -6,22 +6,13 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/routineext"
+	"ptah.run/internal/routineext/compound"
 )
 
-func (p *Parser) parseCreateMySQLRoutineStatement(statementStart int, kind ast.RoutineKind) (ast.Node, error) {
-	sql, err := p.collectRawRoutineStatement(statementStart)
-	if err != nil {
-		return nil, err
-	}
-	routine, err := parseMySQLRoutineSQL(sql, p.dialect, kind)
-	if err != nil {
-		return ast.NewOpaqueRoutine(sql, p.dialect, kind), nil
-	}
-	return routine, nil
-}
-
-func parseMySQLRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.MySQLRoutineNode, error) {
+func parseMySQLRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.RoutineNode, error) {
 	parser := newMySQLRoutineParser(sql, dialect, kind)
 	return parser.parse()
 }
@@ -48,7 +39,7 @@ func newMySQLRoutineParser(sql, dialect string, kind ast.RoutineKind) mysqlRouti
 // grammar, so a doubled quote inside a literal stays inside it, as it does on
 // the server.
 func tokenizeMySQLRoutineSQL(sql, dialect string) []lexer.Token {
-	l := lexer.NewLexerWithOptions(sql, lexerOptions(dialect))
+	l := lexer.NewLexerWithOptions(sql, dialectlexer.Options(dialect))
 	tokens := make([]lexer.Token, 0)
 	for {
 		tok := l.NextToken()
@@ -59,8 +50,8 @@ func tokenizeMySQLRoutineSQL(sql, dialect string) []lexer.Token {
 	}
 }
 
-func (p mysqlRoutineParser) parse() (*ast.MySQLRoutineNode, error) {
-	routine := ast.NewMySQLRoutine(p.input, p.dialect, p.kind)
+func (p mysqlRoutineParser) parse() (*ast.RoutineNode, error) {
+	routine := ast.NewRoutine(p.input, p.dialect, p.kind)
 	targetIdx, err := p.findRoutineTarget()
 	if err != nil {
 		return nil, err
@@ -85,7 +76,7 @@ func (p mysqlRoutineParser) parse() (*ast.MySQLRoutineNode, error) {
 	if routine.Kind == ast.RoutineKindFunction {
 		routine.Returns = p.collectFunctionReturns(afterParamsIdx, bodyIdx)
 	}
-	routine.SetCharacteristics(p.collectRoutineCharacteristics(afterParamsIdx, bodyIdx))
+	routine.Options = p.collectRoutineCharacteristics(afterParamsIdx, bodyIdx)
 	if routine.Comment, err = p.collectRoutineComment(afterParamsIdx, bodyIdx); err != nil {
 		return nil, err
 	}
@@ -129,7 +120,7 @@ func (p mysqlRoutineParser) collectDefiner(targetIdx int) string {
 	return ""
 }
 
-func (p mysqlRoutineParser) parseRoutineName(targetIdx int, routine *ast.MySQLRoutineNode) (int, error) {
+func (p mysqlRoutineParser) parseRoutineName(targetIdx int, routine *ast.RoutineNode) (int, error) {
 	nameStartIdx := p.nextSignificant(targetIdx + 1)
 	if nameStartIdx == -1 {
 		return -1, fmt.Errorf("expected MySQL routine name")
@@ -144,7 +135,7 @@ func (p mysqlRoutineParser) parseRoutineName(targetIdx int, routine *ast.MySQLRo
 	return -1, fmt.Errorf("expected parameter list for MySQL routine %s", p.rawToken(nameStartIdx))
 }
 
-func (p mysqlRoutineParser) parseRoutineParameters(openParenIdx int, routine *ast.MySQLRoutineNode) (int, error) {
+func (p mysqlRoutineParser) parseRoutineParameters(openParenIdx int, routine *ast.RoutineNode) (int, error) {
 	closeParenIdx, err := p.matchingParen(openParenIdx)
 	if err != nil {
 		return -1, err
@@ -214,13 +205,13 @@ func (p mysqlRoutineParser) collectFunctionReturns(startIdx, bodyIdx int) string
 	return strings.TrimSpace(p.rawFragment(p.tokens[valueStartIdx].Start, valueEnd))
 }
 
-func (p mysqlRoutineParser) collectRoutineCharacteristics(startIdx, bodyIdx int) []string {
-	characteristics := make([]string, 0)
+func (p mysqlRoutineParser) collectRoutineCharacteristics(startIdx, bodyIdx int) []ast.RoutineOption {
+	characteristics := make([]ast.RoutineOption, 0)
 	for i := startIdx; i < bodyIdx; i++ {
 		if isMySQLRoutineCharacteristicStart(p.tokens[i]) {
 			characteristic, nextIdx := p.collectRoutineCharacteristic(i, bodyIdx)
 			if characteristic != "" {
-				characteristics = append(characteristics, characteristic)
+				characteristics = append(characteristics, ast.RoutineOption{Text: characteristic})
 			}
 			i = nextIdx - 1
 		}
@@ -245,7 +236,7 @@ func (p mysqlRoutineParser) collectRoutineComment(startIdx, bodyIdx int) (string
 		if valueIdx == -1 {
 			return "", fmt.Errorf("expected a string after COMMENT at position %d", p.tokens[i].Start)
 		}
-		text, ok := lexer.StringValue(p.tokens[valueIdx].Value, lexerOptions(p.dialect))
+		text, ok := lexer.StringValue(p.tokens[valueIdx].Value, dialectlexer.Options(p.dialect))
 		if !ok {
 			return "", fmt.Errorf("%s is not a string constant the server reads, for a routine comment at position %d",
 				abbreviatedToken(p.tokens[valueIdx].Value), p.tokens[valueIdx].Start)
@@ -311,25 +302,25 @@ func (p mysqlRoutineParser) afterSignificantTokens(startIdx, bodyIdx, count int)
 	return min(endIdx, bodyIdx)
 }
 
-func (p mysqlRoutineParser) parseRoutineBody(bodyIdx int) (ast.MySQLRoutineBody, error) {
+func (p mysqlRoutineParser) parseRoutineBody(bodyIdx int) (ast.RoutineBody, error) {
 	switch {
 	case p.isOuterBodyLabel(bodyIdx):
 		bodySQL, err := p.collectCompoundBodySQL(bodyIdx)
 		if err != nil {
-			return ast.MySQLRoutineBody{}, err
+			return ast.RoutineBody{}, err
 		}
-		return ast.MySQLRoutineBody{SQL: bodySQL}, nil
+		return ast.RoutineBody{SQL: bodySQL}, nil
 	case p.tokens[bodyIdx].MatchIdentifierValue("BEGIN"):
 		bodySQL, err := p.collectCompoundBodySQL(bodyIdx)
 		if err != nil {
-			return ast.MySQLRoutineBody{}, err
+			return ast.RoutineBody{}, err
 		}
-		return ast.MySQLRoutineBody{SQL: bodySQL}, nil
+		return ast.RoutineBody{SQL: bodySQL}, nil
 	case p.tokens[bodyIdx].MatchIdentifierValue("RETURN"):
 		bodySQL := strings.TrimSpace(p.rawFragment(p.tokens[bodyIdx].Start, p.statementEndFrom(bodyIdx)))
-		return ast.MySQLRoutineBody{SQL: bodySQL}, nil
+		return ast.RoutineBody{SQL: bodySQL}, nil
 	default:
-		return ast.MySQLRoutineBody{}, fmt.Errorf("unsupported MySQL routine body at position %d", p.tokens[bodyIdx].Start)
+		return ast.RoutineBody{}, fmt.Errorf("unsupported MySQL routine body at position %d", p.tokens[bodyIdx].Start)
 	}
 }
 
@@ -360,7 +351,7 @@ func (p mysqlRoutineParser) collectCompoundBodySQL(beginIdx int) (string, error)
 		if keyword == "IF" && p.isScalarIF(i) {
 			continue
 		}
-		trackRoutineCompoundKeyword(keyword, &depth, &caseDepth, &pendingEndTrailer)
+		compound.TrackKeyword(keyword, &depth, &caseDepth, &pendingEndTrailer)
 		if depth == 0 && keyword == "END" {
 			end := p.compoundBodyEnd(i, bodyLabel)
 			return strings.TrimSpace(p.rawFragment(p.tokens[bodyStartIdx].Start, end)), nil
@@ -493,3 +484,95 @@ var mysqlRoutineCharacteristicKeywords = []string{
 	"READS",
 	"SQL",
 }
+
+func parseRoutine(p routineext.Cursor, statementStart int, kind ast.RoutineKind) (ast.Node, error) {
+	sql, err := Collect(p, statementStart)
+	if err != nil {
+		return nil, err
+	}
+	routine, err := parseMySQLRoutineSQL(sql, p.Dialect(), kind)
+	if err != nil {
+		return ast.NewOpaqueRoutine(sql, p.Dialect(), kind), nil
+	}
+	return routine, nil
+}
+
+// Collect reads the complete compound routine from the shared cursor.
+func Collect(p routineext.Cursor, statementStart int) (string, error) {
+	blockDepth := 0
+	caseDepth := 0
+	pendingEndTrailer := false
+	for !p.AtEnd() {
+		if err := p.CheckTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.Current().Type == lexer.TokenSemicolon && blockDepth == 0 {
+			sql := p.Fragment(statementStart, p.Current().Start)
+			p.Advance()
+			return sql, nil
+		}
+
+		if p.Current().Type == lexer.TokenIdentifier {
+			trackCurrent(p, &blockDepth, &caseDepth, &pendingEndTrailer)
+		}
+		if p.Current().Type == lexer.TokenSemicolon {
+			pendingEndTrailer = false
+		}
+
+		p.Advance()
+	}
+
+	if blockDepth > 0 {
+		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.Current().Start)
+	}
+	return p.Fragment(statementStart, p.Previous().End), nil
+}
+
+func trackCurrent(p routineext.Cursor, blockDepth, caseDepth *int, pendingEndTrailer *bool) {
+	keyword := strings.ToUpper(p.Current().Value)
+	if keyword == "IF" && compound.ScalarIF(p.Input()[p.Current().End:]) {
+		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
+		return
+	}
+	compound.TrackKeyword(keyword, blockDepth, caseDepth, pendingEndTrailer)
+}
+
+func abbreviatedToken(token string) string {
+	const limit = 40
+	if len(token) <= limit {
+		return token
+	}
+	return token[:limit] + "..."
+}
+
+func (syntax) Create(p routineext.Cursor, target string, statementStart int) (ast.Node, error) {
+	if target == "PROCEDURE" {
+		return parseRoutine(p, statementStart, ast.RoutineKindProcedure)
+	}
+	if target == "PROC" {
+		return p.Fallback(target, statementStart)
+	}
+	return parseRoutine(p, statementStart, ast.RoutineKindFunction)
+}
+
+func (syntax) Definer(p routineext.Cursor, statementStart int) (ast.Node, error) {
+	for !p.AtEnd() {
+		if err := p.CheckTimeout(); err != nil {
+			return nil, err
+		}
+		switch {
+		case p.Current().MatchIdentifierValue("FUNCTION"):
+			return parseRoutine(p, statementStart, ast.RoutineKindFunction)
+		case p.Current().MatchIdentifierValue("PROCEDURE"):
+			return parseRoutine(p, statementStart, ast.RoutineKindProcedure)
+		case p.Current().Type == lexer.TokenSemicolon:
+			return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.Current().Start)
+		default:
+			p.Advance()
+		}
+	}
+	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.Current().Start)
+}
+
+type syntax struct{}

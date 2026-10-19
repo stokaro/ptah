@@ -128,15 +128,11 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 	// A routine node keeps its dialect metadata for the parser and the readers,
 	// and renders as the statement it wraps. The body is preserved verbatim, so
 	// the raw-SQL handler is the whole rendering of it.
-	case *ast.MySQLRoutineNode:
+	case *ast.RoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 	case *ast.OpaqueRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 	case *ast.DoBlockNode:
-		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
-	case *ast.PostgresRoutineNode:
-		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
-	case *ast.SQLServerRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 
 	// An alter operation, a type operation and a type definition are parts of a

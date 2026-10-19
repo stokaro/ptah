@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 )
 
 // switchAnswers is what the dialect switch Options replaced answered for each
@@ -17,7 +18,7 @@ import (
 // MariaDB and ClickHouse; bracketed names and no # comments on SQL Server;
 // the E'...' prefix on the PostgreSQL family and PostgreSQL's own string
 // constants on PostgreSQL alone; the -- rule and the executable comments of
-// MySQL and MariaDB; the YQL lexer alone on YDB; and SQL-standard strings on
+// MySQL and MariaDB; the YQL scanner alone on YDB; and SQL-standard strings on
 // every dialect the shared lexer reads.
 //
 // SQLite differs from the switch, deliberately: its descriptor states
@@ -42,7 +43,7 @@ var switchAnswers = map[string]lexer.Options{
 	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true},
 	platform.SQLServer:  {StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true},
 	platform.Oracle:     {StandardStrings: true},
-	platform.YDB:        {YQL: true},
+	platform.YDB:        {Scanner: yql.Scanner{}},
 }
 
 // TestOptions_AgreesWithTheSwitchItReplaces pins Options for every spelling
@@ -126,7 +127,15 @@ func TestFromDescriptor_HappyPath(t *testing.T) {
 		{
 			name:    "the YQL lexer",
 			lexical: descriptor.Lexical{Lexer: descriptor.LexerYQL},
-			want:    lexer.Options{YQL: true},
+			want:    lexer.Options{Scanner: yql.Scanner{}},
+		},
+		{
+			// A registry refuses a lexer the descriptor package does not
+			// declare, so only a descriptor nobody validated names one no
+			// service serves, and its text is read by the shared rules.
+			name:    "a lexer no service serves",
+			lexical: descriptor.Lexical{Lexer: "antlr"},
+			want:    lexer.Options{StandardStrings: true},
 		},
 	}
 	for _, test := range tests {

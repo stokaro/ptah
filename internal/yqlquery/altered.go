@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 )
 
 // AlteredTable returns the table an ALTER TABLE query changes, as the query
@@ -14,7 +15,7 @@ import (
 // table is a named expression (`ALTER TABLE $t ...`), when a quoted name holds
 // an escape the server refuses, and when a PRAGMA heads any statement of the
 // query, since `PRAGMA TablePathPrefix` changes what a relative name resolves
-// to. A quoted name is decoded by [lexer.YQLIdentifierValue], the way the
+// to. A quoted name is decoded by [yql.IdentifierValue], the way the
 // server reads it.
 func AlteredTable(text string) (string, bool) {
 	queries, err := Split(text)
@@ -51,5 +52,5 @@ func tableName(token lexer.Token) (string, bool) {
 	if token.Type != lexer.TokenIdentifier || value == "" || strings.HasPrefix(value, "$") {
 		return "", false
 	}
-	return lexer.YQLIdentifierValue(value)
+	return yql.IdentifierValue(value)
 }

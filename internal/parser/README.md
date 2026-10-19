@@ -1,4 +1,4 @@
-# SQL Parser
+# SQL parser
 
 This package provides a SQL DDL (Data Definition Language) parser that converts SQL tokens into Abstract Syntax Tree (AST) nodes. The parser is designed to work with the Ptah schema management system and supports multiple SQL dialects.
 
@@ -103,7 +103,7 @@ schema that Ptah can diff or render.
 
 ## Usage
 
-### Basic Usage
+### Basic usage
 
 ```go
 package main
@@ -132,7 +132,17 @@ func main() {
 }
 ```
 
-### Dialect-Aware Parsing
+A parsed procedure or a routine whose grammar keeps its complete statement
+uses `ast.RoutineNode`. Its `Dialect` names the normalized source dialect;
+the descriptor's `Grammar.Routines.Body` selects its grammar. `Options` keeps
+header clauses in source order, with `Read` recording those a syntax owner
+consumes into `Facets`. All routine bodies use `ast.RoutineBody`.
+The SQL schema reader selects a converter from `internal/routineext/builtin`
+using the source dialect's routine grammar. The owners in
+`internal/routineext/{postgres,mysql,sqlserver}` interpret the header options;
+the shared reader normalizes the name for the destination schema.
+
+### Dialect-aware parsing
 
 `parser.NewParser(sql)` keeps the compatibility-oriented best-effort behavior
 used by existing callers. When the target SQL family is known, pass an explicit
@@ -162,23 +172,23 @@ p := parser.NewParser(
 )
 ```
 
-Dialect-specific routine bodies are handled behind parser strategies. Generic
-mode stays best-effort; dialect mode can use a routine boundary detector that is
-specific to the selected SQL family without turning the generic DDL parser into
-a stored-procedure sub-language parser.
+Routine grammar services in `internal/routineext` read headers and statement
+boundaries. The shared parser lends them its token cursor, timeout checks, and
+owner-claim pass. Generic mode stays best-effort; dialect mode uses the selected
+grammar's boundary detector. Body statements remain the routine body reader's responsibility.
 
-MySQL and MariaDB dialect mode parses a routine header into
-`ast.MySQLRoutineNode` and keeps the body as its text. This package does not
+The MySQL grammar owner parses a routine header into
+`ast.RoutineNode` and keeps the body as its text. This package does not
 split a MySQL body into statements. The MySQL owner does
 (`dialect/mysql/mysqlroutine`), through the runtime's routine body reader
 (`core/routineext`).
 
 PostgreSQL-family dialect mode keeps `CREATE FUNCTION` rendering on
-`ast.CreateFunctionNode`, but attaches parser-only `PostgresRoutineBody`
+`ast.CreateFunctionNode`, but attaches parser-only `ast.RoutineBody`
 metadata for quoted, SQL-standard `RETURN`, and `BEGIN ATOMIC` bodies: the
 body text, its dollar-quote delimiter and its language.
 In a dialect whose descriptor states the quoted-body routine grammar,
-`CREATE PROCEDURE` becomes `ast.PostgresRoutineNode` and a `DO` block becomes
+`CREATE PROCEDURE` becomes `ast.RoutineNode` and a `DO` block becomes
 `ast.DoBlockNode`. Every other dialect reads a `DO` block as raw SQL. Both
 nodes render through the raw-SQL visitor contract.
 This package does not split a PostgreSQL body into statements. The PostgreSQL
@@ -195,7 +205,7 @@ replay remains a separate execution path with disposable-server checks.
 
 SQL Server dialect mode parses `CREATE [OR ALTER] FUNCTION`,
 `CREATE [OR ALTER] PROCEDURE`, and `CREATE PROC` through a T-SQL routine layer.
-The parser preserves the executable statement in `ast.SQLServerRoutineNode.SQL`,
+The parser preserves the executable statement in `ast.RoutineNode.SQL`,
 strips line-scoped client `GO` batch separators from the node, and records
 routine metadata for scalar functions, inline table-valued functions,
 multi-statement table-valued functions, and procedures. `Returns` is the raw
@@ -203,7 +213,7 @@ fragment between `RETURNS` and the body `AS`, so SQL Server routine options
 inside that fragment are preserved even when they are not structurally modeled
 yet.
 
-The body is kept as its text in `ast.SQLServerRoutineBody`. This package does
+The body is kept as its text in `ast.RoutineBody`. This package does
 not split it into statements: the SQL Server owner does
 (`dialect/mssql/mssqlroutine`), through the runtime's routine body reader
 (`core/routineext`). Whether a `BEGIN` opens a block and an `END` closes one is
@@ -215,7 +225,7 @@ structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit it
 SQL through the raw-SQL visitor contract, while parser consumers can still
 distinguish it from arbitrary raw SQL.
 
-### Owner Syntax
+### Owner syntax
 
 The parser reads the grammar every target shares. A feature owner adds its own
 syntax through `ptah.run/core/sqlext`, and `WithSQL` selects the owners a parse
@@ -227,7 +237,7 @@ hands every span to its owner in one call and applies what the owner returns.
 ClickHouse's data-skipping index and a materialized view's `REFRESH` clause
 are read this way. Without `WithSQL` the parse reads the shared grammar alone.
 
-### Parsing Multiple Statements
+### Parsing multiple statements
 
 ```go
 sql := `
@@ -241,7 +251,7 @@ statements, err := parser.Parse()
 // statements.Statements will contain 3 AST nodes
 ```
 
-### Working with AST Nodes
+### Working with AST nodes
 
 ```go
 for _, stmt := range statements.Statements {
@@ -259,14 +269,14 @@ for _, stmt := range statements.Statements {
 }
 ```
 
-## Supported SQL Syntax
+## Supported SQL syntax
 
-### Column Types
+### Column types
 - Basic types: `INTEGER`, `VARCHAR(255)`, `TEXT`, `TIMESTAMP`
 - Parameterized types: `DECIMAL(10,2)`, `CHAR(50)`
 - Complex types: `ENUM('value1', 'value2')`
 
-### Column Constraints
+### Column constraints
 - `PRIMARY KEY`
 - `NOT NULL` / `NULL`
 - `UNIQUE`
@@ -279,14 +289,14 @@ PostgreSQL time keywords such as `CURRENT_TIMESTAMP` remain expressions without
 added parentheses. Explicit precision, such as `CURRENT_TIMESTAMP(3)`, is kept.
 `DEFAULT NULL` is a SQL expression; `DEFAULT 'NULL'` is a string literal.
 
-### Table Constraints
+### Table constraints
 - `PRIMARY KEY (column1, column2)`
 - `UNIQUE (column1, column2)`
 - `FOREIGN KEY (column) REFERENCES table(column)`
 - `CHECK (expression)`
 - `CONSTRAINT name PRIMARY KEY (columns)`
 
-### Table Options
+### Table options
 - `ENGINE=InnoDB`
 - `CHARSET=utf8mb4` / `CHARACTER SET=utf8mb4`
 - `COLLATE=utf8mb4_unicode_ci`
@@ -319,14 +329,14 @@ The parser follows a recursive descent parsing approach:
 3. **Error Handling**: Provides detailed error messages with position information
 4. **Whitespace Handling**: Automatically skips whitespace and comments
 
-### Key Components
+### Key components
 
 - `Parser`: Main parser struct that manages token stream
 - `Parse()`: Entry point that returns a `StatementList`
 - Statement parsers: `parseCreateTable()`, `parseAlterTable()`, etc.
 - Helper parsers: `parseColumnDefinition()`, `parseConstraint()`, etc.
 
-## Error Handling
+## Error handling
 
 The parser provides detailed error messages including:
 - Expected vs actual token types
@@ -375,8 +385,12 @@ Current limitations include:
   PostgreSQL-family, and SQL Server dialect modes expose routine metadata for
   supported routine forms while preserving expression internals as raw SQL;
   unsupported routine body shapes fall back to typed opaque routines or raw SQL.
+- A dialect whose descriptor names a lexer of its own, as YDB's names YQL, is
+  not written in the shared grammar, and the parser refuses its documents with
+  `ErrUnsupportedFeature`. The engine's owner reads them with its own grammar,
+  and `internal/sqlsyntax` serves a syntax tree of them.
 
-## Future Enhancements
+## Future enhancements
 
 Planned improvements:
 - Enhanced expression parsing

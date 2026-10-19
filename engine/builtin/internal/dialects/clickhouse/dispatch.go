@@ -139,15 +139,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// so each one lowers to the raw-SQL handler with the statement it holds.
 	case *ast.RawSQLNode:
 		return r.renderRawSQL(n)
-	case *ast.MySQLRoutineNode:
+	case *ast.RoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 	case *ast.OpaqueRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 	case *ast.DoBlockNode:
-		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
-	case *ast.PostgresRoutineNode:
-		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
-	case *ast.SQLServerRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:

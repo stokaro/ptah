@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/builtin"
 )
 
 // Options returns the lexer behavior for dialect-sensitive SQL tokenization:
@@ -25,10 +26,11 @@ var optionsByDialect = descriptortable.New(FromDescriptor)
 
 // FromDescriptor returns the lexer behavior a dialect descriptor states in its
 // Lexical section. Every dialect the shared lexer reads gets SQL-standard
-// strings. A dialect whose descriptor names the YQL lexer gets that lexer
-// alone: it reads none of the fields the other dialects set, so it sets none
-// of them either, since a field that looked as if it applied would say
-// something false about how the text is read.
+// strings. A dialect whose descriptor names a lexer of its own that a service
+// serves (internal/lexerext) gets that lexer's scanner alone: it reads none of
+// the fields the other dialects set, so it sets none of them either, since a
+// field that looked as if it applied would say something false about how the
+// text is read.
 //
 // The shared lexer reads PostgreSQL's continued and U&'...' strings as one
 // rule, so a descriptor that states one of the two has neither read as one
@@ -36,8 +38,8 @@ var optionsByDialect = descriptortable.New(FromDescriptor)
 // may not share.
 func FromDescriptor(described descriptor.Dialect) lexer.Options {
 	lexical := described.Lexical
-	if lexical.Lexer == descriptor.LexerYQL {
-		return lexer.Options{YQL: true}
+	if scanner := builtin.Lookup(lexical.Lexer).Scanner; scanner != nil {
+		return lexer.Options{Scanner: scanner}
 	}
 	return lexer.Options{
 		StandardStrings:                true,

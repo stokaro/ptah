@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
 )
@@ -152,16 +154,12 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// routine body is another engine's code.
 	case *ast.RawSQLNode:
 		return r.renderRawSQL(n)
-	case *ast.MySQLRoutineNode:
-		return r.keyed(capability.Functions, "routine", "a MySQL routine")
+	case *ast.RoutineNode:
+		return r.keyed(capability.Functions, "routine", routineSubject(n))
 	case *ast.OpaqueRoutineNode:
 		return r.keyed(capability.Functions, "routine", "a routine")
 	case *ast.DoBlockNode:
 		return refuseFact("a PostgreSQL DO block", "YQL has no anonymous code block in DDL")
-	case *ast.PostgresRoutineNode:
-		return r.keyed(capability.Functions, "routine", "a PostgreSQL routine")
-	case *ast.SQLServerRoutineNode:
-		return r.keyed(capability.Functions, "routine", "a SQL Server routine")
 
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
 		return r.renderExtensionNode(node)
@@ -248,4 +246,21 @@ func (r *Renderer) renderStatementList(node *ast.StatementList) error {
 		}
 	}
 	return nil
+}
+
+// routineSubject names a routine for a refusal after the routine grammar that
+// read it, the one the descriptor of its dialect states, and as a routine
+// alone where that dialect states none.
+func routineSubject(routine *ast.RoutineNode) string {
+	described, _ := platform.Lookup(routine.Dialect)
+	switch described.Grammar.Routines.Body {
+	case descriptor.RoutineCompoundStatement:
+		return "a MySQL routine"
+	case descriptor.RoutineQuotedBody:
+		return "a PostgreSQL routine"
+	case descriptor.RoutineTransactSQL:
+		return "a SQL Server routine"
+	default:
+		return "a routine"
+	}
 }

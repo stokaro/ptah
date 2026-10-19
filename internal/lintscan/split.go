@@ -209,18 +209,15 @@ func MayDefineRoutine(sql string) bool {
 
 // routineBodySQL returns the body text of whichever node a routine arrived as.
 //
-// Four node types, because four dialect paths claim a routine, and the fifth,
-// the opaque node, is the one the parser preserves verbatim when no path
-// claimed it, so there is no parsed body to read.
+// Two node types, because a CREATE FUNCTION the shared grammar reads is a
+// function node and a routine a dialect's routine grammar reads is a routine
+// node. The third, the opaque node, is the one the parser preserves verbatim
+// when no grammar claimed it, so there is no parsed body to read.
 func routineBodySQL(node ast.Node) (string, bool) {
 	switch routine := node.(type) {
 	case *ast.CreateFunctionNode:
 		return routine.Body, true
-	case *ast.PostgresRoutineNode:
-		return routine.Body.SQL, true
-	case *ast.MySQLRoutineNode:
-		return routine.Body.SQL, true
-	case *ast.SQLServerRoutineNode:
+	case *ast.RoutineNode:
 		return routine.Body.SQL, true
 	default:
 		return "", false

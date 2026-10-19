@@ -27,7 +27,8 @@ type Departure struct {
 	// the recorded departures leave it empty.
 	Marker Marker
 	// Successors are the owner payloads that carry the kind's operations now,
-	// spelled as [ExtensionKinds] spells them.
+	// spelled as [ExtensionKinds] spells them, or the core/ast kind that holds
+	// the kind's statements since it was merged into that kind.
 	Successors []ExtensionKind
 }
 
@@ -120,7 +121,8 @@ func Baseline() []BaselineKind {
 // Departures returns the recorded departures, sorted by node name.
 //
 // A change that moves a node kind out of core/ast adds its row here, naming
-// the payloads that now carry its operations. A row may land before the node
+// the payloads that now carry its operations. A change that merges node kinds
+// into one names that kind. A row may land before the node
 // leaves, when the successor already exists; [Account] reports it as pending.
 func Departures() []Departure {
 	result := make([]Departure, 0, len(recordedDepartures))
@@ -137,8 +139,10 @@ func compareExtensionKinds(a, b ExtensionKind) int {
 	return strings.Compare(a.Name, b.Name)
 }
 
-// The owner payload packages the departures name.
+// The owner payload packages the departures name, and core/ast for a kind
+// merged into another.
 const (
+	coreAST        = "ptah.run/core/ast"
 	clickHouseAST  = "ptah.run/dialect/clickhouse/chast"
 	cockroachAST   = "ptah.run/dialect/cockroachdb/crdbast"
 	extensionOwner = "ptah.run/feature/pgextension"
@@ -203,9 +207,12 @@ var recordedDepartures = []Departure{
 	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},
 	{Node: "ExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation"), payload(extensionOwner, "CommentOperation")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterStorage")}},
+	{Node: "MySQLRoutineNode", Successors: []ExtensionKind{payload(coreAST, "RoutineNode")}},
+	{Node: "PostgresRoutineNode", Successors: []ExtensionKind{payload(coreAST, "RoutineNode")}},
 	{Node: "RangeTypeDef", Successors: []ExtensionKind{payload(pgTypeOwner, "CreateRange")}},
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "RevokeDefaultPrivilegeNode", Successors: []ExtensionKind{payload("ptah.run/feature/pgdefaultprivilege", "Operation")}},
+	{Node: "SQLServerRoutineNode", Successors: []ExtensionKind{payload(coreAST, "RoutineNode")}},
 	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},
 	{Node: "SetRowDeletionPolicyOperation", Successors: []ExtensionKind{payload(spannerAST, "AlterRowDeletion"), payload(ydbAST, "AlterTTL")}},
 	{Node: "SetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},

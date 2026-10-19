@@ -112,6 +112,8 @@ func TestStatementExcerpt(t *testing.T) {
 		{"a comment line", "-- Recreates the user.\nCREATE USER `reader`;", "ydb", "CREATE USER `reader`;"},
 		{"a YDB translation setting", "--!syntax_v1\nCREATE USER `reader`;", "ydb", "--!syntax_v1"},
 		{"the same line elsewhere", "--!syntax_v1\nCREATE ROLE reader;", "postgres", "CREATE ROLE reader;"},
+		{"the same line where -- needs a space", "--!syntax_v1\nCREATE ROLE reader;", "mysql", "CREATE ROLE reader;"},
+		{"a setting after a comment", "-- Recreates the user.\n--!syntax_v1\nCREATE USER `reader`;", "ydb", "--!syntax_v1"},
 		{"a long line", long, "postgres", long[:80] + "..."},
 		{"comments alone", "-- " + long + "\n-- second", "postgres", ("-- " + long)[:80] + "..."},
 	}

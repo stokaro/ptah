@@ -49,7 +49,9 @@ import (
 //     PostgreSQL family's, and isPostgresRoutineDialect read the PostgreSQL
 //     family's DO blocks, routine bodies, string defaults, and trigger WHEN
 //     and REFERENCING; collectTriggerBody took the MySQL family's one-statement
-//     trigger body; CREATE OR ALTER was SQL Server's.
+//     trigger body; CREATE OR ALTER was SQL Server's. parsePostgresDoBlockSQL
+//     gave a DO block that writes no LANGUAGE the language plpgsql on every
+//     dialect whose DO blocks it read.
 //   - parseUse, CREATE ROLE IF NOT EXISTS, ADD KEY or INDEX, RENAME INDEX,
 //     MODIFY, refuseDropCheck and refuseAlterGuard read the MySQL family, the
 //     column guard MariaDB alone; refuseModify called Oracle's and ClickHouse's
@@ -72,7 +74,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		},
 		Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
+		Routines: descriptor.RoutineGrammar{
+			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",
+		},
 	},
 	platform.MySQL: {
 		Columns: descriptor.ColumnGrammar{
@@ -172,7 +176,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
 		Indexes:    descriptor.IndexGrammar{TrailingVisibility: true, Alter: descriptor.AlterIndexVisibility},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
+		Routines: descriptor.RoutineGrammar{
+			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",
+		},
 	},
 	platform.YugabyteDB: {
 		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
@@ -181,12 +187,16 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			Match:    descriptor.Match{Clause: true},
 		},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
+		Routines: descriptor.RoutineGrammar{
+			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",
+		},
 	},
 	platform.Spanner: {
 		Columns:    descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
+		Routines: descriptor.RoutineGrammar{
+			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",
+		},
 	},
 	platform.Oracle: {
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},

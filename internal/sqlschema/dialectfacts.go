@@ -27,6 +27,9 @@ type readingFacts struct {
 	identifierLimit     descriptor.IdentifierLimit
 	columns             descriptor.Columns
 	statements          descriptor.Statements
+	// routines is the routine grammar the dialect writes its routines in,
+	// which says how a routine node's header converts.
+	routines string
 }
 
 // readingFactsCache keeps each dialect name's facts once read. A read asks
@@ -64,6 +67,7 @@ func factsOf(sourcePlatform string) readingFacts {
 		identifierLimit:     described.IdentifierLimit,
 		columns:             described.Columns,
 		statements:          described.Statements,
+		routines:            described.Grammar.Routines.Body,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

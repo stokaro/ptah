@@ -123,15 +123,11 @@ func mockNodeName(node ast.Node) string {
 	// what a renderer emits.
 	case *ast.RawSQLNode:
 		return n.SQL
-	case *ast.MySQLRoutineNode:
+	case *ast.RoutineNode:
 		return n.SQL
 	case *ast.OpaqueRoutineNode:
 		return n.SQL
 	case *ast.DoBlockNode:
-		return n.SQL
-	case *ast.PostgresRoutineNode:
-		return n.SQL
-	case *ast.SQLServerRoutineNode:
 		return n.SQL
 	default:
 		return ""

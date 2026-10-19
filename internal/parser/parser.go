@@ -24,7 +24,8 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/nullsdistinct"
-	"ptah.run/internal/sqlcompound"
+	routinebuiltin "ptah.run/internal/routineext/builtin"
+	"ptah.run/internal/routineext/compound"
 	"ptah.run/internal/tableref"
 )
 
@@ -183,11 +184,12 @@ func (p *Parser) Parse() (*ast.StatementList, error) {
 // parseStatements reads the document's statements, recording the spans the
 // owners' patterns claim.
 //
-// A dialect whose documents are not written in the shared grammar, as YQL is
-// for YDB, is refused: its owner reads them with a grammar of its own, and a
-// syntax consumer reads them through internal/sqlsyntax.
+// A dialect whose documents a lexer of its own reads is not written in the
+// shared grammar, as YQL is not for YDB, and is refused: its owner reads them
+// with a grammar of its own, and a syntax consumer reads them through
+// internal/sqlsyntax.
 func (p *Parser) parseStatements() (*ast.StatementList, error) {
-	if lexerOptions(p.dialect).YQL {
+	if lexerOptions(p.dialect).Scanner != nil {
 		return nil, fmt.Errorf("%w: the shared SQL grammar does not read %s documents; the owner of the target reads them",
 			ptaherr.ErrUnsupportedFeature, p.dialect)
 	}
@@ -292,16 +294,24 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 }
 
 func (p *Parser) parseDoStatement() (ast.Node, error) {
-	statementStart := p.current.Start
-	if p.isPostgresRoutineDialect() {
-		return p.parsePostgresDoStatement(statementStart)
-	}
+	start := p.current.Start
 	p.advance()
-	sql, err := p.collectRawStatement(statementStart, "DO statement")
+	sql, err := p.collectRawStatement(start, "DO statement")
 	if err != nil {
 		return nil, err
 	}
-	return ast.NewRawSQL(sql), nil
+	read := p.routineServices().ReadDo
+	if read == nil {
+		return ast.NewRawSQL(sql), nil
+	}
+	body, language, err := read(sql, dialectlexer.Options(p.target.family), p.target.grammar.Routines.DefaultDoBlockLanguage)
+	if err != nil {
+		return nil, err
+	}
+	block := ast.NewDoBlock(sql)
+	block.Body = body
+	block.Language = language
+	return block, nil
 }
 
 func (p *Parser) collectRawStatement(statementStart int, label string) (string, error) {
@@ -424,11 +434,17 @@ func (p *Parser) parseCreateSchemaObject(target string) (ast.Node, error) {
 }
 
 func (p *Parser) parseCreateRoutine(target string, statementStart int) (ast.Node, error) {
-	return p.routineParser().parseCreateRoutine(p, target, statementStart)
+	if syntax := p.routineServices().Syntax; syntax != nil {
+		return syntax.Create(routineCursor{p}, target, statementStart)
+	}
+	return p.parseRoutineBestEffort(target, statementStart)
 }
 
 func (p *Parser) parseCreateDefinerRoutine(statementStart int) (ast.Node, error) {
-	return p.routineParser().parseCreateDefinerRoutine(p, statementStart)
+	if syntax := p.routineServices().Syntax; syntax != nil {
+		return syntax.Definer(routineCursor{p}, statementStart)
+	}
+	return p.parseCreateDefinerRoutineBestEffort(statementStart)
 }
 
 func (p *Parser) parseCreateDefinerRoutineBestEffort(statementStart int) (ast.Node, error) {
@@ -548,7 +564,7 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return nil, fmt.Errorf("expected REPLACE or ALTER after CREATE OR, got %s at position %d", p.current.Value, p.current.Start)
 	}
 	p.skipWhitespace()
-	if orMode == "ALTER" && !p.isSQLServerRoutineDialect() {
+	if orMode == "ALTER" && !p.routineServices().ReplacesWithAlter {
 		return nil, fmt.Errorf("unsupported CREATE OR ALTER outside SQL Server dialect at position %d", p.current.Start)
 	}
 	if orMode == "ALTER" {
@@ -837,8 +853,8 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
-	if p.isSQLServerBracketedRoutineNameStart() {
-		return p.parseCreateRawSQLServerRoutine(statementStart)
+	if p.isBracketedRoutineNameStart() {
+		return p.parseCreateRawBatchRoutine(statementStart)
 	}
 
 	functionName, err := p.parseQualifiedIdentifier("function name")
@@ -861,170 +877,24 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	if raw {
 		return ast.NewRawSQL(p.rawStatement(statementStart)), nil
 	}
-	p.attachPostgresFunctionBody(function)
+	if attach := p.routineServices().FunctionBody; attach != nil {
+		attach(function)
+	}
 	return function, nil
 }
 
-func (p *Parser) isSQLServerBracketedRoutineNameStart() bool {
+func (p *Parser) isBracketedRoutineNameStart() bool {
 	// Bracketed function names enter T-SQL's routine-body sub-language. The
 	// compatibility parser preserves them as raw SQL without dialect metadata.
 	return p.current.MatchOperatorValue("[")
 }
 
-func (p *Parser) parseCreateRawSQLServerRoutine(statementStart int) (ast.Node, error) {
-	sql, err := p.collectRawSQLServerRoutine(statementStart, sqlServerRoutineStopAtTopLevelSemicolon)
-	if err != nil {
-		return nil, err
-	}
-	return ast.NewRawSQL(sql), nil
+func (p *Parser) parseCreateRawBatchRoutine(start int) (ast.Node, error) {
+	return routinebuiltin.Raw(routineCursor{p}, start, "PROC")
 }
 
-type sqlServerRoutineSemicolonMode int
-
-const (
-	sqlServerRoutineStopAtTopLevelSemicolon sqlServerRoutineSemicolonMode = iota
-	sqlServerRoutineKeepTopLevelSemicolon
-)
-
-func (p *Parser) collectRawSQLServerRoutine(statementStart int, semicolonMode sqlServerRoutineSemicolonMode) (string, error) {
-	blockDepth := 0
-	caseDepth := 0
-	for !p.isAtEnd() {
-		if err := p.checkTimeout(); err != nil {
-			return "", err
-		}
-
-		if p.current.MatchOperatorValue("[") {
-			p.skipSQLServerBracketedIdentifier()
-			continue
-		}
-
-		if p.current.Type == lexer.TokenSemicolon &&
-			blockDepth == 0 &&
-			semicolonMode == sqlServerRoutineStopAtTopLevelSemicolon {
-			sql := p.rawStatement(statementStart)
-			p.advance()
-			return sql, nil
-		}
-		if p.isCurrentSQLServerGoBatchSeparator() && blockDepth == 0 {
-			sql := p.rawStatementFragment(statementStart, p.current.Start)
-			p.advance()
-			return sql, nil
-		}
-
-		if p.current.Type == lexer.TokenIdentifier && !p.previous.MatchOperatorValue("@") {
-			nextValue := sqlServerRawRoutineNextSignificantValue(p.input, p.current.End)
-			if complete := trackSQLServerRawRoutineKeyword(strings.ToUpper(p.current.Value), nextValue, &blockDepth, &caseDepth); complete {
-				end := p.current.End
-				p.advance()
-				return p.rawStatementFragment(statementStart, end), nil
-			}
-		}
-		p.advance()
-	}
-
-	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.current.Start)
-	}
-	return p.rawStatementFragment(statementStart, p.previous.End), nil
-}
-
-func (p *Parser) skipSQLServerBracketedIdentifier() {
-	p.advance()
-	for !p.isAtEnd() {
-		if p.current.MatchOperatorValue("]") {
-			p.advance()
-			if p.current.MatchOperatorValue("]") {
-				p.advance()
-				continue
-			}
-			return
-		}
-		p.advance()
-	}
-}
-
-func trackSQLServerRawRoutineKeyword(keyword, nextValue string, blockDepth, caseDepth *int) bool {
-	switch keyword {
-	case "BEGIN":
-		if !sqlcompound.SQLServerBeginOpensBlock(nextValue) {
-			return false
-		}
-		(*blockDepth)++
-	case "CASE":
-		(*caseDepth)++
-	case "END":
-		if !sqlcompound.SQLServerEndClosesBlock(nextValue) {
-			return false
-		}
-		if *caseDepth > 0 {
-			(*caseDepth)--
-		} else if *blockDepth > 0 {
-			(*blockDepth)--
-			return *blockDepth == 0
-		}
-	}
-	return false
-}
-
-func sqlServerRawRoutineNextSignificantValue(input string, pos int) string {
-	if pos >= len(input) {
-		return ""
-	}
-	l := lexer.NewLexerWithOptions(input[pos:], lexer.Options{
-		BracketIdentifiers:  true,
-		DisableHashComments: true,
-	})
-	for {
-		tok := l.NextToken()
-		switch tok.Type {
-		case lexer.TokenWhitespace, lexer.TokenComment:
-			continue
-		case lexer.TokenEOF:
-			return ""
-		default:
-			return strings.ToUpper(tok.Value)
-		}
-	}
-}
-
-func (p *Parser) parseCreateRawRoutineStatement(statementStart int) (ast.Node, error) {
-	sql, err := p.collectRawRoutineStatement(statementStart)
-	if err != nil {
-		return nil, err
-	}
-	return ast.NewRawSQL(sql), nil
-}
-
-func (p *Parser) collectRawRoutineStatement(statementStart int) (string, error) {
-	blockDepth := 0
-	caseDepth := 0
-	pendingEndTrailer := false
-	for !p.isAtEnd() {
-		if err := p.checkTimeout(); err != nil {
-			return "", err
-		}
-
-		if p.current.Type == lexer.TokenSemicolon && blockDepth == 0 {
-			sql := p.rawStatementFragment(statementStart, p.current.Start)
-			p.advance()
-			return sql, nil
-		}
-
-		if p.current.Type == lexer.TokenIdentifier {
-			p.trackCurrentRoutineCompoundKeyword(&blockDepth, &caseDepth, &pendingEndTrailer)
-		}
-		if p.current.Type == lexer.TokenSemicolon {
-			pendingEndTrailer = false
-		}
-
-		p.advance()
-	}
-
-	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.current.Start)
-	}
-	return p.rawStatementFragment(statementStart, p.previous.End), nil
+func (p *Parser) parseCreateRawRoutineStatement(start int) (ast.Node, error) {
+	return routinebuiltin.Raw(routineCursor{p}, start, "PROCEDURE")
 }
 
 func (p *Parser) collectParenthesizedBody(label string) (string, error) {
@@ -1265,8 +1135,8 @@ func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
 			abbreviatedToken(body), p.current.Start)
 	}
 	function.SetBody(text)
-	if p.isPostgresRoutineDialect() {
-		function.RoutineBody = &ast.PostgresRoutineBody{Delimiter: dollarQuoteDelimiter(body)}
+	if delimiter := p.routineServices().Delimiter; delimiter != nil {
+		function.RoutineBody = &ast.RoutineBody{Delimiter: delimiter(body)}
 	}
 	p.advance()
 	return nil
@@ -1363,43 +1233,11 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 
 func (p *Parser) trackCurrentRoutineCompoundKeyword(blockDepth, caseDepth *int, pendingEndTrailer *bool) {
 	keyword := strings.ToUpper(p.current.Value)
-	if keyword == "IF" && isScalarIFExpressionFragment(p.input[p.current.End:]) {
+	if keyword == "IF" && compound.ScalarIF(p.input[p.current.End:]) {
 		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
 		return
 	}
-	trackRoutineCompoundKeyword(keyword, blockDepth, caseDepth, pendingEndTrailer)
-}
-
-func trackRoutineCompoundKeyword(keyword string, blockDepth, caseDepth *int, pendingEndTrailer *bool) {
-	if *pendingEndTrailer {
-		*pendingEndTrailer = false
-		if isRoutineEndTrailerKeyword(keyword) {
-			return
-		}
-	}
-
-	switch keyword {
-	case "BEGIN", "IF", "LOOP", "REPEAT", "WHILE":
-		(*blockDepth)++
-	case "CASE":
-		(*caseDepth)++
-	case "END":
-		if *caseDepth > 0 {
-			(*caseDepth)--
-		} else if *blockDepth > 0 {
-			(*blockDepth)--
-		}
-		*pendingEndTrailer = true
-	}
-}
-
-func isRoutineEndTrailerKeyword(keyword string) bool {
-	switch keyword {
-	case "CASE", "IF", "LOOP", "REPEAT", "WHILE":
-		return true
-	default:
-		return false
-	}
+	compound.TrackKeyword(keyword, blockDepth, caseDepth, pendingEndTrailer)
 }
 
 func (p *Parser) rawStatement(start int) string {
@@ -1505,7 +1343,7 @@ func (p *Parser) readRoutineSettingValue() string {
 		if p.current.Type == lexer.TokenSemicolon {
 			break
 		}
-		if p.current.Type == lexer.TokenIdentifier && endsRoutineSettingValue(p.current.Value) {
+		if p.current.Type == lexer.TokenIdentifier && routinebuiltin.EndsSetting(p.current.Value) {
 			break
 		}
 		if p.current.Type != lexer.TokenWhitespace {
@@ -1518,16 +1356,6 @@ func (p *Parser) readRoutineSettingValue() string {
 
 // endsRoutineSettingValue reports whether a keyword starts the next clause of a
 // routine header, and therefore ends the value being read.
-func endsRoutineSettingValue(value string) bool {
-	switch strings.ToUpper(value) {
-	case "SET", "AS", "LANGUAGE", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE",
-		"RETURNS", "RETURN", "BEGIN", "STRICT", "PARALLEL", "COST", "ROWS",
-		"WINDOW", "LEAKPROOF", "CALLED", "EXTERNAL":
-		return true
-	default:
-		return false
-	}
-}
 
 func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "TRIGGER"); err != nil {

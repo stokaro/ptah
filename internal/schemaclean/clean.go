@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
@@ -281,6 +282,9 @@ func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan
 // boundary. A schema-scoped dialect (descriptor.Cleanup.SchemaScoped)
 // validates through the transaction session, after its catalog locks every
 // planned relation that can own dependent objects and before any drop runs.
+// On a server that commits each schema change as it runs (no
+// capability.TransactionalDDL) there is no transaction to hold a lock, so the
+// validation runs through the connection right before the first drop.
 type ApplyPlanOptions struct {
 	ValidateBeforeExecute func(catalog.SchemaExecutor) error
 }
@@ -301,8 +305,11 @@ func ApplyPlanWithOptions(
 		return nil
 	}
 	conn.SchemaWriter().SetDryRun(false)
-	if savepoint, scoped := scopedExecution(describedOf(conn.Info().Dialect)); scoped {
-		return applyScopedPlan(ctx, conn, changes, opts, savepoint)
+	if run, scoped := scopedExecution(describedOf(conn.Info().Dialect), conn.Info().Capabilities); scoped {
+		if !run.held {
+			return applyUnheldScopedPlan(ctx, conn, changes, opts)
+		}
+		return applyScopedPlan(ctx, conn, changes, opts, run.savepoint)
 	}
 	if opts.ValidateBeforeExecute != nil {
 		if err := opts.ValidateBeforeExecute(conn.Writer()); err != nil {
@@ -368,6 +375,33 @@ func applyScopedPlan(
 	return nil
 }
 
+// applyUnheldScopedPlan runs changes on a server that commits each schema
+// change as it runs (no capability.TransactionalDDL): the caller's
+// validation, then the refusal of selected objects whose dependents the
+// selection leaves behind, and then the drops, each on its own.
+//
+// Such a server commits an open transaction before a schema statement, so a
+// transaction around the drops would end at the first one and take its
+// savepoint with it. The plan opens none. It takes no relation lock either,
+// because a lock lasts only as long as the transaction that holds it. So the
+// validation reads the catalog right before the first drop, not under a lock.
+func applyUnheldScopedPlan(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	changes []Change,
+	opts ApplyPlanOptions,
+) error {
+	if opts.ValidateBeforeExecute != nil {
+		if err := opts.ValidateBeforeExecute(conn.Writer()); err != nil {
+			return err
+		}
+	}
+	if err := refuseUnselectedDependents(ctx, conn, changes); err != nil {
+		return err
+	}
+	return applyUnheldScopedPlanChanges(ctx, conn.Writer(), changes)
+}
+
 // plannedRelations are the tables and foreign tables a scoped plan drops, in
 // the plan's order: the relations its engine's catalog locks before the first
 // drop; see [dbreset.CleanupCatalog.LockRelations].
@@ -393,6 +427,52 @@ func applyScopedPlanChanges(
 	// unknown dependency eventually stops progress and rolls back the outer
 	// transaction. This mirrors the writer's unscoped cleanup algorithm
 	// without widening the selected object set.
+	return retryScopedPlanChanges(changes, func(change Change) (dropErr, controlErr error) {
+		return tryApplyScopedPlanChange(ctx, tx, savepoint, change)
+	})
+}
+
+// applyUnheldScopedPlanChanges runs changes through executor, each drop on
+// its own, and retries a refused drop once the drops after it are done, as
+// the transaction does without the savepoint: a refused statement outside a
+// transaction leaves nothing to return to. RESTRICT stays the safety
+// boundary. Every drop the server accepts stays committed, so the error that
+// ends the plan names each drop that ran before it.
+func applyUnheldScopedPlanChanges(ctx context.Context, executor catalog.SchemaExecutor, changes []Change) error {
+	var dropped []Change
+	err := retryScopedPlanChanges(changes, func(change Change) (dropErr, controlErr error) {
+		if err := executor.ExecuteSQL(ctx, change.Cmd); err != nil {
+			return fmt.Errorf("drop schema object %s %q: %w", change.Type, change.Name, err), nil
+		}
+		dropped = append(dropped, change)
+		return nil, nil
+	})
+	if err != nil {
+		return errors.Join(err, fmt.Errorf(
+			"the server commits each drop as it runs; dropped before the failure: %s", droppedObjects(dropped)))
+	}
+	return nil
+}
+
+// droppedObjects names the objects of dropped in the order they were
+// dropped, or says that there are none.
+func droppedObjects(dropped []Change) string {
+	if len(dropped) == 0 {
+		return "nothing"
+	}
+	names := make([]string, 0, len(dropped))
+	for _, change := range dropped {
+		names = append(names, fmt.Sprintf("%s %q", change.Type, change.Name))
+	}
+	return strings.Join(names, ", ")
+}
+
+// retryScopedPlanChanges runs attempt over changes, round after round, for as
+// long as a round drops at least one of them. A round that drops nothing
+// cannot be improved on by running it again, so its first refusal is the
+// answer. A round that drops something may have freed a refused one, so the
+// refused ones are tried again. A control error ends the plan at once.
+func retryScopedPlanChanges(changes []Change, attempt func(Change) (dropErr, controlErr error)) error {
 	pending := slices.Clone(changes)
 	for len(pending) > 0 {
 		remaining := make([]Change, 0, len(pending))
@@ -402,7 +482,7 @@ func applyScopedPlanChanges(
 			if strings.TrimSpace(change.Cmd) == "" {
 				continue
 			}
-			dropErr, controlErr := tryApplyScopedPlanChange(ctx, tx, savepoint, change)
+			dropErr, controlErr := attempt(change)
 			if controlErr != nil {
 				return errors.Join(dropErr, controlErr)
 			}
@@ -463,14 +543,27 @@ type savepointStatements struct {
 	release  string
 }
 
-// scopedExecution reports whether the dialect described runs a plan in one
-// transaction, each drop under a savepoint (descriptor.Cleanup.SchemaScoped),
-// with the savepoint statements it brackets each drop with.
-func scopedExecution(described descriptor.Dialect) (savepointStatements, bool) {
+// scopedRun is how the drops of a scoped plan run on one server.
+type scopedRun struct {
+	// held reports that the drops run in one transaction, each under
+	// savepoint, because the server rolls schema changes back as a unit
+	// (capability.TransactionalDDL). Otherwise each drop commits as it runs,
+	// and savepoint is zero.
+	held      bool
+	savepoint savepointStatements
+}
+
+// scopedExecution reports whether the dialect described runs a plan scoped
+// to its schema (descriptor.Cleanup.SchemaScoped), and how its drops run on a
+// server of capabilities caps.
+func scopedExecution(described descriptor.Dialect, caps capability.Capabilities) (scopedRun, bool) {
 	if !described.Cleanup.SchemaScoped {
-		return savepointStatements{}, false
+		return scopedRun{}, false
 	}
-	return scopedSavepoint(described), true
+	if !caps.Has(capability.TransactionalDDL) {
+		return scopedRun{}, true
+	}
+	return scopedRun{held: true, savepoint: scopedSavepoint(described)}, true
 }
 
 // scopedSavepoint names the savepoint statements of the dialect described.

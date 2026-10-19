@@ -28,7 +28,7 @@ func TestRenderSQL_MySQLFamilyRoutinePreservesRawSQL(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			routine := ast.NewMySQLRoutine("CREATE PROCEDURE p1() BEGIN SELECT 1; END", dialect, ast.RoutineKindProcedure)
+			routine := ast.NewRoutine("CREATE PROCEDURE p1() BEGIN SELECT 1; END", dialect, ast.RoutineKindProcedure)
 
 			sql, err := builtin.RenderSQL(dialect, routine)
 

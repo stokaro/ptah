@@ -46,10 +46,13 @@ type Cleanup struct {
 	// with its drop statement, in its drop order, so the plan is that list.
 	WriterListing bool `json:"writer_listing,omitempty"`
 	// SchemaScoped reports that the writer drops only the objects of its own
-	// schema, DefaultSchema when none is configured, and runs a scoped plan in
-	// one transaction, each drop under a savepoint, so a refused drop is
-	// retried once the drops after it are done. A schema-scoped dialect
-	// states the savepoint's Create and Rollback (Dialect.Savepoint).
+	// schema, DefaultSchema when none is configured, and that a scoped plan
+	// retries a refused drop once the drops after it are done. On a server
+	// that rolls schema changes back as a unit (capability.TransactionalDDL)
+	// the plan runs in one transaction, each drop under a savepoint. On any
+	// other server each drop commits as it runs and no savepoint is set. A
+	// schema-scoped dialect states the savepoint's Create and Rollback
+	// (Dialect.Savepoint).
 	SchemaScoped bool `json:"schema_scoped,omitempty"`
 	// Restrict reports that a drop refuses dependents: DROP TABLE, DROP
 	// VIEW and DROP SEQUENCE end with RESTRICT, and a routine is dropped by
