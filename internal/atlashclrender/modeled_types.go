@@ -5,7 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
 
 // modeledColumnTypes lists, per dialect, the column type names the Atlas HCL
@@ -68,113 +69,38 @@ import (
 // `ARRAY` are resolved before rendering -- see goSchemaFieldType in
 // internal/convert/dbschematogo.
 //
-// Dialects absent from this map wrap nothing, which is exactly today's
-// behavior for them (stokaro/ptah#1138).
-var modeledColumnTypes = map[string]map[string]struct{}{
-	platform.SQLite: namesToSet(
-		"bigint",
-		"blob",
-		"bool",
-		"boolean",
-		"character",
-		"date",
-		"datetime",
-		"decimal",
-		"double",
-		"float",
-		"int",
-		"integer",
-		"json",
-		"jsonb",
-		"numeric",
-		"real",
-		"smallint",
-		"text",
-		"uuid",
-		"varchar",
-	),
-	// Measured by feeding each name to the pinned binary bare, as
-	// `type = <name>`, against a PostgreSQL 17 dev database. Names refused
-	// there are deliberately absent: hstore, citext, ltree and geometry are
-	// extension types the dev database does not carry, and they are refused
-	// wrapped as well, so listing them would not have helped.
-	//
-	// The multi-word spellings PostgreSQL's own catalog reports -- `character
-	// varying`, `double precision`, `timestamp with time zone`, `time without
-	// time zone` -- are absent for a different reason: they are not writable
-	// bare at all, because two identifiers separated by a space is not one HCL
-	// expression. They reach the binary through sql(), which accepts all four.
-	platform.Postgres: namesToSet(
-		"bigint",
-		"bigserial",
-		"bit",
-		"bool",
-		"boolean",
-		"box",
-		"bytea",
-		"char",
-		"character",
-		"cidr",
-		"circle",
-		"date",
-		"daterange",
-		"decimal",
-		"float",
-		"float4",
-		"float8",
-		"inet",
-		"int",
-		"int2",
-		"int4",
-		"int4range",
-		"int8",
-		"int8range",
-		"integer",
-		"interval",
-		"json",
-		"jsonb",
-		"line",
-		"lseg",
-		"macaddr",
-		"macaddr8",
-		"money",
-		"name",
-		"numeric",
-		"numrange",
-		"oid",
-		"path",
-		"point",
-		"polygon",
-		"real",
-		"regclass",
-		"serial",
-		"smallint",
-		"smallserial",
-		"text",
-		"time",
-		"timestamp",
-		"timestamptz",
-		"timetz",
-		"tsquery",
-		"tsrange",
-		"tstzrange",
-		"tsvector",
-		"uuid",
-		"varchar",
-		"xml",
-	),
-}
+// The lists are the descriptors' (descriptor.Atlas.HCL.ColumnTypes), measured
+// there. A dialect that states none wraps nothing (stokaro/ptah#1138).
+var modeledColumnTypes = descriptortable.New(func(described descriptor.Dialect) map[string]struct{} {
+	if len(described.Atlas.HCL.ColumnTypes) == 0 {
+		return nil
+	}
+	return namesToSet(described.Atlas.HCL.ColumnTypes...)
+})
+
+// modeledColumnTypeDialects are the dialects whose descriptor states a
+// column-type vocabulary.
+var modeledColumnTypeDialects = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []string {
+	var names []string
+	for _, described := range dialects {
+		if len(described.Atlas.HCL.ColumnTypes) != 0 {
+			names = append(names, described.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+})
 
 // ModeledColumnTypeDialects returns the dialects with an explicitly measured
 // Atlas HCL column-type vocabulary.
 func ModeledColumnTypeDialects() []string {
-	return slices.Sorted(maps.Keys(modeledColumnTypes))
+	return slices.Clone(modeledColumnTypeDialects.Get())
 }
 
 // ModeledColumnTypes returns the measured Atlas HCL column-type names for a
 // dialect. The returned slice is sorted and independent of internal state.
 func ModeledColumnTypes(dialect string) []string {
-	return slices.Sorted(maps.Keys(modeledColumnTypes[platform.NormalizeDialect(dialect)]))
+	return slices.Sorted(maps.Keys(modeledColumnTypes.Get(dialect)))
 }
 
 // IsModeledColumnType reports whether the Atlas HCL schema models the supplied
@@ -219,8 +145,8 @@ func namesToSet(names ...string) map[string]struct{} {
 //
 // A dialect with no measured list keeps whatever the IR holds.
 func modeledColumnType(dialect, columnType string) (string, bool) {
-	modeled, known := modeledColumnTypes[platform.NormalizeDialect(dialect)]
-	if !known {
+	modeled := modeledColumnTypes.Get(dialect)
+	if modeled == nil {
 		return columnType, true
 	}
 	trimmed := strings.TrimSpace(columnType)

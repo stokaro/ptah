@@ -48,8 +48,11 @@ func atlasRedactedURL(raw string) atlasTemplateURL {
 	}
 	parsed.RawQuery = query.Encode()
 	result := atlasTemplateURL{URL: *parsed}
-	if parsed.Scheme == "sqlite" {
-		result.Schema = "main"
+	// The schema Atlas names for an engine of one namespace, such as SQLite's
+	// main, goes with a URL spelled with the dialect's own name: sqlite://
+	// names it, and sqlite3:// and file: name none.
+	if fact := atlasFacts.Get(parsed.Scheme); fact.schema != "" && fact.name == parsed.Scheme {
+		result.Schema = fact.schema
 	}
 	return result
 }

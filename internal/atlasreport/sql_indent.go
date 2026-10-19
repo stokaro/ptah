@@ -12,6 +12,13 @@ import (
 // Some report payloads have no dialect, so retain the union of quoted spans
 // under the supported string-escape policies. Extra preservation costs only
 // alignment; guessing a policy can change a literal's value or a routine body.
+//
+// The three lexers are named here, rather than read from the descriptors,
+// because a SchemaDiff payload carries no dialect. Every rule that would
+// derive the set from the registry changes the output: the union of every
+// dialect's lexer adds YQL, which reads `@@...@@` as a string, so a T-SQL or
+// MySQL body that names two `@@` variables would lose its indentation between
+// them. The fix is a payload that carries its dialect and is lexed under it.
 func indentSQL(sql, indent string) string {
 	protected := make([]bool, len(sql))
 	for _, dialect := range []string{platform.Postgres, platform.MySQL, platform.SQLServer} {

@@ -117,6 +117,18 @@ func sqlite() descriptor.Dialect {
 			Enums:         descriptor.EnumCheck,
 			EnumCheckType: "TEXT",
 		},
+
+		// Database URLs and the Atlas contract: what internal/atlasurl, the
+		// Atlas reports and the Atlas HCL reader and writer read. A libsql URL
+		// names a server, so its schemes are no file schemes.
+		URLs: descriptor.URLs{FileSchemes: []string{"sqlite", "sqlite3", "file"}},
+		Atlas: descriptor.Atlas{
+			Schema: "main",
+			HCL: descriptor.AtlasHCL{
+				TableProperties: []string{"strict", "without_rowid"},
+				ColumnTypes:     sqliteAtlasColumnTypes(),
+			},
+		},
 	}
 }
 
@@ -166,5 +178,17 @@ func sqliteKeywords() []string {
 		"table", "temp", "temporary", "then", "ties", "to", "transaction", "trigger", "unbounded",
 		"union", "unique", "update", "using", "vacuum", "values", "view", "virtual", "when", "where",
 		"window", "with", "without",
+	}
+}
+
+// sqliteAtlasColumnTypes are the column type names the pinned Atlas community
+// binary v1.3.0 models as a bare HCL type for SQLite. timestamp is absent: it
+// is an ordinary type name Ptah models, and that binary answers `type =
+// timestamp` for SQLite with `There is no type named "timestamp"`. The Atlas
+// CE oracle job re-measures every entry.
+func sqliteAtlasColumnTypes() []string {
+	return []string{
+		"bigint", "blob", "bool", "boolean", "character", "date", "datetime", "decimal", "double", "float",
+		"int", "integer", "json", "jsonb", "numeric", "real", "smallint", "text", "uuid", "varchar",
 	}
 }

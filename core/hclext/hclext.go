@@ -366,6 +366,12 @@ type Declaration struct {
 	// directory, and refuses a table the load does not declare and a second
 	// setting of one table. Nil declares none.
 	TableSetting schemaext.Value
+	// TableSettingDialect is the dialect whose identifier rules match
+	// TableSetting's labels with the tables of the load, such as "postgres"
+	// for a hypertable, whose labels name a table in public when they name no
+	// schema. Empty matches them under the rules the frontend gives a dialect
+	// it does not model: names as written, and no default schema.
+	TableSettingDialect string
 	// Facets are settings of the claim's index, for an [IndexAttributes]
 	// claim, or of its table, for an [InTable] or [TableAttributes] claim. Each
 	// facet has one of the extension's Kinds. RoutineAttributes and

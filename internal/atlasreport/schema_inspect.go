@@ -14,7 +14,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -217,7 +216,7 @@ func NewSchemaInspectReport(
 		return nil, err
 	}
 	realm := atlasSchemaInspectJSON(schema, info)
-	attachYDBJSONLoss(&realm, db, schema, info, diagnostics)
+	attachExtensionJSONLoss(&realm, db, schema, info, diagnostics)
 	if err := attachFeatureJSONLoss(ctx, &realm, db, info, diagnostics, runtime); err != nil {
 		return nil, err
 	}
@@ -851,8 +850,5 @@ func atlasSchemaInspectSchemaName(schema string, info catalog.ServerInfo) string
 	if info.Schema != "" {
 		return info.Schema
 	}
-	if platform.NormalizeDialect(info.Dialect) == platform.SQLite {
-		return "main"
-	}
-	return ""
+	return atlasFacts.Get(info.Dialect).schema
 }

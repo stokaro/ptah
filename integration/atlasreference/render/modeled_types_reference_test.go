@@ -77,10 +77,11 @@ var unmodeledControls = map[string][]string{
 	},
 }
 
-// TestReferenceModeledColumnTypesMatchTheBinary re-measures every entry of
-// modeledColumnTypes against the pinned community binary.
+// TestReferenceModeledColumnTypesMatchTheBinary re-measures every column type a
+// descriptor states (descriptor.Atlas.HCL.ColumnTypes) against the pinned
+// community binary.
 //
-// The asymmetry this guards is recorded on the map itself: a list that is too
+// The asymmetry this guards is recorded in internal/atlashclrender: a list that is too
 // SHORT costs a needless sql() wrap, which round trips, while a list that is too
 // LONG emits HCL the binary refuses to read at all. So each entry is asserted in
 // the direction that can break drop-in -- written bare, it must be accepted --
@@ -109,7 +110,7 @@ func TestReferenceModeledColumnTypesMatchTheBinary(t *testing.T) {
 
 			modeled := atlashclrender.ModeledColumnTypes(dialect)
 			c.Assert(modeled, qt.Not(qt.HasLen), 0,
-				qt.Commentf("a dialect present in the map with no entries would make this run measure nothing"))
+				qt.Commentf("a dialect listed with no entries would make this run measure nothing"))
 
 			for _, name := range modeled {
 				t.Run("modeled/"+name, func(t *testing.T) {

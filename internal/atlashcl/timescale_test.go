@@ -105,6 +105,24 @@ hypertable "readings" {
 			want: tsschema.DesiredHypertable{Column: "time"},
 		},
 		{
+			// The owner states that a hypertable's labels follow PostgreSQL's
+			// identifier rules, under which a table declared without a schema
+			// is in public.
+			name: "a table without a schema, named in the default schema",
+			document: `
+table "readings" {
+  column "time" {
+    type = timestamptz
+  }
+}
+
+hypertable "public" "readings" {
+  column = "time"
+}
+`,
+			want: tsschema.DesiredHypertable{Column: "time"},
+		},
+		{
 			name: "the two-label spelling, before its table",
 			document: `
 hypertable "app" "readings" {

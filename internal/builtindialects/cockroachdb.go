@@ -170,5 +170,8 @@ func cockroachDB() descriptor.Dialect {
 		// E'...' prefix.
 		Lexical: descriptor.Lexical{EscapeStrings: true},
 		Reach:   postgresReach(),
+
+		// Database URLs: what internal/atlasurl reads.
+		URLs: descriptor.URLs{DefaultPort: 26257},
 	}
 }

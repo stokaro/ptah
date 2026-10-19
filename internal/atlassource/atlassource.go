@@ -40,10 +40,12 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/envbool"
@@ -255,6 +257,16 @@ func (s Set) ValidateLocalSchemaSources(validate func(string) error) error {
 	return nil
 }
 
+// fileDialects names each dialect that keeps its databases in files, which
+// it does when its descriptor states a file scheme
+// (descriptor.URLs.FileSchemes), and is empty for every other dialect.
+var fileDialects = descriptortable.New(func(described descriptor.Dialect) string {
+	if len(described.URLs.FileSchemes) == 0 {
+		return ""
+	}
+	return described.Name
+})
+
 // Classify determines the source kind of one desired-state URL. env://
 // references are returned unexpanded; use ClassifySet to expand them against
 // an evaluated atlas.hcl environment.
@@ -266,10 +278,11 @@ func Classify(rawURL string) (Source, error) {
 	scheme, rest, hasScheme := strings.Cut(base, "://")
 	if !hasScheme {
 		// SQLite drive paths use the opaque form on Windows so the drive's
-		// colon cannot be parsed as a URL host port.
+		// colon cannot be parsed as a URL host port: a dialect that keeps its
+		// databases in files reads a scheme without "//" as a path.
 		opaqueScheme, _, hasOpaqueScheme := strings.Cut(base, ":")
-		if hasOpaqueScheme && platform.NormalizeDialect(opaqueScheme) == platform.SQLite {
-			return Source{Raw: trimmed, Kind: KindDatabase, Dialect: platform.SQLite}, nil
+		if dialect := fileDialects.Get(opaqueScheme); hasOpaqueScheme && dialect != "" {
+			return Source{Raw: trimmed, Kind: KindDatabase, Dialect: dialect}, nil
 		}
 		return classifyLocal(trimmed)
 	}

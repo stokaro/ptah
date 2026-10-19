@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaexportloss"
 )
@@ -59,8 +58,12 @@ func (i atlasSchemaInspectJSONIndex) MarshalJSON() ([]byte, error) {
 	return json.Marshal(document(i))
 }
 
-func attachYDBJSONLoss(realm *atlasSchemaInspectJSONRealm, db *schemamodel.Database, described *catalog.Database, info catalog.ServerInfo, writer io.Writer) {
-	if db == nil || writer == nil || platform.NormalizeDialect(info.Dialect) != platform.YDB {
+// attachExtensionJSONLoss gives the JSON document of an inspection what it leaves
+// out, on an engine no Atlas edition has a driver for, such as YDB
+// (descriptor.Atlas.Extension): no Atlas document of that engine exists whose
+// silence the warnings would depart from.
+func attachExtensionJSONLoss(realm *atlasSchemaInspectJSONRealm, db *schemamodel.Database, described *catalog.Database, info catalog.ServerInfo, writer io.Writer) {
+	if db == nil || writer == nil || !atlasFacts.Get(info.Dialect).extension {
 		return
 	}
 	realm.loss = &inspectJSONLoss{writer: writer, omitted: schemaexportloss.CommonFamilies(db)}

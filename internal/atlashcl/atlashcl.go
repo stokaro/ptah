@@ -672,10 +672,12 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Checks:     checks,
 		CustomSQL:  customSQL,
-		Overrides: sqliteProperties(mysqlProperties(overrides, map[string]string{
+		Overrides: atlasProperties(overrides, tableProperties, map[string]string{
 			"auto_increment": p.optionalString(block.Body.Attributes["auto_increment"]),
 			"charset":        p.optionalString(block.Body.Attributes["charset"]),
-		}), map[string]string{"strict": strict, "without_rowid": withoutRowID}),
+			"strict":         strict,
+			"without_rowid":  withoutRowID,
+		}),
 		DependsOn: p.objectRefListAttr(block, "depends_on"),
 	}
 
@@ -913,38 +915,12 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 	}
 	// A column's charset and on_update are the MySQL family's: Atlas reads
 	// them from its MySQL driver only. They become the platform properties of
-	// the mysql and mariadb targets, where the MySQL owner reads them.
-	field.Overrides = mysqlColumnSettings(field.Overrides,
-		p.optionalString(block.Body.Attributes["charset"]), p.optionalSQLExpression(block.Body.Attributes["on_update"]))
+	// the targets that read them, where their owner does.
+	field.Overrides = atlasProperties(field.Overrides, columnProperties, map[string]string{
+		"charset":   p.optionalString(block.Body.Attributes["charset"]),
+		"on_update": p.optionalSQLExpression(block.Body.Attributes["on_update"]),
+	})
 	return field, nil
-}
-
-// mysqlColumnSettings states a column's charset and on_update, which only the
-// MySQL family has, as the platform properties of the mysql and mariadb
-// targets. A target group that states one already keeps its own. overrides is
-// not changed.
-func mysqlColumnSettings(overrides map[string]map[string]string, charset, onUpdate string) map[string]map[string]string {
-	if charset == "" && onUpdate == "" {
-		return overrides
-	}
-	result := make(map[string]map[string]string, len(overrides)+2)
-	for target, group := range overrides {
-		result[target] = maps.Clone(group)
-	}
-	for _, target := range []string{"mysql", "mariadb"} {
-		for _, setting := range []struct{ key, value string }{{"charset", charset}, {"on_update", onUpdate}} {
-			if setting.value == "" {
-				continue
-			}
-			if result[target] == nil {
-				result[target] = make(map[string]string)
-			}
-			if _, stated := result[target][setting.key]; !stated {
-				result[target][setting.key] = setting.value
-			}
-		}
-	}
-	return result
 }
 
 type generatedColumnSpec struct {
@@ -1115,7 +1091,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Comment:        p.optionalString(block.Body.Attributes["comment"]),
 		IncludeColumns: include,
 		StorageParams:  storageParams,
-		Overrides:      mysqlProperties(overrides, map[string]string{"parser": parserName}),
+		Overrides:      atlasProperties(overrides, indexProperties, map[string]string{"parser": parserName}),
 		TableName:      tableName,
 	}, nil
 }
@@ -2672,46 +2648,4 @@ func (p *parser) printLine(line string) {
 // goes.
 func writePrintLine(line string) {
 	fmt.Fprintln(printDestination, line)
-}
-
-// mysqlProperties states options only the MySQL family has, such as a
-// table's auto_increment and charset or a FULLTEXT index's parser, as the
-// platform properties of the mysql and mariadb targets, where the MySQL owner
-// reads them. See [targetProperties].
-func mysqlProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
-	return targetProperties(overrides, []string{"mysql", "mariadb"}, options)
-}
-
-// sqliteProperties states a table's strict and without_rowid, which only
-// SQLite has, as the platform properties of the sqlite target, where the
-// SQLite owner reads them. See [targetProperties].
-func sqliteProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
-	return targetProperties(overrides, []string{"sqlite"}, options)
-}
-
-// targetProperties states options as the platform properties of targets. An
-// empty option states nothing, and a target group that states one already
-// keeps its own. overrides is not changed.
-func targetProperties(overrides map[string]map[string]string, targets []string, options map[string]string) map[string]map[string]string {
-	if !slices.ContainsFunc(slices.Collect(maps.Values(options)), func(value string) bool { return value != "" }) {
-		return overrides
-	}
-	result := make(map[string]map[string]string, len(overrides)+len(targets))
-	for target, group := range overrides {
-		result[target] = maps.Clone(group)
-	}
-	for _, target := range targets {
-		for key, value := range options {
-			if value == "" {
-				continue
-			}
-			if result[target] == nil {
-				result[target] = make(map[string]string)
-			}
-			if _, stated := result[target][key]; !stated {
-				result[target][key] = value
-			}
-		}
-	}
-	return result
 }

@@ -54,3 +54,38 @@ func TestTable_DerivesOncePerDescriptor(t *testing.T) {
 	group.Wait()
 	c.Assert(calls.Load(), qt.Equals, int64(len(platform.Dialects().Dialects())+1))
 }
+
+func TestIndex_Get(t *testing.T) {
+	c := qt.New(t)
+	names := descriptortable.NewIndex(func(dialects []descriptor.Dialect) []string {
+		names := make([]string, 0, len(dialects))
+		for _, described := range dialects {
+			names = append(names, described.Name)
+		}
+		return names
+	})
+
+	got := names.Get()
+
+	want := make([]string, 0, len(platform.Dialects().Dialects()))
+	for _, described := range platform.Dialects().Dialects() {
+		want = append(want, described.Name)
+	}
+	c.Assert(got, qt.DeepEquals, want)
+}
+
+func TestIndex_DerivesOncePerRegistry(t *testing.T) {
+	var calls atomic.Int64
+	index := descriptortable.NewIndex(func([]descriptor.Dialect) bool {
+		calls.Add(1)
+		return true
+	})
+	c := qt.New(t)
+	c.Assert(index.Get(), qt.IsTrue)
+	var group sync.WaitGroup
+	for range 16 {
+		group.Go(func() { index.Get() })
+	}
+	group.Wait()
+	c.Assert(calls.Load(), qt.Equals, int64(1))
+}

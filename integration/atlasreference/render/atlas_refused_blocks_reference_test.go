@@ -57,9 +57,10 @@ var atlasToleratedBlockTypes = map[string][]string{
 	},
 	platform.SQLite: {
 		// The three PostgreSQL refuses. They are listed here rather than in
-		// atlasRefusedBlockTypes because the refusal is the PostgreSQL driver's
-		// and not the file format's, which is why that map is keyed by dialect
-		// at all. If SQLite ever starts refusing them, this run says so.
+		// SQLite's descriptor (descriptor.Atlas.HCL.RefusedBlocks) because the
+		// refusal is the PostgreSQL driver's and not the file format's, which
+		// is why each dialect states its own list at all. If SQLite ever
+		// starts refusing them, this run says so.
 		"extension",
 		"sequence",
 		"policy",
@@ -67,8 +68,9 @@ var atlasToleratedBlockTypes = map[string][]string{
 	},
 }
 
-// TestReferenceAtlasRefusedBlockTypesMatchTheBinary re-measures every entry of
-// atlasRefusedBlockTypes against the pinned community binary.
+// TestReferenceAtlasRefusedBlockTypesMatchTheBinary re-measures every refused
+// block a descriptor states (descriptor.Atlas.HCL.RefusedBlocks) against the
+// pinned community binary.
 //
 // A list nothing re-measures rots silently, and this one rots in a direction
 // that costs the user: a block type a later build starts modeling would go on
@@ -108,7 +110,7 @@ func TestReferenceAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 
 			refused := atlashclrender.AtlasRefusedBlockTypes(dialect)
 			c.Assert(refused, qt.Not(qt.HasLen), 0,
-				qt.Commentf("a dialect in the map with no entries would measure nothing"))
+				qt.Commentf("a dialect listed with no entries would measure nothing"))
 
 			t.Run("base", func(t *testing.T) {
 				c := qt.New(t)
@@ -228,7 +230,7 @@ table "probe" {
 // The empty key is the base probe, which adds nothing to the base.
 //
 // The spellings are written out rather than composed from the block name so
-// that adding a block type to atlasRefusedBlockTypes or to
+// that adding a block type to a descriptor's refused blocks or to
 // atlasToleratedBlockTypes without deciding how it is spelled fails the run
 // instead of measuring a form Ptah never emits. `permission` is why that
 // matters: it is the one block Ptah renders with no label at all.
