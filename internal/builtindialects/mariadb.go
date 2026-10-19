@@ -80,7 +80,6 @@ func mariaDB() descriptor.Dialect {
 		},
 		Seeds: descriptor.Seeds{
 			Transactional: true,
-			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 			TablesQuery:   "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
 		},
 
@@ -281,5 +280,8 @@ func mariaDB() descriptor.Dialect {
 		// 12.3.3, an unnamed key is `<n>` where 12.0.2 and earlier write
 		// `<table>_ibfk_<n>`.
 		ForeignKeyNameRules: descriptor.ForeignKeyNameRules{CreateTableMaxChars: 63, BareNumbers: true},
+
+		// Transactions: what migration/seeder and internal/schemaclean read.
+		Savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 	}
 }

@@ -66,6 +66,18 @@ type Relation struct {
 	Name   string
 }
 
+// Dependent is a relation defined in terms of a relation a scoped cleanup
+// selects, such as a view that reads a selected table.
+type Dependent struct {
+	// Source is the selected relation the dependent reads.
+	Source string
+	// Name is the dependent's name.
+	Name string
+	// Kind spells the dependent's kind for a diagnostic, such as "view" or
+	// "materialized view".
+	Kind string
+}
+
 // Querier runs a catalog read.
 type Querier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)

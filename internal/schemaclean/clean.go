@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
-	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
@@ -94,9 +93,11 @@ type Object struct {
 }
 
 // SnapshotWithinWriterScope returns the reader snapshot restricted where the
-// cleanup writer itself is restricted. PostgreSQL extensions are database-wide
-// reader inventory, while schema cleanup can only reason about extensions
-// owned by its configured schema; global extensions must not veto an otherwise
+// cleanup writer itself is restricted. An object of the whole database that
+// the database installed into one schema ([schemaext.SchemaInstallation]),
+// such as an extension, is database-wide reader inventory, while a
+// schema-scoped cleanup can only reason about the ones installed in its
+// configured schema; one installed elsewhere must not veto an otherwise
 // schema-local clean.
 func SnapshotWithinWriterScope(
 	schema *catalog.Database,
@@ -111,16 +112,13 @@ func SnapshotWithinWriterScope(
 		writerSchema = defaultSchemaOf(dialect)
 	}
 	owned := *schema
-	// The extension owner's observations are kept when they are installed in
-	// the writer's schema. One that is not an observation names no schema to
-	// keep it by and stays, so the snapshot's validation still sees it.
+	// An installed object is kept when it is installed in the writer's
+	// schema. A value that names no installation schema is kept, so the
+	// snapshot's validation sees it.
 	owned.FeatureObjects = schema.FeatureObjects.Select(func(ref objectidentity.ID) bool {
-		if ref.Kind != objectidentity.Kind(pgextension.ExtensionKind) {
-			return true
-		}
 		object, _, err := schema.FeatureObjects.Get(ref)
-		installed, observed := object.Value.(*pgextension.ObservedExtension)
-		return err != nil || !observed || strings.TrimSpace(installed.Schema) == writerSchema
+		installed, ok := object.Value.(schemaext.SchemaInstallation)
+		return err != nil || !ok || strings.TrimSpace(installed.InstalledSchema()) == writerSchema
 	})
 	return &owned
 }
@@ -131,7 +129,8 @@ func SnapshotWithinWriterScope(
 // An unscoped Apply delegates to SchemaWriter.DropAllTables, which rebuilds its
 // own statements from the live catalog. ApplyPlan executes Cmd for a scoped
 // cleanup, but in a separate dependency-safe order rather than this report's
-// alphabetical order. PostgreSQL-family commands use RESTRICT: the scoped
+// alphabetical order. A dialect whose drops refuse dependents
+// (descriptor.Cleanup.Restrict) spells its commands with RESTRICT: the scoped
 // executor removes selected known dependents first, and the server refuses a
 // parent whose remaining dependency was outside the selected set.
 type Change struct {
@@ -279,9 +278,9 @@ func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan
 }
 
 // ApplyPlanOptions configures validation at the destructive execution
-// boundary. PostgreSQL validates through the transaction session after locking
-// every planned relation that can own dependent objects and before executing
-// any drop.
+// boundary. A schema-scoped dialect (descriptor.Cleanup.SchemaScoped)
+// validates through the transaction session, after its catalog locks every
+// planned relation that can own dependent objects and before any drop runs.
 type ApplyPlanOptions struct {
 	ValidateBeforeExecute func(catalog.SchemaExecutor) error
 }
@@ -302,8 +301,8 @@ func ApplyPlanWithOptions(
 		return nil
 	}
 	conn.SchemaWriter().SetDryRun(false)
-	if cleanupOf(conn.Info().Dialect).SchemaScoped {
-		return applyPostgresFamilyPlan(ctx, conn, changes, opts)
+	if savepoint, scoped := scopedExecution(describedOf(conn.Info().Dialect)); scoped {
+		return applyScopedPlan(ctx, conn, changes, opts, savepoint)
 	}
 	if opts.ValidateBeforeExecute != nil {
 		if err := opts.ValidateBeforeExecute(conn.Writer()); err != nil {
@@ -322,11 +321,16 @@ func executableChanges(plan Plan) []Change {
 	return plan.Changes
 }
 
-func applyPostgresFamilyPlan(
+// applyScopedPlan runs changes in one transaction, each drop under savepoint:
+// the catalog's relation locks first, then the caller's validation, then the
+// refusal of selected objects whose dependents the selection leaves behind,
+// and then the drops.
+func applyScopedPlan(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	changes []Change,
 	opts ApplyPlanOptions,
+	savepoint savepointStatements,
 ) error {
 	tx, err := conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
@@ -352,7 +356,7 @@ func applyPostgresFamilyPlan(
 	if err := refuseUnselectedDependents(ctx, conn, changes); err != nil {
 		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 	}
-	if err := applyPostgresFamilyPlanChanges(ctx, tx, changes); err != nil {
+	if err := applyScopedPlanChanges(ctx, tx, savepoint, changes); err != nil {
 		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 	}
 	if err := tx.Commit(); err != nil {
@@ -378,15 +382,16 @@ func plannedRelations(changes []Change) []dbreset.Relation {
 	return relations
 }
 
-func applyPostgresFamilyPlanChanges(
+func applyScopedPlanChanges(
 	ctx context.Context,
 	tx catalog.SchemaTransaction,
+	savepoint savepointStatements,
 	changes []Change,
 ) error {
 	// RESTRICT is the safety boundary. Savepoints let a selected dependent
 	// disappear before retrying its selected dependency, while an external or
 	// unknown dependency eventually stops progress and rolls back the outer
-	// transaction. This mirrors PostgreSQLWriter's unscoped cleanup algorithm
+	// transaction. This mirrors the writer's unscoped cleanup algorithm
 	// without widening the selected object set.
 	pending := slices.Clone(changes)
 	for len(pending) > 0 {
@@ -397,7 +402,7 @@ func applyPostgresFamilyPlanChanges(
 			if strings.TrimSpace(change.Cmd) == "" {
 				continue
 			}
-			dropErr, controlErr := tryApplyPostgresFamilyPlanChange(ctx, tx, change)
+			dropErr, controlErr := tryApplyScopedPlanChange(ctx, tx, savepoint, change)
 			if controlErr != nil {
 				return errors.Join(dropErr, controlErr)
 			}
@@ -420,33 +425,80 @@ func applyPostgresFamilyPlanChanges(
 	return nil
 }
 
-func tryApplyPostgresFamilyPlanChange(
+// tryApplyScopedPlanChange runs change under savepoint. dropErr is the
+// drop's own refusal, after which the transaction is back at the savepoint;
+// controlErr is a failure to set, return to or release the savepoint.
+func tryApplyScopedPlanChange(
 	ctx context.Context,
 	tx catalog.SchemaTransaction,
+	savepoint savepointStatements,
 	change Change,
 ) (dropErr, controlErr error) {
-	const savepoint = "ptah_scoped_cleanup_object"
-
-	if err := tx.ExecuteSQL(ctx, "SAVEPOINT "+savepoint); err != nil {
+	if err := tx.ExecuteSQL(ctx, savepoint.create); err != nil {
 		return nil, fmt.Errorf("create scoped cleanup savepoint: %w", err)
 	}
 	if err := tx.ExecuteSQL(ctx, change.Cmd); err != nil {
 		dropErr = fmt.Errorf("drop schema object %s %q: %w", change.Type, change.Name, err)
-		if rollbackErr := tx.ExecuteSQL(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+		if rollbackErr := tx.ExecuteSQL(ctx, savepoint.rollback); rollbackErr != nil {
 			controlErr = fmt.Errorf("roll back scoped cleanup savepoint: %w", rollbackErr)
 		}
-		if releaseErr := tx.ExecuteSQL(ctx, "RELEASE SAVEPOINT "+savepoint); releaseErr != nil {
-			controlErr = errors.Join(
-				controlErr,
-				fmt.Errorf("release scoped cleanup savepoint: %w", releaseErr),
-			)
+		if err := savepoint.releaseIn(ctx, tx); err != nil {
+			controlErr = errors.Join(controlErr, err)
 		}
 		return dropErr, controlErr
 	}
-	if err := tx.ExecuteSQL(ctx, "RELEASE SAVEPOINT "+savepoint); err != nil {
-		return nil, fmt.Errorf("release scoped cleanup savepoint: %w", err)
+	return nil, savepoint.releaseIn(ctx, tx)
+}
+
+// savepointStatements are the statements a scoped plan brackets each drop
+// with, spelled from the keywords of the dialect's descriptor
+// (descriptor.Dialect.Savepoint). The registry refuses a schema-scoped
+// cleanup on a dialect that states no way to create a savepoint and roll back
+// to it, so create and rollback are never empty. release is empty where the
+// engine has no statement for it: the savepoint then lives until the
+// transaction ends.
+type savepointStatements struct {
+	create   string
+	rollback string
+	release  string
+}
+
+// scopedExecution reports whether the dialect described runs a plan in one
+// transaction, each drop under a savepoint (descriptor.Cleanup.SchemaScoped),
+// with the savepoint statements it brackets each drop with.
+func scopedExecution(described descriptor.Dialect) (savepointStatements, bool) {
+	if !described.Cleanup.SchemaScoped {
+		return savepointStatements{}, false
 	}
-	return nil, nil
+	return scopedSavepoint(described), true
+}
+
+// scopedSavepoint names the savepoint statements of the dialect described.
+func scopedSavepoint(described descriptor.Dialect) savepointStatements {
+	const name = "ptah_scoped_cleanup_object"
+	statement := func(keyword string) string {
+		if keyword == "" {
+			return ""
+		}
+		return keyword + " " + name
+	}
+	return savepointStatements{
+		create:   statement(described.Savepoint.Create),
+		rollback: statement(described.Savepoint.Rollback),
+		release:  statement(described.Savepoint.Release),
+	}
+}
+
+// releaseIn releases the savepoint through tx, and does nothing where the
+// engine has no statement for it.
+func (s savepointStatements) releaseIn(ctx context.Context, tx catalog.SchemaTransaction) error {
+	if s.release == "" {
+		return nil
+	}
+	if err := tx.ExecuteSQL(ctx, s.release); err != nil {
+		return fmt.Errorf("release scoped cleanup savepoint: %w", err)
+	}
+	return nil
 }
 
 func applyPlanChanges(
@@ -601,8 +653,14 @@ func coverageFor(dialect string) dialectCoverage {
 // the zero value, which reports tables only, for a dialect the registry does
 // not know.
 func cleanupOf(dialect string) descriptor.Cleanup {
+	return describedOf(dialect).Cleanup
+}
+
+// describedOf returns dialect's descriptor, and the zero value for a dialect
+// the registry does not know.
+func describedOf(dialect string) descriptor.Dialect {
 	described, _ := platform.Lookup(dialect)
-	return described.Cleanup
+	return described
 }
 
 // defaultSchemaOf returns the schema an unqualified name resolves to on
@@ -879,21 +937,33 @@ func catalogObjects(
 		if err != nil {
 			return nil, err
 		}
-		for _, found := range listed {
-			if !slices.Contains(objectTypes(), found.Kind) {
-				return nil, fmt.Errorf("inspect schema before cleanup: the %s writer lists %s %q, which the plan cannot name",
-					dialect, found.Kind, found.Name)
-			}
-			objects = append(objects, Object{
-				Type:         found.Kind,
-				Schema:       found.Schema,
-				Table:        found.Table,
-				Name:         found.Name,
-				SelectorName: found.SelectorName,
-				Implicit:     found.Implicit,
-				Command:      found.Statement,
-			})
+		found, err := planObjects(listed, dialect)
+		if err != nil {
+			return nil, err
 		}
+		objects = append(objects, found...)
+	}
+	return objects, nil
+}
+
+// planObjects turns what a writer's catalog strategy lists into plan rows, in
+// its order. It refuses a kind the plan has no name for, naming dialect.
+func planObjects(listed []dbreset.CleanupObject, dialect string) ([]Object, error) {
+	objects := make([]Object, 0, len(listed))
+	for _, found := range listed {
+		if !slices.Contains(objectTypes(), found.Kind) {
+			return nil, fmt.Errorf("inspect schema before cleanup: the %s writer lists %s %q, which the plan cannot name",
+				dialect, found.Kind, found.Name)
+		}
+		objects = append(objects, Object{
+			Type:         found.Kind,
+			Schema:       found.Schema,
+			Table:        found.Table,
+			Name:         found.Name,
+			SelectorName: found.SelectorName,
+			Implicit:     found.Implicit,
+			Command:      found.Statement,
+		})
 	}
 	return objects, nil
 }
@@ -1390,24 +1460,13 @@ func isForeignKeyConstraint(constraint catalog.Constraint) bool {
 	return strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY")
 }
 
-// dependentRelationsQuery asks which relations are defined in terms of the
-// selected ones. It reaches views and materialized views, which are the
-// dependents a scoped cleanup meets: both store their definition in pg_rewrite,
-// and pg_depend links that rule back to every relation the definition reads.
-//
-// Placeholders are built by the caller rather than passed as an array, because
-// the two PostgreSQL-family drivers in use disagree about how a Go slice binds
-// to ANY($1) and a scoped cleanup should not depend on that.
-const dependentRelationsQuery = `
-	SELECT DISTINCT source.relname, dependent.relname, dependent.relkind
-	FROM pg_depend d
-	JOIN pg_rewrite r ON r.oid = d.objid
-	JOIN pg_class dependent ON dependent.oid = r.ev_class
-	JOIN pg_class source ON source.oid = d.refobjid
-	JOIN pg_namespace n ON n.oid = source.relnamespace
-	WHERE n.nspname = current_schema()
-	  AND dependent.oid <> source.oid
-	  AND source.relname IN (%s)`
+// dependentsWriter is a writer that lists, from its engine's catalog, the
+// relations defined in terms of the ones a scoped plan selects; see
+// [refuseUnselectedDependents]. A writer that is not one leaves the
+// dependency to the server, which refuses the RESTRICT drop itself.
+type dependentsWriter interface {
+	CleanupDependents(ctx context.Context, q dbreset.Querier, names []string) ([]dbreset.Dependent, error)
+}
 
 // refuseUnselectedDependents fails a scoped cleanup BEFORE any DROP runs when a
 // selected object has a dependent the selection leaves behind.
@@ -1431,6 +1490,16 @@ func refuseUnselectedDependents(
 	conn *dbschema.DatabaseConnection,
 	changes []Change,
 ) error {
+	return refuseDependents(ctx, conn.SchemaWriter(), conn, changes)
+}
+
+// refuseDependents is [refuseUnselectedDependents] for writer, reading its
+// catalog through q.
+func refuseDependents(ctx context.Context, writer catalog.SchemaWriter, q dbreset.Querier, changes []Change) error {
+	finder, ok := writer.(dependentsWriter)
+	if !ok {
+		return nil
+	}
 	selected := make(map[string]bool, len(changes))
 	names := make([]string, 0, len(changes))
 	for _, change := range changes {
@@ -1446,33 +1515,21 @@ func refuseUnselectedDependents(
 		return nil
 	}
 
-	placeholders := make([]string, 0, len(names))
-	args := make([]any, 0, len(names))
-	for i, name := range names {
-		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
-		args = append(args, name)
-	}
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(dependentRelationsQuery, strings.Join(placeholders, ", ")), args...)
+	dependents, err := finder.CleanupDependents(ctx, q, names)
 	if err != nil {
 		// The check is an improvement on the diagnostic, not a gate on the
-		// cleanup: a catalog this query cannot read leaves the previous
-		// behavior, where the server reports the dependency itself.
+		// cleanup: on a catalog the writer cannot read, the server reports
+		// the dependency itself.
 		return nil
 	}
-	defer rows.Close()
-
 	var blocked []string
-	for rows.Next() {
-		var source, dependent, kind string
-		if err := rows.Scan(&source, &dependent, &kind); err != nil {
-			return nil
-		}
-		if selected[dependent] {
+	for _, dependent := range dependents {
+		if selected[dependent.Name] {
 			continue
 		}
-		blocked = append(blocked, fmt.Sprintf("%s %q depends on %s", relationKindName(kind), dependent, source))
+		blocked = append(blocked, fmt.Sprintf("%s %q depends on %s", dependent.Kind, dependent.Name, dependent.Source))
 	}
-	if err := rows.Err(); err != nil || len(blocked) == 0 {
+	if len(blocked) == 0 {
 		return nil
 	}
 	slices.Sort(blocked)
@@ -1480,18 +1537,4 @@ func refuseUnselectedDependents(
 		"scoped cleanup would leave dependents behind: %s. "+
 			"Add them to the selection so they are dropped together, or widen it to the whole schema",
 		strings.Join(blocked, "; "))
-}
-
-// relationKindName spells a pg_class.relkind for a diagnostic.
-func relationKindName(kind string) string {
-	switch kind {
-	case "v":
-		return "view"
-	case "m":
-		return "materialized view"
-	case "r", "p":
-		return "table"
-	default:
-		return "object"
-	}
 }

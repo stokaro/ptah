@@ -88,7 +88,6 @@ func mysql() descriptor.Dialect {
 		},
 		Seeds: descriptor.Seeds{
 			Transactional: true,
-			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 			TablesQuery:   "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
 		},
 
@@ -291,6 +290,9 @@ func mysql() descriptor.Dialect {
 		// and 26.7.0, CREATE TABLE and ALTER TABLE both keep a derived name of
 		// 64 characters and answer ERROR 1059 to one of 65, and an unnamed key
 		// is never named by its number alone.
+
+		// Transactions: what migration/seeder and internal/schemaclean read.
+		Savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 	}
 }
 

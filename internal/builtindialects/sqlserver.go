@@ -91,7 +91,6 @@ BEGIN
     )
 END`,
 			Transactional: true,
-			Savepoint:     descriptor.Savepoint{Create: "SAVE TRANSACTION", Rollback: "ROLLBACK TRANSACTION"},
 		},
 
 		// How an identifier is written, and how a column's own key is named.
@@ -192,6 +191,9 @@ END`,
 		// Reach: the constructs of SQL Server that reach outside the
 		// database, which a scan refuses on every engine.
 		Reach: descriptor.Reach{Everywhere: sqlServerEverywhere()},
+
+		// Transactions: what migration/seeder and internal/schemaclean read.
+		Savepoint: descriptor.Savepoint{Create: "SAVE TRANSACTION", Rollback: "ROLLBACK TRANSACTION"},
 	}
 }
 

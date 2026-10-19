@@ -62,7 +62,6 @@ func sqlite() descriptor.Dialect {
 		},
 		Seeds: descriptor.Seeds{
 			Transactional: true,
-			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 		},
 
 		// How an identifier is written, and how a column's own key is named.
@@ -192,6 +191,9 @@ func sqlite() descriptor.Dialect {
 		// Reach: the constructs of SQLite that reach outside the database,
 		// which a scan refuses on every engine.
 		Reach: descriptor.Reach{Everywhere: sqliteEverywhere()},
+
+		// Transactions: what migration/seeder and internal/schemaclean read.
+		Savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 	}
 }
 

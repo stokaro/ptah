@@ -71,10 +71,6 @@ type Seeds struct {
 	// records it. Without it the statements run one by one, and an
 	// idempotent run is refused.
 	Transactional bool `json:"transactional,omitempty"`
-	// Savepoint is how a seed file is bracketed inside its transaction, so an
-	// idempotent run can roll back a file that hit a duplicate key and keep
-	// the files before it.
-	Savepoint Savepoint `json:"savepoint,omitzero"`
 	// TablesQuery lists the base tables of the connection's schema, taking no
 	// parameter. Empty takes the portable information_schema query, bound to
 	// the connection's schema.
@@ -84,16 +80,4 @@ type Seeds struct {
 	// engine provides (dbschema.DatabaseConnection.Seeds). A seed run on a
 	// connection without one refuses the engine.
 	ByOwner bool `json:"by_owner,omitempty"`
-}
-
-// Savepoint holds the keywords a savepoint's name follows in each statement,
-// such as "SAVEPOINT". An empty Create means the engine has no savepoint; an
-// empty Release means the savepoint lives until the transaction ends.
-type Savepoint struct {
-	// Create sets the savepoint, as "SAVEPOINT" or "SAVE TRANSACTION".
-	Create string `json:"create,omitempty"`
-	// Rollback returns to it, as "ROLLBACK TO SAVEPOINT".
-	Rollback string `json:"rollback,omitempty"`
-	// Release ends it, as "RELEASE SAVEPOINT".
-	Release string `json:"release,omitempty"`
 }

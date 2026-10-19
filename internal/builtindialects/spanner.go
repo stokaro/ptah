@@ -73,7 +73,6 @@ func spanner() descriptor.Dialect {
     applied_at TIMESTAMPTZ NOT NULL
 )`,
 			Transactional: true,
-			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 		},
 
 		// How an identifier is written, and how a column's own key is named.
@@ -210,6 +209,9 @@ func spanner() descriptor.Dialect {
 		// directives when its dialect is unknown. The PostgreSQL interface has
 		// no enum type, so no value is added to one.
 		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+
+		// Transactions: what migration/seeder and internal/schemaclean read.
+		Savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
 	}
 }
 

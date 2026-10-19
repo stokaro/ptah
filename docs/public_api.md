@@ -784,6 +784,11 @@ into creates that one too, unless it is the connection's default. It is given
 the object's identity, so an owner whose object takes the schema its identity
 names, as a created domain does, answers from it.
 
+`schemaext.SchemaInstallation` is an observed value of an object that belongs
+to the whole database while the database installed it into one schema, as an
+extension is. A host confined to one schema, such as a schema-scoped cleanup,
+reasons only about the objects installed in that schema.
+
 `schemaext.CapabilityProvider` is a value or a change whose object, once
 created, provides capabilities; it is given the object's identity, which holds
 what a value alone does not, such as an extension's name.
@@ -2927,10 +2932,14 @@ declares an installation schema, a version, a comment and IF NOT EXISTS, and an
 empty field leaves its choice to the server. `ObservedExtension` holds what
 `pg_extension` reports, whether the extension may move to another schema, and
 `Provides`, the catalog names the extension supplies that do not resolve
-without it. A `DesiredExtension` is `schemaext.Redeclarable`, and states IF NOT
-EXISTS as `schemaext.Guarded`. `Subject` names an extension in a plan step's
-effects under the common `objectidentity.KindExtension`, so another owner can
-order its steps after the extension without importing this package.
+without it.
+
+An `ObservedExtension` is a `schemaext.SchemaInstallation`, installed in the
+schema `pg_extension` reports. A `DesiredExtension` is
+`schemaext.Redeclarable`, and states IF NOT EXISTS as `schemaext.Guarded`.
+`Subject` names an extension in a plan step's effects under the common
+`objectidentity.KindExtension`, so another owner can order its steps after the
+extension without importing this package.
 
 A declaration made from a read also carries the read's `Provides`. No
 statement writes it and no comparison reads it; an export uses it to keep an
@@ -4868,6 +4877,11 @@ in place of a dialect's name:
   migration file whose dialect is unknown, the session settings a migration
   replay restores, and whether a value added to an existing enum type has to
   commit before a statement uses it.
+- `Savepoint`: how the engine spells a savepoint inside a transaction.
+  `migration/seeder` brackets each seed file in one, and a schema-scoped
+  cleanup each drop. A registry refuses a descriptor whose cleanup is
+  schema-scoped (`Cleanup.SchemaScoped`) and whose savepoint names no way to
+  create one or roll back to it.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,

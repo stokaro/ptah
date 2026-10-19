@@ -108,7 +108,6 @@ EXCEPTION
         END IF;
 END;`,
 			Transactional: true,
-			Savepoint:     descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
 		},
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble, Bare: descriptor.BareEverywhere, Keywords: oracleKeywords()},
@@ -172,6 +171,9 @@ END;`,
 		// lexer does not read Oracle's q'...' strings, so it cannot read a
 		// file as Oracle does, and every other rule it reads for Oracle is a
 		// standard one SQLite's reading applies already.
+
+		// Transactions: what migration/seeder and internal/schemaclean read.
+		Savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
 	}
 }
 
