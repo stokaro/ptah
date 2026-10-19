@@ -23,7 +23,10 @@ import (
 // extraction departure ledger rather than by a common node.
 // Default privileges, domains, composite types and range types use owner
 // operations through ExtensionNode.
-const nodeKindFloor = 72
+// The three routine nodes of the PostgreSQL, MySQL and SQL Server routine
+// grammars are one RoutineNode, which the departure ledger records as their
+// successor.
+const nodeKindFloor = 70
 
 // censusRow is one node kind the census accepts.
 //
@@ -101,10 +104,8 @@ var nodeCensus = []censusRow{
 	// The routines, whose body is preserved verbatim. The node carries the
 	// dialect and the kind that selected it, and the visitor is handed both.
 	{node: &ast.DoBlockNode{}},
-	{node: &ast.MySQLRoutineNode{}},
 	{node: &ast.OpaqueRoutineNode{}},
-	{node: &ast.PostgresRoutineNode{}},
-	{node: &ast.SQLServerRoutineNode{}},
+	{node: &ast.RoutineNode{}},
 
 	// The remaining ALTER TABLE operations. Each is rendered inside the ALTER
 	// statement that carries it, and a renderer reached with one standing alone

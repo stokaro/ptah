@@ -146,8 +146,9 @@ type Statements struct {
 	DoBlocks string `json:"do_blocks,omitempty"`
 }
 
-// DoBlocksPLpgSQL is the [Statements.DoBlocks] language of PostgreSQL's
-// procedural blocks.
+// DoBlocksPLpgSQL is PL/pgSQL, the language of PostgreSQL's procedural
+// blocks, as [Statements.DoBlocks] and [RoutineGrammar.DefaultDoBlockLanguage]
+// name it.
 const DoBlocksPLpgSQL = "plpgsql"
 
 // DoBlockLanguages returns every declared [Statements.DoBlocks] value.

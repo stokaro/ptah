@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/sqlident"
@@ -777,35 +778,50 @@ func firstLine(sql string) string {
 // error message.
 const unmodeledStatementQuote = 80
 
-// appendRoutine records the routine nodes CREATE PROCEDURE parses to, and
-// reports whether it recognized one. A routine whose header states what the
-// model has no place for is refused; see [toSQLServerRoutine].
+// appendRoutine records the routine node a dialect's routine grammar parses a
+// routine to, and reports whether it recognized one. A routine whose header
+// states what the model has no place for is refused; see
+// [toSQLServerRoutine].
 //
-// Separate from the statement switch because three more cases took that
-// function past the cyclomatic threshold, and because these three answer one
-// question: CREATE FUNCTION reaches this package as a CreateFunctionNode and
-// CREATE PROCEDURE as whichever of these the dialect selected.
+// Separate from the statement switch because the routine's conversion depends
+// on the grammar that read it: CREATE FUNCTION reaches this package as a
+// CreateFunctionNode where the shared grammar reads it, and a routine a
+// dialect's routine grammar reads as a RoutineNode.
 //
 // The sentence above appendStatement already said a node with no case is
-// dropped in silence, and these three were missed anyway. A comment is read by
-// whoever is already thinking about the switch, which is never the person
-// adding a node kind (stokaro/ptah#932, stokaro/ptah#2435).
+// dropped in silence, and the routine nodes were missed anyway. A comment is
+// read by whoever is already thinking about the switch, which is never the
+// person adding a node kind (stokaro/ptah#932, stokaro/ptah#2435).
 func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
-	switch node := stmt.(type) {
-	case *ast.PostgresRoutineNode:
-		database.Functions = append(database.Functions, toPostgresRoutine(node, sourcePlatform))
-	case *ast.SQLServerRoutineNode:
-		function, err := toSQLServerRoutine(node, sourcePlatform)
-		if err != nil {
-			return true, err
-		}
-		database.Functions = append(database.Functions, function)
-	case *ast.MySQLRoutineNode:
-		database.Functions = append(database.Functions, toMySQLRoutine(node, sourcePlatform))
-	default:
+	node, isRoutine := stmt.(*ast.RoutineNode)
+	if !isRoutine {
 		return false, nil
 	}
+	function, err := toRoutine(node, sourcePlatform)
+	if err != nil {
+		return true, err
+	}
+	database.Functions = append(database.Functions, function)
 	return true, nil
+}
+
+// toRoutine converts a routine node by the routine grammar that read it, the
+// one the descriptor of the node's dialect states. The node's dialect, not
+// the read's, decides, because a statement list parsed as one dialect may be
+// converted with none. A node whose dialect states no routine grammar was not
+// read by one, and is refused.
+func toRoutine(node *ast.RoutineNode, sourcePlatform string) (schemamodel.Function, error) {
+	switch grammar := factsOf(node.Dialect).routines; grammar {
+	case descriptor.RoutineQuotedBody:
+		return toPostgresRoutine(node, sourcePlatform), nil
+	case descriptor.RoutineTransactSQL:
+		return toSQLServerRoutine(node, sourcePlatform)
+	case descriptor.RoutineCompoundStatement:
+		return toMySQLRoutine(node, sourcePlatform), nil
+	default:
+		return schemamodel.Function{}, fmt.Errorf("%w: the %s %s names dialect %q, whose descriptor states no routine grammar",
+			ErrUnmodeledStatement, node.Kind, node.Name, node.Dialect)
+	}
 }
 
 // appendPrivilegeDeclaration records the statements that declare access, and

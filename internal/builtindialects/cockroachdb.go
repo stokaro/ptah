@@ -177,7 +177,8 @@ func cockroachDB() descriptor.Dialect {
 		// v26.3.2 takes NOT VALID and MATCH FULL, refuses every deferral
 		// clause, and reads INDEX in a table body as an index only before a
 		// column list. An index may end with its visibility, which ALTER
-		// INDEX table@index changes.
+		// INDEX table@index changes. A DO block that writes no LANGUAGE is
+		// read as PL/pgSQL.
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
@@ -191,8 +192,9 @@ func cockroachDB() descriptor.Dialect {
 			Indexes:    descriptor.IndexGrammar{TrailingVisibility: true, Alter: descriptor.AlterIndexVisibility},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 			Routines: descriptor.RoutineGrammar{
-				Body:              descriptor.RoutineQuotedBody,
-				TriggerConditions: true,
+				Body:                   descriptor.RoutineQuotedBody,
+				TriggerConditions:      true,
+				DefaultDoBlockLanguage: descriptor.DoBlocksPLpgSQL,
 			},
 		},
 

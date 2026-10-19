@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+	"unicode"
 )
 
 // Grammar states where the engine's DDL grammar differs, as the shared DDL
@@ -315,6 +317,12 @@ type RoutineGrammar struct {
 	// TriggerStatementBody reports that a trigger's body may be one statement
 	// rather than a BEGIN ... END block.
 	TriggerStatementBody bool `json:"trigger_statement_body,omitempty"`
+	// DefaultDoBlockLanguage is the language of a DO block that writes no
+	// LANGUAGE clause, in lower case, such as plpgsql. The parser gives such a
+	// block this language. Empty leaves its language unknown. Only the
+	// [RoutineQuotedBody] grammar reads a DO block, so a registry refuses the
+	// field with any other.
+	DefaultDoBlockLanguage string `json:"default_do_block_language,omitempty"`
 }
 
 const (
@@ -365,7 +373,7 @@ func KeyVisibilityClauses() []string {
 // engine does not take.
 func (d Dialect) validateGrammar() error {
 	for _, check := range []func(Grammar) error{
-		validateColumnGrammar, validateConstraintGrammar, validateKeyGrammar, validateGrammarNames,
+		validateColumnGrammar, validateConstraintGrammar, validateKeyGrammar, validateGrammarNames, validateRoutineGrammar,
 	} {
 		if err := check(d.Grammar); err != nil {
 			return fmt.Errorf("%w: dialect %q: grammar: %w", ErrInvalidDescriptor, d.Name, err)
@@ -444,6 +452,24 @@ func validateGrammarNames(grammar Grammar) error {
 		}
 	}
 	return nil
+}
+
+// validateRoutineGrammar checks the default language of a DO block: it is
+// stated only with the grammar that reads a DO block, and in the form the
+// parser gives a block, one lower-case word.
+func validateRoutineGrammar(grammar Grammar) error {
+	language := grammar.Routines.DefaultDoBlockLanguage
+	switch {
+	case language == "":
+		return nil
+	case grammar.Routines.Body != RoutineQuotedBody:
+		return fmt.Errorf("default DO-block language %q is stated, and routine grammar %q reads no DO block",
+			language, grammar.Routines.Body)
+	case language != strings.ToLower(language) || strings.ContainsFunc(language, unicode.IsSpace):
+		return fmt.Errorf("default DO-block language %q is not one lower-case word", language)
+	default:
+		return nil
+	}
 }
 
 // validateWords refuses a word of words that is not one of allowed, and one

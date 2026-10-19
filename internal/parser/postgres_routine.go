@@ -56,7 +56,7 @@ func (p *Parser) parsePostgresDoStatement(statementStart int) (ast.Node, error) 
 	}
 
 	block := ast.NewDoBlock(sql)
-	body, language, err := parsePostgresDoBlockSQL(sql, p.postgresRoutineLexerOptions())
+	body, language, err := parsePostgresDoBlockSQL(sql, p.postgresRoutineLexerOptions(), p.target.grammar.Routines.DefaultDoBlockLanguage)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,10 @@ func (p *Parser) attachPostgresFunctionBody(function *ast.CreateFunctionNode) {
 	function.RoutineBody = &body
 }
 
-func parsePostgresDoBlockSQL(sql string, options lexer.Options) (ast.PostgresRoutineBody, string, error) {
+// parsePostgresDoBlockSQL reads a DO statement's body and its language: the
+// LANGUAGE clause the block writes, or defaultLanguage, the one the dialect's
+// descriptor states, where it writes none.
+func parsePostgresDoBlockSQL(sql string, options lexer.Options, defaultLanguage string) (ast.RoutineBody, string, error) {
 	tokens := tokenizePostgresRoutineSQL(sql, options)
 	bodyIdx := -1
 	language := ""
@@ -116,24 +119,24 @@ func parsePostgresDoBlockSQL(sql string, options lexer.Options) (ast.PostgresRou
 		}
 	}
 	if language == "" {
-		language = "plpgsql"
+		language = defaultLanguage
 	}
 	language = strings.ToLower(language)
 	if bodyIdx == -1 {
-		return ast.PostgresRoutineBody{Language: language}, language, nil
+		return ast.RoutineBody{Language: language}, language, nil
 	}
 
 	bodyToken := tokens[bodyIdx].Value
 	body, err := postgresRoutineBodyText(bodyToken, "DO", options)
 	if err != nil {
-		return ast.PostgresRoutineBody{}, "", err
+		return ast.RoutineBody{}, "", err
 	}
 	return parsePostgresRoutineBody(body, language, dollarQuoteDelimiter(bodyToken)), language, nil
 }
 
-func parsePostgresRoutineSQL(sql, dialect string, options lexer.Options, kind ast.RoutineKind) (*ast.PostgresRoutineNode, error) {
+func parsePostgresRoutineSQL(sql, dialect string, options lexer.Options, kind ast.RoutineKind) (*ast.RoutineNode, error) {
 	tokens := tokenizePostgresRoutineSQL(sql, options)
-	routine := ast.NewPostgresRoutine(sql, dialect, kind)
+	routine := ast.NewRoutine(sql, dialect, kind)
 	routine.Name, routine.Parameters = parsePostgresRoutineHeader(sql, tokens, strings.ToUpper(string(kind)))
 	security, settings, err := parsePostgresRoutineClauses(tokens, strings.ToUpper(string(kind)))
 	if err != nil {
@@ -359,8 +362,8 @@ func postgresRoutineStatementEnd(sql string, tokens []lexer.Token) int {
 // parsePostgresRoutineBody records a body as the routine writes it. What its
 // statements are is the PostgreSQL owner's to read (dialect/postgres/pgroutine),
 // through the runtime's routine body reader.
-func parsePostgresRoutineBody(sql, language, delimiter string) ast.PostgresRoutineBody {
-	return ast.PostgresRoutineBody{
+func parsePostgresRoutineBody(sql, language, delimiter string) ast.RoutineBody {
+	return ast.RoutineBody{
 		SQL:       sql,
 		Delimiter: delimiter,
 		Language:  strings.ToLower(language),

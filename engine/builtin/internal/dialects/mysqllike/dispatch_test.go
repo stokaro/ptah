@@ -28,14 +28,14 @@ type loweredRoutineRow struct {
 // TestVisitNode_ARoutineBodyReachesTheOutputVerbatim pins the lowering.
 //
 // A routine node carries a complete statement this renderer does not parse, so
-// the dispatcher hands the body to the raw-SQL handler. Five node kinds take
+// the dispatcher hands the body to the raw-SQL handler. Three node kinds take
 // that path, and one whose case is dropped reaches the default arm instead:
 // the render aborts where it would have emitted the routine.
 func TestVisitNode_ARoutineBodyReachesTheOutputVerbatim(t *testing.T) {
 	tests := []loweredRoutineRow{
 		{
-			kind: "MySQLRoutineNode",
-			node: &ast.MySQLRoutineNode{SQL: "CREATE FUNCTION f() RETURNS int DETERMINISTIC RETURN 1;"},
+			kind: "RoutineNode",
+			node: &ast.RoutineNode{SQL: "CREATE FUNCTION f() RETURNS int DETERMINISTIC RETURN 1;"},
 			want: "CREATE FUNCTION f() RETURNS int DETERMINISTIC RETURN 1;\n",
 		},
 		{
@@ -47,16 +47,6 @@ func TestVisitNode_ARoutineBodyReachesTheOutputVerbatim(t *testing.T) {
 			kind: "DoBlockNode",
 			node: &ast.DoBlockNode{SQL: "DO $$ BEGIN END $$"},
 			want: "DO $$ BEGIN END $$;\n",
-		},
-		{
-			kind: "PostgresRoutineNode",
-			node: &ast.PostgresRoutineNode{SQL: "CREATE PROCEDURE p() LANGUAGE sql AS $$ $$"},
-			want: "CREATE PROCEDURE p() LANGUAGE sql AS $$ $$;\n",
-		},
-		{
-			kind: "SQLServerRoutineNode",
-			node: &ast.SQLServerRoutineNode{SQL: "CREATE PROCEDURE p AS SELECT 1"},
-			want: "CREATE PROCEDURE p AS SELECT 1;\n",
 		},
 	}
 

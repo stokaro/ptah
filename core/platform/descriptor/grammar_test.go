@@ -70,9 +70,10 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			RoleIfNotExists:    true,
 		},
 		Routines: descriptor.RoutineGrammar{
-			Body:                 descriptor.RoutineTransactSQL,
-			TriggerConditions:    true,
-			TriggerStatementBody: true,
+			Body:                   descriptor.RoutineQuotedBody,
+			TriggerConditions:      true,
+			TriggerStatementBody:   true,
+			DefaultDoBlockLanguage: "plalpha",
 		},
 	}
 
@@ -195,6 +196,34 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "an undeclared routine body grammar",
 			dialect: with(func(g *descriptor.Grammar) { g.Routines.Body = "plpgsql" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: routine body grammar "plpgsql" is not one of .*`,
+		},
+		{
+			name: "a default DO-block language with a grammar that reads no DO block",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Routines = descriptor.RoutineGrammar{Body: descriptor.RoutineTransactSQL, DefaultDoBlockLanguage: "plalpha"}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default DO-block language "plalpha" is stated, ` +
+				`and routine grammar "transact-sql" reads no DO block`,
+		},
+		{
+			name:    "a default DO-block language with no routine grammar",
+			dialect: with(func(g *descriptor.Grammar) { g.Routines.DefaultDoBlockLanguage = "plalpha" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default DO-block language "plalpha" is stated, ` +
+				`and routine grammar "" reads no DO block`,
+		},
+		{
+			name: "an upper-case default DO-block language",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Routines = descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, DefaultDoBlockLanguage: "PLalpha"}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default DO-block language "PLalpha" is not one lower-case word`,
+		},
+		{
+			name: "a default DO-block language of two words",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Routines = descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, DefaultDoBlockLanguage: "pl alpha"}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default DO-block language "pl alpha" is not one lower-case word`,
 		},
 	}
 	for _, test := range tests {

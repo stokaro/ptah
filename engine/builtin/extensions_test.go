@@ -373,8 +373,14 @@ func TestExtensionPayloads_CoverSourceTypes(t *testing.T) {
 	}
 	slices.Sort(fixtures)
 
+	// A departure can merge engine-specific statements into a common AST node.
+	// Check that successor against the independent core node inventory too.
+	successorSources := slices.Clone(source)
+	for _, node := range nodes {
+		successorSources = append(successorSources, "ptah.run/core/ast."+node.Name)
+	}
 	for _, successor := range astrouteguard.Account(astrouteguard.Baseline(), astrouteguard.Departures(), nodes).Successors() {
-		c.Assert(source, qt.Contains, successor.String())
+		c.Assert(successorSources, qt.Contains, successor.String())
 	}
 	c.Assert(fixtures, qt.DeepEquals, source)
 }

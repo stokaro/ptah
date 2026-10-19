@@ -1266,7 +1266,7 @@ func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
 	}
 	function.SetBody(text)
 	if p.isPostgresRoutineDialect() {
-		function.RoutineBody = &ast.PostgresRoutineBody{Delimiter: dollarQuoteDelimiter(body)}
+		function.RoutineBody = &ast.RoutineBody{Delimiter: dollarQuoteDelimiter(body)}
 	}
 	p.advance()
 	return nil

@@ -2014,9 +2014,10 @@ type CreateFunctionNode struct {
 	Body string
 	// BodyKind specifies how Body should be rendered.
 	BodyKind FunctionBodyKind
-	// RoutineBody contains dialect-specific parser metadata for the function
-	// body. Rendering still uses Body and BodyKind.
-	RoutineBody *PostgresRoutineBody
+	// RoutineBody is the body as the routine grammar of the dialect read it,
+	// and nil where no routine grammar read the statement. Rendering still
+	// uses Body and BodyKind.
+	RoutineBody *RoutineBody
 	// Security specifies security attributes (e.g., "DEFINER", "INVOKER")
 	Security string
 	// Volatility specifies function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")

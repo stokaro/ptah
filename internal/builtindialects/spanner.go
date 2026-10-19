@@ -147,13 +147,15 @@ func spanner() descriptor.Dialect {
 		Reach:   postgresReach(),
 
 		// Grammar: how the shared DDL parser reads the engine's DDL. Statements,
-		// routines and triggers are read in the PostgreSQL family's grammar.
+		// routines and triggers are read in the PostgreSQL family's grammar,
+		// and a DO block that writes no LANGUAGE as PL/pgSQL.
 		Grammar: descriptor.Grammar{
 			Columns:    descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 			Routines: descriptor.RoutineGrammar{
-				Body:              descriptor.RoutineQuotedBody,
-				TriggerConditions: true,
+				Body:                   descriptor.RoutineQuotedBody,
+				TriggerConditions:      true,
+				DefaultDoBlockLanguage: descriptor.DoBlocksPLpgSQL,
 			},
 		},
 

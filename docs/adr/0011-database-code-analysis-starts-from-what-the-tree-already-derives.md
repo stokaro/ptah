@@ -50,30 +50,21 @@ The epic's Stage 0 asks whether Ptah models these. It does, on both sides of the
 comparison, which is the harder half: analysis wants the before-state and the
 after-state, and both are already representable in one type each.
 
-### 2.2 The parser already reaches inside a PL/pgSQL body
+### 2.2 Routine parsing has an owner boundary
 
-`internal/parser` does not stop at the routine header. A PostgreSQL routine body
-is parsed into `ast.PostgresRoutineBody`, which carries the language, the
-dollar-quote delimiter, and `Statements []PostgresRoutineStatement` — a
-statement list with a `Kind` that distinguishes, among others:
+`internal/parser` retains routine body text, its delimiter, and its language in
+`ast.RoutineBody`. This shared AST type carries no parsed body statements.
+`ast.RoutineNode` retains the complete routine statement and the header its
+source dialect's grammar reads.
 
-```text
-assignment  block  case  close  cursor  declaration  delete
-exception   execute  fetch  handler  if  insert  iterate
-```
+A host reads body statements through `core/routineext`. The PostgreSQL, MySQL,
+and SQL Server owners supply their readers in `dialect/postgres/pgroutine`,
+`dialect/mysql/mysqlroutine`, and `dialect/mssql/mssqlroutine`. The runtime's
+`ReadRoutineBodies` selects the reader for the source dialect.
 
-MySQL and SQL Server routines have their own frontends in the same package
-(`mysql_routine.go`, `mysql_routine_declare.go`, `sqlserver_routine.go`).
-
-So the "parser strategy" section of #1270 is not starting from zero. What is
-missing is a consumer. Measured by naming the types: `ast.PostgresRoutineBody`
-and `ast.PostgresRoutineStatement` appear in eight non-test files, and all eight
-either define them (`core/ast`), produce them (`internal/parser`, four files) or
-refuse a read that cannot see a body at all
-(`internal/dbschema/mysql/reader.go`, which names the type only to say
-`hiddenRoutineBodyError` when the connected account cannot see the routine
-source). **Nothing reads the statements.** They are produced and no analysis
-looks at them.
+Database-code analysis can consume that boundary without adding engine-specific
+body types to the shared AST. This boundary does not lift #1270's post-GA
+implementation freeze.
 
 ### 2.3 The findings model exists and is already used
 

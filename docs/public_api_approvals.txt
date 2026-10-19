@@ -811,3 +811,11 @@ v0.13.0 ptah.run/migration/generator
 # construct rather than one engine. The fields are unchanged. Pre-v1, so no
 # compatibility is owed.
 v0.13.0 ptah.run/core/ast
+
+# #4692 replaces PostgresRoutineNode, MySQLRoutineNode and SQLServerRoutineNode
+# with RoutineNode, and their body types with RoutineBody. RoutineOption holds
+# MySQL characteristics and SQL Server options. The SQL Server Form field is
+# derived from Kind and Returns and has no production reader. Constructors and
+# callers use the common types without aliases. Pre-v1, so no compatibility is
+# owed.
+v0.13.0 ptah.run/core/ast

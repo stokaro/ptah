@@ -5100,3 +5100,19 @@ reviewed change:
 
 Do not weaken the CI checks, broaden exclusions, or silently remove packages
 from the stable list to hide an API change.
+
+### Routine AST and DO-block language
+
+`ast.RoutineNode` keeps a parsed function or procedure's complete SQL and
+recovered header. `Dialect` names the normalized source dialect. Its
+`Grammar.Routines.Body` selects the grammar that reads the header. `Options`
+keeps header clauses in source order; `RoutineOption.Read` reports that a
+syntax owner consumed a clause into `Facets`. `ast.RoutineBody` carries the
+body text, its delimiter, and its language where known. Renderers emit the
+node's complete SQL.
+
+`Grammar.Routines.DefaultDoBlockLanguage` states the language of a DO block
+that omits `LANGUAGE`. It is valid only with the quoted-body routine grammar.
+An explicit `LANGUAGE` clause takes precedence. An empty default means that
+the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
+Spanner state `plpgsql`.

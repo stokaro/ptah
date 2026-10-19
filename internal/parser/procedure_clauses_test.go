@@ -10,10 +10,10 @@ import (
 )
 
 // procedureOf returns the single PostgreSQL CREATE PROCEDURE a parse produced.
-func procedureOf(c *qt.C, statements *ast.StatementList) *ast.PostgresRoutineNode {
+func procedureOf(c *qt.C, statements *ast.StatementList) *ast.RoutineNode {
 	c.Helper()
 	for _, node := range statements.Statements {
-		if routine, ok := node.(*ast.PostgresRoutineNode); ok {
+		if routine, ok := node.(*ast.RoutineNode); ok {
 			return routine
 		}
 	}

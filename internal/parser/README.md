@@ -132,6 +132,12 @@ func main() {
 }
 ```
 
+A parsed procedure or a routine whose grammar keeps its complete statement
+uses `ast.RoutineNode`. Its `Dialect` names the normalized source dialect;
+the descriptor's `Grammar.Routines.Body` selects its grammar. `Options` keeps
+header clauses in source order, with `Read` recording those a syntax owner
+consumes into `Facets`. All routine bodies use `ast.RoutineBody`.
+
 ### Dialect-Aware Parsing
 
 `parser.NewParser(sql)` keeps the compatibility-oriented best-effort behavior
@@ -168,17 +174,17 @@ specific to the selected SQL family without turning the generic DDL parser into
 a stored-procedure sub-language parser.
 
 MySQL and MariaDB dialect mode parses a routine header into
-`ast.MySQLRoutineNode` and keeps the body as its text. This package does not
+`ast.RoutineNode` and keeps the body as its text. This package does not
 split a MySQL body into statements. The MySQL owner does
 (`dialect/mysql/mysqlroutine`), through the runtime's routine body reader
 (`core/routineext`).
 
 PostgreSQL-family dialect mode keeps `CREATE FUNCTION` rendering on
-`ast.CreateFunctionNode`, but attaches parser-only `PostgresRoutineBody`
+`ast.CreateFunctionNode`, but attaches parser-only `ast.RoutineBody`
 metadata for quoted, SQL-standard `RETURN`, and `BEGIN ATOMIC` bodies: the
 body text, its dollar-quote delimiter and its language.
 In a dialect whose descriptor states the quoted-body routine grammar,
-`CREATE PROCEDURE` becomes `ast.PostgresRoutineNode` and a `DO` block becomes
+`CREATE PROCEDURE` becomes `ast.RoutineNode` and a `DO` block becomes
 `ast.DoBlockNode`. Every other dialect reads a `DO` block as raw SQL. Both
 nodes render through the raw-SQL visitor contract.
 This package does not split a PostgreSQL body into statements. The PostgreSQL
@@ -195,7 +201,7 @@ replay remains a separate execution path with disposable-server checks.
 
 SQL Server dialect mode parses `CREATE [OR ALTER] FUNCTION`,
 `CREATE [OR ALTER] PROCEDURE`, and `CREATE PROC` through a T-SQL routine layer.
-The parser preserves the executable statement in `ast.SQLServerRoutineNode.SQL`,
+The parser preserves the executable statement in `ast.RoutineNode.SQL`,
 strips line-scoped client `GO` batch separators from the node, and records
 routine metadata for scalar functions, inline table-valued functions,
 multi-statement table-valued functions, and procedures. `Returns` is the raw
@@ -203,7 +209,7 @@ fragment between `RETURNS` and the body `AS`, so SQL Server routine options
 inside that fragment are preserved even when they are not structurally modeled
 yet.
 
-The body is kept as its text in `ast.SQLServerRoutineBody`. This package does
+The body is kept as its text in `ast.RoutineBody`. This package does
 not split it into statements: the SQL Server owner does
 (`dialect/mssql/mssqlroutine`), through the runtime's routine body reader
 (`core/routineext`). Whether a `BEGIN` opens a block and an `END` closes one is
