@@ -80,6 +80,17 @@ type ConstraintNaming string
 // PostgreSQL's naming.
 const ConstraintNamingTableColumnsSuffix ConstraintNaming = "table-columns-suffix"
 
+// ForeignKeyNaming is how a server names a foreign key a schema file leaves
+// unnamed, and the index it builds for the key.
+type ForeignKeyNaming string
+
+// ForeignKeyNamingTableNumbered names an unnamed foreign key
+// `<table>_ibfk_<n>`, numbered by the statement that declares it, and builds
+// the key an index of its own where no index covers the key, named after the
+// key's first column by the rule [IndexNaming] states: the MySQL family's
+// naming, as internal/mysqlname measures it.
+const ForeignKeyNamingTableNumbered ForeignKeyNaming = "table-numbered"
+
 // Columns states how a server reads a column definition.
 type Columns struct {
 	// IdentityNotNull reports that an identity column is NOT NULL whether or
@@ -149,6 +160,30 @@ func (d Dialect) validateNames() error {
 	}
 	if naming := d.CheckNaming; naming != "" && !slices.Contains(CheckNamings(), naming) {
 		return fmt.Errorf("%w: dialect %q: check naming %q is not one of %q", ErrInvalidDescriptor, d.Name, naming, CheckNamings())
+	}
+	return d.validateForeignKeyNaming()
+}
+
+// validateForeignKeyNaming checks ForeignKeyNaming and the fields it depends
+// on. A dialect that names a foreign key here does not name it again through
+// ConstraintNaming, and the index it builds for the key is named by
+// IndexNaming, so a reader would ignore half of a naming stated without it.
+func (d Dialect) validateForeignKeyNaming() error {
+	naming := d.ForeignKeyNaming
+	if naming == "" {
+		return nil
+	}
+	if naming != ForeignKeyNamingTableNumbered {
+		return fmt.Errorf("%w: dialect %q: foreign key naming %q is not %q",
+			ErrInvalidDescriptor, d.Name, naming, ForeignKeyNamingTableNumbered)
+	}
+	if d.ConstraintNaming != "" {
+		return fmt.Errorf("%w: dialect %q: foreign key naming %q and constraint naming %q both name an unnamed foreign key",
+			ErrInvalidDescriptor, d.Name, naming, d.ConstraintNaming)
+	}
+	if d.IndexNaming.MaxBytes == 0 {
+		return fmt.Errorf("%w: dialect %q: foreign key naming %q names the index a key builds, and the index naming states no rule",
+			ErrInvalidDescriptor, d.Name, naming)
 	}
 	return nil
 }

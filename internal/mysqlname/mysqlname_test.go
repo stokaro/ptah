@@ -144,31 +144,6 @@ func TestIsUnnamedKeyIndexName_FailurePath(t *testing.T) {
 	}
 }
 
-// TestNamesForeignKeys_HappyPath covers the dialects the rules were measured
-// on: MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 name an unnamed key
-// `<table>_ibfk_<n>` and its index after the key's first column alike.
-func TestNamesForeignKeys_HappyPath(t *testing.T) {
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB, "MariaDB"} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(mysqlname.NamesForeignKeys(dialect), qt.IsTrue)
-		})
-	}
-}
-
-// TestNamesForeignKeys_FailurePath keeps the rules off the engines that name
-// an unnamed key another way or keep no name.
-func TestNamesForeignKeys_FailurePath(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.SQLServer, ""} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(mysqlname.NamesForeignKeys(dialect), qt.IsFalse)
-		})
-	}
-}
-
 // TestClauseIndexNamesKey pins the one rule the engines disagree on. Measured,
 // `FOREIGN KEY idx_c_p (p_id) REFERENCES p(id)` names the key `idx_c_p` on
 // MariaDB 11.8.9 and `c_ibfk_1` on MySQL 8.4.11 and 26.7.0.
@@ -277,8 +252,8 @@ func TestIsNumberedForeignKeyName_FailurePath(t *testing.T) {
 }
 
 // TestIsServerForeignKeyName covers the names the comparison reads as the
-// server's own for an unnamed key of `c`: either scheme on MariaDB, the older
-// one on MySQL, and neither on an engine the package does not speak for.
+// server's own for an unnamed key of `c`: either scheme on MariaDB, and the
+// older one on MySQL.
 func TestIsServerForeignKeyName(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -291,7 +266,6 @@ func TestIsServerForeignKeyName(t *testing.T) {
 		{name: "MariaDB, the table's scheme", dialect: platform.MariaDB, key: "c_ibfk_1", want: true},
 		{name: "MariaDB, a number", dialect: platform.MariaDB, key: "1", want: true},
 		{name: "MariaDB, a name of the author's", dialect: platform.MariaDB, key: "fk_c", want: false},
-		{name: "SQLite", dialect: platform.SQLite, key: "c_ibfk_1", want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

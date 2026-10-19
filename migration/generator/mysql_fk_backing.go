@@ -7,9 +7,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/indexscope"
-	"ptah.run/internal/mysqlname"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -54,9 +54,10 @@ func addMySQLFamilyForeignKeyBackingIndexRemovals(
 	dialect string,
 	forwardNodes []ast.Node,
 ) error {
-	// The engines whose server builds and names an index for a foreign key
-	// are the ones the SQL reader and the comparison model that way.
-	if !mysqlname.NamesForeignKeys(dialect) {
+	// An engine whose server builds a foreign key an index named after the
+	// key's first column states it in its descriptor, and the SQL reader and
+	// the comparison read the same field.
+	if described, _ := platform.Lookup(dialect); described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered {
 		return nil
 	}
 

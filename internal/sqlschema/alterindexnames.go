@@ -95,7 +95,7 @@ func nameAddedMySQLIndex(target alterTarget, column string) (string, error) {
 // UNIQUE, and each column's own UNIQUE, which the server names after its
 // column. The index the server built for a foreign key is in the namespace too,
 // and the document records it under the name the server gave it; see
-// [keyIndex]. Measured on every engine [mysqlname.NamesForeignKeys] answers
+// [keyIndex]. Measured on every engine [numbersForeignKeys] answers
 // for, with `FK (x)` standing for `FOREIGN KEY (x) REFERENCES p(id)`:
 //
 //	the table holds                ALTER TABLE c ...    names

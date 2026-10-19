@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
@@ -29,7 +30,11 @@ func Rules(dialect string) schemacomparison.Rules {
 	return schemacomparison.Rules{
 		Indexes:              Indexes{dialect: dialect},
 		GeneratedExpressions: GeneratedExpressions{},
-		ForeignKeyIndexes:    ForeignKeyIndexes{dialect: dialect, descendingCovers: described.IndexNaming.DescendingCovers},
+		ForeignKeyIndexes: ForeignKeyIndexes{
+			dialect:          dialect,
+			numbersKeys:      described.ForeignKeyNaming == descriptor.ForeignKeyNamingTableNumbered,
+			descendingCovers: described.IndexNaming.DescendingCovers,
+		},
 	}
 }
 
@@ -166,6 +171,11 @@ func (GeneratedExpressions) Spelling(expression string) string {
 // ForeignKeyIndexes finds the index MySQL or MariaDB built for a foreign key.
 type ForeignKeyIndexes struct {
 	dialect string
+	// numbersKeys is whether the descriptor's ForeignKeyNaming is
+	// descriptor.ForeignKeyNamingTableNumbered: the server names a key
+	// written without a name by the rules of [mysqlname], and the index it
+	// builds for the key after the key's first column.
+	numbersKeys bool
 	// descendingCovers is the descriptor's IndexNaming.DescendingCovers: an
 	// index whose leading parts descend can still back a key.
 	descendingCovers bool
@@ -263,7 +273,7 @@ func (f ForeignKeyIndexes) engineCouldNameIndex(
 	if identifiersEqual(semantics, index.Name, key.Name) {
 		return true
 	}
-	if !mysqlname.IsServerForeignKeyName(f.dialect, key.TableName, key.Name) {
+	if !f.numbersKeys || !mysqlname.IsServerForeignKeyName(f.dialect, key.TableName, key.Name) {
 		return false
 	}
 	return mysqlname.IsUnnamedKeyIndexName(firstColumn, index.Name, func(a, b string) bool {

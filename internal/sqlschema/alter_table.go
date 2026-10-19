@@ -55,7 +55,7 @@ type alterTarget struct {
 // the first and not the second.
 type alterStatement struct {
 	// nextForeignKey is the number the next unnamed foreign key of the
-	// statement takes, on an engine [mysqlname.NamesForeignKeys] speaks for.
+	// statement takes, on an engine [numbersForeignKeys] answers for.
 	nextForeignKey int
 	// nextCheck is the number the next unnamed CHECK of the statement takes
 	// on MySQL. MySQL counts the CHECKs the table holds once the statement's

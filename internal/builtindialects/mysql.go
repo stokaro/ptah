@@ -268,6 +268,12 @@ func mysql() descriptor.Dialect {
 		// A database carries a character set and a collation, which a schema
 		// read fills in where the reader did not describe them.
 		SchemaAttributesQuery: mysqlSchemaAttributes,
+
+		// Foreign key naming: what the SQL reader, the comparison and the
+		// generator's backing index cleanup read. Measured on 8.4.11 and
+		// 26.7.0, `FOREIGN KEY (p_id) REFERENCES p(id)` on `c` holds
+		// `c_ibfk_1` over an index called `p_id`.
+		ForeignKeyNaming: descriptor.ForeignKeyNamingTableNumbered,
 	}
 }
 

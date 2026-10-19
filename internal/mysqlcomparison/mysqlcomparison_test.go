@@ -147,7 +147,9 @@ func foreignKey(name string) catalog.Constraint {
 // foreign key from two signals, the name the server could have given it and
 // the leading columns, and finds none where another index already covers the
 // key. A descending leading part covers a key on MariaDB and not on MySQL,
-// measured on MySQL 8.4.11 and MariaDB 11.8.9.
+// measured on MySQL 8.4.11 and MariaDB 11.8.9. A name reads as the server's
+// only where the dialect's descriptor states the naming
+// (descriptor.ForeignKeyNamingTableNumbered).
 func TestForeignKeyIndexes_BackingIndexes(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -176,6 +178,13 @@ func TestForeignKeyIndexes_BackingIndexes(t *testing.T) {
 			key:     foreignKey("children_ibfk_1"),
 			indexes: []catalog.Index{{Name: "a", TableName: "children", Columns: []string{"a"}}},
 			want:    []string{"a"},
+		},
+		{
+			name:    "an engine whose descriptor names no unnamed key reads the name as the author's",
+			dialect: "sqlite",
+			key:     foreignKey("children_ibfk_1"),
+			indexes: []catalog.Index{{Name: "a", TableName: "children", Columns: []string{"a"}}},
+			want:    nil,
 		},
 		{
 			name:    "a key the author named builds no column-named index",

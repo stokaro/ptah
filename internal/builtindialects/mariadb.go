@@ -256,5 +256,10 @@ func mariaDB() descriptor.Dialect {
 		CleanCheck: descriptor.CleanCheck{Adoption: true, Dev: true},
 		// A database carries a character set and a collation, as on MySQL.
 		SchemaAttributesQuery: mysqlSchemaAttributes,
+
+		// Foreign key naming: as MySQL, measured on 11.8.9. From 12.1 the
+		// server writes the key's number alone, `1`, which
+		// internal/mysqlname reads as the same key.
+		ForeignKeyNaming: descriptor.ForeignKeyNamingTableNumbered,
 	}
 }

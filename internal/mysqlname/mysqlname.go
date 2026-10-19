@@ -14,7 +14,9 @@
 // The rules were measured on MySQL 8.4.11, MySQL 26.7.0 and MariaDB 11.8.9,
 // and the cut of a long index name on MySQL 9.7.2. The engines agree on every
 // rule here except the two [ClauseIndexNamesKey] and [IsUnnamedKeyIndexName]
-// state. [NamesForeignKeys] says which dialects the package speaks for.
+// state. The package speaks for a dialect whose descriptor states
+// descriptor.ForeignKeyNamingTableNumbered as its ForeignKeyNaming, and a
+// caller reads the descriptor before it asks the package.
 //
 // MariaDB changed the name at 12.1 and kept the numbering. Measured on
 // 10.11.19, 11.4.13, 11.8.9 and 12.0.2, an unnamed key is `<table>_ibfk_<n>`;
@@ -45,20 +47,6 @@ const foreignKeyLabel = "_ibfk_"
 // and a 64-character `_10`. MariaDB does not cut the name; see
 // [IsUnnamedKeyIndexName].
 const IndexBaseBytes = 61
-
-// NamesForeignKeys reports whether a source of dialect names an unnamed foreign
-// key and its backing index by the rules of this package: MySQL and MariaDB.
-//
-// The SQL reader and the schema comparison both ask it, so the set of engines
-// the rule speaks for is decided once.
-func NamesForeignKeys(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
-}
 
 // ClauseIndexNamesKey reports whether the identifier the MySQL family allows
 // between FOREIGN KEY and its column list names the key itself on dialect.
@@ -206,11 +194,10 @@ func IsNumberedForeignKeyName(dialect, name string) bool {
 
 // IsServerForeignKeyName reports whether name is one the server of dialect
 // could have given a foreign key of table that the statement left unnamed, in
-// either scheme the package describes.
+// either scheme the package describes. It answers for a server that names
+// unnamed keys by this package's rules; the caller asks the dialect's
+// descriptor whether its server does.
 func IsServerForeignKeyName(dialect, table, name string) bool {
-	if !NamesForeignKeys(dialect) {
-		return false
-	}
 	return IsForeignKeyName(table, name) || IsNumberedForeignKeyName(dialect, name)
 }
 
