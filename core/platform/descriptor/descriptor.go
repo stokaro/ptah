@@ -130,6 +130,10 @@ type Dialect struct {
 	// Schemas states what a schema is on the engine and how a database URL
 	// selects one.
 	Schemas Schemas `json:"schemas,omitzero"`
+	// SystemSchemas states the schemas a PostgreSQL-family engine owns
+	// beyond the ones every member of the family owns, as
+	// internal/pgsystemschema reads them; see systemschemas.go.
+	SystemSchemas SystemSchemas `json:"system_schemas,omitzero"`
 	// Roles states which of the roles Ptah manages a schema read leaves out of
 	// a description, and whether that can be widened.
 	Roles Roles `json:"roles,omitzero"`
@@ -487,6 +491,9 @@ func (d Dialect) validate() error {
 		return err
 	}
 	if err := d.validateCleanCheck(); err != nil {
+		return err
+	}
+	if err := d.validateSystemSchemas(); err != nil {
 		return err
 	}
 	return nil

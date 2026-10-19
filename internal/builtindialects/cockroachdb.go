@@ -205,5 +205,16 @@ func cockroachDB() descriptor.Dialect {
 		// does not open cockroachdb://, and its `migrate apply` gate was never
 		// measured here, so Ptah does not refuse an adoption.
 		CleanCheck: descriptor.CleanCheck{Dev: true, ConnectedSchema: true},
+
+		// System schemas: what internal/pgsystemschema reads. CockroachDB
+		// exposes crdb_internal through the PostgreSQL catalog surface, but its
+		// virtual relations are not ordinary user tables and the PostgreSQL
+		// reader cannot inspect them as comparison input, so a read leaves the
+		// schema out and a document may not hold it. Matching is exact: a
+		// quoted CRDB_INTERNAL is the user's.
+		SystemSchemas: descriptor.SystemSchemas{
+			Catalog:  []string{"crdb_internal"},
+			Reserved: []string{"crdb_internal"},
+		},
 	}
 }
