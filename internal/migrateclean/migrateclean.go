@@ -194,9 +194,8 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs fun
 	}
 	defer func() { _ = rows.Close() }()
 
-	namesOnly := engine.Schemas.Selection == descriptor.SchemaSelectionSingle
 	for rows.Next() {
-		schema, name, scanErr := scanProbeRow(namesOnly, rows)
+		schema, name, scanErr := scanProbeRow(engine.Schemas.Selection, rows)
 		if scanErr != nil {
 			return Scope{}, fmt.Errorf("clean check: %w", scanErr)
 		}
@@ -522,9 +521,10 @@ type probeRow interface {
 }
 
 // scanProbeRow reads one row of a table probe: the table's schema and name, or
-// its name alone where namesOnly says the probe selects no schema.
-func scanProbeRow(namesOnly bool, row probeRow) (schema, name string, err error) {
-	if namesOnly {
+// its name alone on an engine with one namespace, whose probe selects no
+// schema.
+func scanProbeRow(selection descriptor.SchemaSelection, row probeRow) (schema, name string, err error) {
+	if selection == descriptor.SchemaSelectionSingle {
 		if err := row.Scan(&name); err != nil {
 			return "", "", err
 		}
