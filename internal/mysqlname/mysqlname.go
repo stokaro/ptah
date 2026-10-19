@@ -273,7 +273,7 @@ func IndexName(baseBytes int, base string, taken func(string) bool) string {
 
 // indexBase is the part of a column name a server keeps before it appends a
 // number: its first bytes, cut on a character boundary, or the whole name
-// where bytes is zero or the name is no longer.
+// where bytes is zero or the name fits in that many bytes.
 func indexBase(column string, bytes int) string {
 	if bytes <= 0 || len(column) <= bytes {
 		return column
