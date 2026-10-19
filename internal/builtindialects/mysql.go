@@ -159,6 +159,8 @@ func mysql() descriptor.Dialect {
 			RoutineTypeAliases:       "mysqlroutine",
 			ViewPredicatesAsIntegers: true,
 			AutoIncrementFlag:        true,
+			// A whole server compares its databases too.
+			ServerDatabases: true,
 		},
 
 		// An enum column is the ENUM column type, and a serial type is the

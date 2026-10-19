@@ -2179,19 +2179,35 @@ it declares, compares a column's sequence start and increment on a target with
 `capability.SerialSequenceOptions`, and reads a default the catalog reports as a
 typed literal back as its value.
 
-`Rules.Indexes` compares an index's kind and build settings, and a
-target that registers it has the whole index definition compared; it also says
-which facet kinds an index rename keeps, and without it an index carrying any
-facet is dropped and built again rather than renamed. `Rules.Views` compares
-view and materialized view queries in place of the shared reading.
+The index rules decide when an index is the declared one:
+
+- `Rules.Indexes` compares an index's kind and build settings, and a target
+  that registers it has the whole index definition compared. It also says which
+  facet kinds an index rename keeps; without it an index carrying any facet is
+  dropped and built again rather than renamed.
+- `Rules.IndexDefinitions` decides alone whether an index is rebuilt, in place
+  of the shared comparison of uniqueness and keys and of `Rules.Indexes`, for a
+  target whose index has no uniqueness or whose key is one expression. A target
+  that registers neither has its indexes compared by name.
+- `Rules.IndexPredicates` removes the decorations a target's catalog adds to a
+  partial index's predicate before the shared reading compares it.
+- `Rules.ForeignKeyIndexes` finds the index the server builds for a foreign
+  key, on a target whose descriptor states `Comparison.ForeignKeyBackingIndex`,
+  so the comparison does not drop it.
+
+`Rules.GeneratedExpressions` gives a generated column's expression the spelling
+both sides share on the target, and a reported change quotes that spelling.
+`Rules.Views` compares view and materialized view queries in place of the
+shared reading.
+
 `Rules.Routines` states the language and the security mode the target applies
 to a routine that declares none, and the shared comparison reads an omitted
 value as the target's on both sides, while the diff keeps the declaration as
-written;
-`RoutineDefaults` is a `Routines` that answers with its own values. A nil member
-keeps the shared rule, and a typed-nil member is an invalid registration.
-`Runtime.ComparisonRules` returns a target's rules under any of its names, and
-refuses an unregistered target with `ptaherr.ErrUnsupportedDialect`.
+written; `RoutineDefaults` is a `Routines` that answers with its own values. A
+nil member keeps the shared rule, and a typed-nil member is an invalid
+registration. `Runtime.ComparisonRules` returns a target's rules under any of
+its names, and refuses an unregistered target with
+`ptaherr.ErrUnsupportedDialect`.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete

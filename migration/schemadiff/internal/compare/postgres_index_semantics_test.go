@@ -365,7 +365,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			database := &catalog.Database{Indexes: []catalog.Index{test.database}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, platform.Postgres)
+			compare.IndexesWithDialect(desired, database, diff, platform.Postgres, builtinRules(c, platform.Postgres))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 				{Name: "i", TableName: postgresIndexTable},
@@ -575,7 +575,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			database := &catalog.Database{Indexes: []catalog.Index{test.database}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, platform.Postgres)
+			compare.IndexesWithDialect(desired, database, diff, platform.Postgres, builtinRules(c, platform.Postgres))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
@@ -612,7 +612,7 @@ func TestPostgresIndexSemantics_ChangeStaysInItsOwnSchema(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.IndexesWithDialect(desired, database, diff, platform.Postgres)
+	compare.IndexesWithDialect(desired, database, diff, platform.Postgres, builtinRules(c, platform.Postgres))
 
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "i", TableName: "app.t"},
@@ -638,7 +638,10 @@ func TestPostgresIndexSemantics_ChangeStaysInItsOwnSchema(t *testing.T) {
 // rather than a guess borrowed from PostgreSQL. It reacts for its own reason,
 // which TestIndexes_MariaDBAccessMethod_FailurePath asserts, and the isolation
 // this control exists for is unchanged: MySQL stays in the list because its
-// catalog records the clause only on MEMORY (stokaro/ptah#2834).
+// catalog records the clause only on MEMORY (stokaro/ptah#2834). CockroachDB
+// left it for the same reason as MariaDB: its own rules compare the access
+// method its reader reports (stokaro/ptah#4649). Each row compares with the
+// rules the built-in runtime registers for its dialect.
 func TestPostgresIndexSemantics_OtherDialectsAreUnaffected(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -647,7 +650,6 @@ func TestPostgresIndexSemantics_OtherDialectsAreUnaffected(t *testing.T) {
 		{name: "mysql", dialect: platform.MySQL},
 		{name: "sqlite", dialect: platform.SQLite},
 		{name: "clickhouse", dialect: platform.ClickHouse},
-		{name: "cockroachdb", dialect: platform.CockroachDB},
 		{name: "yugabytedb", dialect: platform.YugabyteDB},
 		{name: "spanner", dialect: platform.Spanner},
 		{name: "unset dialect", dialect: ""},
@@ -668,7 +670,7 @@ func TestPostgresIndexSemantics_OtherDialectsAreUnaffected(t *testing.T) {
 			}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, test.dialect)
+			compare.IndexesWithDialect(desired, database, diff, test.dialect, builtinRules(c, test.dialect))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)

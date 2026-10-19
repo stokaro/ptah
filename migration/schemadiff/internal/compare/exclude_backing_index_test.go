@@ -97,7 +97,7 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, "postgres")
+			compare.IndexesWithDialect(desired, database, diff, "postgres", builtinRules(c, "postgres"))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, test.wantAdditions)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, test.wantRemovals)

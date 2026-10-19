@@ -80,7 +80,7 @@ func TestIndexes_ForeignKeyBackingIndexIdempotency(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, "mysql")
+			compare.IndexesWithDialect(desired, database, diff, "mysql", builtinRules(c, "mysql"))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
@@ -161,7 +161,7 @@ func TestIndexes_ForeignKeyBackingIndexDrift(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, "mysql")
+			compare.IndexesWithDialect(desired, database, diff, "mysql", builtinRules(c, "mysql"))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
@@ -199,7 +199,7 @@ func TestIndexes_ForeignKeyBackingIndexDialects(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, test.dialect)
+			compare.IndexesWithDialect(desired, database, diff, test.dialect, builtinRules(c, test.dialect))
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)

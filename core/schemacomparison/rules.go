@@ -8,6 +8,7 @@ package schemacomparison
 
 import (
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
@@ -20,6 +21,15 @@ type Rules struct {
 	Columns Columns
 	// Indexes compares index definitions.
 	Indexes Indexes
+	// IndexDefinitions compares whole index definitions, in place of the
+	// shared comparison of an index's uniqueness and keys and of Indexes.
+	IndexDefinitions IndexDefinitions
+	// IndexPredicates reads the predicates of partial indexes.
+	IndexPredicates IndexPredicates
+	// ForeignKeyIndexes finds the indexes the server builds for foreign keys.
+	ForeignKeyIndexes ForeignKeyIndexes
+	// GeneratedExpressions reads the expressions of generated columns.
+	GeneratedExpressions GeneratedExpressions
 	// Views compares the queries of views and materialized views.
 	Views Views
 	// Routines gives a routine the attributes the target applies where its
@@ -60,16 +70,69 @@ type Columns interface {
 type Indexes interface {
 	// OptionsEqual reports whether current holds the index options desired
 	// declares: its kind and the settings fixed when the index is built. A
-	// target that registers it has the whole definition compared, its
-	// uniqueness, key parts and covered columns included, and an index whose
-	// definition differs is dropped and built again. It must not modify
-	// either index.
+	// target that registers it, and no [IndexDefinitions], has the whole
+	// definition compared, its uniqueness, key parts and covered columns
+	// included, and an index whose definition differs is dropped and built
+	// again. A key the catalog could not read whole
+	// ([catalog.Index.KeyPartsIncomplete]) is compared by the names it was
+	// read with, in order. It must not modify either index.
 	OptionsEqual(desired schemamodel.Index, current catalog.Index) bool
 	// RenameCarries reports whether an index renamed in place keeps a facet
 	// of kind, so that the comparison may pair a dropped and an added index
 	// as a rename. Without it, an index that carries any facet is dropped and
 	// built again rather than renamed.
 	RenameCarries(kind schemaext.Kind) bool
+}
+
+// IndexDefinitions compares the index definitions of a target whose index the
+// shared comparison of uniqueness and keys cannot read, such as an index that
+// has no uniqueness or whose key is a single expression.
+type IndexDefinitions interface {
+	// DefinitionChanged reports whether current, the index the catalog
+	// reports under the name desired declares, has to be dropped and desired
+	// built in its place. The shared comparison asks it after its own
+	// comparison of the predicate, the NULLS DISTINCT setting and the covered
+	// columns finds no difference, and compares nothing else of the
+	// definition: not the uniqueness, not the keys and not
+	// [Indexes.OptionsEqual]. desired carries the key expression a server
+	// reported for its declaration, where one was asked. semantics are the
+	// identifier rules of the comparison. It must not modify either index.
+	DefinitionChanged(desired schemamodel.Index, current catalog.Index, semantics identifier.Semantics) bool
+}
+
+// IndexPredicates reads the predicate of a partial index on one target.
+type IndexPredicates interface {
+	// Spelling returns predicate, as a declaration or the catalog writes it,
+	// without the decorations the target's catalog adds to a predicate it
+	// stores, such as the quoting it puts around every name. The shared
+	// comparison then compares the two sides as it compares CHECK
+	// expressions, without case, spacing or redundant parentheses.
+	Spelling(predicate string) string
+}
+
+// ForeignKeyIndexes finds the indexes the server of one target builds for its
+// foreign keys. Such an index is the key's: no declaration names it, and a
+// plan must not drop it while the key needs it.
+type ForeignKeyIndexes interface {
+	// BackingIndexes returns the indexes of current the server built for
+	// key, a foreign key current reports, or none. The shared comparison asks
+	// it on a target whose descriptor states
+	// [ptah.run/core/platform/descriptor.Comparison.ForeignKeyBackingIndex],
+	// and compares an index a declaration names as an index whatever it
+	// answers. semantics are the identifier rules of the comparison. It must
+	// not modify current.
+	BackingIndexes(current *catalog.Database, key catalog.Constraint, semantics identifier.Semantics) []catalog.Index
+}
+
+// GeneratedExpressions reads the expression of a generated column on one
+// target.
+type GeneratedExpressions interface {
+	// Spelling returns expression, the expression of a generated column as a
+	// declaration or the catalog writes it, in the spelling every way of
+	// writing one expression shares on the target. The shared comparison
+	// removes surrounding space and redundant outer parentheses first, then
+	// compares the two spellings, and a change it reports quotes them.
+	Spelling(expression string) string
 }
 
 // Views compares view queries on one target.

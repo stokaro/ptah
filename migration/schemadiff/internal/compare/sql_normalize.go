@@ -4,12 +4,6 @@ import (
 	"strings"
 )
 
-func replaceSQLFunctionOutsideSingleQuotedSQL(value, old, replacement string) string {
-	return replaceOutsideSingleQuotedSQL(value, old, replacement, func(value string, start int) bool {
-		return start == 0 || !isSQLIdentifierByte(value[start-1])
-	})
-}
-
 func replaceSQLLiteralOutsideSingleQuotedSQL(value, old, replacement string) string {
 	return replaceOutsideSingleQuotedSQL(value, old, replacement, func(value string, start int) bool {
 		end := start + len(old)

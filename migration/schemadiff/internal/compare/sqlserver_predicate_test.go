@@ -109,7 +109,7 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(desired, database, diff, "sqlserver")
+			compare.IndexesWithDialect(desired, database, diff, "sqlserver", builtinRules(c, "sqlserver"))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
@@ -141,7 +141,7 @@ func TestIndexes_PredicateBracketSpellingStaysSignificantOutsideSQLServer(t *tes
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.IndexesWithDialect(desired, database, diff, "postgres")
+	compare.IndexesWithDialect(desired, database, diff, "postgres", builtinRules(c, "postgres"))
 
 	ref := []difftypes.IndexRef{{Name: "idx_users_filtered", TableName: "users"}}
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, ref)

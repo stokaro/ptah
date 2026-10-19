@@ -14,13 +14,10 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/chindexkey"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/indexscope"
-	"ptah.run/internal/mysqlindex"
-	"ptah.run/internal/mysqlname"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -107,7 +104,7 @@ import (
 // - Space Complexity: O(n + m) for the identity maps
 // - Index operations can be expensive on large tables in production
 func Indexes(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
-	IndexesWithDialect(desired, current, diff, "")
+	IndexesWithDialect(desired, current, diff, "", schemacomparison.Rules{})
 }
 
 type generatedIndexEntry struct {
@@ -129,15 +126,16 @@ type databaseIndexEntry struct {
 }
 
 // IndexesWithDialect compares indexes for dialect, with its identifier
-// semantics and its default capability preset.
-func IndexesWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect), nil)
+// semantics, its default capability preset and rules, the target's comparison
+// rules.
+func IndexesWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string, rules schemacomparison.Rules) {
+	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect), rules)
 }
 
 // IndexesWithSemantics compares indexes using explicit identifier semantics,
-// on a target with caps and the target's index rules, nil where it registers
-// none. A target with [capability.IndexRename] gets an index the declaration
-// renamed as a rename; see [pairIndexRenames].
+// on a target with caps and the target's comparison rules, whose index members
+// are nil where it registers none. A target with [capability.IndexRename] gets
+// an index the declaration renamed as a rename; see [pairIndexRenames].
 func IndexesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -146,13 +144,13 @@ func IndexesWithSemantics(
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
 	caps capability.Capabilities,
-	rules schemacomparison.Indexes,
+	rules schemacomparison.Rules,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
 	if comparisonOf(dialect).PrimaryKeyStoresColumns {
 		withoutImplicitPrimaryKeyPayload(genIndexes, desired, semantics)
 	}
-	owned := constraintBackedIndexIdentities(database, dialect, semantics)
+	owned := constraintBackedIndexIdentities(database, dialect, semantics, rules.ForeignKeyIndexes)
 	dbIndexes := collectDatabaseIndexes(
 		database,
 		dialect,
@@ -277,14 +275,17 @@ type constraintOwnedIndexes struct {
 	unique      map[difftypes.IndexRef]struct{}
 }
 
+// constraintBackedIndexIdentities is the identity of every database index a
+// constraint owns: a UNIQUE constraint's own index where the server backs one
+// with it, and the index the server built for a foreign key where it builds
+// one, which foreignKeys, the target's rule, finds. Structured identities
+// ensure the filter only suppresses a backing index on its owning table.
 func constraintBackedIndexIdentities(
 	database *catalog.Database,
 	dialect string,
 	semantics identifier.Semantics,
+	foreignKeys schemacomparison.ForeignKeyIndexes,
 ) constraintOwnedIndexes {
-	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY
-	// named after the constraint. Structured identities ensure the filter only
-	// suppresses the backing index on its owning table.
 	owned := constraintOwnedIndexes{
 		foreignKeys: make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
 		unique:      make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
@@ -296,28 +297,23 @@ func constraintBackedIndexIdentities(
 			TableName: constraint.QualifiedTableName(),
 		})
 		// Whether this server backs the kind at all is the shared answer;
-		// WHICH index backs it is structural and stays here, because the match
-		// is on the constraint's columns rather than on its name.
+		// WHICH index backs a foreign key is the target's, because the match
+		// is on the constraint's columns and on the name the server gives an
+		// index, not on the constraint's name alone.
 		kind := indexbacking.KindOf(constraint.Type)
 		if !indexbacking.ServerBacks(normalizedDialect, kind) {
 			continue
 		}
 		switch kind {
 		case indexbacking.ForeignKey:
-			if normalizedDialect == platform.MySQL ||
-				normalizedDialect == platform.MariaDB {
-				for _, backing := range mysqlForeignKeyBackingIndexes(
-					database, constraint, semantics, normalizedDialect,
-				) {
-					owned.foreignKeys[backing] = struct{}{}
-				}
+			if foreignKeys == nil {
+				continue
 			}
-			if normalizedDialect == platform.Spanner {
-				for _, backing := range spannerForeignKeyBackingIndexes(
-					database, constraint, semantics,
-				) {
-					owned.foreignKeys[backing] = struct{}{}
-				}
+			for _, backing := range foreignKeys.BackingIndexes(database, constraint, semantics) {
+				owned.foreignKeys[indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
+					Name:      backing.Name,
+					TableName: backing.QualifiedTableName(),
+				})] = struct{}{}
 			}
 		case indexbacking.Unique:
 			owned.unique[ref] = struct{}{}
@@ -327,305 +323,6 @@ func constraintBackedIndexIdentities(
 		}
 	}
 	return owned
-}
-
-// spannerForeignKeyBackingIndexes names the index Spanner built to enforce one
-// foreign key.
-//
-// Spanner creates it and names it itself -- `IDX_children_parent_id_FBF4366D...`
-// -- so unlike MySQL's, which carries the constraint's name, it cannot be found
-// by identity. What identifies it is its key: the constraint's columns, in the
-// constraint's order, which is what the enforcement needs.
-//
-// Without this the index is an object in the database that no desired state
-// declares, so the ordinary removal arm plans a DROP for it, and the server
-// refuses: measured on the PGAdapter emulator v0.55.2, the second apply of a
-// document containing one foreign key answered
-//
-//	Cannot drop index `IDX_children_parent_id_FBF4366D73F2084A`.
-//	It is in use by foreign keys: `children_parent_fk`.
-//
-// so such a document applies exactly once and fails on every run afterwards,
-// with a plan that never changes (stokaro/ptah#2076).
-//
-// A user's own index over the same columns is not swallowed by this: an
-// identity the desired state declares as an index never reaches the ownership
-// filter at all, which is the rule collectDatabaseIndexes states below.
-// mysqlForeignKeyBackingIndexes is the index MySQL or MariaDB built for one
-// foreign key, where it built one at all.
-//
-// The name alone cannot decide it, because a name is not evidence. Measured on
-// MySQL 8.4.11 and MariaDB 11.8.9, both engines accept this table:
-//
-//	CREATE TABLE children (
-//	    a INT, b INT,
-//	    KEY cover (a), KEY f (b),
-//	    CONSTRAINT f FOREIGN KEY (a) REFERENCES parents(id));
-//
-// `cover(a)` backs the constraint and `f(b)` is an ordinary performance index
-// that happens to share the symbol. Claiming it for the foreign key suppresses
-// it from the comparison, so removing it from the desired schema reports
-// `InSync` with no plan and leaves a live index nothing will ever manage
-// (stokaro/ptah#2782).
-//
-// Both signals are required, the way the Spanner arm below already requires
-// them: the NAME says the engine could have made it, and the LEADING COLUMNS
-// say it could serve the key. Neither is sufficient -- a covering index under
-// the author's own name is droppable, and a same-named index over different
-// columns is a different object.
-//
-// A third condition joins them, and it is what the reader recording key-part
-// direction unblocked (stokaro/ptah#2816). The engine builds this index only
-// where nothing else covers the key, so a same-named index is still the
-// author's where another index backs the key too, and dropping it is what the
-// author asked for.
-//
-// Covering is dialect-specific, measured on MySQL 8.4.11 and MariaDB 11.8.9 by
-// declaring one index and then adding the foreign key, and reading back whether
-// the engine built a second index of its own:
-//
-//	cover           MySQL              MariaDB
-//	(a)             reuses cover       reuses cover
-//	(a DESC)        builds its own     reuses cover
-//	(a, b DESC)     reuses cover       reuses cover
-//	(a DESC, b)     builds its own     reuses cover
-//
-// So MySQL requires the LEADING parts -- the ones the key uses -- to be
-// ascending, and MariaDB does not care. The third row is what makes that
-// precise rather than "no descending part anywhere".
-func mysqlForeignKeyBackingIndexes(
-	database *catalog.Database,
-	constraint catalog.Constraint,
-	semantics identifier.Semantics,
-	dialect string,
-) []difftypes.IndexRef {
-	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
-	if len(columns) == 0 {
-		return nil
-	}
-	table := constraint.QualifiedTableName()
-	var refs []difftypes.IndexRef
-	for _, index := range database.Indexes {
-		if !mysqlEngineCouldNameIndex(index, constraint, columns[0], semantics, dialect) {
-			continue
-		}
-		if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
-			continue
-		}
-		if mysqlAnotherIndexCoversForeignKey(database, index, table, columns, semantics, dialect) {
-			continue
-		}
-		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
-			Name:      index.Name,
-			TableName: index.QualifiedTableName(),
-		}))
-	}
-	return refs
-}
-
-// mysqlEngineCouldNameIndex is the NAME signal of
-// [mysqlForeignKeyBackingIndexes]: whether the engine could have given the
-// index this name when it built one for the key.
-//
-// A key with a name gets an index under the key's name, on both engines. A key
-// written without one is named `<table>_ibfk_<n>`, or `<n>` on MariaDB 12.1
-// and later, and its index is named after the key's first column instead, `_2`
-// and on when that is taken: measured on MySQL 8.4.11, 26.7.0 and MariaDB
-// 11.8.9 and 12.3.3, `FOREIGN KEY (p_id) REFERENCES p(id)` holds `c_ibfk_1`,
-// or `1`, over an index called `p_id`. Without the second shape the index
-// reads as one nobody declared, and a schema file compared with the database
-// it built plans `DROP INDEX p_id`, which the server refuses while the key
-// needs it (stokaro/ptah#3725, stokaro/ptah#3743). The constraint's name is
-// what keeps a column-named index of the author's out: a key whose name the
-// engine could not have chosen was written with one, and its index carries
-// that name.
-func mysqlEngineCouldNameIndex(
-	index catalog.Index,
-	constraint catalog.Constraint,
-	firstColumn string,
-	semantics identifier.Semantics,
-	dialect string,
-) bool {
-	if identifiersEqual(semantics, index.Name, constraint.Name) {
-		return true
-	}
-	if !mysqlname.IsServerForeignKeyName(dialect, constraint.TableName, constraint.Name) {
-		return false
-	}
-	return mysqlname.IsUnnamedKeyIndexName(firstColumn, index.Name, func(a, b string) bool {
-		return identifiersEqual(semantics, a, b)
-	})
-}
-
-// mysqlAnotherIndexCoversForeignKey reports whether some index other than the
-// candidate already serves the key, which is what makes the candidate the
-// author's rather than the engine's.
-//
-// Identity is compared through the target's own semantics rather than by
-// string, so the candidate is not mistaken for a second index under a spelling
-// the engine folds onto the same name.
-func mysqlAnotherIndexCoversForeignKey(
-	database *catalog.Database,
-	candidate catalog.Index,
-	table string,
-	columns []string,
-	semantics identifier.Semantics,
-	dialect string,
-) bool {
-	for _, other := range database.Indexes {
-		if identifiersEqual(semantics, other.Name, candidate.Name) &&
-			strings.EqualFold(other.QualifiedTableName(), candidate.QualifiedTableName()) {
-			continue
-		}
-		if mysqlIndexCoversForeignKey(other, table, columns, semantics, dialect) {
-			return true
-		}
-	}
-	return false
-}
-
-// mysqlIndexCoversForeignKey reports whether an index can serve as the engine's
-// backing index for a foreign key over these columns.
-//
-// Leading columns decide it on both engines. Direction decides it on MySQL
-// alone, and only for the parts the key uses: see the table on
-// [mysqlForeignKeyBackingIndexes] for the measurement, including the row that
-// separates "the leading parts are ascending" from "no part is descending".
-//
-// An index whose Parts the reader dropped is ascending throughout -- the MySQL
-// reader clears a parts list that says nothing its column names do not, and a
-// descending part is one of the two reasons it is kept.
-func mysqlIndexCoversForeignKey(
-	index catalog.Index,
-	table string,
-	columns []string,
-	semantics identifier.Semantics,
-	dialect string,
-) bool {
-	if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
-		return false
-	}
-	if platform.NormalizeDialect(dialect) == platform.MariaDB {
-		return true
-	}
-	return !mysqlLeadingPartsDescend(index, len(columns))
-}
-
-// mysqlLeadingPartsDescend reports whether any of an index's first count parts
-// is descending.
-func mysqlLeadingPartsDescend(index catalog.Index, count int) bool {
-	for position, part := range index.Parts {
-		if position >= count {
-			return false
-		}
-		if part.Desc {
-			return true
-		}
-	}
-	return false
-}
-
-// mysqlIndexBacksForeignKey reports whether one index could serve a foreign key
-// on table: its LEADING columns are the key's, which is the engines' own rule.
-func mysqlIndexBacksForeignKey(
-	index catalog.Index,
-	table string,
-	columns []string,
-	semantics identifier.Semantics,
-) bool {
-	if !strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) {
-		return false
-	}
-	if len(index.Columns) < len(columns) {
-		return false
-	}
-	return sameColumnNames(semantics, columns, index.Columns[:len(columns)])
-}
-
-// identifiersEqual compares two identifiers under the target's own rules.
-func identifiersEqual(semantics identifier.Semantics, left, right string) bool {
-	return semantics.IndexIdentityKey(strings.TrimSpace(left)) ==
-		semantics.IndexIdentityKey(strings.TrimSpace(right))
-}
-
-func spannerForeignKeyBackingIndexes(
-	database *catalog.Database,
-	constraint catalog.Constraint,
-	semantics identifier.Semantics,
-) []difftypes.IndexRef {
-	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
-	if len(columns) == 0 {
-		return nil
-	}
-	table := constraint.QualifiedTableName()
-	refs := make([]difftypes.IndexRef, 0, 1)
-	for _, index := range database.Indexes {
-		if !spannerIndexEnforces(index, table, columns, semantics) {
-			continue
-		}
-		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
-			Name:      index.Name,
-			TableName: index.QualifiedTableName(),
-		}))
-	}
-	return refs
-}
-
-// spannerIndexEnforces reports whether one index is the key Spanner built for a
-// foreign key on table.
-//
-// Two signals, and both are needed. The columns say the index COULD enforce the
-// constraint; the name says Spanner made it. A user's own index over the same
-// columns is a different object -- measured on the emulator, declaring one
-// leaves Spanner's beside it rather than reusing it -- and it stays droppable,
-// which it would not if the columns alone decided.
-//
-// A primary key's index is excluded because it is already owned, and because a
-// foreign key whose columns are the primary key is enforced by that key rather
-// than by an index of its own.
-func spannerIndexEnforces(
-	index catalog.Index,
-	table string,
-	columns []string,
-	semantics identifier.Semantics,
-) bool {
-	if index.IsPrimary || !spannerGeneratedIndexName(index.Name) {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) {
-		return false
-	}
-	return sameColumnNames(semantics, columns, index.Columns)
-}
-
-// spannerGeneratedIndexName reports whether a name is one Spanner wrote for
-// itself: `IDX_<table>_<columns>_<16 hex digits>`, as in
-// `IDX_children_parent_id_FBF4366D73F2084A`.
-//
-// Only the two ends are checked. The middle is the table and the columns, which
-// the caller compares properly rather than by string surgery, and a name
-// carrying an underscore in an identifier would defeat any attempt to split it.
-func spannerGeneratedIndexName(name string) bool {
-	trimmed := strings.TrimSpace(name)
-	const suffixDigits = 16
-	if !strings.HasPrefix(trimmed, "IDX_") || len(trimmed) < len("IDX_")+1+suffixDigits {
-		return false
-	}
-	suffix := trimmed[len(trimmed)-suffixDigits:]
-	if trimmed[len(trimmed)-suffixDigits-1] != '_' {
-		return false
-	}
-	for i := range len(suffix) {
-		if !isHexDigit(suffix[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-// isHexDigit reports whether b is one of 0-9, a-f or A-F.
-func isHexDigit(b byte) bool {
-	return b >= '0' && b <= '9' || b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
 }
 
 // collectDatabaseIndexes keys the database's indexes by identity, leaving out
@@ -782,8 +479,8 @@ type indexComparison struct {
 	semantics   identifier.Semantics
 	expressions map[string]config.IndexExpression
 	caps        capability.Capabilities
-	// rules are the target's index rules, nil where it registers none.
-	rules schemacomparison.Indexes
+	// rules are the target's comparison rules.
+	rules schemacomparison.Rules
 }
 
 // replacementRequired reports whether the database index has to be dropped and
@@ -805,7 +502,7 @@ func (c indexComparison) replacementRequired(desired generatedIndexEntry, databa
 // with any facet is never renamed, since no rule says the rename keeps it.
 func (c indexComparison) renameKeeps(facets schemaext.Facets) bool {
 	return !slices.ContainsFunc(facets.DeclaredKinds(), func(kind schemaext.Kind) bool {
-		return c.rules == nil || !c.rules.RenameCarries(kind)
+		return c.rules.Indexes == nil || !c.rules.Indexes.RenameCarries(kind)
 	})
 }
 
@@ -1073,10 +770,11 @@ func indexReplacementRequired(
 	dialect string,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
-	rules schemacomparison.Indexes,
+	rules schemacomparison.Rules,
 ) bool {
-	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
-		desired.ref.Name != database.ref.Name {
+	// An index whose name the catalog spells otherwise than the declaration is
+	// rebuilt under the declared spelling, on a target that rebuilds it.
+	if comparisonOf(dialect).RespelledIndexReplaced && desired.ref.Name != database.ref.Name {
 		return true
 	}
 	return indexDefinitionsChanged(desired.index, database.index, dialect, semantics, resolved, rules)
@@ -1088,7 +786,7 @@ func indexDefinitionsChanged(
 	dialect string,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
-	rules schemacomparison.Indexes,
+	rules schemacomparison.Rules,
 ) bool {
 	// The predicate is compared in the server's spelling where the server
 	// answered. PostgreSQL stores a parse tree rather than the text it was
@@ -1101,60 +799,29 @@ func indexDefinitionsChanged(
 		declaredPredicate = resolved.Predicate
 	}
 	if !nullsDistinctEqual(desired.NullsDistinct, database.NullsDistinct) ||
-		indexPredicateChanged(declaredPredicate, database.Condition, dialect) ||
+		indexPredicateChanged(declaredPredicate, database.Condition, rules.IndexPredicates) ||
 		indexPayloadChanged(desired.IncludeColumns, database.IncludeColumns, dialect, semantics) {
 		return true
 	}
-	// A target that registers index rules has its whole definition compared:
-	// its uniqueness, key parts and covered columns here, and its kind and
-	// build settings by the rules. The covered columns are compared in order,
-	// as the key columns are.
-	if rules != nil {
+	// Everything else is the target's question, because "these two indexes
+	// are the same index" depends on what its catalog reports and what it
+	// leaves implicit. A target that compares whole definitions decides
+	// alone. A target that registers index rules has its uniqueness, key
+	// parts and covered columns compared here, and its kind and build settings
+	// by the rules; the covered columns are compared in order, as the key
+	// columns are. A target that registers neither keeps the name-only
+	// comparison rather than getting guessed semantics (issue #1272 scope).
+	switch {
+	case rules.IndexDefinitions != nil:
+		return rules.IndexDefinitions.DefinitionChanged(generatedIndexWithResolvedExpression(desired, resolved), database, semantics)
+	case rules.Indexes != nil:
 		return desired.Unique != database.IsUnique ||
 			ruledIndexKeysChanged(generatedIndexWithResolvedExpression(desired, resolved), database, semantics) ||
-			postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
-			!rules.OptionsEqual(desired, database)
-	}
-	// Every other property is compared per dialect, because "these two indexes
-	// are the same index" is a dialect question. Adding a dialect here means
-	// deciding what its currentCatalog reports and what it leaves implicit; a dialect
-	// that has not been measured keeps the name-only comparison rather than
-	// getting guessed semantics (issue #1272 scope).
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer:
-		return desired.Unique != database.IsUnique ||
-			indexKeyPartsChanged(desired, database, semantics)
-	case platform.Postgres:
-		return postgresIndexDefinitionChanged(desired, database, semantics, resolved)
-	case platform.MySQL, platform.MariaDB:
-		return mysqlIndexDefinitionChanged(desired, database, semantics, dialect)
-	case platform.ClickHouse:
-		return clickhouseIndexKeyChanged(desired, database)
+			coveredColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
+			!rules.Indexes.OptionsEqual(desired, database)
 	default:
 		return false
 	}
-}
-
-// clickhouseIndexKeyChanged answers whether a ClickHouse data-skipping
-// index's key differs, the one part of its definition this comparison owns.
-//
-// A skipping index's key is one expression, and system.data_skipping_indices
-// reports it whole: `INDEX i (a, b)` reads back as the single key `a, b`. So
-// the keys are compared as the expression each side writes, in the form
-// [chindexkey.Same] reads ClickHouse's own formatting into. The type and the
-// granularity are the ClickHouse owner's index facet, compared there. An
-// index has no uniqueness and no key direction on ClickHouse, which the
-// renderer reports as lost rather than writes, so neither is compared.
-func clickhouseIndexKeyChanged(desired schemamodel.Index, database catalog.Index) bool {
-	desiredKeys := make([]string, 0, len(desired.Parts))
-	for _, part := range effectiveGeneratedIndexParts(desired) {
-		desiredKeys = append(desiredKeys, cmp.Or(strings.TrimSpace(part.Expr), part.Name))
-	}
-	databaseKeys := make([]string, 0, len(database.Parts))
-	for _, part := range effectiveDatabaseIndexParts(database) {
-		databaseKeys = append(databaseKeys, cmp.Or(strings.TrimSpace(part.Expr), part.Name))
-	}
-	return !chindexkey.Same(desiredKeys, databaseKeys)
 }
 
 // indexPayloadChanged answers whether an index's payload columns -- INCLUDE on
@@ -1176,128 +843,16 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 	if !capability.ForDialect(dialect).Has(capability.IndexCoveringColumns) {
 		return len(desired) > 0
 	}
-	return postgresIncludeColumnsChanged(desired, database, semantics)
+	return coveredColumnsChanged(desired, database, semantics)
 }
 
-// mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to
-// be rebuilt to match the desired definition.
+// namedKeyPartsContradict answers the only question a partly-read key
+// ([catalog.Index.KeyPartsIncomplete]) can answer: do the parts the reader
+// COULD name already prove this is not the desired key?
 //
-// Uniqueness has to be compared here, and it is the reason this branch exists.
-// On these engines a UNIQUE constraint *is* its index, so
-// [collectDatabaseIndexes] lets a declared identity through even when a UNIQUE
-// constraint of that name owns it -- and without a uniqueness comparison a
-// desired plain `index "uq_users_email"` would match a database
-// `UNIQUE KEY uq_users_email` and report synced, which is the opposite mistake
-// from the one #1245 fixed: two genuinely different objects made equal.
-// Measured on MySQL 9.7.1, the pinned community binary v1.3.0 plans
-// `ALTER TABLE users DROP INDEX uq_users_email` followed by
-// `ALTER TABLE users ADD INDEX uq_users_email (email)` for that pair.
-//
-// Key columns are compared for the same reason: `UNIQUE KEY uq (email)` against
-// a desired unique `uq (name)` is a different index, and the pinned binary
-// plans a drop and an add for it. Comparing them is also what keeps this
-// change from trading a loud failure for a silent one -- before it, that pair
-// planned CREATE plus DROP of one name and the apply failed with
-// `Error 1061 (42000): Duplicate key name`.
-//
-// The access method is compared through [mysqlindex.Kind], the same
-// classification the renderer emits the DDL prefix from. A desired `SPATIAL`
-// index and a `BTREE` index of the same name over the same column are different
-// schema states, and comparing neither made reconciliation report `InSync` for
-// a table that did not have the requested method -- invisible until somebody
-// read MariaDB's own metadata (stokaro/ptah#2721). Which direction is compared,
-// and why only one, is at [mysqlindex.Kind.SatisfiedBy].
-//
-// The comment is compared too. On these engines it is part of the index's
-// definition, kept in STATISTICS.INDEX_COMMENT, and no statement changes it in
-// place, so a changed comment is a rebuild. MySQL 8.4.11 and MariaDB 11.8.9
-// take the drop and the add in one statement, which the planner writes
-// (stokaro/ptah#3853).
-//
-// Each key part is compared whole: its column, or the expression of a
-// functional key part, its prefix length and its direction, all of which the
-// reader takes from information_schema.STATISTICS. MySQL 26.7 and MariaDB 12.3
-// change none of them in place, so a changed key part rebuilds the index as a
-// changed comment does; see [mysqlIndexKeyColumnsChanged].
-func mysqlIndexDefinitionChanged(
-	desired schemamodel.Index,
-	database catalog.Index,
-	semantics identifier.Semantics,
-	dialect string,
-) bool {
-	return desired.Unique != database.IsUnique ||
-		mysqlIndexMethodChanged(desired, database, dialect) ||
-		mysqlIndexKeyColumnsChanged(desired, database, semantics) ||
-		desired.Comment != database.Comment
-}
-
-// mysqlIndexMethodChanged answers whether the server's index satisfies the
-// access method the desired index asks for.
-//
-// Both sides go through one classifier, which is what keeps this from becoming
-// a string comparison that agrees with the renderer today and stops agreeing
-// the moment either spelling moves.
-func mysqlIndexMethodChanged(
-	desired schemamodel.Index, database catalog.Index, dialect string,
-) bool {
-	if !mysqlindex.KindOf(desired.Type).SatisfiedBy(mysqlindex.KindOf(database.Method)) {
-		return true
-	}
-	// The USING clause is a second question about the same field, and it needs
-	// the dialect because only one of the two engines records what was asked
-	// for. [mysqlindex.MethodSatisfiedBy] carries the per-engine measurement.
-	return !mysqlindex.MethodSatisfiedBy(dialect, desired.Type, database.Method)
-}
-
-// mysqlIndexKeyColumnsChanged compares the key parts in order: each part's
-// column or expression, its prefix length and its direction. An expression is
-// compared the way a CHECK is, since MySQL keeps it in its own spelling, such
-// as lower(`a`) for a declared lower(a). A prefix is the number the reader
-// reports in SUB_PART, and a direction the COLLATION it reports.
-//
-// A key the reader could not read whole is compared as far as it was read. The
-// MySQL reader reports a functional key part -- `KEY idx ((b + 1))` -- as a
-// part missing from Columns on a server whose STATISTICS has no EXPRESSION
-// column; see [catalog.Index.KeyPartsIncomplete]. Reading
-// what is left as the whole key would find the key short by one part on every
-// run and plan a rebuild forever, on a database the pinned community binary
-// v1.3.0 reports synced -- but declining the comparison outright reported
-// `KEY idx_mixed (b, (b + 1))` and a desired `idx_mixed (c, (c + 1))` as the
-// same key, which is a different key by every part the reader could read. The
-// names that were read are compared; see [mysqlNamedKeyPartsContradict].
-func mysqlIndexKeyColumnsChanged(
-	desired schemamodel.Index,
-	database catalog.Index,
-	semantics identifier.Semantics,
-) bool {
-	if database.KeyPartsIncomplete {
-		return mysqlNamedKeyPartsContradict(desired, database, semantics)
-	}
-	generatedParts := effectiveGeneratedIndexParts(desired)
-	databaseParts := effectiveDatabaseIndexParts(database)
-	if len(generatedParts) != len(databaseParts) {
-		return true
-	}
-	for position, generatedPart := range generatedParts {
-		databasePart := databaseParts[position]
-		generatedColumn, generatedExpr := postgresIndexKeyTarget(generatedPart.Name, generatedPart.Expr, semantics)
-		databaseColumn, databaseExpr := postgresIndexKeyTarget(databasePart.Name, databasePart.Expr, semantics)
-		if generatedColumn != databaseColumn || generatedExpr != databaseExpr ||
-			strings.TrimSpace(generatedPart.Prefix) != strings.TrimSpace(databasePart.Prefix) ||
-			generatedPart.Desc != databasePart.Desc {
-			return true
-		}
-	}
-	return false
-}
-
-// mysqlNamedKeyPartsContradict answers the only question a partly-read key can
-// answer: do the parts the reader COULD name already prove this is not the
-// desired key?
-//
-// The reader names every part except the functional ones, and it does not
-// record where in the key those sat, so the two key lists cannot be lined up by
-// position. What survives is the order of the named parts, which is enough for
+// The MySQL reader names every part except the functional ones, and it does
+// not record where in the key those sat, so the two key lists cannot be lined
+// up by position. What survives is the order of the named parts, which is enough for
 // the shape that matters: a database `KEY idx_mixed (b, (b + 1))` against a
 // desired `idx_mixed (c, (c + 1))` names `b` where the desired key names only
 // `c`, so the keys differ no matter what the unread part turns out to be. That
@@ -1314,7 +869,7 @@ func mysqlIndexKeyColumnsChanged(
 // information_schema.STATISTICS.EXPRESSION is what closes that half, and it is
 // a reader change with its own dialect sweep (MariaDB has no such column).
 // Recorded in docs/conformance.md.
-func mysqlNamedKeyPartsContradict(
+func namedKeyPartsContradict(
 	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
@@ -1336,124 +891,6 @@ func mysqlNamedKeyPartsContradict(
 			return true
 		}
 		next = position + 1
-	}
-	return false
-}
-
-// postgresIndexDefinitionChanged answers whether a PostgreSQL index has to be
-// rebuilt to match the desired definition.
-//
-// Until issue #1272 the PostgreSQL branch compared nothing beyond the partial
-// predicate and NULLS DISTINCT, so every property #1246 and #1271 taught the
-// reader to preserve was read and then discarded at reconciliation time.
-// Measured on PostgreSQL 17.10 against the pinned community binary v1.3.0,
-// each of these pairs made `schema diff` print "Schemas are synced, no changes
-// to be made" while the pinned binary planned DROP INDEX + CREATE INDEX:
-//
-//	USING btree (value)        -> USING hash (value)
-//	USING gin (tsv)            -> USING gist (tsv)
-//	(value)                    -> (value text_pattern_ops)   and the reverse
-//	(value)                    -> (value DESC)
-//	(value)                    -> (value NULLS FIRST)
-//	(value DESC)               -> (value DESC NULLS LAST)
-//	(a) INCLUDE (b)            -> (a) INCLUDE (c), added, and removed
-//	(a)                        -> (lower(a))                 and the reverse
-//	(lower(a))                 -> (upper(a))
-//	(value)                    -> UNIQUE (value)
-//	(a)                        -> (b)
-//
-// PostgreSQL cannot alter any of them in place: there is no ALTER INDEX form
-// for the access method, the key list, an operator class, a key's sort or
-// NULLS ordering, or the INCLUDE payload. Reporting the change is therefore
-// enough -- the planner already emits DROP INDEX followed by CREATE INDEX for
-// an index that is both added and removed, which is the transition the pinned
-// binary plans and the one the server accepts.
-func postgresIndexDefinitionChanged(
-	desired schemamodel.Index,
-	database catalog.Index,
-	semantics identifier.Semantics,
-	resolved config.IndexExpression,
-) bool {
-	return desired.Unique != database.IsUnique ||
-		postgresAccessMethod(desired.Type) != postgresAccessMethod(database.Method) ||
-		postgresIndexKeysChanged(desired, database, semantics, resolved) ||
-		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
-		postgresIndexStorageParamsChanged(desired.StorageParams, database.StorageParams)
-}
-
-// postgresIndexStorageParamsChanged compares the WITH (...) storage parameters.
-//
-// Only the parameters the reader records reach here, and it records only the
-// ones every surface in the chain can carry back out again -- see
-// postgresRoundTrippableIndexStorageParams in the PostgreSQL reader. That is
-// what keeps this arm from churning: a parameter one surface drops would arrive
-// on one side and not the other on every run, and the rebuild it planned would
-// drop the parameter it was meant to protect.
-//
-// The values are compared as the two sides spell them, with case and space
-// normalized. PostgreSQL reports pg_class.reloptions as `pages_per_range=32`
-// and every writing surface in the chain spells integers the same way, so there
-// is no unit or default resolution to do here -- an absent parameter means the
-// server's own default, and both sides say so by omitting it.
-func postgresIndexStorageParamsChanged(desired, database map[string]string) bool {
-	if len(desired) != len(database) {
-		return true
-	}
-	for name, value := range desired {
-		databaseValue, ok := database[name]
-		if !ok {
-			return true
-		}
-		if !strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(databaseValue)) {
-			return true
-		}
-	}
-	return false
-}
-
-// postgresDefaultAccessMethod is the method PostgreSQL uses when CREATE INDEX
-// carries no USING clause.
-const postgresDefaultAccessMethod = "btree"
-
-// postgresAccessMethod reduces an access method to a comparison key.
-//
-// The two sides spell it differently by construction: an annotation or HCL
-// source writes BTREE/GIN, while the reader reports pg_am.amname verbatim,
-// which PostgreSQL spells btree/gin. An absent method is the default one, so
-// `USING btree (x)` and `(x)` are the same index and must not churn.
-func postgresAccessMethod(method string) string {
-	normalized := strings.ToLower(strings.TrimSpace(method))
-	if normalized == "" {
-		return postgresDefaultAccessMethod
-	}
-	return normalized
-}
-
-func postgresIndexKeysChanged(
-	desired schemamodel.Index,
-	database catalog.Index,
-	semantics identifier.Semantics,
-	resolved config.IndexExpression,
-) bool {
-	// An index over an EXPRESSION is compared in the server's spelling where
-	// the server answered. PostgreSQL stores a parse tree and prints it back
-	// with the casts the parser inserted, and the cast depends on the column's
-	// type: measured on 17.11, `lower(code)` over a varchar column is stored as
-	// `lower((code)::text)` and over a text column unchanged. So an expression
-	// index nobody had touched was dropped and rebuilt on every run, and no
-	// rule over the declaration's text could tell the two cases apart
-	// (stokaro/ptah#2047).
-	desired = generatedIndexWithResolvedExpression(desired, resolved)
-	generatedParts := effectiveGeneratedIndexParts(desired)
-	databaseParts := effectiveDatabaseIndexParts(database)
-	if len(generatedParts) != len(databaseParts) {
-		return true
-	}
-	for position, generatedPart := range generatedParts {
-		generatedKey := postgresGeneratedIndexKey(generatedPart, desired.Operator, semantics)
-		if generatedKey != postgresDatabaseIndexKey(databaseParts[position], semantics) {
-			return true
-		}
 	}
 	return false
 }
@@ -1487,85 +924,13 @@ func generatedIndexWithResolvedExpression(
 	return desired
 }
 
-// postgresIndexKey is one index key reduced to the form the two sides can be
-// compared in. It is comparable, so a key is one `!=` rather than a chain of
-// per-attribute comparisons that a later attribute could be forgotten from.
-//
-// column and expr are separate fields on purpose, and exactly one is ever set.
-// That is the distinction #1246 established: an index on lower(name) and an
-// index on a column literally named "lower(name)" are different indexes, and
-// collapsing them is how a reader comes to emit
-// CREATE INDEX ... ("lower(name)"), which psql rejects.
-type postgresIndexKey struct {
-	column     string
-	expr       string
-	operator   string
-	desc       bool
-	nullsOrder string
-}
-
-// resolvedNullsOrder resolves this key's NULLS ordering to the ordering the
-// server actually applies.
-//
-// The default is direction-dependent -- NULLS LAST for ASC, NULLS FIRST for
-// DESC -- so an omitted ordering and an explicit spelling of that direction's
-// default are the same key. #1271's reader records only the deviating spelling,
-// so resolving both sides is what keeps `ASC` and `ASC NULLS LAST` from
-// planning a rebuild against each other while `ASC` and `ASC NULLS FIRST` still
-// report one.
-func (k postgresIndexKey) resolvedNullsOrder(order string) string {
-	switch strings.ToUpper(strings.TrimSpace(order)) {
-	case catalog.NullsOrderFirst:
-		return catalog.NullsOrderFirst
-	case catalog.NullsOrderLast:
-		return catalog.NullsOrderLast
-	}
-	if k.desc {
-		return catalog.NullsOrderFirst
-	}
-	return catalog.NullsOrderLast
-}
-
-// postgresGeneratedIndexKey reduces one desired key.
-//
-// indexOperator is the index-level operator class an annotation may set for
-// every key at once. The renderer applies it to each key that has none, so the
-// comparison resolves it the same way.
-func postgresGeneratedIndexKey(
-	part schemamodel.IndexPart,
-	indexOperator string,
-	semantics identifier.Semantics,
-) postgresIndexKey {
-	key := postgresIndexKey{
-		operator: postgresOperatorClass(part.Operator, indexOperator),
-		desc:     part.Desc,
-	}
-	key.column, key.expr = postgresIndexKeyTarget(part.Name, part.Expr, semantics)
-	key.nullsOrder = key.resolvedNullsOrder(part.NullsOrder)
-	return key
-}
-
-// postgresDatabaseIndexKey reduces one introspected key. The database shape has
-// no index-level operator class slot, so every class it reports is already
-// per-key.
-func postgresDatabaseIndexKey(
-	part catalog.IndexPart,
-	semantics identifier.Semantics,
-) postgresIndexKey {
-	key := postgresIndexKey{
-		operator: postgresOperatorClass(part.Operator, ""),
-		desc:     part.Desc,
-	}
-	key.column, key.expr = postgresIndexKeyTarget(part.Name, part.Expr, semantics)
-	key.nullsOrder = key.resolvedNullsOrder(part.NullsOrder)
-	return key
-}
-
-// postgresIndexKeyTarget splits what a key indexes into its column slot and its
-// expression slot, filling exactly one. An expression is normalized the way a
-// check-constraint expression is, so spacing and keyword case do not make a new
-// index; a column goes through the dialect's identifier semantics.
-func postgresIndexKeyTarget(
+// indexKeyTarget splits what a key indexes into its column slot and its
+// expression slot, filling exactly one. That is the distinction #1246
+// established: an index on lower(name) and an index on a column literally
+// named "lower(name)" are different indexes. An expression is normalized the
+// way a check-constraint expression is, so spacing and keyword case do not
+// make a new index; a column goes through the dialect's identifier semantics.
+func indexKeyTarget(
 	name, expr string,
 	semantics identifier.Semantics,
 ) (column, expression string) {
@@ -1576,32 +941,8 @@ func postgresIndexKeyTarget(
 	return semantics.ColumnIdentityKey(name), ""
 }
 
-// postgresOperatorClass reduces an operator class to a comparison key.
-//
-// Only case and surrounding space are normalized. PostgreSQL reports an
-// operator class in pg_index.indclass for every key, and #1271's reader
-// deliberately records only the ones that are not the key type's default, so
-// an introspected index names a class exactly when the choice was not the
-// default and both sides of an inspect/replay round trip agree.
-//
-// A hand-written source that spells the default out -- `ops = text_ops` on a
-// text column -- is the one case where this diverges from the pinned community
-// binary v1.3.0, which resolves type defaults and reported "Schemas are synced"
-// for that fixture on PostgreSQL 17.10 where Ptah plans a rebuild. Ptah does
-// not resolve default operator classes, and inventing the resolution from a
-// version-pinned currentCatalog table would be worse than the churn: the alternative
-// is to ignore a named class, which would silently accept a real operator-class
-// change. Neither binary's `schema inspect` emits a default class, so no
-// round trip reaches this branch. Recorded in docs/conformance.md.
-func postgresOperatorClass(partOperator, indexOperator string) string {
-	operator := strings.TrimSpace(partOperator)
-	if operator == "" {
-		operator = strings.TrimSpace(indexOperator)
-	}
-	return strings.ToLower(operator)
-}
-
-// postgresIncludeColumnsChanged compares the INCLUDE payload.
+// coveredColumnsChanged compares an index's covered columns: the INCLUDE,
+// STORING or COVER payload.
 //
 // Order is significant, matching both PostgreSQL -- which stores the payload
 // columns in the order they were written and reports them that way -- and the
@@ -1611,7 +952,7 @@ func postgresOperatorClass(partOperator, indexOperator string) string {
 // The payload is compared separately from the keys and never merged into them:
 // an index on (a) INCLUDE (b) is not an index on (a, b), and treating the
 // payload as a trailing key would make the two compare equal.
-func postgresIncludeColumnsChanged(
+func coveredColumnsChanged(
 	desired, database []string,
 	semantics identifier.Semantics,
 ) bool {
@@ -1627,27 +968,6 @@ func postgresIncludeColumnsChanged(
 	return false
 }
 
-func indexKeyPartsChanged(
-	desired schemamodel.Index,
-	database catalog.Index,
-	semantics identifier.Semantics,
-) bool {
-	generatedParts := effectiveGeneratedIndexParts(desired)
-	databaseParts := effectiveDatabaseIndexParts(database)
-	if len(generatedParts) != len(databaseParts) {
-		return true
-	}
-	for position, generatedPart := range generatedParts {
-		databasePart := databaseParts[position]
-		if semantics.ColumnIdentityKey(generatedPart.Name) !=
-			semantics.ColumnIdentityKey(databasePart.Name) ||
-			generatedPart.Desc != databasePart.Desc {
-			return true
-		}
-	}
-	return false
-}
-
 // ruledIndexKeysChanged compares the keys of an index on a target that
 // registers index rules: each key's column, its direction and its expression,
 // in order. A key is a column or an expression and never both, so a column
@@ -1655,11 +975,19 @@ func indexKeyPartsChanged(
 // do. An expression is compared in the server's spelling where the server
 // answered ([generatedIndexWithResolvedExpression]), and otherwise normalized
 // the way a predicate is, so spacing and keyword case do not make a new index.
+//
+// A key the reader could not read whole is compared as far as it was read:
+// see [namedKeyPartsContradict]. Reading what is left as the whole key would
+// find it short by one part on every run and plan a rebuild forever, on a
+// database the pinned community binary v1.3.0 reports synced.
 func ruledIndexKeysChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
+	if database.KeyPartsIncomplete {
+		return namedKeyPartsContradict(desired, database, semantics)
+	}
 	generatedParts := effectiveGeneratedIndexParts(desired)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(generatedParts) != len(databaseParts) {
@@ -1667,8 +995,8 @@ func ruledIndexKeysChanged(
 	}
 	for position, generatedPart := range generatedParts {
 		databasePart := databaseParts[position]
-		generatedColumn, generatedExpr := postgresIndexKeyTarget(generatedPart.Name, generatedPart.Expr, semantics)
-		databaseColumn, databaseExpr := postgresIndexKeyTarget(databasePart.Name, databasePart.Expr, semantics)
+		generatedColumn, generatedExpr := indexKeyTarget(generatedPart.Name, generatedPart.Expr, semantics)
+		databaseColumn, databaseExpr := indexKeyTarget(databasePart.Name, databasePart.Expr, semantics)
 		if generatedColumn != databaseColumn || generatedExpr != databaseExpr || generatedPart.Desc != databasePart.Desc {
 			return true
 		}
@@ -1698,24 +1026,24 @@ func effectiveDatabaseIndexParts(index catalog.Index) []catalog.IndexPart {
 	return parts
 }
 
-func indexPredicateChanged(desired, database, dialect string) bool {
+func indexPredicateChanged(desired, database string, predicates schemacomparison.IndexPredicates) bool {
 	if strings.TrimSpace(desired) == "" || strings.TrimSpace(database) == "" {
 		return strings.TrimSpace(desired) != strings.TrimSpace(database)
 	}
 	if checkExpressionHasUnsupportedRewrite(desired, database) {
 		return false
 	}
-	return normalizePredicate(desired, dialect) != normalizePredicate(database, dialect)
+	return normalizePredicate(desired, predicates) != normalizePredicate(database, predicates)
 }
 
 // normalizePredicate reduces an index predicate to a spelling-insensitive
-// comparison key. SQL Server additionally strips the currentCatalog's canonical
-// filter_definition decorations (bracket quoting, parenthesized numeric
-// literals) so user-authored predicates converge with introspected ones
-// instead of planning a replacement on every run.
-func normalizePredicate(value, dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.SQLServer {
-		value = normalizeSQLServerPredicateSpelling(value)
+// comparison key. A target whose catalog decorates the predicate it stores
+// removes the decorations first, through predicates, its rule, so
+// user-authored predicates converge with introspected ones instead of
+// planning a replacement on every run.
+func normalizePredicate(value string, predicates schemacomparison.IndexPredicates) string {
+	if predicates != nil {
+		value = predicates.Spelling(value)
 	}
 	return normalizeCheckExpression(value)
 }
@@ -1731,7 +1059,7 @@ func IndexRenames(
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
 	caps capability.Capabilities,
-	rules schemacomparison.Indexes,
+	rules schemacomparison.Rules,
 ) []difftypes.IndexRename {
 	scratch := &difftypes.SchemaDiff{}
 	IndexesWithSemantics(desired, database, scratch, dialect, semantics, indexes, caps, rules)

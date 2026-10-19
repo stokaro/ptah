@@ -35,13 +35,17 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/builtindialects"
+	"ptah.run/internal/clickhousecomparison"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/mssqlroutineprep"
+	"ptah.run/internal/mysqlcomparison"
 	mysqlrules "ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracledata"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgdefaultprivilegeprovider"
+	"ptah.run/internal/postgrescomparison"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/sqlservercomparison"
 	"ptah.run/internal/ydbcomparison"
 	"ptah.run/internal/ydbdata"
 	"ptah.run/internal/ydbextensions"
@@ -91,7 +95,7 @@ func New() (*engine.Runtime, error) {
 				// A routine body is the engine's own language, so its owner
 				// reads it, and a routine that declares no language is in it.
 				RoutineBodies: routineBodyReader(name),
-				Comparison:    schemacomparison.Rules{Routines: routineDefaults(name), Indexes: indexRules(name)},
+				Comparison:    comparisonRules(name),
 			}},
 		}
 		if name == platform.SQLServer {
@@ -336,13 +340,26 @@ func renderTarget(dialect string) string {
 	return dialect
 }
 
-// indexRules returns the index rules a target registers before its owner's
-// services run, or nil. The shared comparison reads a YugabyteDB index's whole
-// definition through YugabyteDB's own rules; the owners of other targets
-// register theirs with their services.
-func indexRules(name string) schemacomparison.Indexes {
-	if name == platform.YugabyteDB {
-		return yugabytecomparison.Rules().Indexes
+// comparisonRules returns the rules a target gives the shared comparison
+// before its owner's services run, which may register more: the comparison
+// rules of each engine whose owner registers none with its services, and the
+// routine defaults the engine applies. The shared comparison reads an index
+// definition, a partial index's predicate, a generated column's expression
+// and a foreign key's backing index through these rules alone.
+func comparisonRules(name string) schemacomparison.Rules {
+	var rules schemacomparison.Rules
+	switch name {
+	case platform.Postgres:
+		rules = postgrescomparison.Rules()
+	case platform.MySQL, platform.MariaDB:
+		rules = mysqlcomparison.Rules(name)
+	case platform.SQLServer:
+		rules = sqlservercomparison.Rules()
+	case platform.ClickHouse:
+		rules = clickhousecomparison.Rules()
+	case platform.YugabyteDB:
+		rules = yugabytecomparison.Rules()
 	}
-	return nil
+	rules.Routines = routineDefaults(name)
+	return rules
 }

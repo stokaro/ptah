@@ -72,10 +72,13 @@ type CompareOptions struct {
 	// as well as the objects in them: a database only the desired state
 	// declares is created, one only the server holds is dropped with
 	// everything in it, and a declared character set or collation that
-	// differs is changed (stokaro/ptah#3789). It is read on those two dialects
-	// only, and only a comparison of two whole servers or of a server and a
-	// declaration of one should set it. The connected comparison sets it
-	// itself for a connection that selected no database.
+	// differs is changed (stokaro/ptah#3789). It is read on a dialect whose
+	// descriptor states
+	// [ptah.run/core/platform/descriptor.Comparison.ServerDatabases], which
+	// among the built-in dialects are those two. Only a comparison of two
+	// whole servers or of a server and a declaration of one should set it.
+	// The connected comparison sets it itself for a connection that selected
+	// no database.
 	ServerSchemas bool
 
 	// SkipColumnDrops reports that the caller removes every column drop from

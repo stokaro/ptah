@@ -216,6 +216,7 @@ func tableColumnsWithSemantics(
 				defaultIntSize:       spellings.DefaultIntSize,
 				serialSequences:      caps.Has(capability.SerialSequenceOptions),
 				rules:                spellings.ColumnRules,
+				generated:            spellings.GeneratedExpressions,
 			})
 			// A comment-only difference has no entry in Changes, and it is
 			// still a difference: without the second condition a column whose
@@ -370,13 +371,13 @@ func Columns(genCol schemamodel.Field, dbCol catalog.Column) difftypes.ColumnDif
 // comparison that has a desired schema to consult goes through
 // tableColumnsWithSemantics, which passes that set down.
 func ColumnsWithDialect(genCol schemamodel.Field, dbCol catalog.Column, dialect string) difftypes.ColumnDiff {
-	return ColumnsWithRules(genCol, dbCol, dialect, nil)
+	return ColumnsWithRules(genCol, dbCol, dialect, schemacomparison.Rules{})
 }
 
-// ColumnsWithRules is [ColumnsWithDialect] with the target's column rules,
-// nil where it registers none.
-func ColumnsWithRules(genCol schemamodel.Field, dbCol catalog.Column, dialect string, rules schemacomparison.Columns) difftypes.ColumnDiff {
-	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil, columnContext{rules: rules})
+// ColumnsWithRules is [ColumnsWithDialect] with the target's comparison rules,
+// whose column members are nil where it registers none.
+func ColumnsWithRules(genCol schemamodel.Field, dbCol catalog.Column, dialect string, rules schemacomparison.Rules) difftypes.ColumnDiff {
+	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil, columnContext{rules: rules.Columns, generated: rules.GeneratedExpressions})
 }
 
 // columnContext carries what a column comparison needs about the table it sits
@@ -403,6 +404,9 @@ type columnContext struct {
 	serialSequences bool
 	// rules are the target's column rules, nil where it registers none.
 	rules schemacomparison.Columns
+	// generated reads a generated column's expression on the target, nil
+	// where it registers no rule for it.
+	generated schemacomparison.GeneratedExpressions
 }
 
 // columnSpelling returns the server's spelling of the column's type and
@@ -513,7 +517,7 @@ func columnsWithDesiredDomains(
 	if entry, ok := ctx.generatedExpressions[exprkey.Generated(dialect, ctx.schema, ctx.table, genCol.Name)]; ok {
 		resolution = &entry
 	}
-	if diff := generatedColumnDiff(genCol, dbCol, dialect, resolution); diff != "" {
+	if diff := generatedColumnDiff(genCol, dbCol, dialect, resolution, ctx.generated); diff != "" {
 		colDiff.Changes["generated"] = diff
 	}
 
@@ -1384,6 +1388,7 @@ func generatedColumnDiff(
 	dbCol catalog.Column,
 	dialect string,
 	resolution *config.GeneratedExpression,
+	spelling schemacomparison.GeneratedExpressions,
 ) string {
 	declared := genCol.GeneratedExpression
 	switch {
@@ -1399,10 +1404,10 @@ func generatedColumnDiff(
 		return generatedKindDiff(genCol, dbCol)
 	}
 
-	genExpr := normalizeGeneratedExpression(declared, dialect)
+	genExpr := normalizeGeneratedExpression(declared, spelling)
 	dbExpr := ""
 	if dbCol.GeneratedExpression != nil {
-		dbExpr = normalizeGeneratedExpression(*dbCol.GeneratedExpression, dialect)
+		dbExpr = normalizeGeneratedExpression(*dbCol.GeneratedExpression, spelling)
 	}
 	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
 	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
@@ -1426,210 +1431,16 @@ func generatedKindDiff(genCol schemamodel.Field, dbCol catalog.Column) string {
 	return fmt.Sprintf("%s -> %s", dbKind, genKind)
 }
 
-func normalizeGeneratedExpression(expression, dialect string) string {
+// normalizeGeneratedExpression reduces a generated column's expression to the
+// spelling it is compared and reported in: without surrounding space and
+// redundant outer parentheses, and in the spelling spelling, the target's
+// rule, gives it where the target registers one.
+func normalizeGeneratedExpression(expression string, spelling schemacomparison.GeneratedExpressions) string {
 	expression = normalize.Expression(expression)
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
-		return normalizeCatalogGeneratedExpression(stripPostgresGeneratedTypeCasts(expression), dialect)
-	case platform.MySQL, platform.MariaDB:
-		return normalizeMySQLGeneratedExpression(normalizeCatalogGeneratedExpression(expression, dialect))
-	case platform.SQLServer:
-		return normalizeSQLServerGeneratedExpression(expression)
-	default:
+	if spelling == nil {
 		return expression
 	}
-}
-
-func normalizeMySQLGeneratedExpression(expression string) string {
-	return replaceSQLFunctionOutsideSingleQuotedSQL(expression, "lcase(", "lower(")
-}
-
-func normalizeSQLServerGeneratedExpression(expression string) string {
-	var b strings.Builder
-	inString := false
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		if ch == '\'' {
-			b.WriteByte(ch)
-			if inString && i+1 < len(expression) && expression[i+1] == '\'' {
-				i++
-				b.WriteByte('\'')
-				continue
-			}
-			inString = !inString
-			continue
-		}
-		if !inString && ch == '[' {
-			i = writeSQLServerBracketedIdentifier(&b, expression, i)
-			continue
-		}
-		if !inString && ch >= 'A' && ch <= 'Z' {
-			ch += 'a' - 'A'
-		}
-		if !inString && (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
-			continue
-		}
-		b.WriteByte(ch)
-	}
-	return b.String()
-}
-
-func normalizeCatalogGeneratedExpression(expression, dialect string) string {
-	var b strings.Builder
-	mysqlFamily := comparisonOf(dialect).DoubleQuotedStrings
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		if ch == '\'' || (mysqlFamily && ch == '"') {
-			i = copyQuotedSQL(&b, expression, i)
-			continue
-		}
-		switch ch {
-		case '`', '"', ' ', '\t', '\n', '\r':
-			continue
-		default:
-			if ch >= 'A' && ch <= 'Z' {
-				ch += 'a' - 'A'
-			}
-			b.WriteByte(ch)
-		}
-	}
-	return collapseParenthesizedIdentifiers(b.String())
-}
-
-func stripPostgresGeneratedTypeCasts(expression string) string {
-	var b strings.Builder
-	inString := false
-	inIdentifier := false
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		if ch == '\'' && !inIdentifier {
-			b.WriteByte(ch)
-			if inString && i+1 < len(expression) && expression[i+1] == '\'' {
-				i++
-				b.WriteByte('\'')
-				continue
-			}
-			inString = !inString
-			continue
-		}
-		if ch == '"' && !inString {
-			b.WriteByte(ch)
-			if inIdentifier && i+1 < len(expression) && expression[i+1] == '"' {
-				i++
-				b.WriteByte('"')
-				continue
-			}
-			inIdentifier = !inIdentifier
-			continue
-		}
-		if !inString && !inIdentifier && i+1 < len(expression) && ch == ':' && expression[i+1] == ':' {
-			i = skipPostgresGeneratedTypeCast(expression, i)
-			i--
-			continue
-		}
-		b.WriteByte(ch)
-	}
-	return b.String()
-}
-
-func skipPostgresGeneratedTypeCast(expression string, start int) int {
-	i := start + 2
-	for i < len(expression) && isPostgresTypeCastCharacter(expression[i]) {
-		i++
-	}
-	if i >= len(expression) || expression[i] != '(' {
-		return i
-	}
-	depth := 0
-	for i < len(expression) {
-		switch expression[i] {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				return i + 1
-			}
-		}
-		i++
-	}
-	return i
-}
-
-func isPostgresTypeCastCharacter(ch byte) bool {
-	return ch == ' ' || ch == '.' || ch == '_' ||
-		(ch >= '0' && ch <= '9') ||
-		(ch >= 'A' && ch <= 'Z') ||
-		(ch >= 'a' && ch <= 'z')
-}
-
-func collapseParenthesizedIdentifiers(expression string) string {
-	for {
-		next, changed := collapseOneParenthesizedIdentifier(expression)
-		if !changed {
-			return expression
-		}
-		expression = next
-	}
-}
-
-func collapseOneParenthesizedIdentifier(expression string) (string, bool) {
-	for start := 0; start < len(expression); start++ {
-		if expression[start] != '(' {
-			continue
-		}
-		if start > 0 && isIdentifierExpression(expression[start-1:start]) {
-			continue
-		}
-		end := strings.IndexByte(expression[start+1:], ')')
-		if end < 0 {
-			return expression, false
-		}
-		end += start + 1
-		inner := expression[start+1 : end]
-		if !isIdentifierExpression(inner) {
-			continue
-		}
-		return expression[:start] + inner + expression[end+1:], true
-	}
-	return expression, false
-}
-
-func isIdentifierExpression(expression string) bool {
-	if expression == "" {
-		return false
-	}
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		if ch != '_' && ch != '.' &&
-			(ch < '0' || ch > '9') &&
-			(ch < 'a' || ch > 'z') &&
-			(ch < 'A' || ch > 'Z') {
-			return false
-		}
-	}
-	return true
-}
-
-func writeSQLServerBracketedIdentifier(b *strings.Builder, expression string, start int) int {
-	for i := start + 1; i < len(expression); i++ {
-		ch := expression[i]
-		if ch == ']' {
-			if i+1 < len(expression) && expression[i+1] == ']' {
-				b.WriteByte(']')
-				i++
-				continue
-			}
-			return i
-		}
-		if ch >= 'A' && ch <= 'Z' {
-			ch += 'a' - 'A'
-		}
-		b.WriteByte(ch)
-	}
-
-	b.WriteByte('[')
-	return start
+	return spelling.Spelling(expression)
 }
 
 // removedColumn describes a column the database reported and the desired schema

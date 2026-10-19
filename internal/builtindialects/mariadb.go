@@ -150,6 +150,8 @@ func mariaDB() descriptor.Dialect {
 			RoutineTypeAliases:       "mysqlroutine",
 			ViewPredicatesAsIntegers: true,
 			AutoIncrementFlag:        true,
+			// A whole server compares its databases too.
+			ServerDatabases: true,
 		},
 
 		// As MySQL.

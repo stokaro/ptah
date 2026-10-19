@@ -13,8 +13,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
+	"ptah.run/internal/postgrescomparison"
 )
 
 // oracleStoredExpression is what a live 23.26.2.0.0 stores for
@@ -65,7 +67,10 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 		// resolution is what a dev database answered for the declaration, nil
 		// when nobody asked one.
 		resolution *config.GeneratedExpression
-		want       string
+		// spelling is the target's rule for a generated expression, nil where
+		// it registers none.
+		spelling schemacomparison.GeneratedExpressions
+		want     string
 	}{
 		{
 			name:       "a resolved declaration converges with the catalog",
@@ -126,6 +131,7 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 			declared:   "view_count * 3",
 			stored:     "view_count * 2",
 			storedKind: "VIRTUAL",
+			spelling:   postgrescomparison.GeneratedExpressions{},
 			want:       "VIRTUAL view_count*2 -> VIRTUAL view_count*3",
 		},
 		{
@@ -134,6 +140,7 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 			declared:   "view_count * 2",
 			stored:     "view_count * 2",
 			storedKind: "VIRTUAL",
+			spelling:   postgrescomparison.GeneratedExpressions{},
 			want:       "",
 		},
 	}
@@ -147,6 +154,7 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 				storedGeneratedColumn(test.stored, test.storedKind),
 				test.dialect,
 				test.resolution,
+				test.spelling,
 			)
 
 			c.Assert(diff, qt.Equals, test.want)
