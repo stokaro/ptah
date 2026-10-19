@@ -245,6 +245,7 @@ linters:
         - ptah.run/internal/atlasscript
         - ptah.run/internal/connector
         - ptah.run/internal/dbexprprobe
+        - ptah.run/internal/dbreset
         - ptah.run/internal/dbschema/postgres
         - ptah.run/internal/dbschema/sqlite
         - ptah.run/internal/dbschema/ydb

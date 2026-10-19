@@ -1,9 +1,11 @@
 package descriptor
 
 // Cleanup states what a cleanup of a development database destroys on an
-// engine and how it spells the statements, which internal/schemaclean reads.
-// The zero value is an engine the cleanup has not measured: its plan reports
-// the tables every writer drops and nothing else.
+// engine and how it spells the statements, which internal/schemaclean reads,
+// and where the engine's writer lists from its catalog what the schema reader
+// does not describe, which the writer reads. The zero value is an engine the
+// cleanup has not measured: its plan reports the tables every writer drops
+// and nothing else.
 type Cleanup struct {
 	// ForeignKeys, Views, MaterializedViews, Enums, Domains, Composites,
 	// Ranges and Functions are the kinds beyond tables the writer's cleanup
@@ -17,13 +19,14 @@ type Cleanup struct {
 	Ranges            bool `json:"ranges,omitempty"`
 	Functions         bool `json:"functions,omitempty"`
 	// CatalogInventory reports that the cleanup was measured against the
-	// engine's catalog as PostgreSQL keeps it: it lists the runtime objects
-	// the snapshot does not carry, orders views by their dependencies and
-	// locks the relations a scoped plan drops.
+	// engine's catalog as PostgreSQL keeps it: the PostgreSQL family's writer
+	// then lists the runtime objects the snapshot does not carry, orders
+	// views by their dependencies and locks the relations a scoped plan
+	// drops.
 	CatalogInventory bool `json:"catalog_inventory,omitempty"`
 	// StoredObjects reports that the writer drops events and stored routines
-	// the snapshot does not carry, which the cleanup lists from the catalog
-	// as MySQL keeps it.
+	// the snapshot does not carry, which the MySQL family's writer then lists
+	// from the catalog as MySQL keeps it.
 	StoredObjects bool `json:"stored_objects,omitempty"`
 	// RevisionTables reports that the writer drops Ptah's revision tables
 	// while the reader hides them by name, so the cleanup finds them itself.

@@ -20,6 +20,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/revisiontable"
 )
 
@@ -153,21 +154,23 @@ func TestPostgresFamilyScopedExecutionRetriesSelectedDependencies(t *testing.T) 
 	})
 }
 
-func TestPostgresPlanRelationsLockEveryTableOwner(t *testing.T) {
+// TestPlannedRelationsAreTheTablesAScopedPlanDrops pins what a scoped plan
+// hands its engine's catalog to lock: its tables and foreign tables, in the
+// plan's order, and nothing else it drops.
+func TestPlannedRelationsAreTheTablesAScopedPlanDrops(t *testing.T) {
 	c := qt.New(t)
-	tx := &cleanupRetryTransaction{}
 	changes := []Change{
 		{Type: ObjectTypeView, Schema: "public", Name: "active_users"},
 		{Type: ObjectTypeTable, Schema: "tenant", Name: "users"},
 		{Type: ObjectTypeForeignTable, Schema: "public", Name: "remote_users"},
+		{Type: ObjectTypeSequence, Schema: "public", Name: "users_id_seq"},
 		{Type: ObjectTypeTable, Schema: "tenant", Name: "users"},
 	}
 
-	err := lockPostgresPlanRelations(t.Context(), tx, changes)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(tx.queries, qt.DeepEquals, []string{
-		`LOCK TABLE "public"."remote_users", "tenant"."users" IN ACCESS EXCLUSIVE MODE`,
+	c.Assert(plannedRelations(changes), qt.DeepEquals, []dbreset.Relation{
+		{Schema: "tenant", Name: "users"},
+		{Schema: "public", Name: "remote_users"},
+		{Schema: "tenant", Name: "users"},
 	})
 }
 
@@ -463,28 +466,4 @@ func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
 			c.Assert(coverageFor(test.dialect).revisionTables, qt.Equals, test.want)
 		})
 	}
-}
-
-func TestPostgresRuntimeObjectTypeCoversEveryWriterOnlyKind(t *testing.T) {
-	c := qt.New(t)
-
-	tests := map[string]string{
-		"aggregate":         ObjectTypeAggregate,
-		"collation":         ObjectTypeCollation,
-		"default_privilege": ObjectTypeDefaultPrivilege,
-		"foreign_table":     ObjectTypeForeignTable,
-		"function":          ObjectTypeFunction,
-		"procedure":         ObjectTypeProcedure,
-		"sequence":          ObjectTypeSequence,
-	}
-	for kind, want := range tests {
-		got, ok := postgresRuntimeObjectType(kind)
-		c.Assert(ok, qt.IsTrue, qt.Commentf("kind %s", kind))
-		c.Assert(got, qt.Equals, want, qt.Commentf("kind %s", kind))
-	}
-
-	_, ok := postgresRuntimeObjectType("extension")
-	c.Assert(ok, qt.IsFalse)
-	c.Assert(coverageFor("postgres").postgresRuntimeObjects, qt.IsTrue)
-	c.Assert(coverageFor("cockroachdb").postgresRuntimeObjects, qt.IsFalse)
 }

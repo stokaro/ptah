@@ -1,10 +1,10 @@
 // Package pgdefaultacl reads pg_default_acl, the catalog of what ALTER DEFAULT
 // PRIVILEGES established, and spells the statement that takes a default back.
 //
-// It is shared by the PostgreSQL reader and writer in
-// internal/dbschema/postgres and by internal/schemaclean. The plan `ptah-compat
-// schema clean` prints, the statements a narrowed plan runs and the cleanup
-// `ptah db drop-all` runs are therefore one revoke read one way. Two readers of
+// It is shared by the PostgreSQL reader, the writer and the writer's cleanup
+// catalog in internal/dbschema/postgres. The plan `ptah-compat schema clean`
+// prints, the statements a narrowed plan runs and the cleanup `ptah db
+// drop-all` runs are therefore one revoke read one way. Two readers of
 // the relation drift: a copy that exploded the ACL with aclexplode revoked
 // nothing on CockroachDB v25.4, and one that named role 0 wrote a role nobody
 // has (stokaro/ptah#3832).

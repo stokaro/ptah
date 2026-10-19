@@ -17,7 +17,6 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbreset"
-	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
 )
@@ -168,11 +167,6 @@ type dialectCoverage struct {
 	ranges            bool
 	functions         bool
 
-	// Runtime-sourced kinds: the reader's snapshot does not carry them, so
-	// Inspect queries the live catalog for them. See inspectRuntimeObjects.
-	postgresRuntimeObjects bool
-	mysqlStoredObjects     bool
-
 	// revisionTables records that this dialect's writer destroys Ptah's own
 	// migration bookkeeping tables while its reader hides them by name, so
 	// Inspect has to find them in the live catalog. See inspectRevisionTables.
@@ -218,12 +212,12 @@ func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, 
 		return planFromObjects(objects, dialect, nil), nil
 	}
 	objects := cleanupObjects(schema, dialect)
-	runtimeObjects, err := inspectRuntimeObjects(conn)
+	runtimeObjects, err := inspectRuntimeObjects(ctx, conn, nil)
 	if err != nil {
 		return Plan{}, err
 	}
 	objects = append(objects, runtimeObjects...)
-	executionDepths, err := inspectPostgresViewDependencyDepths(conn, objects)
+	executionDepths, err := inspectViewDepths(ctx, conn, objects)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -338,8 +332,8 @@ func applyPostgresFamilyPlan(
 	if err != nil {
 		return fmt.Errorf("begin scoped schema cleanup: %w", err)
 	}
-	if cleanupOf(conn.Info().Dialect).CatalogInventory {
-		if err := lockPostgresPlanRelations(ctx, tx, changes); err != nil {
+	if strategy := cleanupCatalogOf(conn); strategy != nil {
+		if err := strategy.LockRelations(ctx, tx, plannedRelations(changes)); err != nil {
 			return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 		}
 	}
@@ -370,33 +364,18 @@ func applyPostgresFamilyPlan(
 	return nil
 }
 
-func lockPostgresPlanRelations(
-	ctx context.Context,
-	tx catalog.SchemaTransaction,
-	changes []Change,
-) error {
-	relations := make([]string, 0, len(changes))
-	seen := make(map[string]struct{}, len(changes))
+// plannedRelations are the tables and foreign tables a scoped plan drops, in
+// the plan's order: the relations its engine's catalog locks before the first
+// drop; see [dbreset.CleanupCatalog.LockRelations].
+func plannedRelations(changes []Change) []dbreset.Relation {
+	var relations []dbreset.Relation
 	for _, change := range changes {
 		if change.Type != ObjectTypeTable && change.Type != ObjectTypeForeignTable {
 			continue
 		}
-		relation := sqlident.Qualified("postgres", change.Schema, change.Name)
-		if _, exists := seen[relation]; exists {
-			continue
-		}
-		seen[relation] = struct{}{}
-		relations = append(relations, relation)
+		relations = append(relations, dbreset.Relation{Schema: change.Schema, Name: change.Name})
 	}
-	if len(relations) == 0 {
-		return nil
-	}
-	slices.Sort(relations)
-	statement := "LOCK TABLE " + strings.Join(relations, ", ") + " IN ACCESS EXCLUSIVE MODE"
-	if err := tx.ExecuteSQL(ctx, statement); err != nil {
-		return fmt.Errorf("lock planned schema cleanup relations: %w", err)
-	}
-	return nil
+	return relations
 }
 
 func applyPostgresFamilyPlanChanges(
@@ -604,18 +583,16 @@ func changesFromObjects(objects []Object, dialect string) []Change {
 func coverageFor(dialect string) dialectCoverage {
 	cleanup := cleanupOf(dialect)
 	return dialectCoverage{
-		foreignKeys:            cleanup.ForeignKeys,
-		views:                  cleanup.Views,
-		materializedViews:      cleanup.MaterializedViews,
-		enums:                  cleanup.Enums,
-		domains:                cleanup.Domains,
-		composites:             cleanup.Composites,
-		ranges:                 cleanup.Ranges,
-		functions:              cleanup.Functions,
-		postgresRuntimeObjects: cleanup.CatalogInventory,
-		mysqlStoredObjects:     cleanup.StoredObjects,
-		revisionTables:         cleanup.RevisionTables,
-		writerListing:          cleanup.WriterListing,
+		foreignKeys:       cleanup.ForeignKeys,
+		views:             cleanup.Views,
+		materializedViews: cleanup.MaterializedViews,
+		enums:             cleanup.Enums,
+		domains:           cleanup.Domains,
+		composites:        cleanup.Composites,
+		ranges:            cleanup.Ranges,
+		functions:         cleanup.Functions,
+		revisionTables:    cleanup.RevisionTables,
+		writerListing:     cleanup.WriterListing,
 	}
 }
 
@@ -845,35 +822,90 @@ func inspectWriterObjects(ctx context.Context, conn *dbschema.DatabaseConnection
 	return objects, depths, nil
 }
 
-func inspectRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
-	return InspectRuntimeObjects(conn, nil)
+// catalogWriter is a writer that offers what its engine's catalog answers a
+// cleanup plan where the schema reader cannot; see [dbreset.CleanupCatalog].
+// A writer that is not one, or offers none, leaves the plan to the snapshot.
+type catalogWriter interface {
+	CleanupCatalog() dbreset.CleanupCatalog
+}
+
+// cleanupCatalogOf returns the catalog strategy of conn's writer, or nil
+// where the writer offers none.
+func cleanupCatalogOf(conn *dbschema.DatabaseConnection) dbreset.CleanupCatalog {
+	return writerCatalog(conn.SchemaWriter())
+}
+
+// writerCatalog returns the catalog strategy writer offers, or nil where it
+// is not a [catalogWriter] or offers none.
+func writerCatalog(writer catalog.SchemaWriter) dbreset.CleanupCatalog {
+	offering, ok := writer.(catalogWriter)
+	if !ok {
+		return nil
+	}
+	return offering.CleanupCatalog()
 }
 
 // InspectRuntimeObjects returns catalog objects that the ordinary schema
-// reader cannot model but which remain relevant to live-schema policy. When
-// schemas is non-empty, only those schema scopes are inventoried; nil uses the
-// connection's cleanup scope. The query is read-only and does not build or
-// execute a cleanup plan.
+// reader cannot model but which remain relevant to live-schema policy: the
+// ones the connection's writer lists from its catalog
+// ([dbreset.CleanupCatalog.Objects]). When schemas is non-empty, only those
+// schema scopes are inventoried; nil uses the connection's cleanup scope. The
+// query is read-only and does not build or execute a cleanup plan.
+//
+// It takes no context, as its callers validate a snapshot they already hold,
+// so the reads run under the background context.
 func InspectRuntimeObjects(conn *dbschema.DatabaseConnection, schemas []string) ([]Object, error) {
-	coverage := coverageFor(conn.Info().Dialect)
-	if !coverage.postgresRuntimeObjects && !coverage.mysqlStoredObjects {
+	return inspectRuntimeObjects(context.Background(), conn, schemas)
+}
+
+// inspectRuntimeObjects lists the objects the writer's catalog strategy
+// reports for each schema of the scope; see [catalogObjects].
+func inspectRuntimeObjects(ctx context.Context, conn *dbschema.DatabaseConnection, schemas []string) ([]Object, error) {
+	return catalogObjects(ctx, cleanupCatalogOf(conn), conn, conn.Info().Dialect, runtimeObjectSchemas(conn, schemas))
+}
+
+// catalogObjects lists, through q, the objects strategy reports for each of
+// schemas, as plan rows. It answers nil for a nil strategy, and refuses a
+// kind the plan has no name for, naming dialect.
+func catalogObjects(
+	ctx context.Context, strategy dbreset.CleanupCatalog, q dbreset.Querier, dialect string, schemas []string,
+) ([]Object, error) {
+	if strategy == nil {
 		return nil, nil
 	}
 	objects := make([]Object, 0)
-	for _, schema := range runtimeObjectSchemas(conn, schemas) {
-		var scoped []Object
-		var err error
-		if coverage.postgresRuntimeObjects {
-			scoped, err = inspectPostgresRuntimeObjects(conn, schema)
-		} else {
-			scoped, err = inspectMySQLStoredObjects(conn, schema)
-		}
+	for _, schema := range schemas {
+		listed, err := strategy.Objects(ctx, q, schema)
 		if err != nil {
 			return nil, err
 		}
-		objects = append(objects, scoped...)
+		for _, found := range listed {
+			if !slices.Contains(objectTypes(), found.Kind) {
+				return nil, fmt.Errorf("inspect schema before cleanup: the %s writer lists %s %q, which the plan cannot name",
+					dialect, found.Kind, found.Name)
+			}
+			objects = append(objects, Object{
+				Type:         found.Kind,
+				Schema:       found.Schema,
+				Table:        found.Table,
+				Name:         found.Name,
+				SelectorName: found.SelectorName,
+				Implicit:     found.Implicit,
+				Command:      found.Statement,
+			})
+		}
 	}
 	return objects, nil
+}
+
+// objectTypes returns every object kind a cleanup plan can name.
+func objectTypes() []string {
+	return []string{
+		ObjectTypeAggregate, ObjectTypeCollation, ObjectTypeComposite, ObjectTypeDefaultPrivilege, ObjectTypeDomain,
+		ObjectTypeEnum, ObjectTypeEvent, ObjectTypeForeignKey, ObjectTypeForeignTable, ObjectTypeFunction,
+		ObjectTypeMaterializedView, ObjectTypeProcedure, ObjectTypeRange, ObjectTypeSequence, ObjectTypeSynonym,
+		ObjectTypeTable, ObjectTypeTrigger, ObjectTypeType, ObjectTypeView, ObjectTypeSchema,
+	}
 }
 
 func runtimeObjectSchemas(conn *dbschema.DatabaseConnection, schemas []string) []string {
@@ -894,272 +926,39 @@ func runtimeObjectSchemas(conn *dbschema.DatabaseConnection, schemas []string) [
 	return result
 }
 
-func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection, schema string) ([]Object, error) {
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
-		schema = "public"
-	}
-	rows, err := conn.Query(`
-		WITH sequence_objects AS (
-			SELECT
-				c.oid,
-				n.nspname,
-				c.relname,
-				owner_tbl.relname AS owner_table,
-				CASE
-					WHEN dep.refobjid IS NULL THEN false
-					WHEN dep.deptype = 'i' THEN true
-					WHEN owner_col_type.typtype = 'd' THEN false
-					ELSE EXISTS (
-						SELECT 1
-						FROM pg_attrdef ad
-						JOIN pg_depend dd ON dd.classid = 'pg_attrdef'::regclass
-							AND dd.objid = ad.oid
-							AND dd.refclassid = 'pg_class'::regclass
-							AND dd.refobjid = c.oid
-							AND dd.deptype = 'n'
-						WHERE ad.adrelid = dep.refobjid AND ad.adnum = dep.refobjsubid
-					)
-				END AS is_implicit
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			LEFT JOIN pg_depend dep ON dep.objid = c.oid
-				AND dep.classid = 'pg_class'::regclass
-				AND dep.refclassid = 'pg_class'::regclass
-				AND dep.deptype IN ('a', 'i')
-				AND dep.refobjsubid > 0
-			LEFT JOIN pg_class owner_tbl ON owner_tbl.oid = dep.refobjid
-			LEFT JOIN pg_attribute owner_col ON owner_col.attrelid = dep.refobjid
-				AND owner_col.attnum = dep.refobjsubid
-			LEFT JOIN pg_type owner_col_type ON owner_col_type.oid = owner_col.atttypid
-			WHERE n.nspname = $1 AND c.relkind = 'S'
-		),
-		runtime_objects AS (
-			SELECT
-				'sequence'::text AS object_kind,
-				nspname AS object_schema,
-				relname AS object_name,
-				relname AS selector_name,
-				is_implicit,
-				COALESCE(owner_table, '') AS owner_table,
-				format('DROP SEQUENCE IF EXISTS %I.%I RESTRICT', nspname, relname) AS drop_statement
-			FROM sequence_objects
-
-			UNION ALL
-
-			SELECT
-				'foreign_table',
-				n.nspname,
-				c.relname,
-				c.relname,
-				false,
-				'',
-				format('DROP FOREIGN TABLE IF EXISTS %I.%I RESTRICT', n.nspname, c.relname)
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1 AND c.relkind = 'f'
-
-			UNION ALL
-
-			SELECT
-				CASE p.prokind
-					WHEN 'p' THEN 'procedure'
-					WHEN 'a' THEN 'aggregate'
-					ELSE 'function'
-				END,
-				n.nspname,
-				format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)),
-				p.proname,
-				false,
-				'',
-				format(
-					'DROP %s IF EXISTS %I.%I(%s) RESTRICT',
-					CASE p.prokind
-						WHEN 'p' THEN 'PROCEDURE'
-						WHEN 'a' THEN 'AGGREGATE'
-						ELSE 'FUNCTION'
-					END,
-					n.nspname,
-					p.proname,
-					pg_get_function_identity_arguments(p.oid)
-				)
-			FROM pg_proc p
-			JOIN pg_namespace n ON n.oid = p.pronamespace
-			WHERE n.nspname = $1
-			  AND p.prokind IN ('p', 'a', 'w')
-			  AND NOT EXISTS (
-				SELECT 1
-				FROM pg_depend d
-				WHERE d.classid = 'pg_proc'::regclass
-				  AND d.objid = p.oid
-				  AND d.deptype = 'i'
-			  )
-
-			UNION ALL
-
-			SELECT
-				'collation',
-				n.nspname,
-				c.collname,
-				c.collname,
-				false,
-				'',
-				format('DROP COLLATION IF EXISTS %I.%I RESTRICT', n.nspname, c.collname)
-			FROM pg_collation c
-			JOIN pg_namespace n ON n.oid = c.collnamespace
-			WHERE n.nspname = $1
-		)
-		SELECT object_kind, object_schema, object_name, selector_name, is_implicit, owner_table, drop_statement
-		FROM runtime_objects
-		ORDER BY object_kind, object_name`, schema)
-	if err != nil {
-		return nil, fmt.Errorf("inspect PostgreSQL runtime objects: %w", err)
-	}
-	defer rows.Close()
-
-	objects := make([]Object, 0)
-	for rows.Next() {
-		var kind string
-		var schema string
-		var name string
-		var selectorName string
-		var implicit bool
-		var table sql.NullString
-		var command string
-		if err := rows.Scan(&kind, &schema, &name, &selectorName, &implicit, &table, &command); err != nil {
-			return nil, fmt.Errorf("scan PostgreSQL runtime object: %w", err)
-		}
-		objectType, ok := postgresRuntimeObjectType(kind)
-		if !ok {
-			return nil, fmt.Errorf("inspect PostgreSQL runtime objects: unsupported object kind %q", kind)
-		}
-		objects = append(objects, Object{
-			Type:         objectType,
-			Schema:       schema,
-			Table:        table.String,
-			Name:         name,
-			SelectorName: selectorName,
-			Implicit:     implicit,
-			Command:      command,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate PostgreSQL runtime objects: %w", err)
-	}
-	revokes, err := inspectPostgresDefaultPrivileges(conn, schema)
-	if err != nil {
-		return nil, err
-	}
-	return append(objects, revokes...), nil
-}
-
-// inspectPostgresDefaultPrivileges names each default privilege the cleanup
-// revokes, one object per grantee, with the statement the writer's cleanup
-// runs for it.
-//
-// Both read through [pgdefaultacl.ReadRevokes], so the plan prints the revoke
-// DropAllTables executes and a narrowed plan executes the same statement. A
-// read of its own spelled the revoke differently and exploded the ACL with
-// aclexplode, which answers nothing on CockroachDB v25.4 (stokaro/ptah#3832).
-//
-// The inventory takes no context, as the query above it runs without one, so
-// the read gets the background context that query runs under.
-func inspectPostgresDefaultPrivileges(conn *dbschema.DatabaseConnection, schema string) ([]Object, error) {
-	revokes, err := pgdefaultacl.ReadRevokes(context.Background(), conn, []string{schema})
-	if err != nil {
-		return nil, fmt.Errorf("inspect PostgreSQL default privileges: %w", err)
-	}
-	objects := make([]Object, 0, len(revokes))
-	for _, revoke := range revokes {
-		objects = append(objects, Object{
-			Type:         ObjectTypeDefaultPrivilege,
-			Schema:       revoke.Schema,
-			Name:         revoke.Name(),
-			SelectorName: revoke.GrantorName() + ":" + revoke.Class + ":" + revoke.GranteeName(),
-			Command:      revoke.Statement,
-		})
-	}
-	return objects, nil
-}
-
-func inspectPostgresViewDependencyDepths(
+// inspectViewDepths reads, from the writer's catalog strategy, how deep each
+// view and materialized view of the connection's schema, its default schema
+// when none is configured, reads through other views; see [catalogViewDepths].
+func inspectViewDepths(
+	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	objects []Object,
 ) (map[executionObjectIdentity]int, error) {
-	if !cleanupOf(conn.Info().Dialect).CatalogInventory {
-		return nil, nil
-	}
 	schema := strings.TrimSpace(conn.Info().Schema)
 	if schema == "" {
-		schema = "public"
+		schema = defaultSchemaOf(conn.Info().Dialect)
 	}
-	rows, err := conn.Query(`
-		WITH RECURSIVE
-		managed_views AS (
-			SELECT c.oid, c.relnamespace, c.relname, c.relkind
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1 AND c.relkind IN ('v', 'm')
-		),
-		view_dependencies AS (
-			SELECT
-				dependent.oid AS dependent_oid,
-				referenced.oid AS referenced_oid
-			FROM pg_rewrite rewrite
-			JOIN managed_views dependent ON dependent.oid = rewrite.ev_class
-			JOIN pg_depend dependency
-				ON dependency.classid = 'pg_rewrite'::regclass
-			   AND dependency.objid = rewrite.oid
-			   AND dependency.refclassid = 'pg_class'::regclass
-			JOIN managed_views referenced ON referenced.oid = dependency.refobjid
-			WHERE dependent.oid <> referenced.oid
-		),
-		view_depths AS (
-			SELECT view.oid, 0 AS depth
-			FROM managed_views view
-			WHERE NOT EXISTS (
-				SELECT 1
-				FROM view_dependencies dependency
-				WHERE dependency.dependent_oid = view.oid
-			)
+	return catalogViewDepths(ctx, cleanupCatalogOf(conn), conn, schema, objects)
+}
 
-			UNION ALL
-
-			SELECT dependency.dependent_oid, depth.depth + 1
-			FROM view_depths depth
-			JOIN view_dependencies dependency
-				ON dependency.referenced_oid = depth.oid
-		)
-		SELECT
-			view.relname,
-			view.relkind,
-			COALESCE(MAX(depth.depth), 0)
-		FROM managed_views view
-		LEFT JOIN view_depths depth ON depth.oid = view.oid
-		GROUP BY view.oid, view.relname, view.relkind
-		ORDER BY view.relname
-	`, schema)
-	if err != nil {
-		return nil, fmt.Errorf("inspect PostgreSQL view dependencies before cleanup: %w", err)
+// catalogViewDepths reads, through q, how deep each view of schema reads
+// through other views, and keys the depth of each object that is one of them
+// by its identity, an object naming no schema being in schema, so a scoped
+// plan drops the deepest first. It answers nil for a nil strategy and for one
+// that orders nothing.
+func catalogViewDepths(
+	ctx context.Context, strategy dbreset.CleanupCatalog, q dbreset.Querier, schema string, objects []Object,
+) (map[executionObjectIdentity]int, error) {
+	if strategy == nil {
+		return nil, nil
 	}
-	defer rows.Close()
-
-	depths := make(map[postgresViewIdentity]int)
-	for rows.Next() {
-		var name string
-		var relkind string
-		var depth int
-		if err := rows.Scan(&name, &relkind, &depth); err != nil {
-			return nil, fmt.Errorf("scan PostgreSQL view dependency: %w", err)
-		}
-		objectType := ObjectTypeView
-		if relkind == "m" {
-			objectType = ObjectTypeMaterializedView
-		}
-		depths[postgresViewIdentity{objectType: objectType, schema: schema, name: name}] = depth
+	found, err := strategy.ViewDepths(ctx, q, schema)
+	if err != nil || found == nil {
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate PostgreSQL view dependencies: %w", err)
+	depths := make(map[viewIdentity]int, len(found))
+	for _, view := range found {
+		depths[viewIdentity{objectType: view.Kind, schema: schema, name: view.Name}] = view.Depth
 	}
 	executionDepths := make(map[executionObjectIdentity]int)
 	for i := range objects {
@@ -1167,7 +966,7 @@ func inspectPostgresViewDependencyDepths(
 		if objectSchema == "" {
 			objectSchema = schema
 		}
-		depth := depths[postgresViewIdentity{
+		depth := depths[viewIdentity{
 			objectType: objects[i].Type,
 			schema:     objectSchema,
 			name:       objects[i].Name,
@@ -1179,7 +978,7 @@ func inspectPostgresViewDependencyDepths(
 	return executionDepths, nil
 }
 
-type postgresViewIdentity struct {
+type viewIdentity struct {
 	objectType string
 	schema     string
 	name       string
@@ -1201,65 +1000,6 @@ func objectExecutionIdentity(object Object) executionObjectIdentity {
 		name:       object.Name,
 		parameters: object.Parameters,
 	}
-}
-
-// inspectMySQLStoredObjects reports the stored programs and MariaDB sequences
-// that the MySQL writer's listCleanupObjects returns but the MySQL reader never
-// records: information_schema.routines, information_schema.events, and the
-// SEQUENCE rows of information_schema.tables.
-//
-// The scope mirrors mysql.Writer.cleanupSchema: the configured schema when the
-// connection pins one, otherwise the session's current database.
-func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection, schema string) ([]Object, error) {
-	schema = strings.TrimSpace(schema)
-	rows, err := conn.Query(`
-		SELECT object_name, object_kind
-		FROM (
-			SELECT routine_name AS object_name, routine_type AS object_kind
-			FROM information_schema.routines
-			WHERE routine_schema = COALESCE(NULLIF(?, ''), DATABASE())
-
-			UNION ALL
-
-			SELECT event_name, 'EVENT'
-			FROM information_schema.events
-			WHERE event_schema = COALESCE(NULLIF(?, ''), DATABASE())
-
-			UNION ALL
-
-			SELECT table_name, 'SEQUENCE'
-			FROM information_schema.tables
-			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
-			  AND table_type = 'SEQUENCE'
-		) AS cleanup_objects
-		ORDER BY object_kind, object_name`,
-		schema, schema, schema,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("inspect stored objects: %w", err)
-	}
-	defer rows.Close()
-
-	objects := make([]Object, 0)
-	for rows.Next() {
-		var name string
-		var kind string
-		if err := rows.Scan(&name, &kind); err != nil {
-			return nil, fmt.Errorf("scan stored object: %w", err)
-		}
-		objectType, ok := mysqlStoredObjectType(kind)
-		if !ok {
-			return nil, fmt.Errorf("inspect stored objects: unsupported object kind %q", kind)
-		}
-		objects = append(objects, Object{
-			Type: objectType,
-			Name: name,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate stored objects: %w", err)
-	}
-	return objects, nil
 }
 
 // inspectRevisionTables reports the migration bookkeeping tables that this
@@ -1420,42 +1160,6 @@ func unlistedObjects(listed, candidates []Object) []Object {
 		missing = append(missing, candidate)
 	}
 	return missing
-}
-
-func mysqlStoredObjectType(kind string) (string, bool) {
-	switch strings.ToUpper(strings.TrimSpace(kind)) {
-	case "EVENT":
-		return ObjectTypeEvent, true
-	case "FUNCTION":
-		return ObjectTypeFunction, true
-	case "PROCEDURE":
-		return ObjectTypeProcedure, true
-	case "SEQUENCE":
-		return ObjectTypeSequence, true
-	default:
-		return "", false
-	}
-}
-
-func postgresRuntimeObjectType(kind string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "aggregate":
-		return ObjectTypeAggregate, true
-	case "collation":
-		return ObjectTypeCollation, true
-	case "default_privilege":
-		return ObjectTypeDefaultPrivilege, true
-	case "foreign_table":
-		return ObjectTypeForeignTable, true
-	case "function":
-		return ObjectTypeFunction, true
-	case "procedure":
-		return ObjectTypeProcedure, true
-	case "sequence":
-		return ObjectTypeSequence, true
-	default:
-		return "", false
-	}
 }
 
 // sortObjects orders the report by (type, schema, table, name, parameters):

@@ -3,8 +3,10 @@
 // Each dialect's schema writer resets a dev database with a catalog query of
 // its own, and the check that refuses a dev database before that reset has to
 // judge the same objects the reset removes. The writers list them through the
-// query the reset runs, and internal/migrateclean reads the list; the type
-// lives here so that neither side imports the other.
+// query the reset runs, and internal/migrateclean reads the list. A writer
+// also answers, through [CleanupCatalog], what a cleanup plan of
+// internal/schemaclean needs from its catalog. The types live here so that
+// neither side imports the other.
 package dbreset
 
 import (
