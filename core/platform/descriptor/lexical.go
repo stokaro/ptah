@@ -12,9 +12,11 @@ import (
 // field names the reader that honors it where only one of them does.
 type Lexical struct {
 	// Lexer names a lexer of the engine's own its text is read with, such as
-	// [LexerYQL]. Empty reads the shared SQL lexer, with the rules below. A
-	// descriptor that names a lexer states none of those rules, since that
-	// lexer reads none of them.
+	// [LexerYQL]. A service of that lexer reads the text in place of the
+	// shared SQL lexer, which holds no rule of it (internal/lexerext). Empty
+	// reads the shared SQL lexer, with the rules below. A descriptor that
+	// names a lexer states none of those rules, since that lexer reads none of
+	// them.
 	Lexer string `json:"lexer,omitempty"`
 	// LineComments are the markers, beside "--", that open a comment running
 	// to the end of the line, such as "#" and "//". The body scanner honors

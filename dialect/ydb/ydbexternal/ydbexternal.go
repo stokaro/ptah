@@ -63,6 +63,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -779,7 +780,7 @@ func keyword(token lexer.Token, word string) bool {
 
 // identifierText is the name a token writes, without backticks.
 func identifierText(token lexer.Token) string {
-	if name, ok := lexer.YQLIdentifierValue(token.Value); ok {
+	if name, ok := yql.IdentifierValue(token.Value); ok {
 		return name
 	}
 	return token.Value

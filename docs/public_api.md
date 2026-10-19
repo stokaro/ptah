@@ -4917,7 +4917,9 @@ outside the database:
 
 - `Lexical`: how the shared SQL lexer tokenizes the engine's text, or the
   lexer of its own it is read with, and how a routine or view body is
-  scanned;
+  scanned. A lexer of an engine's own is a service of the engine, not a rule
+  of the shared lexer: every reader of the engine's text gets that lexer's
+  tokens;
 - `Reach`: the constructs of the engine's grammar that reach outside the
   database a statement is sent to, which the plan and check-assertion scans
   refuse under the construct the descriptor names. Its call families, such as

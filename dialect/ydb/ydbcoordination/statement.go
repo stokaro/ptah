@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 	"ptah.run/internal/sqlident"
 )
 
@@ -304,7 +305,7 @@ func parseStatement(tokens []lexer.Token) (Statement, error) {
 		return Statement{}, fmt.Errorf("%w: %s names no node", ErrStatement, opening)
 	}
 	name := tokens[3]
-	nodePath, ok := lexer.YQLIdentifierValue(name.Value)
+	nodePath, ok := yql.IdentifierValue(name.Value)
 	if name.Type != lexer.TokenIdentifier || !ok || nodePath == "" || strings.HasPrefix(nodePath, "$") {
 		return Statement{}, fmt.Errorf("%w: %s %s does not name a node; write its path in backticks", ErrStatement,
 			opening, name.Value)

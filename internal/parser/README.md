@@ -375,6 +375,10 @@ Current limitations include:
   PostgreSQL-family, and SQL Server dialect modes expose routine metadata for
   supported routine forms while preserving expression internals as raw SQL;
   unsupported routine body shapes fall back to typed opaque routines or raw SQL.
+- A dialect whose descriptor names a lexer of its own, as YDB's names YQL, is
+  not written in the shared grammar, and the parser refuses its documents with
+  `ErrUnsupportedFeature`. The engine's owner reads them with its own grammar,
+  and `internal/sqlsyntax` serves a syntax tree of them.
 
 ## Future Enhancements
 

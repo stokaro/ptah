@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 )
 
 // Expansion is a query whose secret values are defined in it, ready for the
@@ -357,7 +358,7 @@ func legacySecretObject(statement []lexer.Token) (form, name string, ok bool) {
 // identifierText is a name token as a reader would write it: a backticked
 // path without its quotes.
 func identifierText(token lexer.Token) string {
-	if name, ok := lexer.YQLIdentifierValue(token.Value); ok {
+	if name, ok := yql.IdentifierValue(token.Value); ok {
 		return name
 	}
 	return token.Value

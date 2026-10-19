@@ -29,17 +29,16 @@ import (
 // read one at a time, as the server scans them, and a Unicode escape string's
 // escapes are read once the segments are joined, as the server reads them.
 //
-// With opts.YQL set, the forms are YQL's instead: `'...'` and `"..."` with
-// YDB's backslash escapes and no doubled quote, and `@@...@@`, each with the
-// type suffix it may carry set aside.
+// With opts.Scanner set, the forms are the scanner's instead, and so is the
+// answer: see [Scanner.StringValue].
 //
 // A routine body written as a string is the reason this exists. The literal
 // that carries the body `SELECT 'x'` doubles each quote inside it, and a body
 // read without that undone is one the server refuses once it is written
 // between dollar quotes (stokaro/ptah#3691).
 func StringValue(token string, opts Options) (string, bool) {
-	if opts.YQL {
-		return yqlStringValue(token)
+	if opts.Scanner != nil {
+		return opts.Scanner.StringValue(token)
 	}
 	read := quotedValue
 	if opts.PostgreSQLStringConstants {

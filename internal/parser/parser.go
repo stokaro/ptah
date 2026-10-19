@@ -183,11 +183,12 @@ func (p *Parser) Parse() (*ast.StatementList, error) {
 // parseStatements reads the document's statements, recording the spans the
 // owners' patterns claim.
 //
-// A dialect whose documents are not written in the shared grammar, as YQL is
-// for YDB, is refused: its owner reads them with a grammar of its own, and a
-// syntax consumer reads them through internal/sqlsyntax.
+// A dialect whose documents a lexer of its own reads is not written in the
+// shared grammar, as YQL is not for YDB, and is refused: its owner reads them
+// with a grammar of its own, and a syntax consumer reads them through
+// internal/sqlsyntax.
 func (p *Parser) parseStatements() (*ast.StatementList, error) {
-	if lexerOptions(p.dialect).YQL {
+	if lexerOptions(p.dialect).Scanner != nil {
 		return nil, fmt.Errorf("%w: the shared SQL grammar does not read %s documents; the owner of the target reads them",
 			ptaherr.ErrUnsupportedFeature, p.dialect)
 	}

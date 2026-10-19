@@ -1,4 +1,4 @@
-package lexer_test
+package yql_test
 
 import (
 	"strings"
@@ -7,10 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext/yql"
 )
 
 // yqlToken is the part of a token a YQL row pins: its type and its text. The
-// offsets follow from the text, and TestLexer_YQL_TokensCoverTheInput holds
+// offsets follow from the text, and TestScanner_TokensCoverTheInput holds
 // them.
 type yqlToken struct {
 	Type  lexer.TokenType
@@ -18,14 +19,8 @@ type yqlToken struct {
 }
 
 func yqlTokens(input string) []yqlToken {
-	return lexedTokens(input, lexer.Options{YQL: true})
-}
-
-// lexedTokens lexes input under options and keeps each token's type and
-// text, without the EOF token.
-func lexedTokens(input string, options lexer.Options) []yqlToken {
 	var tokens []yqlToken
-	for _, token := range everyToken(input, options) {
+	for _, token := range everyToken(input) {
 		if token.Type != lexer.TokenEOF {
 			tokens = append(tokens, yqlToken{Type: token.Type, Value: token.Value})
 		}
@@ -33,9 +28,9 @@ func lexedTokens(input string, options lexer.Options) []yqlToken {
 	return tokens
 }
 
-// everyToken lexes input under options through its EOF token.
-func everyToken(input string, options lexer.Options) []lexer.Token {
-	l := lexer.NewLexerWithOptions(input, options)
+// everyToken lexes input with the YQL scanner through its EOF token.
+func everyToken(input string) []lexer.Token {
+	l := lexer.NewLexerWithOptions(input, lexer.Options{Scanner: yql.Scanner{}})
 	var tokens []lexer.Token
 	for {
 		token := l.NextToken()
@@ -50,7 +45,7 @@ func everyToken(input string, options lexer.Options) []lexer.Token {
 // YQL grammar's STRING_VALUE, ID_QUOTED and COMMENT rules where the row says
 // so. A row whose tokens differ from the server's reading is a statement
 // boundary the splitter would draw somewhere the server does not.
-func TestLexer_YQL_HappyPath(t *testing.T) {
+func TestScanner_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -256,7 +251,7 @@ func TestLexer_YQL_HappyPath(t *testing.T) {
 // a plain comment, after a block comment, or after a statement. A setting is
 // TokenUnknown so that stripping comments keeps it; anywhere else the same
 // text is an ordinary comment.
-func TestLexer_YQL_TranslationSettings(t *testing.T) {
+func TestScanner_TranslationSettings(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -315,7 +310,7 @@ func TestLexer_YQL_TranslationSettings(t *testing.T) {
 
 // The YQL tokens tile the input, so a caller that writes token values back
 // out, as the splitter does, reproduces the text byte for byte.
-func TestLexer_YQL_TokensCoverTheInput(t *testing.T) {
+func TestScanner_TokensCoverTheInput(t *testing.T) {
 	inputs := []string{
 		"--!syntax_v1\nDEFINE ACTION $a() AS SELECT 'x\\'y'u; END DEFINE;\nDO $a();",
 		"SELECT @@a@@@@b@@j, \"q\"pt, `t\\`x`, $f(($x) -> { RETURN $x; }) # x",
@@ -325,7 +320,7 @@ func TestLexer_YQL_TokensCoverTheInput(t *testing.T) {
 	}
 	for _, input := range inputs {
 		c := qt.New(t)
-		tokens := everyToken(input, lexer.Options{YQL: true})
+		tokens := everyToken(input)
 		var rebuilt strings.Builder
 		position := 0
 		for _, token := range tokens {
@@ -339,68 +334,9 @@ func TestLexer_YQL_TokensCoverTheInput(t *testing.T) {
 	}
 }
 
-// The YQL field leaves every other reading where it was. Each row is a text
-// whose YQL reading differs, lexed under the options a dialect that is not
-// YDB uses, with the tokens that dialect produced before YQL existed.
-func TestLexer_YQL_OtherDialectsKeepTheirReading(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		options lexer.Options
-		want    []yqlToken
-	}{
-		{
-			name:    "MySQL system variables keep their at signs apart",
-			input:   "@@session.x;",
-			options: lexer.Options{StandardStrings: true, BackslashEscapes: true},
-			want: []yqlToken{
-				{lexer.TokenOperator, "@"}, {lexer.TokenOperator, "@"}, {lexer.TokenIdentifier, "session"},
-				{lexer.TokenOperator, "."}, {lexer.TokenIdentifier, "x"}, {lexer.TokenSemicolon, ";"},
-			},
-		},
-		{
-			name:    "PostgreSQL keeps its dollar quote",
-			input:   "$a$;$a$",
-			options: lexer.Options{StandardStrings: true, PostgreSQLEscapeStrings: true},
-			want:    []yqlToken{{lexer.TokenString, "$a$;$a$"}},
-		},
-		{
-			name:    "MySQL keeps its doubled quote",
-			input:   `'a\''';'`,
-			options: lexer.Options{StandardStrings: true, BackslashEscapes: true},
-			want:    []yqlToken{{lexer.TokenString, `'a\''';'`}},
-		},
-		{
-			name:    "MySQL keeps its hash comment",
-			input:   "# c;",
-			options: lexer.Options{StandardStrings: true, BackslashEscapes: true},
-			want:    []yqlToken{{lexer.TokenComment, "# c;"}},
-		},
-		{
-			name:    "a suffix stays a separate identifier",
-			input:   `'x'u`,
-			options: lexer.Options{StandardStrings: true},
-			want:    []yqlToken{{lexer.TokenString, `'x'`}, {lexer.TokenIdentifier, "u"}},
-		},
-		{
-			name:    "a leading bang comment stays a comment",
-			input:   "--!x",
-			options: lexer.Options{StandardStrings: true},
-			want:    []yqlToken{{lexer.TokenComment, "--!x"}},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(lexedTokens(test.input, test.options), qt.DeepEquals, test.want)
-		})
-	}
-}
-
 // Each row is a YQL literal and the text YDB 26.2.1.14 answered for it.
-func TestStringValue_YQL_HappyPath(t *testing.T) {
-	yql := lexer.Options{YQL: true}
+func TestStringValue_HappyPath(t *testing.T) {
+	options := lexer.Options{Scanner: yql.Scanner{}}
 	tests := []struct {
 		name    string
 		literal string
@@ -426,7 +362,7 @@ func TestStringValue_YQL_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, ok := lexer.StringValue(test.literal, yql)
+			got, ok := lexer.StringValue(test.literal, options)
 
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
@@ -436,8 +372,8 @@ func TestStringValue_YQL_HappyPath(t *testing.T) {
 
 // A literal the server refuses, or a token that is not one whole literal,
 // has no text.
-func TestStringValue_YQL_FailurePath(t *testing.T) {
-	yql := lexer.Options{YQL: true}
+func TestStringValue_FailurePath(t *testing.T) {
+	options := lexer.Options{Scanner: yql.Scanner{}}
 	tests := []struct {
 		name    string
 		literal string
@@ -457,7 +393,7 @@ func TestStringValue_YQL_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, ok := lexer.StringValue(test.literal, yql)
+			got, ok := lexer.StringValue(test.literal, options)
 
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(got, qt.Equals, "")
@@ -465,7 +401,13 @@ func TestStringValue_YQL_FailurePath(t *testing.T) {
 	}
 }
 
-func TestYQLIdentifierValue_HappyPath(t *testing.T) {
+// scanner is the YQL scanner as internal/dialectlexer hands it to a reader of
+// YDB's text.
+var scanner lexer.Scanner = yql.Scanner{}
+
+// Each row is a YQL name and the name it stands for, read by the function the
+// YDB packages call and by the scanner a reader of the dialect's text asks.
+func TestIdentifierValue_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -481,14 +423,19 @@ func TestYQLIdentifierValue_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, ok := lexer.YQLIdentifierValue(test.input)
+			got, ok := yql.IdentifierValue(test.input)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+			got, ok = scanner.IdentifierValue(test.input)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }
 
-func TestYQLIdentifierValue_FailurePath(t *testing.T) {
+// Each row is text that is not one whole YQL name, or one whose escape YDB
+// refuses.
+func TestIdentifierValue_FailurePath(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -502,9 +449,43 @@ func TestYQLIdentifierValue_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, ok := lexer.YQLIdentifierValue(test.input)
+			got, ok := yql.IdentifierValue(test.input)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
+			got, ok = scanner.IdentifierValue(test.input)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(got, qt.Equals, "")
 		})
 	}
+}
+
+// A range is read as text after the head of its input: a translation setting
+// there is an ordinary comment, where the same text at the head of the input
+// is one.
+func TestScanner_RangeIsNotTheHeadOfTheInput(t *testing.T) {
+	c := qt.New(t)
+	input := "--!syntax_v1\nSELECT 1"
+	outer := lexer.NewLexerWithOptions(input, lexer.Options{Scanner: yql.Scanner{}})
+
+	head := lexer.NewLexerWithOptions(input, lexer.Options{Scanner: yql.Scanner{}}).NextToken()
+	inRange := outer.Range(0, len(input)).NextToken()
+
+	c.Assert(head.Type, qt.Equals, lexer.TokenUnknown)
+	c.Assert(inRange.Type, qt.Equals, lexer.TokenComment)
+	c.Assert(inRange.Value, qt.Equals, "--!syntax_v1")
+}
+
+// A range reads only its own text, from its start, and names positions in
+// the whole input.
+func TestScanner_RangeReadsItsOwnText(t *testing.T) {
+	c := qt.New(t)
+	input := "SELECT @@a;b@@u; SELECT 2"
+	outer := lexer.NewLexerWithOptions(input, lexer.Options{Scanner: yql.Scanner{}})
+
+	ranged := outer.Range(7, 15)
+	first := ranged.NextToken()
+	second := ranged.NextToken()
+
+	c.Assert(first, qt.Equals, lexer.Token{Type: lexer.TokenString, Value: "@@a;b@@u", Start: 7, End: 15})
+	c.Assert(second, qt.Equals, lexer.Token{Type: lexer.TokenEOF, Start: 15, End: 15})
 }
