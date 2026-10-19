@@ -139,6 +139,13 @@ func spanner() descriptor.Dialect {
 			EmptyPolicyRolesArePublic: true,
 			AutoIncrementIdentity:     true,
 		},
+
+		// Lexing and reach: what internal/dialectlexer and internal/sqlreach
+		// read. Nobody has measured PostgreSQL's continued and U&'...' strings
+		// on Spanner, so a text that writes one is two tokens and is refused
+		// rather than read by a rule the server may not share.
+		Lexical: descriptor.Lexical{EscapeStrings: true},
+		Reach:   postgresReach(),
 	}
 }
 

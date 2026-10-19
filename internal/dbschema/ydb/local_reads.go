@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/sqlreach"
+	"ptah.run/internal/yqlreach"
 )
 
 // ErrReadLeavesDatabase is wrapped by every refusal of [ProveLocalReads] that
@@ -35,7 +36,7 @@ type ReadCatalog interface {
 // relative names mean the directory root, reads only rows the database
 // stores, and returns an error naming the first read it cannot prove.
 //
-// The text names what the query reads (see [sqlreach.ReadYQLSources]), and
+// The text names what the query reads (see [yqlreach.ReadSources]), and
 // the catalog says what each name is. A row table, a column table and a
 // system view are read where they are stored. A view is followed into the
 // query it stores, to a depth of [sqlreach.MaxNesting]. Every SELECT, the
@@ -54,7 +55,7 @@ func ProveLocalReads(ctx context.Context, catalog ReadCatalog, root, query strin
 }
 
 func proveLocalReads(ctx context.Context, catalog ReadCatalog, root, query string, depth int) error {
-	reads, err := sqlreach.ReadYQLSources(query)
+	reads, err := yqlreach.ReadSources(query)
 	if err != nil {
 		return err
 	}

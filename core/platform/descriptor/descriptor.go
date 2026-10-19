@@ -222,12 +222,9 @@ type Dialect struct {
 	// builds an index of its own for a foreign key no declared index covers, as
 	// the MySQL family does.
 	IndexesBeforeForeignKeys bool `json:"indexes_before_foreign_keys,omitempty"`
-	// Lexical is how the engine's SQL text differs from the standard, where
-	// the shared scanner of routine and view bodies honors the difference. It
-	// is the beginning of a lexer description, not all of one: a difference
-	// that scanner does not honor, such as MySQL's # comments and backslash
-	// escapes, is not stated yet, since stating it changes how the scanner
-	// reads such a body.
+	// Lexical is how the engine's SQL text differs from the standard: how
+	// the shared SQL lexer tokenizes it and how the scanner of routine and
+	// view bodies reads it.
 	Lexical Lexical `json:"lexical,omitzero"`
 	// Comparison: what migration/schemadiff and its helpers read.
 
@@ -242,6 +239,10 @@ type Dialect struct {
 	// Conversion states what the readers and converters of schema documents
 	// read of the engine where engines differ.
 	Conversion Conversion `json:"conversion,omitzero"`
+
+	// Reach states the calls of the engine's grammar that reach outside the
+	// database a statement is sent to; see reach.go.
+	Reach Reach `json:"reach,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and
@@ -330,22 +331,6 @@ const (
 	// the engine spells an identifier.
 	InlineEnumCheckQuoted = "quoted"
 )
-
-// Lexical describes the engine's SQL text where it differs from the standard.
-type Lexical struct {
-	// Lexer names a lexer of the engine's own its text is read with, such as
-	// [LexerYQL]. Empty reads the shared SQL lexer, with the rules below.
-	Lexer string `json:"lexer,omitempty"`
-	// LineComments are the markers, beside "--", that open a comment running
-	// to the end of the line, such as "#" and "//".
-	LineComments []string `json:"line_comments,omitempty"`
-	// BackslashEscapes reports that a backslash escapes the next character
-	// inside a string literal and a quoted identifier.
-	BackslashEscapes bool `json:"backslash_escapes,omitempty"`
-}
-
-// LexerYQL is the [Lexical.Lexer] of YDB's query language.
-const LexerYQL = "yql"
 
 // Identifiers states how an engine compares identifiers offline. The values
 // are spelled as core/platform/identifier spells its IndexNamespace and
@@ -440,6 +425,15 @@ func (d Dialect) validate() error {
 		return err
 	}
 	if err := d.validateNames(); err != nil {
+		return err
+	}
+	if err := d.validateLexical(); err != nil {
+		return err
+	}
+	if err := d.validateScripts(); err != nil {
+		return err
+	}
+	if err := d.validateReach(); err != nil {
 		return err
 	}
 	return nil

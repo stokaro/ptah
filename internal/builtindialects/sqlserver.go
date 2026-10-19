@@ -55,7 +55,7 @@ func sqlServer() descriptor.Dialect {
 			UpsertRefusal: "SQL Server has no ON CONFLICT: it expresses an upsert as MERGE, " +
 				"a different statement with its own source, join condition and match clauses",
 		},
-		Scripts: descriptor.Scripts{BatchSeparator: "GO", ClientDelimiters: true},
+		Scripts: descriptor.Scripts{BatchSeparator: "GO", ClientDelimiters: true, Bodies: descriptor.BodiesTransactSQL},
 
 		// Migrations: what the migrator reads.
 		DDLTransactions: "transactional",
@@ -152,6 +152,10 @@ END`,
 			ForeignKeyNamespace:     descriptor.NamespaceSchema,
 			ForeignKeyNamesFoldCase: true,
 		},
+
+		// Lexing: what internal/dialectlexer reads. [a] is a name, and #t and
+		// ##t are temporary tables, so # opens no comment.
+		Lexical: descriptor.Lexical{BracketIdentifiers: true, HashNames: true},
 	}
 }
 

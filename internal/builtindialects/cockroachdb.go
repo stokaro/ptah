@@ -163,5 +163,12 @@ func cockroachDB() descriptor.Dialect {
 			EmptyPolicyRolesArePublic: true,
 			AutoIncrementIdentity:     true,
 		},
+
+		// Lexing and reach: what internal/dialectlexer and internal/sqlreach
+		// read. CockroachDB 26.3, measured, refuses a -- comment between
+		// continued strings and has no U&'...' strings, so it keeps only the
+		// E'...' prefix.
+		Lexical: descriptor.Lexical{EscapeStrings: true},
+		Reach:   postgresReach(),
 	}
 }

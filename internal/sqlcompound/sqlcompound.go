@@ -20,23 +20,28 @@
 //
 // YQL needs punctuation as well, because a lambda's body sits between braces,
 // so a scanner that splits YQL also feeds [State.Symbol] every operator token.
-// For every other dialect Symbol does nothing.
+// For every other grammar Symbol does nothing.
+//
+// Which grammar a dialect's bodies are written in is the dialect
+// descriptor's Scripts.Bodies, so no engine is named here.
 package sqlcompound
 
 import (
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
 
 // State tracks one scanner's position relative to a compound routine body.
 //
 // The zero value is a state for no dialect, which recognizes the dialect-blind
 // forms -- `CREATE FUNCTION … BEGIN … END` -- and none of the ones that need a
-// dialect to read: T-SQL's `AS`-opened body, PL/SQL's `IS`/`AS`, and the
-// PL/SQL terminator that belongs to the block rather than to the client.
+// grammar to read: T-SQL's `AS`-opened body, PL/SQL's `IS`/`AS`, the PL/SQL
+// terminator that belongs to the block rather than to the client, and YQL's
+// actions and lambdas.
 type State struct {
-	dialect          string
+	bodies           descriptor.Bodies
 	createPrefix     createStatementPrefix
 	createObject     string
 	inCompoundCreate bool
@@ -55,7 +60,7 @@ type State struct {
 	pendingEndKeyword            bool
 	pendingCaseEndKeyword        bool
 	// pendingBegin holds a T-SQL BEGIN until the word after it says whether
-	// it opens a block; see [State.sqlServerWord].
+	// it opens a block; see [State.transactSQLWord].
 	pendingBegin bool
 	// blocksClosed records that a T-SQL END followed by a word closed the
 	// last open block, so the next semicolon ends the routine as it would
@@ -141,22 +146,31 @@ func (b *yqlBodies) inside() bool {
 	return b.blocks > 0 || b.braces > 0
 }
 
-// New returns the state for a dialect. The dialect is normalized here, so a
-// caller may pass whatever spelling it was given.
+// New returns the state for a dialect, which reads the bodies of the grammar
+// the dialect's descriptor names in Scripts.Bodies. A caller may pass
+// whatever spelling it was given; an unknown dialect reads the dialect-blind
+// forms, as the zero value does.
 func New(dialect string) State {
-	return State{dialect: platform.NormalizeDialect(dialect)}
+	return State{bodies: bodiesByDialect.Get(dialect)}
 }
 
-// Reset returns to the start of a statement, keeping the dialect.
+// bodiesByDialect holds every dialect's Scripts.Bodies. A splitter builds a
+// state for every script it reads, so the grammars are read once per
+// registry rather than copied out of a descriptor per call.
+var bodiesByDialect = descriptortable.New(func(described descriptor.Dialect) descriptor.Bodies {
+	return described.Scripts.Bodies
+})
+
+// Reset returns to the start of a statement, keeping the grammar.
 func (s *State) Reset() {
-	dialect := s.dialect
-	*s = State{dialect: dialect}
+	bodies := s.bodies
+	*s = State{bodies: bodies}
 }
 
 // Word feeds one identifier-like word, in the spelling it was written.
 func (s *State) Word(value string) {
 	value = strings.ToUpper(value)
-	if s.dialect == platform.YDB {
+	if s.bodies == descriptor.BodiesYQL {
 		s.yql.word(value)
 		return
 	}
@@ -164,8 +178,8 @@ func (s *State) Word(value string) {
 		s.observeCreatePrefix(value)
 		return
 	}
-	if s.isSQLServer() {
-		s.sqlServerWord(value)
+	if s.transactSQL() {
+		s.transactSQLWord(value)
 		return
 	}
 
@@ -198,7 +212,7 @@ func (s *State) Word(value string) {
 	}
 }
 
-// sqlServerWord follows the blocks of a T-SQL routine body, which differ from
+// transactSQLWord follows the blocks of a T-SQL routine body, which differ from
 // the other dialects' in what a BEGIN and an END mean.
 //
 // BEGIN TRAN, BEGIN TRANSACTION, BEGIN DISTRIBUTED TRANSACTION, BEGIN DIALOG
@@ -209,7 +223,7 @@ func (s *State) Word(value string) {
 // semicolon between the two. When that END closed the last open block, the
 // next semicolon ends the routine, as the one in "END;" does. The answers are
 // the ones the parser and the SQL Server owner use (stokaro/ptah#4461).
-func (s *State) sqlServerWord(value string) {
+func (s *State) transactSQLWord(value string) {
 	if s.pendingBegin {
 		s.pendingBegin = false
 		if SQLServerBeginOpensBlock(value) {
@@ -239,10 +253,10 @@ func (s *State) sqlServerWord(value string) {
 }
 
 // Symbol feeds one punctuation token, such as `{` or `)`. Only YQL reads
-// punctuation, for the braces around a lambda's body; for every other dialect
+// punctuation, for the braces around a lambda's body; for every other grammar
 // it does nothing.
 func (s *State) Symbol(value string) {
-	if s.dialect == platform.YDB {
+	if s.bodies == descriptor.BodiesYQL {
 		s.yql.symbol(value)
 	}
 }
@@ -281,7 +295,7 @@ func (s *State) observeCreatePrefix(value string) {
 		return
 
 	case createPrefixCreateObjectBeforeBody:
-		if s.isSQLServerRoutineObject() && value == "AS" {
+		if s.transactSQLRoutineObject() && value == "AS" {
 			s.inCompoundCreate = true
 			s.routineBodyOpener = true
 			s.pendingEndKeyword = false
@@ -292,7 +306,7 @@ func (s *State) observeCreatePrefix(value string) {
 		// `FUNCTION f RETURN NUMBER IS x NUMBER := 0; BEGIN ... END;` at the
 		// semicolon after the declaration, and the four fragments that came out
 		// are four statements the server refuses.
-		if s.isOracleRoutineObject() && (value == "IS" || value == "AS") {
+		if s.plsqlRoutineObject() && (value == "IS" || value == "AS") {
 			s.inCompoundCreate = true
 			s.routineBodyOpener = true
 			s.plsqlBody = true
@@ -308,7 +322,7 @@ func (s *State) observeCreatePrefix(value string) {
 			// semicolon that belongs to it, and a trigger handed over without
 			// one is created INVALID -- measured, and invisible from
 			// USER_TRIGGERS, which reports it ENABLED all the same.
-			s.plsqlBody = s.isOracle()
+			s.plsqlBody = s.plsql()
 		}
 		return
 	}
@@ -319,18 +333,18 @@ func (s State) isCompoundCreateObject(value string) bool {
 	case "FUNCTION", "PROCEDURE", "TRIGGER":
 		return true
 	case "PROC":
-		return s.isSQLServer()
+		return s.transactSQL()
 	default:
 		return false
 	}
 }
 
-func (s State) isSQLServerRoutineObject() bool {
-	return s.isSQLServer() &&
+func (s State) transactSQLRoutineObject() bool {
+	return s.transactSQL() &&
 		(s.createObject == "FUNCTION" || s.createObject == "PROC" || s.createObject == "PROCEDURE" || s.createObject == "TRIGGER")
 }
 
-// isOracleRoutineObject reports whether the CREATE being scanned is one whose
+// plsqlRoutineObject reports whether the CREATE being scanned is one whose
 // body PL/SQL opens with IS or AS.
 //
 // A TRIGGER is not in the set, and it is the one exclusion worth stating. Its
@@ -340,17 +354,17 @@ func (s State) isSQLServerRoutineObject() bool {
 // a CALL has neither BEGIN nor END, so treating that AS as the opener would
 // keep every semicolon after it and swallow the rest of the file into one
 // statement.
-func (s State) isOracleRoutineObject() bool {
-	return s.isOracle() &&
+func (s State) plsqlRoutineObject() bool {
+	return s.plsql() &&
 		(s.createObject == "FUNCTION" || s.createObject == "PROCEDURE")
 }
 
-func (s State) isSQLServer() bool {
-	return s.dialect == platform.SQLServer
+func (s State) transactSQL() bool {
+	return s.bodies == descriptor.BodiesTransactSQL
 }
 
-func (s State) isOracle() bool {
-	return s.dialect == platform.Oracle
+func (s State) plsql() bool {
+	return s.bodies == descriptor.BodiesPLSQL
 }
 
 func isEndContinuationKeyword(value string) bool {
@@ -381,7 +395,7 @@ func (s State) TerminatorBelongsToStatement() bool {
 // body text rather than a statement terminator. It advances the state, so it is
 // called once per semicolon.
 func (s *State) KeepSemicolonInsideStatement() bool {
-	if s.dialect == platform.YDB {
+	if s.bodies == descriptor.BodiesYQL {
 		// A semicolon separates the words on either side of it as well, so
 		// END; DO is not END DO.
 		s.yql.separate()

@@ -4776,7 +4776,8 @@ in place of a dialect's name:
 - `Preparation`: how a declared schema is prepared for the engine: enum
   columns, rewritten types, and the names of unnamed constraints.
 - `Query`: how `core/query` spells what engines spell differently.
-- `Scripts`: how a script is cut into statements.
+- `Scripts`: how a script is cut into statements, including the grammar of
+  the bodies that hold statements of their own (`Bodies`).
 - `Literals`: how `migration/datadiff` writes a value as a literal.
 - `ManagedData`: how managed rows are compared and changed.
 - `Seeds`: how `migration/seeder` runs seed files and records them.
@@ -4811,8 +4812,18 @@ A descriptor also states how the common model is lowered for the engine:
 - `InlineEnum`: how an enum column holds its values where the engine has no
   enum type;
 - `ForeignKeysInCreateTable` and `IndexesBeforeForeignKeys`: where foreign keys
-  go in a rendered schema;
-- `Lexical`: how a routine or view body is scanned.
+  go in a rendered schema.
+
+A descriptor also states how the engine's text is read, and what in it reaches
+outside the database:
+
+- `Lexical`: how the shared SQL lexer tokenizes the engine's text, or the
+  lexer of its own it is read with, and how a routine or view body is
+  scanned;
+- `Reach`: the calls of the engine's grammar that reach outside the database
+  a statement is sent to, such as a table function that reads a URL, which the
+  plan and check-assertion scans refuse under the construct the descriptor
+  names.
 
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:

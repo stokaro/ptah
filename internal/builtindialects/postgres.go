@@ -170,5 +170,11 @@ func postgres() descriptor.Dialect {
 			EmptyPolicyRolesArePublic: true,
 			AutoIncrementIdentity:     true,
 		},
+
+		// Lexing and reach: what internal/dialectlexer and internal/sqlreach
+		// read. PostgreSQL's scanner reads E'...', continued strings and
+		// U&'...' strings.
+		Lexical: descriptor.Lexical{EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true},
+		Reach:   postgresReach(),
 	}
 }

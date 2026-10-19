@@ -12,7 +12,8 @@ import (
 )
 
 // loweringFacts are the per-engine facts internal/modelast, internal/deporder
-// and migration/generator read from a descriptor.
+// and migration/generator read from a descriptor, beside Lexical, which
+// TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace pins.
 type loweringFacts struct {
 	GeneratedTimeouts        descriptor.GeneratedTimeouts
 	GeneratedColumnDefault   string
@@ -20,14 +21,12 @@ type loweringFacts struct {
 	ForeignKeysInCreateTable bool
 	IndexesBeforeForeignKeys bool
 	QuotingPaths             bool
-	Lexical                  descriptor.Lexical
 }
 
 // oldSwitches is what the dialect switches these fields replace answered for
 // each engine: the generated timeouts of postgres, mysql and mariadb, the
 // generated-column and inline-enum switches of internal/modelast, its SQLite,
-// MySQL-family and YDB table rules (YDB's read from Quoting.Paths), and the ClickHouse and YDB scanning rules of
-// internal/deporder.
+// MySQL-family and YDB table rules (YDB's read from Quoting.Paths).
 var oldSwitches = map[string]loweringFacts{
 	platform.Postgres:    {GeneratedTimeouts: descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"}, GeneratedColumnDefault: "STORED"},
 	platform.CockroachDB: {GeneratedColumnDefault: "STORED"},
@@ -40,12 +39,11 @@ var oldSwitches = map[string]loweringFacts{
 		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumValues}, IndexesBeforeForeignKeys: true},
 	platform.SQLServer: {GeneratedColumnDefault: "PERSISTED",
 		InlineEnum: descriptor.InlineEnum{Type: "NVARCHAR(255)", Check: descriptor.InlineEnumCheckQuoted}},
-	platform.Oracle: {InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted}},
-	platform.ClickHouse: {InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumNumbered},
-		Lexical: descriptor.Lexical{LineComments: []string{"#", "//"}, BackslashEscapes: true}},
+	platform.Oracle:     {InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted}},
+	platform.ClickHouse: {InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumNumbered}},
 	platform.SQLite: {GeneratedColumnDefault: "VIRTUAL",
 		InlineEnum: descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare}, ForeignKeysInCreateTable: true},
-	platform.YDB: {QuotingPaths: true, Lexical: descriptor.Lexical{Lexer: descriptor.LexerYQL}},
+	platform.YDB: {QuotingPaths: true},
 }
 
 // TestDescriptors_LoweringFactsAgreeWithTheOldSwitches pins every built-in
@@ -65,7 +63,6 @@ func TestDescriptors_LoweringFactsAgreeWithTheOldSwitches(t *testing.T) {
 				ForeignKeysInCreateTable: dialect.ForeignKeysInCreateTable,
 				IndexesBeforeForeignKeys: dialect.IndexesBeforeForeignKeys,
 				QuotingPaths:             dialect.Quoting.Paths,
-				Lexical:                  dialect.Lexical,
 			}
 			c.Assert(got, qt.CmpEquals(cmpopts.EquateEmpty()), oldSwitches[dialect.Name])
 		})

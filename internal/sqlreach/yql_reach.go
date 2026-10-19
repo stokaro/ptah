@@ -111,6 +111,17 @@ var yqlSourceListEnds = []string{
 	"EXCEPT", "INTO", "SELECT", "ASSUME", "PRESORT",
 }
 
+// YQLSourceListEnds returns the words that end a YQL list of sources written
+// with commas, at the depth the list began, as a new slice. ON and USING do
+// not end one: a comma after a join condition joins another source.
+//
+// It is exported because internal/yqlreach walks the same lists to name what
+// a query reads, and two lists would agree only until one of them was
+// extended.
+func YQLSourceListEnds() []string {
+	return slices.Clone(yqlSourceListEnds)
+}
+
 // yqlDottedSource matches a source written with a dot or a colon: the
 // `cluster.table` and `source.path` forms YQL reads as something other than a
 // table of this database, and `cluster:dir.table`, which the grammar's
