@@ -166,6 +166,12 @@ END;`,
 		// the rehearsal's identity check both refuse it first. The check
 		// keeps a path that reaches the reset without them from emptying one.
 		CleanCheck: descriptor.CleanCheck{Dev: true, Tables: oracleCleanTables},
+
+		// Migrations: the engine's reading takes no part in deciding the
+		// directives of a migration file whose dialect is unknown. The shared
+		// lexer does not read Oracle's q'...' strings, so it cannot read a
+		// file as Oracle does, and every other rule it reads for Oracle is a
+		// standard one SQLite's reading applies already.
 	}
 }
 

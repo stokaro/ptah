@@ -180,5 +180,14 @@ func yugabyteDB() descriptor.Dialect {
 		// community binary does not open yugabytedb://, and its `migrate
 		// apply` gate was never measured here.
 		CleanCheck: descriptor.CleanCheck{Dev: true, ConnectedSchema: true},
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown, and a generated ADD VALUE is
+		// planned by PostgreSQL's rule: it commits before a statement uses the
+		// value.
+		Migration: descriptor.Migration{
+			DirectivesWithoutDialect: true,
+			EnumValuesCommitFirst:    true,
+		},
 	}
 }

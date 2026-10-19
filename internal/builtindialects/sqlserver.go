@@ -185,6 +185,10 @@ END`,
 		QualifierRefusal: "SQL Server has schemas and Ptah renders into one (dbo by default), but the qualifier " +
 			"has never been measured against a server there; enabling it needs a live round trip showing that a " +
 			"rewritten plan applies and reads back under the qualified name",
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown.
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
 	}
 }
 

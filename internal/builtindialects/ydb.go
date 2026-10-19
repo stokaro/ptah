@@ -174,6 +174,14 @@ func ydb() descriptor.Dialect {
 		QualifierRefusal: "a YDB schema is a directory and a table one quoted path, `dir/t`, so a qualifier would have " +
 			"to be written into each path, while the qualifier writes a schema-qualified name, which YQL reads as a " +
 			"cluster and a table; enabling it needs path rewriting and a live round trip",
+
+		// Migrations: the engine's reading takes no part in deciding the
+		// directives of a migration file whose dialect is unknown. YQL reads
+		// @@...@@ as one string, so two MySQL system variables such as
+		// @@session.sql_mode on either side of a directive would hide it, and a
+		// MySQL file imported with no target dialect would lose a directive
+		// every other reader sees. A YDB file is read by its own rules wherever
+		// its dialect is known.
 	}
 }
 

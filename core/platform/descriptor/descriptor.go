@@ -108,7 +108,10 @@ type Dialect struct {
 	// index without blocking writes, as PostgreSQL's CREATE INDEX CONCURRENTLY
 	// and DROP INDEX CONCURRENTLY do. Whether a given server takes the
 	// statements is a capability; an engine without the grammar has no such
-	// statement whatever a capability set claims.
+	// statement whatever a capability set claims. The statements commit more
+	// than one transaction, so PostgreSQL refuses them inside a transaction
+	// block (SQLSTATE 25001), and a generated migration runs them outside its
+	// transaction.
 	ConcurrentIndexes bool `json:"concurrent_indexes,omitempty"`
 	// OnlineAlter is the grammar in which the engine is asked to apply an
 	// ALTER TABLE without blocking the writes running against the table:
@@ -288,6 +291,14 @@ type Dialect struct {
 	// leaves unnamed, and the index it builds for the key. Empty leaves the
 	// key's name to ConstraintNaming.
 	ForeignKeyNaming ForeignKeyNaming `json:"foreign_key_naming,omitempty"`
+
+	// Directives, replays and generated migrations: what
+	// internal/ptahdirective, internal/migrationreplay and internal/txrequire
+	// read.
+
+	// Migration states how migration files are read, replayed and generated
+	// for the engine; see migration.go.
+	Migration Migration `json:"migration,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and
@@ -336,7 +347,10 @@ const (
 	// clauses, which the server refuses when it cannot honor them.
 	OnlineAlterAlgorithmLock OnlineAlter = "algorithm-lock"
 	// OnlineAlterNotValid is PostgreSQL's NOT VALID constraint, validated by a
-	// second statement whose scan takes a weaker lock.
+	// second statement whose scan takes a weaker lock. The addition's lock is
+	// held to commit, so the validation gains the weaker lock only when it
+	// commits apart from the addition, and a generated migration keeps the
+	// validation out of a transaction.
 	OnlineAlterNotValid OnlineAlter = "not-valid"
 )
 
@@ -494,6 +508,9 @@ func (d Dialect) validate() error {
 		return err
 	}
 	if err := d.validateSystemSchemas(); err != nil {
+		return err
+	}
+	if err := d.validateMigration(); err != nil {
 		return err
 	}
 	return nil

@@ -176,6 +176,10 @@ func clickHouse() descriptor.Dialect {
 		QualifierRefusal: "ClickHouse namespaces objects by database rather than by schema within a database, so " +
 			"a qualifier is a different kind of name here; enabling it needs that difference settled first, not a " +
 			"dialect added to a list",
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown.
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
 	}
 }
 

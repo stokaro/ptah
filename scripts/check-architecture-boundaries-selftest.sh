@@ -445,12 +445,14 @@ rm -f "$target"
 # one more reference in a package is refused, and so is debt that moved
 # between two packages with the total unchanged. The packages are the first
 # two the baseline still records, so a package that reaches zero and leaves
-# the baseline does not break this check.
+# the baseline does not break this check. Where the baseline records one
+# package, the debt moves to internal/parser, a shared package the rule
+# requires and that names no dialect.
 cp "$baseline" "$work_dir/baseline.orig"
 python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); r='shared-packages-name-dialects'; k=sorted(n for n,c in d['packages'][r].items() if c>0); d['packages'][r][k[0]]+=1; d['rules'][r]+=1; json.dump(d,open(p,'w'),indent=2)" "$baseline"
 require_refusal "a package baseline higher than the package's count"
 cp "$work_dir/baseline.orig" "$baseline"
-python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); r='shared-packages-name-dialects'; k=sorted(n for n,c in d['packages'][r].items() if c>0); d['packages'][r][k[0]]+=1; d['packages'][r][k[1]]-=1; json.dump(d,open(p,'w'),indent=2)" "$baseline"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); r='shared-packages-name-dialects'; k=sorted(n for n,c in d['packages'][r].items() if c>0)+['internal/parser']; d['packages'][r][k[1]]=d['packages'][r].get(k[1],0)+1; d['packages'][r][k[0]]-=1; json.dump(d,open(p,'w'),indent=2)" "$baseline"
 require_refusal "dialect debt recorded in the wrong package with the total unchanged"
 cp "$work_dir/baseline.orig" "$baseline"
 require_acceptance "the restored dialect-name baseline"

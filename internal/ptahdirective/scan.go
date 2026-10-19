@@ -6,7 +6,8 @@ import (
 	"iter"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
@@ -94,8 +95,9 @@ func LineComments(sql string, options lexer.Options) iter.Seq[LineComment] {
 	}
 }
 
-// ConservativeBodies yields only markers that every supported dialect sees at
-// the same byte offset with the same body. It is the safe fallback for source
+// ConservativeBodies yields only markers that every engine deciding the
+// directives of a file without a dialect sees at the same byte offset with the
+// same body; see [ConservativeMarkers]. It is the safe fallback for source
 // operations such as migration import that have no target dialect: an
 // ambiguous marker-looking line inside a dialect-specific string remains SQL,
 // while an actual line-anchored directive is common to every scan.
@@ -115,29 +117,21 @@ func ConservativeBodies(sql string) iter.Seq[string] {
 // know where it is, and it must ask that question of the same marker set the
 // directive parser used or the two answers can disagree.
 //
-// YDB is not among the readers, deliberately. YQL reads @@...@@ as one string,
-// so two MySQL system variables such as @@session.sql_mode on either side of
-// a directive line would hide the directive from the intersection, and a
-// MySQL file imported with no target dialect would lose a directive every
-// other reader sees. A YDB file is read by its own rules wherever its dialect
-// is known, through [Markers] with the YQL lexer options.
+// The readers are the lexers of the engines whose descriptor states
+// Migration.DirectivesWithoutDialect, in registry order. A marker is kept only
+// where every one of them sees it at the same offset with the same body. An
+// engine left out is read by its own rules wherever its dialect is known,
+// through [Markers] with its lexer options.
 func ConservativeMarkers(sql string) iter.Seq[Marker] {
 	return func(yield func(Marker) bool) {
-		dialects := []string{
-			platform.Postgres,
-			platform.MySQL,
-			platform.MariaDB,
-			platform.SQLite,
-			platform.ClickHouse,
-			platform.CockroachDB,
-			platform.YugabyteDB,
-			platform.SQLServer,
-			platform.Spanner,
+		readers := dialectlessReaders.Get()
+		if len(readers) == 0 {
+			return
 		}
-		common := scan(sql, dialectlexer.Options(dialects[0]))
-		for _, dialect := range dialects[1:] {
+		common := scan(sql, readers[0])
+		for _, options := range readers[1:] {
 			present := make(map[marker]struct{})
-			for _, found := range scan(sql, dialectlexer.Options(dialect)) {
+			for _, found := range scan(sql, options) {
 				present[found] = struct{}{}
 			}
 			common = keepMarkers(common, present)
@@ -152,6 +146,21 @@ func ConservativeMarkers(sql string) iter.Seq[Marker] {
 		}
 	}
 }
+
+// dialectlessReaders holds the lexer options of every engine that decides the
+// directives of a file whose dialect is unknown, in registry order. A
+// migration import asks for each file it reads, so the options are derived
+// once per registry rather than per file. A registry with no such engine
+// keeps no marker; the built-in engines always include some.
+var dialectlessReaders = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []lexer.Options {
+	var readers []lexer.Options
+	for _, described := range dialects {
+		if described.Migration.DirectivesWithoutDialect {
+			readers = append(readers, dialectlexer.FromDescriptor(described))
+		}
+	}
+	return readers
+})
 
 func keepMarkers(candidates []marker, present map[marker]struct{}) []marker {
 	kept := candidates[:0]

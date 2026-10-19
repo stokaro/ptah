@@ -505,7 +505,7 @@ func NodeRequiresNoTransaction(dialect string, node ast.Node) bool {
 // RequiresNoTransaction reports whether the planned migration contains
 // statements that must be applied outside the migrator's per-migration
 // transaction. Keep this conservative: it should only return true for DDL that
-// is known to be rejected or unusable in a PostgreSQL-family transaction.
+// the engine's descriptor states is rejected or unusable inside a transaction.
 func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 	for _, node := range nodes {
 		if NodeRequiresNoTransaction(dialect, node) {

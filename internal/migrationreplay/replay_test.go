@@ -377,6 +377,42 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 	assertSQLiteRealmObjectCount(c, conn, 0)
 }
 
+// TestWithReplayedSnapshot_RestoresTheSessionAnInMemoryDatabaseKeeps covers
+// the one session a replay hands back to the pool: an in-memory SQLite
+// database lives on its only connection, so the session the migration turned
+// foreign keys off on is the one every later query reads. A file database
+// discards the replay's session, and its next query opens one with
+// enforcement on whatever the replay restored.
+func TestWithReplayedSnapshot_RestoresTheSessionAnInMemoryDatabaseKeeps(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://:memory:")
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	callbackForeignKeys := -1
+
+	err = migrationreplay.WithReplayedSnapshot(
+		ctx,
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": {
+				Data: []byte("-- atlas:txmode none\n\nPRAGMA foreign_keys = OFF;\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+			},
+		},
+		migrationfile.DirFormatAtlas,
+		func(replayConn *dbschema.DatabaseConnection, _ devclean.Baseline) error {
+			return replayConn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&callbackForeignKeys)
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(callbackForeignKeys, qt.Equals, 0)
+	var restoredForeignKeys int
+	err = conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&restoredForeignKeys)
+	c.Assert(err, qt.IsNil)
+	c.Assert(restoredForeignKeys, qt.Equals, 1)
+}
+
 // TestWithReplayedSnapshot_TransactionalMigrationIgnoresAForeignKeysPragma is
 // the counterpart of the test above for a migration that runs in a
 // transaction. SQLite ignores a foreign_keys pragma inside a transaction, and

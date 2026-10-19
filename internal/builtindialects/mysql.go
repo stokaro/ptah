@@ -274,6 +274,10 @@ func mysql() descriptor.Dialect {
 		// 26.7.0, `FOREIGN KEY (p_id) REFERENCES p(id)` on `c` holds
 		// `c_ibfk_1` over an index called `p_id`.
 		ForeignKeyNaming: descriptor.ForeignKeyNamingTableNumbered,
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown.
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
 	}
 }
 

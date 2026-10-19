@@ -8,16 +8,12 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 23,
+    "shared-packages-name-dialects": 10,
     "sql-reader-links-owners": 0
   },
   "packages": {
     "shared-packages-name-dialects": {
-      "internal/liquibaserun": 10,
-      "internal/migrationreplay": 1,
-      "internal/ptahdirective": 9,
-      "internal/txrequire": 1,
-      "migration/internal/generatedschema": 2
+      "internal/liquibaserun": 10
     }
   }
 }

@@ -167,6 +167,21 @@ func sqlite() descriptor.Dialect {
 		QualifierRefusal: "SQLite's qualified form names an ATTACHed database rather than a schema inside one, " +
 			"so a qualifier would have to be established as an attachment before any statement referencing it runs; " +
 			"nothing here does that",
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown. A migration that rebuilds a
+		// table turns foreign key enforcement off around the rebuild, and the
+		// setting belongs to the session, so a replay sets it back to what it
+		// was before the replay ran.
+		Migration: descriptor.Migration{
+			DirectivesWithoutDialect: true,
+			ReplayedSession: []descriptor.SessionSetting{{
+				Name:  "SQLite foreign key state",
+				Query: "PRAGMA foreign_keys",
+				On:    "PRAGMA foreign_keys = ON",
+				Off:   "PRAGMA foreign_keys = OFF",
+			}},
+		},
 	}
 }
 

@@ -4826,6 +4826,10 @@ in place of a dialect's name:
   information_schema and the pg_ namespaces every member owns: the ones a
   realm read leaves out, the ones a schema document may not hold, and the
   ones every database holds that a migration never creates.
+- `Migration`: whether the engine's reading decides the directives of a
+  migration file whose dialect is unknown, the session settings a migration
+  replay restores, and whether a value added to an existing enum type has to
+  commit before a statement uses it.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,
@@ -4841,7 +4845,9 @@ providers for the built-in engines only.
 A descriptor also states the planning grammars the engine has: a concurrent
 index build (`ConcurrentIndexes`) and an online ALTER TABLE (`OnlineAlter`). A
 capability says whether a given server takes such a grammar, and a capability
-set cannot claim one the dialect lacks.
+set cannot claim one the dialect lacks. A generated migration runs a
+concurrent index build or drop, and the validation of a NOT VALID constraint,
+outside its transaction.
 
 A descriptor also states how the common model is lowered for the engine:
 

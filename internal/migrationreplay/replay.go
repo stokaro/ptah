@@ -351,27 +351,34 @@ func replayMigrationVersionLabel(version string) string {
 	return version
 }
 
+// captureReplaySessionState reads the session settings the engine's
+// descriptor says a migration may change (Migration.ReplayedSession) and
+// returns the function that sets each back to the value read, in the order
+// they were read.
 func captureReplaySessionState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 ) (func(context.Context) error, error) {
-	if platform.NormalizeDialect(conn.Info().Dialect) != platform.SQLite {
-		return func(context.Context) error { return nil }, nil
-	}
-
-	var foreignKeysEnabled bool
-	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
-		return nil, fmt.Errorf("capture SQLite foreign key state before migration replay: %w", err)
+	described, _ := platform.Lookup(conn.Info().Dialect)
+	settings := described.Migration.ReplayedSession
+	values := make([]bool, len(settings))
+	for index, setting := range settings {
+		if err := conn.QueryRowContext(ctx, setting.Query).Scan(&values[index]); err != nil {
+			return nil, fmt.Errorf("capture %s before migration replay: %w", setting.Name, err)
+		}
 	}
 	return func(restoreCtx context.Context) error {
-		statement := "PRAGMA foreign_keys = OFF"
-		if foreignKeysEnabled {
-			statement = "PRAGMA foreign_keys = ON"
+		var restoreErr error
+		for index, setting := range settings {
+			statement := setting.Off
+			if values[index] {
+				statement = setting.On
+			}
+			if _, err := conn.ExecContext(restoreCtx, statement); err != nil {
+				restoreErr = errors.Join(restoreErr, fmt.Errorf("restore %s after migration replay: %w", setting.Name, err))
+			}
 		}
-		if _, err := conn.ExecContext(restoreCtx, statement); err != nil {
-			return fmt.Errorf("restore SQLite foreign key state after migration replay: %w", err)
-		}
-		return nil
+		return restoreErr
 	}, nil
 }
 

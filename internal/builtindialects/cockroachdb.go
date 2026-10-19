@@ -216,5 +216,14 @@ func cockroachDB() descriptor.Dialect {
 			Catalog:  []string{"crdb_internal"},
 			Reserved: []string{"crdb_internal"},
 		},
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown, and a generated ADD VALUE is
+		// planned by PostgreSQL's rule: it commits before a statement uses the
+		// value.
+		Migration: descriptor.Migration{
+			DirectivesWithoutDialect: true,
+			EnumValuesCommitFirst:    true,
+		},
 	}
 }
