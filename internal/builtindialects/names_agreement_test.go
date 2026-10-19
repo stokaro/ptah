@@ -36,7 +36,8 @@ import (
 //     dialect, and a view kept a table from a plain DROP TABLE on the
 //     PostgreSQL family.
 //   - STRICT and WITHOUT ROWID set SQLite's strict and without_rowid
-//     properties.
+//     properties, and the parser read them, on every dialect, as two arms
+//     of parseTableOptions spelled STRICT and WITHOUT ROWID.
 func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	pgFamily := descriptor.IndexNaming{PrimaryKeySuffix: "pkey"}
 	tests := []struct {
@@ -77,8 +78,8 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			dialect: platform.SQLite,
 			names:   descriptor.Names{Lookup: "ascii_case_insensitive"},
 			tableOptions: []descriptor.TableOption{
-				{Option: "STRICT", Property: "strict"},
-				{Option: "WITHOUT_ROWID", Property: "without_rowid"},
+				{Option: "STRICT", Words: []string{"STRICT"}, Property: "strict"},
+				{Option: "WITHOUT_ROWID", Words: []string{"WITHOUT", "ROWID"}, Property: "without_rowid"},
 			},
 		},
 		{

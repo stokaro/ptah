@@ -13,7 +13,7 @@ import (
 // appendRoleBootstrap reads the roles a DO block declares with the reader of
 // the language the dialect's descriptor names, and appends them.
 func appendRoleBootstrap(
-	database *schemamodel.Database, document *Document, block *ast.PostgresDoBlockNode, dialect string,
+	database *schemamodel.Database, document *Document, block *ast.DoBlockNode, dialect string,
 ) error {
 	// The block is read as the source dialect's, or for a read with no
 	// dialect as the dialect whose descriptor names a DO-block language.

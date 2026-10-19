@@ -46,7 +46,15 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 		{name: "a table option without a property", dialect: with(func(d *descriptor.Dialect) {
 			d.TableOptions = []descriptor.TableOption{{Option: "STRICT"}}
 		}),
-			wantErr: `invalid dialect descriptor: dialect "alpha": table option .* names no option or no property`},
+			wantErr: `invalid dialect descriptor: dialect "alpha": table option \{Option:STRICT Property:\} names no option or no property`},
+		{name: "a table option spelled with an empty word", dialect: with(func(d *descriptor.Dialect) {
+			d.TableOptions = []descriptor.TableOption{{Option: "WITHOUT_ROWID", Words: []string{"WITHOUT", ""}, Property: "without_rowid"}}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": table option "WITHOUT_ROWID" is spelled with "", which is not one word`},
+		{name: "a table option spelled with two words in one", dialect: with(func(d *descriptor.Dialect) {
+			d.TableOptions = []descriptor.TableOption{{Option: "WITHOUT_ROWID", Words: []string{"WITHOUT ROWID"}, Property: "without_rowid"}}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": table option "WITHOUT_ROWID" is spelled with "WITHOUT ROWID", which is not one word`},
 		{name: "an undeclared check naming", dialect: with(func(d *descriptor.Dialect) { d.CheckNaming = "numbered" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": check naming "numbered" is not one of .*`},
 		{name: "a numbered check naming with no identifier limit in characters", dialect: with(func(d *descriptor.Dialect) {

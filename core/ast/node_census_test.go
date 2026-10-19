@@ -100,9 +100,9 @@ var nodeCensus = []censusRow{
 
 	// The routines, whose body is preserved verbatim. The node carries the
 	// dialect and the kind that selected it, and the visitor is handed both.
+	{node: &ast.DoBlockNode{}},
 	{node: &ast.MySQLRoutineNode{}},
 	{node: &ast.OpaqueRoutineNode{}},
-	{node: &ast.PostgresDoBlockNode{}},
 	{node: &ast.PostgresRoutineNode{}},
 	{node: &ast.SQLServerRoutineNode{}},
 

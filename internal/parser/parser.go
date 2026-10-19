@@ -4731,14 +4731,12 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		case "TABLESPACE":
 			// Handle PostgreSQL TABLESPACE
 			err = p.handleTablespace(table)
-		case "WITHOUT":
-			err = p.handleSQLiteWithoutRowID(table)
-		case "STRICT":
-			table.SetOption("STRICT", "true")
-			p.advance()
 		default:
-			// Unknown option, stop parsing
-			err = fmt.Errorf("unsupported table option: %s at position %d", option, p.current.Start)
+			var handled bool
+			if handled, err = p.handleWordTableOption(table, option); !handled {
+				// Unknown option, stop parsing
+				err = fmt.Errorf("unsupported table option: %s at position %d", option, p.current.Start)
+			}
 		}
 
 		if err != nil {
@@ -4901,17 +4899,6 @@ func (p *Parser) endsTableClause() bool {
 		return true
 	}
 	return isCreateTableOptionBoundary(upper)
-}
-
-func (p *Parser) handleSQLiteWithoutRowID(table *ast.CreateTableNode) error {
-	if err := p.expect(lexer.TokenIdentifier, "WITHOUT"); err != nil {
-		return err
-	}
-	if err := p.expect(lexer.TokenIdentifier, "ROWID"); err != nil {
-		return fmt.Errorf("expected ROWID after WITHOUT: %w", err)
-	}
-	table.SetOption("WITHOUT_ROWID", "true")
-	return nil
 }
 
 // parsePostgreSQLWithClause parses PostgreSQL WITH clause for table options.

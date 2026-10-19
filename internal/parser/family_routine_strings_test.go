@@ -56,7 +56,7 @@ func TestParse_FamilyMemberDoBlocks_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
-			block, ok := statements.Statements[0].(*ast.PostgresDoBlockNode)
+			block, ok := statements.Statements[0].(*ast.DoBlockNode)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(block.Body.SQL, qt.Equals, "BEGIN NULL; END")
 		})

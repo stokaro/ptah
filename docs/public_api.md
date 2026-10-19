@@ -4820,7 +4820,11 @@ in place of a dialect's name:
   as `DoBlocksPLpgSQL`; a registry refuses any other value, and the SQL reader
   reads the block with that language's reader. `TableOptions` are the options
   after a CREATE TABLE that set a property of the engine's own group, and no
-  other group.
+  other group. An option's `Words` spell it, such as WITHOUT ROWID, and the
+  parser reads them as the option set to true, in a file of any dialect or of
+  none; an option with no `Words` is one another grammar reports, such as a
+  storage parameter of a WITH clause. A registry refuses a word that is empty
+  or holds whitespace.
 - `URLs`: how a database URL of the engine is read and compared before
   anything is connected: the port a URL that names none reaches, the dialect
   its URLs are compared as, a grammar beyond the one `net/url` reads, and the

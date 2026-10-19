@@ -177,9 +177,10 @@ PostgreSQL-family dialect mode keeps `CREATE FUNCTION` rendering on
 `ast.CreateFunctionNode`, but attaches parser-only `PostgresRoutineBody`
 metadata for quoted, SQL-standard `RETURN`, and `BEGIN ATOMIC` bodies: the
 body text, its dollar-quote delimiter and its language.
-`CREATE PROCEDURE` and `DO` blocks become PostgreSQL-specific routine nodes in
-PostgreSQL-family dialect mode and still render through the raw-SQL visitor
-contract.
+In a dialect whose descriptor states the quoted-body routine grammar,
+`CREATE PROCEDURE` becomes `ast.PostgresRoutineNode` and a `DO` block becomes
+`ast.DoBlockNode`. Every other dialect reads a `DO` block as raw SQL. Both
+nodes render through the raw-SQL visitor contract.
 This package does not split a PostgreSQL body into statements. The PostgreSQL
 owner does (`dialect/postgres/pgroutine`), through the runtime's routine body
 reader (`core/routineext`), and a host that analyzes a body asks the runtime.
@@ -290,8 +291,12 @@ added parentheses. Explicit precision, such as `CURRENT_TIMESTAMP(3)`, is kept.
 - `CHARSET=utf8mb4` / `CHARACTER SET=utf8mb4`
 - `COLLATE=utf8mb4_unicode_ci`
 - `COMMENT='table description'`
-- SQLite `WITHOUT ROWID`
-- SQLite `STRICT`
+- The options a dialect's descriptor spells as words
+  (`descriptor.TableOption.Words`), such as SQLite's `WITHOUT ROWID` and
+  `STRICT`. Each is read as the option set to true, in a file of any dialect
+  or of none, because a file is also parsed with no dialect. An owner's
+  options, the ClickHouse clauses and the options the parser reads itself,
+  such as `ENGINE` and `WITH`, are read first.
 
 ### CREATE TABLE ... SELECT
 

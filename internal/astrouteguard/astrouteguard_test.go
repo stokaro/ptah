@@ -67,7 +67,7 @@ func TestNodeKinds_ReportsTheKindsThatReachNoVisitorMethod(t *testing.T) {
 		"AddColumnOperation",
 		"EnumTypeDef",
 		"StatementList",
-		"PostgresDoBlockNode",
+		"DoBlockNode",
 		"CreateTableNode",
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -43,9 +43,9 @@ func TestStatementLabel_EveryNodeKindWouldReadAsSQL(t *testing.T) {
 	notStatements := map[string]string{
 		"ColumnNode":           "a column inside CREATE TABLE",
 		"ConstraintNode":       "a constraint inside CREATE TABLE",
+		"DoBlockNode":          "labeled by an explicit case",
 		"MySQLRoutineNode":     "labeled by an explicit case, from its own Kind",
 		"OpaqueRoutineNode":    "labeled by an explicit case, from its own Kind",
-		"PostgresDoBlockNode":  "labeled by an explicit case",
 		"PostgresRoutineNode":  "labeled by an explicit case, from its own Kind",
 		"SQLServerRoutineNode": "labeled by an explicit case, from its own Kind",
 	}

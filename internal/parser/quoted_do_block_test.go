@@ -29,7 +29,7 @@ func TestParse_AQuotedDoBlockIsItsCode(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
-			block, isBlock := statements.Statements[0].(*ast.PostgresDoBlockNode)
+			block, isBlock := statements.Statements[0].(*ast.DoBlockNode)
 			c.Assert(isBlock, qt.IsTrue)
 			c.Assert(block.Body.SQL, qt.Equals, `BEGIN RAISE NOTICE 'x'; END`)
 		})

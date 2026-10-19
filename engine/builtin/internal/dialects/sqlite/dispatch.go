@@ -130,7 +130,7 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 	case *ast.OpaqueRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
-	case *ast.PostgresDoBlockNode:
+	case *ast.DoBlockNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 	case *ast.PostgresRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
