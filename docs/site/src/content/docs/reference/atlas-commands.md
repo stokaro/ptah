@@ -1850,10 +1850,21 @@ unscoped cleanup rebuilds its statements from the live catalog; a scoped
 cleanup executes the reported `Cmd` values in a separate deterministic order
 that removes known dependents before their dependencies. PostgreSQL uses live
 catalog depth to order dependent views and materialized views of the same kind.
-Every PostgreSQL-family target executes the complete scoped plan in one
-transaction and retries selected dependencies after a `RESTRICT` refusal. An
-external dependency rolls back earlier selected drops instead of leaving a
-partially cleaned schema.
+Every PostgreSQL-family target retries selected dependencies after a `RESTRICT`
+refusal.
+
+Whether an external dependency undoes the earlier selected drops depends on the
+server:
+
+- PostgreSQL runs the complete scoped plan in one transaction, so the refusal
+  rolls back earlier selected drops instead of leaving a partially cleaned
+  schema.
+- CockroachDB 25 and later commit each schema statement as it runs, so each
+  drop runs on its own. The drops that ran before the refusal stay, and the
+  error names them.
+- YugabyteDB runs the plan in one transaction, but with
+  `yb_ddl_transaction_block_enabled` at its default, off, the server does not
+  roll back a drop when the transaction rolls back.
 
 PostgreSQL `SERIAL` and identity sequences are recognized as implicit table
 children, execute after their parent table, and are not reported as forbidden

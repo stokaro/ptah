@@ -4879,7 +4879,8 @@ in place of a dialect's name:
   commit before a statement uses it.
 - `Savepoint`: how the engine spells a savepoint inside a transaction.
   `migration/seeder` brackets each seed file in one, and a schema-scoped
-  cleanup each drop. A registry refuses a descriptor whose cleanup is
+  cleanup each drop on a server that rolls schema changes back as a unit
+  (`capability.TransactionalDDL`). A registry refuses a descriptor whose cleanup is
   schema-scoped (`Cleanup.SchemaScoped`) and whose savepoint names no way to
   create one or roll back to it.
 

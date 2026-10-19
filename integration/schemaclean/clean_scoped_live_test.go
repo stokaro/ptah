@@ -4,20 +4,21 @@ package schemaclean_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemaclean"
 )
 
-// scopedCleanupEngine is a PostgreSQL-family engine whose cleanup runs a
-// scoped plan in one transaction, with the statement that drops a throwaway
-// database of it.
+// scopedCleanupEngine is a PostgreSQL-family engine that runs scoped cleanup,
+// with the statement that drops its throwaway database.
 type scopedCleanupEngine struct {
 	name   string
 	engine dbtarget.Engine
@@ -80,12 +81,13 @@ func retryPlan(dialect string) schemaclean.Plan {
 	}, dialect)
 }
 
-// TestScopedCleanupRetriesASelectedDependencyLive_HappyPath drops the refused view
-// under a savepoint, so the transaction survives the refusal, and the retry
-// after the dependent view is gone drops it. The table the views read is not
-// selected and stays.
+// TestScopedCleanupRetriesASelectedDependencyLive_HappyPath drops the refused
+// view again after the dependent view is gone. The table the views read is
+// not selected and stays. PostgreSQL and YugabyteDB return to a savepoint
+// after the refusal. CockroachDB v26.3.2 commits each drop as it runs, so
+// the refused drop leaves nothing to return to and is simply sent again.
 func TestScopedCleanupRetriesASelectedDependencyLive_HappyPath(t *testing.T) {
-	for _, engine := range []scopedCleanupEngine{scopedPostgreSQL, scopedYugabyteDB} {
+	for _, engine := range []scopedCleanupEngine{scopedPostgreSQL, scopedCockroachDB, scopedYugabyteDB} {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			ctx := c.Context()
@@ -102,23 +104,113 @@ func TestScopedCleanupRetriesASelectedDependencyLive_HappyPath(t *testing.T) {
 	}
 }
 
-// TestScopedCleanupRetriesASelectedDependencyLive_FailurePath is the same plan on
-// CockroachDB, measured on v26.3.2: the refused DROP VIEW takes the savepoint
-// with it, so ROLLBACK TO SAVEPOINT answers SQLSTATE 3B001, the retry cannot
-// run, and the whole plan rolls back.
-func TestScopedCleanupRetriesASelectedDependencyLive_FailurePath(t *testing.T) {
+// refusedFixture is a table nothing reads and an enum that a second table
+// uses. The plan built on it selects the free table and the enum and leaves
+// the table that uses the enum out. The selection reads no view, so nothing
+// refuses it before the first drop: the free table is dropped, and the
+// server refuses the enum every time it is asked.
+var refusedFixture = []string{
+	`CREATE TABLE free_t (id INT PRIMARY KEY)`,
+	`CREATE TYPE mood AS ENUM ('calm')`,
+	`CREATE TABLE keep_t (id INT PRIMARY KEY, m mood)`,
+}
+
+// refusedPlan selects the free table and the enum of [refusedFixture].
+func refusedPlan(dialect string) schemaclean.Plan {
+	return schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Name: "free_t"},
+		{Type: schemaclean.ObjectTypeEnum, Name: "mood"},
+	}, dialect)
+}
+
+// TestScopedCleanupRefusedDropRollsBackLive_FailurePath ends the plan of
+// [refusedFixture] on PostgreSQL, which rolls schema changes back as a unit:
+// the transaction rolls back, so the free table dropped before the refusal
+// is there again.
+func TestScopedCleanupRefusedDropRollsBackLive_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	ctx := c.Context()
-	conn := newScopedCleanupConnection(c, ctx, scopedCockroachDB)
-	for _, statement := range retryFixture {
+	conn := newScopedCleanupConnection(c, ctx, scopedPostgreSQL)
+	for _, statement := range refusedFixture {
 		c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("statement: %s", statement))
 	}
 
-	err := schemaclean.ApplyPlan(ctx, conn, retryPlan(conn.Info().Dialect))
+	err := schemaclean.ApplyPlan(ctx, conn, refusedPlan(conn.Info().Dialect))
 
-	c.Assert(err, qt.ErrorMatches, `(?s)drop schema object view "a_base": .*\(SQLSTATE 2BP01\).*`+
-		`roll back scoped cleanup savepoint: .*savepoint "ptah_scoped_cleanup_object" does not exist \(SQLSTATE 3B001\).*`)
-	c.Assert(scopedRelations(c, ctx, conn), qt.DeepEquals, []string{"a_base", "base_t", "z_child"})
+	c.Assert(err, qt.ErrorMatches, `(?s)drop schema object enum "mood": .*\(SQLSTATE 2BP01\).*`)
+	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*dropped before the failure.*`)
+	c.Assert(scopedRelations(c, ctx, conn), qt.DeepEquals, []string{"free_t", "keep_t"})
+}
+
+// TestScopedCleanupRefusedDropOnYugabyteDBLive_FailurePath is the plan of
+// [refusedFixture] on YugabyteDB, measured on 2026.1.2. The plan runs in one
+// transaction, as on PostgreSQL, and the transaction rolls back. The free
+// table stays dropped anyway: yb_ddl_transaction_block_enabled defaults to
+// off, so the server does not roll back a DROP TABLE run in a transaction
+// block. The error does not say so.
+func TestScopedCleanupRefusedDropOnYugabyteDBLive_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx := c.Context()
+	conn := newScopedCleanupConnection(c, ctx, scopedYugabyteDB)
+	for _, statement := range refusedFixture {
+		c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
+
+	err := schemaclean.ApplyPlan(ctx, conn, refusedPlan(conn.Info().Dialect))
+
+	c.Assert(err, qt.ErrorMatches, `(?s)drop schema object enum "mood": .*\(SQLSTATE 2BP01\).*`)
+	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*dropped before the failure.*`)
+	c.Assert(scopedRelations(c, ctx, conn), qt.DeepEquals, []string{"keep_t"})
+}
+
+// TestScopedCleanupRefusedDropKeepsEarlierDropsLive_FailurePath is the plan
+// of [refusedFixture] on CockroachDB, measured on v26.3.2, which commits each
+// drop as it runs: the free table stays dropped, and the error says so.
+func TestScopedCleanupRefusedDropKeepsEarlierDropsLive_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx := c.Context()
+	conn := newScopedCleanupConnection(c, ctx, scopedCockroachDB)
+	for _, statement := range refusedFixture {
+		c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
+
+	err := schemaclean.ApplyPlan(ctx, conn, refusedPlan(conn.Info().Dialect))
+
+	c.Assert(err, qt.ErrorMatches, `(?s)drop schema object enum "mood": .*\(SQLSTATE 2BP01\).*`+
+		`\nthe server commits each drop as it runs; dropped before the failure: table "free_t"`)
+	c.Assert(scopedRelations(c, ctx, conn), qt.DeepEquals, []string{"keep_t"})
+}
+
+// TestScopedCleanupValidatesBeforeTheFirstDropLive_FailurePath refuses a
+// scoped plan from the caller's validation, which strict compatibility uses
+// to read the catalog again. The validation is handed an executor, its
+// refusal ends the plan, and nothing is dropped. PostgreSQL and YugabyteDB
+// validate inside the transaction; CockroachDB, which opens none, through
+// the connection.
+func TestScopedCleanupValidatesBeforeTheFirstDropLive_FailurePath(t *testing.T) {
+	for _, engine := range []scopedCleanupEngine{scopedPostgreSQL, scopedCockroachDB, scopedYugabyteDB} {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := c.Context()
+			conn := newScopedCleanupConnection(c, ctx, engine)
+			for _, statement := range retryFixture {
+				c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("statement: %s", statement))
+			}
+			refusal := errors.New("schema changed after cleanup confirmation")
+			var validatedThrough catalog.SchemaExecutor
+
+			err := schemaclean.ApplyPlanWithOptions(ctx, conn, retryPlan(conn.Info().Dialect), schemaclean.ApplyPlanOptions{
+				ValidateBeforeExecute: func(executor catalog.SchemaExecutor) error {
+					validatedThrough = executor
+					return refusal
+				},
+			})
+
+			c.Assert(err, qt.ErrorIs, refusal)
+			c.Assert(validatedThrough, qt.IsNotNil)
+			c.Assert(scopedRelations(c, ctx, conn), qt.DeepEquals, []string{"a_base", "base_t", "z_child"})
+		})
+	}
 }
 
 // newScopedCleanupConnection creates a throwaway database on engine and
