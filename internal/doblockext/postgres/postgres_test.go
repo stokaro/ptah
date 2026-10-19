@@ -61,3 +61,31 @@ func TestRoles_FailurePath(t *testing.T) {
 		`in this desired schema; use supported role-bootstrap declarations or an explicit migration`)
 	c.Assert(roles, qt.IsNil)
 }
+
+// TestRoles_RefusesNUL refuses a body that holds a NUL byte before reading
+// it.
+func TestRoles_RefusesNUL(t *testing.T) {
+	c := qt.New(t)
+	roles, err := postgres.Services().Roles.Roles(doblockext.Request{
+		Dialect: "postgres",
+		Body:    " BEGIN NULL; END \x00",
+		Role:    prefixed,
+	})
+	c.Assert(err, qt.ErrorMatches, `desired-state DO block at body byte 18: NUL is not allowed in a procedural body; `+
+		`use supported role-bootstrap declarations or an explicit migration`)
+	c.Assert(roles, qt.IsNil)
+}
+
+// TestRoles_RefusesNestedComments refuses a nested block comment for what it
+// is, though the text after the inner closing marker would be refused too.
+func TestRoles_RefusesNestedComments(t *testing.T) {
+	c := qt.New(t)
+	roles, err := postgres.Services().Roles.Roles(doblockext.Request{
+		Dialect: "postgres",
+		Body:    " BEGIN /* outer /* nested */ comment */ NULL; END ",
+		Role:    prefixed,
+	})
+	c.Assert(err, qt.ErrorMatches, `desired-state DO block at body byte 1: unterminated or nested block comment; `+
+		`use supported role-bootstrap declarations or an explicit migration`)
+	c.Assert(roles, qt.IsNil)
+}

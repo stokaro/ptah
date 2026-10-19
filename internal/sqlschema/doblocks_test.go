@@ -63,3 +63,25 @@ func TestRoleBootstrap_NoDialect(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
 }
+
+// A DO block of a later file of a schema directory sees the roles the earlier
+// files declared: a condition on one of them holds, and a CREATE ROLE that
+// would repeat one is refused.
+func TestRoleBootstrap_EarlierFiles_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	base := schemamodel.Database{Roles: []schemamodel.Role{{Name: "reader"}}}
+	db, _, err := sqlschema.ReadOnto([]byte(`DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'reader') THEN CREATE ROLE reader LOGIN; END IF;
+ END $$;`), "postgres", sqlschema.NewDocument(&base))
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Roles, qt.HasLen, 0)
+}
+
+func TestRoleBootstrap_EarlierFiles_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	base := schemamodel.Database{Roles: []schemamodel.Role{{Name: "reader"}}}
+	db, _, err := sqlschema.ReadOnto([]byte(`DO $$ BEGIN CREATE ROLE reader; END $$;`), "postgres", sqlschema.NewDocument(&base))
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+	c.Assert(err, qt.ErrorMatches, `.*: CREATE ROLE would repeat a role already declared in this desired schema; .*`)
+	c.Assert(db, qt.DeepEquals, schemamodel.Database{})
+}

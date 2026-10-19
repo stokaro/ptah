@@ -1,23 +1,44 @@
 package registration_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
+	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
 )
 
+// postgresScript parses a document as PostgreSQL's and leaves every
+// statement to the shared conversion, so a load converted with it and no
+// target reads a DO block as the first dialect that reads one.
+type postgresScript struct{}
+
+func (postgresScript) Parse(_ context.Context, file sqlext.SourceFile) (*ast.StatementList, error) {
+	return parser.NewParser(file.Text, parser.WithDialect(platform.Postgres)).Parse()
+}
+
+func (postgresScript) Statement(sqlschema.Scope, ast.Node) (bool, error) { return false, nil }
+
+func (postgresScript) AlterOperation(sqlschema.Scope, sqlschema.Table, *ast.ExtensionAlterOperation) (bool, error) {
+	return false, nil
+}
+
 // TestRegister_ReadsTheDoBlocksOfAnEngineNobodyShips registers an engine
-// whose grammar writes PostgreSQL's routines and whose descriptor says its DO
-// blocks are PL/pgSQL. Before the registration the SQL reader reads the
-// engine's DO block as an unmodeled statement and declares no role, and
-// refuses CockroachDB's, whose descriptor names no language, naming
-// PostgreSQL as the one dialect that reads them. After it the block declares
-// its role, and the refusal names the engine too, though nothing names it.
+// whose grammar writes PostgreSQL's routines, whose descriptor says its DO
+// blocks are PL/pgSQL, and which records a name as written. Before the
+// registration the SQL reader reads the engine's DO block as an unmodeled
+// statement and declares no role, and refuses CockroachDB's, whose
+// descriptor names no language, naming PostgreSQL as the one dialect that
+// reads them. After it the block declares its role under the engine's names,
+// and the refusal names the engine too, though nothing names it. A load with
+// no target reads a block as PostgreSQL, which registers first.
 func TestRegister_ReadsTheDoBlocksOfAnEngineNobodyShips(t *testing.T) {
 	const block = `DO $$ BEGIN
  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'reader') THEN CREATE ROLE Reader LOGIN; END IF;
@@ -31,15 +52,22 @@ func TestRegister_ReadsTheDoBlocksOfAnEngineNobodyShips(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*: procedural role declarations require one of the dialects \["postgres"\]`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 
+	untargeted := sqlext.GrammarRequest{Files: []sqlext.SourceFile{{Path: "roles.sql", Text: block}}}
+	result, err := sqlschema.ConvertScript(context.Background(), untargeted, postgresScript{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
+
 	engine := described("bootstrapping", "", "bootdb")
 	engine.Grammar.Routines.Body = descriptor.RoutineQuotedBody
-	engine.Names = descriptor.Names{Unquoted: "ascii_case_insensitive"}
 	engine.Statements = descriptor.Statements{DoBlocks: descriptor.DoBlocksPLpgSQL}
 	c.Assert(platform.Register(engine), qt.IsNil)
 
 	database, _, err = sqlschema.Read([]byte(block), "bootdb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
+	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "Reader", Login: true, Inherit: true}})
+	result, err = sqlschema.ConvertScript(context.Background(), untargeted, postgresScript{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
 	database, _, err = sqlschema.Read([]byte(block), platform.CockroachDB)
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 	c.Assert(err, qt.ErrorMatches, `.*: procedural role declarations require one of the dialects \["postgres" "bootstrapping"\]`)
