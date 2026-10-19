@@ -120,3 +120,22 @@ func TestVocabulary_WithFormatLimits_SameKindInTwoFormats(t *testing.T) {
 	c.Assert(vocabulary.FormatLimits(coverage.FormatHCL), qt.DeepEquals, []coverage.Kind{"gauge"})
 	c.Assert(vocabulary.FormatLimits(coverage.FormatDBML), qt.DeepEquals, []coverage.Kind{"gauge"})
 }
+
+// TestVocabulary_WithFormatLimits_LeavesItsBaseAsItWas adds limits to a
+// vocabulary that already holds some, and the vocabulary it was built from
+// answers what it answered before: a Vocabulary is immutable.
+func TestVocabulary_WithFormatLimits_LeavesItsBaseAsItWas(t *testing.T) {
+	c := qt.New(t)
+	first := must.Must(must.Must(coverage.NewVocabulary("gauge", "meter")).WithFormatLimits(
+		coverage.FormatLimit{Format: coverage.FormatHCL, Kinds: []coverage.Kind{"gauge"}}))
+
+	second := must.Must(first.WithFormatLimits(
+		coverage.FormatLimit{Format: coverage.FormatHCL, Kinds: []coverage.Kind{"meter"}},
+		coverage.FormatLimit{Format: coverage.FormatDBML, Kinds: []coverage.Kind{"meter"}},
+	))
+
+	c.Assert(second.FormatLimits(coverage.FormatHCL), qt.DeepEquals, []coverage.Kind{"gauge", "meter"})
+	c.Assert(second.FormatLimits(coverage.FormatDBML), qt.DeepEquals, []coverage.Kind{"meter"})
+	c.Assert(first.FormatLimits(coverage.FormatHCL), qt.DeepEquals, []coverage.Kind{"gauge"})
+	c.Assert(first.FormatLimits(coverage.FormatDBML), qt.IsNil)
+}
