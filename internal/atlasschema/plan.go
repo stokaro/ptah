@@ -14,6 +14,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -906,16 +907,19 @@ func validatePlanRowSets(plan PlanFile) error {
 	return nil
 }
 
+// planDialectsCompatible reports whether a plan file's dialect and the
+// connection's name one engine: two spellings the process registry folds onto
+// one dialect, such as postgresql and postgres, or two that fold onto none and
+// are equal without regard to case.
 func planDialectsCompatible(planDialect, connDialect string) bool {
 	return normalizePlanDialect(planDialect) == normalizePlanDialect(connDialect)
 }
 
 func normalizePlanDialect(dialect string) string {
-	normalized := strings.ToLower(strings.TrimSpace(dialect))
-	if normalized == "postgresql" {
-		return "postgres"
+	if canonical := platform.NormalizeDialect(dialect); canonical != "" {
+		return canonical
 	}
-	return normalized
+	return strings.ToLower(strings.TrimSpace(dialect))
 }
 
 // reportPlanDevURLProvisionsNothing names the half of --dev-url that a saved

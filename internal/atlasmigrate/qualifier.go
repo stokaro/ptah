@@ -90,8 +90,8 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 	if q.IsZero() {
 		return nil
 	}
-	if !qualifierSupportsDialect(dialect) {
-		return fmt.Errorf("%s is not supported for dialect %q: %s", q.errLabel(), dialect, qualifierDialectRefusal(dialect))
+	if refusal := qualifierDialectRefusal(dialect); refusal != "" {
+		return fmt.Errorf("%s is not supported for dialect %q: %s", q.errLabel(), dialect, refusal)
 	}
 	if len(schemas) > 1 {
 		return fmt.Errorf("%s %q requires a single schema scope, got --schema %q", q.errLabel(), q.name, strings.Join(schemas, ","))
@@ -99,46 +99,22 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 	return nil
 }
 
-// qualifierDialectRefusals maps each dialect the qualifier does not rewrite for
-// to the reason it does not, so that "why not mine?" is answered in the same
-// declaration as "which ones?" (stokaro/ptah#1714). It replaced an allow-list
-// switch, which could say only that a dialect was absent from it.
+// qualifierDialectRefusal returns why the qualifier does not rewrite a plan for
+// the dialect, its descriptor's QualifierRefusal, so that "why not mine?" is
+// answered in the same declaration as "which ones?" (stokaro/ptah#1714). An
+// empty answer means the qualifier rewrites for it, as it does for a dialect
+// the process registry does not know.
 //
-// Every reason below is about what THIS package has established, not about what
-// the engine can do. The qualifier rewrites planned nodes -- table names, index
+// Every reason is about what THIS package has established, not about what the
+// engine can do. The qualifier rewrites planned nodes -- table names, index
 // targets, drop targets -- into schema-qualified form, and the risk of turning
 // it on for a dialect is that it writes a name that dialect reads differently.
-// None of these has been exercised against a server that way, so none of them
-// is enabled, and each says what enabling it would take.
-var qualifierDialectRefusals = map[string]string{
-	platform.SQLite: "SQLite's qualified form names an ATTACHed database rather than a schema inside one, " +
-		"so a qualifier would have to be established as an attachment before any statement referencing it runs; " +
-		"nothing here does that",
-	platform.SQLServer: "SQL Server has schemas and Ptah renders into one (dbo by default), but the qualifier " +
-		"has never been measured against a server there; enabling it needs a live round trip showing that a " +
-		"rewritten plan applies and reads back under the qualified name",
-	platform.ClickHouse: "ClickHouse namespaces objects by database rather than by schema within a database, so " +
-		"a qualifier is a different kind of name here; enabling it needs that difference settled first, not a " +
-		"dialect added to a list",
-	platform.Spanner: "Spanner renders through the PostgreSQL path but has no live coverage at all " +
-		"(stokaro/ptah#942), so a qualified plan could not be shown to apply",
-	platform.YDB: "a YDB schema is a directory and a table one quoted path, `dir/t`, so a qualifier would have " +
-		"to be written into each path, while the qualifier writes a schema-qualified name, which YQL reads as a " +
-		"cluster and a table; enabling it needs path rewriting and a live round trip",
-}
-
-func qualifierSupportsDialect(dialect string) bool {
-	_, refused := qualifierDialectRefusals[platform.NormalizeDialect(dialect)]
-	return !refused
-}
-
-// qualifierDialectRefusal returns the recorded reason, or a generic one for a
-// dialect nothing here has heard of.
+// None of the refused dialects has been exercised against a server that way,
+// so none of them is enabled, and each reason says what enabling it would
+// take.
 func qualifierDialectRefusal(dialect string) string {
-	if reason, ok := qualifierDialectRefusals[platform.NormalizeDialect(dialect)]; ok {
-		return reason
-	}
-	return "the qualifier has no rewriting rules for this dialect"
+	described, _ := platform.Lookup(dialect)
+	return described.QualifierRefusal
 }
 
 // ApplyToPlan rewrites the planned migration AST in place so that every object
@@ -151,8 +127,8 @@ func (q Qualifier) ApplyToPlan(dialect string, desired *schemamodel.Database, no
 	if q.IsZero() {
 		return nil
 	}
-	if !qualifierSupportsDialect(dialect) {
-		return fmt.Errorf("%s is not supported for dialect %q: %s", q.errLabel(), dialect, qualifierDialectRefusal(dialect))
+	if refusal := qualifierDialectRefusal(dialect); refusal != "" {
+		return fmt.Errorf("%s is not supported for dialect %q: %s", q.errLabel(), dialect, refusal)
 	}
 	state := &qualifyState{
 		qualifier: q,
@@ -320,10 +296,16 @@ func (s *qualifyState) checkSingleSchemaScope() error {
 }
 
 // enumTypeNames collects the desired-state enum type names (bare, lowercased)
-// for PostgreSQL-family dialects, where enum-typed columns reference a named
-// type that the qualifier rewrite cannot reach yet.
+// for a dialect that keeps an enum a standalone type columns name, as
+// PostgreSQL's CREATE TYPE ... AS ENUM does: an enum-typed column there
+// references a named type that the qualifier rewrite cannot reach yet. The
+// descriptor of such a dialect leaves Preparation.Enums empty; one the process
+// registry does not know collects none.
 func enumTypeNames(dialect string, desired *schemamodel.Database) map[string]struct{} {
-	if desired == nil || !platform.IsPostgresFamily(dialect) {
+	if desired == nil {
+		return nil
+	}
+	if described, found := platform.Lookup(dialect); !found || described.Preparation.Enums != "" {
 		return nil
 	}
 	names := make(map[string]struct{}, len(desired.Enums))

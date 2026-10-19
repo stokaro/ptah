@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/ydbacl"
 	"ptah.run/internal/ydburl"
@@ -21,8 +20,11 @@ import (
 // next one rehearsed in the realm, so the baseline writes none, and a
 // permission an earlier run left on the root plans no REVOKE either. Every
 // other target is left as it is.
+//
+// A database root is what an engine has whose descriptor states
+// Conversion.DatabaseRootPaths, YDB's.
 func omitRealmRootGrants(info catalog.ServerInfo, target *schemamodel.Database, dev *catalog.Database) {
-	if platform.NormalizeDialect(info.Dialect) != platform.YDB {
+	if !described(info.Dialect).Conversion.DatabaseRootPaths {
 		return
 	}
 	if parsed, err := ydburl.Parse(info.URL); err != nil || parsed.Realm == "" {

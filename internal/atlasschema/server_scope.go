@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/hclext"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/internal/atlassource"
@@ -103,7 +103,8 @@ func refuseSQLBesideOneDatabaseOnDevServer(info catalog.ServerInfo, devURL strin
 
 // isDevServer reports whether devURL is a whole dev server: a MySQL-family URL
 // naming no database, written out or as a docker URL whose server the command
-// starts.
+// starts. A docker URL names a server on an engine whose URL selects a
+// database as its schema, as the MySQL family's descriptors state.
 //
 // A `docker+mysql://_/mysql:8.4.11` URL names no database, and the pinned
 // community binary v1.3.0 plans a whole server beside it: measured, `schema
@@ -117,7 +118,7 @@ func isDevServer(devURL string) bool {
 	if devdocker.IsURL(devURL) {
 		spec, err := devdocker.Parse(devURL)
 		return err == nil && spec.Database == "" &&
-			(spec.Dialect == platform.MySQL || spec.Dialect == platform.MariaDB)
+			described(spec.Dialect).Schemas.Selection == descriptor.SchemaSelectionDatabase
 	}
 	parsed, err := atlasurl.ParseMySQLURL(strings.TrimSpace(devURL))
 	return err == nil && parsed.Database() == ""

@@ -42,7 +42,8 @@ func IsDevScopeEscape(err error) bool {
 }
 
 // schemaScopeNamesDatabase reports whether a connection's schema scope names a
-// whole database rather than a namespace inside the connected one.
+// whole database rather than a namespace inside the connected one: whether the
+// dialect's descriptor states SchemaIsDatabase.
 //
 // This is the difference that makes stokaro/ptah#1240 a MySQL defect. Measured
 // on 2026-08-07 against a live MySQL 9.7 and a live PostgreSQL 17, one apply
@@ -56,12 +57,7 @@ func IsDevScopeEscape(err error) bool {
 //     qualified-plan-against-dev shape is present, and it is contained, because
 //     a PostgreSQL schema cannot name anything outside the connected database.
 func schemaScopeNamesDatabase(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
-		return true
-	default:
-		return false
-	}
+	return described(dialect).SchemaIsDatabase
 }
 
 // rescopeStatementsForDevDatabase rewrites an apply plan so it rehearses inside

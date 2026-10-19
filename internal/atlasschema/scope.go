@@ -8,6 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -163,6 +165,14 @@ func refuseUnmatchedExclude(selectors []string) error {
 		"%w; schema apply refuses a selection that protects nothing, set %s=1 to keep the permissive behavior",
 		&atlasfilter.UnmatchedExcludeError{Selectors: selectors},
 		atlasfilter.AllowUnmatchedExcludeEnvVar)
+}
+
+// described returns the descriptor of the dialect a spelling selects, and the
+// zero descriptor, which states none of the facts this package reads, for one
+// the process registry does not know.
+func described(dialect string) descriptor.Dialect {
+	found, _ := platform.Lookup(dialect)
+	return found
 }
 
 // dialectDefaultSchema is the schema that owns unqualified objects when no
