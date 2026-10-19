@@ -174,5 +174,11 @@ func yugabyteDB() descriptor.Dialect {
 				TriggerConditions: true,
 			},
 		},
+
+		// Clean checks: what internal/migrateclean reads. A dev database is
+		// judged by the PostgreSQL rules, as CockroachDB's is. The pinned
+		// community binary does not open yugabytedb://, and its `migrate
+		// apply` gate was never measured here.
+		CleanCheck: descriptor.CleanCheck{Dev: true, ConnectedSchema: true},
 	}
 }

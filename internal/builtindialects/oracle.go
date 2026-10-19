@@ -160,6 +160,12 @@ END;`,
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 			Statements: descriptor.StatementGrammar{UserTypes: true},
 		},
+
+		// Clean checks: what internal/migrateclean reads. A dev database is
+		// checked although no run resets an Oracle one: the replay's lock and
+		// the rehearsal's identity check both refuse it first. The check
+		// keeps a path that reaches the reset without them from emptying one.
+		CleanCheck: descriptor.CleanCheck{Dev: true, Tables: oracleCleanTables},
 	}
 }
 

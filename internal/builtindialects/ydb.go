@@ -160,6 +160,20 @@ func ydb() descriptor.Dialect {
 		// states no default port, because a URL without one reaches the port
 		// of its scheme.
 		Atlas: descriptor.Atlas{DockerImages: []string{"ydb"}, Extension: true},
+
+		// Clean checks: what internal/migrateclean reads. A dev database is
+		// the root its connection treats as its database: a dev realm Ptah
+		// created for the run, which starts empty, or a whole database on a
+		// server the run owns. The writer lists what its reset would drop
+		// under that root, a directory included, and the first object refuses
+		// the database. No Atlas edition opens YDB, so there is no binary to
+		// match.
+		CleanCheck: descriptor.CleanCheck{Dev: true, ResetListing: true},
+		// What a schema qualifier on a planned migration, as `migrate diff
+		// --qualifier` writes one, would need on YDB.
+		QualifierRefusal: "a YDB schema is a directory and a table one quoted path, `dir/t`, so a qualifier would have " +
+			"to be written into each path, while the qualifier writes a schema-qualified name, which YQL reads as a " +
+			"cluster and a table; enabling it needs path rewriting and a live round trip",
 	}
 }
 

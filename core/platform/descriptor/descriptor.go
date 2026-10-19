@@ -259,6 +259,23 @@ type Dialect struct {
 	// Grammar states where the engine's DDL grammar differs, as the shared
 	// DDL parser reads it; see grammar.go.
 	Grammar Grammar `json:"grammar,omitzero"`
+
+	// Clean checks, schema attributes and plan qualifiers: what
+	// internal/migrateclean, internal/atlasschema and internal/atlasmigrate
+	// read.
+
+	// CleanCheck states how Ptah tells whether a database holds anything
+	// before it adopts the database or resets it as a dev database; see
+	// cleancheck.go.
+	CleanCheck CleanCheck `json:"clean_check,omitzero"`
+	// SchemaAttributesQuery is the catalog query that selects the default
+	// character set and the default collation of one schema, binding the
+	// schema's name. Empty means a schema carries neither.
+	SchemaAttributesQuery string `json:"schema_attributes_query,omitempty"`
+	// QualifierRefusal says why a planned migration is not rewritten to name
+	// another schema on the engine, as a schema qualifier such as `migrate
+	// diff --qualifier` asks. Empty means the rewrite runs.
+	QualifierRefusal string `json:"qualifier_refusal,omitempty"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and

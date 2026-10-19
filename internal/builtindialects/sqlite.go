@@ -148,6 +148,25 @@ func sqlite() descriptor.Dialect {
 			},
 			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 		},
+
+		// Clean checks: what internal/migrateclean reads. Measured against
+		// the pinned community binary on 2026-08-07, `migrate apply` refuses
+		// a database that holds a table with a count that includes the
+		// revision table and excludes SQLite's own sqlite_* tables: one
+		// unrelated table reads `found multiple tables: 2`. A dev refusal
+		// names the first table in the order the tables were created in.
+		CleanCheck: descriptor.CleanCheck{
+			Adoption:       true,
+			AdoptionCounts: true,
+			Dev:            true,
+			Tables:         sqliteCleanTables,
+			CatalogOrder:   true,
+		},
+		// What a schema qualifier on a planned migration, as `migrate diff
+		// --qualifier` writes one, would need on SQLite.
+		QualifierRefusal: "SQLite's qualified form names an ATTACHed database rather than a schema inside one, " +
+			"so a qualifier would have to be established as an attachment before any statement referencing it runs; " +
+			"nothing here does that",
 	}
 }
 

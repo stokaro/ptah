@@ -211,6 +211,19 @@ func postgres() descriptor.Dialect {
 				TriggerConditions: true,
 			},
 		},
+
+		// Clean checks: what internal/migrateclean reads. The pinned
+		// community binary refuses to adopt a database that holds a table,
+		// measured on PostgreSQL 17 on 2026-08-07, and refuses a dev database
+		// that holds one "in connected schema", measured on PostgreSQL 18 on
+		// 2026-09-26. A dev database an atlas.hcl docker block provisioned
+		// starts from the state the block leaves (stokaro/ptah#4056).
+		CleanCheck: descriptor.CleanCheck{
+			Adoption:        true,
+			Dev:             true,
+			ConnectedSchema: true,
+			StartingPoint:   true,
+		},
 	}
 }
 
