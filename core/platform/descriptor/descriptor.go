@@ -276,6 +276,14 @@ type Dialect struct {
 	// another schema on the engine, as a schema qualifier such as `migrate
 	// diff --qualifier` asks. Empty means the rewrite runs.
 	QualifierRefusal string `json:"qualifier_refusal,omitempty"`
+
+	// Foreign key naming: what internal/sqlschema, the comparison and the
+	// generator's backing index cleanup read; see names.go.
+
+	// ForeignKeyNaming is how the server names a foreign key a schema file
+	// leaves unnamed, and the index it builds for the key. Empty leaves the
+	// key's name to ConstraintNaming.
+	ForeignKeyNaming ForeignKeyNaming `json:"foreign_key_naming,omitempty"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and

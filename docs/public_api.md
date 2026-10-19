@@ -4803,6 +4803,10 @@ in place of a dialect's name:
   connection selected.
 - `Conversion`: what the schema readers and converters read of the engine,
   such as its property shortcuts and how its row-level security is held.
+- `Names`, `IndexNaming`, `CheckNaming`, `ConstraintNaming` and
+  `ForeignKeyNaming`: how the server resolves a name a schema file writes, and
+  the names it gives the indexes, CHECKs, constraints and foreign keys the
+  file leaves unnamed.
 - `URLs`: how a database URL of the engine is read and compared before
   anything is connected: the port a URL that names none reaches, the dialect
   its URLs are compared as, a grammar beyond the one `net/url` reads, and the

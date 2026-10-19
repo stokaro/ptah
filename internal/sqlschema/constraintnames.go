@@ -51,9 +51,18 @@ const foreignKeyLabel = "fkey"
 // engines name an unnamed constraint differently or not in a way anyone
 // measured here -- SQLite keeps no name -- and they keep the name the rest of
 // Ptah derives. The foreign keys of MySQL and MariaDB have a rule of their
-// own; see [mysqlname.NamesForeignKeys].
+// own; see [numbersForeignKeys].
 func namesConstraintsLikePostgres(sourcePlatform string) bool {
 	return factsOf(sourcePlatform).constraintNaming == descriptor.ConstraintNamingTableColumnsSuffix
+}
+
+// numbersForeignKeys reports whether an unnamed foreign key read from a source
+// of this dialect takes the name the server gives it, `<table>_ibfk_<n>`, and
+// the index the server builds for it the name after its first column: the
+// rules of [mysqlname], which the dialect's descriptor states as
+// descriptor.ForeignKeyNamingTableNumbered. MySQL and MariaDB state it.
+func numbersForeignKeys(sourcePlatform string) bool {
+	return factsOf(sourcePlatform).foreignKeyNaming == descriptor.ForeignKeyNamingTableNumbered
 }
 
 // nameCreatedMySQLForeignKeys gives every unnamed foreign key one CREATE TABLE
@@ -85,7 +94,7 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 func nameCreatedMySQLForeignKeys(
 	database, base *schemamodel.Database, table schemamodel.Table, keys []elementSite, sourcePlatform string,
 ) error {
-	if !mysqlname.NamesForeignKeys(sourcePlatform) {
+	if !numbersForeignKeys(sourcePlatform) {
 		return nil
 	}
 	databases := []*schemamodel.Database{database, base}
@@ -153,7 +162,7 @@ func statementName(statement mysqlname.Statement) string {
 // FOREIGN KEY (a) ...` on a table holding `c_ibfk_2` names the column's key
 // `c_ibfk_3` and the other `c_ibfk_4`.
 func nameAddedColumnForeignKeys(fields []schemamodel.Field, target alterTarget) error {
-	if !mysqlname.NamesForeignKeys(target.sourcePlatform) {
+	if !numbersForeignKeys(target.sourcePlatform) {
 		return nil
 	}
 	for i := range fields {
@@ -183,7 +192,7 @@ func nameAddedColumnForeignKeys(fields []schemamodel.Field, target alterTarget) 
 // drop the other. MySQL builds no key from the clause, and the parser refuses
 // it there.
 func refuseRestatedColumnForeignKey(field schemamodel.Field, target alterTarget, column string) error {
-	if field.Foreign == "" || !mysqlname.NamesForeignKeys(target.sourcePlatform) {
+	if field.Foreign == "" || !numbersForeignKeys(target.sourcePlatform) {
 		return nil
 	}
 	return fmt.Errorf(
@@ -255,7 +264,7 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 	if constraint.Name != "" {
 		return nil
 	}
-	if mysqlname.NamesForeignKeys(target.sourcePlatform) && isForeignKey(*constraint) {
+	if numbersForeignKeys(target.sourcePlatform) && isForeignKey(*constraint) {
 		name, err := nameAddedMySQLForeignKey(target)
 		if err != nil {
 			return err

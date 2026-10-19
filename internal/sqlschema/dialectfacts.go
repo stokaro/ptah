@@ -9,8 +9,8 @@ import (
 )
 
 // readingFacts is what a source dialect's descriptor says about reading a
-// schema file: how its names resolve, how its server names an unnamed index
-// or CHECK, and what a schema is there.
+// schema file: how its names resolve, how its server names an unnamed index,
+// CHECK or foreign key, and what a schema is there.
 type readingFacts struct {
 	name        string
 	names       descriptor.Names
@@ -20,6 +20,7 @@ type readingFacts struct {
 	// defaultSchema is the schema an unqualified name means offline.
 	defaultSchema    string
 	constraintNaming descriptor.ConstraintNaming
+	foreignKeyNaming descriptor.ForeignKeyNaming
 	columns          descriptor.Columns
 	statements       descriptor.Statements
 }
@@ -33,8 +34,8 @@ var readingFactsCache sync.Map
 
 // factsOf returns what the descriptor of sourcePlatform says about reading a
 // schema file, or the zero facts for a dialect no descriptor describes, the
-// empty name among them: names as written, and no unnamed index or CHECK
-// named.
+// empty name among them: names as written, and no unnamed index, CHECK or
+// foreign key named.
 func factsOf(sourcePlatform string) readingFacts {
 	if cached, ok := readingFactsCache.Load(sourcePlatform); ok {
 		if facts, ok := cached.(readingFacts); ok {
@@ -54,6 +55,7 @@ func factsOf(sourcePlatform string) readingFacts {
 
 		defaultSchema:    described.DefaultSchema,
 		constraintNaming: described.ConstraintNaming,
+		foreignKeyNaming: described.ForeignKeyNaming,
 		columns:          described.Columns,
 		statements:       described.Statements,
 	}

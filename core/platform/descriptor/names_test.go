@@ -35,6 +35,23 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": table option .* names no option or no property`},
 		{name: "an undeclared check naming", dialect: with(func(d *descriptor.Dialect) { d.CheckNaming = "numbered" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": check naming "numbered" is not one of .*`},
+		{name: "an undeclared foreign key naming", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = "numbered"
+			d.IndexNaming.MaxBytes = 64
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key naming "numbered" is not "table-numbered"`},
+		{name: "a foreign key named twice", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+			d.IndexNaming.MaxBytes = 64
+			d.ConstraintNaming = descriptor.ConstraintNamingTableColumnsSuffix
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key naming "table-numbered" and ` +
+				`constraint naming "table-columns-suffix" both name an unnamed foreign key`},
+		{name: "a foreign key index named by no rule", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key naming "table-numbered" names ` +
+				`the index a key builds, and the index naming states no rule`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -47,4 +64,21 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 			c.Assert(registry, qt.IsNil)
 		})
 	}
+}
+
+// TestNewRegistry_ForeignKeyNaming_HappyPath accepts a foreign key naming
+// beside the index naming that names the key's index, and keeps it as stated.
+func TestNewRegistry_ForeignKeyNaming_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	described := head("alpha")
+	described.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+	described.IndexNaming = descriptor.IndexNaming{MaxBytes: 64}
+
+	registry, err := descriptor.NewRegistry(described)
+
+	c.Assert(err, qt.IsNil)
+	got, found := registry.Lookup("alpha")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(got.ForeignKeyNaming, qt.Equals, descriptor.ForeignKeyNamingTableNumbered)
+	c.Assert(got, qt.DeepEquals, described)
 }
