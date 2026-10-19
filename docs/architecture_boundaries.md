@@ -129,6 +129,15 @@ shares: which dialect a block is read as, the roles the file declared before
 it, and how a CREATE ROLE is recorded. The reader runs in process, like the
 YQL parser.
 
+Routine headers are parsed and converted by `internal/routineext` services, selected by
+the source dialect's `Grammar.Routines.Body`. The PostgreSQL, MySQL, and SQL
+Server owners read their statement boundaries, headers, and options and retain
+their refusal messages. The shared parser supplies its cursor and time budget
+and validates the owner claims after parsing.
+The shared SQL reader normalizes the destination name and adds its refusal
+sentinel to an owner's error. The service boundary is in-process; the public
+provider protocol remains part of #4204.
+
 The tables the shared conversion reads for the YDB owner carry YDB names: one
 path in backticks, where a dot is part of the name. The reader asks
 `internal/sqlident`, the helper that also quotes and qualifies a name, how a
@@ -144,7 +153,6 @@ dialect needs, whatever owners a load selects:
 | `internal/mysqlcheck` | Whether a column CHECK names another column, which MySQL refuses. |
 | `internal/mysqlindex` | The access method a `USING` clause asks for. |
 | `internal/mysqlname` | The names MySQL and MariaDB give an unnamed foreign key, CHECK or key index. |
-| `internal/mysqlroutine` | The security and volatility a routine's characteristics state. |
 | `internal/pgname` | The names PostgreSQL gives an unnamed constraint. |
 | `internal/pgprivilege` | The privileges `ALL` names in a GRANT or REVOKE. |
 

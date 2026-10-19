@@ -104,3 +104,32 @@ func TestRegister_ReadsTheRoutinesOfAnEngineNobodyShipsInTheGrammarItStates(t *t
 		Security: "INVOKER", Volatility: "IMMUTABLE", Body: "BEGIN SELECT n; END", Comment: "tick",
 	})
 }
+
+// A new dialect selects the grammar owner's conversion without a branch in
+// the SQL reader.
+func TestRegister_RoutineConversionUsesTheSourceGrammar(t *testing.T) {
+	tests := []struct {
+		name, grammar, sql, wantLanguage, wantSecurity string
+	}{
+		{name: "quotedconvert", grammar: descriptor.RoutineQuotedBody,
+			sql:          "CREATE PROCEDURE touch() LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN NULL; END $$;",
+			wantLanguage: "plpgsql", wantSecurity: "DEFINER"},
+		{name: "transactconvert", grammar: descriptor.RoutineTransactSQL,
+			sql:          "CREATE PROCEDURE touch WITH EXECUTE AS CALLER AS SELECT 1;",
+			wantLanguage: "sql", wantSecurity: "INVOKER"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			engine := described(test.name, "", test.name+"db")
+			engine.Grammar.Routines.Body = test.grammar
+			c.Assert(platform.Register(engine), qt.IsNil)
+			database, _, err := sqlschema.Read([]byte(test.sql), test.name)
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Functions, qt.HasLen, 1)
+			c.Assert(database.Functions[0].Name, qt.Equals, "touch")
+			c.Assert(database.Functions[0].Language, qt.Equals, test.wantLanguage)
+			c.Assert(database.Functions[0].Security, qt.Equals, test.wantSecurity)
+		})
+	}
+}

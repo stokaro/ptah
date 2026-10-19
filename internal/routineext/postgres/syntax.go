@@ -1,4 +1,4 @@
-package parser
+package postgres
 
 import (
 	"fmt"
@@ -6,104 +6,14 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform/descriptor"
-	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/routineext"
 )
 
-type postgresRoutineParser struct{}
-
-func (postgresRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
-	if target == "PROCEDURE" {
-		sql, err := p.collectPostgresRoutineStatement(statementStart)
-		if err != nil {
-			return nil, err
-		}
-		return parsePostgresRoutineSQL(sql, p.dialect, p.postgresRoutineLexerOptions(), ast.RoutineKindProcedure)
-	}
-	if target == "PROC" {
-		return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
-	}
-	return p.parseCreateFunction(statementStart)
-}
-
-func (postgresRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error) {
-	return compatibilityRoutineParser{}.parseCreateDefinerRoutine(p, statementStart)
-}
-
-// isPostgresRoutineDialect reports whether the dialect writes PostgreSQL's
-// routine grammar, whose body is a string constant in a LANGUAGE.
-func (p *Parser) isPostgresRoutineDialect() bool {
-	return p.target.grammar.Routines.Body == descriptor.RoutineQuotedBody
-}
-
-// postgresRoutineLexerOptions are the string rules of the head of the
-// dialect's family, which a routine of PostgreSQL's grammar and its body
-// follow whatever member of the family the document names: PostgreSQL's for
-// every engine of its family. The dialect-blind lexer reads `E'...'` as an
-// identifier and a string, which leaves a procedure written that way with no
-// body at all, and it reads a backslash in a standard string as an escape
-// (stokaro/ptah#3691).
-func (p *Parser) postgresRoutineLexerOptions() lexer.Options {
-	return dialectlexer.Options(p.target.family)
-}
-
-func (p *Parser) parsePostgresDoStatement(statementStart int) (ast.Node, error) {
-	p.advance()
-	sql, err := p.collectRawStatement(statementStart, "DO statement")
-	if err != nil {
-		return nil, err
-	}
-
-	block := ast.NewDoBlock(sql)
-	body, language, err := parsePostgresDoBlockSQL(sql, p.postgresRoutineLexerOptions(), p.target.grammar.Routines.DefaultDoBlockLanguage)
-	if err != nil {
-		return nil, err
-	}
-	block.Language = language
-	block.Body = body
-	return block, nil
-}
-
-func (p *Parser) collectPostgresRoutineStatement(statementStart int) (string, error) {
-	blockDepth := 0
-	for !p.isAtEnd() {
-		if err := p.checkTimeout(); err != nil {
-			return "", err
-		}
-		if p.current.Type == lexer.TokenSemicolon && blockDepth == 0 {
-			sql := p.rawStatement(statementStart)
-			p.advance()
-			return sql, nil
-		}
-		if p.current.Type == lexer.TokenIdentifier {
-			trackPostgresSQLBodyKeyword(p.current.Value, &blockDepth)
-		}
-		p.advance()
-	}
-
-	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE PROCEDURE body at position %d", p.current.Start)
-	}
-	return p.rawStatementFragment(statementStart, p.previous.End), nil
-}
-
-func (p *Parser) attachPostgresFunctionBody(function *ast.CreateFunctionNode) {
-	if !p.isPostgresRoutineDialect() || function == nil {
-		return
-	}
-	delimiter := ""
-	if function.RoutineBody != nil {
-		delimiter = function.RoutineBody.Delimiter
-	}
-	body := parsePostgresRoutineBody(function.Body, function.Language, delimiter)
-	function.RoutineBody = &body
-}
-
-// parsePostgresDoBlockSQL reads a DO statement's body and its language: the
+// ReadDo reads a DO statement's body and its language: the
 // LANGUAGE clause the block writes, or defaultLanguage, the one the dialect's
 // descriptor states, where it writes none.
-func parsePostgresDoBlockSQL(sql string, options lexer.Options, defaultLanguage string) (ast.RoutineBody, string, error) {
+func ReadDo(sql string, options lexer.Options, defaultLanguage string) (ast.RoutineBody, string, error) {
 	tokens := tokenizePostgresRoutineSQL(sql, options)
 	bodyIdx := -1
 	language := ""
@@ -206,7 +116,7 @@ func parsePostgresRoutineHeader(sql string, tokens []lexer.Token, keyword string
 // parsePostgresRoutineClauses reads the SECURITY and SET clauses of a routine
 // header, between its parameter list and its body, as the CREATE FUNCTION path
 // reads them: the mode upper-cased, and each setting as `name=value` or `name
-// FROM CURRENT` (see [Parser.parseFunctionSetting]). Read nowhere else, a
+// FROM CURRENT`. Read nowhere else, a
 // procedure declared SECURITY DEFINER became one that runs with its caller's
 // rights, and its search_path was dropped.
 func parsePostgresRoutineClauses(tokens []lexer.Token, keyword string) (security string, settings []string, err error) {
@@ -288,7 +198,7 @@ func postgresRoutineSetting(tokens []lexer.Token, setIdx int) (setting string, l
 	for i := opIdx + 1; i < len(tokens); i++ {
 		tok := tokens[i]
 		if tok.Type == lexer.TokenEOF || tok.Type == lexer.TokenSemicolon ||
-			tok.Type == lexer.TokenIdentifier && endsRoutineSettingValue(tok.Value) {
+			tok.Type == lexer.TokenIdentifier && EndsSetting(tok.Value) {
 			break
 		}
 		if !isPostgresRoutineTrivia(tok) {
@@ -430,4 +340,66 @@ func dollarQuoteDelimiter(value string) string {
 		return ""
 	}
 	return value[:end+2]
+}
+
+type syntax struct{}
+
+func (syntax) Create(p routineext.Cursor, target string, start int) (ast.Node, error) {
+	if target == "PROCEDURE" {
+		sql, err := collectPostgresRoutineStatement(p, start)
+		if err != nil {
+			return nil, err
+		}
+		return parsePostgresRoutineSQL(sql, p.Dialect(), p.FamilyOptions(), ast.RoutineKindProcedure)
+	}
+	if target == "PROC" {
+		return p.Fallback(target, start)
+	}
+	return p.Function(start)
+}
+func (syntax) Definer(p routineext.Cursor, start int) (ast.Node, error) {
+	return p.DefinerFallback(start)
+}
+func attachFunctionBody(function *ast.CreateFunctionNode) {
+	if function == nil {
+		return
+	}
+	delimiter := ""
+	if function.RoutineBody != nil {
+		delimiter = function.RoutineBody.Delimiter
+	}
+	body := parsePostgresRoutineBody(function.Body, function.Language, delimiter)
+	function.RoutineBody = &body
+}
+func collectPostgresRoutineStatement(p routineext.Cursor, statementStart int) (string, error) {
+	blockDepth := 0
+	for !p.AtEnd() {
+		if err := p.CheckTimeout(); err != nil {
+			return "", err
+		}
+		if p.Current().Type == lexer.TokenSemicolon && blockDepth == 0 {
+			sql := p.Statement(statementStart)
+			p.Advance()
+			return sql, nil
+		}
+		if p.Current().Type == lexer.TokenIdentifier {
+			trackPostgresSQLBodyKeyword(p.Current().Value, &blockDepth)
+		}
+		p.Advance()
+	}
+
+	if blockDepth > 0 {
+		return "", fmt.Errorf("unterminated CREATE PROCEDURE body at position %d", p.Current().Start)
+	}
+	return p.Fragment(statementStart, p.Previous().End), nil
+}
+func EndsSetting(value string) bool {
+	switch strings.ToUpper(value) {
+	case "SET", "AS", "LANGUAGE", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE",
+		"RETURNS", "RETURN", "BEGIN", "STRICT", "PARALLEL", "COST", "ROWS",
+		"WINDOW", "LEAKPROOF", "CALLED", "EXTERNAL":
+		return true
+	default:
+		return false
+	}
 }

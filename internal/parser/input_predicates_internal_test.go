@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/routineext/compound"
 )
 
 func TestIsSQLServerGoBatchSeparatorAt(t *testing.T) {
@@ -134,7 +136,7 @@ func TestIsScalarIFExpressionFragment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(isScalarIFExpressionFragment(tt.fragment), qt.Equals, tt.expected)
+			c.Assert(compound.ScalarIF(tt.fragment), qt.Equals, tt.expected)
 		})
 	}
 }

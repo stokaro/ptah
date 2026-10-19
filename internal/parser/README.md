@@ -137,6 +137,10 @@ uses `ast.RoutineNode`. Its `Dialect` names the normalized source dialect;
 the descriptor's `Grammar.Routines.Body` selects its grammar. `Options` keeps
 header clauses in source order, with `Read` recording those a syntax owner
 consumes into `Facets`. All routine bodies use `ast.RoutineBody`.
+The SQL schema reader selects a converter from `internal/routineext/builtin`
+using the source dialect's routine grammar. The owners in
+`internal/routineext/{postgres,mysql,sqlserver}` interpret the header options;
+the shared reader normalizes the name for the destination schema.
 
 ### Dialect-aware parsing
 
@@ -168,12 +172,12 @@ p := parser.NewParser(
 )
 ```
 
-Dialect-specific routine bodies are handled behind parser strategies. Generic
-mode stays best-effort; dialect mode can use a routine boundary detector that is
-specific to the selected SQL family without turning the generic DDL parser into
-a stored-procedure sub-language parser.
+Routine grammar services in `internal/routineext` read headers and statement
+boundaries. The shared parser lends them its token cursor, timeout checks, and
+owner-claim pass. Generic mode stays best-effort; dialect mode uses the selected
+grammar's boundary detector. Body statements remain the routine body reader's responsibility.
 
-MySQL and MariaDB dialect mode parses a routine header into
+The MySQL grammar owner parses a routine header into
 `ast.RoutineNode` and keeps the body as its text. This package does not
 split a MySQL body into statements. The MySQL owner does
 (`dialect/mysql/mysqlroutine`), through the runtime's routine body reader

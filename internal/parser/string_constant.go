@@ -42,3 +42,11 @@ func (p *Parser) stringConstant(what string) (string, error) {
 func quotedStringConstant(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 }
+
+func abbreviatedToken(token string) string {
+	const limit = 40
+	if len(token) <= limit {
+		return token
+	}
+	return token[:limit] + "..."
+}
