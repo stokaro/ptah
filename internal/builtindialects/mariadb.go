@@ -188,5 +188,17 @@ func mariaDB() descriptor.Dialect {
 			DashCommentNeedsSpace: true,
 			ExecutableComments:    descriptor.ExecutableCommentsMBang,
 		},
+
+		// Database URLs and the Atlas contract: what internal/atlasurl and the
+		// Atlas HCL reader read. The MariaDB schemes open the MySQL driver, so
+		// a URL cannot tell a MariaDB server from a MySQL one, and the pinned
+		// community binary accepts any pair of the three schemes for a target
+		// and its dev database (stokaro/ptah#3756).
+		URLs: descriptor.URLs{DefaultPort: 3306, ComparedAs: "mysql", Grammar: descriptor.URLGrammarGoSQLDriver},
+		Atlas: descriptor.Atlas{
+			DockerImages:  []string{"maria", "mariadb"},
+			DockerDrivers: []string{"maria", "mariadb"},
+			HCL:           mysqlFamilyAtlasHCL(),
+		},
 	}
 }

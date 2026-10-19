@@ -8,18 +8,14 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 223,
+    "shared-packages-name-dialects": 161,
     "sql-reader-links-owners": 0
   },
   "packages": {
     "shared-packages-name-dialects": {
-      "internal/atlashcl": 6,
-      "internal/atlashclrender": 5,
       "internal/atlasmigrate": 6,
-      "internal/atlasreport": 6,
+      "internal/atlasreport": 3,
       "internal/atlasschema": 21,
-      "internal/atlassource": 2,
-      "internal/atlasurl": 46,
       "internal/liquibaserun": 10,
       "internal/migrateclean": 42,
       "internal/migrationreplay": 1,

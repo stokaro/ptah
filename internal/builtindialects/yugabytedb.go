@@ -156,5 +156,8 @@ func yugabyteDB() descriptor.Dialect {
 		// refused rather than read by a rule the server may not share.
 		Lexical: descriptor.Lexical{EscapeStrings: true},
 		Reach:   postgresReach(),
+
+		// Database URLs: what internal/atlasurl reads.
+		URLs: descriptor.URLs{DefaultPort: 5433},
 	}
 }

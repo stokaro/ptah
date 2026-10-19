@@ -16,8 +16,9 @@
 // of an engine Ptah does not ship, builds one with [NewRegistry].
 //
 // This package checks the parts of a descriptor every reader shares: names,
-// aliases, family, the placeholder style, and the enumerated schema, role and
-// lock values of [Schemas], [Roles] and [Lock]. A package that interprets a
+// aliases, family, the placeholder style, the enumerated schema, role and lock
+// values of [Schemas], [Roles] and [Lock], and the names a dialect claims in a
+// URL through [URLs] and [Atlas]. A package that interprets a
 // field checks that field's values when it reads them; see
 // core/platform/identifier.FromDescriptor.
 package descriptor
@@ -35,8 +36,9 @@ import (
 // that names no family head, or an undeclared value of an enumerated field.
 var ErrInvalidDescriptor = errors.New("invalid dialect descriptor")
 
-// ErrConflict identifies a descriptor that claims a spelling another,
-// different descriptor of the same registry already owns.
+// ErrConflict identifies a descriptor that claims a spelling, a file scheme,
+// or a docker image or driver another, different descriptor of the same
+// registry already owns.
 var ErrConflict = errors.New("conflicting dialect descriptor")
 
 // Dialect is the description one database engine gives of itself. The zero
@@ -92,6 +94,9 @@ type Dialect struct {
 	// PostgreSQL protocol to a driver that does not know its name. Empty keeps
 	// the scheme the URL carries. It uses the alphabet of Name.
 	WireScheme string `json:"wire_scheme,omitempty"`
+	// URLs states how a database URL of the dialect is read and compared
+	// before anything is connected; see urls.go.
+	URLs URLs `json:"urls,omitzero"`
 
 	// Query states how the query builder spells what engines spell
 	// differently.
@@ -161,6 +166,13 @@ type Dialect struct {
 
 	// Lint states how migration lint reads the dialect's migrations.
 	Lint Lint `json:"lint,omitzero"`
+
+	// The Atlas contract: what ptah-compat reads; see atlas.go.
+
+	// Atlas states where the engine stands in the Atlas CLI contract: the
+	// names an Atlas dev URL gives it and the parts of an Atlas HCL schema
+	// that belong to it alone.
+	Atlas Atlas `json:"atlas,omitzero"`
 
 	// Reading a schema file; see names.go.
 
@@ -416,6 +428,12 @@ func (d Dialect) validate() error {
 		return fmt.Errorf("%w: dialect %q: placeholder %q is not one of %q", ErrInvalidDescriptor, d.Name, d.Placeholder, Placeholders())
 	}
 	if err := d.validateConnection(); err != nil {
+		return err
+	}
+	if err := d.validateURLs(); err != nil {
+		return err
+	}
+	if err := d.validateAtlas(); err != nil {
 		return err
 	}
 	if err := d.validateScope(); err != nil {

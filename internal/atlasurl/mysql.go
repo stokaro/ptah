@@ -178,8 +178,8 @@ func (u MySQLURL) Scheme() string {
 	return u.scheme
 }
 
-// Dialect is the dialect the scheme spells: [platform.MySQL] or
-// [platform.MariaDB]. Which of the two a server is, only the server says.
+// Dialect is the dialect the scheme spells, such as MySQL or MariaDB. Which
+// of the dialects whose URLs it shares a server is, only the server says.
 func (u MySQLURL) Dialect() string {
 	return platform.NormalizeDialect(u.scheme)
 }
@@ -308,10 +308,8 @@ func cutMySQLScheme(rawURL string) (scheme, rest string, ok bool) {
 	if !found || !isURLScheme(scheme) {
 		return "", rawURL, false
 	}
-	switch platform.NormalizeDialect(scheme) {
-	case platform.MySQL, platform.MariaDB:
-		return scheme, rest, true
-	default:
+	if !mysqlGrammar.Get(scheme) {
 		return "", rawURL, false
 	}
+	return scheme, rest, true
 }

@@ -609,7 +609,8 @@ func (p *parser) addOwnerDeclarations(declarations []hclext.Declaration) error {
 		}
 		if declaration.TableSetting != nil {
 			p.tableSettings = append(p.tableSettings, TableSetting{Schema: claim.match.Claim.Schema, Table: claim.match.Claim.Name,
-				Block: claim.block.Type, Position: claim.block.TypeRange.String(), Value: declaration.TableSetting})
+				Block: claim.block.Type, Position: claim.block.TypeRange.String(), Value: declaration.TableSetting,
+				Dialect: declaration.TableSettingDialect})
 		}
 	}
 	return nil

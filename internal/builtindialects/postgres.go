@@ -176,5 +176,40 @@ func postgres() descriptor.Dialect {
 		// U&'...' strings.
 		Lexical: descriptor.Lexical{EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true},
 		Reach:   postgresReach(),
+
+		// Database URLs and the Atlas contract: what internal/atlasurl and the
+		// Atlas HCL reader and writer read. postgis and pgvector start their
+		// projects' PostgreSQL images (stokaro/ptah#4066).
+		URLs: descriptor.URLs{DefaultPort: 5432},
+		Atlas: descriptor.Atlas{
+			DockerImages:  []string{"postgres", "postgis", "pgvector"},
+			DockerDrivers: []string{"postgres"},
+			HCL: descriptor.AtlasHCL{
+				RefusedBlocks: []string{"extension", "policy", "sequence"},
+				ColumnTypes:   postgresAtlasColumnTypes(),
+			},
+		},
+	}
+}
+
+// postgresAtlasColumnTypes are the column type names the pinned Atlas
+// community binary v1.3.0 models as a bare HCL type for PostgreSQL, measured
+// by feeding each name to it bare, as `type = <name>`, against a PostgreSQL
+// 17 dev database. Names refused there are absent: hstore, citext, ltree and
+// geometry are extension types the dev database does not carry, and they are
+// refused when wrapped as well. The multi-word spellings PostgreSQL's catalog
+// reports, such as `character varying` and `timestamp with time zone`, are
+// absent because two identifiers separated by a space are not one HCL
+// expression; they reach the binary through sql(). internal/atlashclrender
+// says why a list that is too short is safe and one that is too long is not,
+// and the Atlas CE oracle job re-measures every entry.
+func postgresAtlasColumnTypes() []string {
+	return []string{
+		"bigint", "bigserial", "bit", "bool", "boolean", "box", "bytea", "char", "character", "cidr",
+		"circle", "date", "daterange", "decimal", "float", "float4", "float8", "inet", "int", "int2",
+		"int4", "int4range", "int8", "int8range", "integer", "interval", "json", "jsonb", "line", "lseg",
+		"macaddr", "macaddr8", "money", "name", "numeric", "numrange", "oid", "path", "point", "polygon",
+		"real", "regclass", "serial", "smallint", "smallserial", "text", "time", "timestamp", "timestamptz", "timetz",
+		"tsquery", "tsrange", "tstzrange", "tsvector", "uuid", "varchar", "xml",
 	}
 }

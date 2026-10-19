@@ -1,0 +1,58 @@
+// Package ydb reads what a YDB URL selects, as internal/ydburl reads it, and
+// refuses to rename the database one names.
+package ydb
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/dburlext"
+	"ptah.run/internal/ydburl"
+)
+
+// ErrDatabaseName is the refusal a rename of a YDB URL gives.
+var ErrDatabaseName = errors.New("a YDB database cannot be created through SQL, so a URL renamed to a new " +
+	"database names one nothing can create; a YDB dev or scratch database is a dev realm in the database the URL names")
+
+// Services returns YDB's services.
+func Services() dburlext.Services {
+	return dburlext.Services{Dialects: []string{platform.YDB}, Endpoints: endpoints{}, Rename: rename{}}
+}
+
+type endpoints struct{}
+
+// Select reads the endpoint and the database root the URL names.
+//
+// The port defaults by scheme rather than by dialect: both schemes are YDB,
+// and a server listens for plaintext on one port and for TLS on another.
+//
+// A dev realm is a database of its own to every reader and writer a
+// connection to it builds, and the database that holds it leaves the realm
+// out of everything it reads and resets. A comparison that may address one
+// database leaves the endpoint out, and on YDB a host proves least: every
+// node of a cluster answers for each of its databases. Two servers that both
+// name /local are told apart by the dev realm a dev URL resolves to, and
+// after connecting by their live identity.
+func (endpoints) Select(parsed *url.URL, _ descriptor.Dialect) (dburlext.Selection, error) {
+	ydbURL, err := ydburl.FromURL(parsed)
+	if err != nil {
+		return dburlext.Selection{}, fmt.Errorf("invalid YDB database URL: %w", err)
+	}
+	return dburlext.Selection{
+		Endpoints: []dburlext.Endpoint{{Host: ydbURL.Host, Port: ydbURL.Port}},
+		Database:  ydbURL.Root(),
+	}, nil
+}
+
+type rename struct{}
+
+// Rename refuses with [ErrDatabaseName]. A YDB database cannot be created
+// with SQL, so a URL naming a new one names a database nothing can make, and
+// its name may also sit in a database parameter that a new path would not
+// replace.
+func (rename) Rename(*url.URL, string) (string, error) {
+	return "", ErrDatabaseName
+}

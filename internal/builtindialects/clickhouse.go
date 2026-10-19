@@ -149,6 +149,13 @@ func clickHouse() descriptor.Dialect {
 
 		// Reach: what internal/sqlreach reads.
 		Reach: clickHouseReach(),
+
+		// Database URLs and the Atlas contract: what internal/atlasurl reads.
+		// The pinned community binary takes docker+clickhouse and answers
+		// docker://clickhouse with "unknown driver", so ClickHouse names a
+		// docker driver and no docker image.
+		URLs:  descriptor.URLs{DefaultPort: 9000},
+		Atlas: descriptor.Atlas{DockerDrivers: []string{"clickhouse"}},
 	}
 }
 

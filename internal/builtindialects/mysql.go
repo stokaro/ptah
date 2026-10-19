@@ -200,6 +200,15 @@ func mysql() descriptor.Dialect {
 			DashCommentNeedsSpace: true,
 			ExecutableComments:    descriptor.ExecutableCommentsBang,
 		},
+
+		// Database URLs and the Atlas contract: what internal/atlasurl and the
+		// Atlas HCL reader read.
+		URLs: descriptor.URLs{DefaultPort: 3306, Grammar: descriptor.URLGrammarGoSQLDriver},
+		Atlas: descriptor.Atlas{
+			DockerImages:  []string{"mysql"},
+			DockerDrivers: []string{"mysql"},
+			HCL:           mysqlFamilyAtlasHCL(),
+		},
 	}
 }
 
@@ -269,5 +278,17 @@ operator_version = VALUES(operator_version)`,
 		// community binary keeps its revision table in a database of its own,
 		// measured on MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#3789).
 		AtlasSchema: "database",
+	}
+}
+
+// mysqlFamilyAtlasHCL is what an Atlas HCL schema holds for MySQL and MariaDB
+// alone: the attributes the pinned community binary reads from its MySQL
+// driver only. They become the platform properties of the mysql and mariadb
+// targets, where the MySQL owner reads them.
+func mysqlFamilyAtlasHCL() descriptor.AtlasHCL {
+	return descriptor.AtlasHCL{
+		TableProperties:  []string{"auto_increment", "charset"},
+		ColumnProperties: []string{"charset", "on_update"},
+		IndexProperties:  []string{"parser"},
 	}
 }

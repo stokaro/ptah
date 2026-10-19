@@ -17,7 +17,6 @@ import (
 
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -1366,12 +1365,15 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 // TableSetting is a table setting a document declares in a block of its own,
 // such as `hypertable`, waiting for the table it names. Schema is the schema
 // the block named, empty when it named none. Block is the block's type and
-// Position its place in the source, for a refusal.
+// Position its place in the source, for a refusal. Dialect is the dialect
+// whose identifier rules match the block's labels with a table, as its owner
+// stated it (hclext.Declaration.TableSettingDialect).
 type TableSetting struct {
 	Schema, Table string
 	Value         schemaext.Value
 	Block         string
 	Position      string
+	Dialect       string
 }
 
 // AttachTableSettings gives each table of db the settings a block named it
@@ -1387,11 +1389,12 @@ type TableSetting struct {
 // refused rather than dropped: the setting belongs to a table, and a schema
 // that partitions a table it never describes asks for something no plan can
 // carry. A second block for one table is refused the same way. Names compare
-// the way PostgreSQL folds an unquoted name, the only engine these settings
-// exist on. db is changed in place; on error it may hold some settings.
+// under the identifier rules of the setting's dialect, the engine its owner
+// says the setting exists on, such as PostgreSQL for a hypertable. db is
+// changed in place; on error it may hold some settings.
 func AttachTableSettings(db *schemamodel.Database, settings []TableSetting) error {
-	builder := objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres))
 	for _, setting := range settings {
+		builder := objectidentity.NewBuilder(identifier.ForDialect(setting.Dialect))
 		named := qualifyHypertableName(setting.Schema, setting.Table)
 		matches := tableMatches(builder, db.Tables, setting.Schema, setting.Table)
 		switch {

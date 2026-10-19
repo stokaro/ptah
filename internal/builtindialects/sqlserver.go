@@ -158,6 +158,12 @@ END`,
 		// Lexing: what internal/dialectlexer reads. [a] is a name, and #t and
 		// ##t are temporary tables, so # opens no comment.
 		Lexical: descriptor.Lexical{BracketIdentifiers: true, HashNames: true},
+
+		// Database URLs and the Atlas contract: what internal/atlasurl reads.
+		// The pinned community binary takes docker+sqlserver and answers
+		// docker://sqlserver with "unknown driver".
+		URLs:  descriptor.URLs{DefaultPort: 1433},
+		Atlas: descriptor.Atlas{DockerDrivers: []string{"sqlserver"}},
 	}
 }
 

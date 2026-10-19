@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburlext/ydb"
 )
 
 // A YDB database is a path, and the URL may carry it in its path or in a
@@ -216,7 +217,7 @@ func TestWithDatabaseName_RefusesYDB(t *testing.T) {
 
 			got, err := atlasurl.WithDatabaseName(rawURL, "scratch")
 
-			c.Assert(err, qt.ErrorIs, atlasurl.ErrYDBDatabaseName)
+			c.Assert(err, qt.ErrorIs, ydb.ErrDatabaseName)
 			c.Assert(got, qt.Equals, "")
 		})
 	}

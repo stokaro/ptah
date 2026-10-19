@@ -15,9 +15,10 @@ type Registry struct {
 }
 
 // NewRegistry validates dialects and returns them as a registry, in the given
-// order. It refuses a malformed descriptor with [ErrInvalidDescriptor] and a
-// spelling two different descriptors claim with [ErrConflict]. A descriptor
-// given twice, equal both times, is kept once.
+// order. It refuses a malformed descriptor with [ErrInvalidDescriptor], and
+// with [ErrConflict] a spelling, a file scheme of [URLs.FileSchemes], or a
+// docker image or driver of [Atlas] that two different descriptors claim. A
+// descriptor given twice, equal both times, is kept once.
 func NewRegistry(dialects ...Dialect) (*Registry, error) {
 	var empty *Registry
 	return empty.With(dialects...)
@@ -59,7 +60,62 @@ func (r *Registry) With(dialects ...Dialect) (*Registry, error) {
 	if err := next.validateFamilies(); err != nil {
 		return nil, err
 	}
+	if err := next.validateComparedAs(); err != nil {
+		return nil, err
+	}
+	if err := next.validateClaims(); err != nil {
+		return nil, err
+	}
 	return next, nil
+}
+
+// validateComparedAs checks that every dialect a descriptor's URLs are
+// compared as is the name of a descriptor in the registry that is compared as
+// itself.
+func (r *Registry) validateComparedAs() error {
+	for _, dialect := range r.dialects {
+		target := dialect.URLs.ComparedAs
+		if target == "" {
+			continue
+		}
+		index, found := r.bySpelling[target]
+		if !found || r.dialects[index].Name != target {
+			return fmt.Errorf("%w: dialect %q is compared as %q, which is no dialect's name", ErrInvalidDescriptor, dialect.Name, target)
+		}
+		if own := r.dialects[index].URLs.ComparedAs; own != "" && own != target {
+			return fmt.Errorf("%w: dialect %q is compared as %q, which is itself compared as %q",
+				ErrInvalidDescriptor, dialect.Name, target, own)
+		}
+	}
+	return nil
+}
+
+// validateClaims checks that no name a dialect claims for itself in a URL is
+// claimed by another: a file scheme, a docker image or a docker driver.
+// Each selects the dialect that claims it, so two claims would make the
+// answer depend on the order the dialects were added.
+func (r *Registry) validateClaims() error {
+	kinds := []struct {
+		kind  string
+		names func(Dialect) []string
+	}{
+		{"file scheme", func(d Dialect) []string { return d.URLs.FileSchemes }},
+		{"docker image", func(d Dialect) []string { return d.Atlas.DockerImages }},
+		{"docker driver", func(d Dialect) []string { return d.Atlas.DockerDrivers }},
+	}
+	for _, kind := range kinds {
+		owners := make(map[string]string)
+		for _, dialect := range r.dialects {
+			for _, name := range kind.names(dialect) {
+				if owner, taken := owners[name]; taken {
+					return fmt.Errorf("%w: dialect %q claims %s %q, which dialect %q already claims",
+						ErrConflict, dialect.Name, kind.kind, name, owner)
+				}
+				owners[name] = dialect.Name
+			}
+		}
+	}
+	return nil
 }
 
 // validateFamilies checks that every family a descriptor names is the name of

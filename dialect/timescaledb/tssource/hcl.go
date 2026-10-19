@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/hclext"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
 )
@@ -63,7 +64,7 @@ func (hclDecoder) DecodeHCL(ctx context.Context, request hclext.Request) (hclext
 			if err != nil {
 				return hclext.Result{}, &hclext.ClaimError{Claim: i, Err: err}
 			}
-			declarations = append(declarations, hclext.Declaration{TableSetting: hypertable})
+			declarations = append(declarations, hclext.Declaration{TableSetting: hypertable, TableSettingDialect: platform.Postgres})
 			continue
 		}
 		object, err := hclAggregate(claim)

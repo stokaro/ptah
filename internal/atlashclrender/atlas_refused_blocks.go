@@ -10,14 +10,17 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/envbool"
 )
 
 // Top-level HCL block spellings an inspected render can emit. Only the ones a
 // refusal list, a diagnostic, a reference or a placement's order names are
 // constants: the token has to be spelled identically by the renderer, by
-// [atlasRefusedBlockTypes], by [renderer.documentDeclares], by the entries
+// [atlasRefusedBlockTypes] and the descriptors it reads, by
+// [renderer.documentDeclares], by the entries
 // [renderer.renderSlot] orders among the owners' blocks, and by the
 // conformance runs that re-measure both against the binary, and string
 // literals drift where one constant cannot.
@@ -70,7 +73,8 @@ func KeepAtlasRefusedBlocks() (bool, error) {
 }
 
 // atlasRefusedBlockTypes lists, per dialect, the top-level block types the
-// pinned Atlas community binary v1.3.0 refuses AS A FEATURE: not because of how
+// pinned Atlas community binary v1.3.0 refuses AS A FEATURE, as each
+// descriptor states them (descriptor.Atlas.HCL.RefusedBlocks): not because of how
 // Ptah spells an attribute inside them, but because that build does not model
 // the construct at all. One such block anywhere in a file costs the WHOLE file,
 // so the Atlas-compatible surface omits them by default rather than emitting a
@@ -103,29 +107,38 @@ func KeepAtlasRefusedBlocks() (bool, error) {
 // only "harmless to the file", which is all the compatibility surface needs.
 // Suppressing those would lose description for nothing.
 //
-// The map is keyed by dialect because the refusal is, and that is measured too:
+// The list is the dialect's because the refusal is, and that is measured too:
 // on SQLite the same three blocks are accepted and dropped exactly like
-// `wibble`, all at exit 0. A dialect absent here suppresses nothing.
+// `wibble`, all at exit 0. A dialect that states none suppresses nothing. The
+// lists are keyed by canonical name and a dialect is looked up as the caller
+// spelled it, so a dialect given in another spelling suppresses nothing
+// either.
 //
 // A later build may model any of these, at which point suppressing it would
 // silently withhold something the reader could have used.
 // TestOracleAtlasRefusedBlockTypesMatchTheBinary re-measures the list in both
 // directions so that turns the Atlas CE Oracle job red rather than going
 // unnoticed.
-var atlasRefusedBlockTypes = map[string][]string{
-	platform.Postgres: {blockExtension, blockPolicy, blockSequence},
-}
+var atlasRefusedBlockTypes = descriptortable.NewIndex(func(dialects []descriptor.Dialect) map[string][]string {
+	refused := make(map[string][]string)
+	for _, described := range dialects {
+		if blocks := described.Atlas.HCL.RefusedBlocks; len(blocks) != 0 {
+			refused[described.Name] = blocks
+		}
+	}
+	return refused
+})
 
 // AtlasRefusedBlockDialects returns the dialects for which the pinned Atlas
 // community binary has measured whole-document block refusals.
 func AtlasRefusedBlockDialects() []string {
-	return slices.Sorted(maps.Keys(atlasRefusedBlockTypes))
+	return slices.Sorted(maps.Keys(atlasRefusedBlockTypes.Get()))
 }
 
 // AtlasRefusedBlockTypes returns the measured top-level block refusals for a
 // dialect. The returned slice is independent of internal state.
 func AtlasRefusedBlockTypes(dialect string) []string {
-	return slices.Clone(atlasRefusedBlockTypes[platform.NormalizeDialect(dialect)])
+	return slices.Clone(atlasRefusedBlockTypes.Get()[platform.NormalizeDialect(dialect)])
 }
 
 // AtlasRefusesBlock reports whether the pinned Atlas community binary refuses
@@ -137,7 +150,7 @@ func AtlasRefusesBlock(dialect, block string) bool {
 // atlasRefusesBlock reports whether the pinned binary refuses a whole file for
 // containing this block type on this dialect.
 func atlasRefusesBlock(dialect, block string) bool {
-	return slices.Contains(atlasRefusedBlockTypes[dialect], block)
+	return slices.Contains(atlasRefusedBlockTypes.Get()[dialect], block)
 }
 
 // blockCoverageKinds maps a suppressible block type to the coverage kind the
@@ -176,7 +189,7 @@ func (r *renderer) notDescribed() coverage.Set {
 	if !r.omitAtlasRefusedBlocks {
 		return set
 	}
-	for _, block := range atlasRefusedBlockTypes[r.dialect] {
+	for _, block := range atlasRefusedBlockTypes.Get()[r.dialect] {
 		kind, known := blockCoverageKinds[block]
 		if !known {
 			continue

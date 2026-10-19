@@ -4,9 +4,10 @@
 // work it decides.
 //
 // platform.Lookup copies the whole descriptor on every call. A [Table]
-// derives its answer once per descriptor and serves it until a registration
-// replaces the process registry, which makes the answers for the older
-// registry stale rather than wrong; the next call derives them anew.
+// derives its answer once per descriptor, and an [Index] one answer from all
+// of them, and each serves it until a registration replaces the process
+// registry, which makes the answers for the older registry stale rather than
+// wrong; the next call derives them anew.
 package descriptortable
 
 import (
@@ -60,4 +61,37 @@ func (t *Table[T]) build(registry *descriptor.Registry) *answers[T] {
 		byName[described.Name] = t.derive(described)
 	}
 	return &answers[T]{registry: registry, byName: byName, unknown: t.derive(descriptor.Dialect{})}
+}
+
+// Index holds one answer derived from every descriptor of one registry, for a
+// question about the registry as a whole, such as which dialect claims a
+// name. The zero value is not usable; build one with [NewIndex]. An Index is
+// safe for concurrent use.
+type Index[T any] struct {
+	derive  func([]descriptor.Dialect) T
+	current atomic.Pointer[indexAnswer[T]]
+}
+
+type indexAnswer[T any] struct {
+	registry *descriptor.Registry
+	answer   T
+}
+
+// NewIndex returns an index that derives its answer with derive, which is
+// given every descriptor of the registry in the order they were added. The
+// answer is shared by every caller, so a caller must not modify it.
+func NewIndex[T any](derive func(dialects []descriptor.Dialect) T) *Index[T] {
+	return &Index[T]{derive: derive}
+}
+
+// Get returns the answer for the process registry, derived once per
+// registry.
+func (i *Index[T]) Get() T {
+	registry := platform.Dialects()
+	current := i.current.Load()
+	if current == nil || current.registry != registry {
+		current = &indexAnswer[T]{registry: registry, answer: i.derive(registry.Dialects())}
+		i.current.Store(current)
+	}
+	return current.answer
 }

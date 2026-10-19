@@ -3639,7 +3639,8 @@ shape. `schema inspect` writes its document for the inspected target.
 - Once a document is read, the owner's `Decoder` gets every block of its in one
   call and returns, for each, the objects it declares and a `TableSetting` on
   the table its labels name, which the reader attaches once the load's tables
-  are known. An owner of index attributes gets every `index` block, with the
+  are known. `TableSettingDialect` names the engine the setting exists on,
+  whose identifier rules match the labels with a table. An owner of index attributes gets every `index` block, with the
   table, type and operator the reader read in `Claim.Index`, and returns the
   `Facets` the reader adds to that index. A `TableAttributes` owner receives
   every table, including those without its attributes, with its schema, name
@@ -4802,6 +4803,14 @@ in place of a dialect's name:
   connection selected.
 - `Conversion`: what the schema readers and converters read of the engine,
   such as its property shortcuts and how its row-level security is held.
+- `URLs`: how a database URL of the engine is read and compared before
+  anything is connected: the port a URL that names none reaches, the dialect
+  its URLs are compared as, a grammar beyond the one `net/url` reads, and the
+  schemes whose URL names a database file.
+- `Atlas`: where the engine stands in the Atlas CLI contract `ptah-compat`
+  implements: the docker images and drivers of a dev URL, whether any Atlas
+  edition has a driver for it, and the attributes, refused blocks and column
+  types an Atlas HCL schema holds for it alone.
 
 A `descriptor.Registry` is an immutable, validated set of descriptors.
 `core/platform` serves the process registry through `Dialects` and `Lookup`,
@@ -4809,9 +4818,9 @@ and `NormalizeDialect`, `DialectSpellings` and `IsPostgresFamily` read it. The
 registry starts with the built-in engines, ready before any package-level
 variable reads it. `platform.Register` adds an engine Ptah does not ship. It
 only adds: an equal descriptor registered again changes nothing, and one that
-claims a spelling a different descriptor owns fails with
-`descriptor.ErrConflict`, so a spelling keeps its first answer for the life of
-the process. `engine.New` registers nothing, and `engine/builtin.New` builds
+claims a spelling, a file scheme, or a docker image or driver a different
+descriptor owns fails with `descriptor.ErrConflict`, so each keeps its first
+answer for the life of the process. `engine.New` registers nothing, and `engine/builtin.New` builds
 providers for the built-in engines only.
 
 A descriptor also states the planning grammars the engine has: a concurrent

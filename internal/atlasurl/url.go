@@ -1,78 +1,79 @@
 // Package atlasurl interprets Atlas-style database URLs: mapping a URL to a
 // Ptah dialect, validating that a URL matches a target dialect, and deciding
 // whether two URLs address the same database.
+//
+// It names no engine. What an engine states about its URLs is read from its
+// descriptor (descriptor.URLs and descriptor.Atlas), and what an engine does
+// differently with one, such as reading it with its driver's own parser, is
+// asked of its services in internal/dburlext.
 package atlasurl
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	posixpath "path"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
-	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/microsoft/go-mssqldb/msdsn"
-
 	"ptah.run/core/platform"
-	"ptah.run/internal/ydburl"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/dburlext"
+	"ptah.run/internal/dburlext/builtin"
+	"ptah.run/internal/descriptortable"
 )
 
 // dockerScheme is the URL scheme that asks Ptah to start a dev database from
 // an engine's own image: `docker://postgres/16/dev`.
 const dockerScheme = "docker"
 
-// dockerEngineDialects maps the engine a `docker://<engine>/...` URL names
-// onto the dialect of the server it starts. The keys are the engines the
-// pinned community binary v1.3.0 starts, measured one at a time on 2026-10-03,
-// and they are matched as written: that binary refuses `docker://POSTGRES/...`
-// and `docker://Postgres/...` with `unsupported docker image`. `postgis` and
-// `pgvector` start their projects' PostgreSQL images (stokaro/ptah#4066).
-// `clickhouse` and `sqlserver` are not here: that binary answers `unknown
-// driver` for both.
-//
-// internal/devdocker keeps what it needs to start each engine; this map is the
-// one answer to which engines there are and what each speaks.
-var dockerEngineDialects = map[string]string{
-	"postgres": platform.Postgres,
-	"postgis":  platform.Postgres,
-	"pgvector": platform.Postgres,
-	"mysql":    platform.MySQL,
-	"maria":    platform.MariaDB,
-	"mariadb":  platform.MariaDB,
+// dockerImage is the engine a `docker://<engine>/...` URL names.
+type dockerImage struct {
+	// dialect is the dialect of the server it starts.
+	dialect string
+	// extension reports that no Atlas edition has a driver for its engine.
+	extension bool
 }
 
-// dockerExtensionEngines are the engines Ptah starts from a `docker://` URL
-// and the pinned community binary does not: measured on v1.3.0,
-// `docker://ydb/...` answers `unsupported docker image "ydb"`, since no Atlas
-// edition has a YDB driver. Strict compatibility refuses each in those words;
-// see [DockerEngineIsExtension].
-var dockerExtensionEngines = map[string]string{
-	"ydb": platform.YDB,
-}
+// dockerImages are the engines a `docker://<engine>/...` URL may name: the
+// images every descriptor states (descriptor.Atlas.DockerImages), each with
+// the dialect that claims it. They are matched as written: the pinned
+// community binary v1.3.0 refuses `docker://POSTGRES/...` and
+// `docker://Postgres/...` with `unsupported docker image`. An engine that
+// binary answers `unknown driver` for, such as ClickHouse, claims no image.
+//
+// internal/devdocker keeps what it needs to start each engine; these are the
+// one answer to which engines there are and what each speaks.
+var dockerImages = descriptortable.NewIndex(func(dialects []descriptor.Dialect) map[string]dockerImage {
+	images := make(map[string]dockerImage)
+	for _, described := range dialects {
+		for _, image := range described.Atlas.DockerImages {
+			images[image] = dockerImage{dialect: described.Name, extension: described.Atlas.Extension}
+		}
+	}
+	return images
+})
 
 // DockerEngineDialect returns the dialect of the server a `docker://` URL
 // naming engine starts, and whether engine is one Ptah starts. engine is
 // compared as written.
 func DockerEngineDialect(engine string) (string, bool) {
-	if dialect, ok := dockerEngineDialects[engine]; ok {
-		return dialect, true
-	}
-	dialect, ok := dockerExtensionEngines[engine]
-	return dialect, ok
+	image, ok := dockerImages.Get()[engine]
+	return image.dialect, ok
 }
 
 // DockerEngineIsExtension reports whether engine is one Ptah starts from a
 // `docker://` URL and the pinned community binary refuses as an unsupported
-// image.
+// image: an image of an engine no Atlas edition has a driver for
+// (descriptor.Atlas.Extension). Measured on v1.3.0, `docker://ydb/...`
+// answers `unsupported docker image "ydb"`. Strict compatibility refuses each
+// in those words.
 func DockerEngineIsExtension(engine string) bool {
-	_, ok := dockerExtensionEngines[engine]
-	return ok
+	return dockerImages.Get()[engine].extension
 }
 
 // dockerImageSchemePrefix begins the scheme that asks Ptah to start a dev
@@ -80,18 +81,27 @@ func DockerEngineIsExtension(engine string) bool {
 const dockerImageSchemePrefix = "docker+"
 
 // dockerImageDrivers are the drivers the pinned community binary v1.3.0 accepts
-// after [dockerImageSchemePrefix]. It registers exactly these, so any other
+// after [dockerImageSchemePrefix], each with the dialect that claims it
+// (descriptor.Atlas.DockerDrivers). It registers exactly these, so any other
 // `docker+` scheme is a driver it does not know: measured, `docker+sqlite`,
 // `docker+postgis` and `docker+nosuch` all answer `sql/sqlclient: unknown
 // driver` at exit 1.
-var dockerImageDrivers = []string{"postgres", "mysql", "maria", "mariadb", "clickhouse", "sqlserver"}
+var dockerImageDrivers = descriptortable.NewIndex(func(dialects []descriptor.Dialect) map[string]string {
+	drivers := make(map[string]string)
+	for _, described := range dialects {
+		for _, driver := range described.Atlas.DockerDrivers {
+			drivers[driver] = described.Name
+		}
+	}
+	return drivers
+})
 
 // DockerImageDriver returns the driver a `docker+<driver>` scheme names, and
 // whether scheme is one of the `docker+` schemes the pinned community binary
 // registers. scheme is compared as written; [url.Parse] already lowercases it.
 func DockerImageDriver(scheme string) (string, bool) {
 	driver, found := strings.CutPrefix(scheme, dockerImageSchemePrefix)
-	if !found || !slices.Contains(dockerImageDrivers, driver) {
+	if _, known := dockerImageDrivers.Get()[driver]; !found || !known {
 		return "", false
 	}
 	return driver, true
@@ -110,15 +120,28 @@ func IsDockerScheme(scheme string) bool {
 	return ok
 }
 
-var defaultPorts = map[string]string{
-	platform.Postgres:    "5432",
-	platform.CockroachDB: "26257",
-	platform.YugabyteDB:  "5433",
-	platform.MySQL:       "3306",
-	platform.MariaDB:     "3306",
-	platform.SQLServer:   "1433",
-	platform.ClickHouse:  "9000",
-}
+// defaultPorts is the port a URL of each dialect reaches when it names none
+// (descriptor.URLs.DefaultPort), spelled as a URL spells it, or empty where
+// the descriptor states none.
+var defaultPorts = descriptortable.New(func(described descriptor.Dialect) string {
+	if described.URLs.DefaultPort == 0 {
+		return ""
+	}
+	return strconv.Itoa(int(described.URLs.DefaultPort))
+})
+
+// comparedAs is the dialect a URL of each dialect is compared as
+// (descriptor.URLs.ComparedAs): itself unless its descriptor names another.
+// An unknown dialect answers empty.
+var comparedAs = descriptortable.New(func(described descriptor.Dialect) string {
+	return cmp.Or(described.URLs.ComparedAs, described.Name)
+})
+
+// mysqlGrammar reports for each dialect whether its URLs take go-sql-driver's
+// forms (descriptor.URLs.Grammar), which [ParseMySQLURL] reads.
+var mysqlGrammar = descriptortable.New(func(described descriptor.Dialect) bool {
+	return described.URLs.Grammar == descriptor.URLGrammarGoSQLDriver
+})
 
 // SQLiteURLFromPath returns a SQLite URL whose path remains unambiguous on the
 // current operating system. Windows drive paths use the URL's opaque form
@@ -172,9 +195,10 @@ func Parse(rawURL string) (*url.URL, error) {
 // CutMySQLScheme reports whether rawURL begins with a scheme that selects the
 // MySQL driver, and returns what follows that scheme's "://".
 //
-// Which schemes those are is [platform.NormalizeDialect]'s answer: every
-// spelling that folds onto MySQL or MariaDB, in any letter case, since net/url
-// lowercases a scheme too. The scheme is read as text because net/url refuses
+// Which schemes those are is the descriptors' answer: every spelling of a
+// dialect whose URLs take go-sql-driver's forms (descriptor.URLs.Grammar),
+// MySQL's and MariaDB's, in any letter case, since net/url lowercases a scheme
+// too. The scheme is read as text because net/url refuses
 // the go-sql-driver form a MySQL-family URL may carry,
 // user:pass@tcp(host:port)/db, so a caller that rewrites, redacts or splits
 // that form has to recognize the scheme before it can parse anything.
@@ -271,7 +295,7 @@ func DialectFromURL(rawURL string) (string, error) {
 		return dialectFromDockerURL(parsed)
 	}
 	if driver, ok := DockerImageDriver(parsed.Scheme); ok {
-		return platform.NormalizeDialect(driver), nil
+		return dockerImageDrivers.Get()[driver], nil
 	}
 	// Every spelling platform.NormalizeDialect accepts, rather than a list
 	// copied from it.
@@ -316,17 +340,17 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 }
 
 // SchemeDialectMatches reports whether a dialect read from a URL scheme can
-// name a server of the other dialect: the two are the same, or both are in the
-// MySQL family.
+// name a server of the other dialect: the two are compared as one dialect
+// (descriptor.URLs.ComparedAs).
 //
-// A MySQL-family scheme selects a driver, not a server. `mysql://`,
-// `mariadb://` and `maria://` open the same MySQL driver, and whether the
-// server behind them is MySQL or MariaDB only the server says, in its version
-// banner. The pinned community binary v1.3.0 reads them that way: its `schema
-// inspect` output was byte-identical through all three schemes against MariaDB
-// 11.8.9 and against MySQL 8.4.11, and it accepts any pair of them for a
-// target and its dev database (stokaro/ptah#3756). Held to the spelling, a
-// comparison refuses a dev URL naming the target's own server.
+// A scheme selects a driver, not a server. `mysql://`, `mariadb://` and
+// `maria://` open the same MySQL driver, and whether the server behind them
+// is MySQL or MariaDB only the server says, in its version banner. The pinned
+// community binary v1.3.0 reads them that way: its `schema inspect` output was
+// byte-identical through all three schemes against MariaDB 11.8.9 and against
+// MySQL 8.4.11, and it accepts any pair of them for a target and its dev
+// database (stokaro/ptah#3756). Held to the spelling, a comparison refuses a
+// dev URL naming the target's own server.
 //
 // Which server each URL reaches is compared once both are connected. A check
 // made before connecting can compare only what the schemes can say.
@@ -334,18 +358,14 @@ func SchemeDialectMatches(schemeDialect, other string) bool {
 	return identityDialect(schemeDialect) == identityDialect(other)
 }
 
-// identityDialect is the dialect a URL is compared under: the MySQL family
-// is one, since its schemes cannot tell MySQL from MariaDB, and every other
-// dialect is itself.
+// identityDialect is the dialect a URL is compared under: the one its
+// descriptor names, or itself. A dialect no descriptor states is compared as
+// written.
 func identityDialect(dialect string) string {
-	switch normalized := platform.NormalizeDialect(dialect); normalized {
-	case platform.MySQL, platform.MariaDB:
-		return platform.MySQL
-	case "":
-		return dialect
-	default:
-		return normalized
+	if compared := comparedAs.Get(dialect); compared != "" {
+		return compared
 	}
+	return dialect
 }
 
 // SameDatabaseEndpoint reports whether two directly connectable URLs prove
@@ -368,8 +388,8 @@ func SameDatabaseEndpoint(left, right string) (bool, error) {
 	if identityDialect(leftURL.dialect) != identityDialect(rightURL.dialect) {
 		return false, nil
 	}
-	if leftURL.dialect == platform.SQLite {
-		return sameSQLiteDatabase(leftURL.parsed, rightURL.parsed)
+	if databases := builtin.Lookup(leftURL.dialect).Databases; databases != nil {
+		return databases.SameDatabase(leftURL.parsed, rightURL.parsed)
 	}
 	leftIdentity, err := leftURL.identity()
 	if err != nil {
@@ -402,8 +422,8 @@ func MayAddressSameDatabase(left, right string) (bool, error) {
 	if identityDialect(leftURL.dialect) != identityDialect(rightURL.dialect) {
 		return false, nil
 	}
-	if leftURL.dialect == platform.SQLite {
-		return sameSQLiteDatabase(leftURL.parsed, rightURL.parsed)
+	if databases := builtin.Lookup(leftURL.dialect).Databases; databases != nil {
+		return databases.SameDatabase(leftURL.parsed, rightURL.parsed)
 	}
 	leftIdentity, err := leftURL.identity()
 	if err != nil {
@@ -425,93 +445,42 @@ type databaseIdentity struct {
 	database string
 }
 
+// networkDatabaseIdentity is the server and database a URL of a dialect that
+// names a server selects: what the dialect's services read
+// (dburlext.Services.Endpoints), or the host, port and path the URL names.
 func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity, error) {
 	endpoint := networkEndpoint(parsed.Hostname(), parsed.Port(), dialect)
 	database := strings.Trim(parsed.Path, "/")
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		connectionURL := *parsed
-		connectionURL.Scheme = platform.Postgres
-		config, err := pgconn.ParseConfig(connectionURL.String())
+	if reader := builtin.Lookup(dialect).Endpoints; reader != nil {
+		described, _ := platform.Lookup(dialect)
+		selected, err := reader.Select(parsed, described)
 		if err != nil {
-			return databaseIdentity{}, errors.New("invalid PostgreSQL database URL")
+			return databaseIdentity{}, err
 		}
-		endpoints := []string{networkEndpoint(config.Host, strconv.Itoa(int(config.Port)), dialect)}
-		for _, fallback := range config.Fallbacks {
-			endpoints = append(endpoints, networkEndpoint(
-				fallback.Host,
-				strconv.Itoa(int(fallback.Port)),
-				dialect,
-			))
-		}
-		endpoint = networkEndpointRoute(endpoints)
-		database = config.Database
-	case platform.SQLServer:
-		connectionURL := *parsed
-		connectionURL.Scheme = platform.SQLServer
-		config, err := msdsn.Parse(connectionURL.String())
-		if err != nil {
-			return databaseIdentity{}, errors.New("invalid SQL Server database URL")
-		}
-		port := ""
-		if config.Port != 0 {
-			port = strconv.FormatUint(config.Port, 10)
-		}
-		endpoint = networkEndpoint(config.Host, port, dialect)
-		if config.Instance != "" {
-			endpoint += "\x00" + strings.ToLower(config.Instance)
-		}
-		if config.FailOverPartner != "" {
-			failoverPort := ""
-			if config.FailOverPort != 0 {
-				failoverPort = strconv.FormatUint(config.FailOverPort, 10)
-			}
-			endpoint = networkEndpointRoute([]string{
-				endpoint,
-				networkEndpoint(config.FailOverPartner, failoverPort, dialect),
-			})
-		}
-		database = config.Database
-	case platform.ClickHouse:
-		connectionURL := *parsed
-		connectionURL.Scheme = platform.ClickHouse
-		options, err := clickhouse.ParseDSN(connectionURL.String())
-		if err != nil {
-			return databaseIdentity{}, errors.New("invalid ClickHouse database URL")
-		}
-		if len(options.Addr) != 0 {
-			endpoints := make([]string, 0, len(options.Addr))
-			for _, address := range options.Addr {
-				endpoints = append(endpoints, normalizedNetworkAddress(address, dialect))
+		if len(selected.Endpoints) != 0 {
+			endpoints := make([]string, 0, len(selected.Endpoints))
+			for _, server := range selected.Endpoints {
+				endpoints = append(endpoints, serverEndpoint(server, dialect))
 			}
 			endpoint = networkEndpointRoute(endpoints)
 		}
-		database = options.Auth.Database
-	case platform.YDB:
-		ydbURL, err := ydburl.FromURL(parsed)
-		if err != nil {
-			return databaseIdentity{}, fmt.Errorf("invalid YDB database URL: %w", err)
-		}
-		// The port defaults by scheme rather than by dialect: both schemes are
-		// YDB, and a server listens for plaintext on one port and for TLS on
-		// another.
-		endpoint = networkEndpoint(ydbURL.Host, ydbURL.Port, platform.YDB)
-		// A dev realm is a database of its own to every reader and writer a
-		// connection to it builds, and the database that holds it leaves
-		// the realm out of everything it reads and resets.
-		//
-		// MayAddressSameDatabase leaves the endpoint out here as everywhere,
-		// and on YDB a host proves least: every node of a cluster answers for
-		// each of its databases. Two servers that both name /local are told
-		// apart by the dev realm a dev URL resolves to, and after connecting
-		// by their live identity.
-		database = ydbURL.Root()
+		database = selected.Database
 	}
 	return databaseIdentity{
 		dialect:  identityDialect(dialect),
 		endpoint: endpoint,
 		database: database,
 	}, nil
+}
+
+// serverEndpoint is the endpoint of one server a service read, with the
+// instance it names on its host and port.
+func serverEndpoint(server dburlext.Endpoint, dialect string) string {
+	endpoint := networkEndpoint(server.Host, server.Port, dialect)
+	if server.Instance != "" {
+		endpoint += "\x00" + server.Instance
+	}
+	return endpoint
 }
 
 func networkEndpointRoute(endpoints []string) string {
@@ -524,17 +493,9 @@ func networkEndpointRoute(endpoints []string) string {
 	return strings.Join(unique, "\x01")
 }
 
-func normalizedNetworkAddress(address, dialect string) string {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return networkEndpoint(address, "", dialect)
-	}
-	return networkEndpoint(host, port, dialect)
-}
-
 func networkEndpoint(host, port, dialect string) string {
 	if port == "" {
-		port = defaultPorts[dialect]
+		port = defaultPorts.Get(dialect)
 	}
 	return normalizedDatabaseHost(host) + "\x00" + port
 }
@@ -619,83 +580,6 @@ func mysqlDatabaseIdentity(u MySQLURL) databaseIdentity {
 	return databaseIdentity{dialect: identityDialect(u.Dialect()), endpoint: endpoint, database: u.Database()}
 }
 
-func sqliteIdentity(parsed *url.URL) (string, error) {
-	path, memory, err := sqliteDatabasePath(parsed)
-	if err != nil {
-		return "", err
-	}
-	if memory {
-		return "sqlite\x00:memory:", nil
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", errors.New("resolve SQLite database path")
-	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err == nil {
-		absolute = resolved
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", errors.New("resolve SQLite database path")
-	}
-	return "sqlite\x00" + filepath.Clean(absolute), nil
-}
-
-func sameSQLiteDatabase(left, right *url.URL) (bool, error) {
-	leftPath, leftMemory, err := sqliteDatabasePath(left)
-	if err != nil {
-		return false, err
-	}
-	rightPath, rightMemory, err := sqliteDatabasePath(right)
-	if err != nil {
-		return false, err
-	}
-	if leftMemory || rightMemory {
-		return leftMemory && rightMemory, nil
-	}
-	leftInfo, leftErr := os.Stat(leftPath)
-	rightInfo, rightErr := os.Stat(rightPath)
-	if leftErr == nil && rightErr == nil {
-		return os.SameFile(leftInfo, rightInfo), nil
-	}
-	leftIdentity, err := sqliteIdentity(left)
-	if err != nil {
-		return false, err
-	}
-	rightIdentity, err := sqliteIdentity(right)
-	if err != nil {
-		return false, err
-	}
-	return leftIdentity == rightIdentity, nil
-}
-
-func sqliteDatabasePath(parsed *url.URL) (string, bool, error) {
-	path := parsed.Opaque
-	fileURI := strings.HasPrefix(path, "file:")
-	switch {
-	case path != "":
-		// Opaque SQLite URLs already contain the driver path verbatim.
-	case parsed.Host != "" && parsed.Path != "":
-		path = parsed.Host + parsed.Path
-	case parsed.Host != "":
-		path = parsed.Host
-	default:
-		path = parsed.Path
-	}
-	path = strings.TrimPrefix(path, "file:")
-	if fileURI {
-		decoded, err := url.PathUnescape(path)
-		if err != nil {
-			return "", false, errors.New("invalid SQLite database URL")
-		}
-		path = decoded
-	}
-	if path == "" || path == "/:memory:" || path == ":memory:" ||
-		parsed.Query().Get("mode") == "memory" {
-		return "", true, nil
-	}
-	return filepath.Clean(path), false, nil
-}
-
 // dialectFromDockerURL answers the dialect of the engine a `docker://` URL
 // names. The host is the engine, matched whole and as written, and a value that
 // names none is refused in the pinned community binary's own words, quoting the
@@ -709,21 +593,26 @@ func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	return dialect, nil
 }
 
-// fileSchemes are the schemes of a URL that names a SQLite database file
-// rather than a server. A libsql URL names a server.
-var fileSchemes = []string{"sqlite", "sqlite3", "file"}
+// fileSchemes are the schemes of a URL that names a database file rather
+// than a server (descriptor.URLs.FileSchemes), such as SQLite's sqlite and
+// file. A libsql URL names a server.
+var fileSchemes = descriptortable.NewIndex(func(dialects []descriptor.Dialect) map[string]bool {
+	schemes := make(map[string]bool)
+	for _, described := range dialects {
+		for _, scheme := range described.URLs.FileSchemes {
+			schemes[scheme] = true
+		}
+	}
+	return schemes
+})
 
-// NamesAFile reports whether rawURL names a SQLite database file rather than a
+// NamesAFile reports whether rawURL names a database file rather than a
 // server. Opening one creates the file when it does not exist, and the engine
 // behind it is the one compiled into Ptah.
 func NamesAFile(rawURL string) bool {
 	parsed, err := Parse(rawURL)
-	return err == nil && slices.Contains(fileSchemes, parsed.Scheme)
+	return err == nil && fileSchemes.Get()[parsed.Scheme]
 }
-
-// ErrYDBDatabaseName is the refusal [WithDatabaseName] gives a YDB URL.
-var ErrYDBDatabaseName = errors.New("a YDB database cannot be created through SQL, so a URL renamed to a new " +
-	"database names one nothing can create; a YDB dev or scratch database is a dev realm in the database the URL names")
 
 // WithDatabaseName returns rawURL addressing the database name instead of the
 // one it names now.
@@ -740,10 +629,11 @@ var ErrYDBDatabaseName = errors.New("a YDB database cannot be created through SQ
 // the path is the socket, so replacing the path would point the connection at
 // a socket named after the database.
 //
-// SQLite is refused. Its URL names a file rather than a server, so swapping the
-// path would name a database in another directory rather than another database
-// on the same server, and the caller that wants a disposable SQLite database
-// wants a new file instead.
+// A URL that names a file is refused: swapping its path would name a database
+// in another directory rather than another database on the same server, and
+// the caller that wants a disposable SQLite database wants a new file
+// instead. So is a URL whose engine's services refuse a rename
+// (dburlext.Services.Rename), such as YDB's.
 func WithDatabaseName(rawURL, name string) (string, error) {
 	mysqlURL, err := ParseMySQLURL(rawURL)
 	switch {
@@ -756,14 +646,11 @@ func WithDatabaseName(rawURL, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if slices.Contains(fileSchemes, parsed.Scheme) {
+	if fileSchemes.Get()[parsed.Scheme] {
 		return "", fmt.Errorf("a %s URL names a file rather than a server, so it has no database name to replace", parsed.Scheme)
 	}
-	if platform.NormalizeDialect(parsed.Scheme) == platform.YDB {
-		// A YDB database cannot be created with SQL, so a URL naming a new one
-		// names a database nothing can make, and its name may also sit in a
-		// database parameter that a new path would not replace.
-		return "", ErrYDBDatabaseName
+	if renamer := builtin.Lookup(parsed.Scheme).Rename; renamer != nil {
+		return renamer.Rename(parsed, name)
 	}
 	parsed.Path = "/" + name
 	parsed.Opaque = ""

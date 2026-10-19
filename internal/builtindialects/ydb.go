@@ -153,6 +153,13 @@ func ydb() descriptor.Dialect {
 			DatabaseRootPaths: true,
 			IndexTypeIsMethod: true,
 		},
+
+		// The Atlas contract: what internal/atlasurl and the Atlas reports
+		// read. No Atlas edition has a YDB driver: measured on v1.3.0,
+		// docker://ydb/... answers `unsupported docker image "ydb"`. YDB
+		// states no default port, because a URL without one reaches the port
+		// of its scheme.
+		Atlas: descriptor.Atlas{DockerImages: []string{"ydb"}, Extension: true},
 	}
 }
 
