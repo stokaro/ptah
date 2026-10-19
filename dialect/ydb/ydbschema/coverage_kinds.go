@@ -30,9 +30,8 @@ const (
 	// does not describe. A read records, by the table's path, what a TTL
 	// carries beyond the row deletion policy Ptah models: the run interval,
 	// which only the SDK and the CLI set, and a column table's tiering policy.
-	// A document in a format with no spelling for a TTL, HCL or DBML, records
-	// the whole kind, and the comparison then keeps the policy the database
-	// holds for each table, through a rebuild too.
+	// A document in a format with no spelling for a TTL, DBML, records the
+	// whole kind; see [CoverageFormatLimits].
 	CoverageTTL coverage.Kind = "ttl"
 	// CoverageTableOption is a table's storage settings Ptah does not model,
 	// where they differ from what a new table is given: its tablet's commit
@@ -57,19 +56,28 @@ func ProcessCoverageKinds() []coverage.Kind {
 }
 
 // CoverageFormatLimits returns the document formats with no spelling for a
-// YDB coverage kind, in a new slice. HCL and DBML cannot spell a changefeed,
-// a column-oriented table or a TTL, so a document in either records the three
-// kinds as not described, and applying it keeps what the database holds.
+// YDB coverage kind, in a new slice. HCL and DBML cannot spell a changefeed or
+// a column-oriented table, and DBML cannot spell a TTL either. A document in
+// one of them records those kinds as not described, with the format as the
+// reason.
 //
-// HCL and DBML have no spelling for a table's row deletion policy or for a
-// YDB changefeed, which a Go schema and a YAML schema have, and Spanner's SQL
-// has for a policy. Measured on YDB 26.2.1.14, a TTL table inspected through
-// `ptah-compat schema inspect` and applied back from that HCL planned
-// `ALTER TABLE ... RESET (TTL)`, and an HCL or a DBML document declaring a
-// table that carries a changefeed planned `DROP CHANGEFEED`.
+// The records explain the document's silence. They do not keep the objects:
+// HCL and DBML do not claim to describe every changefeed and TTL the owner
+// models, so the comparison leaves the ones the database holds and the
+// document does not name as they are. Measured on
+// YDB 26.2.1.14 and 25.1.4.7 with no format limit stated, an HCL document
+// applied to a table carrying a changefeed planned nothing, a rebuild it
+// asked for dropped the changefeed and added it back with its consumer, and
+// a document that names no TTL kept the table's TTL.
+//
+// HCL carries a TTL as the owner's `platform "ydb"` properties, so it records
+// no TTL. Measured on YDB 26.2.1.14, an HCL document with those properties
+// created the table with its TTL, `ptah-compat schema inspect` wrote the
+// properties back, the inspected document applied back planned nothing, and
+// a document with another interval planned `ALTER TABLE ... SET (TTL = ...)`.
 func CoverageFormatLimits() []coverage.FormatLimit {
 	return []coverage.FormatLimit{
-		{Format: coverage.FormatHCL, Kinds: []coverage.Kind{CoverageChangefeed, CoverageColumnTable, CoverageTTL}},
+		{Format: coverage.FormatHCL, Kinds: []coverage.Kind{CoverageChangefeed, CoverageColumnTable}},
 		{Format: coverage.FormatDBML, Kinds: []coverage.Kind{CoverageChangefeed, CoverageColumnTable, CoverageTTL}},
 	}
 }

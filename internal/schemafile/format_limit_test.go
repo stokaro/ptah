@@ -36,16 +36,17 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 	}{
 		{
 			// HCL has the synonym and extended_property blocks
-			// (stokaro/ptah#1031), and their owners' coverage says so -- and it still cannot
-			// name a table's row deletion policy, a changefeed, or a YDB
-			// resource pool or classifier. A secret, a topic, an external
-			// object, an async replication, a transfer, a column family and a
-			// SQLite virtual table are owned features the format makes no
-			// claim about.
-			name:     "HCL cannot name a TTL, a changefeed, a resource pool or classifier",
+			// (stokaro/ptah#1031), and their owners' coverage says so. It
+			// carries a TTL as the YDB owner's platform properties, and it
+			// cannot name a changefeed or a column-oriented table. A secret, a
+			// topic, a resource pool or classifier, an external object, an
+			// async replication, a transfer, a column family and a SQLite
+			// virtual table are owned features the format makes no claim
+			// about.
+			name:     "HCL cannot name a changefeed or a column table",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want:     unsupportedRecords(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL),
+			want:     unsupportedRecords(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable),
 		},
 		{
 			// The control on the common families. Synonyms, extended
@@ -57,12 +58,11 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			want:     nil,
 		},
 		{
-			// YAML expresses the fewest families of the three, and the row is
-			// what keeps the HCL narrowing from being read as "the loader no
-			// longer records these kinds anywhere". It has keys for a row
-			// deletion policy, a changefeed and a column family, as `.sql` has
-			// Spanner's policy clause, so both rows are the control on the TTL,
-			// changefeed and column family records HCL and DBML carry.
+			// YAML expresses the fewest common families of the three. It has
+			// keys for a row deletion policy, a changefeed and a column
+			// family, as `.sql` has Spanner's policy clause, so both rows are
+			// the control on the changefeed, column table and TTL records HCL
+			// and DBML carry.
 			name:     "YAML cannot name four families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
