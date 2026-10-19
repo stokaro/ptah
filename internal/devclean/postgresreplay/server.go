@@ -158,7 +158,7 @@ func postgresServerWidePrivilege(tokens []lexer.Token) string {
 // statement is the protected namespace: a routine created in pg_catalog, or a
 // privilege granted on it, changes the catalogs the rest of the run reads.
 func validatePostgresServerWideStatement(dialect string, tokens []lexer.Token) error {
-	if namespace := protectedPostgresMutationNamespace(tokens); namespace != "" {
+	if namespace := (protection{dialect: dialect}).protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return replay.Refuse(
 			dialect,
 			fmt.Sprintf("protected namespace %q mutation", namespace),

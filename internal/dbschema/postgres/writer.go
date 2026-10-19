@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/pgdefaultacl"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
@@ -83,7 +84,12 @@ func quoteIdent(name string) string {
 type PostgreSQLWriter struct {
 	db     sqlrunner.Runner
 	schema string
-	dryRun bool
+	// dialect is the member of the PostgreSQL family the writer is for. It
+	// decides which schemas a realm cleanup leaves to the server; see
+	// [PostgreSQLWriter.systemSchemaDialect]. Empty means the writer was built
+	// without one.
+	dialect string
+	dryRun  bool
 	// caps decides whether cleanup may take a transaction. The writer cannot
 	// ask the server: the answer has to be known BEFORE the transaction is
 	// opened, and on a server that refuses DDL there the probe would be the
@@ -119,7 +125,7 @@ func NewPostgreSQLWriterForRunner(
 	schema string,
 ) *PostgreSQLWriter {
 	return NewPostgreSQLWriterForRunnerWithCapabilities(
-		runner, schema, capability.Of(map[capability.Capability]bool{
+		runner, schema, "", capability.Of(map[capability.Capability]bool{
 			capability.DDLInsideTransaction: true,
 			capability.CatalogRecursiveCTE:  true,
 			// pg_depend, for the same reason as the two above: every
@@ -159,19 +165,22 @@ func NewPostgreSQLWriterForRunner(
 }
 
 // NewPostgreSQLWriterForRunnerWithCapabilities creates a writer that knows what
-// the server accepts.
+// the server accepts and which member of the PostgreSQL family it is. An empty
+// dialect is a writer that cannot tell; its realm cleanup leaves alone every
+// schema a member of the family owns.
 func NewPostgreSQLWriterForRunnerWithCapabilities(
 	runner sqlrunner.Runner,
-	schema string,
+	schema, dialect string,
 	caps capability.Capabilities,
 ) *PostgreSQLWriter {
 	if schema == "" {
 		schema = "public"
 	}
 	return &PostgreSQLWriter{
-		db:     runner,
-		schema: schema,
-		caps:   caps,
+		db:      runner,
+		schema:  schema,
+		dialect: dialect,
+		caps:    caps,
 	}
 }
 
@@ -577,8 +586,9 @@ type postgresDatabaseCleanupPlan struct {
 }
 
 // keptExtensionSchemas returns the schemas the named extensions are installed
-// in, less the server's own, sorted. The cleanup empties those in place.
-func keptExtensionSchemas(ctx context.Context, tx *sql.Tx, keep []string) ([]string, error) {
+// in, less the ones the server of dialect owns, sorted. The cleanup empties
+// those in place.
+func keptExtensionSchemas(ctx context.Context, tx *sql.Tx, dialect string, keep []string) ([]string, error) {
 	if len(keep) == 0 {
 		return nil, nil
 	}
@@ -599,7 +609,7 @@ func keptExtensionSchemas(ctx context.Context, tx *sql.Tx, keep []string) ([]str
 		if err := rows.Scan(&schema); err != nil {
 			return nil, fmt.Errorf("failed to scan the schema of a kept extension: %w", err)
 		}
-		if !isPostgresSystemSchema(schema) {
+		if !pgsystemschema.IsPostgresFamilySystemSchema(dialect, schema) {
 			schemas = append(schemas, schema)
 		}
 	}
@@ -1820,7 +1830,7 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, kept db
 	if w.db == nil {
 		return fmt.Errorf("no database connection")
 	}
-	if isPostgresSystemSchema(w.schema) {
+	if pgsystemschema.IsPostgresFamilySystemSchema(w.systemSchemaDialect(), w.schema) {
 		return fmt.Errorf(
 			"refusing to clean PostgreSQL database realm with system root schema %q",
 			w.schema,
@@ -1971,7 +1981,7 @@ func (w *PostgreSQLWriter) UserSchemas(ctx context.Context) ([]string, error) {
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
-	return collectCleanupSchemas(ctx, w.db, w.caps)
+	return collectCleanupSchemas(ctx, w.db, w.systemSchemaDialect(), w.caps)
 }
 
 // InstalledExtensions returns the extensions installed in the database, sorted
@@ -2388,7 +2398,9 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, kept dbreset.K
 	if err != nil {
 		return err
 	}
-	if err := verifyCompletedPostgresDatabaseCleanup(ctx, sqlTx, preservedSchemas, plan, w.caps); err != nil {
+	if err := verifyCompletedPostgresDatabaseCleanup(
+		ctx, sqlTx, preservedSchemas, plan, w.systemSchemaDialect(), w.caps,
+	); err != nil {
 		return err
 	}
 	if err := w.verifyKeptDefaultPrivileges(ctx, sqlTx, plan.keptDefaultPrivileges); err != nil {
@@ -2441,7 +2453,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 			return postgresDatabaseCleanupPlan{}, err
 		}
 	}
-	schemas, err := collectCleanupSchemas(ctx, tx, w.caps)
+	schemas, err := collectCleanupSchemas(ctx, tx, w.systemSchemaDialect(), w.caps)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
@@ -2450,7 +2462,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		schemas = excludeString(schemas, schema)
 	}
 	keptExtensions := keptCleanupExtensions(capabilities.systemExtensions, keep)
-	inPlaceSchemas, err := keptExtensionSchemas(ctx, tx, keep)
+	inPlaceSchemas, err := keptExtensionSchemas(ctx, tx, w.systemSchemaDialect(), keep)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
@@ -2576,6 +2588,7 @@ func verifyCompletedPostgresDatabaseCleanup(
 	tx *sql.Tx,
 	preservedSchemas []string,
 	plan postgresDatabaseCleanupPlan,
+	dialect string,
 	caps capability.Capabilities,
 ) error {
 	if err := verifyPostgresDatabaseRealm(
@@ -2585,6 +2598,7 @@ func verifyCompletedPostgresDatabaseCleanup(
 		plan.untouched,
 		plan.keptExtensions,
 		plan.keptDefaultPrivileges.Scope.Schemas,
+		dialect,
 		caps,
 	); err != nil {
 		return err
@@ -2598,51 +2612,31 @@ func verifyCompletedPostgresDatabaseCleanup(
 }
 
 // collectCleanupSchemas returns the schemas a realm cleanup empties and drops
-// one object at a time: the user schemas, less those an extension owns.
+// one object at a time: the user schemas, less those an extension owns. It
+// selects them with the predicate a realm read of dialect describes with
+// ([pgsystemschema.PostgresDescribedSchemasPredicate]), so the cleanup, the
+// reader and the clean gate leave out the same schemas: the server's own, as
+// the dialect's descriptor states them, and an extension's.
 //
 // An extension's schema is the extension's. A kept extension keeps it, and
 // DROP EXTENSION takes a dropped extension's schemas and everything in them.
 // Queued separately, a statement that names the schema itself runs after the
 // schema is gone and fails on it, which IF EXISTS cannot cover: the revoke of
-// a default grant in the schema is one. Leaving the schema out is also how the
-// reader and the clean gate see it
-// ([pgsystemschema.PostgresDescribedSchemasPredicate]). The check that a cleanup
-// finished reads the same list, and answers for extension schemas through the
+// a default grant in the schema is one. The check that a cleanup finished
+// reads the same list, and answers for extension schemas through the
 // extensions that own them.
 //
-// The filter reads pg_depend and is gated on [capability.CatalogDependencies],
-// like the other extension filters of this cleanup.
-func collectCleanupSchemas(ctx context.Context, tx cleanupConn, caps capability.Capabilities) ([]string, error) {
-	if !caps.Has(capability.CatalogDependencies) {
-		return queryUserSchemas(ctx, tx, userSchemasQuery)
-	}
-	return queryUserSchemas(ctx, tx, userSchemasWithoutExtensionSchemasQuery)
+// The predicate reads pg_depend only where [capability.CatalogDependencies]
+// says the catalog has it, like the other extension filters of this cleanup.
+func collectCleanupSchemas(
+	ctx context.Context, tx cleanupConn, dialect string, caps capability.Capabilities,
+) ([]string, error) {
+	return queryUserSchemas(ctx, tx, `
+		SELECT n.nspname
+		FROM pg_namespace n
+		WHERE `+pgsystemschema.PostgresDescribedSchemasPredicate(dialect, caps)+`
+		ORDER BY n.nspname`)
 }
-
-const userSchemasQuery = `
-		SELECT n.nspname
-		FROM pg_namespace n
-		WHERE n.nspname <> 'information_schema'
-		  AND n.nspname <> 'crdb_internal'
-		  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
-		ORDER BY n.nspname
-	`
-
-const userSchemasWithoutExtensionSchemasQuery = `
-		SELECT n.nspname
-		FROM pg_namespace n
-		WHERE n.nspname <> 'information_schema'
-		  AND n.nspname <> 'crdb_internal'
-		  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM pg_depend d
-			WHERE d.classid = 'pg_namespace'::regclass
-			  AND d.objid = n.oid
-			  AND d.deptype = 'e'
-		  )
-		ORDER BY n.nspname
-	`
 
 func queryUserSchemas(ctx context.Context, tx cleanupConn, query string) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, query)
@@ -2871,12 +2865,13 @@ func verifyPostgresDatabaseRealm(
 	untouchedSchemas,
 	keptExtensions,
 	keptDefaultPrivilegeSchemas []string,
+	dialect string,
 	caps capability.Capabilities,
 ) error {
 	// A schema an extension owns is checked through the extension: the
 	// extension check below refuses any extension the cleanup was not asked to
 	// keep, and a dropped extension takes its schemas with it.
-	schemas, err := collectCleanupSchemas(ctx, tx, caps)
+	schemas, err := collectCleanupSchemas(ctx, tx, dialect, caps)
 	if err != nil {
 		return err
 	}
@@ -3084,10 +3079,15 @@ func verifyPostgresUserExtensions(
 	)
 }
 
-func isPostgresSystemSchema(schema string) bool {
-	return schema == "information_schema" ||
-		schema == "crdb_internal" ||
-		strings.HasPrefix(schema, "pg_")
+// systemSchemaDialect is the dialect whose system schemas the writer leaves to
+// the server: its own, or [pgsystemschema.AnyMember] for a writer built
+// without one, which cannot tell which member of the family it is connected
+// to.
+func (w *PostgreSQLWriter) systemSchemaDialect() string {
+	if w.dialect == "" {
+		return pgsystemschema.AnyMember
+	}
+	return w.dialect
 }
 
 func quotePostgresRole(role string) string {

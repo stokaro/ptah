@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/pgsystemschema"
 )
 
 func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error {
@@ -25,7 +26,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 	if definesPostgresRoutine(tokens) {
 		return replay.Refuse(dialect, first+" routine definition")
 	}
-	if namespace := protectedPostgresMutationNamespace(tokens); namespace != "" {
+	if namespace := (protection{dialect: dialect}).protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return replay.Refuse(
 			dialect,
 			fmt.Sprintf("protected namespace %q mutation", namespace),
@@ -56,39 +57,45 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 	return validatePostgresReplayStatementBase(dialect, tokens)
 }
 
-func protectedPostgresMutationNamespace(tokens []lexer.Token) string {
-	if namespace := protectedPostgresSelectIntoNamespace(tokens); namespace != "" {
+// protection reads the namespaces a replayed statement must not change on one
+// member of the PostgreSQL family: the ones its server owns.
+type protection struct {
+	dialect string
+}
+
+func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) string {
+	if namespace := p.protectedPostgresSelectIntoNamespace(tokens); namespace != "" {
 		return namespace
 	}
 	for _, target := range postgresMutationTargets(tokens) {
-		if namespace := protectedNamespaceFromMutationTarget(tokens, target); namespace != "" {
+		if namespace := p.protectedNamespaceFromMutationTarget(tokens, target); namespace != "" {
 			return namespace
 		}
 	}
-	if namespace := protectedPostgresMutationListNamespace(tokens); namespace != "" {
+	if namespace := p.protectedPostgresMutationListNamespace(tokens); namespace != "" {
 		return namespace
 	}
-	if namespace := protectedPostgresSpecialMutationNamespace(tokens); namespace != "" {
+	if namespace := p.protectedPostgresSpecialMutationNamespace(tokens); namespace != "" {
 		return namespace
 	}
 
 	switch replay.NormalizedIdentifier(tokens[0]) {
 	case "ALTER":
 		if replay.TokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") {
-			return protectedPostgresSchemaClause(tokens)
+			return p.protectedPostgresSchemaClause(tokens)
 		}
 	case "COMMENT", "SECURITY":
-		return protectedPostgresObjectTarget(tokens)
+		return p.protectedPostgresObjectTarget(tokens)
 	case "GRANT", "REVOKE":
-		if namespace := protectedPostgresSchemaClause(tokens); namespace != "" {
+		if namespace := p.protectedPostgresSchemaClause(tokens); namespace != "" {
 			return namespace
 		}
-		return protectedPostgresObjectTarget(tokens)
+		return p.protectedPostgresObjectTarget(tokens)
 	}
 	return ""
 }
 
-func protectedPostgresSelectIntoNamespace(tokens []lexer.Token) string {
+func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) string {
 	tokens = replay.LeadingCTEExecutableTokens(tokens)
 	if replay.NormalizedIdentifier(tokens[0]) != "SELECT" {
 		return ""
@@ -103,7 +110,7 @@ func protectedPostgresSelectIntoNamespace(tokens []lexer.Token) string {
 			case "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "TABLE":
 				targetIndex++
 			default:
-				return protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+				return p.protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
 			}
 		}
 		return ""
@@ -122,8 +129,8 @@ func postgresMutationTargets(tokens []lexer.Token) [][]string {
 	return targets
 }
 
-func protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string) string {
-	if len(target) >= 2 && isProtectedPostgresNamespace(target[0]) {
+func (p protection) protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string) string {
+	if len(target) >= 2 && p.isProtectedPostgresNamespace(target[0]) {
 		return target[0]
 	}
 	if len(target) == 0 {
@@ -133,13 +140,13 @@ func protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string)
 	kindIndex := replay.StatementObjectKindIndex(tokens)
 	if kindIndex != replay.MutationTargetNotFound &&
 		replay.NormalizedIdentifier(tokens[kindIndex]) == "SCHEMA" &&
-		isProtectedPostgresNamespace(target[0]) {
+		p.isProtectedPostgresNamespace(target[0]) {
 		return target[0]
 	}
 	return ""
 }
 
-func protectedPostgresSchemaClause(tokens []lexer.Token) string {
+func (p protection) protectedPostgresSchemaClause(tokens []lexer.Token) string {
 	for index := 0; index+1 < len(tokens); index++ {
 		if replay.NormalizedIdentifier(tokens[index]) != "SCHEMA" {
 			continue
@@ -150,11 +157,11 @@ func protectedPostgresSchemaClause(tokens []lexer.Token) string {
 				continue
 			}
 		}
-		if namespace := protectedPostgresObjectListNamespace(
+		if namespace := p.protectedPostgresObjectListNamespace(
 			tokens,
 			index+1,
 			postgresPrivilegeRecipientKeyword(tokens),
-			protectedPostgresNamespaceObjectAt,
+			p.protectedPostgresNamespaceObjectAt,
 		); namespace != "" {
 			return namespace
 		}
@@ -162,7 +169,7 @@ func protectedPostgresSchemaClause(tokens []lexer.Token) string {
 	return ""
 }
 
-func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
+func (p protection) protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "DROP":
@@ -174,11 +181,11 @@ func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
 		if !postgresDropSupportsObjectList(tokens, kindIndex, kind) {
 			return ""
 		}
-		targetAt := protectedPostgresQualifiedNamespaceAt
+		targetAt := p.protectedPostgresQualifiedNamespaceAt
 		if kind == "SCHEMA" {
-			targetAt = protectedPostgresNamespaceObjectAt
+			targetAt = p.protectedPostgresNamespaceObjectAt
 		}
-		return protectedPostgresObjectListNamespace(
+		return p.protectedPostgresObjectListNamespace(
 			tokens,
 			replay.ObjectNameIndex(tokens, kindIndex),
 			"",
@@ -192,11 +199,11 @@ func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
 		if replay.TokenSequenceAt(tokens, index, "ONLY") {
 			index++
 		}
-		return protectedPostgresObjectListNamespace(
+		return p.protectedPostgresObjectListNamespace(
 			tokens,
 			index,
 			"",
-			protectedPostgresQualifiedNamespaceAt,
+			p.protectedPostgresQualifiedNamespaceAt,
 		)
 	default:
 		return ""
@@ -218,18 +225,18 @@ func postgresDropSupportsObjectList(tokens []lexer.Token, kindIndex int, kind st
 	}
 }
 
-func protectedPostgresSpecialMutationNamespace(tokens []lexer.Token) string {
+func (p protection) protectedPostgresSpecialMutationNamespace(tokens []lexer.Token) string {
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "ALTER", "CREATE", "DROP":
-		return protectedPostgresSpecialDDLNamespace(tokens)
+		return p.protectedPostgresSpecialDDLNamespace(tokens)
 	case "IMPORT":
 		if replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
-			return protectedPostgresNamespaceAfterKeyword(
+			return p.protectedPostgresNamespaceAfterKeyword(
 				tokens,
 				"INTO",
 				1,
-				protectedPostgresNamespaceObjectAt,
+				p.protectedPostgresNamespaceObjectAt,
 			)
 		}
 	case "REFRESH":
@@ -238,15 +245,15 @@ func protectedPostgresSpecialMutationNamespace(tokens []lexer.Token) string {
 			if replay.TokenSequenceAt(tokens, index, "CONCURRENTLY") {
 				index++
 			}
-			return protectedPostgresQualifiedNamespaceAt(tokens, index)
+			return p.protectedPostgresQualifiedNamespaceAt(tokens, index)
 		}
 	case "REINDEX":
-		return protectedPostgresReindexNamespace(tokens)
+		return p.protectedPostgresReindexNamespace(tokens)
 	}
 	return ""
 }
 
-func protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) string {
+func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) string {
 	kindIndex := postgresSpecialDDLKindIndex(tokens)
 	if kindIndex >= len(tokens) {
 		return ""
@@ -254,31 +261,31 @@ func protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) string {
 	kind := replay.NormalizedIdentifier(tokens[kindIndex])
 	switch kind {
 	case "AGGREGATE", "COLLATION", "CONVERSION", "OPERATOR", "STATISTICS":
-		return protectedPostgresNamedSpecialDDLNamespace(tokens, kindIndex, kind)
+		return p.protectedPostgresNamedSpecialDDLNamespace(tokens, kindIndex, kind)
 	case "EXTENSION":
-		return protectedPostgresNamespaceAfterKeyword(
+		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
 			"SCHEMA",
 			kindIndex+1,
-			protectedPostgresNamespaceObjectAt,
+			p.protectedPostgresNamespaceObjectAt,
 		)
 	case "POLICY":
-		return protectedPostgresNamespaceAfterKeyword(
+		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
 			"ON",
 			kindIndex+1,
-			protectedPostgresQualifiedNamespaceAt,
+			p.protectedPostgresQualifiedNamespaceAt,
 		)
 	case "RULE":
 		keyword := "ON"
 		if replay.NormalizedIdentifier(tokens[0]) == "CREATE" {
 			keyword = "TO"
 		}
-		return protectedPostgresNamespaceAfterKeyword(
+		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
 			keyword,
 			kindIndex+1,
-			protectedPostgresQualifiedNamespaceAt,
+			p.protectedPostgresQualifiedNamespaceAt,
 		)
 	default:
 		return ""
@@ -294,7 +301,7 @@ func postgresSpecialDDLKindIndex(tokens []lexer.Token) int {
 	return index
 }
 
-func protectedPostgresNamedSpecialDDLNamespace(
+func (p protection) protectedPostgresNamedSpecialDDLNamespace(
 	tokens []lexer.Token,
 	kindIndex int,
 	kind string,
@@ -306,42 +313,42 @@ func protectedPostgresNamedSpecialDDLNamespace(
 		nameIndex++
 	}
 	nameIndex = replay.SkipNameModifiers(tokens, nameIndex)
-	if namespace := protectedPostgresObjectListNamespace(
+	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
 		nameIndex,
 		"",
-		protectedPostgresQualifiedNamespaceAt,
+		p.protectedPostgresQualifiedNamespaceAt,
 	); namespace != "" {
 		return namespace
 	}
 	if kind == "STATISTICS" {
-		return protectedPostgresNamespaceAfterKeyword(
+		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
 			"FROM",
 			nameIndex,
-			protectedPostgresQualifiedNamespaceAt,
+			p.protectedPostgresQualifiedNamespaceAt,
 		)
 	}
 	return ""
 }
 
-func protectedPostgresReindexNamespace(tokens []lexer.Token) string {
+func (p protection) protectedPostgresReindexNamespace(tokens []lexer.Token) string {
 	for index := 1; index < len(tokens); index++ {
 		switch replay.NormalizedIdentifier(tokens[index]) {
 		case "DATABASE", "SYSTEM":
 			return ""
 		case "INDEX", "TABLE":
 			targetIndex := replay.SkipNameModifiers(tokens, index+1)
-			return protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+			return p.protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
 		case "SCHEMA":
 			targetIndex := replay.SkipNameModifiers(tokens, index+1)
-			return protectedPostgresNamespaceObjectAt(tokens, targetIndex)
+			return p.protectedPostgresNamespaceObjectAt(tokens, targetIndex)
 		}
 	}
 	return ""
 }
 
-func protectedPostgresNamespaceAfterKeyword(
+func (p protection) protectedPostgresNamespaceAfterKeyword(
 	tokens []lexer.Token,
 	keyword string,
 	start int,
@@ -354,7 +361,7 @@ func protectedPostgresNamespaceAfterKeyword(
 	return targetAt(tokens, index+1)
 }
 
-func protectedPostgresObjectTarget(tokens []lexer.Token) string {
+func (p protection) protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
 	if onIndex == replay.MutationTargetNotFound || onIndex+1 >= len(tokens) {
 		return ""
@@ -363,11 +370,11 @@ func protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	targetIndex := onIndex + 1
 	classWidth := postgresObjectClassWidth(tokens, targetIndex)
 	targetIndex += classWidth
-	targetAt := protectedPostgresQualifiedNamespaceAt
+	targetAt := p.protectedPostgresQualifiedNamespaceAt
 	if classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "SCHEMA" {
-		targetAt = protectedPostgresNamespaceObjectAt
+		targetAt = p.protectedPostgresNamespaceObjectAt
 	}
-	if namespace := protectedPostgresObjectListNamespace(
+	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
 		targetIndex,
 		postgresPrivilegeRecipientKeyword(tokens),
@@ -384,10 +391,10 @@ func protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	if relationOnIndex == replay.MutationTargetNotFound {
 		return ""
 	}
-	return protectedPostgresQualifiedNamespaceAt(tokens, relationOnIndex+1)
+	return p.protectedPostgresQualifiedNamespaceAt(tokens, relationOnIndex+1)
 }
 
-func protectedPostgresObjectListNamespace(
+func (p protection) protectedPostgresObjectListNamespace(
 	tokens []lexer.Token,
 	start int,
 	stopKeyword string,
@@ -430,19 +437,19 @@ func protectedPostgresObjectListNamespace(
 	return ""
 }
 
-func protectedPostgresNamespaceObjectAt(tokens []lexer.Token, index int) string {
+func (p protection) protectedPostgresNamespaceObjectAt(tokens []lexer.Token, index int) string {
 	if index < 0 || index >= len(tokens) {
 		return ""
 	}
 	name := replay.IdentifierValue(tokens[index])
-	if !isProtectedPostgresNamespace(name) {
+	if !p.isProtectedPostgresNamespace(name) {
 		return ""
 	}
 	return name
 }
 
-func protectedPostgresQualifiedNamespaceAt(tokens []lexer.Token, index int) string {
-	name := protectedPostgresNamespaceObjectAt(tokens, index)
+func (p protection) protectedPostgresQualifiedNamespaceAt(tokens []lexer.Token, index int) string {
+	name := p.protectedPostgresNamespaceObjectAt(tokens, index)
 	if name == "" {
 		return ""
 	}
@@ -452,11 +459,12 @@ func protectedPostgresQualifiedNamespaceAt(tokens []lexer.Token, index int) stri
 	return ""
 }
 
-func isProtectedPostgresNamespace(namespace string) bool {
-	namespace = strings.ToLower(strings.TrimSpace(namespace))
-	return namespace == "information_schema" ||
-		namespace == "crdb_internal" ||
-		strings.HasPrefix(namespace, "pg_")
+// isProtectedPostgresNamespace reports whether namespace is one the server of
+// the dialect owns ([pgsystemschema.IsPostgresFamilySystemSchema]). The name
+// is folded to lower case first, so a quoted lookalike in another case is
+// refused as well: a replay refuses where it cannot tell.
+func (p protection) isProtectedPostgresNamespace(namespace string) bool {
+	return pgsystemschema.IsPostgresFamilySystemSchema(p.dialect, strings.ToLower(strings.TrimSpace(namespace)))
 }
 
 func postgresGlobalDCLOrMetadata(tokens []lexer.Token) string {

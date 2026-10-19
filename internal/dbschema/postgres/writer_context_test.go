@@ -9,6 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/dbschema/dbtest"
@@ -1504,4 +1506,46 @@ func (e *postgresInternalDependencyExec) execute(
 		return nil, errors.New("cannot drop table because view depends on it")
 	}
 	return driver.RowsAffected(0), nil
+}
+
+// TestWriterDropDatabaseRealm_DialectRootSchema_FailurePath refuses
+// a root schema the writer's dialect owns, or any member owns for a writer
+// built without one, before anything is sent.
+func TestWriterDropDatabaseRealm_DialectRootSchema_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		schema  string
+	}{
+		{name: "CockroachDB's own", dialect: platform.CockroachDB, schema: "crdb_internal"},
+		{name: "Spanner's own", dialect: platform.Spanner, schema: "spanner_sys"},
+		{name: "any member's, without a dialect", dialect: "", schema: "spanner_sys"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(c, emptyPostgresCleanupQuery)
+			writer := postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db.SQL, test.schema, test.dialect, capability.ForDialect(platform.Postgres))
+
+			err := writer.DropDatabaseRealm(c.Context())
+
+			c.Assert(err, qt.ErrorMatches,
+				`refusing to clean PostgreSQL database realm with system root schema "`+test.schema+`"`)
+			c.Assert(db.BeginCount(), qt.Equals, 0)
+			c.Assert(db.QueryCount(), qt.Equals, 0)
+		})
+	}
+}
+
+// TestWriterDropDatabaseRealm_DialectRootSchema_HappyPath cleans a
+// root schema another member owns: crdb_internal is a user's schema on
+// PostgreSQL 18, so the cleanup opens its transaction.
+func TestWriterDropDatabaseRealm_DialectRootSchema_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(c, emptyPostgresCleanupQuery)
+	writer := postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db.SQL, "crdb_internal", platform.Postgres, capability.ForDialect(platform.Postgres))
+
+	_ = writer.DropDatabaseRealm(c.Context())
+
+	c.Assert(db.BeginCount(), qt.Equals, 1)
 }

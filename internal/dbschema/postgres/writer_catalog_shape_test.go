@@ -29,7 +29,7 @@ func cleanupQueryFor(c *qt.C, caps capability.Capabilities) string {
 	}, func(string, []driver.NamedValue) (driver.Result, error) {
 		return driver.RowsAffected(0), nil
 	})
-	writer := postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db.SQL, "public", caps)
+	writer := postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db.SQL, "public", "", caps)
 
 	c.Assert(writer.DropAllTables(c.TB.Context()), qt.IsNil)
 	c.Assert(len(queries) >= 3, qt.IsTrue)

@@ -278,9 +278,9 @@ func (Service) NewReader(_ *connector.Pool, info catalog.ServerInfo, runner sqlr
 // NewWriter returns the PostgreSQL-wire writer. The set decides whether
 // cleanup may take a transaction: Spanner refuses DDL inside one, and the
 // writer cannot ask the server without opening the transaction it is trying
-// to avoid.
+// to avoid. The dialect decides which schemas a cleanup leaves to the server.
 func (Service) NewWriter(_ *connector.Pool, info catalog.ServerInfo, runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
-	return postgres.NewPostgreSQLWriterForRunnerWithCapabilities(runner, info.Schema, info.Capabilities)
+	return postgres.NewPostgreSQLWriterForRunnerWithCapabilities(runner, info.Schema, info.Dialect, info.Capabilities)
 }
 
 // OutsideTransaction reads the status byte of the server's last

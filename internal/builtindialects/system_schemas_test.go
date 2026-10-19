@@ -12,16 +12,22 @@ import (
 
 // TestDescriptors_SystemSchemasAgreeWithTheSwitchesTheyReplace pins
 // SystemSchemas against the switches of internal/pgsystemschema it replaces,
-// written out here as they stood. PostgresNonSystemSchemasPredicate left
-// crdb_internal out of a CockroachDB read and spanner_sys out of a Spanner
-// one; IsPostgresFamilySystemSchema added crdb_internal on CockroachDB; and
-// IsUncreatableSchema added public and spanner_sys on Spanner. Each held for
-// every spelling NormalizeDialect folds onto the engine, in any case and with
-// surrounding space, and for no other spelling, an unknown one included.
+// written out here as they stood, with one change made on purpose.
+// PostgresNonSystemSchemasPredicate left crdb_internal out of a CockroachDB
+// read and spanner_sys out of a Spanner one; IsPostgresFamilySystemSchema
+// added crdb_internal on CockroachDB; and IsUncreatableSchema added public and
+// spanner_sys on Spanner. Spanner refuses a document that holds spanner_sys,
+// as CockroachDB refuses one holding crdb_internal, so spanner_sys is reserved
+// rather than implicit; see the Spanner descriptor for the measurement. Each
+// holds for every spelling NormalizeDialect folds onto the engine, in any
+// case and with surrounding space, and for no other spelling, an unknown one
+// included.
 func TestDescriptors_SystemSchemasAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	switches := map[string]descriptor.SystemSchemas{
 		platform.CockroachDB: {Catalog: []string{"crdb_internal"}, Reserved: []string{"crdb_internal"}},
-		platform.Spanner:     {Catalog: []string{"spanner_sys"}, Implicit: []string{"public", "spanner_sys"}},
+		platform.Spanner: {
+			Catalog: []string{"spanner_sys"}, Reserved: []string{"spanner_sys"}, Implicit: []string{"public"},
+		},
 	}
 	var spellings []string
 	for _, spelling := range platform.DialectSpellings() {

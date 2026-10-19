@@ -171,15 +171,22 @@ func spanner() descriptor.Dialect {
 		// System schemas: what internal/pgsystemschema reads. Spanner lists
 		// spanner_sys in pg_namespace beside public, measured on the PGAdapter
 		// emulator v0.55.3, and it is the server's own, so a read leaves it
-		// out. Neither schema can be created: `CREATE SCHEMA IF NOT EXISTS
-		// "public"` is refused with `Schema name not valid: public`, measured
-		// on v0.55.2, and the IF NOT EXISTS does not help because the refusal
-		// is about the name (stokaro/ptah#2072). `public` holds the user's own
-		// tables, and `ptah schema inspect` writes a `schema "public"` block
-		// for it, so a document may declare it.
+		// out. A document may not hold it either. Measured on v0.56.1, `CREATE
+		// SCHEMA spanner_sys` is refused with `'spanner_' is not supported as
+		// a prefix for a schema name`, with or without IF NOT EXISTS, and
+		// `CREATE TABLE spanner_sys.t (...)` and `CREATE VIEW spanner_sys.v`
+		// are refused with `Schema not found: spanner_sys`, although a SELECT
+		// from its tables answers. `public` cannot be created either:
+		// `CREATE SCHEMA IF NOT EXISTS "public"` is refused with `Schema name
+		// not valid: public`, measured on v0.55.2, and the IF NOT EXISTS does
+		// not help because the refusal is about the name (stokaro/ptah#2072).
+		// But `public` holds the user's own tables, and `ptah schema inspect`
+		// writes a `schema "public"` block for it, so a document may declare
+		// it.
 		SystemSchemas: descriptor.SystemSchemas{
 			Catalog:  []string{"spanner_sys"},
-			Implicit: []string{"public", "spanner_sys"},
+			Reserved: []string{"spanner_sys"},
+			Implicit: []string{"public"},
 		},
 
 		// Migrations: the engine's reading decides a migration file's

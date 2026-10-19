@@ -2292,8 +2292,9 @@ func appendSchemaStatements(visit func(ast.Node) error, schemas []schemamodel.Sc
 // disagree with the plan about the same document -- which internal/modelast's
 // render-and-plan agreement test is what measures. An owner's object that names
 // its schema, as an extension the extension owner holds does, contributes it
-// too, unless it is the target's default schema; see
-// [schemaext.SchemaPlacement].
+// too, unless it is the target's default schema or one the target owns and
+// will not create ([pgsystemschema.IsUncreatableSchema]), which is the schema
+// the planner's precondition leaves out too; see [schemaext.SchemaPlacement].
 func schemasForRender(database schemamodel.Database, targetPlatform string) ([]schemamodel.Schema, error) {
 	schemas := slices.Clone(database.Schemas)
 	named, err := placedSchemas(database, targetPlatform)
@@ -2306,7 +2307,7 @@ func schemasForRender(database schemamodel.Database, targetPlatform string) ([]s
 		seen[schema.Name] = struct{}{}
 	}
 	for _, name := range named {
-		if name == "" || pgsystemschema.IsPostgresSystemSchema(name) {
+		if name == "" || pgsystemschema.IsUncreatableSchema(targetPlatform, name) {
 			continue
 		}
 		if _, exists := seen[name]; exists {
