@@ -55,3 +55,21 @@ func CoverageKinds() []coverage.Kind {
 func ProcessCoverageKinds() []coverage.Kind {
 	return []coverage.Kind{CoverageReplicaTable}
 }
+
+// CoverageFormatLimits returns the document formats with no spelling for a
+// YDB coverage kind, in a new slice. HCL and DBML cannot spell a changefeed,
+// a column-oriented table or a TTL, so a document in either records the three
+// kinds as not described, and applying it keeps what the database holds.
+//
+// HCL and DBML have no spelling for a table's row deletion policy or for a
+// YDB changefeed, which a Go schema and a YAML schema have, and Spanner's SQL
+// has for a policy. Measured on YDB 26.2.1.14, a TTL table inspected through
+// `ptah-compat schema inspect` and applied back from that HCL planned
+// `ALTER TABLE ... RESET (TTL)`, and an HCL or a DBML document declaring a
+// table that carries a changefeed planned `DROP CHANGEFEED`.
+func CoverageFormatLimits() []coverage.FormatLimit {
+	return []coverage.FormatLimit{
+		{Format: coverage.FormatHCL, Kinds: []coverage.Kind{CoverageChangefeed, CoverageColumnTable, CoverageTTL}},
+		{Format: coverage.FormatDBML, Kinds: []coverage.Kind{CoverageChangefeed, CoverageColumnTable, CoverageTTL}},
+	}
+}

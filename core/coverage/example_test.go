@@ -171,3 +171,28 @@ func ExampleObject_Explain() {
 	// "the selection this run was given put them outside it"
 	// ""
 }
+
+// ExampleVocabulary_FormatLimits shows an owner's statement that a format has
+// no spelling for its kind. A loader asks the vocabulary of its run which
+// kinds a document's format cannot spell and records each as not described.
+func ExampleVocabulary_FormatLimits() {
+	vocabulary, err := coverage.NewVocabulary("gauge")
+	if err != nil {
+		panic(err)
+	}
+	vocabulary, err = vocabulary.WithFormatLimits(coverage.FormatLimit{Format: coverage.FormatHCL, Kinds: []coverage.Kind{"gauge"}})
+	if err != nil {
+		panic(err)
+	}
+	var limits coverage.Set
+	for _, kind := range vocabulary.FormatLimits(coverage.FormatHCL) {
+		limits = limits.With(coverage.Object{Kind: kind, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
+	}
+	fmt.Println(limits.Directives())
+	fmt.Println(limits.Objects[0].Explain())
+	fmt.Println(vocabulary.FormatLimits(coverage.FormatYAML) == nil)
+	// Output:
+	// [ptah:not-described gauge reason=unsupported provenance=derived-from-fact]
+	// the format that description is written in cannot express them
+	// true
+}

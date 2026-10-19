@@ -95,7 +95,46 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+			runtime := builtintest.Runtime()
+			database, err := schemafile.LoadPath(path, schemafile.Options{
+				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), CoverageVocabulary: runtime.CoverageVocabulary(),
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// An owner's kinds a format cannot spell come from the owner, through the
+// vocabulary the load is given. A load whose vocabulary does not select the
+// YDB owner records the common limits of its format and none of the YDB
+// kinds: no comparison of that run reads them, and the HCL writer refuses a
+// record its vocabulary cannot name.
+func TestAFormatRecordsNoKindOfAnOwnerTheLoadDidNotSelect(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		contents string
+		want     []coverage.Object
+	}{
+		{name: "HCL", file: "schema.hcl", contents: "schema \"main\" {\n}\n", want: nil},
+		{
+			name: "DBML", file: "schema.dbml", contents: "Table users {\n  id integer [pk]\n}\n",
+			want: unsupportedRecords(
+				coverage.Composite, coverage.Domain, coverage.Extension,
+				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(t.TempDir(), test.file)
+			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
+			runtime := builtintest.Runtime()
+
+			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)
