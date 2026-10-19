@@ -11,7 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -360,7 +360,9 @@ func preflightApplyReadScope(
 	if requested := schemascope.SplitNames(schemas); len(requested) > 0 {
 		return requested, nil
 	}
-	if platform.IsPostgresFamily(conn.Info().Dialect) {
+	// A search-path engine's realm is every schema of the database, which
+	// its catalog lists; another engine reads the schemas its URL scope names.
+	if described(conn.Info().Dialect).Schemas.Selection == descriptor.SchemaSelectionSearchPath {
 		return schemaselection.RealmSchemas(ctx, conn.Info().Dialect, conn.Info().Capabilities, conn)
 	}
 	return schemascope.ReadNames(ctx, conn.Info(), nil, conn)
@@ -997,7 +999,7 @@ func refuseOnlineAlterInOneTransaction(
 	txMode migrator.MigrationTxMode,
 	dialect string,
 ) error {
-	if !policy.OnlineAlter || !platform.IsPostgresFamily(dialect) {
+	if !policy.OnlineAlter || described(dialect).OnlineAlter != descriptor.OnlineAlterNotValid {
 		return nil
 	}
 	if txMode == migrator.MigrationTxModeNone {

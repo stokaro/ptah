@@ -208,6 +208,29 @@ func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 		`plan file targets dialect "mysql", but the --url database dialect is "sqlite"`)
 }
 
+// TestVerifyPlanTargetAcceptsAnAliasOfTheConnectionsDialect pins that a plan
+// file's dialect is compared as the dialect registry folds it: sqlite3,
+// SQLITE and libsql name the engine a sqlite connection reaches.
+func TestVerifyPlanTargetAcceptsAnAliasOfTheConnectionsDialect(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	conn := connectPlanSQLite(c, filepath.Join(dir, "alias.db"))
+	desired := writePlanDesiredSchema(c, dir, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
+	c.Assert(err, qt.IsNil)
+
+	for _, spelling := range []string{"sqlite3", " SQLITE ", "libsql"} {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
+			aliased := plan
+			aliased.Dialect = spelling
+			c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, aliased, must.Must(builtin.New())), qt.IsNil)
+		})
+	}
+}
+
 func TestPlanFileMarshalReadRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

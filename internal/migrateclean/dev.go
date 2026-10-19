@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devdocker"
@@ -52,13 +52,14 @@ func (e *NotCleanError) Error() string {
 // An error that is not a *NotCleanError means the catalog could not be read,
 // and the caller must not treat the database as clean.
 //
-// A YDB dev database is the root its connection treats as its database: a
-// dev realm Ptah created for the run, which starts empty, or a whole database
-// on a server the run owns. It is clean when its writer's reset would drop
-// nothing; see [ydbDevRefusal].
+// An engine whose descriptor states CleanCheck.ResetListing, YDB's, has no
+// catalog query: its dev database is clean when its writer's reset would drop
+// nothing; see [listedDevRefusal].
 func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	if conn != nil && platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		return ydbDevRefusal(ctx, conn)
+	if conn != nil {
+		if engine := described(conn.Info().Dialect); engine.CleanCheck.ResetListing {
+			return listedDevRefusal(ctx, conn, engine)
+		}
 	}
 	if StartsFromDeclaredState(conn) {
 		return nil
@@ -70,9 +71,9 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if !GovernsDev(scope.Dialect) {
 		return nil
 	}
-	// A whole MySQL-family server is reset database by database, so any user
-	// database refuses it and there is nothing smaller to list.
-	if scope.Realm && isMySQLFamily(scope.Dialect) {
+	// A whole server is reset database by database, so any user database
+	// refuses it and there is nothing smaller to list.
+	if scope.Realm && wholeServer(scope.Dialect) {
 		return scope.DevRefusal()
 	}
 	scope.Dropped, err = resetObjects(ctx, conn, scope)
@@ -82,17 +83,18 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	return scope.DevRefusal()
 }
 
-// ydbDevRefusal is [DevRefusal] for YDB. The writer lists every object its
-// reset would drop, or refuse to drop, under the connection's root, and the
-// first of them refuses the database: `found table "t"` at the root, and
-// `found view "v" in schema "app"` in a directory, a YDB schema being a
-// directory. A directory refuses too, empty or not, as an empty schema does
-// on PostgreSQL at realm scope: the reset would remove it, and the run did not
-// create it. There is no binary to match; Atlas has no YDB driver.
-func ydbDevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+// listedDevRefusal is [DevRefusal] for an engine judged by its writer's reset
+// listing alone. The writer lists every object its reset would drop, or refuse
+// to drop, under the connection's root, and the first of them refuses the
+// database: on YDB, `found table "t"` at the root, and `found view "v" in
+// schema "app"` in a directory, a YDB schema being a directory. A directory
+// refuses too, empty or not, as an empty schema does on PostgreSQL at realm
+// scope: the reset would remove it, and the run did not create it. There is
+// no binary to match; Atlas has no YDB driver.
+func listedDevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection, engine descriptor.Dialect) error {
 	lister, ok := conn.SchemaWriter().(resetObjectLister)
 	if !ok {
-		return fmt.Errorf("the %s writer cannot list what its reset drops", platform.YDB)
+		return fmt.Errorf("the %s writer cannot list what its reset drops", engine.Name)
 	}
 	objects, err := lister.ResetObjects(ctx, dbreset.Scope{})
 	if err != nil {
@@ -108,25 +110,26 @@ func ydbDevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error
 	return &NotCleanError{Reason: fmt.Sprintf("found %s %q in schema %q", object.Kind, object.Name, object.Schema)}
 }
 
-// StartsFromDeclaredState reports whether conn is a PostgreSQL dev database an
-// atlas.hcl docker block provisioned, whose state after the image and the
-// block's baseline is its starting point (stokaro/ptah#4056). Such a database
-// is not judged clean: whatever the starting point holds is the environment
-// the run works in, and every reset returns the database to it. The claim asks
-// the same question, so a database this lets through is one the claim records
+// StartsFromDeclaredState reports whether conn is a dev database an atlas.hcl
+// docker block provisioned, whose state after the image and the block's
+// baseline is its starting point (stokaro/ptah#4056), on an engine whose
+// descriptor states CleanCheck.StartingPoint, PostgreSQL's. Such a database is
+// not judged clean: whatever the starting point holds is the environment the
+// run works in, and every reset returns the database to it. The claim asks the
+// same question, so a database this lets through is one the claim records
 // whole.
 //
 // The block's semantics come from the report it answers, ariga/atlas#3807, and
 // from the block's name; the community binary does not run the block. A dev
 // URL that names no block, a `docker+postgres://` image included, keeps the
-// binary's rule, and so does a MySQL or MariaDB block, whose reset has no
-// starting point to return to.
+// binary's rule, and so does a block on an engine whose reset has no starting
+// point to return to, such as MySQL or MariaDB.
 func StartsFromDeclaredState(conn *dbschema.DatabaseConnection) bool {
 	if conn == nil {
 		return false
 	}
 	info := conn.Info()
-	return platform.NormalizeDialect(info.Dialect) == platform.Postgres && devdocker.StartingPointDeclared(info.URL)
+	return described(info.Dialect).CleanCheck.StartingPoint && devdocker.StartingPointDeclared(info.URL)
 }
 
 // resetObjectLister is the writer that says what a reset of its database
@@ -224,41 +227,18 @@ func keptDefaultPrivileges(schema string) dbreset.DefaultPrivilegeScope {
 }
 
 // GovernsDev reports whether a dev database of the dialect is checked before
-// it is reset.
+// it is reset: whether its descriptor states CleanCheck.Dev.
 //
 // It is wider than [Governs], which is the `migrate apply` gate and covers only
 // the dialects that gate was measured on. A reset drops the tables of a dev
-// database on every dialect Ptah replays or rehearses on, so every one of them
-// is checked. Without the check, a CockroachDB, YugabyteDB, Spanner, SQL
-// Server or ClickHouse dev database holding a table is emptied by the reset.
-//
-//   - PostgreSQL, MySQL, MariaDB and SQLite, measured against the pinned
-//     community binary, which refuses the same databases.
-//   - CockroachDB, which that binary reaches through a `postgres://` URL and
-//     judges by the PostgreSQL rules: measured on CockroachDB 26.2 on
-//     2026-09-27, it refuses a table in the connected schema and, with no
-//     search_path, any schema but an empty public, and it accepts a view, a
-//     sequence or an empty database. YugabyteDB takes the same rules.
-//   - Spanner, SQL Server, ClickHouse and Oracle, whose URLs that binary does
-//     not open (`unknown driver`), and neither does it open `cockroachdb://`
-//     or `yugabytedb://`. There is no sentence of its to match, and the
-//     refusal uses the shape of its others.
-//   - YDB, which no Atlas edition opens either. Its dev database is a root
-//     the connection treats as its database, read through the writer; see
-//     [DevRefusal].
-//
-// Oracle is checked although no run resets an Oracle dev database: the
-// replay's lock and the rehearsal's identity check both refuse one first. The
-// check keeps a path that reaches the reset without them from emptying one.
+// database on every dialect Ptah replays or rehearses on, so every built-in
+// engine is checked. Without the check, a dev database holding a table is
+// emptied by the reset. Where the pinned community binary opens the engine,
+// the check refuses what it refuses; where it does not, there is no sentence
+// of its to match, and the refusal uses the shape of its others. Each
+// descriptor records which applies.
 func GovernsDev(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		platform.MySQL, platform.MariaDB, platform.SQLite,
-		platform.SQLServer, platform.ClickHouse, platform.Oracle, platform.YDB:
-		return true
-	default:
-		return false
-	}
+	return described(dialect).CleanCheck.Dev
 }
 
 // RealmScoped reports whether conn's URL left the run at realm scope, where
@@ -337,10 +317,11 @@ func (s Scope) DevRefusal() error {
 	if len(s.Tables) == 0 {
 		return s.droppedRefusal()
 	}
-	switch platform.NormalizeDialect(s.Dialect) {
-	case platform.SQLite:
+	engine := described(s.Dialect)
+	switch {
+	case engine.Schemas.Selection == descriptor.SchemaSelectionSingle:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q", s.Tables[0])}
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case engine.CleanCheck.ConnectedSchema:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in connected schema", s.Tables[0])}
 	default:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in schema %q", s.Tables[0], s.Schema)}
@@ -357,7 +338,7 @@ func (s Scope) droppedRefusal() error {
 	switch {
 	case object.Schema == "":
 		return &NotCleanError{Reason: fmt.Sprintf("found %s %q", object.Kind, object.Name)}
-	case s.Realm || !platform.IsPostgresFamily(s.Dialect):
+	case s.Realm || !described(s.Dialect).CleanCheck.ConnectedSchema:
 		return &NotCleanError{Reason: fmt.Sprintf("found %s %q in schema %q", object.Kind, object.Name, object.Schema)}
 	default:
 		return &NotCleanError{Reason: fmt.Sprintf("found %s %q in connected schema", object.Kind, object.Name)}
@@ -368,22 +349,24 @@ func (s Scope) droppedRefusal() error {
 // schema. Schemas is in byte order, which is the order the binary names them
 // in.
 //
-// On a whole MySQL or MariaDB server every user database refuses, even an
-// empty one and even one named atlas_schema_revisions: measured on MySQL
-// 8.4.11 and MariaDB 11.8.9, the binary refuses `found schema "A2"` for a dev
-// server holding b1, A2 and c3 (stokaro/ptah#3789).
+// On a whole server every user database refuses, even an empty one and even
+// one named atlas_schema_revisions: measured on MySQL 8.4.11 and MariaDB
+// 11.8.9, the binary refuses `found schema "A2"` for a dev server holding b1,
+// A2 and c3 (stokaro/ptah#3789). In a database of schemas, the engine's
+// default schema is tolerated while it is the only one, PostgreSQL's public.
 func (s Scope) devRealmRefusal() error {
+	defaultSchema := described(s.Dialect).DefaultSchema
 	switch {
 	case len(s.Schemas) == 0:
 		return nil
-	case isMySQLFamily(s.Dialect):
+	case wholeServer(s.Dialect):
 		return &NotCleanError{Reason: fmt.Sprintf("found schema %q", s.Schemas[0].Name)}
-	case len(s.Schemas) == 1 && s.Schemas[0].Name == postgresDefaultSchema:
+	case len(s.Schemas) == 1 && s.Schemas[0].Name == defaultSchema:
 		if len(s.Schemas[0].Tables) == 0 {
 			return nil
 		}
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in schema %q",
-			s.Schemas[0].Tables[0], postgresDefaultSchema)}
+			s.Schemas[0].Tables[0], defaultSchema)}
 	default:
 		return &NotCleanError{Reason: fmt.Sprintf("found schema %q", s.Schemas[0].Name)}
 	}

@@ -38,6 +38,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/mysqlsystemdb"
@@ -46,16 +47,6 @@ import (
 )
 
 const (
-	// postgresDefaultSchema is the one schema a realm-scope run tolerates
-	// finding, and only while it holds no table.
-	//
-	// It is the literal name rather than the session's schema. Measured on
-	// PostgreSQL 17 with `ALTER DATABASE … SET search_path TO zapp` and both
-	// `public` and `zapp` empty, the pinned binary refuses `found schema
-	// "zapp"` — the schema the session lands in is an offender and the one it
-	// does not is not.
-	postgresDefaultSchema = "public"
-
 	// realmRevisionsSchema is where a realm-scope run keeps its revision table
 	// when --revisions-schema names nothing.
 	//
@@ -68,26 +59,26 @@ const (
 	realmRevisionsSchema = "atlas_schema_revisions"
 )
 
-// Governs reports whether the not-clean gate is enforced for a dialect.
+// Governs reports whether the not-clean gate is enforced for a dialect: whether
+// its descriptor states CleanCheck.Adoption.
 //
-// The list is the set of dialects the gate was measured on, not the set the
-// catalog probes below could be written for. A dialect answers "no" until
-// somebody runs the pinned binary against it and records what it does, because
-// the cost of guessing is asymmetric: guessing "enforce" turns every existing
-// run on that dialect into a refusal the other implementation may never make,
-// which is the drop-in regression the compatibility policy forbids outright.
-//
-// Measured 2026-08-07: PostgreSQL 17, MySQL 9.7, SQLite. MariaDB is included
-// because it reads the same information_schema through the same code path as
-// MySQL, and is called out as inferred in the pull request rather than passed
-// off as measured.
+// The set is the dialects the gate was measured on, not the set the catalog
+// probes below could be written for, and each descriptor records the
+// measurement. A dialect answers "no" until somebody runs the pinned binary
+// against it and records what it does, because the cost of guessing is
+// asymmetric: guessing "enforce" turns every existing run on that dialect into
+// a refusal the other implementation may never make, which is the drop-in
+// regression the compatibility policy forbids outright.
 func Governs(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLite:
-		return true
-	default:
-		return false
-	}
+	return described(dialect).CleanCheck.Adoption
+}
+
+// described returns the descriptor of the dialect a spelling selects, and the
+// zero descriptor, which no check governs, for one the process registry does
+// not know.
+func described(dialect string) descriptor.Dialect {
+	found, _ := platform.Lookup(dialect)
+	return found
 }
 
 // Scope is the set of objects the gate reasons about, plus everything the
@@ -189,7 +180,8 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs fun
 	if realmScoped(dialect, conn.Info().URL, scope.Schema) {
 		return inspectRealm(ctx, conn, scope)
 	}
-	query, args := tableProbe(dialect, conn.Info().Capabilities, scope.Schema)
+	engine := described(dialect)
+	query, args := tableProbe(engine, conn.Info().Capabilities, scope.Schema)
 	if query == "" {
 		// governs said yes and this function has no probe for it. Reporting a
 		// clean database would be a gate that passes without running, so it
@@ -203,7 +195,7 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs fun
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
-		schema, name, scanErr := scanProbeRow(dialect, rows)
+		schema, name, scanErr := scanProbeRow(engine.Schemas.Selection, rows)
 		if scanErr != nil {
 			return Scope{}, fmt.Errorf("clean check: %w", scanErr)
 		}
@@ -220,10 +212,11 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs fun
 	if err := rows.Err(); err != nil {
 		return Scope{}, fmt.Errorf("clean check: %w", err)
 	}
-	// SQLite keeps the catalog's order, which the probe reads: a dev refusal
-	// names the first table in it. A `migrate apply` refusal counts SQLite's
-	// tables and names none, so the order is not an operand there.
-	if platform.NormalizeDialect(dialect) != platform.SQLite {
+	// An engine whose descriptor states CleanCheck.CatalogOrder keeps the
+	// catalog's order, which the probe reads: a dev refusal names the first
+	// table in it. SQLite's is the one, and its `migrate apply` refusal counts
+	// the tables and names none, so the order is not an operand there.
+	if !engine.CleanCheck.CatalogOrder {
 		slices.Sort(scope.Tables)
 	}
 	return scope, nil
@@ -274,15 +267,12 @@ func inspectRealm(
 	conn *dbschema.DatabaseConnection,
 	scope Scope,
 ) (Scope, error) {
-	query := realmProbe(scope.Dialect, conn.Info().Capabilities)
+	query := realmProbe(described(scope.Dialect), scope.Dialect, conn.Info().Capabilities)
 	if query == "" {
 		// The caller's dialect predicate said yes, the connection selected
 		// realm scope, and this function has no probe for it. Reporting a
 		// clean database would be a gate that passes without running, so it
-		// fails loudly instead. The
-		// shapes this branch would need on MySQL are measured and recorded on
-		// realmProbe; the connection layer refuses that URL first, so writing
-		// the probe would be writing code nothing can reach.
+		// fails loudly instead.
 		return Scope{}, fmt.Errorf(
 			"clean check has no realm-scope catalog probe for dialect %q", scope.Dialect,
 		)
@@ -367,7 +357,7 @@ func (s Scope) Refusal() error {
 	if unmanaged == 0 {
 		return nil
 	}
-	if platform.NormalizeDialect(s.Dialect) == platform.SQLite {
+	if described(s.Dialect).CleanCheck.AdoptionCounts {
 		return notClean("found multiple tables: %d", len(candidates))
 	}
 	return notClean("found table %q in schema %q", candidates[0], s.Schema)
@@ -385,11 +375,12 @@ func (s Scope) Refusal() error {
 //
 // A schema fails unless one of two conditions holds:
 //
-//   - it is `public` and holds no table. Measured: an empty database applies at
-//     exit 0, while an EMPTY `extra` beside it refuses. `public` is tolerated by
-//     NAME and not because the session lands there — with the database default
-//     search_path moved to `zapp` and both `public` and `zapp` empty, the binary
-//     refuses on "zapp" and still says nothing about "public".
+//   - it is the engine's default schema, `public`, and holds no table.
+//     Measured: an empty database applies at exit 0, while an EMPTY `extra`
+//     beside it refuses. `public` is tolerated by NAME and not because the
+//     session lands there — with `ALTER DATABASE … SET search_path TO zapp`
+//     and both `public` and `zapp` empty, the binary refuses on "zapp" and
+//     still says nothing about "public".
 //   - it is this run's bookkeeping schema and holds nothing but the revision
 //     table. More than that reports a COUNT rather than a name, and the count
 //     includes the revision table the binary creates before it looks: measured,
@@ -400,14 +391,21 @@ func (s Scope) Refusal() error {
 // same reason the schema-scope count is: a dry run on this implementation never
 // creates that table, and without the addition --dry-run would report one table
 // fewer than a real apply against the same database.
+//
+// The rule an engine takes is its schema selection's: a database-selecting
+// engine's realm is a whole server, judged by [Scope.serverRefusal], and a
+// search-path engine's is a database of schemas, judged here. [Scope.Refusal]
+// asks only about the dialects [Governs] covers, so PostgreSQL is the one
+// search-path engine that reaches this rule.
 func (s Scope) realmRefusal() error {
-	if isMySQLFamily(s.Dialect) {
+	engine := described(s.Dialect)
+	switch engine.Schemas.Selection {
+	case descriptor.SchemaSelectionDatabase:
 		return s.serverRefusal()
-	}
-	if platform.NormalizeDialect(s.Dialect) != platform.Postgres {
-		// Only PostgreSQL reaches realm scope through Inspect, and only its
-		// shapes are measured. A Scope built by hand for another dialect gets a
-		// loud error rather than a clean bill of health.
+	case descriptor.SchemaSelectionSearchPath:
+	default:
+		// A Scope built by hand for a dialect whose URL selects no realm gets
+		// a loud error rather than a clean bill of health.
 		return fmt.Errorf("migrate apply clean check has no realm-scope rule for dialect %q", s.Dialect)
 	}
 	for _, schema := range s.Schemas {
@@ -418,7 +416,7 @@ func (s Scope) realmRefusal() error {
 			}
 			continue
 		}
-		if schema.Name == postgresDefaultSchema && len(schema.Tables) == 0 {
+		if schema.Name == engine.DefaultSchema && len(schema.Tables) == 0 {
 			continue
 		}
 		return notClean("found schema %q", schema.Name)
@@ -460,14 +458,11 @@ func (s Scope) serverRefusal() error {
 	return nil
 }
 
-// isMySQLFamily reports whether dialect is MySQL or MariaDB.
-func isMySQLFamily(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
+// wholeServer reports whether a realm-scope scope of dialect is a whole
+// server, whose schemas are its user databases: the realm of an engine whose
+// URL selects a database.
+func wholeServer(dialect string) bool {
+	return described(dialect).Schemas.Selection == descriptor.SchemaSelectionDatabase
 }
 
 // notClean wraps a measured reason in the sentence the pinned binary prints
@@ -501,15 +496,16 @@ func tablesWithRevisionTable(tables []string, revisionTable string) []string {
 // revisionTableInScope reports the revisions table name to exempt, or "" when
 // this run keeps its revisions outside the connected schema.
 //
-// SQLite has no schemas, so --revisions-schema cannot move anything there and
-// the table is always in scope.
+// An engine with one namespace, such as SQLite, has no schema
+// --revisions-schema could move anything to, so the table is always in scope
+// there.
 func revisionTableInScope(dialect, connectedSchema, revisionTable, revisionsSchema string) string {
 	revisionTable = strings.TrimSpace(revisionTable)
 	if revisionTable == "" {
 		return ""
 	}
 	revisionsSchema = strings.TrimSpace(revisionsSchema)
-	if revisionsSchema == "" || platform.NormalizeDialect(dialect) == platform.SQLite {
+	if revisionsSchema == "" || described(dialect).Schemas.Selection == descriptor.SchemaSelectionSingle {
 		return revisionTable
 	}
 	if strings.EqualFold(revisionsSchema, connectedSchema) {
@@ -524,8 +520,11 @@ type probeRow interface {
 	Scan(dest ...any) error
 }
 
-func scanProbeRow(dialect string, row probeRow) (schema, name string, err error) {
-	if platform.NormalizeDialect(dialect) == platform.SQLite {
+// scanProbeRow reads one row of a table probe: the table's schema and name, or
+// its name alone on an engine with one namespace, whose probe selects no
+// schema.
+func scanProbeRow(selection descriptor.SchemaSelection, row probeRow) (schema, name string, err error) {
+	if selection == descriptor.SchemaSelectionSingle {
 		if err := row.Scan(&name); err != nil {
 			return "", "", err
 		}
@@ -544,33 +543,25 @@ func scanProbeRow(dialect string, row probeRow) (schema, name string, err error)
 // session defaults it rather than to a literal, so a URL that pins no schema is
 // asked about the schema its statements would really land in.
 //
-// An unrecognized dialect returns an empty query rather than falling through to
-// another dialect's catalog; Inspect turns that into an error.
-func tableProbe(dialect string, caps capability.Capabilities, schema string) (string, []any) {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLite:
-		// The ESCAPE clause matters: in LIKE, `_` matches any single
-		// character, so an unescaped 'sqlite_%' would also hide a user table
-		// named `sqliteXthing` and under-report the database.
-		//
-		// rowid is the catalog's order, the order the tables were created in,
-		// and the first table in it is the one the pinned binary names when it
-		// refuses a dev database: with `zzz_t` created before `aaa_t` it names
-		// `zzz_t`.
-		return `
-			SELECT name
-			FROM sqlite_master
-			WHERE type = 'table'
-			  AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
-			ORDER BY rowid`, nil
-	case platform.MySQL, platform.MariaDB:
+// An engine whose URL selects a schema is read through the catalog its
+// selection names, as [schemaselection.RealmSchemas] reads its realm: a
+// search-path engine through PostgreSQL's pg_class, and a database-selecting
+// one through MySQL's information_schema. Each binds the connected schema.
+// Every other engine states its query as CleanCheck.Tables, which binds
+// nothing.
+//
+// An engine that states no query returns an empty one rather than falling
+// through to another dialect's catalog; Inspect turns that into an error.
+func tableProbe(engine descriptor.Dialect, caps capability.Capabilities, schema string) (string, []any) {
+	switch engine.Schemas.Selection {
+	case descriptor.SchemaSelectionDatabase:
 		return `
 			SELECT table_schema, table_name
 			FROM information_schema.tables
 			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
 			  AND table_type = 'BASE TABLE'
 			ORDER BY table_name`, []any{schema}
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case descriptor.SchemaSelectionSearchPath:
 		// relkind 'r' and 'p' are ordinary and partitioned tables. Views,
 		// sequences, materialized views and indexes are excluded on purpose:
 		// measured on PostgreSQL 17, a database holding only a view or only a
@@ -584,44 +575,8 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 			  AND c.relkind IN ('r', 'p')
 			  AND ` + postgresUserTable(caps) + `
 			ORDER BY c.relname`, []any{schema}
-	case platform.SQLServer:
-		// A replay empties every user schema of a SQL Server dev database,
-		// so the probe reads them all and returns the first table in byte
-		// order. A rehearsal empties only the connected schema and is refused
-		// over a table elsewhere too, since one claim serves both.
-		// is_ms_shipped leaves the server's own out.
-		return `
-			SELECT TOP 1 s.name, t.name
-			FROM sys.tables t
-			JOIN sys.schemas s ON s.schema_id = t.schema_id
-			WHERE t.is_ms_shipped = 0
-			ORDER BY s.name COLLATE Latin1_General_BIN2, t.name COLLATE Latin1_General_BIN2`, nil
-	case platform.ClickHouse:
-		// A view, a dictionary and the storage a materialized view keeps in
-		// an `.inner` table are not tables a reset would lose data from.
-		return `
-			SELECT database, name
-			FROM system.tables
-			WHERE database = currentDatabase()
-			  AND is_temporary = 0
-			  AND engine NOT IN ('View', 'MaterializedView', 'LiveView', 'WindowView', 'Dictionary')
-			  AND NOT startsWith(name, '.inner')
-			ORDER BY name`, nil
-	case platform.Oracle:
-		// The tables the Oracle reset drops: every table the connected account
-		// owns that Oracle did not generate and that is not already in the
-		// recycle bin. The list is the reset's own, so an account that owns
-		// tables Oracle maintains, such as SYSTEM, is refused rather than
-		// emptied.
-		return `
-			SELECT USER, o.object_name
-			FROM user_objects o
-			WHERE o.object_type = 'TABLE'
-			  AND o.object_name NOT LIKE 'BIN$%'
-			  AND o.generated = 'N'
-			ORDER BY o.object_name`, nil
 	default:
-		return "", nil
+		return engine.CleanCheck.Tables, nil
 	}
 }
 
@@ -633,12 +588,17 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 // the join rather than the WHERE clause for the same reason — moving it down
 // would drop exactly the empty schemas the gate exists to see.
 //
-// On MySQL and MariaDB the realm is a whole server, reached through a URL that
-// names no database, and its schemas are the user databases; see
+// The probe is the one the engine's schema selection names, as
+// [schemaselection.RealmSchemas] chooses its own. On a database-selecting
+// engine, MySQL's model, the realm is a whole server, reached through a URL
+// that names no database, and its schemas are the user databases; see
 // [mysqlsystemdb.MySQLUserDatabasesPredicate]. A view is not a table there
-// either.
-func realmProbe(dialect string, caps capability.Capabilities) string {
-	if isMySQLFamily(dialect) {
+// either. A search-path engine's realm is the schemas of one database, read
+// through PostgreSQL's catalog. An engine whose URL selects no realm has no
+// probe.
+func realmProbe(engine descriptor.Dialect, dialect string, caps capability.Capabilities) string {
+	switch engine.Schemas.Selection {
+	case descriptor.SchemaSelectionDatabase:
 		return `
 		SELECT s.SCHEMA_NAME, COALESCE(t.TABLE_NAME, '')
 		FROM information_schema.SCHEMATA s
@@ -647,8 +607,8 @@ func realmProbe(dialect string, caps capability.Capabilities) string {
 		 AND t.TABLE_TYPE = 'BASE TABLE'
 		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("s.SCHEMA_NAME") + `
 		ORDER BY s.SCHEMA_NAME, t.TABLE_NAME`
-	}
-	if !platform.IsPostgresFamily(dialect) {
+	case descriptor.SchemaSelectionSearchPath:
+	default:
 		return ""
 	}
 	// Which schemas belong to the realm is

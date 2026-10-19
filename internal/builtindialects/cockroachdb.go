@@ -196,5 +196,14 @@ func cockroachDB() descriptor.Dialect {
 				TriggerConditions: true,
 			},
 		},
+
+		// Clean checks: what internal/migrateclean reads. The pinned
+		// community binary reaches CockroachDB through a postgres:// URL and
+		// judges a dev database by the PostgreSQL rules, measured on
+		// CockroachDB 26.2 on 2026-09-27: it refuses a table in the connected
+		// schema and, with no search_path, any schema but an empty public. It
+		// does not open cockroachdb://, and its `migrate apply` gate was never
+		// measured here, so Ptah does not refuse an adoption.
+		CleanCheck: descriptor.CleanCheck{Dev: true, ConnectedSchema: true},
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -573,11 +574,13 @@ func guardRehearsalBaseline(statements []string, info catalog.ServerInfo) error 
 
 // statementExcerpt is the first line of a statement that is not a comment,
 // cut to a length an error message can carry, so a refusal names what it
-// refused. A YDB `--!` line is a translation setting rather than a comment,
-// and the guard refuses it, so it is the excerpt. A statement holding only
-// comments is excerpted by its first line.
+// refused. A `--!` line of a text read with the YQL lexer, YDB's, is a
+// translation setting rather than a comment, and the guard refuses it, so it is
+// the excerpt. A statement holding only comments is excerpted by its first
+// line.
 func statementExcerpt(statement, dialect string) string {
 	const limit = 80
+	settings := described(dialect).Lexical.Lexer == descriptor.LexerYQL
 	excerpt := ""
 	for line := range strings.SplitSeq(statement, "\n") {
 		line = strings.TrimSpace(line)
@@ -587,7 +590,7 @@ func statementExcerpt(statement, dialect string) string {
 		if excerpt == "" {
 			excerpt = line
 		}
-		setting := platform.NormalizeDialect(dialect) == platform.YDB && strings.HasPrefix(line, "--!")
+		setting := settings && strings.HasPrefix(line, "--!")
 		if !strings.HasPrefix(line, "--") || setting {
 			excerpt = line
 			break
@@ -616,7 +619,7 @@ func nameColumnSequencesAsTarget(
 	current *catalog.Database,
 ) error {
 	dialect := devConn.Info().Dialect
-	if current == nil || !platform.IsPostgresFamily(dialect) {
+	if current == nil || !described(dialect).Conversion.OwnedSequences {
 		return nil
 	}
 	want := make(map[string]string)
@@ -670,15 +673,17 @@ func defaultSchemaOf(info catalog.ServerInfo) string {
 	return dialectDefaultSchema(info.Dialect)
 }
 
-// normalizeBaselineSerialColumns rewrites introspected PostgreSQL-family
-// SERIAL columns back to their SERIAL spelling for baseline recreation.
+// normalizeBaselineSerialColumns rewrites introspected SERIAL columns back to
+// their SERIAL spelling for baseline recreation, on an engine whose serial
+// column owns the sequence that fills it, as the PostgreSQL family's
+// descriptors state with Conversion.OwnedSequences.
 // Introspection deliberately omits the implicit sequences owned by SERIAL
 // columns, so replaying the raw "integer DEFAULT nextval('...')" form on an
 // empty dev database would reference a sequence that never gets created.
 // Columns whose nextval default names an explicitly introspected sequence
 // keep their default: that sequence is part of the baseline and is created.
 func normalizeBaselineSerialColumns(baseline *schemamodel.Database, dialect string) {
-	if !platform.IsPostgresFamily(dialect) {
+	if !described(dialect).Conversion.OwnedSequences {
 		return
 	}
 	sequences := make(map[string]bool, len(baseline.Sequences))

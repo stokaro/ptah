@@ -175,6 +175,16 @@ END`,
 			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
 			Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineTransactSQL},
 		},
+
+		// Clean checks: what internal/migrateclean reads. The pinned
+		// community binary does not open a SQL Server URL, so a dev database
+		// is refused in the shape of its other refusals.
+		CleanCheck: descriptor.CleanCheck{Dev: true, Tables: sqlServerCleanTables},
+		// What a schema qualifier on a planned migration, as `migrate diff
+		// --qualifier` writes one, would need on SQL Server.
+		QualifierRefusal: "SQL Server has schemas and Ptah renders into one (dbo by default), but the qualifier " +
+			"has never been measured against a server there; enabling it needs a live round trip showing that a " +
+			"rewritten plan applies and reads back under the qualified name",
 	}
 }
 

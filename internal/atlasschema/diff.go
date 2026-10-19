@@ -11,7 +11,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -1076,8 +1075,11 @@ func sourceDatabaseURL(devURL string, sets ...atlassource.Set) string {
 // Two file sources carry no live catalog root. The explicit dev URL still
 // supplies the path needed to render database permissions; retain it only
 // as comparison context, never as part of the portable desired schema.
+//
+// The engines this applies to name objects by absolute paths under a database
+// root, as their descriptors state with Conversion.DatabaseRootPaths: YDB's.
 func setYDBDiffRoot(dialect, devURL string, current *catalog.Database) error {
-	if dialect != platform.YDB || current.DatabasePath != "" || devURL == "" {
+	if !described(dialect).Conversion.DatabaseRootPaths || current.DatabasePath != "" || devURL == "" {
 		return nil
 	}
 	root, err := schemafile.YDBSourceRoot(devURL)

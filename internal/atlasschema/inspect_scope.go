@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/schemascope"
 )
@@ -117,12 +116,11 @@ func connectedSchemaName(info catalog.ServerInfo) string {
 // did not describe, so a schema-only document is not thinner than the one the
 // pinned binary prints.
 //
-// MySQL-family schemas carry a character set and a collation, and the pinned
-// binary prints both for an empty database: measured on MySQL 9.7,
-// `{"name":"…","charset":"utf8mb4","collate":"utf8mb4_0900_ai_ci"}`. Nothing
-// else reaches this: the PostgreSQL-family reader fills its own rows including
-// the comment, and SQLite's single namespace carries no attributes on either
-// implementation.
+// A schema carries a character set and a collation on an engine whose
+// descriptor states SchemaAttributesQuery, the MySQL family's, and the pinned
+// binary prints both for an empty database. Nothing else reaches this: the
+// PostgreSQL-family reader fills its own rows including the comment, and
+// SQLite's single namespace carries no attributes on either implementation.
 func inspectSchemaAttributes(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -132,9 +130,8 @@ func inspectSchemaAttributes(
 		return nil
 	}
 	info := conn.Info()
-	switch platform.NormalizeDialect(info.Dialect) {
-	case platform.MySQL, platform.MariaDB:
-	default:
+	query := described(info.Dialect).SchemaAttributesQuery
+	if query == "" {
 		return nil
 	}
 	for i := range schema.Schemas {
@@ -143,10 +140,7 @@ func inspectSchemaAttributes(
 			continue
 		}
 		var charset, collate string
-		err := conn.QueryRowContext(ctx, `
-			SELECT default_character_set_name, default_collation_name
-			FROM information_schema.schemata
-			WHERE schema_name = ?`, row.Name).Scan(&charset, &collate)
+		err := conn.QueryRowContext(ctx, query, row.Name).Scan(&charset, &collate)
 		if errors.Is(err, sql.ErrNoRows) {
 			// A schema that is not in the catalog has no attributes to carry.
 			// Inspection is read-only, so it describes what it found rather

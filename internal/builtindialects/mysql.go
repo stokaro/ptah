@@ -259,6 +259,15 @@ func mysql() descriptor.Dialect {
 				TriggerStatementBody: true,
 			},
 		},
+
+		// Clean checks: what internal/migrateclean reads. The pinned
+		// community binary refuses to adopt a database that holds a table,
+		// measured on MySQL 9.7 on 2026-08-07, and refuses a dev database
+		// that holds one, measured on MySQL 8.4 on 2026-09-26.
+		CleanCheck: descriptor.CleanCheck{Adoption: true, Dev: true},
+		// A database carries a character set and a collation, which a schema
+		// read fills in where the reader did not describe them.
+		SchemaAttributesQuery: mysqlSchemaAttributes,
 	}
 }
 

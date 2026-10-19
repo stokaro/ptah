@@ -166,6 +166,16 @@ func clickHouse() descriptor.Dialect {
 			Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 		},
+
+		// Clean checks: what internal/migrateclean reads. The pinned
+		// community binary does not open a ClickHouse URL, so a dev database
+		// is refused in the shape of its other refusals.
+		CleanCheck: descriptor.CleanCheck{Dev: true, Tables: clickHouseCleanTables},
+		// What a schema qualifier on a planned migration, as `migrate diff
+		// --qualifier` writes one, would need on ClickHouse.
+		QualifierRefusal: "ClickHouse namespaces objects by database rather than by schema within a database, so " +
+			"a qualifier is a different kind of name here; enabling it needs that difference settled first, not a " +
+			"dialect added to a list",
 	}
 }
 

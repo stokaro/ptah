@@ -157,6 +157,16 @@ func spanner() descriptor.Dialect {
 				TriggerConditions: true,
 			},
 		},
+
+		// Clean checks: what internal/migrateclean reads. The pinned
+		// community binary does not open a Spanner URL (`unknown driver`), so
+		// a dev database is refused in the shape of the PostgreSQL refusals.
+		CleanCheck: descriptor.CleanCheck{Dev: true, ConnectedSchema: true},
+
+		// What a schema qualifier on a planned migration, as `migrate diff
+		// --qualifier` writes one, would need on Spanner.
+		QualifierRefusal: "Spanner renders through the PostgreSQL path but has no live coverage at all " +
+			"(stokaro/ptah#942), so a qualified plan could not be shown to apply",
 	}
 }
 

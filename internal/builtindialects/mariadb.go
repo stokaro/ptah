@@ -247,5 +247,14 @@ func mariaDB() descriptor.Dialect {
 				TriggerStatementBody: true,
 			},
 		},
+
+		// Clean checks: what internal/migrateclean reads. MariaDB's adoption
+		// is refused because it reads the same information_schema through
+		// the same code path as MySQL, which is inferred rather than
+		// measured. The pinned community binary refuses a dev database that
+		// holds a table, measured on MariaDB 11.8 on 2026-09-26.
+		CleanCheck: descriptor.CleanCheck{Adoption: true, Dev: true},
+		// A database carries a character set and a collation, as on MySQL.
+		SchemaAttributesQuery: mysqlSchemaAttributes,
 	}
 }

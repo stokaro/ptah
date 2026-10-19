@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlassource"
 )
@@ -46,14 +46,14 @@ func (e *OutsideDatabaseError) Error() string {
 }
 
 // refuseOutsideDatabase answers an [OutsideDatabaseError] for the first object
-// of desired that a one-database MySQL-family scope cannot hold, and nil for
-// every other dialect, a whole server, and a document that names only the
-// database it is limited to. A name the document leaves unqualified is in the
-// one database, and so is one qualified with its name.
+// of desired that a one-database scope cannot hold, and nil for every other
+// dialect, a whole server, and a document that names only the database it is
+// limited to. A one-database scope is a URL that names a database on an
+// engine whose URL selects a database as its schema, the MySQL family's. A
+// name the document leaves unqualified is in the one database, and so is one
+// qualified with its name.
 func refuseOutsideDatabase(dialect, limit, side string, desired *schemamodel.Database) error {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-	default:
+	if described(dialect).Schemas.Selection != descriptor.SchemaSelectionDatabase {
 		return nil
 	}
 	if limit == "" || desired == nil {
