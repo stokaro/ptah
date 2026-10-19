@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext/yql"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlreach"
 )
 
@@ -35,6 +36,9 @@ func TestRegister_ReadsTheTextOfAnEngineByTheLexerItNames(t *testing.T) {
 	}
 	c := qt.New(t)
 	c.Assert(dialectlexer.Options("ownlexdb"), qt.DeepEquals, lexer.Options{StandardStrings: true})
+	name, read := sqlident.ReadName("ownlexdb", "`tick\\`name`")
+	c.Assert(read, qt.IsFalse)
+	c.Assert(name, qt.Equals, "")
 	c.Assert(sqlutil.SplitSQLStatementsForDialect(script, "ownlexdb"), qt.DeepEquals, []string{"SELECT @@a", "b@@", "SELECT 2"})
 	finding, found, err := sqlreach.Scan(attach, "ownlexdb")
 	c.Assert(err, qt.IsNil)
@@ -47,6 +51,14 @@ func TestRegister_ReadsTheTextOfAnEngineByTheLexerItNames(t *testing.T) {
 	c.Assert(platform.Register(engine), qt.IsNil)
 
 	c.Assert(dialectlexer.Options("ownlexdb"), qt.DeepEquals, lexer.Options{Scanner: yql.Scanner{}})
+	// A lexer service does not grant path naming to an engine that states none.
+	c.Assert(sqlident.NamesArePaths("ownlexdb"), qt.IsFalse)
+	name, read = sqlident.ReadName("ownlexdb", "`tick\\`name`")
+	c.Assert(read, qt.IsFalse)
+	c.Assert(name, qt.Equals, "")
+	name, read = sqlident.ReadName("ydb", "`tick\\`name`")
+	c.Assert(read, qt.IsTrue)
+	c.Assert(name, qt.Equals, "tick`name")
 	c.Assert(sqlutil.SplitSQLStatementsForDialect(script, "ownlexdb"), qt.DeepEquals, []string{"SELECT @@a;b@@", "SELECT 2"})
 	finding, found, err = sqlreach.Scan(attach, "ownlexdb")
 	c.Assert(err, qt.IsNil)

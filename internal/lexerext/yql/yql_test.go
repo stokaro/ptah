@@ -366,6 +366,7 @@ func TestStringValue_HappyPath(t *testing.T) {
 		{name: "two hex digits and no more", literal: `"\x414"u`, want: `A4`},
 		{name: "a question mark", literal: `"\?"u`, want: `?`},
 		{name: "a two-letter suffix", literal: `'x'Pt`, want: `x`},
+		{name: "a varchar suffix", literal: `'x'Pv`, want: `x`},
 		{name: "a multiline literal", literal: "@@a;\nb@@", want: "a;\nb"},
 		{name: "four at signs stand for two", literal: `@@a@@@@b@@`, want: `a@@b`},
 		{name: "a trailing at sign", literal: `@@c@@@`, want: `c@`},
@@ -392,9 +393,10 @@ func TestStringValue_FailurePath(t *testing.T) {
 		name    string
 		literal string
 	}{
-		// Each of these four answered "Failed to parse string literal".
+		// These invalid escapes and code points fail string-literal parsing.
 		{name: "a short octal escape", literal: `"\01x"`},
 		{name: "a short hex escape", literal: `"\x4"`},
+		{name: "a hex escape with one digit and a non-hex character", literal: `"\xAz"`},
 		{name: "a surrogate", literal: `"\uD800"`},
 		{name: "a code point past the last", literal: `"\U00110000"`},
 		{name: "an unterminated literal", literal: `'a\'`},
