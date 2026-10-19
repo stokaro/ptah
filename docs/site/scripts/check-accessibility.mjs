@@ -27,10 +27,20 @@ const viewports = [
 // every dark color the design introduced was unmeasured while the code and the
 // README said otherwise (stokaro/ptah#2930).
 const colorSchemes = ['light', 'dark'];
+// Both shortcut hints. Starlight's search button shows "Ctrl K", or the
+// command key on Apple platforms, chosen by navigator.platform, so a run
+// measures only the hint of the host it runs on. The two read differently to
+// label-content-name-mismatch, which drops the command key symbol and compares
+// "Ctrl" as text, so a mismatch in one hint passes on a host that shows the
+// other.
+const platforms = [
+  { name: 'ctrl', navigatorPlatform: 'Linux x86_64' },
+  { name: 'command', navigatorPlatform: 'MacIntel' },
+];
 
-function formatViolation(route, viewport, scheme, violation) {
+function formatViolation(route, viewport, scheme, platform, violation) {
   const targets = violation.nodes.slice(0, 3).map((node) => node.target.join(' ')).join(', ');
-  return `${route} [${viewport}, ${scheme}] ${violation.id} (${violation.impact ?? 'unknown'}): ${targets}`;
+  return `${route} [${viewport}, ${scheme}, ${platform}] ${violation.id} (${violation.impact ?? 'unknown'}): ${targets}`;
 }
 
 // Expressive Code makes a code block that scrolls sideways focusable from the
@@ -149,17 +159,23 @@ async function main() {
   const browser = await chromium.launch();
   const problems = [];
   try {
-    for (const scheme of colorSchemes) {
-      for (const viewport of viewports) {
-        const context = await browser.newContext({ viewport, colorScheme: scheme });
-        const page = await context.newPage();
-        for (const route of routes) {
-          await page.goto(`${origin}${built.base}${route}`, { waitUntil: 'load' });
-          await codeBlocksSettled(page);
-          const violations = await axeViolations(page);
-          problems.push(...violations.map((violation) => formatViolation(route, viewport.name, scheme, violation)));
+    for (const platform of platforms) {
+      for (const scheme of colorSchemes) {
+        for (const viewport of viewports) {
+          const context = await browser.newContext({ viewport, colorScheme: scheme });
+          await context.addInitScript((value) => {
+            Object.defineProperty(Navigator.prototype, 'platform', { get: () => value });
+          }, platform.navigatorPlatform);
+          const page = await context.newPage();
+          for (const route of routes) {
+            await page.goto(`${origin}${built.base}${route}`, { waitUntil: 'load' });
+            await codeBlocksSettled(page);
+            const violations = await axeViolations(page);
+            problems.push(...violations.map((violation) =>
+              formatViolation(route, viewport.name, scheme, platform.name, violation)));
+          }
+          await context.close();
         }
-        await context.close();
       }
     }
 
@@ -179,7 +195,8 @@ async function main() {
   }
   console.log(
     `check-accessibility.mjs: OK (${routes.length} routes x ${viewports.length} viewports x ` +
-    `${colorSchemes.join(' and ')} plus keyboard controls)`,
+    `${colorSchemes.join(' and ')} x ${platforms.map((platform) => platform.name).join(' and ')} shortcut hints ` +
+    'plus keyboard controls)',
   );
 }
 
