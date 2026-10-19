@@ -2390,6 +2390,11 @@ of its databases, so Ptah does not tell databases apart by their URLs; the
 realm keeps the dev database apart from the target on either server. `ptah migrations test` and `ptah schema test` run their
 cases in one realm, and a case marked `parallel` in a realm of its own.
 
+When cleanup drops a row table listed by the scheme service, it waits up to
+ten seconds if the SQL service reports that the path is not visible. A replica
+can appear in the listing before SQL can drop it. The caller can cancel the
+wait, and a persistent refusal still fails cleanup.
+
 Creating a realm needs the `ydb.granular.create_directory` right on the
 database, and removing it needs `ydb.granular.remove_schema`. A run that is
 killed before it removes its realm leaves `ptah_dev/<name>` behind; remove it
