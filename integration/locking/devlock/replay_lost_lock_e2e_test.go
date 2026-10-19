@@ -17,7 +17,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/clirun"
-	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/devclean"
 )
@@ -64,7 +64,7 @@ func TestMigrationsValidateStopsWhenTheDevLockSessionEndsE2E(t *testing.T) {
 	started := time.Now()
 	c.Assert(cmd.Start(), qt.IsNil)
 
-	holder := advisoryLockHolder(c, witness, dblock.PostgresKey(lockName))
+	holder := advisoryLockHolder(c, witness, pglock.Key(lockName))
 	waitForQuery(c, witness, "SELECT pg_sleep(20)", &stderr)
 	_, err = witness.ExecContext(c.Context(), "SELECT pg_terminate_backend($1)", holder)
 	c.Assert(err, qt.IsNil)

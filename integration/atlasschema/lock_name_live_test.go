@@ -18,7 +18,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasschema"
-	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 )
 
 const namedLockLive = "atlas_migrate_execute"
@@ -78,12 +78,12 @@ func holdNamedLockSession(c *qt.C, dbURL, name string) *sql.Conn {
 	session, err := holder.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
-	_, err = session.ExecContext(ctx, "SELECT pg_advisory_lock($1)", dblock.PostgresKey(name))
+	_, err = session.ExecContext(ctx, "SELECT pg_advisory_lock($1)", pglock.Key(name))
 	c.Assert(err, qt.IsNil)
 	return session
 }
 
 func releaseNamedLockSession(c *qt.C, session *sql.Conn, name string) {
 	c.Helper()
-	_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", dblock.PostgresKey(name))
+	_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", pglock.Key(name))
 }

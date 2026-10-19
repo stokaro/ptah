@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
 )
@@ -53,7 +54,7 @@ func TestMigrator_StopsWhenItsLockSessionEnds(t *testing.T) {
 			engine:  dbtarget.PostgreSQL,
 			sleep:   "SELECT pg_sleep(20)",
 			holder:  "SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND objid::bigint = $1",
-			lockArg: dblock.PostgresKey(lostLockName),
+			lockArg: pglock.Key(lostLockName),
 			running: "SELECT COUNT(*) FROM pg_stat_activity WHERE state = 'active' AND starts_with(query, $1)",
 			kill:    "SELECT pg_terminate_backend(%d)",
 			tryLock: "SELECT pg_try_advisory_lock($1)::int",

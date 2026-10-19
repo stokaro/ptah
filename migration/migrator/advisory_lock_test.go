@@ -6,6 +6,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+
+	pglock "ptah.run/internal/dblockext/postgres"
 )
 
 func TestIsMigrationLockTimeout(t *testing.T) {
@@ -19,6 +21,12 @@ func TestIsMigrationLockTimeout(t *testing.T) {
 
 	c.Assert(IsMigrationLockTimeout(err), qt.IsTrue)
 	c.Assert(IsMigrationLockTimeout(fmt.Errorf("other error")), qt.IsFalse)
+}
+
+// postgresMigrationLockKey is the PostgreSQL advisory lock key a migration run
+// takes under name.
+func postgresMigrationLockKey(name string) int64 {
+	return pglock.Key(normalizeMigrationLockName(name))
 }
 
 func TestPostgresMigrationLockKeyStable(t *testing.T) {

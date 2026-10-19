@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/dblock"
 	"ptah.run/migration/migrator"
 )
@@ -372,7 +373,7 @@ func TestYDBLock_ExcludesASecondSession(t *testing.T) {
 			taken, err := dblock.Acquire(c.Context(), second, "ptah_ydb_lock_probe", dblock.NoWait)
 			c.Assert(err, qt.IsNil)
 			c.Assert(taken.Release(context.Background()), qt.IsNil)
-			c.Assert(directoryNames(c, c.Context(), line), qt.Contains, dblock.YDBLockNode)
+			c.Assert(directoryNames(c, c.Context(), line), qt.Contains, ydbcoordination.LockNode)
 		})
 	}
 }

@@ -16,8 +16,8 @@
 // of an engine Ptah does not ship, builds one with [NewRegistry].
 //
 // This package checks the parts of a descriptor every reader shares: names,
-// aliases, family, the placeholder style, the enumerated schema, role and lock
-// values of [Schemas], [Roles] and [Lock], the names a dialect claims in a URL
+// aliases, family, the placeholder style, the enumerated schema and role
+// values of [Schemas] and [Roles], the names a dialect claims in a URL
 // through [URLs] and [Atlas], and the values of [Grammar]. A package that
 // interprets a field checks that field's values when it reads them; see
 // core/platform/identifier.FromDescriptor.
@@ -140,9 +140,6 @@ type Dialect struct {
 	// Roles states which of the roles Ptah manages a schema read leaves out of
 	// a description, and whether that can be widened.
 	Roles Roles `json:"roles,omitzero"`
-	// Lock states how the engine holds the advisory lock that serializes
-	// schema-changing runs.
-	Lock Lock `json:"lock,omitzero"`
 	// URLValuedParameters are the query parameters of a database URL whose
 	// value is a URL of its own, such as the monitoring endpoint of a YDB
 	// cluster. A display of the URL hides the credentials inside them too.

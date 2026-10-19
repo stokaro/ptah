@@ -68,9 +68,6 @@ func mariaDB() descriptor.Dialect {
 		RevisionTable:   mysqlFamilyRevisionTable(),
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionDatabase},
-		// MariaDB refuses the negative timeout MySQL's GET_LOCK takes for a
-		// wait without limit, so a year stands in for it.
-		Lock: descriptor.Lock{Protocol: descriptor.LockGetLock, UnboundedWaitSeconds: 31_536_000},
 		// String literals process C-style backslash escapes by default, so a
 		// backslash in a value is doubled, and a boolean is the TINYINT(1) the
 		// family creates it as. Neither engine's DATETIME literal accepts an

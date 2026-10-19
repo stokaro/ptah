@@ -61,7 +61,6 @@ func sqlServer() descriptor.Dialect {
 		DDLTransactions: "transactional",
 		RevisionTable:   sqlServerRevisionTable(),
 
-		Lock: descriptor.Lock{Protocol: descriptor.LockAppLock},
 		// SQL Server refuses to convert a varchar literal to varbinary, so a
 		// binary value is a 0x constant. The reader marks only IDENTITY
 		// columns auto-increment, and those refuse an explicit value unless

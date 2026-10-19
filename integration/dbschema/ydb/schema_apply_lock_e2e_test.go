@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -32,7 +31,7 @@ type LockItem struct {
 // starts from a database no locking run has used.
 func removeLockNode(c *qt.C, line ydbLine) {
 	c.Helper()
-	if slices.Contains(directoryNames(c, context.Background(), line), dblock.YDBLockNode) {
+	if slices.Contains(directoryNames(c, context.Background(), line), ydbcoordination.LockNode) {
 		dropLockNode(c, line)
 	}
 }
@@ -68,12 +67,12 @@ func TestYDBBinary_SchemaApplyDryRunCreatesNoLockNode(t *testing.T) {
 			c.Assert(previewErr, qt.IsNil, qt.Commentf("schema apply --dry-run:\n%s", previewed))
 			c.Assert(previewed, qt.Contains, "CREATE TABLE `ptah_ydb_e2e_lock/lock_items`")
 			c.Assert(afterPreview, qt.DeepEquals, before)
-			c.Assert(before, qt.Not(qt.Contains), dblock.YDBLockNode)
+			c.Assert(before, qt.Not(qt.Contains), ydbcoordination.LockNode)
 			c.Assert(applyErr, qt.IsNil, qt.Commentf("schema apply:\n%s", applied))
-			c.Assert(afterApply, qt.Contains, dblock.YDBLockNode)
+			c.Assert(afterApply, qt.Contains, ydbcoordination.LockNode)
 			c.Assert(readErr, qt.IsNil)
-			c.Assert(live.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", dblock.YDBLockNode)).State, qt.Equals, schemaext.Complete)
-			_, found, lookupErr := live.FeatureObjects.Get(ydbcoordination.Ref("", dblock.YDBLockNode))
+			c.Assert(live.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", ydbcoordination.LockNode)).State, qt.Equals, schemaext.Complete)
+			_, found, lookupErr := live.FeatureObjects.Get(ydbcoordination.Ref("", ydbcoordination.LockNode))
 			c.Assert(lookupErr, qt.IsNil)
 			c.Assert(found, qt.IsFalse)
 		})

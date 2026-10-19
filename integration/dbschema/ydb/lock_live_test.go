@@ -14,6 +14,7 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
@@ -30,7 +31,7 @@ func dropLockNode(c *qt.C, line ydbLine) {
 	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, line.engine))
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = driver.Close(ctx) }()
-	c.Assert(driver.Coordination().DropNode(ctx, path.Join(driver.Name(), dblock.YDBLockNode)), qt.IsNil)
+	c.Assert(driver.Coordination().DropNode(ctx, path.Join(driver.Name(), ydbcoordination.LockNode)), qt.IsNil)
 }
 
 // closedWithin reports whether done closes within timeout.
@@ -151,7 +152,7 @@ func TestYDBLock_TellsAUserWhatRightIsMissing(t *testing.T) {
 			removeLockNode(c, line)
 			locker := connectAs(c, line, user, password)
 			grant := func(right string) {
-				c.Assert(admin.Writer().ExecuteSQL(c.Context(), "GRANT "+right+" ON `/local/"+dblock.YDBLockNode+"` TO "+user),
+				c.Assert(admin.Writer().ExecuteSQL(c.Context(), "GRANT "+right+" ON `/local/"+ydbcoordination.LockNode+"` TO "+user),
 					qt.IsNil)
 			}
 

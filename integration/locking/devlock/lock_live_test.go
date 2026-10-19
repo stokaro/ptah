@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
+	pglock "ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/devlock"
 )
@@ -136,7 +137,7 @@ func TestGuard_ReportsTheEndOfTheLockSessionLive(t *testing.T) {
 	c.Cleanup(func() { dbschema.CloseAndWarn(witness) })
 	var database string
 	c.Assert(witness.QueryRowContext(c.Context(), "SELECT current_database()").Scan(&database), qt.IsNil)
-	key := dblock.PostgresKey("ptah-dev-replay:postgres:" + database)
+	key := pglock.Key("ptah-dev-replay:postgres:" + database)
 
 	lock, err := devlock.Acquire(c.Context(), conn, 0)
 	c.Assert(err, qt.IsNil)

@@ -80,7 +80,6 @@ func ydb() descriptor.Dialect {
 		RevisionTable:   ydbRevisionTable(),
 
 		Roles:               descriptor.Roles{OutOfScope: descriptor.RoleScopeUserMade},
-		Lock:                descriptor.Lock{Protocol: descriptor.LockCoordinationSemaphore},
 		URLValuedParameters: []string{"monitoring"},
 		// YQL types every literal and converts few, so the owner writes each
 		// value in its column's YDB type and types the rows it compares. A

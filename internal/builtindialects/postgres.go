@@ -64,7 +64,6 @@ func postgres() descriptor.Dialect {
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSearchPath, Implicit: true},
 		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced, Widenable: true},
-		Lock:    descriptor.Lock{Protocol: descriptor.LockPostgresAdvisory},
 		// The bytea input reads a backslash as an escape and refuses a byte
 		// that is not UTF-8 (SQLSTATE 22021), so a binary value is spelled in
 		// hex digits, relying on standard_conforming_strings. A timestamp

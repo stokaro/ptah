@@ -1,4 +1,4 @@
-package dblock
+package ydb
 
 // White-box testing required: whether a YDB lock is still held is decided by a
 // watch over a coordination session and the time its last answer was asked
@@ -133,8 +133,8 @@ func TestYDBHold_HappyPath(t *testing.T) {
 			}
 			clock.advance(test.elapsed - time.Second)
 
-			c.Assert(hold.held(), qt.IsTrue)
-			c.Assert(closed(hold.lost()), qt.IsFalse)
+			c.Assert(hold.Held(), qt.IsTrue)
+			c.Assert(closed(hold.Lost()), qt.IsFalse)
 		})
 	}
 }
@@ -164,8 +164,8 @@ func TestYDBHold_FailurePath(t *testing.T) {
 			hold.check(context.Background())
 			clock.advance(test.elapsed)
 
-			c.Assert(hold.held(), qt.IsFalse)
-			c.Assert(closed(hold.lost()), qt.IsTrue)
+			c.Assert(hold.Held(), qt.IsFalse)
+			c.Assert(closed(hold.Lost()), qt.IsTrue)
 		})
 	}
 }
@@ -178,30 +178,20 @@ func TestYDBHold_EndedLeaseIsALoss(t *testing.T) {
 
 	lease.cancel()
 
-	c.Assert(hold.held(), qt.IsFalse)
-	c.Assert(closed(hold.lost()), qt.IsTrue)
+	c.Assert(hold.Held(), qt.IsFalse)
+	c.Assert(closed(hold.Lost()), qt.IsTrue)
 }
 
 // releaseWithin releases hold on ctx and reports what it answered, and
 // whether it answered within limit at all.
 func releaseWithin(ctx context.Context, hold *ydbHold, limit time.Duration) (returned bool, err error) {
 	released := make(chan error, 1)
-	go func() { released <- hold.release(ctx) }()
+	go func() { released <- hold.Release(ctx) }()
 	select {
 	case err := <-released:
 		return true, err
 	case <-time.After(limit):
 		return false, nil
-	}
-}
-
-// closesWithin reports whether ch closes within limit.
-func closesWithin(ch <-chan struct{}, limit time.Duration) bool {
-	select {
-	case <-ch:
-		return true
-	case <-time.After(limit):
-		return false
 	}
 }
 
@@ -226,9 +216,9 @@ func TestYDBHold_UnansweredCheckKeepsTheLastAnswer(t *testing.T) {
 	hold.check(context.Background())
 	clock.advance(time.Second)
 
-	c.Assert(hold.held(), qt.IsTrue)
+	c.Assert(hold.Held(), qt.IsTrue)
 	clock.advance(time.Millisecond)
-	c.Assert(hold.held(), qt.IsFalse)
+	c.Assert(hold.Held(), qt.IsFalse)
 }
 
 // A release is not a loss, and gives the lease back before it ends the
@@ -263,8 +253,8 @@ func TestYDBHold_Release(t *testing.T) {
 			c.Assert(fmt.Sprint(err), qt.Equals, test.wantErr)
 			c.Assert(closed(session.closed), qt.IsTrue)
 			clock.advance(time.Hour)
-			c.Assert(hold.held(), qt.IsTrue)
-			c.Assert(closed(hold.lost()), qt.IsFalse)
+			c.Assert(hold.Held(), qt.IsTrue)
+			c.Assert(closed(hold.Lost()), qt.IsFalse)
 		})
 	}
 }
@@ -286,36 +276,4 @@ func TestYDBHold_ReleaseOfALostLockEndsTheSession(t *testing.T) {
 	c.Assert(returned, qt.IsTrue)
 	c.Assert(err, qt.IsNil)
 	c.Assert(closed(session.closed), qt.IsTrue)
-}
-
-// A lock reports its loss through Err, Done and the context Guard returns,
-// and a lock that reports no loss answers none of them.
-func TestLock_ReportsALoss(t *testing.T) {
-	c := qt.New(t)
-	hold, session, _, _ := newFakeHold(c)
-	lock := &Lock{name: "ptah_migrate", dialect: "ydb", release: hold.release, holding: hold}
-	guarded, stop := lock.Guard(context.Background())
-	c.Cleanup(stop)
-	c.Assert(lock.Err(), qt.IsNil)
-
-	session.owners = []uint64{8}
-	hold.check(context.Background())
-
-	c.Assert(lock.Err(), qt.ErrorMatches, `advisory lock "ptah_migrate" on ydb was lost while it was held: .*`)
-	c.Assert(IsLost(lock.Err()), qt.IsTrue)
-	c.Assert(closed(lock.Done()), qt.IsTrue)
-	c.Assert(closesWithin(guarded.Done(), 5*time.Second), qt.IsTrue)
-	c.Assert(IsLost(context.Cause(guarded)), qt.IsTrue)
-}
-
-func TestLock_WithoutALossToReport(t *testing.T) {
-	c := qt.New(t)
-	lock := &Lock{name: "ptah_migrate", dialect: "postgres", release: func(context.Context) error { return nil }}
-	guarded, stop := lock.Guard(context.Background())
-
-	c.Assert(lock.Done(), qt.IsNil)
-	c.Assert(lock.Err(), qt.IsNil)
-	c.Assert(guarded.Err(), qt.IsNil)
-	stop()
-	c.Assert(context.Cause(guarded), qt.Equals, context.Canceled)
 }

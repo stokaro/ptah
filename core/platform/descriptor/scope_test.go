@@ -15,7 +15,6 @@ func scoped() descriptor.Dialect {
 	described.DefaultSchema = "main"
 	described.Schemas = descriptor.Schemas{Selection: descriptor.SchemaSelectionSingle, Implicit: true}
 	described.Roles = descriptor.Roles{OutOfScope: descriptor.RoleScopeUserMade, Widenable: true}
-	described.Lock = descriptor.Lock{Protocol: descriptor.LockGetLock, UnboundedWaitSeconds: 60}
 	described.URLValuedParameters = []string{"monitoring", "metrics"}
 	return described
 }
@@ -56,21 +55,6 @@ func TestNewRegistry_ScopeFailurePath(t *testing.T) {
 			name:    "an undeclared role scope",
 			edit:    withScope(func(d *descriptor.Dialect) { d.Roles.OutOfScope = "all" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": role scope "all" is not one of .*`,
-		},
-		{
-			name:    "an undeclared lock protocol",
-			edit:    withScope(func(d *descriptor.Dialect) { d.Lock = descriptor.Lock{Protocol: "flock"} }),
-			wantErr: `invalid dialect descriptor: dialect "alpha": lock protocol "flock" is not one of .*`,
-		},
-		{
-			name:    "a negative unbounded wait",
-			edit:    withScope(func(d *descriptor.Dialect) { d.Lock.UnboundedWaitSeconds = -1 }),
-			wantErr: `invalid dialect descriptor: dialect "alpha": an unbounded wait of -1 seconds needs the "get-lock" protocol and a positive value`,
-		},
-		{
-			name:    "an unbounded wait on another protocol",
-			edit:    withScope(func(d *descriptor.Dialect) { d.Lock.Protocol = descriptor.LockAppLock }),
-			wantErr: `invalid dialect descriptor: dialect "alpha": an unbounded wait of 60 seconds needs the "get-lock" protocol and a positive value`,
 		},
 		{
 			name:    "an empty URL-valued parameter",
