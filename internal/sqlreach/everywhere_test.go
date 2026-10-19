@@ -145,18 +145,24 @@ func TestScan_AcceptsWhatNoConstructMatches(t *testing.T) {
 	}
 }
 
-// A statement that uses two constructs of two engines names the one the
-// registry asks first: PostgreSQL's descriptor comes before SQLite's, so
-// pg_read_file is named ahead of ATTACH on every dialect.
+// A statement that uses constructs of two engines names the one the registry
+// asks first, whatever dialect it was written for. SQLite's descriptor comes
+// before SQL Server's, so ATTACH is named ahead of xp_cmdshell. PostgreSQL's
+// comes first of all, so pg_read_file is named ahead of ATTACH.
 func TestScan_NamesTheFirstConstructInRegistryOrder(t *testing.T) {
-	const statement = "ATTACH DATABASE '/tmp/x.db' AS x; SELECT pg_read_file('/etc/passwd')"
-	for _, dialect := range []string{platform.SQLite, platform.Postgres, ""} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			finding, found, err := sqlreach.Scan(statement, dialect)
-			c.Assert(err, qt.IsNil)
-			c.Assert(found, qt.IsTrue)
-			c.Assert(finding.Construct, qt.Equals, "pg_read_file")
-		})
+	tests := []struct{ name, statement, want string }{
+		{name: "SQLite before SQL Server", statement: "ATTACH DATABASE '/tmp/x.db' AS x; EXEC xp_cmdshell 'id'", want: "ATTACH"},
+		{name: "PostgreSQL before SQLite", statement: "ATTACH DATABASE '/tmp/x.db' AS x; SELECT pg_read_file('/etc/passwd')", want: "pg_read_file"},
+	}
+	for _, dialect := range []string{platform.SQLite, platform.Postgres, platform.SQLServer, ""} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				finding, found, err := sqlreach.Scan(test.statement, dialect)
+				c.Assert(err, qt.IsNil)
+				c.Assert(found, qt.IsTrue)
+				c.Assert(finding.Construct, qt.Equals, test.want)
+			})
+		}
 	}
 }
