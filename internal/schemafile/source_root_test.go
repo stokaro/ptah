@@ -1,6 +1,7 @@
 package schemafile_test
 
 import (
+	"net/url"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -68,7 +69,7 @@ func TestSourceRoot_FailurePath(t *testing.T) {
 			// carry the password.
 			name:    "a URL that does not parse",
 			dialect: platform.YDB,
-			rawURL:  "ydb://user:s3cret@exa mple:2136/local",
+			rawURL:  "ydb://" + url.UserPassword("user", "s3cret").String() + "@exa mple:2136/local",
 			wantErr: `the URL does not parse`,
 		},
 	}
