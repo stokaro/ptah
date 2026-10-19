@@ -476,6 +476,11 @@ func (d Dialect) validate() error {
 		return err
 	}
 	return d.validateGrammar()
+
+	if err := d.validateCleanCheck(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // validSpelling reports whether value is a name or alias: lowercase ASCII

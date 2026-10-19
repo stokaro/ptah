@@ -1,10 +1,13 @@
 package descriptor
 
+import "fmt"
+
 // CleanCheck states how Ptah tells whether a database holds anything before
 // it adopts the database for migrations or resets it as a dev database.
 // internal/migrateclean reads it. The zero value is an engine neither check
 // governs: `migrate apply` adopts any database, and a dev database is reset
-// without a look at what it holds.
+// without a look at what it holds. A registry refuses a combination of values
+// the reader would ignore.
 type CleanCheck struct {
 	// Adoption reports that `migrate apply` refuses to adopt a database that
 	// holds a table its revision table does not account for, as the pinned
@@ -42,4 +45,27 @@ type CleanCheck struct {
 	// provisioned is not judged: the claim records the state the block
 	// leaves, and every reset returns the database to it.
 	StartingPoint bool `json:"starting_point,omitempty"`
+}
+
+// validateCleanCheck refuses the clean-check values a reader would ignore
+// without a word: a catalog query on an engine whose URL selects a schema,
+// which is read through the catalog its selection names, a catalog query
+// beside ResetListing, which reads none, and a counted adoption refusal on an
+// engine whose adoption is not refused.
+func (d Dialect) validateCleanCheck() error {
+	check := d.CleanCheck
+	selects := d.Schemas.Selection == SchemaSelectionSearchPath || d.Schemas.Selection == SchemaSelectionDatabase
+	switch {
+	case check.Tables != "" && selects:
+		return fmt.Errorf("%w: dialect %q: a clean check states no tables query where the URL selects a schema by %q",
+			ErrInvalidDescriptor, d.Name, d.Schemas.Selection)
+	case check.Tables != "" && check.ResetListing:
+		return fmt.Errorf("%w: dialect %q: a clean check that reads the reset listing states no tables query",
+			ErrInvalidDescriptor, d.Name)
+	case check.AdoptionCounts && !check.Adoption:
+		return fmt.Errorf("%w: dialect %q: a counted adoption refusal needs a refused adoption",
+			ErrInvalidDescriptor, d.Name)
+	default:
+		return nil
+	}
 }
