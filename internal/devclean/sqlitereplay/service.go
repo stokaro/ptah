@@ -7,7 +7,7 @@ package sqlitereplay
 import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
-	"ptah.run/internal/lexer"
+	"ptah.run/internal/dialectlexer"
 )
 
 // Services returns the SQLite replay guard.
@@ -21,10 +21,5 @@ type guard struct{}
 // scope does not widen what SQLite accepts: the database is one file, and a
 // server realm has nothing more to give it.
 func (guard) Validate(stmt string, _ replay.Scope) error {
-	return validateSQLiteReplayStatement(replay.Tokens(stmt, lexerOptions()))
-}
-
-// lexerOptions reads SQLite's literals and its bracketed identifiers.
-func lexerOptions() lexer.Options {
-	return lexer.Options{StandardStrings: true, BracketIdentifiers: true}
+	return validateSQLiteReplayStatement(replay.Tokens(stmt, dialectlexer.Options(platform.SQLite)))
 }

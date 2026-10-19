@@ -68,6 +68,12 @@ func sqlite() descriptor.Dialect {
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble, Keywords: sqliteKeywords()},
 
+		// Lexing: what internal/dialectlexer reads. A bracket pair quotes a
+		// name: SQLite 3.51 creates and reads tables named [a;b], [a--b],
+		// [a/*b] and [it's], so nothing between the brackets ends a statement
+		// or opens a comment or a string.
+		Lexical: descriptor.Lexical{BracketIdentifiers: true},
+
 		// Cleanup: what a development database cleanup reads.
 		// The writer reads pragma_table_list and drops tables and views. The
 		// reader hides schema_migrations and the writer keeps it, so the

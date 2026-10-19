@@ -43,6 +43,7 @@ func TestSQL_ReadsNamesAsWritten(t *testing.T) {
 		{sql: `CREATE VIRTUAL TABLE "main"."my docs" USING "my module"(a);`, wantTable: `"main"."my docs"`, wantModule: `"my module"`,
 			wantArguments: "a"},
 		{sql: `create virtual table [my]]docs] using fts5;`, wantTable: "[my]]docs]", wantModule: "fts5"},
+		{sql: `CREATE VIRTUAL TABLE [a;b--c] USING fts5(body);`, wantTable: "[a;b--c]", wantModule: "fts5", wantArguments: "body"},
 		{sql: "CREATE /* note */ VIRTUAL\n  TABLE -- why\n docs USING fts5 ( a,\n b ) ;", wantTable: "docs", wantModule: "fts5",
 			wantArguments: "a,\n b"},
 		{sql: `CREATE VIRTUAL TABLE docs USING m("a\", "b)");`, wantTable: "docs", wantModule: "m", wantArguments: `"a\", "b)"`},

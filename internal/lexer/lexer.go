@@ -125,7 +125,8 @@ type Options struct {
 	ExecutableComments ExecutableCommentStyle
 
 	// BracketIdentifiers treats a square-bracket pair as one identifier token.
-	// Enable it only for SQL Server: in dialect-neutral and PostgreSQL-family
+	// Enable it only for an engine whose grammar quotes a name that way, as
+	// SQL Server's and SQLite's do: in dialect-neutral and PostgreSQL-family
 	// input, square brackets can instead delimit array syntax.
 	BracketIdentifiers bool
 
