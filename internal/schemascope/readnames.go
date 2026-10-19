@@ -44,14 +44,14 @@ import (
 // schema the reader would have defaulted to, so the read reports the schemas
 // themselves and not only their contents.
 //
-// q is the connection the realm probe runs on; it is the narrow interface
-// [schemaselection.RealmSchemas] takes, so this package stays off the
-// connection layer.
+// q is the connection the realm read runs on, with the writer whose catalog
+// lists the realm; it is the narrow interface [schemaselection.RealmSchemas]
+// takes, so this package stays off the connection layer.
 func ReadNames(
 	ctx context.Context,
 	info catalog.ServerInfo,
 	requested []string,
-	q schemaselection.RowsQuerier,
+	q schemaselection.RealmConnection,
 ) ([]string, error) {
 	if names := SplitNames(requested); len(names) > 0 {
 		return names, nil

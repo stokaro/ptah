@@ -26,8 +26,8 @@ type CleanCheck struct {
 	// parameter. It selects the schema and the name of each table, or the
 	// name alone where Schemas.Selection is SchemaSelectionSingle. An engine
 	// whose URL selects a schema leaves it empty: its tables are read through
-	// the catalog its selection names, as internal/schemaselection reads that
-	// engine's realm.
+	// the scope catalog its schema writer offers, which binds the schema the
+	// URL pinned and also lists the engine's realm.
 	Tables string `json:"tables,omitempty"`
 	// CatalogOrder reports that a refusal names the first table in the
 	// order the catalog query returns them, which is the order they were
@@ -49,7 +49,7 @@ type CleanCheck struct {
 
 // validateCleanCheck refuses the clean-check values a reader would ignore
 // without a word: a catalog query on an engine whose URL selects a schema,
-// which is read through the catalog its selection names, a catalog query
+// which is read through its schema writer's scope catalog, a catalog query
 // beside ResetListing, which reads none, and a counted adoption refusal on an
 // engine whose adoption is not refused.
 func (d Dialect) validateCleanCheck() error {

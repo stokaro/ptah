@@ -1,11 +1,12 @@
-// Package ydb reads what a YDB URL selects, as internal/ydburl reads it, and
-// refuses to rename the database one names.
+// Package ydb reads what a YDB URL selects and the database root it names, as
+// internal/ydburl reads them, and refuses to rename the database one names.
 package ydb
 
 import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
@@ -13,13 +14,26 @@ import (
 	"ptah.run/internal/ydburl"
 )
 
+// ErrSourceRoot is the refusal of the URL a YDB schema document is read
+// against when it names no database root.
+var ErrSourceRoot = errors.New("YDB source context requires a valid YDB database or Docker dev URL")
+
+// ErrDiffRoot is the refusal of the dev URL of a YDB diff between two schema
+// documents when it names no database root.
+var ErrDiffRoot = errors.New("YDB diff requires a valid database or Docker dev URL")
+
 // ErrDatabaseName is the refusal a rename of a YDB URL gives.
 var ErrDatabaseName = errors.New("a YDB database cannot be created through SQL, so a URL renamed to a new " +
 	"database names one nothing can create; a YDB dev or scratch database is a dev realm in the database the URL names")
 
 // Services returns YDB's services.
 func Services() dburlext.Services {
-	return dburlext.Services{Dialects: []string{platform.YDB}, Endpoints: endpoints{}, Rename: rename{}}
+	return dburlext.Services{
+		Dialects:  []string{platform.YDB},
+		Endpoints: endpoints{},
+		Rename:    rename{},
+		Roots:     roots{},
+	}
 }
 
 type endpoints struct{}
@@ -56,3 +70,28 @@ type rename struct{}
 func (rename) Rename(*url.URL, string) (string, error) {
 	return "", ErrDatabaseName
 }
+
+type roots struct{}
+
+// Root reads the database a YDB URL names, from its path or its database
+// parameter, and the dev realm it names in that database, as
+// internal/ydburl reads them.
+func (roots) Root(parsed *url.URL) (dburlext.DatabaseRoot, error) {
+	ydbURL, err := ydburl.FromURL(parsed)
+	if err != nil {
+		return dburlext.DatabaseRoot{}, err
+	}
+	return dburlext.DatabaseRoot{Path: ydbURL.Database, Realm: ydbURL.Realm}, nil
+}
+
+// DatabaseRoot returns the path of the database a Docker dev URL creates: its
+// name with one leading slash, and the bare slash for an empty name.
+func (roots) DatabaseRoot(name string) string {
+	return "/" + strings.Trim(name, "/")
+}
+
+// SourceRefusal returns [ErrSourceRoot].
+func (roots) SourceRefusal() error { return ErrSourceRoot }
+
+// DiffRefusal returns [ErrDiffRoot].
+func (roots) DiffRefusal() error { return ErrDiffRoot }

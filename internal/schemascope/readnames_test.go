@@ -1,6 +1,7 @@
 package schemascope_test
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"testing"
@@ -8,7 +9,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/schemascope"
 )
 
@@ -150,12 +153,32 @@ func TestReadNames(t *testing.T) {
 
 			db := dbtest.Open(t, test.probe)
 
-			got, err := schemascope.ReadNames(t.Context(), test.info, test.requested, db.SQL)
+			got, err := schemascope.ReadNames(t.Context(), test.info, test.requested, postgresConnection(db.SQL))
 
 			c.Assert(errString(err), qt.Equals, test.wantErr)
 			c.Assert(got, qt.DeepEquals, test.want)
 			c.Assert(db.QueryCount(), qt.Equals, test.wantProbes)
 		})
+	}
+}
+
+// realmConnection is the connection a realm read runs on: a scripted database
+// and the writer whose catalog lists the realm.
+type realmConnection struct {
+	*sql.DB
+	writer catalog.SchemaWriter
+}
+
+// SchemaWriter returns the writer the connection was given.
+func (c realmConnection) SchemaWriter() catalog.SchemaWriter { return c.writer }
+
+// postgresConnection reads a realm through db as PostgreSQL's writer reads it.
+// Every row of [TestReadNames] that reads a realm is PostgreSQL's; a row of
+// another dialect reads none, which its wantProbes of 0 asserts.
+func postgresConnection(db *sql.DB) realmConnection {
+	return realmConnection{
+		DB:     db,
+		writer: postgres.NewPostgreSQLWriterForRunnerWithCapabilities(db, "", "postgres", capability.ForDialect("postgres")),
 	}
 }
 

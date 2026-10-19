@@ -15,7 +15,8 @@ import (
 
 // TestOmitRealmRootGrants pins which permissions a baseline leaves out: those
 // on the database root, on both sides, and only when the dev connection names
-// a YDB realm. A permission on a directory or a table is kept.
+// a dev realm under the database root of an engine that has one, as its root
+// reader reads the URL. A permission on a directory or a table is kept.
 func TestOmitRealmRootGrants(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -34,6 +35,32 @@ func TestOmitRealmRootGrants(t *testing.T) {
 		{
 			name: "a YDB database without a realm",
 			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local"},
+			wantTarget: []schemamodel.Grant{
+				{Role: "ACCESS-ADMINS", Privileges: []string{"ydb.access.grant"}, OnDatabase: true},
+				{Role: "reader", Privileges: []string{"ydb.generic.read"}, OnSchema: "shop"},
+			},
+			wantRevoked: []schemamodel.Grant{{Role: "writer", Privileges: []string{"ydb.generic.write"}, OnDatabase: true}},
+			wantDev: []catalog.Grant{
+				{Role: "ACCESS-ADMINS", Privilege: "ydb.access.grant", ObjectType: "DATABASE"},
+				{Role: "reader", Privilege: "ydb.generic.read", ObjectType: "TABLE", ObjectName: "items"},
+			},
+		},
+		{
+			name: "a YDB URL whose realm cannot be read",
+			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb:///local?dev_realm=abc"},
+			wantTarget: []schemamodel.Grant{
+				{Role: "ACCESS-ADMINS", Privileges: []string{"ydb.access.grant"}, OnDatabase: true},
+				{Role: "reader", Privileges: []string{"ydb.generic.read"}, OnSchema: "shop"},
+			},
+			wantRevoked: []schemamodel.Grant{{Role: "writer", Privileges: []string{"ydb.generic.write"}, OnDatabase: true}},
+			wantDev: []catalog.Grant{
+				{Role: "ACCESS-ADMINS", Privilege: "ydb.access.grant", ObjectType: "DATABASE"},
+				{Role: "reader", Privilege: "ydb.generic.read", ObjectType: "TABLE", ObjectName: "items"},
+			},
+		},
+		{
+			name: "an engine whose documents name no database root",
+			info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://localhost/db?dev_realm=abc"},
 			wantTarget: []schemamodel.Grant{
 				{Role: "ACCESS-ADMINS", Privileges: []string{"ydb.access.grant"}, OnDatabase: true},
 				{Role: "reader", Privileges: []string{"ydb.generic.read"}, OnSchema: "shop"},

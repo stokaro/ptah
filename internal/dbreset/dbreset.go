@@ -5,8 +5,9 @@
 // judge the same objects the reset removes. The writers list them through the
 // query the reset runs, and internal/migrateclean reads the list. A writer
 // also answers, through [CleanupCatalog], what a cleanup plan of
-// internal/schemaclean needs from its catalog. The types live here so that
-// neither side imports the other.
+// internal/schemaclean needs from its catalog, and, through [ScopeCatalog],
+// which schemas and tables a connection reaches, which the clean check before
+// a reset judges. The types live here so that neither side imports the other.
 package dbreset
 
 import (

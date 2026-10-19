@@ -37,6 +37,22 @@ func TestLookup_ServesTheArmsOfTheSwitchesItReplaces(t *testing.T) {
 	}
 }
 
+// A root reader serves exactly the dialects whose descriptor states that a
+// schema document names objects by absolute paths under the database root,
+// so the descriptor and the service cannot disagree about which engines
+// have one.
+func TestLookup_ServesARootReaderWhereTheDescriptorStatesRootPaths(t *testing.T) {
+	for _, spelling := range platform.DialectSpellings() {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
+			described, found := platform.Lookup(spelling)
+			c.Assert(found, qt.IsTrue)
+
+			c.Assert(builtin.Lookup(spelling).Roots != nil, qt.Equals, described.Conversion.DatabaseRootPaths)
+		})
+	}
+}
+
 func TestLookup_FoldsSpellings(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(builtin.Lookup(" PGX ").Dialects, qt.DeepEquals, builtin.Lookup(platform.Postgres).Dialects)
@@ -52,6 +68,7 @@ func TestLookup_UnknownDialectTakesTheGenericBehavior(t *testing.T) {
 			c.Assert(services.Endpoints, qt.IsNil)
 			c.Assert(services.Databases, qt.IsNil)
 			c.Assert(services.Rename, qt.IsNil)
+			c.Assert(services.Roots, qt.IsNil)
 		})
 	}
 }

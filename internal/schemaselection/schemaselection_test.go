@@ -2,6 +2,7 @@ package schemaselection_test
 
 import (
 	"database/sql/driver"
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -240,7 +241,7 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 	})
 
 	got, err := schemaselection.RealmSchemas(
-		t.Context(), "cockroachdb", capability.ForDialect("cockroachdb"), db.SQL)
+		t.Context(), "cockroachdb", capability.ForDialect("cockroachdb"), postgresConnection(db.SQL, "cockroachdb"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{"extra", "public"})
@@ -268,7 +269,7 @@ func TestRealmSchemas_MySQLFamilyListsTheUserDatabases(t *testing.T) {
 				}, nil
 			})
 
-			got, err := schemaselection.RealmSchemas(t.Context(), dialect, capability.ForDialect(dialect), db.SQL)
+			got, err := schemaselection.RealmSchemas(t.Context(), dialect, capability.ForDialect(dialect), mysqlConnection(db.SQL, dialect))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, []string{"R1", "r1", "r2"})
@@ -280,18 +281,50 @@ func TestRealmSchemas_MySQLFamilyListsTheUserDatabases(t *testing.T) {
 	}
 }
 
-// TestRealmSchemas_FailurePath has no probe for a dialect whose realm nobody
-// measured, and says so rather than answering no schemas.
+// TestRealmSchemas_FailurePath has no probe for a dialect whose writer offers
+// no catalog to list its realm, and says so rather than answering no schemas.
+// The query is never sent.
 func TestRealmSchemas_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
 		return dbtest.QueryResult{}, nil
 	})
 
-	got, err := schemaselection.RealmSchemas(t.Context(), "sqlserver", capability.ForDialect("sqlserver"), db.SQL)
+	got, err := schemaselection.RealmSchemas(t.Context(), "sqlserver", capability.ForDialect("sqlserver"), writerlessConnection(db.SQL))
 
 	c.Assert(err, qt.ErrorMatches, `no realm-scope schema probe for dialect "sqlserver"`)
 	c.Assert(got, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 0)
+}
+
+// TestRealmSchemas_ReadFailure wraps a catalog read the server refused.
+func TestRealmSchemas_ReadFailure(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, errors.New("permission denied for pg_namespace")
+	})
+
+	got, err := schemaselection.RealmSchemas(t.Context(), "postgres", capability.ForDialect("postgres"), postgresConnection(db.SQL, "postgres"))
+
+	c.Assert(err, qt.ErrorMatches, `failed to list realm schemas: permission denied for pg_namespace`)
+	c.Assert(got, qt.IsNil)
+}
+
+// TestRealmSchemas_ReadsTheWritersCatalog lists the realm the scope catalog
+// of the connection's writer lists, for an engine Ptah does not ship, in byte
+// order. The function names no engine and sends no query of its own.
+func TestRealmSchemas_ReadsTheWritersCatalog(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, nil
+	})
+	conn := realmConnection{DB: db.SQL, writer: acmeWriter{scope: acmeScope{schemas: []string{"b", "Zed", "a"}}}}
+
+	got, err := schemaselection.RealmSchemas(t.Context(), "acme", capability.Capabilities{}, conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"Zed", "a", "b"})
+	c.Assert(db.QueryCount(), qt.Equals, 0)
 }
 
 // errString renders an error for comparison, so the table can carry the wanted
