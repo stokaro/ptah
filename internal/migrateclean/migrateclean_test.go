@@ -669,6 +669,19 @@ func TestScopeForRevisions(t *testing.T) {
 			},
 		},
 		{
+			// SQLite has one namespace, so --revisions-schema names no place
+			// the table could move to, and the table stays in scope.
+			name:            "an engine with one namespace keeps the table whatever --revisions-schema says",
+			scope:           migrateclean.Scope{Dialect: "sqlite", Schema: "main"},
+			revisionsSchema: "revs",
+			revisionTable:   "atlas_schema_revisions",
+			want: migrateclean.Scope{
+				Dialect:       "sqlite",
+				Schema:        "main",
+				RevisionTable: "atlas_schema_revisions",
+			},
+		},
+		{
 			name:            "realm scope follows --revisions-schema",
 			scope:           migrateclean.Scope{Dialect: "postgres", Schema: "public", Realm: true},
 			revisionsSchema: "revs",
