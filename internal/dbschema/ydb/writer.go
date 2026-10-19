@@ -506,7 +506,7 @@ func (w *Writer) dropTableUnlessReplica(ctx context.Context, table string, drop 
 	if err != nil || kept {
 		return false, err
 	}
-	if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, table)); err != nil {
+	if err := w.dropListedTable(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, table)); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -668,6 +668,8 @@ func dropCoordinationNode(target string) string {
 // object, or the removal of a directory, by its absolute path, once it is
 // empty.
 type treeStep struct {
+	// rowTable marks a table the scheme listing found; its SQL visibility may lag.
+	rowTable  bool
 	statement string
 	directory string
 	// rank is the step's [teardownRank]; a directory's is the last one.
@@ -696,7 +698,8 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 				return err
 			}
 		case droppable:
-			*steps = append(*steps, treeStep{statement: statement, rank: teardownRank(entry.GetType())})
+			*steps = append(*steps, treeStep{statement: statement, rowTable: entry.GetType() == Ydb_Scheme.Entry_TABLE,
+				rank: teardownRank(entry.GetType())})
 		default:
 			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing was dropped",
 				absolute, name, entryTypeName(entry.GetType()))
@@ -708,6 +711,9 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 
 // runTreeStep runs one step of a teardown.
 func (w *Writer) runTreeStep(ctx context.Context, step treeStep) error {
+	if step.rowTable {
+		return w.dropListedTable(ctx, step.statement)
+	}
 	if step.statement != "" {
 		return w.ExecuteSQL(ctx, step.statement)
 	}
