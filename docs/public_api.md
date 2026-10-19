@@ -4869,10 +4869,16 @@ outside the database:
 - `Lexical`: how the shared SQL lexer tokenizes the engine's text, or the
   lexer of its own it is read with, and how a routine or view body is
   scanned;
-- `Reach`: the calls of the engine's grammar that reach outside the database
-  a statement is sent to, such as a table function that reads a URL, which the
-  plan and check-assertion scans refuse under the construct the descriptor
-  names.
+- `Reach`: the constructs of the engine's grammar that reach outside the
+  database a statement is sent to, which the plan and check-assertion scans
+  refuse under the construct the descriptor names. Its call families, such as
+  a table function that reads a URL, are refused on the engine that states
+  them. `Everywhere` holds constructs whose spelling means nothing ordinary on
+  any engine, such as `ATTACH` or `xp_cmdshell`. Each is a
+  `descriptor.ReachConstruct`: the words a refusal prints and the parts of a
+  statement that use it, such as a keyword sequence the statement starts with
+  or a function it calls. The scans refuse every engine's `Everywhere`
+  constructs on every engine, an engine Ptah does not ship included.
 
 A descriptor also states, in `Grammar`, how the shared DDL parser reads the
 engine's DDL: which words open an index, which clauses may follow a column

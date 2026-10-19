@@ -64,6 +64,7 @@ func postgresReach() descriptor.Reach {
 			"PG_REPLICATION_ORIGIN_SESSION_RESET", "PG_REPLICATION_ORIGIN_SESSION_SETUP",
 			"PG_REPLICATION_ORIGIN_XACT_RESET", "PG_REPLICATION_ORIGIN_XACT_SETUP",
 		}},
+		Everywhere: postgresEverywhere(),
 	}
 }
 
@@ -91,11 +92,14 @@ func clickHouseReach() descriptor.Reach {
 	for _, base := range bases {
 		names = append(names, base, base+"CLUSTER")
 	}
-	return descriptor.Reach{TableFunctions: descriptor.ReachCalls{
-		Construct: "ClickHouse remote table function",
-		Reach:     "reads over the network or from the host filesystem inside a query",
-		Names:     names,
-	}}
+	return descriptor.Reach{
+		TableFunctions: descriptor.ReachCalls{
+			Construct: "ClickHouse remote table function",
+			Reach:     "reads over the network or from the host filesystem inside a query",
+			Names:     names,
+		},
+		Everywhere: clickHouseEverywhere(),
+	}
 }
 
 // oracleReach is Oracle's. Oracle reaches the network through built-in

@@ -136,7 +136,9 @@ func TestDescriptors_ReachAgreesWithTheRulesItReplaces(t *testing.T) {
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(dialect.Reach, qt.CmpEquals(cmpopts.EquateEmpty()), want[dialect.Name])
+			got := dialect.Reach
+			got.Everywhere = nil
+			c.Assert(got, qt.CmpEquals(cmpopts.EquateEmpty()), want[dialect.Name])
 		})
 	}
 }

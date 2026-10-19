@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
@@ -1034,13 +1033,13 @@ func sqlCodeMask(body string) []bool {
 // scanner: the line comments it opens beside -- and /* ... */, such as the #
 // of the MySQL family and ClickHouse's # and //, and the backslash escapes of
 // its strings and of its quoted names. MySQL's catalog writes a view's
-// strings that way, as 'it\'s'. A target read by a lexer of its own, as
-// YDB's YQL is, is read by that lexer instead; see [yqlMasks].
+// strings that way, as 'it\'s'. A target whose descriptor names a lexer of
+// its own is read by that lexer instead; see [lexerMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
 	described, _ := platform.Lookup(dialect)
 	lexical := described.Lexical
-	if lexical.Lexer == descriptor.LexerYQL {
-		return yqlMasks(body)
+	if lexical.Lexer != "" {
+		return lexerMasks(body, dialectlexer.FromDescriptor(described))
 	}
 	masks := sqlMasks{
 		code:             make([]bool, len(body)),
@@ -1096,27 +1095,26 @@ type sqlMasks struct {
 	quoteClose       []bool
 }
 
-// yqlMasks marks a YQL body by the YQL lexer's tokens rather than by the
-// scanner above, whose rules are PostgreSQL's where YQL's differ: in YQL a
-// double-quoted "x" is a string rather than a name, a backslash escapes a
-// quote in every string, a doubled quote is two literals, @@...@@ is a
-// string, $name is never a dollar quote, and block comments do not nest.
+// lexerMasks marks a body by the tokens of the lexer its dialect's
+// descriptor names rather than by the scanner above, whose rules are
+// PostgreSQL's: a lexer of an engine's own reads strings, names and comments
+// by that engine's rules, as YQL reads "x" as a string and @@...@@ as one.
 // Reading the body with the lexer the splitter uses keeps the two in
 // agreement about where a string ends.
 //
-// A string, a comment and a leading translation setting are not code. A
-// backtick identifier is code and a quoted identifier, opened at its first
-// byte and closed at its last. An unterminated one runs to the end of the
-// body, and a quoted spelling cannot end at a byte it does not hold, so its
-// last byte needs no separate test.
-func yqlMasks(body string) sqlMasks {
+// A string, a comment and an unknown token, such as a leading translation
+// setting, are not code. An identifier the lexer kept in backticks is code and
+// a quoted identifier, opened at its first byte and closed at its last. An
+// unterminated one runs to the end of the body, and a quoted spelling cannot
+// end at a byte it does not hold, so its last byte needs no separate test.
+func lexerMasks(body string, options lexer.Options) sqlMasks {
 	masks := sqlMasks{
 		code:             make([]bool, len(body)),
 		quotedIdentifier: make([]bool, len(body)),
 		quoteOpen:        make([]bool, len(body)),
 		quoteClose:       make([]bool, len(body)),
 	}
-	l := lexer.NewLexerWithOptions(body, lexer.Options{YQL: true})
+	l := lexer.NewLexerWithOptions(body, options)
 	for token := l.NextToken(); token.Type != lexer.TokenEOF; token = l.NextToken() {
 		switch {
 		case token.Type == lexer.TokenString, token.Type == lexer.TokenComment, token.Type == lexer.TokenUnknown:

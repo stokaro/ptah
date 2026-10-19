@@ -110,8 +110,10 @@ document. Two seams carry it, and both are plugin debt under
   library or one of its own.
 - A consumer of SQL syntax rather than of the declared schema, such as
   `atlascompat.ParseSQL` or the structural-change count of migration lint,
-  reaches a YQL syntax tree through `internal/sqlsyntax`. Whether a grammar
-  owner also serves syntax trees, and in what form, is not decided yet.
+  reaches a YQL syntax tree through `internal/sqlsyntax`, which asks the
+  parser of the lexer the dialect's descriptor names (`internal/syntaxext`).
+  The parser runs in process. Whether a grammar owner also serves syntax trees
+  over the protocol, and in what form, is not decided yet.
 
 The tables the shared conversion reads for the YDB owner carry YDB names: one
 path in backticks, where a dot is part of the name. The reader asks

@@ -14,6 +14,7 @@ package sqlreach
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ import (
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/reachext"
+	"ptah.run/internal/reachext/builtin"
 )
 
 // MaxNesting bounds how deep the scanner follows code carried inside string
@@ -55,14 +58,7 @@ type escapeRule struct {
 	match     tokenMatcher
 	// applies restricts the rule to the engines whose grammar gives the
 	// construct its meaning, as the dialect's descriptor states it. Nil means
-	// every engine, which is right for a spelling no other dialect can mistake
-	// for something ordinary -- there is no `xp_cmdshell` that means anything
-	// else.
-	//
-	// It exists for the ones that can be mistaken: a YQL UDF call is written
-	// `Module::Function`, which is no call in any other grammar, and a rule
-	// that fired on every dialect would refuse a PostgreSQL assertion for a
-	// grammar PostgreSQL does not have.
+	// every engine.
 	applies func(descriptor.Dialect) bool
 	// listed makes the rule one the dialect's descriptor writes, in
 	// descriptor.Reach: the descriptor names the construct, says what it
@@ -88,29 +84,105 @@ func (r escapeRule) on(described descriptor.Dialect) (escapeRule, bool) {
 	return escapeRule{construct: calls.Construct, reach: calls.Reach, match: r.call(calls.Names...)}, true
 }
 
-// readsYQL reports whether a dialect's text is YQL, whose grammar gives the
-// YQL rules their meaning.
-func readsYQL(described descriptor.Dialect) bool {
-	return described.Lexical.Lexer == descriptor.LexerYQL
-}
-
 // rulesByDialect holds the rules that apply to every dialect, built once per
 // registry rather than for every statement [Scan] reads. A caller only reads
 // the slice it gets.
 var rulesByDialect = descriptortable.New(rulesFor)
 
-// rulesFor returns the rules that apply to a dialect, in the table's order.
+// rulesFor returns the rules that apply to a dialect, in the order a scan
+// asks them: the constructs every engine refuses, then the families and the
+// lexical rules the dialect's descriptor states, in the table's order, then
+// the rules of the lexer of its own the descriptor names.
 func rulesFor(described descriptor.Dialect) []escapeRule {
-	rules := make([]escapeRule, 0, len(escapeRules))
+	rules := slices.Clone(everywhereRules.Get())
 	for _, rule := range escapeRules {
 		if applied, ok := rule.on(described); ok {
 			rules = append(rules, applied)
 		}
 	}
+	for _, rule := range builtin.Lookup(described.Lexical.Lexer).Rules {
+		rules = append(rules, escapeRule{construct: rule.Construct, reach: rule.Reach, match: lexerRule(rule)})
+	}
 	return rules
 }
 
-// escapeRules enumerates the escape constructs this lint knows about.
+// lexerRule is a rule of a lexer's service as a token matcher.
+func lexerRule(rule reachext.Rule) tokenMatcher {
+	return func(ctx scanContext) bool { return rule.Match(ctx.tokens) }
+}
+
+// everywhereRules holds the constructs every engine refuses: those of
+// descriptor.Reach.Everywhere of every descriptor in the registry, in
+// registry order and each engine's own order, a construct two engines state
+// alike asked once, at its first place. A construct an engine Ptah does not
+// ship states is refused on every built-in engine too.
+var everywhereRules = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []escapeRule {
+	var (
+		rules  []escapeRule
+		stated []descriptor.ReachConstruct
+	)
+	for _, described := range dialects {
+		for _, construct := range described.Reach.Everywhere {
+			if slices.ContainsFunc(stated, func(seen descriptor.ReachConstruct) bool { return reflect.DeepEqual(seen, construct) }) {
+				continue
+			}
+			stated = append(stated, construct)
+			rules = append(rules, escapeRule{construct: construct.Construct, reach: construct.Reach, match: constructMatcher(construct)})
+		}
+	}
+	return rules
+})
+
+// constructMatcher matches a statement that has every part a construct
+// states; descriptor.ReachConstruct says what each part matches.
+func constructMatcher(construct descriptor.ReachConstruct) tokenMatcher {
+	var parts []tokenMatcher
+	if len(construct.StartsWith) > 0 {
+		parts = append(parts, statementStartsWith(construct.StartsWith...))
+	}
+	if construct.Keyword != "" {
+		parts = append(parts, containsKeyword(construct.Keyword))
+	}
+	if len(construct.StringAfter) > 0 {
+		parts = append(parts, stringArgumentAfter(construct.StringAfter...))
+	}
+	if len(construct.Calls) > 0 {
+		parts = append(parts, calledFunctionAnyOf(construct.Calls...))
+	}
+	if len(construct.CallPrefixes) > 0 {
+		parts = append(parts, anyOf(construct.CallPrefixes, calledFunctionPrefix))
+	}
+	if len(construct.Procedures) > 0 {
+		parts = append(parts, anyOf(construct.Procedures, procedureOrFunction))
+	}
+	if len(construct.Pragmas) > 0 {
+		parts = append(parts, anyOf(construct.Pragmas, pragmaAssignment))
+	}
+	if len(construct.WordsThenString) > 0 {
+		parts = append(parts, keywordSequenceWithStringArgument(construct.WordsThenString...))
+	}
+	if len(construct.Engines) > 0 {
+		parts = append(parts, anyOf(construct.Engines, engineAssignment))
+	}
+	if len(construct.PathOption) == 2 {
+		parts = append(parts, tableOptionPath(construct.PathOption[0], construct.PathOption[1]))
+	}
+	return all(parts...)
+}
+
+// anyOf matches a statement that one of the matchers built from names
+// matches.
+func anyOf(names []string, matcher func(string) tokenMatcher) tokenMatcher {
+	matchers := make([]tokenMatcher, 0, len(names))
+	for _, name := range names {
+		matchers = append(matchers, matcher(name))
+	}
+	return anyMatch(matchers...)
+}
+
+// escapeRules enumerates the escape constructs a dialect's descriptor states
+// for itself alone, in the order a scan asks them after the constructs every
+// engine refuses.
 //
 // This is a BEST-EFFORT LINT over statement text, not a containment boundary,
 // and it cannot become one. String concatenation alone defeats any scanner:
@@ -130,177 +202,28 @@ func rulesFor(described descriptor.Dialect) []escapeRule {
 //     one they are willing to have a foreign plan file execute arbitrary SQL
 //     against.
 //
-// Coverage is deliberately partial and dialect-specific: SQLite, PostgreSQL,
-// MySQL/MariaDB, SQL Server, ClickHouse, Oracle and YDB constructs are
-// represented. A construct whose name is ordinary on another engine applies
-// only where the dialect's descriptor says the grammar has it: the calls a
-// descriptor lists in descriptor.Reach, the YQL rules on a dialect whose text
-// is YQL, and Oracle's alternative quoting where Lexical states it.
+// Coverage is deliberately partial and comes from the descriptors and the
+// lexer services. A construct whose spelling means nothing ordinary on any
+// engine is one of descriptor.Reach.Everywhere and is refused on every
+// engine. A construct whose name is ordinary on another engine applies only
+// where the dialect's descriptor states it: the calls it lists in the other
+// families of descriptor.Reach, and alternative quoting where Lexical states
+// it. A dialect read by a lexer of its own gets that lexer's rules too, from
+// internal/reachext.
 //
-// A YDB external table is outside what any text rule can see: it is a catalog
-// object whose reads leave the database, and a statement names it exactly as
-// it names a table. internal/yqlreach names what a query reads, and a caller
-// that has the database asks its catalog what each name is, as the migrator
-// does before a check runs. A dev realm replay has no such
-// catalog question to ask, and its guard refuses every statement that names
-// an external table or data source instead. The lint catches honest mistakes
-// and known tricks. It does not stop an author who is trying to get past it.
+// A catalog object whose reads leave the database, such as a YDB external
+// table, is outside what any text rule can see: a statement names it exactly
+// as it names a table. A caller that has the database asks its catalog what
+// each name is, as the migrator does before a check runs. A dev realm replay
+// has no such catalog question to ask, and its guard refuses every statement
+// that names such an object instead. The lint catches honest mistakes and
+// known tricks. It does not stop an author who is trying to get past it.
 var escapeRules = []escapeRule{
 	{
-		construct: "ATTACH",
-		reach:     "attaches another SQLite database file to the session, so the statement can write to databases other than the dev database",
-		match:     statementStartsWith("ATTACH"),
-	},
-	{
-		construct: "DETACH",
-		reach:     "manipulates the session's attached SQLite databases rather than the dev database schema",
-		match:     statementStartsWith("DETACH"),
-	},
-	{
-		construct: "VACUUM INTO",
-		reach:     "writes a copy of the database to an arbitrary path on the host filesystem",
-		match:     all(statementStartsWith("VACUUM"), containsKeyword("INTO")),
-	},
-	{
-		construct: "PRAGMA temp_store_directory",
-		reach:     "redirects SQLite temporary storage to an arbitrary directory on the host filesystem",
-		match:     pragmaAssignment("TEMP_STORE_DIRECTORY"),
-	},
-	{
-		construct: "PRAGMA data_store_directory",
-		reach:     "redirects SQLite database storage to an arbitrary directory on the host filesystem",
-		match:     pragmaAssignment("DATA_STORE_DIRECTORY"),
-	},
-	{
-		construct: "load_extension",
-		reach:     "loads a native extension module from the host filesystem",
-		match:     calledFunction("LOAD_EXTENSION"),
-	},
-	{
-		construct: "LOAD DATA INFILE",
-		reach:     "reads a file from the database server or the client host",
-		match:     all(statementStartsWith("LOAD"), containsKeyword("INFILE")),
-	},
-	{
-		construct: "SELECT ... INTO OUTFILE",
-		reach:     "writes a file on the database server host",
-		match:     keywordSequenceWithStringArgument("INTO", "OUTFILE"),
-	},
-	{
-		construct: "SELECT ... INTO DUMPFILE",
-		reach:     "writes a file on the database server host",
-		match:     keywordSequenceWithStringArgument("INTO", "DUMPFILE"),
-	},
-	{
-		construct: "LOAD_FILE",
-		reach:     "reads a file on the database server host",
-		match:     calledFunction("LOAD_FILE"),
-	},
-	{
-		construct: "ENGINE=FEDERATED",
-		reach:     "stores the table on another database server reached over the network",
-		match:     engineAssignment("FEDERATED"),
-	},
-	{
-		construct: "ClickHouse remote table engine",
-		reach:     "stores or reads the table over the network or from the host filesystem",
-		match: anyMatch(
-			engineAssignment("URL"), engineAssignment("FILE"), engineAssignment("S3"),
-			engineAssignment("HDFS"), engineAssignment("MYSQL"), engineAssignment("POSTGRESQL"),
-		),
-	},
-	{
-		// The same reach without a table to attach it to: a table function
-		// such as ClickHouse's url(...), which an ordinary SELECT takes in its
-		// FROM clause.
+		// A table function such as ClickHouse's url(...), which an ordinary
+		// SELECT takes in its FROM clause.
 		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.TableFunctions },
 		call:   calledFunctionAnyOf,
-	},
-	{
-		construct: "CREATE SERVER",
-		reach:     "defines a connection to another database server",
-		match:     statementStartsWith("CREATE", "SERVER"),
-	},
-	{
-		construct: "INSTALL PLUGIN",
-		reach:     "loads a server-side plugin, which runs native code on the database server host",
-		match:     statementStartsWith("INSTALL", "PLUGIN"),
-	},
-	{
-		construct: "INSTALL COMPONENT",
-		reach:     "loads a server-side component, which runs native code on the database server host",
-		match:     statementStartsWith("INSTALL", "COMPONENT"),
-	},
-	{
-		construct: "DATA DIRECTORY",
-		reach:     "places table data at an arbitrary path on the database server host",
-		match:     tableOptionPath("DATA", "DIRECTORY"),
-	},
-	{
-		construct: "INDEX DIRECTORY",
-		reach:     "places index data at an arbitrary path on the database server host",
-		match:     tableOptionPath("INDEX", "DIRECTORY"),
-	},
-	{
-		construct: "COPY ... PROGRAM",
-		reach:     "executes a shell command on the database server host",
-		match:     all(statementStartsWith("COPY"), containsKeyword("PROGRAM")),
-	},
-	{
-		construct: "COPY with a file path",
-		reach:     "reads or writes a file on the database server host",
-		match:     all(statementStartsWith("COPY"), stringArgumentAfter("FROM", "TO")),
-	},
-	{
-		construct: "BULK INSERT",
-		reach:     "reads a file on the database server host",
-		match:     statementStartsWith("BULK", "INSERT"),
-	},
-	{
-		construct: "dblink",
-		reach:     "opens a connection to another database server",
-		match:     calledFunctionPrefix("DBLINK"),
-	},
-	{
-		construct: "postgres_fdw",
-		reach:     "federates data from another database server",
-		match:     containsKeyword("POSTGRES_FDW"),
-	},
-	{
-		construct: "file_fdw",
-		reach:     "exposes files on the database server host as tables",
-		match:     containsKeyword("FILE_FDW"),
-	},
-	{
-		construct: "pg_read_file",
-		reach:     "reads a file on the database server host",
-		match:     calledFunction("PG_READ_FILE"),
-	},
-	{
-		construct: "pg_read_binary_file",
-		reach:     "reads a file on the database server host",
-		match:     calledFunction("PG_READ_BINARY_FILE"),
-	},
-	{
-		// adminpack, which ships with PostgreSQL and is installed on plenty of
-		// servers. Each of these fits in one scalar SELECT and changes a file
-		// on the host, which no transaction restores.
-		construct: "adminpack file function",
-		reach:     "writes, renames or removes a file on the database server host",
-		match: anyMatch(
-			calledFunction("PG_FILE_WRITE"), calledFunction("PG_FILE_RENAME"),
-			calledFunction("PG_FILE_UNLINK"), calledFunction("PG_FILE_SYNC"),
-			calledFunction("PG_LOGDIR_LS"),
-		),
-	},
-	{
-		// Every predefined `pg_ls_` function lists a directory on the server
-		// host -- pg_ls_dir, pg_ls_logdir, pg_ls_waldir, pg_ls_tmpdir,
-		// pg_ls_archive_statusdir, pg_ls_replslotdir -- so the prefix is the
-		// rule rather than a list that goes stale on the next release.
-		construct: "pg_ls_ directory listing",
-		reach:     "lists a directory on the database server host",
-		match:     calledFunctionPrefix("PG_LS_"),
 	},
 	{
 		// A built-in package that sends a request from the server, such as
@@ -329,31 +252,6 @@ var escapeRules = []escapeRule{
 		call:   packageCallAnyOf,
 	},
 	{
-		construct: "lo_import",
-		reach:     "reads a file on the database server host",
-		match:     calledFunction("LO_IMPORT"),
-	},
-	{
-		construct: "lo_export",
-		reach:     "writes a file on the database server host",
-		match:     calledFunction("LO_EXPORT"),
-	},
-	{
-		construct: "xp_cmdshell",
-		reach:     "executes a shell command on the database server host",
-		match:     procedureOrFunction("XP_CMDSHELL"),
-	},
-	{
-		construct: "xp_dirtree",
-		reach:     "lists directories on the database server host",
-		match:     procedureOrFunction("XP_DIRTREE"),
-	},
-	{
-		construct: "sp_addlinkedserver",
-		reach:     "defines a connection to another database server",
-		match:     procedureOrFunction("SP_ADDLINKEDSERVER"),
-	},
-	{
 		// Not reach outside the database but control over the server it runs
 		// on, such as terminating a backend, or over its replication state. A
 		// read-only transaction permits every one of them and undoes none.
@@ -363,92 +261,6 @@ var escapeRules = []escapeRule{
 	{
 		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.ReplicationFunctions },
 		call:   calledFunctionAnyOf,
-	},
-	{
-		construct: "OPENQUERY",
-		reach:     "runs a query on a linked server, which is another database server",
-		match:     calledFunction("OPENQUERY"),
-	},
-	{
-		construct: "OPENROWSET",
-		reach:     "reads from another data source or a file on the database server host",
-		match:     calledFunction("OPENROWSET"),
-	},
-	{
-		construct: "OPENDATASOURCE",
-		reach:     "reads from another data source reached over the network",
-		match:     calledFunction("OPENDATASOURCE"),
-	},
-	{
-		// YQL reads translation settings from the head of the query, and
-		// --!ansi_lexer changes how every string, name and comment after it
-		// is read: a doubled quote becomes an escape and a backslash stops
-		// being one, so `'a\'; DELETE ...` is a string to this scanner and
-		// two statements to the server. The lexer models the default mode
-		// only, so a setting is refused rather than read past.
-		construct: "YQL translation setting",
-		reach:     "changes how the server reads the text after it, so what the statement runs cannot be judged",
-		match:     yqlTranslationSetting(),
-		applies:   readsYQL,
-	},
-	{
-		// File, Folder, Library, Package and Udf fetch code or data from a
-		// URL, and every other pragma changes how the rest of the query
-		// resolves names or runs. A pragma is refused by name wherever it
-		// appears, including inside an action body, where it starts no
-		// statement this scanner would see.
-		construct: "PRAGMA",
-		reach:     "changes how the server resolves or runs the query, and several pragmas fetch code or data from a URL",
-		match:     containsKeyword("PRAGMA"),
-		applies:   readsYQL,
-	},
-	{
-		// Module::Function is how YQL calls a UDF, and the module may be a
-		// script UDF (Python, JavaScript) or a native one that reaches the
-		// network. The name of a module says nothing reliable about what it
-		// does, so every call is refused: measured on YDB 26.2.1.14, the
-		// module may also be written `String`::Contains.
-		construct: "YQL UDF call",
-		reach:     "runs a user-defined function module, and a module may execute a script or reach outside the database",
-		match:     yqlNamespaceCall(),
-		applies:   readsYQL,
-	},
-	{
-		// These read files attached to the query, list folders, or read a
-		// secret; PRAGMA File and PRAGMA Library are how a file is attached
-		// from a URL. See yqlFileFunctions for the list and its source.
-		construct: "YQL file or secret function",
-		reach:     "reads a file attached to the query, a folder listing or a secret",
-		match:     yqlCallAnyOf(yqlFileFunctions()),
-		applies:   readsYQL,
-	},
-	{
-		construct: "YQL code or UDF function",
-		reach:     "evaluates code built at run time or calls a user-defined function by name",
-		match:     yqlCodeCall(),
-		applies:   readsYQL,
-	},
-	{
-		// PgCall runs a PostgreSQL function inside YDB: measured on 26.2.1.14,
-		// PgCall('version') answers `PostgreSQL 16.10 ...`, and
-		// PgCall('pg_read_file', ...) answers `No access to proc:
-		// pg_read_file`. Which functions the server allows is its decision,
-		// so every Pg call is refused rather than a list of the dangerous ones.
-		construct: "YQL PostgreSQL function",
-		reach:     "runs a PostgreSQL function inside YDB, and the server alone decides which functions may run",
-		match:     yqlCallWithPrefix("PG"),
-		applies:   readsYQL,
-	},
-	{
-		// A dotted source is a cluster or an external data source, never a
-		// table of this database: measured on YDB 26.2.1.14, FROM `dir`.`t`
-		// answers `Unknown cluster: dir`, while a table in a directory is
-		// one path, `dir/t`. An external data source reads object storage
-		// or another database over the network.
-		construct: "YQL external source",
-		reach:     "reads a cluster or an external data source: object storage or another database",
-		match:     yqlDottedSource(),
-		applies:   readsYQL,
 	},
 }
 
@@ -755,7 +567,7 @@ func matchesKeywordSequence(tokens []lexer.Token, keywords []string) bool {
 // Quoting is the reason this is not [containsKeyword]: Oracle resolves
 // `"UTL_HTTP"."REQUEST"(...)` to the same package as the bare spelling, and
 // the lexer reports a quoted identifier as a string token, so a keyword match
-// sees nothing. [callableName] already unquotes for call position and is the
+// sees nothing. [reachext.CallableName] already unquotes for call position and is the
 // same reading here.
 // packageCallAnyOf matches a name used to call something: qualified, as
 // `UTL_HTTP.REQUEST(...)`, or applied directly, as `HTTPURITYPE('http://...')`.
@@ -767,7 +579,7 @@ func matchesKeywordSequence(tokens []lexer.Token, keywords []string) bool {
 func packageCallAnyOf(names ...string) tokenMatcher {
 	return func(ctx scanContext) bool {
 		for i, token := range ctx.tokens {
-			value, ok := callableName(token)
+			value, ok := reachext.CallableName(token)
 			if !ok || !slices.Contains(names, value) {
 				continue
 			}
@@ -952,7 +764,7 @@ func callPositionMatcher(name string, prefix bool) tokenMatcher {
 			// position accepts the quoted spellings too — "pg_read_file",
 			// `load_file`, [xp_cmdshell]. isKeyword stays strict, so a table
 			// named "attach" remains ordinary DDL.
-			value, ok := callableName(token)
+			value, ok := reachext.CallableName(token)
 			if !ok {
 				continue
 			}
@@ -979,7 +791,7 @@ func procedureOrFunction(name string) tokenMatcher {
 			return true
 		}
 		for i, token := range ctx.tokens {
-			value, ok := callableName(token)
+			value, ok := reachext.CallableName(token)
 			if !ok || value != name || i == 0 {
 				continue
 			}
@@ -994,28 +806,6 @@ func procedureOrFunction(name string) tokenMatcher {
 		}
 		return false
 	}
-}
-
-// callableName returns the upper-cased name of a token that can name a
-// callable, unwrapping the quoted spellings. Double-quoted names arrive as
-// strings from the lexer; backticked and bracketed ones keep their quotes.
-func callableName(token lexer.Token) (string, bool) {
-	value := token.Value
-	switch token.Type {
-	case lexer.TokenIdentifier:
-		value = strings.Trim(value, "`[]")
-	case lexer.TokenString:
-		if !strings.HasPrefix(value, `"`) {
-			return "", false
-		}
-		value = strings.Trim(value, `"`)
-	default:
-		return "", false
-	}
-	if value == "" {
-		return "", false
-	}
-	return strings.ToUpper(value), true
 }
 
 // stringArgumentAfter reports whether a string literal directly follows one of
@@ -1056,17 +846,16 @@ func IsKeyword(token lexer.Token, keyword string) bool {
 //
 // A default is all it can be: MySQL reads the rule from sql_mode, which is
 // session state, which is why [Scan] reads a statement under both
-// interpretations rather than trusting this one. YQL reads backslash escapes
-// in every string, so a dialect whose text is YQL uses them; its one switch is
-// a --!ansi_lexer translation setting, which [Scan] refuses, and its lexer
-// mode ignores the interpretation the caller asks for.
+// interpretations rather than trusting this one. A dialect read by a lexer of
+// its own answers what that lexer's service says (reachext.Services), since
+// the lexer ignores the interpretation the caller asks for.
 func DialectUsesBackslashEscapes(dialect string) bool {
 	return escapesByDialect.Get(dialect)
 }
 
 // escapesByDialect holds every dialect's default escape reading.
 var escapesByDialect = descriptortable.New(func(described descriptor.Dialect) bool {
-	return described.Lexical.BackslashEscapes || readsYQL(described)
+	return described.Lexical.BackslashEscapes || builtin.Lookup(described.Lexical.Lexer).BackslashEscapes
 })
 
 // SignificantTokens tokenizes a statement, dropping whitespace and comments so
@@ -1116,7 +905,7 @@ func tokenOptions(backslashEscapes bool, dialect string) lexer.Options {
 // the server applies: with a space between them, `u & "mask"` is a bitwise
 // operator over two columns. It runs for every dialect, because a token that
 // arrives double-quoted is already read as a possible callable name for every
-// dialect -- see [callableName] -- and a name this misses is a construct that
+// dialect -- see [reachext.CallableName] -- and a name this misses is a construct that
 // executes.
 func foldUnicodeEscapedIdentifiers(tokens []lexer.Token) []lexer.Token {
 	folded := make([]lexer.Token, 0, len(tokens))
