@@ -422,20 +422,15 @@ func readRoutineBodies(ctx context.Context, items []sourceItem, opts Options) (m
 // routineBodyOf is the body of a routine a node defines, in the language of
 // the node's dialect.
 //
-// A PostgreSQL routine arrives as one of two node kinds, and the difference is
-// not about what was parsed. A PROCEDURE becomes a PostgresRoutineNode
-// carrying its body; a FUNCTION becomes a CreateFunctionNode, and
+// A routine of the quoted-body grammar arrives as one of two node kinds, and
+// the difference is not about what was parsed. A PROCEDURE becomes a
+// RoutineNode carrying its body; a FUNCTION becomes a CreateFunctionNode, and
 // `Parser.attachPostgresFunctionBody` fills its RoutineBody. Reading only the
 // first node type left every function unexamined while looking like a parser
-// limitation. A MySQL routine is a MySQLRoutineNode, and a SQL Server routine
-// a SQLServerRoutineNode.
+// limitation. A routine of every other routine grammar is a RoutineNode.
 func routineBodyOf(node ast.Node) (routineext.Body, bool) {
 	switch node := node.(type) {
-	case *ast.MySQLRoutineNode:
-		return routineext.Body{Kind: string(node.Kind), SQL: node.Body.SQL}, true
-	case *ast.SQLServerRoutineNode:
-		return routineext.Body{Kind: string(node.Kind), SQL: node.Body.SQL}, true
-	case *ast.PostgresRoutineNode:
+	case *ast.RoutineNode:
 		return routineext.Body{Kind: string(node.Kind), Language: node.Language, SQL: node.Body.SQL}, true
 	case *ast.CreateFunctionNode:
 		if node.RoutineBody == nil {
@@ -715,16 +710,12 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 			keyword = "raw SQL"
 		}
 		return []Finding{ctx.unsupportedModeledSQLFinding(keyword, keywordOffset)}
-	case *ast.MySQLRoutineNode:
+	case *ast.RoutineNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.OpaqueRoutineNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.DoBlockNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("DO", 0)}
-	case *ast.PostgresRoutineNode:
-		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
-	case *ast.SQLServerRoutineNode:
-		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.CreateFunctionNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE FUNCTION", 0)}
 	case *ast.CreateTriggerNode:
@@ -832,12 +823,8 @@ func flattenRoutineStatements(statements []routineext.Statement) []routineext.St
 // a finding: its kind in lowercase, then its name.
 func readRoutineLabel(stmt ast.Node) string {
 	switch node := stmt.(type) {
-	case *ast.MySQLRoutineNode:
+	case *ast.RoutineNode:
 		return routineLabel(string(node.Kind), node.Name)
-	case *ast.SQLServerRoutineNode:
-		return routineLabel(string(node.Kind), node.Name)
-	case *ast.PostgresRoutineNode:
-		return fmt.Sprintf("%s %s", node.Kind, node.Name)
 	case *ast.CreateFunctionNode:
 		kind := node.Kind
 		if kind == "" {

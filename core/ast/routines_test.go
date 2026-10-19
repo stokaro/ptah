@@ -8,53 +8,52 @@ import (
 	"ptah.run/core/ast"
 )
 
-func TestNewMySQLRoutine(t *testing.T) {
+func TestNewRoutine(t *testing.T) {
 	c := qt.New(t)
 
-	routine := ast.NewMySQLRoutine(" CREATE FUNCTION fn() RETURNS int RETURN 1; ", "mysql", ast.RoutineKindFunction)
+	routine := ast.NewRoutine(" CREATE FUNCTION fn() RETURNS int DETERMINISTIC RETURN 1; ", "mysql", ast.RoutineKindFunction)
 	routine.Name = "fn"
-	routine.Parameters = ""
 	routine.Returns = "int"
-	routine.SetCharacteristics([]string{"DETERMINISTIC"})
-	routine.Body = ast.MySQLRoutineBody{SQL: "RETURN 1"}
+	routine.Options = []ast.RoutineOption{{Text: "DETERMINISTIC"}}
+	routine.Body = ast.RoutineBody{SQL: "RETURN 1"}
 
-	c.Assert(routine.SQL, qt.Equals, "CREATE FUNCTION fn() RETURNS int RETURN 1;")
+	c.Assert(routine.SQL, qt.Equals, "CREATE FUNCTION fn() RETURNS int DETERMINISTIC RETURN 1;")
 	c.Assert(routine.Dialect, qt.Equals, "mysql")
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Name, qt.Equals, "fn")
 	c.Assert(routine.Returns, qt.Equals, "int")
-	c.Assert(routine.Characteristics, qt.DeepEquals, []string{"DETERMINISTIC"})
-	c.Assert(routine.Body, qt.Equals, ast.MySQLRoutineBody{SQL: "RETURN 1"})
+	c.Assert(routine.Options, qt.DeepEquals, []ast.RoutineOption{{Text: "DETERMINISTIC"}})
+	c.Assert(routine.Body, qt.Equals, ast.RoutineBody{SQL: "RETURN 1"})
 }
 
-// TestMySQLRoutineNode_AcceptHandsTheVisitorTheRoutine pins that the visitor
+// TestRoutineNode_AcceptHandsTheVisitorTheRoutine pins that the visitor
 // receives the routine, with its dialect and kind still on it. A renderer needs
 // those to decide the delimiter it wraps the body in, and a visitor handed the
 // bare statement has neither.
-func TestMySQLRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
+func TestRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
 	c := qt.New(t)
 
-	routine := ast.NewMySQLRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
+	routine := ast.NewRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
 	visitor := &MockVisitor{}
 
 	err := routine.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"MySQLRoutine:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Routine:CREATE PROCEDURE p() SELECT 1;"})
 	c.Assert(routine.Dialect, qt.Equals, "mysql")
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 }
 
-func TestMySQLRoutineNode_AcceptPropagatesTheVisitorError(t *testing.T) {
+func TestRoutineNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 	c := qt.New(t)
 
-	routine := ast.NewMySQLRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
+	routine := ast.NewRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
 	visitor := &MockVisitor{ReturnError: true}
 
 	err := routine.Accept(visitor)
 
 	c.Assert(err, qt.ErrorMatches, "mock error")
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"MySQLRoutine:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Routine:CREATE PROCEDURE p() SELECT 1;"})
 }
 
 func TestNewDoBlock(t *testing.T) {
@@ -78,58 +77,4 @@ func TestDoBlockNode_AcceptHandsTheVisitorTheBlock(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(block.SQL, qt.Equals, "DO $$ BEGIN PERFORM 1; END $$;")
 	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"DoBlock:DO $$ BEGIN PERFORM 1; END $$;"})
-}
-
-func TestNewPostgresRoutine(t *testing.T) {
-	c := qt.New(t)
-
-	routine := ast.NewPostgresRoutine(" CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$; ", "postgres", ast.RoutineKindProcedure)
-	routine.Name = "p"
-	routine.Language = "sql"
-
-	c.Assert(routine.SQL, qt.Equals, "CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;")
-	c.Assert(routine.Dialect, qt.Equals, "postgres")
-	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
-	c.Assert(routine.Name, qt.Equals, "p")
-	c.Assert(routine.Language, qt.Equals, "sql")
-}
-
-func TestPostgresRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
-	c := qt.New(t)
-
-	routine := ast.NewPostgresRoutine(" CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$; ", "postgres", ast.RoutineKindProcedure)
-	visitor := &MockVisitor{}
-
-	err := routine.Accept(visitor)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"PostgresRoutine:CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;"})
-}
-
-func TestNewSQLServerRoutine(t *testing.T) {
-	c := qt.New(t)
-
-	routine := ast.NewSQLServerRoutine(" CREATE FUNCTION [dbo].[f]() RETURNS int AS BEGIN RETURN 1; END ", "sqlserver", ast.RoutineKindFunction)
-	routine.Name = "[dbo].[f]"
-	routine.Returns = "int"
-	routine.Form = ast.SQLServerRoutineFormScalarFunction
-
-	c.Assert(routine.SQL, qt.Equals, "CREATE FUNCTION [dbo].[f]() RETURNS int AS BEGIN RETURN 1; END")
-	c.Assert(routine.Dialect, qt.Equals, "sqlserver")
-	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
-	c.Assert(routine.Name, qt.Equals, "[dbo].[f]")
-	c.Assert(routine.Returns, qt.Equals, "int")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormScalarFunction)
-}
-
-func TestSQLServerRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
-	c := qt.New(t)
-
-	routine := ast.NewSQLServerRoutine(" CREATE PROCEDURE [dbo].[p] AS SELECT 1; ", "sqlserver", ast.RoutineKindProcedure)
-	visitor := &MockVisitor{}
-
-	err := routine.Accept(visitor)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"SQLServerRoutine:CREATE PROCEDURE [dbo].[p] AS SELECT 1;"})
 }

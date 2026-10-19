@@ -21,7 +21,7 @@ func sqlServerRoutineOf(c *qt.C, sql string) sqlServerRoutineHeader {
 	statements, err := parser.NewParser(sql, parser.WithDialect("sqlserver")).Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	var options []string
 	for _, option := range routine.Options {

@@ -944,7 +944,7 @@ AS $$ SELECT value + 1; $$;`
 	c.Assert(createFunction.BodyKind, qt.Equals, ast.FunctionBodyQuoted)
 	c.Assert(createFunction.Language, qt.Equals, "sql")
 	c.Assert(createFunction.RoutineBody, qt.IsNotNil)
-	c.Assert(*createFunction.RoutineBody, qt.DeepEquals, ast.PostgresRoutineBody{
+	c.Assert(*createFunction.RoutineBody, qt.DeepEquals, ast.RoutineBody{
 		SQL:       " SELECT value + 1; ",
 		Delimiter: "$$",
 		Language:  "sql",
@@ -1161,7 +1161,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.PostgresRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routine.Dialect, qt.Equals, platform.Postgres)
@@ -1196,7 +1196,7 @@ $proc$;`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.PostgresRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Parameters, qt.Equals, "IN name text DEFAULT 'guest'")
 	c.Assert(routine.Body.SQL, qt.Contains, "RAISE NOTICE '%', name;")
@@ -1219,7 +1219,7 @@ CREATE TABLE after_atomic (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.PostgresRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Language, qt.Equals, "sql")
 	c.Assert(routine.Body.SQL, qt.Contains, "BEGIN ATOMIC")
@@ -1415,14 +1415,14 @@ DELIMITER ;`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Name, qt.Equals, "fn1")
 	c.Assert(routine.Parameters, qt.Equals, "x int")
 	c.Assert(routine.Returns, qt.Equals, "int")
-	c.Assert(routine.Characteristics, qt.DeepEquals, []string{"DETERMINISTIC"})
+	c.Assert(routine.Options, qt.DeepEquals, []ast.RoutineOption{{Text: "DETERMINISTIC"}})
 	c.Assert(routine.SQL, qt.Contains, "CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC")
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT INTO t1 VALUES (x);")
 	c.Assert(routine.Body.SQL, qt.Contains, "RETURN x+2;")
@@ -1441,7 +1441,7 @@ END;`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MariaDB)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
@@ -1548,12 +1548,12 @@ AS RETURN SELECT @a as [a], @b as [b];`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Name, qt.Equals, "[f2]")
 	c.Assert(routine.Parameters, qt.Equals, "@a as INT, @b as INT = 1")
 	c.Assert(routine.Returns, qt.Equals, "TABLE")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormInlineTableValuedFunction)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Body.SQL, qt.Contains, "RETURN SELECT @a as [a]")
 }
 
@@ -1630,12 +1630,12 @@ END`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Name, qt.Equals, "[f3]")
 	c.Assert(routine.Parameters, qt.Equals, "@a int, @b int = 1")
 	c.Assert(routine.Returns, qt.Equals, "@t1 TABLE ([c1] int NOT NULL, [double] AS [c1] * 2)")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormMultiStatementTableFunction)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT @t1")
 }
 
@@ -1651,7 +1651,7 @@ END`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Returns, qt.Equals, "@t TABLE ([c] int DEFAULT CAST(1 AS int))")
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT @t")
@@ -1670,10 +1670,10 @@ END`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Returns, qt.Equals, "@t TABLE ([AS] int NOT NULL, [END]]value] int NOT NULL)")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormMultiStatementTableFunction)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Body.SQL, qt.Contains, "INSERT @t")
 	c.Assert(routine.Body.SQL, qt.Contains, "SELECT @a AS [AS], @a AS [END]]value]")
 }
@@ -1777,14 +1777,13 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.SQLServer)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Name, qt.Equals, "[dbo].[score]")
 	c.Assert(routine.Parameters, qt.Equals, "@user_id int")
 	c.Assert(routine.Returns, qt.Equals, "int")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormScalarFunction)
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "GO")
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
@@ -1805,7 +1804,7 @@ END`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Name, qt.Equals, "dbo.score")
 	c.Assert(routine.Parameters, qt.Equals, "@returns int")
@@ -1834,14 +1833,13 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.SQLServer)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
 	c.Assert(routine.Name, qt.Equals, "dbo.f7")
 	c.Assert(routine.Parameters, qt.Equals, "@a int")
 	c.Assert(routine.Returns, qt.Equals, "int")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormScalarFunction)
 	c.Assert(routine.SQL, qt.Contains, "CREATE FUNCTION dbo.f7")
 	c.Assert(routine.SQL, qt.Contains, "RETURN @a")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
@@ -1863,11 +1861,11 @@ END`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Name, qt.Equals, "[dbo].[touch_user]")
 	c.Assert(routine.Parameters, qt.Equals, "@user_id int, @enabled bit = (1)")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormProcedure)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routine.Body.SQL, qt.Contains, "SELECT @user_id")
 }
 
@@ -1879,7 +1877,7 @@ func TestParser_ParseSQLServerDialectProcAliasAsRoutine(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routine.Name, qt.Equals, "[dbo].[touch_user]")
@@ -1897,7 +1895,7 @@ SELECT 2 AS [second];`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Name, qt.Equals, "[dbo].[list_users]")
 	c.Assert(routine.Body.SQL, qt.Equals, "SELECT 1 AS [first];\nSELECT 2 AS [second]")
@@ -1915,7 +1913,7 @@ GO`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Body.SQL, qt.Equals, "DECLARE @score int\nSET @score = 1\nRETURN @score")
 }
@@ -1949,7 +1947,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Body.SQL, qt.Contains, "SELECT go AS value")
 	c.Assert(routine.Body.SQL, qt.Contains, "[go] AS bracketed")
@@ -1971,12 +1969,11 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.SQLServer)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routine.Name, qt.Equals, "dbo.p1")
-	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormProcedure)
 	c.Assert(routine.SQL, qt.Contains, "CREATE PROCEDURE dbo.p1")
 	c.Assert(routine.SQL, qt.Contains, "SELECT 1")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "GO")
@@ -2000,7 +1997,7 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Parameters, qt.Equals, "@go int")
 	c.Assert(routine.Body.SQL, qt.Contains, "RETURN SELECT @go AS go")
@@ -2022,7 +2019,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.SQLServerRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Body.SQL, qt.Contains, "BEGIN TRANSACTION")
 	c.Assert(routine.Body.SQL, qt.Contains, "END CONVERSATION @handle")
@@ -2111,17 +2108,17 @@ CALL proc();`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routine.Definer, qt.Equals, "DEFINER='boring'")
 	c.Assert(routine.Name, qt.Equals, "proc")
-	c.Assert(routine.Characteristics, qt.DeepEquals, []string{
-		"COMMENT 'ATLAS_DELIMITER'",
-		"SQL SECURITY INVOKER",
-		"NOT DETERMINISTIC",
-		"MODIFIES SQL DATA",
+	c.Assert(routine.Options, qt.DeepEquals, []ast.RoutineOption{
+		{Text: "COMMENT 'ATLAS_DELIMITER'"},
+		{Text: "SQL SECURITY INVOKER"},
+		{Text: "NOT DETERMINISTIC"},
+		{Text: "MODIFIES SQL DATA"},
 	})
 	c.Assert(routine.SQL, qt.Contains, "CREATE DEFINER='boring' PROCEDURE proc ()")
 	c.Assert(routine.SQL, qt.Contains, "SQL SECURITY INVOKER")
@@ -2140,7 +2137,7 @@ func TestParser_ParseMySQLDialectDefinerFunctionAsRoutine(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
@@ -2148,7 +2145,7 @@ func TestParser_ParseMySQLDialectDefinerFunctionAsRoutine(t *testing.T) {
 	c.Assert(routine.Name, qt.Equals, "`add2`")
 	c.Assert(routine.Parameters, qt.Equals, "a int, b int")
 	c.Assert(routine.Returns, qt.Equals, "int")
-	c.Assert(routine.Characteristics, qt.DeepEquals, []string{"DETERMINISTIC"})
+	c.Assert(routine.Options, qt.DeepEquals, []ast.RoutineOption{{Text: "DETERMINISTIC"}})
 	c.Assert(routine.Body.SQL, qt.Equals, "RETURN a + b")
 }
 
@@ -2190,7 +2187,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routine.Body.SQL, qt.Contains, "END LOOP scan_loop;")
@@ -2220,7 +2217,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Body.SQL, qt.Contains, "END IF")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
@@ -2254,7 +2251,7 @@ func TestParser_ParseMariaDBDialectDefinerRoutineHardening(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.RoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MariaDB)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)

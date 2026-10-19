@@ -149,7 +149,8 @@ func (w *Writer) walkTree(ctx context.Context, t tree, dir string, entries *[]ro
 		}
 		var step treeStep
 		if statement, droppable := dropStatement(entry.GetType(), path.Join(t.base, child)); droppable {
-			step = treeStep{statement: statement, rank: teardownRank(entry.GetType())}
+			step = treeStep{statement: statement, rowTable: entry.GetType() == Ydb_Scheme.Entry_TABLE,
+				rank: teardownRank(entry.GetType())}
 		}
 		*entries = append(*entries, rootEntry{object: object, step: step})
 	}

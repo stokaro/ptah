@@ -41,13 +41,11 @@ func TestStatementLabel_EveryNodeKindWouldReadAsSQL(t *testing.T) {
 	// Node types that are parts of a statement rather than statements, so the
 	// linter never answers one, and the routine nodes the rule labels by hand.
 	notStatements := map[string]string{
-		"ColumnNode":           "a column inside CREATE TABLE",
-		"ConstraintNode":       "a constraint inside CREATE TABLE",
-		"DoBlockNode":          "labeled by an explicit case",
-		"MySQLRoutineNode":     "labeled by an explicit case, from its own Kind",
-		"OpaqueRoutineNode":    "labeled by an explicit case, from its own Kind",
-		"PostgresRoutineNode":  "labeled by an explicit case, from its own Kind",
-		"SQLServerRoutineNode": "labeled by an explicit case, from its own Kind",
+		"ColumnNode":        "a column inside CREATE TABLE",
+		"ConstraintNode":    "a constraint inside CREATE TABLE",
+		"DoBlockNode":       "labeled by an explicit case",
+		"OpaqueRoutineNode": "labeled by an explicit case, from its own Kind",
+		"RoutineNode":       "labeled by an explicit case, from its own Kind",
 	}
 
 	// Kinds a rule analyzes never reach the default arm, so they are never

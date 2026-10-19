@@ -194,7 +194,8 @@ func postgres() descriptor.Dialect {
 		// and answers `MATCH PARTIAL not yet implemented`. The current-time
 		// words are keywords: CURRENT_TIMESTAMP() is refused. The server stores
 		// one spelling of a string default, ALTER INDEX renames an index, and
-		// a routine's body is a string constant in a LANGUAGE.
+		// a routine's body is a string constant in a LANGUAGE. A DO block that
+		// writes no LANGUAGE is PL/pgSQL.
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
@@ -205,8 +206,9 @@ func postgres() descriptor.Dialect {
 			Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 			Routines: descriptor.RoutineGrammar{
-				Body:              descriptor.RoutineQuotedBody,
-				TriggerConditions: true,
+				Body:                   descriptor.RoutineQuotedBody,
+				TriggerConditions:      true,
+				DefaultDoBlockLanguage: descriptor.DoBlocksPLpgSQL,
 			},
 		},
 

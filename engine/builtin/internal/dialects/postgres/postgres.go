@@ -426,15 +426,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// what it emits.
 	case *ast.RawSQLNode:
 		return r.renderRawSQL(n)
-	case *ast.MySQLRoutineNode:
+	case *ast.RoutineNode:
 		return r.renderRoutineSQL(n.SQL)
 	case *ast.OpaqueRoutineNode:
 		return r.renderRoutineSQL(n.SQL)
 	case *ast.DoBlockNode:
-		return r.renderRoutineSQL(n.SQL)
-	case *ast.PostgresRoutineNode:
-		return r.renderRoutineSQL(n.SQL)
-	case *ast.SQLServerRoutineNode:
 		return r.renderRoutineSQL(n.SQL)
 
 	// Data manipulation, which this renderer does not generate.

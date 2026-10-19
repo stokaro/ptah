@@ -33,9 +33,9 @@ func leadingSpace(text string) int {
 	return len(text) - len(strings.TrimLeft(text, " \t\r\n"))
 }
 
-func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.SQLServerRoutineNode, []routineOptionSpan, error) {
+func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.RoutineNode, []routineOptionSpan, error) {
 	tokens := newSQLServerRoutineTokenizer(sql).tokens()
-	routine := ast.NewSQLServerRoutine(sql, dialect, kind)
+	routine := ast.NewRoutine(sql, dialect, kind)
 	asIdx := findSQLServerRoutineBodyBoundary(tokens, kind)
 	headerEnd, options, err := parseSQLServerRoutineOptions(sql, tokens, kind, asIdx)
 	if err != nil {
@@ -43,9 +43,8 @@ func parseSQLServerRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.S
 	}
 	routine.Name, routine.Parameters, routine.Returns = parseSQLServerRoutineHeader(sql, tokens, kind, headerEnd)
 	for _, option := range options {
-		routine.Options = append(routine.Options, ast.SQLServerRoutineOption{Text: option.text})
+		routine.Options = append(routine.Options, ast.RoutineOption{Text: option.text})
 	}
-	routine.Form = classifySQLServerRoutineForm(routine)
 	routine.Body = parseSQLServerRoutineBody(sql, tokens, asIdx)
 	return routine, options, nil
 }
@@ -65,7 +64,7 @@ type routineOptionSpan struct {
 // one routine share its number, so an owner combines them into one facet. An option an
 // owner claims is marked read, and the facets its owner reads join the
 // routine's.
-func (p *Parser) claimOwnerRoutineOptions(routine *ast.SQLServerRoutineNode, options []routineOptionSpan, offset int) {
+func (p *Parser) claimOwnerRoutineOptions(routine *ast.RoutineNode, options []routineOptionSpan, offset int) {
 	candidates := p.owners.Candidates(p.dialect, sqlext.RoutineOption)
 	p.definitions++
 	for i, option := range options {
@@ -357,33 +356,18 @@ func parseSQLServerRoutineReturns(sql string, tokens []lexer.Token, afterIdx, as
 	return strings.TrimSpace(sql[tokens[returnsIdx].End:tokens[asIdx].Start])
 }
 
-func classifySQLServerRoutineForm(routine *ast.SQLServerRoutineNode) ast.SQLServerRoutineForm {
-	if routine.Kind == ast.RoutineKindProcedure {
-		return ast.SQLServerRoutineFormProcedure
-	}
-	returns := strings.ToUpper(routine.Returns)
-	switch {
-	case strings.HasPrefix(strings.TrimSpace(returns), "TABLE"):
-		return ast.SQLServerRoutineFormInlineTableValuedFunction
-	case strings.Contains(returns, " TABLE"):
-		return ast.SQLServerRoutineFormMultiStatementTableFunction
-	default:
-		return ast.SQLServerRoutineFormScalarFunction
-	}
-}
-
-func parseSQLServerRoutineBody(sql string, tokens []lexer.Token, asIdx int) ast.SQLServerRoutineBody {
+func parseSQLServerRoutineBody(sql string, tokens []lexer.Token, asIdx int) ast.RoutineBody {
 	if asIdx == -1 {
-		return ast.SQLServerRoutineBody{}
+		return ast.RoutineBody{}
 	}
 	bodyStartIdx := asIdx
 	if tokens[asIdx].MatchIdentifierValue("AS") {
 		bodyStartIdx = nextSQLServerRoutineToken(tokens, asIdx+1)
 	}
 	if bodyStartIdx == -1 {
-		return ast.SQLServerRoutineBody{}
+		return ast.RoutineBody{}
 	}
-	return ast.SQLServerRoutineBody{SQL: strings.TrimSpace(sql[tokens[bodyStartIdx].Start:sqlServerRoutineStatementEnd(sql, tokens)])}
+	return ast.RoutineBody{SQL: strings.TrimSpace(sql[tokens[bodyStartIdx].Start:sqlServerRoutineStatementEnd(sql, tokens)])}
 }
 
 func findSQLServerRoutineKeyword(tokens []lexer.Token, keyword string, startIdx int) int {

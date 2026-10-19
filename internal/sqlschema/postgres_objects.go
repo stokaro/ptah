@@ -224,12 +224,12 @@ func trimTriggerFunctionWrapper(body string) string {
 	return strings.TrimSpace(inner[:len(inner)-len("END;")])
 }
 
-// toPostgresRoutine converts a routine the PostgreSQL routine parser modelled.
+// toPostgresRoutine converts a routine the quoted-body routine grammar read.
 //
 // CREATE FUNCTION reaches this package as a CreateFunctionNode and CREATE
-// PROCEDURE as this one, so a schema's procedures were parsed and then not
-// converted (stokaro/ptah#2435).
-func toPostgresRoutine(node *ast.PostgresRoutineNode, sourcePlatform string) schemamodel.Function {
+// PROCEDURE as a routine node, so a schema's procedures were parsed and then
+// not converted (stokaro/ptah#2435).
+func toPostgresRoutine(node *ast.RoutineNode, sourcePlatform string) schemamodel.Function {
 	function := schemamodel.Function{
 		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Kind:       string(node.Kind),
@@ -243,7 +243,7 @@ func toPostgresRoutine(node *ast.PostgresRoutineNode, sourcePlatform string) sch
 	return function
 }
 
-// toSQLServerRoutine converts a routine the SQL Server routine parser modelled.
+// toSQLServerRoutine converts a routine the transact-sql routine grammar read.
 //
 // EXECUTE AS CALLER is the security mode INVOKER, and every other EXECUTE AS
 // is DEFINER, as the reader reports them. A named principal, SCHEMABINDING,
@@ -255,7 +255,7 @@ func toPostgresRoutine(node *ast.PostgresRoutineNode, sourcePlatform string) sch
 // name too: the model has no place for it, so it could be neither written nor
 // compared back, and keeping the routine without it would create one the
 // author did not write.
-func toSQLServerRoutine(node *ast.SQLServerRoutineNode, sourcePlatform string) (schemamodel.Function, error) {
+func toSQLServerRoutine(node *ast.RoutineNode, sourcePlatform string) (schemamodel.Function, error) {
 	security := ""
 	for _, option := range node.Options {
 		switch {
@@ -298,15 +298,21 @@ func toSQLServerRoutine(node *ast.SQLServerRoutineNode, sourcePlatform string) (
 	return function, nil
 }
 
-// toMySQLRoutine converts a routine the MySQL routine parser modelled.
+// toMySQLRoutine converts a routine the compound-statement routine grammar
+// read.
 //
-// The characteristics carry the security mode and the volatility, read as
-// [mysqlroutine.FromCharacteristics] reads them, so a routine written in SQL
+// The options are the routine's characteristics. They carry the security mode
+// and volatility, which [mysqlroutine.FromCharacteristics] reads, so a routine
+// written in SQL
 // states what the same routine read back from the server reports. A mode or a
 // volatility the statement does not write stays empty, and the target's own
 // applies.
-func toMySQLRoutine(node *ast.MySQLRoutineNode, sourcePlatform string) schemamodel.Function {
-	security, volatility := mysqlroutine.FromCharacteristics(node.Characteristics)
+func toMySQLRoutine(node *ast.RoutineNode, sourcePlatform string) schemamodel.Function {
+	characteristics := make([]string, 0, len(node.Options))
+	for _, option := range node.Options {
+		characteristics = append(characteristics, option.Text)
+	}
+	security, volatility := mysqlroutine.FromCharacteristics(characteristics)
 	function := schemamodel.Function{
 		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Kind:       string(node.Kind),
