@@ -8,7 +8,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/sqlreach"
 )
 
 func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error {
@@ -833,12 +832,16 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 	if definesPostgresRoutine(tokens) || replay.NormalizedIdentifier(tokens[0]) == "CALL" {
 		return ""
 	}
+	// The control and replication functions are the ones the PostgreSQL
+	// descriptor states, which the plan and check-assertion scans of
+	// internal/sqlreach refuse too.
+	described, _ := platform.Lookup(platform.Postgres)
 	for index := 0; index+1 < len(tokens); index++ {
 		if !tokens[index+1].MatchOperatorValue("(") {
 			continue
 		}
 		name := replay.NormalizedIdentifier(tokens[index])
-		// The control-function names are sqlreach's, shared with the
+		// The control and replication names are shared with the
 		// check-assertion validator, which refuses the same set in a predicate
 		// it is about to send to a live database. The rest below are this
 		// guard's own: they answer what a dev-clean run may execute, which is
@@ -846,10 +849,10 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 		if name == "SET_CONFIG" && postgresTransactionScopedSetConfig(tokens, index+1) {
 			continue
 		}
-		if slices.Contains(sqlreach.PostgresControlFunctions(), name) {
+		if slices.Contains(described.Reach.ControlFunctions.Names, name) {
 			return "cluster control function"
 		}
-		if slices.Contains(sqlreach.PostgresReplicationFunctions(), name) {
+		if slices.Contains(described.Reach.ReplicationFunctions.Names, name) {
 			return "replication state operation"
 		}
 		switch name {

@@ -1,14 +1,14 @@
-package sqlreach_test
+package yqlreach_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/sqlreach"
+	"ptah.run/internal/yqlreach"
 )
 
-func TestReadYQLSources_HappyPath(t *testing.T) {
+func TestReadSources_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		text    string
@@ -57,7 +57,7 @@ func TestReadYQLSources_HappyPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := sqlreach.ReadYQLSources(tc.text)
+			got, err := yqlreach.ReadSources(tc.text)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Prefix, qt.Equals, tc.prefix)
 			c.Assert(got.Sources, qt.DeepEquals, tc.sources)
@@ -66,7 +66,7 @@ func TestReadYQLSources_HappyPath(t *testing.T) {
 	}
 }
 
-func TestReadYQLSources_FailurePath(t *testing.T) {
+func TestReadSources_FailurePath(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
@@ -91,9 +91,9 @@ func TestReadYQLSources_FailurePath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := sqlreach.ReadYQLSources(tc.text)
+			got, err := yqlreach.ReadSources(tc.text)
 			c.Assert(err, qt.ErrorMatches, tc.want)
-			c.Assert(got, qt.DeepEquals, sqlreach.YQLReads{})
+			c.Assert(got, qt.DeepEquals, yqlreach.Reads{})
 		})
 	}
 }

@@ -126,7 +126,11 @@ func clickHouse() descriptor.Dialect {
 
 		// How the common model is lowered for the engine.
 		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumNumbered},
-		Lexical:    descriptor.Lexical{LineComments: []string{"#", "//"}, BackslashEscapes: true},
+		Lexical: descriptor.Lexical{
+			LineComments:               []string{"#", "//"},
+			BackslashEscapes:           true,
+			IdentifierBackslashEscapes: true,
+		},
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			NullableTypes: true,
@@ -142,6 +146,9 @@ func clickHouse() descriptor.Dialect {
 		Conversion: descriptor.Conversion{
 			RowPolicyOwned: true,
 		},
+
+		// Reach: what internal/sqlreach reads.
+		Reach: clickHouseReach(),
 	}
 }
 

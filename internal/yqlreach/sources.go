@@ -1,4 +1,4 @@
-package sqlreach
+package yqlreach
 
 import (
 	"errors"
@@ -6,14 +6,14 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlreach"
 )
 
-// YQLReads is what a YQL query reads from the database it is sent to, as far
+// Reads is what a YQL query reads from the database it is sent to, as far
 // as its text says: the names of the objects at its source positions, and the
 // directory a TablePathPrefix pragma in front of it resolves them against.
-type YQLReads struct {
+type Reads struct {
 	// Prefix is the directory a `PRAGMA TablePathPrefix` names, or empty.
 	Prefix string
 	// Sources are the names at the query's source positions, in the order
@@ -24,10 +24,10 @@ type YQLReads struct {
 	Selects []string
 }
 
-// errYQLSource starts every refusal of [ReadYQLSources].
+// errYQLSource starts every refusal of [ReadSources].
 var errYQLSource = errors.New("the objects a YDB query reads cannot be named from its text")
 
-// ReadYQLSources names what text, one SELECT or a SELECT after
+// ReadSources names what text, one SELECT or a SELECT after
 // TablePathPrefix pragmas, reads: every name written after FROM or JOIN, after
 // ANY there, and after a comma in a list of sources. That is the half of a
 // read-only proof the text can give. Whether a name is a table this database
@@ -41,31 +41,31 @@ var errYQLSource = errors.New("the objects a YDB query reads cannot be named fro
 // out: a named expression, a call such as a table function, a parenthesized
 // source that is not a subquery, a dotted or cluster name, a name holding a
 // backtick or a backslash, a statement other than SELECT and the pragma, and
-// any pragma but TablePathPrefix. Every SELECT is held to [YQLReadOnly] first,
+// any pragma but TablePathPrefix. Every SELECT is held to [ReadOnly] first,
 // so a statement that writes, or that a number written against a word would
 // hide a source in, never reaches the walk.
-func ReadYQLSources(text string) (YQLReads, error) {
-	var reads YQLReads
+func ReadSources(text string) (Reads, error) {
+	var reads Reads
 	for _, statement := range yqlStatements(text) {
-		tokens := SignificantTokens(statement, true, platform.YDB)
+		tokens := yqlTokens(statement)
 		if len(tokens) == 0 {
 			continue
 		}
-		if IsKeyword(tokens[0], "PRAGMA") {
+		if sqlreach.IsKeyword(tokens[0], "PRAGMA") {
 			prefix, err := yqlTablePathPrefix(tokens)
 			if err != nil {
-				return YQLReads{}, err
+				return Reads{}, err
 			}
 			reads.Prefix = prefix
 			continue
 		}
-		if err := YQLReadOnly(statement); err != nil {
-			return YQLReads{}, fmt.Errorf("%w: %w", errYQLSource, err)
+		if err := ReadOnly(statement); err != nil {
+			return Reads{}, fmt.Errorf("%w: %w", errYQLSource, err)
 		}
 		reads.Selects = append(reads.Selects, strings.TrimSpace(statement))
 		sources, err := yqlSourceNames(tokens)
 		if err != nil {
-			return YQLReads{}, err
+			return Reads{}, err
 		}
 		for _, source := range sources {
 			if !slices.Contains(reads.Sources, source) {
@@ -80,7 +80,7 @@ func ReadYQLSources(text string) (YQLReads, error) {
 func yqlStatements(text string) []string {
 	var statements []string
 	start := 0
-	for _, token := range SignificantTokens(text, true, platform.YDB) {
+	for _, token := range yqlTokens(text) {
 		if token.Type != lexer.TokenSemicolon {
 			continue
 		}
@@ -111,7 +111,7 @@ func yqlTablePathPrefix(tokens []lexer.Token) (string, error) {
 			case "=", "(", ")":
 				matched = matched && token.MatchOperatorValue(want)
 			default:
-				matched = matched && IsKeyword(token, want)
+				matched = matched && sqlreach.IsKeyword(token, want)
 			}
 		}
 		if matched {
@@ -154,10 +154,10 @@ func yqlSourceNames(tokens []lexer.Token) ([]string, error) {
 			delete(lists, depth)
 			depth--
 			continue
-		case token.Type == lexer.TokenIdentifier && slices.Contains(yqlSourceListEnds, strings.ToUpper(token.Value)):
+		case token.Type == lexer.TokenIdentifier && slices.Contains(sqlreach.YQLSourceListEnds(), strings.ToUpper(token.Value)):
 			delete(lists, depth)
 		}
-		anchor := IsKeyword(token, "FROM") || IsKeyword(token, "JOIN")
+		anchor := sqlreach.IsKeyword(token, "FROM") || sqlreach.IsKeyword(token, "JOIN")
 		if anchor {
 			lists[depth] = true
 		}
@@ -179,7 +179,7 @@ func yqlSourceNames(tokens []lexer.Token) ([]string, error) {
 // own sources the walk meets in turn, or a refusal for anything it cannot
 // name.
 func yqlSourceName(tokens []lexer.Token, i int) (string, error) {
-	if i < len(tokens) && IsKeyword(tokens[i], "ANY") {
+	if i < len(tokens) && sqlreach.IsKeyword(tokens[i], "ANY") {
 		i++
 	}
 	if i >= len(tokens) {
@@ -192,7 +192,7 @@ func yqlSourceName(tokens []lexer.Token, i int) (string, error) {
 	}
 	switch {
 	case token.MatchOperatorValue("("):
-		if IsKeyword(next, "SELECT") || next.MatchOperatorValue("(") {
+		if sqlreach.IsKeyword(next, "SELECT") || next.MatchOperatorValue("(") {
 			return "", nil
 		}
 		return "", fmt.Errorf("%w: a parenthesized source is not a subquery", errYQLSource)

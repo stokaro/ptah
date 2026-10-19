@@ -78,7 +78,11 @@ func TestDescriptors_QueryAgreesWithTheRetiredSwitches(t *testing.T) {
 			expected, found := want[dialect.Name]
 			c.Assert(found, qt.IsTrue)
 			c.Assert(dialect.Query, qt.DeepEquals, expected.query)
-			c.Assert(dialect.Scripts, qt.DeepEquals, expected.scripts)
+			// Bodies is internal/sqlcompound's, which
+			// TestDescriptors_BodiesAgreeWithTheSwitchTheyReplace pins.
+			scripts := dialect.Scripts
+			scripts.Bodies = ""
+			c.Assert(scripts, qt.DeepEquals, expected.scripts)
 		})
 	}
 }

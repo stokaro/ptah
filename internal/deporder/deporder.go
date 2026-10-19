@@ -1031,9 +1031,11 @@ func sqlCodeMask(body string) []bool {
 
 // sqlMasksForDialect adds the target's nonstandard lexical forms, as its
 // descriptor states them, without changing the generic PostgreSQL-oriented
-// scanner: ClickHouse recognizes #, #!, and // line comments in addition to
-// -- and /* ... */, and escapes with a backslash. A target read by a lexer of
-// its own, as YDB's YQL is, is read by that lexer instead; see [yqlMasks].
+// scanner: the line comments it opens beside -- and /* ... */, such as the #
+// of the MySQL family and ClickHouse's # and //, and the backslash escapes of
+// its strings and of its quoted names. MySQL's catalog writes a view's
+// strings that way, as 'it\'s'. A target read by a lexer of its own, as
+// YDB's YQL is, is read by that lexer instead; see [yqlMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
 	described, _ := platform.Lookup(dialect)
 	lexical := described.Lexical
@@ -1062,7 +1064,7 @@ func sqlMasksForDialect(body, dialect string) sqlMasks {
 		case body[i] == '\'':
 			i = skipStringLiteral(body, i, lexical.BackslashEscapes)
 		case body[i] == '"' || body[i] == '`':
-			end, closeAt := quotedIdentifierEnd(body, i, lexical.BackslashEscapes)
+			end, closeAt := quotedIdentifierEnd(body, i, lexical.IdentifierBackslashEscapes)
 			masks.quoteOpen[i] = true
 			if closeAt >= 0 {
 				masks.quoteClose[closeAt] = true
@@ -1163,8 +1165,9 @@ func skipBlockComment(body string, start int) int {
 }
 
 // skipStringLiteral consumes a '...' literal. A doubled quote continues it.
-// PostgreSQL enables backslash escapes for E-prefixed literals; ClickHouse
-// enables them for ordinary literals, which backslashEscapes carries here.
+// PostgreSQL enables backslash escapes for E-prefixed literals; ClickHouse and
+// the MySQL family enable them for ordinary literals, which backslashEscapes
+// carries here.
 func skipStringLiteral(body string, start int, backslashEscapes bool) int {
 	escapes := backslashEscapes || start > 0 && body[start-1] == 'e' &&
 		(start == 1 || !isSQLIdentifierRune(rune(body[start-2])))
@@ -1184,9 +1187,10 @@ func skipStringLiteral(body string, start int, backslashEscapes bool) int {
 }
 
 // quotedIdentifierEnd consumes a standard-quoted or backtick-quoted identifier,
-// including doubled closing quotes and ClickHouse backslash escapes. It returns
-// both the exclusive end and the closing delimiter offset, or -1 when the
-// identifier is unterminated.
+// including doubled closing quotes and, where the target's names take them,
+// backslash escapes, as ClickHouse's do. A MySQL name takes none: `a\` is a
+// name ending in a backslash. It returns both the exclusive end and the
+// closing delimiter offset, or -1 when the identifier is unterminated.
 func quotedIdentifierEnd(body string, start int, backslashEscapes bool) (end, closeAt int) {
 	quote := body[start]
 	for i := start + 1; i < len(body); {

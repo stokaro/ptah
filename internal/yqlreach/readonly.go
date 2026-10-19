@@ -1,4 +1,4 @@
-package sqlreach
+package yqlreach
 
 import (
 	"errors"
@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlreach"
 )
 
 // yqlWritingKeywords are the YQL words that start or carry a statement other
@@ -35,7 +35,7 @@ var yqlWritingKeywords = []string{
 
 const yqlReadOnlyRefusal = "a YDB statement is proved read-only only when it is one SELECT"
 
-// YQLReadOnly proves that statement, read as YQL, is one read-only SELECT, and
+// ReadOnly proves that statement, read as YQL, is one read-only SELECT, and
 // returns an error naming the first construct that stands in the way.
 //
 // It is default-deny: what it cannot read as part of a single SELECT is
@@ -49,12 +49,12 @@ const yqlReadOnlyRefusal = "a YDB statement is proved read-only only when it is 
 // as in `1uFROM`, which reads correctly only by the server's number grammar.
 //
 // What a read may still reach -- a UDF module, an external source, a pragma,
-// a translation setting -- is [Scan]'s question, and a caller that proves a
-// statement read-only asks both. The text is the whole proof: no read-only
+// a translation setting -- is [sqlreach.Scan]'s question, and a caller that
+// proves a statement read-only asks both. The text is the whole proof: no read-only
 // YDB session backs it up.
-func YQLReadOnly(statement string) error {
-	tokens := SignificantTokens(statement, true, platform.YDB)
-	if len(tokens) == 0 || !IsKeyword(tokens[0], "SELECT") {
+func ReadOnly(statement string) error {
+	tokens := yqlTokens(statement)
+	if len(tokens) == 0 || !sqlreach.IsKeyword(tokens[0], "SELECT") {
 		return errors.New(yqlReadOnlyRefusal)
 	}
 	for i, token := range tokens {

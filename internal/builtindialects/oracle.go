@@ -62,7 +62,7 @@ func oracle() descriptor.Dialect {
 		Query: descriptor.Query{
 			OffsetFetch: true,
 		},
-		Scripts: descriptor.Scripts{ClientDelimiters: true},
+		Scripts: descriptor.Scripts{ClientDelimiters: true, Bodies: descriptor.BodiesPLSQL},
 
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",
@@ -146,6 +146,11 @@ END;`,
 			EnumCheckType:         "VARCHAR2(255)",
 			EnumCheckQuotesColumn: true,
 		},
+
+		// Lexing and reach: what internal/sqlreach reads. The shared lexer
+		// does not read q'[...]' literals, so a scan refuses one.
+		Lexical: descriptor.Lexical{AlternativeQuoting: true},
+		Reach:   oracleReach(),
 	}
 }
 

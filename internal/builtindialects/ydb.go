@@ -73,7 +73,7 @@ func ydb() descriptor.Dialect {
 		// No YDB client writes a delimiter directive, and the shared rewriter
 		// reads strings and comments by rules YQL does not share: it would
 		// rewrite a delimiter inside an @@...@@ literal.
-		Scripts: descriptor.Scripts{ClientDelimiters: false},
+		Scripts: descriptor.Scripts{ClientDelimiters: false, Bodies: descriptor.BodiesYQL},
 
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",

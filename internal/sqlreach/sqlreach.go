@@ -19,7 +19,8 @@ import (
 	"strings"
 	"unicode"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
@@ -52,16 +53,61 @@ type escapeRule struct {
 	construct string
 	reach     string
 	match     tokenMatcher
-	// dialects restricts the rule to the engines whose grammar gives the
-	// construct its meaning. Empty means every engine, which is right for a
-	// spelling no other dialect can mistake for something ordinary -- there is
-	// no `xp_cmdshell` that means anything else.
+	// applies restricts the rule to the engines whose grammar gives the
+	// construct its meaning, as the dialect's descriptor states it. Nil means
+	// every engine, which is right for a spelling no other dialect can mistake
+	// for something ordinary -- there is no `xp_cmdshell` that means anything
+	// else.
 	//
-	// It exists for the ones that can be mistaken: `url(...)` is a remote read
-	// on ClickHouse and an ordinary user function name anywhere else, and a
-	// rule that fired on every dialect would refuse a PostgreSQL assertion for
-	// a grammar PostgreSQL does not have.
-	dialects []string
+	// It exists for the ones that can be mistaken: a YQL UDF call is written
+	// `Module::Function`, which is no call in any other grammar, and a rule
+	// that fired on every dialect would refuse a PostgreSQL assertion for a
+	// grammar PostgreSQL does not have.
+	applies func(descriptor.Dialect) bool
+	// listed makes the rule one the dialect's descriptor writes, in
+	// descriptor.Reach: the descriptor names the construct, says what it
+	// reaches and lists the names call matches, and a dialect that lists none
+	// has no such rule. url(...) is a remote read on ClickHouse and an
+	// ordinary user function name anywhere else, so only ClickHouse lists it.
+	// The rule keeps its place in the table, so a statement that matches two
+	// constructs names the same one whatever the dialect lists.
+	listed func(descriptor.Reach) descriptor.ReachCalls
+	call   func(names ...string) tokenMatcher
+}
+
+// on returns the rule as it applies to a dialect, or false when the dialect's
+// grammar does not have it.
+func (r escapeRule) on(described descriptor.Dialect) (escapeRule, bool) {
+	if r.listed == nil {
+		return r, r.applies == nil || r.applies(described)
+	}
+	calls := r.listed(described.Reach)
+	if len(calls.Names) == 0 {
+		return escapeRule{}, false
+	}
+	return escapeRule{construct: calls.Construct, reach: calls.Reach, match: r.call(calls.Names...)}, true
+}
+
+// readsYQL reports whether a dialect's text is YQL, whose grammar gives the
+// YQL rules their meaning.
+func readsYQL(described descriptor.Dialect) bool {
+	return described.Lexical.Lexer == descriptor.LexerYQL
+}
+
+// rulesByDialect holds the rules that apply to every dialect, built once per
+// registry rather than for every statement [Scan] reads. A caller only reads
+// the slice it gets.
+var rulesByDialect = descriptortable.New(rulesFor)
+
+// rulesFor returns the rules that apply to a dialect, in the table's order.
+func rulesFor(described descriptor.Dialect) []escapeRule {
+	rules := make([]escapeRule, 0, len(escapeRules))
+	for _, rule := range escapeRules {
+		if applied, ok := rule.on(described); ok {
+			rules = append(rules, applied)
+		}
+	}
+	return rules
 }
 
 // escapeRules enumerates the escape constructs this lint knows about.
@@ -86,11 +132,16 @@ type escapeRule struct {
 //
 // Coverage is deliberately partial and dialect-specific: SQLite, PostgreSQL,
 // MySQL/MariaDB, SQL Server, ClickHouse, Oracle and YDB constructs are
-// represented. A YDB external table is outside what any text rule can see: it
-// is a catalog object whose reads leave the database, and a statement names
-// it exactly as it names a table. [ReadYQLSources] names what a query reads,
-// and a caller that has the database asks its catalog what each name is, as
-// the migrator does before a check runs. A dev realm replay has no such
+// represented. A construct whose name is ordinary on another engine applies
+// only where the dialect's descriptor says the grammar has it: the calls a
+// descriptor lists in descriptor.Reach, the YQL rules on a dialect whose text
+// is YQL, and Oracle's alternative quoting where Lexical states it.
+//
+// A YDB external table is outside what any text rule can see: it is a catalog
+// object whose reads leave the database, and a statement names it exactly as
+// it names a table. internal/yqlreach names what a query reads, and a caller
+// that has the database asks its catalog what each name is, as the migrator
+// does before a check runs. A dev realm replay has no such
 // catalog question to ask, and its guard refuses every statement that names
 // an external table or data source instead. The lint catches honest mistakes
 // and known tricks. It does not stop an author who is trying to get past it.
@@ -159,14 +210,11 @@ var escapeRules = []escapeRule{
 		),
 	},
 	{
-		// The same reach without a table to attach it to. ClickHouse takes
-		// these in the FROM clause of an ordinary SELECT, so a statement that
-		// declares nothing and begins with SELECT still fetches a URL the
-		// author named, from inside the server's network.
-		construct: "ClickHouse remote table function",
-		reach:     "reads over the network or from the host filesystem inside a query",
-		match:     calledFunctionAnyOf(clickHouseRemoteTableFunctions()...),
-		dialects:  []string{platform.ClickHouse},
+		// The same reach without a table to attach it to: a table function
+		// such as ClickHouse's url(...), which an ordinary SELECT takes in its
+		// FROM clause.
+		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.TableFunctions },
+		call:   calledFunctionAnyOf,
 	},
 	{
 		construct: "CREATE SERVER",
@@ -255,18 +303,11 @@ var escapeRules = []escapeRule{
 		match:     calledFunctionPrefix("PG_LS_"),
 	},
 	{
-		// Oracle reaches the network through built-in packages rather than
-		// through a table or a function name of its own, and a package name is
-		// matched wherever it appears: the call is qualified, so the callable
-		// token is the procedure and the package sits in front of a dot.
-		construct: "Oracle network package",
-		reach:     "sends a request from the database server, which no transaction retracts",
-		match: packageCallAnyOf(
-			"UTL_HTTP", "UTL_TCP", "UTL_SMTP", "UTL_MAIL",
-			"UTL_INADDR", "UTL_URL", "UTL_FILE",
-			"DBMS_LDAP", "HTTPURITYPE", "DBMS_NETWORK_ACL_ADMIN",
-		),
-		dialects: []string{platform.Oracle},
+		// A built-in package that sends a request from the server, such as
+		// Oracle's UTL_HTTP. A package name is matched where it qualifies a
+		// call, since the callable token is then the procedure.
+		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.NetworkPackages },
+		call:   packageCallAnyOf,
 	},
 	{
 		// Not a reach of its own: a spelling this scanner reads as something
@@ -279,18 +320,13 @@ var escapeRules = []escapeRule{
 		construct: "Oracle alternative-quoted literal",
 		reach:     "hides its contents from this scanner, so what the statement runs cannot be judged",
 		match:     alternativeQuotedLiteral(),
-		dialects:  []string{platform.Oracle},
+		applies:   func(described descriptor.Dialect) bool { return described.Lexical.AlternativeQuoting },
 	},
 	{
-		// Oracle's own instance is the other side here. A pipe is server
-		// memory shared by every session, a job runs after the statement that
-		// created it, and both are committed by the package rather than by the
-		// transaction around it.
-		construct: "Oracle server control package",
-		reach: "changes instance state that outlives the statement, " +
-			"which no transaction undoes",
-		match:    packageCallAnyOf("DBMS_PIPE", "DBMS_SCHEDULER", "DBMS_JOB"),
-		dialects: []string{platform.Oracle},
+		// A built-in package whose procedures change server state that
+		// outlives the statement, such as Oracle's DBMS_JOB.
+		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.ControlPackages },
+		call:   packageCallAnyOf,
 	},
 	{
 		construct: "lo_import",
@@ -319,18 +355,14 @@ var escapeRules = []escapeRule{
 	},
 	{
 		// Not reach outside the database but control over the server it runs
-		// on: terminating a backend, reloading the configuration, promoting a
-		// standby, switching the write-ahead log. A read-only transaction
-		// permits every one of them and undoes none.
-		construct: "PostgreSQL server control function",
-		reach: "controls the server or its replication state rather than reading from it, " +
-			"and no transaction undoes that",
-		match: calledFunctionAnyOf(append(
-			PostgresControlFunctions(), PostgresReplicationFunctions()...,
-		)...),
-		dialects: []string{
-			platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		},
+		// on, such as terminating a backend, or over its replication state. A
+		// read-only transaction permits every one of them and undoes none.
+		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.ControlFunctions },
+		call:   calledFunctionAnyOf,
+	},
+	{
+		listed: func(reach descriptor.Reach) descriptor.ReachCalls { return reach.ReplicationFunctions },
+		call:   calledFunctionAnyOf,
 	},
 	{
 		construct: "OPENQUERY",
@@ -357,7 +389,7 @@ var escapeRules = []escapeRule{
 		construct: "YQL translation setting",
 		reach:     "changes how the server reads the text after it, so what the statement runs cannot be judged",
 		match:     yqlTranslationSetting(),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 	{
 		// File, Folder, Library, Package and Udf fetch code or data from a
@@ -368,7 +400,7 @@ var escapeRules = []escapeRule{
 		construct: "PRAGMA",
 		reach:     "changes how the server resolves or runs the query, and several pragmas fetch code or data from a URL",
 		match:     containsKeyword("PRAGMA"),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 	{
 		// Module::Function is how YQL calls a UDF, and the module may be a
@@ -379,7 +411,7 @@ var escapeRules = []escapeRule{
 		construct: "YQL UDF call",
 		reach:     "runs a user-defined function module, and a module may execute a script or reach outside the database",
 		match:     yqlNamespaceCall(),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 	{
 		// These read files attached to the query, list folders, or read a
@@ -388,13 +420,13 @@ var escapeRules = []escapeRule{
 		construct: "YQL file or secret function",
 		reach:     "reads a file attached to the query, a folder listing or a secret",
 		match:     yqlCallAnyOf(yqlFileFunctions()),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 	{
 		construct: "YQL code or UDF function",
 		reach:     "evaluates code built at run time or calls a user-defined function by name",
 		match:     yqlCodeCall(),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 	{
 		// PgCall runs a PostgreSQL function inside YDB: measured on 26.2.1.14,
@@ -405,7 +437,7 @@ var escapeRules = []escapeRule{
 		construct: "YQL PostgreSQL function",
 		reach:     "runs a PostgreSQL function inside YDB, and the server alone decides which functions may run",
 		match:     yqlCallWithPrefix("PG"),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 	{
 		// A dotted source is a cluster or an external data source, never a
@@ -416,7 +448,7 @@ var escapeRules = []escapeRule{
 		construct: "YQL external source",
 		reach:     "reads a cluster or an external data source: object storage or another database",
 		match:     yqlDottedSource(),
-		dialects:  []string{platform.YDB},
+		applies:   readsYQL,
 	},
 }
 
@@ -479,8 +511,9 @@ func (e *TooDeepError) Error() string {
 // The boolean is false with no finding. An error means the statement could not
 // be scanned to the end, which is not the same as clean.
 func Scan(statement, dialect string) (Finding, bool, error) {
+	rules := rulesByDialect.Get(dialect)
 	for _, backslashEscapes := range []bool{false, true} {
-		finding, found, err := scanStatement(statement, backslashEscapes, dialect, 0)
+		finding, found, err := scanStatement(statement, backslashEscapes, dialect, rules, 0)
 		if err != nil || found {
 			return finding, found, err
 		}
@@ -488,17 +521,13 @@ func Scan(statement, dialect string) (Finding, bool, error) {
 	return Finding{}, false, nil
 }
 
-func scanStatement(statement string, backslashEscapes bool, dialect string, depth int) (Finding, bool, error) {
+func scanStatement(statement string, backslashEscapes bool, dialect string, rules []escapeRule, depth int) (Finding, bool, error) {
 	tokens := SignificantTokens(statement, backslashEscapes, dialect)
 	if len(tokens) == 0 {
 		return Finding{}, false, nil
 	}
 	ctx := scanContext{tokens: tokens, inBody: depth > 0, options: tokenOptions(backslashEscapes, dialect)}
-	normalized := platform.NormalizeDialect(dialect)
-	for _, rule := range escapeRules {
-		if len(rule.dialects) > 0 && !slices.Contains(rule.dialects, normalized) {
-			continue
-		}
+	for _, rule := range rules {
 		if !rule.match(ctx) {
 			continue
 		}
@@ -512,7 +541,7 @@ func scanStatement(statement string, backslashEscapes bool, dialect string, dept
 		return Finding{}, false, &TooDeepError{Depth: MaxNesting}
 	}
 	for _, inner := range nested {
-		finding, found, err := scanStatement(inner, backslashEscapes, dialect, depth+1)
+		finding, found, err := scanStatement(inner, backslashEscapes, dialect, rules, depth+1)
 		if err != nil || found {
 			return finding, found, err
 		}
@@ -875,94 +904,6 @@ func calledFunctionAnyOf(names ...string) tokenMatcher {
 	return anyMatch(matchers...)
 }
 
-// PostgresControlFunctions enumerates the PostgreSQL functions that act on the
-// server rather than reading from it.
-//
-// It is exported because more than one caller refuses the same set:
-// internal/devclean refuses them in a statement it is about to run against a
-// dev database, and the check-assertion validator refuses them in a predicate
-// it is about to send to a live one. The question differs and the names do
-// not, so a second list would agree until one of them was extended.
-//
-// Advisory-lock functions are deliberately absent, and that is the one
-// exclusion. A session advisory lock is released when the session ends, which
-// an isolated query session guarantees by discarding the physical connection,
-// so nothing outlives the statement for a caller to refuse. Replication state
-// is [PostgresReplicationFunctions], separate so a caller can say which it
-// refused.
-func PostgresControlFunctions() []string {
-	return []string{
-		"PG_CANCEL_BACKEND", "PG_TERMINATE_BACKEND",
-		"PG_RELOAD_CONF", "PG_ROTATE_LOGFILE",
-		"PG_PROMOTE", "PG_CREATE_RESTORE_POINT",
-		"PG_SWITCH_WAL", "PG_WAL_REPLAY_PAUSE", "PG_WAL_REPLAY_RESUME",
-		"PG_NOTIFY", "SET_CONFIG",
-		"PG_STAT_RESET", "PG_STAT_RESET_SHARED", "PG_STAT_RESET_SLRU",
-		"PG_STAT_RESET_SINGLE_TABLE_COUNTERS", "PG_STAT_RESET_SINGLE_FUNCTION_COUNTERS",
-		"PG_STAT_RESET_REPLICATION_SLOT", "PG_STAT_RESET_SUBSCRIPTION_STATS",
-		// The backend writes its memory contexts to the server log, which no
-		// rollback retracts and no caller can read back.
-		"PG_LOG_BACKEND_MEMORY_CONTEXTS",
-		// A nontransactional logical message survives the rollback and reaches
-		// whatever is decoding the write-ahead log.
-		"PG_LOGICAL_EMIT_MESSAGE",
-		// Backup mode forces a checkpoint and the write-ahead log activity
-		// behind it. Ending the session aborts the unfinished backup and
-		// leaves the checkpoint where it is.
-		"PG_BACKUP_START", "PG_BACKUP_STOP",
-		"PG_START_BACKUP", "PG_STOP_BACKUP",
-	}
-}
-
-// PostgresReplicationFunctions enumerates the functions that change
-// replication state.
-//
-// Separate from [PostgresControlFunctions] because a caller may want to say
-// which it refused -- internal/devclean names the two classes differently in
-// its refusal -- while a caller that only asks "does this reach past the
-// statement" takes both.
-//
-// A slot outlives everything a session can undo: it is created by a SELECT, it
-// survives the rollback and the discarded connection, and it retains
-// write-ahead log until an operator removes it.
-func PostgresReplicationFunctions() []string {
-	return []string{
-		"PG_COPY_LOGICAL_REPLICATION_SLOT", "PG_COPY_PHYSICAL_REPLICATION_SLOT",
-		"PG_CREATE_LOGICAL_REPLICATION_SLOT", "PG_CREATE_PHYSICAL_REPLICATION_SLOT",
-		"PG_DROP_REPLICATION_SLOT", "PG_REPLICATION_SLOT_ADVANCE",
-		"PG_REPLICATION_ORIGIN_ADVANCE", "PG_REPLICATION_ORIGIN_CREATE",
-		"PG_REPLICATION_ORIGIN_DROP",
-		"PG_REPLICATION_ORIGIN_SESSION_RESET", "PG_REPLICATION_ORIGIN_SESSION_SETUP",
-		"PG_REPLICATION_ORIGIN_XACT_RESET", "PG_REPLICATION_ORIGIN_XACT_SETUP",
-	}
-}
-
-// clickHouseRemoteTableFunctions enumerates the table functions that read
-// something other than this server's own storage, each with its `Cluster`
-// variant, which ClickHouse spells by suffix and which reaches the same place
-// from every node.
-//
-// Enumeration rather than a prefix: `file` and `url` are short enough that a
-// prefix match would catch `fileSize` and `urlHash`, which read nothing. The
-// list is the one a reader can check against ClickHouse's own table-function
-// index, and a name missing from it is a gap to add rather than a rule to
-// loosen.
-func clickHouseRemoteTableFunctions() []string {
-	bases := []string{
-		"URL", "REMOTE", "REMOTESECURE", "CLUSTER", "CLUSTERALLREPLICAS",
-		"S3", "GCS", "HDFS", "AZUREBLOBSTORAGE", "COSN", "OSS",
-		"FILE", "INPUT", "EXECUTABLE", "EXECUTABLEPOOL",
-		"MYSQL", "POSTGRESQL", "MONGODB", "REDIS", "SQLITE", "ODBC", "JDBC",
-		"ICEBERG", "ICEBERGS3", "ICEBERGAZURE", "ICEBERGHDFS", "ICEBERGLOCAL",
-		"DELTALAKE", "DELTALAKES3", "DELTALAKEAZURE", "HUDI", "FUZZJSON",
-	}
-	names := make([]string, 0, len(bases)*2)
-	for _, base := range bases {
-		names = append(names, base, base+"CLUSTER")
-	}
-	return names
-}
-
 // alternativeQuotedLiteral matches Oracle's `q'...'` and `nq'...'` spellings.
 //
 // The introducer sits directly against the quote, which is what separates it
@@ -1110,22 +1051,23 @@ func IsKeyword(token lexer.Token, keyword string) bool {
 
 // DialectUsesBackslashEscapes reports the string-escape interpretation a
 // server applies by default, so a scan or a rewrite reads the token stream the
-// engine will parse. MySQL, MariaDB and ClickHouse honor backslash escapes.
+// engine will parse: the BackslashEscapes the dialect's descriptor states in
+// its Lexical section, as MySQL's, MariaDB's and ClickHouse's do.
 //
 // A default is all it can be: MySQL reads the rule from sql_mode, which is
 // session state, which is why [Scan] reads a statement under both
 // interpretations rather than trusting this one. YQL reads backslash escapes
-// in every string; its one switch is a --!ansi_lexer translation setting,
-// which [Scan] refuses, and its lexer mode ignores the interpretation the
-// caller asks for.
+// in every string, so a dialect whose text is YQL uses them; its one switch is
+// a --!ansi_lexer translation setting, which [Scan] refuses, and its lexer
+// mode ignores the interpretation the caller asks for.
 func DialectUsesBackslashEscapes(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.YDB:
-		return true
-	default:
-		return false
-	}
+	return escapesByDialect.Get(dialect)
 }
+
+// escapesByDialect holds every dialect's default escape reading.
+var escapesByDialect = descriptortable.New(func(described descriptor.Dialect) bool {
+	return described.Lexical.BackslashEscapes || readsYQL(described)
+})
 
 // SignificantTokens tokenizes a statement, dropping whitespace and comments so
 // rules see the executable token sequence. The lexer options mirror

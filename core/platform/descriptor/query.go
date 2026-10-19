@@ -1,5 +1,10 @@
 package descriptor
 
+import (
+	"fmt"
+	"slices"
+)
+
 // Query states how an engine spells the parts of a statement the query
 // builder, core/query, renders differently per engine. The zero value is the
 // common spelling: every join, LIMIT and OFFSET bound as signed integers, a
@@ -86,4 +91,41 @@ type Scripts struct {
 	// directive. An engine whose text the shared rewriter cannot read leaves
 	// it false, and the directives stay in the text as written.
 	ClientDelimiters bool `json:"client_delimiters,omitempty"`
+	// Bodies is the grammar of the constructs whose body holds statements of
+	// its own, so a semicolon inside one ends no statement of the script:
+	// [BodiesTransactSQL], [BodiesPLSQL] or [BodiesYQL]. Empty reads the
+	// dialect-blind CREATE FUNCTION, PROCEDURE or TRIGGER whose body runs
+	// from BEGIN to the matching END.
+	Bodies Bodies `json:"bodies,omitempty"`
+}
+
+// Bodies is a grammar of statement-holding bodies; see [Scripts.Bodies].
+type Bodies string
+
+const (
+	// BodiesTransactSQL is Transact-SQL: AS opens the body of a FUNCTION,
+	// PROCEDURE, PROC or TRIGGER, which runs to the END that closes its last
+	// block, and BEGIN TRANSACTION, BEGIN DIALOG and their kind open no
+	// block.
+	BodiesTransactSQL Bodies = "transact-sql"
+	// BodiesPLSQL is PL/SQL: IS or AS opens the body of a FUNCTION or
+	// PROCEDURE, and the semicolon after the END that closes a routine or a
+	// trigger belongs to the block rather than to the client.
+	BodiesPLSQL Bodies = "plsql"
+	// BodiesYQL is YQL: DEFINE ACTION and DEFINE SUBQUERY run to END DEFINE,
+	// DO BEGIN to END DO, and a lambda's body is written between braces.
+	BodiesYQL Bodies = "yql"
+)
+
+// BodyGrammars returns every declared [Bodies] value.
+func BodyGrammars() []Bodies {
+	return []Bodies{BodiesTransactSQL, BodiesPLSQL, BodiesYQL}
+}
+
+// validateScripts checks the [Scripts] values this package declares.
+func (d Dialect) validateScripts() error {
+	if bodies := d.Scripts.Bodies; bodies != "" && !slices.Contains(BodyGrammars(), bodies) {
+		return fmt.Errorf("%w: dialect %q: bodies %q is not one of %q", ErrInvalidDescriptor, d.Name, bodies, BodyGrammars())
+	}
+	return nil
 }

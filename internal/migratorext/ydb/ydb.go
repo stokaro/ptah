@@ -12,8 +12,8 @@ import (
 	"ptah.run/core/platform"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/migratorext"
-	"ptah.run/internal/sqlreach"
 	"ptah.run/internal/yqlquery"
+	"ptah.run/internal/yqlreach"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -78,7 +78,7 @@ type checks struct{}
 // proves less in YQL: an action, a lambda or a subquery carries a statement
 // no semicolon precedes.
 func (checks) Validate(assertion string) error {
-	if err := sqlreach.YQLReadOnly(assertion); err != nil {
+	if err := yqlreach.ReadOnly(assertion); err != nil {
 		return fmt.Errorf("check assertion must be one read-only SELECT statement: %w", err)
 	}
 	return nil

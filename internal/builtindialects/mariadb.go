@@ -172,5 +172,19 @@ func mariaDB() descriptor.Dialect {
 			RowFormatProperty:    true,
 			ConstraintComments:   true,
 		},
+
+		// Lexing: what internal/dialectlexer and the body scanner of
+		// internal/deporder read. Measured on 11.8.9, a # comment runs to the
+		// end of the line, 1--1 is a subtraction, and with the default
+		// sql_mode a backslash escapes in '...' and "..." but not in a
+		// backtick-quoted name: `a\` names a table whose name ends in one.
+		// The catalog writes a view's strings with backslash escapes, as in
+		// 'it\'s'.
+		Lexical: descriptor.Lexical{
+			LineComments:          []string{"#"},
+			BackslashEscapes:      true,
+			DashCommentNeedsSpace: true,
+			ExecutableComments:    descriptor.ExecutableCommentsMBang,
+		},
 	}
 }
