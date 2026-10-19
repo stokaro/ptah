@@ -27,6 +27,18 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": lookup names comparison "fold" is not one of .*`},
 		{name: "a negative index name length", dialect: with(func(d *descriptor.Dialect) { d.IndexNaming.MaxBytes = -1 }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": index naming max bytes -1 is negative`},
+		{name: "a negative index base cut", dialect: with(func(d *descriptor.Dialect) {
+			d.IndexNaming = descriptor.IndexNaming{MaxBytes: 64, BaseBytes: -1}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": index naming base bytes -1 is negative`},
+		{name: "an index base cut that leaves no room for a suffix", dialect: with(func(d *descriptor.Dialect) {
+			d.IndexNaming = descriptor.IndexNaming{MaxBytes: 64, BaseBytes: 64}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": index naming base bytes 64 leaves no room for a suffix within max bytes 64`},
+		{name: "an index base cut where no index naming is stated", dialect: with(func(d *descriptor.Dialect) {
+			d.IndexNaming = descriptor.IndexNaming{BaseBytes: 61}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": index naming base bytes 61 leaves no room for a suffix within max bytes 0`},
 		{name: "an undeclared constraint naming", dialect: with(func(d *descriptor.Dialect) { d.ConstraintNaming = "numbered" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": constraint naming "numbered" is not "table-columns-suffix"`},
 		{name: "an undeclared DO-block language", dialect: with(func(d *descriptor.Dialect) { d.Statements.DoBlocks = "plv8" }),
@@ -37,6 +49,12 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": table option .* names no option or no property`},
 		{name: "an undeclared check naming", dialect: with(func(d *descriptor.Dialect) { d.CheckNaming = "numbered" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": check naming "numbered" is not one of .*`},
+		{name: "a numbered check naming with no identifier limit in characters", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNaming = descriptor.CheckNamingTableNumbered
+			d.IdentifierLimit = descriptor.IdentifierLimit{Max: 63, Unit: "bytes"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": check naming "table-numbered" refuses a derived name ` +
+				`longer than the identifier limit in characters, and the identifier limit states no length in characters`},
 		{name: "an undeclared foreign key naming", dialect: with(func(d *descriptor.Dialect) {
 			d.ForeignKeyNaming = "numbered"
 			d.IndexNaming.MaxBytes = 64
@@ -54,6 +72,39 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 		}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key naming "table-numbered" names ` +
 				`the index a key builds, and the index naming states no rule`},
+		{name: "a foreign key naming with no identifier limit", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+			d.IndexNaming.MaxBytes = 64
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key naming "table-numbered" refuses a derived name ` +
+				`longer than the identifier limit in characters, and the identifier limit states no length in characters`},
+		{name: "a foreign key naming with an identifier limit in bytes", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+			d.IndexNaming.MaxBytes = 64
+			d.IdentifierLimit = descriptor.IdentifierLimit{Max: 64, Unit: "bytes"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key naming "table-numbered" refuses a derived name ` +
+				`longer than the identifier limit in characters, and the identifier limit states no length in characters`},
+		{name: "a CREATE TABLE limit past the identifier limit", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+			d.IndexNaming.MaxBytes = 64
+			d.IdentifierLimit = descriptor.IdentifierLimit{Max: 64, Unit: "characters"}
+			d.ForeignKeyNameRules.CreateTableMaxChars = 65
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key name rules: CREATE TABLE max chars 65 ` +
+				`is not between 0 and the identifier limit 64`},
+		{name: "a negative CREATE TABLE limit", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
+			d.IndexNaming.MaxBytes = 64
+			d.IdentifierLimit = descriptor.IdentifierLimit{Max: 64, Unit: "characters"}
+			d.ForeignKeyNameRules.CreateTableMaxChars = -1
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key name rules: CREATE TABLE max chars -1 ` +
+				`is not between 0 and the identifier limit 64`},
+		{name: "foreign key name rules with no foreign key naming", dialect: with(func(d *descriptor.Dialect) {
+			d.ForeignKeyNameRules.BareNumbers = true
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": foreign key name rules are stated, and no foreign key naming is`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -69,12 +120,16 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 }
 
 // TestNewRegistry_ForeignKeyNaming_HappyPath accepts a foreign key naming
-// beside the index naming that names the key's index, and keeps it as stated.
+// beside the index naming that names the key's index and an identifier limit
+// in characters, with the rules that refine it, and keeps them as stated.
 func TestNewRegistry_ForeignKeyNaming_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	described := head("alpha")
 	described.ForeignKeyNaming = descriptor.ForeignKeyNamingTableNumbered
-	described.IndexNaming = descriptor.IndexNaming{MaxBytes: 64}
+	described.IndexNaming = descriptor.IndexNaming{MaxBytes: 64, BaseBytes: 63}
+	described.IdentifierLimit = descriptor.IdentifierLimit{Max: 64, Unit: "characters"}
+	described.ForeignKeyNameRules = descriptor.ForeignKeyNameRules{CreateTableMaxChars: 64, BareNumbers: true}
+	described.CheckNaming = descriptor.CheckNamingTableNumbered
 
 	registry, err := descriptor.NewRegistry(described)
 

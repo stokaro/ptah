@@ -1,18 +1,28 @@
 package mysqlname_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/mysqlname"
 )
 
 // sameIgnoringCase compares index names the way MySQL does.
 func sameIgnoringCase(a, b string) bool {
 	return strings.EqualFold(a, b)
+}
+
+// describedAs is the built-in descriptor of dialect, whose naming facts the
+// rules here are asked with.
+func describedAs(c *qt.C, dialect string) descriptor.Dialect {
+	described, found := platform.Lookup(dialect)
+	c.Assert(found, qt.IsTrue)
+	return described
 }
 
 func TestForeignKey(t *testing.T) {
@@ -93,26 +103,33 @@ func TestForeignKeyNumber_FailurePath(t *testing.T) {
 }
 
 // TestIsUnnamedKeyIndexName_HappyPath covers the names MySQL 8.4.11 gave the
-// index it built for an unnamed key, read back from information_schema.
+// index it built for an unnamed key, read back from information_schema, and
+// the whole name MariaDB keeps. The cuts are the ones MySQL's descriptor
+// states, beside none.
 func TestIsUnnamedKeyIndexName_HappyPath(t *testing.T) {
 	long := strings.Repeat("c", 64)
+	accented := strings.Repeat("c", 60) + "é" + "ccc"
 	tests := []struct {
-		name   string
-		column string
-		index  string
+		name      string
+		baseBytes []int
+		column    string
+		index     string
 	}{
-		{name: "the key's first column", column: "p_id", index: "p_id"},
-		{name: "the column's name taken", column: "p_id", index: "p_id_2"},
-		{name: "a later number", column: "a", index: "a_10"},
-		{name: "another case", column: "ParentId", index: "parentid"},
-		{name: "a long column cut to 61 bytes before its number", column: long, index: long[:61] + "_2"},
-		{name: "a long column MariaDB does not cut", column: long[:62], index: long[:62] + "_2"},
+		{name: "the key's first column", baseBytes: []int{61}, column: "p_id", index: "p_id"},
+		{name: "the column's name taken", baseBytes: []int{61}, column: "p_id", index: "p_id_2"},
+		{name: "a later number", baseBytes: []int{61}, column: "a", index: "a_10"},
+		{name: "another case", baseBytes: []int{61}, column: "ParentId", index: "parentid"},
+		{name: "a long column cut to 61 bytes before its number", baseBytes: []int{61}, column: long, index: long[:61] + "_2"},
+		{name: "a long column MariaDB does not cut", baseBytes: []int{61}, column: long[:62], index: long[:62] + "_2"},
+		{name: "a whole column where no cut is stated", column: long[:62], index: long[:62] + "_2"},
+		{name: "a cut before a character the count would split", baseBytes: []int{61}, column: accented, index: accented[:60] + "_2"},
+		{name: "the second of two cuts", baseBytes: []int{50, 61}, column: long, index: long[:61] + "_3"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(mysqlname.IsUnnamedKeyIndexName(test.column, test.index, sameIgnoringCase), qt.IsTrue)
+			c.Assert(mysqlname.IsUnnamedKeyIndexName(test.baseBytes, test.column, test.index, sameIgnoringCase), qt.IsTrue)
 		})
 	}
 }
@@ -122,53 +139,77 @@ func TestIsUnnamedKeyIndexName_HappyPath(t *testing.T) {
 func TestIsUnnamedKeyIndexName_FailurePath(t *testing.T) {
 	long := strings.Repeat("c", 64)
 	tests := []struct {
-		name   string
-		column string
-		index  string
+		name      string
+		baseBytes []int
+		column    string
+		index     string
 	}{
-		{name: "the constraint's name", column: "p_id", index: "c_ibfk_1"},
-		{name: "another column", column: "p_id", index: "o"},
-		{name: "a first number, which the server never writes", column: "p_id", index: "p_id_1"},
-		{name: "a number with a leading zero", column: "p_id", index: "p_id_02"},
-		{name: "a suffix that is not a number", column: "p_id", index: "p_id_x"},
-		{name: "a longer column that only starts with the name", column: "p_id_extra", index: "p_id_2"},
-		{name: "a long column cut in the wrong place", column: long, index: long[:60] + "_2"},
-		{name: "no column", column: "", index: "p_id"},
+		{name: "the constraint's name", baseBytes: []int{61}, column: "p_id", index: "c_ibfk_1"},
+		{name: "another column", baseBytes: []int{61}, column: "p_id", index: "o"},
+		{name: "a first number, which the server never writes", baseBytes: []int{61}, column: "p_id", index: "p_id_1"},
+		{name: "a number with a leading zero", baseBytes: []int{61}, column: "p_id", index: "p_id_02"},
+		{name: "a suffix that is not a number", baseBytes: []int{61}, column: "p_id", index: "p_id_x"},
+		{name: "a longer column that only starts with the name", baseBytes: []int{61}, column: "p_id_extra", index: "p_id_2"},
+		{name: "a long column cut in the wrong place", baseBytes: []int{61}, column: long, index: long[:60] + "_2"},
+		{name: "a long column cut where no cut is stated", column: long, index: long[:61] + "_2"},
+		{name: "no column", baseBytes: []int{61}, column: "", index: "p_id"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(mysqlname.IsUnnamedKeyIndexName(test.column, test.index, sameIgnoringCase), qt.IsFalse)
+			c.Assert(mysqlname.IsUnnamedKeyIndexName(test.baseBytes, test.column, test.index, sameIgnoringCase), qt.IsFalse)
 		})
 	}
 }
 
-// TestClauseIndexNamesKey pins the one rule the engines disagree on. Measured,
-// `FOREIGN KEY idx_c_p (p_id) REFERENCES p(id)` names the key `idx_c_p` on
-// MariaDB 11.8.9 and `c_ibfk_1` on MySQL 8.4.11 and 26.7.0.
-func TestClauseIndexNamesKey(t *testing.T) {
+// TestIndexName covers the name a server gives an index it names after a
+// column, with the cut each built-in descriptor states. Measured on MySQL
+// 9.7.2, a 64-character column yields a 63-character `_2` and a 64-character
+// `_10`; MariaDB keeps the column whole.
+func TestIndexName(t *testing.T) {
+	long := strings.Repeat("c", 64)
+	accented := strings.Repeat("c", 60) + "é" + "ccc"
 	tests := []struct {
+		name    string
 		dialect string
-		want    bool
+		base    string
+		taken   []string
+		want    string
 	}{
-		{dialect: platform.MariaDB, want: true},
-		{dialect: platform.MySQL, want: false},
+		{name: "MySQL, a free name", dialect: platform.MySQL, base: long, want: long},
+		{name: "MySQL, a long name taken", dialect: platform.MySQL, base: long, taken: []string{long}, want: long[:61] + "_2"},
+		{
+			name: "MySQL, the tenth", dialect: platform.MySQL, base: long,
+			taken: []string{long, long[:61] + "_2", long[:61] + "_3", long[:61] + "_4", long[:61] + "_5",
+				long[:61] + "_6", long[:61] + "_7", long[:61] + "_8", long[:61] + "_9"},
+			want: long[:61] + "_10",
+		},
+		{name: "MySQL, a cut before a split character", dialect: platform.MySQL, base: accented, taken: []string{accented}, want: accented[:60] + "_2"},
+		{name: "MySQL, a short name taken", dialect: platform.MySQL, base: "p_id", taken: []string{"P_ID"}, want: "p_id_2"},
+		{name: "MariaDB, a long name taken", dialect: platform.MariaDB, base: long[:62], taken: []string{long[:62]}, want: long[:62] + "_2"},
+		{name: "MariaDB, a name past the cut taken", dialect: platform.MariaDB, base: long, taken: []string{long}, want: long + "_2"},
 	}
 	for _, test := range tests {
-		t.Run(test.dialect, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			taken := func(name string) bool {
+				return slices.ContainsFunc(test.taken, func(held string) bool { return strings.EqualFold(held, name) })
+			}
 
-			c.Assert(mysqlname.ClauseIndexNamesKey(test.dialect), qt.Equals, test.want)
+			got := mysqlname.IndexName(describedAs(c, test.dialect).IndexNaming.BaseBytes, test.base, taken)
+
+			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }
 
 // TestForeignKeyNameLimit pins the longest derived name each server keeps as
-// derived. Measured over a utf8mb4 connection on MySQL 8.4.11 and 26.7.0 and
-// MariaDB 11.8.9: MySQL keeps 64 characters in either statement and refuses 65;
-// MariaDB refuses 64 in CREATE TABLE and keeps 63; its ALTER TABLE keeps 64 and
-// cuts 65 to 64.
+// derived, from the rules and the identifier limit its descriptor states.
+// Measured over a utf8mb4 connection on MySQL 8.4.11 and 26.7.0 and MariaDB
+// 11.8.9: MySQL keeps 64 characters in either statement and refuses 65;
+// MariaDB refuses 64 in CREATE TABLE and keeps 63; its ALTER TABLE keeps 64
+// and cuts 65 to 64.
 func TestForeignKeyNameLimit(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -185,7 +226,11 @@ func TestForeignKeyNameLimit(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(mysqlname.ForeignKeyNameLimit(test.dialect, test.statement), qt.Equals, test.want)
+			described := describedAs(c, test.dialect)
+
+			got := mysqlname.ForeignKeyNameLimit(described.ForeignKeyNameRules, described.IdentifierLimit, test.statement)
+
+			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }
@@ -223,7 +268,9 @@ func TestIsNumberedForeignKeyName_HappyPath(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(mysqlname.IsNumberedForeignKeyName(platform.MariaDB, name), qt.IsTrue)
+			rules := describedAs(c, platform.MariaDB).ForeignKeyNameRules
+
+			c.Assert(mysqlname.IsNumberedForeignKeyName(rules, name), qt.IsTrue)
 		})
 	}
 }
@@ -246,7 +293,9 @@ func TestIsNumberedForeignKeyName_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(mysqlname.IsNumberedForeignKeyName(test.dialect, test.key), qt.IsFalse)
+			rules := describedAs(c, test.dialect).ForeignKeyNameRules
+
+			c.Assert(mysqlname.IsNumberedForeignKeyName(rules, test.key), qt.IsFalse)
 		})
 	}
 }
@@ -271,7 +320,9 @@ func TestIsServerForeignKeyName(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(mysqlname.IsServerForeignKeyName(test.dialect, "c", test.key), qt.Equals, test.want)
+			rules := describedAs(c, test.dialect).ForeignKeyNameRules
+
+			c.Assert(mysqlname.IsServerForeignKeyName(rules, "c", test.key), qt.Equals, test.want)
 		})
 	}
 }

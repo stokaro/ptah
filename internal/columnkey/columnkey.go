@@ -31,11 +31,17 @@ import (
 	"ptah.run/internal/pgname"
 )
 
+// describe is the dialect's descriptor, or the zero descriptor where the
+// dialect is not described: a zero ColumnKeys names no key.
+func describe(dialect string) descriptor.Dialect {
+	described, _ := platform.Lookup(dialect)
+	return described
+}
+
 // naming is the dialect descriptor's naming of a column's own key, or empty
 // where none is measured or the dialect is not described.
 func naming(dialect string) descriptor.ColumnKeyNaming {
-	described, _ := platform.Lookup(dialect)
-	return described.ColumnKeys
+	return describe(dialect).ColumnKeys
 }
 
 // Named reports whether the package names a column's own UNIQUE on dialect:
@@ -52,8 +58,9 @@ func Named(dialect string) bool {
 // name; a nil taken holds none.
 //
 // MySQL and MariaDB name the key after the column, with `_2` and on where
-// another key of the table holds that name; see [mysqlname.IndexName]. taken
-// answers for the table's index names there.
+// another key of the table holds that name, keeping as much of the column as
+// the descriptor's IndexNaming.BaseBytes says; see [mysqlname.IndexName].
+// taken answers for the table's index names there.
 //
 // PostgreSQL names it `<table>_<column>_key`, with `1` and on where a relation
 // or a constraint of the schema holds that name; see [pgname.Constraint].
@@ -65,9 +72,10 @@ func Name(dialect, table, column string, taken func(string) bool) (string, bool)
 	if taken == nil {
 		taken = func(string) bool { return false }
 	}
-	switch naming(dialect) {
+	described := describe(dialect)
+	switch described.ColumnKeys {
 	case descriptor.ColumnKeyAfterColumn:
-		return mysqlname.IndexName(dialect, column, taken), true
+		return mysqlname.IndexName(described.IndexNaming.BaseBytes, column, taken), true
 	case descriptor.ColumnKeyTableColumnKey:
 		return pgname.Constraint(table, []string{column}, "key", taken), true
 	default:

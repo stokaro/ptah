@@ -23,7 +23,6 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
-	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/sqlcompound"
 	"ptah.run/internal/tableref"
@@ -3858,12 +3857,14 @@ func (p *Parser) readForeignKeyIndexName() error {
 // later comparison would report a difference no apply settles. It is accepted
 // and ignored, which is what the engine does with it.
 //
-// Without a symbol, the engine decides what the name is; see
-// [mysqlname.ClauseIndexNamesKey]. On MariaDB it is the key's own name, so it
-// becomes the symbol and declares no index of its own: the key's index takes
-// the key's name, as it does for any named key. Read as an index beside an
-// unnamed key, the key takes a derived name instead, and a schema file plans to
-// rename it against the database the file built (stokaro/ptah#3743).
+// Without a symbol, the engine decides what the name is, and the grammar's
+// ForeignKeyIndexNameNamesKey states it. Where it is the key's own name, as on
+// MariaDB, it becomes the symbol and declares no index of its own: the key's
+// index takes the key's name, as it does for any named key. Read as an index
+// beside an unnamed key, the key takes a derived name instead, and a schema
+// file plans to rename it against the database the file built
+// (stokaro/ptah#3743). Where the name is the index's alone, as on MySQL, the
+// key is named like any other unnamed key.
 func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.IndexNode {
 	if constraint.Type != ast.ForeignKeyConstraint || p.foreignKeyIndexName == "" {
 		return nil
@@ -3871,7 +3872,7 @@ func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.Ind
 	if constraint.Name != "" {
 		return nil
 	}
-	if mysqlname.ClauseIndexNamesKey(p.dialect) {
+	if p.target.grammar.Keys.ForeignKeyIndexNameNamesKey {
 		constraint.Name = p.foreignKeyIndexName
 		return nil
 	}

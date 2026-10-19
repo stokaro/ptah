@@ -1,6 +1,7 @@
 package mysqlcomparison_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -140,8 +141,18 @@ func indexNames(indexes []catalog.Index) []string {
 
 // foreignKey is the foreign key children(a) references parents(id) under name.
 func foreignKey(name string) catalog.Constraint {
-	return catalog.Constraint{Name: name, Type: "FOREIGN KEY", TableName: "children", ColumnName: "a"}
+	return foreignKeyOn(name, "a")
 }
+
+// foreignKeyOn is the foreign key children(column) references parents(id)
+// under name.
+func foreignKeyOn(name, column string) catalog.Constraint {
+	return catalog.Constraint{Name: name, Type: "FOREIGN KEY", TableName: "children", ColumnName: column}
+}
+
+// longColumn is a column name of the longest length the MySQL family keeps,
+// which MySQL cuts to 61 bytes before it numbers an index named after it.
+var longColumn = strings.Repeat("c", 64)
 
 // TestForeignKeyIndexes_BackingIndexes finds the index the server built for a
 // foreign key from two signals, the name the server could have given it and
@@ -235,6 +246,34 @@ func TestForeignKeyIndexes_BackingIndexes(t *testing.T) {
 			dialect: "mysql",
 			key:     foreignKey("f"),
 			indexes: []catalog.Index{{Name: "f", TableName: "others", Columns: []string{"a"}}},
+			want:    nil,
+		},
+		{
+			name:    "MySQL cuts a long column before it numbers the column's index",
+			dialect: "mysql",
+			key:     foreignKeyOn("children_ibfk_1", longColumn),
+			indexes: []catalog.Index{{Name: longColumn[:61] + "_2", TableName: "children", Columns: []string{longColumn}}},
+			want:    []string{longColumn[:61] + "_2"},
+		},
+		{
+			name:    "MariaDB reads the index MySQL named, as a database MySQL built holds it",
+			dialect: "mariadb",
+			key:     foreignKeyOn("children_ibfk_1", longColumn),
+			indexes: []catalog.Index{{Name: longColumn[:61] + "_2", TableName: "children", Columns: []string{longColumn}}},
+			want:    []string{longColumn[:61] + "_2"},
+		},
+		{
+			name:    "MariaDB keeps a long column whole before it numbers the column's index",
+			dialect: "mariadb",
+			key:     foreignKeyOn("children_ibfk_1", longColumn[:62]),
+			indexes: []catalog.Index{{Name: longColumn[:62] + "_2", TableName: "children", Columns: []string{longColumn[:62]}}},
+			want:    []string{longColumn[:62] + "_2"},
+		},
+		{
+			name:    "a cut no engine of the family makes is the author's",
+			dialect: "mariadb",
+			key:     foreignKeyOn("children_ibfk_1", longColumn),
+			indexes: []catalog.Index{{Name: longColumn[:60] + "_2", TableName: "children", Columns: []string{longColumn}}},
 			want:    nil,
 		},
 	}

@@ -43,10 +43,11 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 				Refused: descriptor.KeyVisibilityClauses(),
 				Refusal: "alpha has no visibility",
 			},
-			BareUniqueName:       true,
-			ForeignKeyIndexName:  true,
-			FunctionalParts:      true,
-			RefusesNullsDistinct: true,
+			BareUniqueName:              true,
+			ForeignKeyIndexName:         true,
+			ForeignKeyIndexNameNamesKey: true,
+			FunctionalParts:             true,
+			RefusesNullsDistinct:        true,
 		},
 		Indexes: descriptor.IndexGrammar{
 			TrailingVisibility: true,
@@ -173,6 +174,12 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "a visibility refusal without a refused clause",
 			dialect: with(func(g *descriptor.Grammar) { g.Keys.Visibility.Refusal = "alpha hides nothing" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a refused visibility clause and its refusal are set together`,
+		},
+		{
+			name:    "a foreign key index name that names the key where no such name is read",
+			dialect: with(func(g *descriptor.Grammar) { g.Keys.ForeignKeyIndexNameNamesKey = true }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a foreign key index name that names the key ` +
+				`is stated, and no foreign key index name is read`,
 		},
 		{
 			name:    "an undeclared ALTER INDEX grammar",

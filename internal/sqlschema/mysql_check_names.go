@@ -27,7 +27,8 @@ import (
 var ErrDuplicateCheckName = errors.New("two CHECK constraints claim the same name")
 
 // ErrCheckNameTooLong is the class of a CHECK name MySQL derives past the
-// longest identifier it keeps. See [mysqlname.MaxIdentifierChars].
+// longest identifier it keeps, the descriptor's IdentifierLimit. See
+// [mysqlname.Check].
 var ErrCheckNameTooLong = errors.New("the derived CHECK name is longer than the engine accepts")
 
 // namesColumnChecksAfterColumns reports whether the source dialect names a
@@ -65,7 +66,7 @@ func nameCreatedMySQLFamilyChecks(
 			}
 			derived := mysqlname.Check(table.Name, n)
 			n++
-			if err := refuseMySQLCheckName(databases, table, derived); err != nil {
+			if err := refuseMySQLCheckName(databases, table, derived, sourcePlatform); err != nil {
 				return err
 			}
 			*name = derived
@@ -109,7 +110,7 @@ func nameAddedMySQLFamilyCheck(name *string, column *schemamodel.Field, target a
 		if err := refuseCheckNameDroppedLater(target, derived); err != nil {
 			return err
 		}
-		if err := refuseMySQLCheckName(target.databases, table, derived); err != nil {
+		if err := refuseMySQLCheckName(target.databases, table, derived, target.sourcePlatform); err != nil {
 			return err
 		}
 		if slices.ContainsFunc(statement.checkNames, func(held string) bool { return strings.EqualFold(held, derived) }) {
@@ -264,12 +265,13 @@ func refuseMariaDBColumnCheckName(databases []*schemamodel.Database, table schem
 
 // refuseMySQLCheckName refuses a name MySQL derives that it would refuse: one
 // another CHECK of the same database already holds, compared without case, and
-// one longer than the longest identifier MySQL keeps.
-func refuseMySQLCheckName(databases []*schemamodel.Database, table schemamodel.Table, name string) error {
-	if utf8.RuneCountInString(name) > mysqlname.MaxIdentifierChars {
+// one longer than the longest identifier the source dialect's descriptor
+// states, in characters.
+func refuseMySQLCheckName(databases []*schemamodel.Database, table schemamodel.Table, name, sourcePlatform string) error {
+	if limit := factsOf(sourcePlatform).identifierLimit.Max; utf8.RuneCountInString(name) > limit {
 		return fmt.Errorf("%w: %s, the name MySQL gives an unnamed CHECK of %s, is longer than %d "+
 			"characters, and MySQL answers ERROR 1059",
-			ErrCheckNameTooLong, name, table.Name, mysqlname.MaxIdentifierChars)
+			ErrCheckNameTooLong, name, table.Name, limit)
 	}
 	for _, database := range databases {
 		if database == nil {

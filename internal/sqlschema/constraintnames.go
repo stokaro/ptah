@@ -139,7 +139,9 @@ func refuseDerivedForeignKeyName(
 	databases []*schemamodel.Database, table schemamodel.Table, name, sourcePlatform string,
 	statement mysqlname.Statement,
 ) error {
-	if limit := mysqlname.ForeignKeyNameLimit(sourcePlatform, statement); utf8.RuneCountInString(name) > limit {
+	facts := factsOf(sourcePlatform)
+	limit := mysqlname.ForeignKeyNameLimit(facts.foreignKeyNameRules, facts.identifierLimit, statement)
+	if utf8.RuneCountInString(name) > limit {
 		return fmt.Errorf("%w: %s, the name %s gives an unnamed foreign key of %s in %s, is %d characters, "+
 			"and the server keeps at most %d there as derived; name the key",
 			ErrForeignKeyNameTooLong, name, platform.NormalizeDialect(sourcePlatform), table.Name,

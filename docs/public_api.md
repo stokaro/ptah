@@ -4806,7 +4806,14 @@ in place of a dialect's name:
 - `Names`, `IndexNaming`, `CheckNaming`, `ConstraintNaming` and
   `ForeignKeyNaming`: how the server resolves a name a schema file writes, and
   the names it gives the indexes, CHECKs, constraints and foreign keys the
-  file leaves unnamed.
+  file leaves unnamed. `IndexNaming.BaseBytes` is how much of a column's name
+  an index keeps before the `_2` and on it takes where the name is held.
+  `ForeignKeyNameRules` refines `ForeignKeyNaming` where servers of one naming
+  differ: the longest derived name CREATE TABLE keeps, and whether some
+  release lines name an unnamed key by its number alone. A registry refuses
+  `ForeignKeyNameRules` without a `ForeignKeyNaming`, and a `ForeignKeyNaming`
+  or `CheckNamingTableNumbered` whose `IdentifierLimit` states no length in
+  characters, which is what the server holds a derived name to.
 - `Statements` and `TableOptions`: how the server reads the role and table
   statements a schema file writes. `Statements.DoBlocks` names the procedural
   language of a DO block that declares roles, one of `DoBlockLanguages`, such
@@ -4892,9 +4899,12 @@ engine's DDL: which words open an index, which clauses may follow a column
 (`Columns`), a constraint (`Constraints`) or a key (`Keys`), which forms of
 CREATE, ALTER and DROP INDEX (`Indexes`), ALTER TABLE clauses (`AlterTable`)
 and statements (`Statements`) it has, and which routine grammar its routines,
-triggers and DO blocks are written in (`Routines`). A refusal the engine
-answers in its own words is a sentence of the descriptor, which the parser
-writes after the position of the construct it refuses.
+triggers and DO blocks are written in (`Routines`). `Keys.ForeignKeyIndexName`
+says that a name may follow FOREIGN KEY, and `Keys.ForeignKeyIndexNameNamesKey`
+that the name is the key's own rather than its index's alone where no
+CONSTRAINT symbol is written. A refusal the engine answers in its own words is
+a sentence of the descriptor, which the parser writes after the position of
+the construct it refuses.
 
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:
