@@ -216,6 +216,17 @@ func TestScanner_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			// YDB 26.2 and 25.1 reject SELECT 0o8AS octal with a failure to
+			// parse the number 0o8. The value is invalid, but 8 belongs to
+			// the numeric token rather than the identifier after it.
+			name:  "an octal eight stays in the numeric token",
+			input: "0o8AS 0o9",
+			want: []yqlToken{
+				{lexer.TokenIdentifier, "0o8"}, {lexer.TokenIdentifier, "AS"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "0"}, {lexer.TokenIdentifier, "o9"},
+			},
+		},
+		{
 			// Each answered a parse error at the token after the one shown:
 			// a prefix with no digit of its base, an exponent with no digit,
 			// and an f directly after a decimal point end the number early.
