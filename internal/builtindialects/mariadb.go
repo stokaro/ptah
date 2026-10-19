@@ -261,5 +261,9 @@ func mariaDB() descriptor.Dialect {
 		// server writes the key's number alone, `1`, which
 		// internal/mysqlname reads as the same key.
 		ForeignKeyNaming: descriptor.ForeignKeyNamingTableNumbered,
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown.
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
 	}
 }

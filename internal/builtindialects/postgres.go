@@ -224,6 +224,16 @@ func postgres() descriptor.Dialect {
 			ConnectedSchema: true,
 			StartingPoint:   true,
 		},
+
+		// Migrations: what internal/ptahdirective, internal/migrationreplay
+		// and internal/txrequire read. The engine's reading decides a migration
+		// file's directives when its dialect is unknown. A value added to an
+		// existing enum type is refused in a statement of the same transaction,
+		// measured on PostgreSQL 18.4: `unsafe use of new value` (55P04).
+		Migration: descriptor.Migration{
+			DirectivesWithoutDialect: true,
+			EnumValuesCommitFirst:    true,
+		},
 	}
 }
 

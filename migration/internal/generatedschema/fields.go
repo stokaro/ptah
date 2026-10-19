@@ -2,7 +2,9 @@
 package generatedschema
 
 import (
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/descriptortable"
 )
 
 // FieldsForTable returns direct and embedded columns for table.
@@ -101,12 +103,43 @@ func relationEmbeddedField(
 		OnDelete:   embedded.OnDelete,
 		OnUpdate:   embedded.OnUpdate,
 		Comment:    embedded.Comment,
-		Overrides: map[string]map[string]string{
-			"mysql":   {"type": "INT"},
-			"mariadb": {"type": "INT"},
-		},
+		Overrides:  serialForeignKeyOverrides(),
 	}
 }
+
+// serialForeignKeyOverrides writes the generated INTEGER column of an
+// embedded relation as the type the engine writes a SERIAL key as, on every
+// engine whose descriptor states one (Conversion.SerialForeignKeyType), as
+// MySQL and MariaDB write it as INT. Each call returns a new map, since a
+// field's overrides are its own.
+func serialForeignKeyOverrides() map[string]map[string]string {
+	types := serialForeignKeyTypes.Get()
+	overrides := make(map[string]map[string]string, len(types))
+	for _, keyType := range types {
+		overrides[keyType.dialect] = map[string]string{"type": keyType.name}
+	}
+	return overrides
+}
+
+// serialKeyType is the type one engine writes a SERIAL key as.
+type serialKeyType struct {
+	dialect string
+	name    string
+}
+
+// serialForeignKeyTypes holds the engines that write a SERIAL key as a type
+// other than INTEGER. A comparison reads the generated fields of every table
+// it compares, so the list is derived once per registry rather than per
+// field.
+var serialForeignKeyTypes = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []serialKeyType {
+	var types []serialKeyType
+	for _, described := range dialects {
+		if name := described.Conversion.SerialForeignKeyType; name != "" {
+			types = append(types, serialKeyType{dialect: described.Name, name: name})
+		}
+	}
+	return types
+})
 
 func appendInlineEmbeddedFields(
 	generatedFields []schemamodel.Field,

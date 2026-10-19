@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
 
 // NodeRequiresAutocommit reports whether a PLANNED node must be routed away
@@ -26,30 +27,53 @@ import (
 // value, which is the shape that fails at apply with 55P04. The generator
 // refuses such a mix rather than splitting it (migration/generator: "cannot be
 // split automatically"), and that refusal depends on this answer.
+//
+// Which nodes leave the file is what the engine's descriptor states: a
+// concurrent index build or drop where its grammar has one
+// (ConcurrentIndexes), an enum value where it commits before a use
+// (Migration.EnumValuesCommitFirst), and a constraint validation where the
+// online grammar is NOT VALID (OnlineAlter).
 func NodeRequiresAutocommit(dialect string, node ast.Node) bool {
-	if !platform.IsPostgresFamily(dialect) {
-		return false
-	}
+	rules := autocommitRules.Get(dialect)
 	switch typed := node.(type) {
 	case *ast.IndexNode:
-		return typed.Concurrently
+		return rules.concurrentIndexes && typed.Concurrently
 	case *ast.DropIndexNode:
 		// DROP INDEX CONCURRENTLY is refused inside a transaction block exactly
 		// as CREATE INDEX CONCURRENTLY is.
-		return typed.Concurrently
+		return rules.concurrentIndexes && typed.Concurrently
 	case *ast.AlterTypeNode:
-		return addsEnumValue(typed)
+		return rules.enumValues && addsEnumValue(typed)
 	case *ast.AlterTableNode:
 		// A constraint added NOT VALID and validated in the same transaction
 		// gains nothing: the ACCESS EXCLUSIVE lock the addition takes is held
 		// to commit, so the weaker lock the validation asks for is held behind
 		// it and writers wait either way. The pair is worth writing only when
 		// the two statements commit separately.
-		return validatesConstraint(typed)
+		return rules.constraintValidation && validatesConstraint(typed)
 	default:
 		return false
 	}
 }
+
+// autocommitNodes are the statements a dialect's descriptor sends out of the
+// transactional migration file.
+type autocommitNodes struct {
+	concurrentIndexes    bool
+	enumValues           bool
+	constraintValidation bool
+}
+
+// autocommitRules holds the answer of every dialect. A generator asks once
+// per planned node, so the answers are derived once per registry rather than
+// copied out of a descriptor per node.
+var autocommitRules = descriptortable.New(func(described descriptor.Dialect) autocommitNodes {
+	return autocommitNodes{
+		concurrentIndexes:    described.ConcurrentIndexes,
+		enumValues:           described.Migration.EnumValuesCommitFirst,
+		constraintValidation: described.OnlineAlter == descriptor.OnlineAlterNotValid,
+	}
+})
 
 // validatesConstraint reports whether the ALTER completes a constraint added
 // NOT VALID.

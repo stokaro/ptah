@@ -181,6 +181,11 @@ func spanner() descriptor.Dialect {
 			Catalog:  []string{"spanner_sys"},
 			Implicit: []string{"public", "spanner_sys"},
 		},
+
+		// Migrations: the engine's reading decides a migration file's
+		// directives when its dialect is unknown. The PostgreSQL interface has
+		// no enum type, so no value is added to one.
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
 	}
 }
 
