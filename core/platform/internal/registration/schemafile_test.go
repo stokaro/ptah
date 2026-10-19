@@ -58,13 +58,18 @@ func TestRegister_ReadsTheDoBlocksOfAnEngineNobodyShips(t *testing.T) {
 	c.Assert(result.Database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
 
 	engine := described("bootstrapping", "", "bootdb")
-	engine.Grammar.Routines.Body = descriptor.RoutineQuotedBody
+	engine.Grammar.Routines = descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, DefaultDoBlockLanguage: "plpgsql"}
 	engine.Statements = descriptor.Statements{DoBlocks: descriptor.DoBlocksPLpgSQL}
 	c.Assert(platform.Register(engine), qt.IsNil)
 
-	database, _, err = sqlschema.Read([]byte(block), "bootdb")
+	database, statements, err := sqlschema.Read([]byte(block), "bootdb")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "Reader", Login: true, Inherit: true}})
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	parsedBlock, isBlock := statements.Statements[0].(*ast.DoBlockNode)
+	c.Assert(isBlock, qt.IsTrue)
+	c.Assert(parsedBlock.Language, qt.Equals, "plpgsql")
+	c.Assert(parsedBlock.Body.Language, qt.Equals, "plpgsql")
 	result, err = sqlschema.ConvertScript(context.Background(), untargeted, postgresScript{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "reader", Login: true, Inherit: true}})
