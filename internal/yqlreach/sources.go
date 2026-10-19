@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/reachext/yql"
 	"ptah.run/internal/sqlreach"
 )
 
@@ -154,7 +155,7 @@ func yqlSourceNames(tokens []lexer.Token) ([]string, error) {
 			delete(lists, depth)
 			depth--
 			continue
-		case token.Type == lexer.TokenIdentifier && slices.Contains(sqlreach.YQLSourceListEnds(), strings.ToUpper(token.Value)):
+		case token.Type == lexer.TokenIdentifier && slices.Contains(yql.SourceListEnds(), strings.ToUpper(token.Value)):
 			delete(lists, depth)
 		}
 		anchor := sqlreach.IsKeyword(token, "FROM") || sqlreach.IsKeyword(token, "JOIN")

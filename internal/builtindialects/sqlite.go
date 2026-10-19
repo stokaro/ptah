@@ -182,6 +182,10 @@ func sqlite() descriptor.Dialect {
 				Off:   "PRAGMA foreign_keys = OFF",
 			}},
 		},
+
+		// Reach: the constructs of SQLite that reach outside the database,
+		// which a scan refuses on every engine.
+		Reach: descriptor.Reach{Everywhere: sqliteEverywhere()},
 	}
 }
 

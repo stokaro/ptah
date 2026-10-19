@@ -189,6 +189,10 @@ END`,
 		// Migrations: the engine's reading decides a migration file's
 		// directives when its dialect is unknown.
 		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+
+		// Reach: the constructs of SQL Server that reach outside the
+		// database, which a scan refuses on every engine.
+		Reach: descriptor.Reach{Everywhere: sqlServerEverywhere()},
 	}
 }
 

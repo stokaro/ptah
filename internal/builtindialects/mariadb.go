@@ -265,5 +265,9 @@ func mariaDB() descriptor.Dialect {
 		// Migrations: the engine's reading decides a migration file's
 		// directives when its dialect is unknown.
 		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+
+		// Reach: none of its own. MariaDB's constructs that reach outside the
+		// database are MySQL's, which MySQL's descriptor states and a scan
+		// refuses on every engine.
 	}
 }
