@@ -3,27 +3,25 @@ package atlasreport
 import (
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
-// indentSQL adds presentation whitespace only outside quoted SQL tokens.
-// Some report payloads have no dialect, so retain the union of quoted spans
-// under the supported string-escape policies. Extra preservation costs only
-// alignment; guessing a policy can change a literal's value or a routine body.
+// indentSQL adds presentation whitespace only outside quoted SQL tokens: the
+// string literals and quoted identifiers that dialect's lexer reads. A newline
+// inside one of them is part of a literal's value, a name or a routine body,
+// so indenting it would change the statement rather than its layout.
 //
-// The three lexers are named here, rather than read from the descriptors,
-// because a SchemaDiff payload carries no dialect. Every rule that would
-// derive the set from the registry changes the output: the union of every
-// dialect's lexer adds YQL, which reads `@@...@@` as a string, so a T-SQL or
-// MySQL body that names two `@@` variables would lose its indentation between
-// them. The fix is a payload that carries its dialect and is lexed under it.
-func indentSQL(sql, indent string) string {
-	protected := make([]bool, len(sql))
-	for _, dialect := range []string{platform.Postgres, platform.MySQL, platform.SQLServer} {
-		markQuotedNewlines(sql, dialect, protected)
-	}
+// The statements are read as the dialect they were planned for, because the
+// quoting rules differ by engine and a reading under another engine's rules
+// moves the boundary of a literal. YQL reads `@@...@@` as a string, for
+// example, so a T-SQL body that names two `@@` variables read as YQL would lose
+// its indentation between them, and a YQL string read as T-SQL would gain it.
+//
+// Every report a command renders names its dialect. An empty or unknown one is
+// read under the dialect-neutral rules [dialectlexer.Options] answers with.
+func indentSQL(dialect, sql, indent string) string {
+	protected := quotedNewlines(dialect, sql)
 	var output strings.Builder
 	output.WriteString(indent)
 	for index := range len(sql) {
@@ -35,12 +33,15 @@ func indentSQL(sql, indent string) string {
 	return output.String()
 }
 
-func markQuotedNewlines(sql, dialect string, protected []bool) {
+// quotedNewlines marks the newlines of sql that dialect's lexer reads inside a
+// string or a quoted identifier.
+func quotedNewlines(dialect, sql string) []bool {
+	protected := make([]bool, len(sql))
 	lex := lexer.NewLexerWithOptions(sql, dialectlexer.Options(dialect))
 	for {
 		token := lex.NextToken()
 		if token.Type == lexer.TokenEOF {
-			return
+			return protected
 		}
 		// Backtick and bracket quoting produce identifiers; dollar-quoted
 		// routine bodies and double-quoted identifiers produce strings.

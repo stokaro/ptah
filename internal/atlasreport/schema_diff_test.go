@@ -13,7 +13,7 @@ import (
 func TestSchemaDiffDefaultFormatReportsSyncedSchemas(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
-	report := atlasreport.NewSchemaDiff(nil, nil, nil)
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{})
 
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, atlasreport.NormalizeSchemaDiffFormat(""), report, schemaext.Registry{})
 
@@ -24,9 +24,9 @@ func TestSchemaDiffDefaultFormatReportsSyncedSchemas(t *testing.T) {
 func TestSchemaDiffCustomSQLTemplate(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
-	report := atlasreport.NewSchemaDiff(nil, nil, []string{
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: []string{
 		`CREATE TABLE "users" ("id" integer);`,
-	})
+	}})
 
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ len .Changes }}|{{ .MarshalSQL }}|{{ sql . "  " }}`, report, schemaext.Registry{})
 
@@ -52,9 +52,9 @@ func TestSchemaDiffTemplateValidationRejectsUnknownHelpers(t *testing.T) {
 func TestSchemaDiffTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
-	report := atlasreport.NewSchemaDiff(nil, nil, []string{
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: []string{
 		`CREATE TABLE "users" ("id" integer);`,
-	})
+	}})
 
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `before {{ sql . "  " "extra" }}`, report, schemaext.Registry{})
 
@@ -77,9 +77,9 @@ func TestSchemaDiffTemplateHelpers_OpenTheSharedSet(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "1")
 	var out bytes.Buffer
-	report := atlasreport.NewSchemaDiff(nil, nil, []string{
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: []string{
 		`CREATE TABLE "users" ("id" integer);`,
-	})
+	}})
 
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ json .Changes }}`, report, schemaext.Registry{})
 
@@ -96,9 +96,9 @@ func TestSchemaDiffTemplateHelpers_KeepSQL(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "1")
 	var out bytes.Buffer
-	report := atlasreport.NewSchemaDiff(nil, nil, []string{
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: []string{
 		`CREATE TABLE "users" ("id" integer);`,
-	})
+	}})
 
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ sql . }}`, report, schemaext.Registry{})
 

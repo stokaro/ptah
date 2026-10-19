@@ -673,6 +673,7 @@ func planDiffFileContents(
 	}
 	contents, err = attachReversePlan(
 		contents,
+		info.Dialect,
 		reverse,
 		format,
 		planned.ReverseRequiresNoTransaction,
@@ -808,8 +809,8 @@ func readReplayedSchema(ctx context.Context,
 	return withoutRevisionTable(current), nil
 }
 
-func renderMigrationDiffSQL(statements []string, format string) (string, error) {
-	report := atlasreport.NewSchemaDiff(nil, nil, statements)
+func renderMigrationDiffSQL(dialect string, statements []string, format string) (string, error) {
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Dialect: dialect, Statements: statements})
 	var out bytes.Buffer
 	if err := atlasreport.WriteMigrateDiff(&out, format, report); err != nil {
 		return "", err

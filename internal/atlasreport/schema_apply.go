@@ -30,13 +30,19 @@ type SchemaApply struct {
 	// such template field, and a field only Ptah offers would let a template
 	// succeed here that the community binary refuses.
 	pending bool
+
+	// dialect is the dialect the statements were planned for, which the `sql`
+	// helper reads them as when it indents them. It is unexported for the
+	// reason pending is.
+	dialect string
 }
 
 type SchemaApplyChange = SchemaChange
 
 // SchemaApplyOptions describes the apply the report is rendered for.
 type SchemaApplyOptions struct {
-	// Driver is the target dialect, as `conn.Info().Dialect` reports it.
+	// Driver is the target dialect, as `conn.Info().Dialect` reports it. The
+	// `sql` helper reads the statements as this dialect when it indents them.
 	Driver string
 	// URL is the raw --url value. Sensitive query parameters and the password
 	// are redacted before the report carries it.
@@ -51,6 +57,7 @@ func NewSchemaApply(opts SchemaApplyOptions) SchemaApply {
 	report := SchemaApply{
 		Changes: schemaChanges(opts.Statements),
 		pending: opts.DryRun,
+		dialect: opts.Driver,
 	}
 	// A synced schema carries no environment on the community binary either:
 	// `{{ json . }}` there renders exactly `{"Changes":{}}` when there is
@@ -153,7 +160,7 @@ func (r SchemaApply) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
-	return schemaIndentSQL(sql, indent[0]), nil
+	return schemaIndentSQL(r.dialect, sql, indent[0]), nil
 }
 
 func schemaApplySQL(result SchemaApply, indent ...string) (string, error) {

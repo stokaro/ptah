@@ -47,6 +47,12 @@ type SchemaDiff struct {
 	From    *schemamodel.Database
 	To      *schemamodel.Database
 	Changes []SchemaDiffChange
+
+	// dialect is the dialect the statements were planned for, which the `sql`
+	// helper reads them as when it indents them. It is unexported because
+	// Atlas has no such template field, and a field only Ptah offers would let
+	// a template succeed here that the community binary refuses.
+	dialect string
 }
 
 type SchemaChange struct {
@@ -55,11 +61,29 @@ type SchemaChange struct {
 
 type SchemaDiffChange = SchemaChange
 
-func NewSchemaDiff(from, to *schemamodel.Database, statements []string) SchemaDiff {
+// SchemaDiffOptions describes the diff the report is rendered for.
+type SchemaDiffOptions struct {
+	// Dialect is the dialect the statements were planned for. The `sql`
+	// helper reads the statements as that dialect when it indents them, so a
+	// newline inside one of its string literals or quoted identifiers keeps
+	// its place.
+	Dialect string
+	// From and To are the two compared schemas. A migration directory diff
+	// renders neither.
+	From *schemamodel.Database
+	To   *schemamodel.Database
+	// Statements is the ordered plan.
+	Statements []string
+}
+
+// NewSchemaDiff builds the template payload of `schema diff` and `migrate
+// diff`.
+func NewSchemaDiff(opts SchemaDiffOptions) SchemaDiff {
 	return SchemaDiff{
-		From:    from,
-		To:      to,
-		Changes: schemaChanges(statements),
+		From:    opts.From,
+		To:      opts.To,
+		Changes: schemaChanges(opts.Statements),
+		dialect: opts.Dialect,
 	}
 }
 
@@ -187,7 +211,7 @@ func (r SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
-	return schemaIndentSQL(sql, indent[0]), nil
+	return schemaIndentSQL(r.dialect, sql, indent[0]), nil
 }
 
 func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
@@ -210,7 +234,7 @@ func schemaStatement(statement string) string {
 	return strings.TrimSuffix(statement, ";")
 }
 
-func schemaIndentSQL(sql, indent string) string {
+func schemaIndentSQL(dialect, sql, indent string) string {
 	trimmed := strings.TrimSuffix(sql, "\n")
-	return indentSQL(trimmed, indent) + "\n"
+	return indentSQL(dialect, trimmed, indent) + "\n"
 }

@@ -20,7 +20,7 @@ import (
 func clickHouseDiff() atlasreport.SchemaDiff {
 	settings := &chschema.DesiredTable{Engine: chschema.Setting{State: chschema.Explicit, Value: "MergeTree"}}
 	to := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", Facets: must.Must(schemaext.NewFacets(settings))}}}
-	return atlasreport.NewSchemaDiff(nil, to, nil)
+	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{To: to})
 }
 
 // With the helpers on, `json` encodes the feature data of a side through the
