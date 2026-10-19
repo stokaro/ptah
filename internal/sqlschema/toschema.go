@@ -29,9 +29,10 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/routineext"
+	routinebuiltin "ptah.run/internal/routineext/builtin"
 	"ptah.run/internal/sqlident"
 )
 
@@ -811,17 +812,18 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform
 // converted with none. A node whose dialect states no routine grammar was not
 // read by one, and is refused.
 func toRoutine(node *ast.RoutineNode, sourcePlatform string) (schemamodel.Function, error) {
-	switch grammar := factsOf(node.Dialect).routines; grammar {
-	case descriptor.RoutineQuotedBody:
-		return toPostgresRoutine(node, sourcePlatform), nil
-	case descriptor.RoutineTransactSQL:
-		return toSQLServerRoutine(node, sourcePlatform)
-	case descriptor.RoutineCompoundStatement:
-		return toMySQLRoutine(node, sourcePlatform), nil
-	default:
+	service := routinebuiltin.Lookup(factsOf(node.Dialect).routines)
+	if service.Converter == nil {
 		return schemamodel.Function{}, fmt.Errorf("%w: the %s %s names dialect %q, whose descriptor states no routine grammar",
 			ErrUnmodeledStatement, node.Kind, node.Name, node.Dialect)
 	}
+	function, err := service.Converter.Convert(routineext.Request{
+		Node: node, Name: normalizeSQLTableReference(sourcePlatform, node.Name),
+	})
+	if err != nil {
+		return schemamodel.Function{}, fmt.Errorf("%w: %w", ErrUnmodeledStatement, err)
+	}
+	return function, nil
 }
 
 // appendPrivilegeDeclaration records the statements that declare access, and

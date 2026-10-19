@@ -137,6 +137,10 @@ uses `ast.RoutineNode`. Its `Dialect` names the normalized source dialect;
 the descriptor's `Grammar.Routines.Body` selects its grammar. `Options` keeps
 header clauses in source order, with `Read` recording those a syntax owner
 consumes into `Facets`. All routine bodies use `ast.RoutineBody`.
+The SQL schema reader selects a converter from `internal/routineext/builtin`
+using the source dialect's routine grammar. The owners in
+`internal/routineext/{postgres,mysql,sqlserver}` interpret the header options;
+the shared reader normalizes the name for the destination schema.
 
 ### Dialect-aware parsing
 
