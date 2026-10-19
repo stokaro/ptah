@@ -92,6 +92,14 @@ func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *te
 
 		c.Assert(predicate, qt.Not(qt.Contains), "spanner_sys")
 	})
+
+	t.Run("any member leaves out every member's catalog", func(t *testing.T) {
+		c := qt.New(t)
+		predicate := pgsystemschema.PostgresNonSystemSchemasPredicate(pgsystemschema.AnyMember)
+
+		c.Assert(predicate, qt.Equals, "n.nspname <> 'information_schema'\n\t\t\t  AND n.nspname <> 'crdb_internal'"+
+			"\n\t\t\t  AND n.nspname <> 'spanner_sys'\n\t\t\t  AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
+	})
 }
 
 func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {
@@ -105,7 +113,11 @@ func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {
 	}
 }
 
-func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
+// TestIsPostgresFamilySystemSchemaAddsTheReservedSchemas covers the schemas a
+// dialect's descriptor reserves: crdb_internal on CockroachDB and spanner_sys
+// on Spanner, each owned by its engine alone, and both for a caller that
+// cannot tell which member it talks to.
+func TestIsPostgresFamilySystemSchemaAddsTheReservedSchemas(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
@@ -116,6 +128,13 @@ func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
 		{name: "Postgres does not own it", dialect: "postgres", schema: "crdb_internal", want: false},
 		{name: "quoted lookalike", dialect: "cockroachdb", schema: "CRDB_INTERNAL", want: false},
 		{name: "common catalog", dialect: "cockroachdb", schema: "pg_catalog", want: true},
+		{name: "Spanner's catalog", dialect: "spanner", schema: "spanner_sys", want: true},
+		{name: "CockroachDB does not own Spanner's catalog", dialect: "cockroachdb", schema: "spanner_sys", want: false},
+		{name: "Spanner's public is the user's", dialect: "spanner", schema: "public", want: false},
+		{name: "any member owns Cockroach internal", dialect: pgsystemschema.AnyMember, schema: "crdb_internal", want: true},
+		{name: "any member owns Spanner's catalog", dialect: pgsystemschema.AnyMember, schema: "spanner_sys", want: true},
+		{name: "any member leaves public to the user", dialect: pgsystemschema.AnyMember, schema: "public", want: false},
+		{name: "any member owns the common catalog", dialect: pgsystemschema.AnyMember, schema: "information_schema", want: true},
 	}
 
 	for _, test := range tests {
@@ -140,6 +159,7 @@ func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing
 		{name: "PostgreSQL reserved prefix", dialect: "yugabytedb", schema: "pg_app"},
 		{name: "information schema", dialect: "spanner", schema: "information_schema"},
 		{name: "CockroachDB internal", dialect: "cockroachdb", schema: "crdb_internal"},
+		{name: "Spanner's catalog", dialect: "spanner", schema: "spanner_sys"},
 	}
 
 	for _, test := range tests {
@@ -165,6 +185,8 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 		{name: "quoted catalog lookalike", dialect: "postgres", schema: "PG_CATALOG"},
 		{name: "CockroachDB lookalike", dialect: "cockroachdb", schema: "CRDB_INTERNAL"},
 		{name: "CockroachDB namespace on PostgreSQL", dialect: "postgres", schema: "crdb_internal"},
+		{name: "Spanner's catalog on PostgreSQL", dialect: "postgres", schema: "spanner_sys"},
+		{name: "Spanner's public", dialect: "spanner", schema: "public"},
 		{name: "non PostgreSQL target", dialect: "mysql", schema: "pg_catalog"},
 	}
 

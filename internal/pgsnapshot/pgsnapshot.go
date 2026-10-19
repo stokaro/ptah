@@ -36,8 +36,10 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgdefaultacl"
+	"ptah.run/internal/pgsystemschema"
 )
 
 // Querier is the part of a database handle a read uses. A transaction, a pool
@@ -219,8 +221,9 @@ func Read(ctx context.Context, q Querier) (Snapshot, error) {
 	return snapshot, nil
 }
 
-// userNamespace is the predicate for a user schema on the alias n.
-const userNamespace = `n.nspname NOT LIKE 'pg\_%' ESCAPE '\' AND n.nspname <> 'information_schema'`
+// userNamespace is the predicate for a user schema on the alias n: one the
+// realm read of PostgreSQL describes, as internal/pgsystemschema states it.
+var userNamespace = pgsystemschema.PostgresNonSystemSchemasPredicate(platform.Postgres)
 
 // notExtensionMember is the predicate for an object no extension owns, for a
 // catalog and an OID expression.

@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
+	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/sqlident"
 )
 
@@ -653,8 +654,7 @@ func targetsAcrossSchemas(
 		JOIN pg_namespace n ON n.oid = t.relnamespace
 		WHERE t.relkind IN ('r', 'p', 'm')
 		  AND t.relname = ?
-		  AND n.nspname !~ '^pg_'
-		  AND n.nspname <> 'information_schema'
+		  AND `+pgsystemschema.PostgresNonSystemSchemasPredicate(platform.Postgres)+`
 		ORDER BY n.nspname`)
 	rows, err := q.QueryContext(ctx, query, ref.Table)
 	if err != nil {

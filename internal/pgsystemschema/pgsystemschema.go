@@ -29,6 +29,12 @@ import (
 	"ptah.run/internal/sqlident"
 )
 
+// AnyMember is the dialect a caller names when it cannot tell which member of
+// the PostgreSQL family it is connected to, such as a schema writer built
+// without a dialect. The answers for it add the schemas every registered
+// dialect states, so a schema any member owns is left alone.
+const AnyMember = "*"
+
 // stated is the schemas each dialect's descriptor adds to the base set. The
 // answers are asked for each schema name a document or a plan holds, so they
 // are derived once per descriptor rather than copied out of the registry for
@@ -36,6 +42,38 @@ import (
 var stated = descriptortable.New(func(described descriptor.Dialect) descriptor.SystemSchemas {
 	return described.SystemSchemas
 })
+
+// everyMember is the schemas every dialect of the registry states, each list
+// in the order of the registry and without repeats: the answer for
+// [AnyMember].
+var everyMember = descriptortable.NewIndex(func(dialects []descriptor.Dialect) descriptor.SystemSchemas {
+	var union descriptor.SystemSchemas
+	for _, described := range dialects {
+		union.Catalog = appendMissing(union.Catalog, described.SystemSchemas.Catalog)
+		union.Reserved = appendMissing(union.Reserved, described.SystemSchemas.Reserved)
+		union.Implicit = appendMissing(union.Implicit, described.SystemSchemas.Implicit)
+	}
+	return union
+})
+
+// appendMissing appends each of names that schemas does not hold yet.
+func appendMissing(schemas, names []string) []string {
+	for _, name := range names {
+		if !slices.Contains(schemas, name) {
+			schemas = append(schemas, name)
+		}
+	}
+	return schemas
+}
+
+// added is the schemas the dialect adds to the base set: its descriptor's,
+// or every member's for [AnyMember].
+func added(dialect string) descriptor.SystemSchemas {
+	if dialect == AnyMember {
+		return everyMember.Get()
+	}
+	return stated.Get(dialect)
+}
 
 // PostgresDescribedSchemasPredicate is the realm predicate a DESCRIPTION uses:
 // [PostgresNonSystemSchemasPredicate] plus the schemas an extension owns.
@@ -96,7 +134,7 @@ func PostgresDescribedSchemasPredicate(dialect string, caps capability.Capabilit
 // less of the database than is there.
 func PostgresNonSystemSchemasPredicate(dialect string) string {
 	predicates := []string{`n.nspname <> 'information_schema'`}
-	for _, schema := range stated.Get(dialect).Catalog {
+	for _, schema := range added(dialect).Catalog {
 		predicates = append(predicates, `n.nspname <> `+sqlident.StringLiteral(schema))
 	}
 	predicates = append(predicates, `n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`)
@@ -119,7 +157,7 @@ func IsPostgresSystemSchema(name string) bool {
 // Matching remains exact so a quoted lookalike in another case is still a
 // user identifier.
 func IsPostgresFamilySystemSchema(dialect, name string) bool {
-	return IsPostgresSystemSchema(name) || slices.Contains(stated.Get(dialect).Reserved, name)
+	return IsPostgresSystemSchema(name) || slices.Contains(added(dialect).Reserved, name)
 }
 
 // IsUncreatableSchema reports whether the target owns name and will not create
@@ -134,7 +172,7 @@ func IsPostgresFamilySystemSchema(dialect, name string) bool {
 // exactly that block, and refusing to read back what Ptah wrote would be the
 // worse fault.
 func IsUncreatableSchema(dialect, name string) bool {
-	return IsPostgresFamilySystemSchema(dialect, name) || slices.Contains(stated.Get(dialect).Implicit, name)
+	return IsPostgresFamilySystemSchema(dialect, name) || slices.Contains(added(dialect).Implicit, name)
 }
 
 // ValidateDeclaredPostgresSystemSchemas refuses schema declarations that ask a

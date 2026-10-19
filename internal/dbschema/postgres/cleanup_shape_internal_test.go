@@ -61,7 +61,7 @@ func TestApplyViewOrderingShapeMatchesTheServer(t *testing.T) {
 func collectedQueryFor(t *testing.T, caps capability.Capabilities) string {
 	t.Helper()
 	runner := newRecordingRunner(t)
-	writer := NewPostgreSQLWriterForRunnerWithCapabilities(runner, "public", caps)
+	writer := NewPostgreSQLWriterForRunnerWithCapabilities(runner, "public", "", caps)
 	_, _ = writer.collectAllObjects(
 		context.Background(), runner, postgresSchemaCleanupScope([]string{"public"}, nil), postgresCleanupCapabilities{})
 	return lastRecordedQuery
@@ -99,7 +99,7 @@ func TestDropAllTablesTakesATransactionOnlyWhereTheServerAcceptsDDLInOne(t *test
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			beganTx = false
-			writer := NewPostgreSQLWriterForRunnerWithCapabilities(newRecordingRunner(t), "public", row.caps)
+			writer := NewPostgreSQLWriterForRunnerWithCapabilities(newRecordingRunner(t), "public", "", row.caps)
 
 			_ = writer.DropAllTables(context.Background())
 
@@ -123,7 +123,7 @@ func TestWriterWithCapabilitiesCarriesTheServersAnswer(t *testing.T) {
 	c := qt.New(t)
 
 	writer := NewPostgreSQLWriterForRunnerWithCapabilities(
-		nil, "public", capability.SpannerPostgres())
+		nil, "public", "", capability.SpannerPostgres())
 
 	// Both are what drive the two cleanup shapes, and both are measured facts
 	// about the Spanner PostgreSQL interface rather than defaults.
