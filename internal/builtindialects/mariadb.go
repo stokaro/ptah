@@ -200,5 +200,39 @@ func mariaDB() descriptor.Dialect {
 			DockerDrivers: []string{"maria", "mariadb"},
 			HCL:           mysqlFamilyAtlasHCL(),
 		},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// MariaDB 11.8 takes no [NOT] ENFORCED, accepts MATCH and records
+		// NONE, takes one CHECK on a column, and takes a column CONSTRAINT
+		// before REFERENCES alone and before nothing in a MODIFY
+		// (stokaro/ptah#3745, #3759). It spells a hidden index IGNORED.
+		Grammar: descriptor.Grammar{
+			Columns: descriptor.ColumnGrammar{
+				SecondCheckRefusal: "MariaDB accepts one CHECK on a column and answers ERROR 1064 (42000) to the " +
+					"second; write it at table level",
+				Constraint:              descriptor.ColumnConstraint{Define: descriptor.ConstraintKindReferences},
+				ModifyRefusesReferences: true,
+			},
+			Constraints: descriptor.ConstraintGrammar{
+				Match: descriptor.Match{
+					Clause: true,
+					Refusal: "MariaDB 11.8.9 accepts the clause and records NONE, so the key it builds is MATCH " +
+						"SIMPLE; declare the key without the clause",
+				},
+				Deferral:       descriptor.Deferral{Refusal: mysqlFamilyDeferralRefusal},
+				SymbolOptional: true,
+			},
+			Keys: descriptor.KeyGrammar{
+				IndexKeywords: []string{"KEY", "INDEX", "FULLTEXT", "SPATIAL"},
+				Options:       true,
+				Visibility: descriptor.KeyVisibility{
+					Refused: []string{"INVISIBLE"},
+					Refusal: "it is MySQL's clause, and MariaDB 11.8.9 answers ERROR 1064; MariaDB spells it IGNORED",
+				},
+				BareUniqueName:       true,
+				ForeignKeyIndexName:  true,
+				RefusesNullsDistinct: true,
+			},
+		},
 	}
 }

@@ -156,6 +156,13 @@ func clickHouse() descriptor.Dialect {
 		// docker driver and no docker image.
 		URLs:  descriptor.URLs{DefaultPort: 9000},
 		Atlas: descriptor.Atlas{DockerDrivers: []string{"clickhouse"}},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// Nullable(T), Array(T), LowCardinality(T) and Map(K, V) take bare
+		// type names, so a type argument equal to a column name is ordinary.
+		Grammar: descriptor.Grammar{
+			Columns: descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+		},
 	}
 }
 

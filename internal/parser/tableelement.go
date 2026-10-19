@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 )
 
 // refuseTableElementTypo reports a table element that reads as a column and
@@ -56,10 +55,12 @@ import (
 //
 // # Where it does not run
 //
-// ClickHouse, because there the conjunction stops being unusual: `Nullable(T)`,
-// `Array(T)`, `LowCardinality(T)` and `Map(K, V)` all take a bare type name, so
-// a table with a column named `String` would be refused for writing an ordinary
-// type. It also has nothing to gain -- its inline `INDEX` is read by
+// A dialect whose type arguments may be types, which its descriptor states as
+// Columns.TypeArgumentsAreTypes. That is ClickHouse, because there the
+// conjunction stops being unusual: `Nullable(T)`, `Array(T)`,
+// `LowCardinality(T)` and `Map(K, V)` all take a bare type name, so a table
+// with a column named `String` would be refused for writing an ordinary type.
+// It also has nothing to gain -- its inline `INDEX` is read by
 // `parseInlineSkippingIndex` before this fallthrough is reached, and it has no
 // MySQL-style `FULLTEXT name (col)` in a table body at all.
 //
@@ -68,8 +69,8 @@ import (
 // carrying a column named after a type argument -- PostGIS `geography(Point)`
 // beside a column called `point` -- which is refused rather than accepted, and
 // the message says which of the two readings it took.
-func refuseTableElementTypo(table *ast.CreateTableNode, dialect string, position int) error {
-	if dialect == platform.ClickHouse {
+func refuseTableElementTypo(table *ast.CreateTableNode, target targetGrammar, position int) error {
+	if target.grammar.Columns.TypeArgumentsAreTypes {
 		return nil
 	}
 	declared := make(map[string]bool, len(table.Columns))

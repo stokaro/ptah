@@ -146,6 +146,11 @@ func spanner() descriptor.Dialect {
 		// rather than read by a rule the server may not share.
 		Lexical: descriptor.Lexical{EscapeStrings: true},
 		Reach:   postgresReach(),
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		Grammar: descriptor.Grammar{
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		},
 	}
 }
 

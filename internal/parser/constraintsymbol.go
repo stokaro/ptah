@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lexer"
 )
 
@@ -57,7 +57,8 @@ import (
 //	NOT NULL        ERROR 1064            ERROR 1064      not-null x
 //	DEFAULT, NULL   ERROR 1064            ERROR 1064      accepted, name kept nowhere
 //
-// So one table, mysqlColumnConstraintKinds, decides both spellings there.
+// So one descriptor field, descriptor.ColumnConstraint, decides both spellings
+// there.
 // Without it, `a int CONSTRAINT uq UNIQUE` reads as a unique constraint `uq`
 // in a MySQL file the server refuses (stokaro/ptah#3745).
 //
@@ -76,9 +77,9 @@ import (
 //
 // So MySQL takes CONSTRAINT before CHECK in a MODIFY as it does in CREATE
 // TABLE, MariaDB takes it before nothing, and neither takes REFERENCES there,
-// with CONSTRAINT or without. The table carries the MODIFY answer beside the
-// other one, and refuseModifyReferences refuses the bare REFERENCES
-// (stokaro/ptah#3759).
+// with CONSTRAINT or without. The descriptor field carries the MODIFY answer
+// beside the other one, and refuseModifyReferences refuses the bare
+// REFERENCES (stokaro/ptah#3759).
 
 // constraintKindWords open the constraint that follows a CONSTRAINT symbol, at
 // table level or on a column.
@@ -109,26 +110,17 @@ var mysqlSymbolLessTableKinds = []string{"PRIMARY", "UNIQUE", "FOREIGN", "CHECK"
 // after CONSTRAINT.
 var columnConstraintKindWords = []string{"CHECK", "REFERENCES", "UNIQUE", "PRIMARY", "NOT", "NULL", "DEFAULT"}
 
-// mysqlColumnConstraintKinds is the one column constraint each engine of the
-// MySQL family accepts after CONSTRAINT, with a symbol or without one. The two
-// engines disagree, and each refuses the other's.
+// columnConstraint is the one column constraint the dialect accepts after
+// CONSTRAINT, with a symbol or without one, where it restricts it, as each
+// engine of the MySQL family does. The two engines disagree, and each refuses
+// the other's. The zero value restricts nothing.
 //
-// It is one table for both spellings because the engines answer both alike. A
-// second list for the named spelling would agree with this one on the day it
+// It is one field for both spellings because the engines answer both alike. A
+// second field for the named spelling would agree with this one on the day it
 // was written, and stop agreeing the day one of them changed.
-var mysqlColumnConstraintKinds = map[string]columnConstraintKinds{
-	platform.MySQL:   {define: "CHECK", modify: "CHECK"},
-	platform.MariaDB: {define: "REFERENCES", modify: ""},
-}
-
-// columnConstraintKinds is one engine's row of mysqlColumnConstraintKinds.
-type columnConstraintKinds struct {
-	// define is the kind CONSTRAINT may precede in the column definition of
-	// CREATE TABLE and ALTER TABLE ... ADD COLUMN.
-	define string
-	// modify is the kind CONSTRAINT may precede in the column definition of
-	// ALTER TABLE ... MODIFY, and empty where it may precede none.
-	modify string
+func (p *Parser) columnConstraint() (descriptor.ColumnConstraint, bool) {
+	kinds := p.target.grammar.Columns.Constraint
+	return kinds, kinds.Define != ""
 }
 
 // constraintSymbolOmitted reports whether the cursor, just past CONSTRAINT, sits
@@ -175,7 +167,7 @@ func (p *Parser) admitSymbolLessTableConstraint(start int) error {
 		return err
 	}
 	kind := strings.ToUpper(p.current.Value)
-	if !p.isMySQLFamilyDialect() {
+	if !p.target.grammar.Constraints.SymbolOptional {
 		return p.constraintSymbolRequired(start, kind)
 	}
 	if !slices.Contains(mysqlSymbolLessTableKinds, kind) {
@@ -210,7 +202,7 @@ func (p *Parser) refuseConstraintBeforeIndex(start int) error {
 // else.
 func (p *Parser) handleSymbolLessColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode, start int) error {
 	kind := strings.ToUpper(p.current.Value)
-	if _, family := mysqlColumnConstraintKinds[p.dialect]; !family {
+	if _, restricted := p.columnConstraint(); !restricted {
 		return p.constraintSymbolRequired(start, kind)
 	}
 	if err := p.refuseMySQLColumnConstraint(start, ""); err != nil {
@@ -232,13 +224,13 @@ func (p *Parser) handleSymbolLessColumnConstraint(table *ast.CreateTableNode, co
 // `a int CONSTRAINT x COMMENT 'c'`, `CONSTRAINT x AUTO_INCREMENT KEY` and
 // `CONSTRAINT x KEY` too.
 func (p *Parser) refuseMySQLColumnConstraint(start int, symbol string) error {
-	kinds, family := mysqlColumnConstraintKinds[p.dialect]
-	if !family {
+	kinds, restricted := p.columnConstraint()
+	if !restricted {
 		return nil
 	}
-	accepted, where := kinds.define, "on a column"
+	accepted, where := kinds.Define, "on a column"
 	if p.modifyColumn {
-		accepted, where = kinds.modify, "in a MODIFY column definition"
+		accepted, where = kinds.Modify, "in a MODIFY column definition"
 	}
 	kind := strings.ToUpper(p.current.Value)
 	if kind == accepted {

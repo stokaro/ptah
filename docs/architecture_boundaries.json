@@ -8,7 +8,7 @@
     "provider-contracts-import-implementation": 0,
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
-    "shared-packages-name-dialects": 161,
+    "shared-packages-name-dialects": 120,
     "sql-reader-links-owners": 0
   },
   "packages": {
@@ -19,7 +19,7 @@
       "internal/liquibaserun": 10,
       "internal/migrateclean": 42,
       "internal/migrationreplay": 1,
-      "internal/parser": 66,
+      "internal/parser": 25,
       "internal/ptahdirective": 9,
       "internal/txrequire": 1,
       "migration/internal/generatedschema": 2

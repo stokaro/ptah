@@ -173,5 +173,21 @@ func cockroachDB() descriptor.Dialect {
 
 		// Database URLs: what internal/atlasurl reads.
 		URLs: descriptor.URLs{DefaultPort: 26257},
+
+		// Grammar: how the shared DDL parser reads the engine's DDL.
+		// v26.3.2 takes NOT VALID and MATCH FULL, refuses every deferral
+		// clause, and reads INDEX in a table body as an index only before a
+		// column list.
+		Grammar: descriptor.Grammar{
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+			Constraints: descriptor.ConstraintGrammar{
+				NotValid: true,
+				Match:    descriptor.Match{Clause: true},
+				Deferral: descriptor.Deferral{
+					Refusal: "CockroachDB has no deferrable constraints, and v26.3.2 refuses the clause, NOT DEFERRABLE included",
+				},
+			},
+			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
+		},
 	}
 }

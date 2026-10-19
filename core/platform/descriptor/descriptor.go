@@ -17,9 +17,9 @@
 //
 // This package checks the parts of a descriptor every reader shares: names,
 // aliases, family, the placeholder style, the enumerated schema, role and lock
-// values of [Schemas], [Roles] and [Lock], and the names a dialect claims in a
-// URL through [URLs] and [Atlas]. A package that interprets a
-// field checks that field's values when it reads them; see
+// values of [Schemas], [Roles] and [Lock], the names a dialect claims in a URL
+// through [URLs] and [Atlas], and the values of [Grammar]. A package that
+// interprets a field checks that field's values when it reads them; see
 // core/platform/identifier.FromDescriptor.
 package descriptor
 
@@ -255,6 +255,10 @@ type Dialect struct {
 	// Reach states the calls of the engine's grammar that reach outside the
 	// database a statement is sent to; see reach.go.
 	Reach Reach `json:"reach,omitzero"`
+
+	// Grammar states where the engine's DDL grammar differs, as the shared
+	// DDL parser reads it; see grammar.go.
+	Grammar Grammar `json:"grammar,omitzero"`
 }
 
 // DevRealm states how Ptah names the dev database a connection selected and
@@ -454,7 +458,7 @@ func (d Dialect) validate() error {
 	if err := d.validateReach(); err != nil {
 		return err
 	}
-	return nil
+	return d.validateGrammar()
 }
 
 // validSpelling reports whether value is a name or alias: lowercase ASCII

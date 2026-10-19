@@ -142,6 +142,14 @@ dialect:
 p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
 ```
 
+The parser reads how a dialect's table body differs from the dialect's
+descriptor, in the `Grammar` section of `core/platform/descriptor`: which words
+open an index, which clauses may follow a column, a constraint or a key, and
+which spellings the server refuses. A refusal the engine answers in its own
+words is held there as the sentence the parser writes. A dialect added through
+`platform.Register` has its table bodies read by what its descriptor states,
+with no change to the parser.
+
 Capabilities are separate from dialect identity. Pass them only when the caller
 knows the concrete server feature set:
 
