@@ -132,6 +132,30 @@ one the run created before dev-database cleanup. PostgreSQL additionally
 removes database large objects inside the cleanup transaction; YugabyteDB does
 not support that catalog write path.
 
+## Scoped schema clean
+
+`ptah-compat schema clean` with `--include` or `--exclude` drops only the
+selected objects, with `RESTRICT`, and drops a refused object again once the
+selected objects that depend on it are gone.
+
+CockroachDB 25 and later commit each schema statement as it runs:
+`autocommit_before_ddl` is on by default, so a `DROP` inside a transaction
+commits the transaction first. The scoped plan therefore opens no transaction
+there. Each drop runs on its own and takes no relation lock. A plan that an
+unselected dependency stops keeps the drops that ran before it, and the error
+names them, as in this run measured on v26.3.2:
+
+```text
+Error: drop schema object enum "mood": SQL execution failed: ERROR: cannot drop type "mood" because other objects ([ref_fix.public.keep_t]) still depend on it (SQLSTATE 2BP01)
+SQL: DROP TYPE IF EXISTS "mood" RESTRICT
+the server commits each drop as it runs; dropped before the failure: table "free_t"
+```
+
+YugabyteDB runs the plan in one transaction, each drop under a savepoint. With
+`yb_ddl_transaction_block_enabled` at its default, off, the server does not roll
+back a drop when the transaction rolls back. Measured on 2026.1.2, a refused
+plan leaves the earlier drops in place, and the error does not name them.
+
 ## CockroachDB row-level TTL
 
 CockroachDB expires rows on a schedule the server runs, declared as table

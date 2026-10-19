@@ -190,7 +190,7 @@ func TestEmptyPlanStillRunsExecutionBoundaryValidation(t *testing.T) {
 	c.Assert(called, qt.IsTrue)
 }
 
-func TestPostgresFamilyClassificationKeepsScopedExecutionAtomic(t *testing.T) {
+func TestPostgresFamilyClassificationKeepsCleanupSchemaScoped(t *testing.T) {
 	for _, test := range []struct {
 		dialect string
 		want    bool
