@@ -7,7 +7,7 @@ audience:
 readerQuestion: "Which PostgreSQL role-bootstrap declarations can Ptah interpret?"
 goal: "Understand supported role-bootstrap syntax and its evaluation boundaries."
 sourceOfTruth:
-  - "internal/sqlschema/postgres_bootstrap.go"
+  - "internal/doblockext/postgres/postgres.go"
   - "internal/schemafile"
   - "integration/postgres_role_bootstrap_e2e_test.go"
 generated: false
@@ -83,6 +83,10 @@ Conditions and declarations naming `pg_*` or `postgres` are refused. Role names
 longer than 63 bytes are refused rather than truncated. Nesting is limited to
 64 levels. A refusal reports the source file and body position; it does not
 publish a partially interpreted schema.
+
+Only PostgreSQL reads these blocks. Another dialect whose grammar has `DO`
+blocks, such as CockroachDB, refuses one, and the refusal names the dialects
+that read them.
 
 ## Migration replay and dev databases
 

@@ -115,10 +115,20 @@ type Statements struct {
 	// view or a materialized view reads the table.
 	ViewsBlockDropTable bool `json:"views_block_drop_table,omitempty"`
 	// DoBlocks is the procedural language an anonymous DO block of a schema
-	// file is written in where the file declares roles in one, such as
-	// "plpgsql". Empty means the engine has no such block. A read with no
-	// dialect reads a DO block as the first dialect that names a language.
+	// file is written in where the file declares roles in one, one of
+	// [DoBlockLanguages]. Empty means the engine has no such block. A read
+	// with no dialect reads a DO block as the first dialect that names a
+	// language.
 	DoBlocks string `json:"do_blocks,omitempty"`
+}
+
+// DoBlocksPLpgSQL is the [Statements.DoBlocks] language of PostgreSQL's
+// procedural blocks.
+const DoBlocksPLpgSQL = "plpgsql"
+
+// DoBlockLanguages returns every declared [Statements.DoBlocks] value.
+func DoBlockLanguages() []string {
+	return []string{DoBlocksPLpgSQL}
 }
 
 // TableOption is one option an engine's grammar writes after a CREATE TABLE.
@@ -146,6 +156,10 @@ func (d Dialect) validateNames() error {
 			return fmt.Errorf("%w: dialect %q: %s names comparison %q is not one of %q",
 				ErrInvalidDescriptor, d.Name, field.name, field.value, NameComparisons())
 		}
+	}
+	if language := d.Statements.DoBlocks; language != "" && !slices.Contains(DoBlockLanguages(), language) {
+		return fmt.Errorf("%w: dialect %q: DO-block language %q is not one of %q",
+			ErrInvalidDescriptor, d.Name, language, DoBlockLanguages())
 	}
 	for _, option := range d.TableOptions {
 		if option.Option == "" || option.Property == "" {

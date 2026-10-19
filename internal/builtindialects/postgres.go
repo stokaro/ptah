@@ -123,7 +123,7 @@ func postgres() descriptor.Dialect {
 		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 		Columns:          descriptor.Columns{IdentityNotNull: true},
-		Statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: "plpgsql"},
+		Statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: descriptor.DoBlocksPLpgSQL},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{

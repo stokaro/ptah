@@ -71,12 +71,20 @@ type optionOwner struct {
 }
 
 // registryFacts is what the SQL reader reads across every registered
-// dialect, for one registry: the dialects that own table options, and the
-// dialect a read with no dialect reads a DO block as.
+// dialect, for one registry: the dialects that own table options and the
+// options they own, the dialects that read DO blocks, and the dialect a read
+// with no dialect reads a DO block as.
 type registryFacts struct {
-	registry      *descriptor.Registry
-	optionOwners  []optionOwner
-	doBlockReader string
+	registry     *descriptor.Registry
+	optionOwners []optionOwner
+	// ownedOptions are the options, as the parser reports them, that some
+	// dialect's TableOptions state. They are that dialect's alone, so none is
+	// kept among the properties of the dialect a table is read as.
+	ownedOptions map[string]bool
+	// doBlockReaders are the dialects whose DO-block language has a reader,
+	// in registry order.
+	doBlockReaders []string
+	doBlockReader  string
 }
 
 // registryFactsCache keeps the facts of the newest registry asked about. A
@@ -90,14 +98,20 @@ func factsOfRegistry() *registryFacts {
 	if cached := registryFactsCache.Load(); cached != nil && cached.registry == registry {
 		return cached
 	}
-	facts := &registryFacts{registry: registry}
+	facts := &registryFacts{registry: registry, ownedOptions: make(map[string]bool)}
 	for _, described := range registry.Dialects() {
 		if len(described.TableOptions) > 0 {
 			facts.optionOwners = append(facts.optionOwners, optionOwner{dialect: described.Name, options: described.TableOptions})
 		}
-		if facts.doBlockReader == "" && described.Statements.DoBlocks != "" {
-			facts.doBlockReader = described.Name
+		for _, option := range described.TableOptions {
+			facts.ownedOptions[option.Option] = true
 		}
+		if doBlockServices(described.Statements.DoBlocks).Roles != nil {
+			facts.doBlockReaders = append(facts.doBlockReaders, described.Name)
+		}
+	}
+	if len(facts.doBlockReaders) > 0 {
+		facts.doBlockReader = facts.doBlockReaders[0]
 	}
 	registryFactsCache.Store(facts)
 	return facts

@@ -185,7 +185,9 @@ owner does (`dialect/postgres/pgroutine`), through the runtime's routine body
 reader (`core/routineext`), and a host that analyzes a body asks the runtime.
 
 Parsing a PostgreSQL `DO` body does not execute it. The shared desired-schema
-reader interprets the bounded conditional role-bootstrap form documented in
+reader hands the body to the reader of the language the dialect's descriptor
+names (`internal/doblockext`), which interprets the bounded conditional
+role-bootstrap form documented in
 [SQL schema](../../docs/site/src/content/docs/schema/postgres-role-bootstrap.md).
 It preserves branch selection and refuses unknown procedural effects. Migration
 replay remains a separate execution path with disposable-server checks.
