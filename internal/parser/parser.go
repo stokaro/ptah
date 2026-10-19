@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
@@ -478,10 +479,10 @@ func (p *Parser) parseCreateDatabase() (*ast.CreateDatabaseNode, error) {
 // refuseCreateExtension refuses CREATE EXTENSION. The statement reaches the
 // shared grammar only when no owner claimed it, and an extension is its
 // owner's object: the shared grammar has no node for one. On a named target
-// outside the PostgreSQL family the extension owner does not read the
-// statement, and the target's own server refuses it as well, so a read that
-// skipped it would be looser than both. Anywhere else the read selected no
-// extension owner.
+// whose descriptor has no extensions, every target outside the PostgreSQL
+// family, the extension owner does not read the statement, and the target's
+// own server refuses it as well, so a read that skipped it would be looser
+// than both. Anywhere else the read selected no extension owner.
 //
 // The returned error satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature]).
 func (p *Parser) refuseCreateExtension() (ast.Node, error) {
@@ -499,7 +500,7 @@ func (p *Parser) refuseCreateExtension() (ast.Node, error) {
 	}
 	target := platform.NormalizeDialect(p.dialect)
 	message := fmt.Sprintf("CREATE EXTENSION %s needs the PostgreSQL extension owner, which this read did not select", name)
-	if target != "" && !platform.IsPostgresFamily(target) {
+	if p.target.known && !p.target.grammar.Statements.Extensions {
 		message = fmt.Sprintf("CREATE EXTENSION %s: an extension is a PostgreSQL object, and %s refuses the statement", name, target)
 	}
 	return nil, &ptaherr.CapabilityError{Dialect: target, Feature: "PostgreSQL extensions", Err: ptaherr.ErrUnsupportedFeature, Message: message}
@@ -672,10 +673,11 @@ func isDoubleQuotedIdentifierToken(tok lexer.Token) bool {
 	return tok.Type == lexer.TokenString && strings.HasPrefix(tok.Value, `"`)
 }
 
-// parseUse reads a USE statement. On the MySQL family it selects the database
-// the tables that follow are in, so a later unqualified table name reads as
-// qualified by it; see parseTableName. Every other dialect's USE, and a
-// dialect-neutral document's, changes nothing the schema holds.
+// parseUse reads a USE statement. On a dialect whose USE selects a database,
+// as the MySQL family's does, it selects the database the tables that follow
+// are in, so a later unqualified table name reads as qualified by it; see
+// parseTableName. Every other dialect's USE, and a dialect-neutral document's,
+// changes nothing the schema holds.
 //
 // Measured on MySQL 8.4.11 with the pinned community binary v1.3.0, a schema
 // file `CREATE DATABASE app; USE app; CREATE TABLE t (...)` compared with a
@@ -684,7 +686,7 @@ func isDoubleQuotedIdentifierToken(tok lexer.Token) bool {
 // database, and the whole-server comparison refuses the file
 // (stokaro/ptah#3926).
 func (p *Parser) parseUse() error {
-	if !isMySQLFamilyDialect(p.dialect) {
+	if !p.target.grammar.Statements.UseSelectsDatabase {
 		p.skipSchemaNeutralStatement()
 		return nil
 	}
@@ -1800,9 +1802,9 @@ func (p *Parser) parseOptionalTriggerWhen() (string, error) {
 }
 
 // readsPostgresTriggerClauses reports whether this read takes WHEN and
-// REFERENCING as PostgreSQL defines them.
+// REFERENCING as PostgreSQL defines them, as the dialect's descriptor states.
 func (p *Parser) readsPostgresTriggerClauses() bool {
-	return platform.IsPostgresFamily(p.dialect)
+	return p.target.grammar.Routines.TriggerConditions
 }
 
 // parseOptionalTriggerForEach reads FOR [EACH] ROW or STATEMENT. PostgreSQL
@@ -1837,7 +1839,7 @@ func (p *Parser) parseOptionalTriggerForEach() (string, error) {
 // BEGIN ... END block.
 func (p *Parser) collectTriggerBody() (string, error) {
 	p.skipWhitespace()
-	if !p.current.MatchIdentifierValue("BEGIN") && (p.dialect == "" || isMySQLFamilyDialect(p.dialect)) {
+	if !p.current.MatchIdentifierValue("BEGIN") && (p.dialect == "" || p.target.grammar.Routines.TriggerStatementBody) {
 		body := p.collectStatementBody()
 		if body == "" {
 			return "", fmt.Errorf("expected trigger body at position %d", p.current.Start)
@@ -3223,7 +3225,7 @@ func isBareWord(value string) bool {
 
 func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 	value := p.current.Value
-	if p.isPostgresRoutineDialect() && !isDoubleQuotedIdentifierToken(p.current) {
+	if p.target.grammar.Columns.StoredStringDefaults && !isDoubleQuotedIdentifierToken(p.current) {
 		// The server stores one spelling of a string default whichever the
 		// file used, so the default is kept in that spelling: kept as
 		// written, `$$x$$` and `E'x'` compare unequal to the 'x' the server
@@ -5013,10 +5015,10 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	case "TABLE":
 		return p.parseAlterTable()
 	case "INDEX":
-		switch p.dialect {
-		case platform.Postgres:
+		switch p.target.grammar.Indexes.Alter {
+		case descriptor.AlterIndexRename:
 			return p.parseAlterIndex()
-		case platform.CockroachDB:
+		case descriptor.AlterIndexVisibility:
 			return p.parseCockroachAlterIndex()
 		}
 		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
@@ -5286,8 +5288,8 @@ func (p *Parser) parseDropIndexTarget() (name, table string, err error) {
 }
 
 // rejectSQLServerTableQualifiedIndex refuses a qualified DROP INDEX target that
-// named no table, for the one dialect where such a name is not a
-// schema-qualified index.
+// named no table, for a dialect where such a name is not a schema-qualified
+// index, as the descriptor's Indexes.DropNamesTable states for SQL Server.
 //
 // SQL Server has no schema-qualified index names: an index lives in its table's
 // namespace, and `DROP INDEX t.idx` is the backward-compatible spelling of
@@ -5301,7 +5303,7 @@ func (p *Parser) parseDropIndexTarget() (name, table string, err error) {
 // wrong schema. Ptah renders SQL Server index drops as `DROP INDEX idx ON t`,
 // which the ON branch above reads exactly.
 func (p *Parser) rejectSQLServerTableQualifiedIndex(name string) error {
-	if p.dialect != platform.SQLServer {
+	if !p.target.grammar.Indexes.DropNamesTable {
 		return nil
 	}
 	if ref, ok := tableref.Parse(name); ok && !ref.Qualified {
@@ -5383,7 +5385,7 @@ func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
 	if p.current.MatchIdentifierValue("CONSTRAINT") {
 		return p.parseRenameConstraintOperation()
 	}
-	if isMySQLFamilyDialect(p.dialect) &&
+	if p.target.grammar.AlterTable.RenameIndex &&
 		(p.current.MatchIdentifierValue("INDEX") || p.current.MatchIdentifierValue("KEY")) {
 		return p.parseRenameIndexOperation()
 	}
@@ -5563,12 +5565,12 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 		// every one of these spellings -- measured on 8.4 and 11.8. Left out of
 		// the gate, `ADD KEY k (a)` fell through to the column parser and was
 		// dropped without a word (stokaro/ptah#2778).
-		return isMySQLFamilyDialect(p.dialect)
+		return p.target.grammar.AlterTable.AddIndex
 	case "INDEX":
 		// `ADD INDEX` is MySQL's other spelling of the same statement, and
 		// ClickHouse's data-skipping index. The dialect is what tells them
 		// apart, exactly as it does for the table-body `INDEX` keyword.
-		return isMySQLFamilyDialect(p.dialect)
+		return p.target.grammar.AlterTable.AddIndex
 	default:
 		return false
 	}
@@ -5717,12 +5719,6 @@ func (p *Parser) indexKeywordOpensColumnList() bool {
 	}
 	afterName := next()
 	return afterName.MatchOperatorValue("(")
-}
-
-// isMySQLFamilyDialect reports whether a dialect writes MySQL's ALTER TABLE
-// index syntax.
-func isMySQLFamilyDialect(dialect string) bool {
-	return dialect == platform.MySQL || dialect == platform.MariaDB
 }
 
 // parseDropOperation parses DROP COLUMN operations.
@@ -5899,10 +5895,11 @@ func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
 // refuseModify refuses ALTER TABLE ... MODIFY where the dialect's MODIFY is
 // not the MySQL one the reader applies; see [Parser.parseModifyOperation].
 func (p *Parser) refuseModify() error {
+	modify := p.target.grammar.AlterTable.Modify
 	switch {
-	case p.dialect == "" || isMySQLFamilyDialect(p.dialect):
+	case p.dialect == "" || modify == descriptor.ModifyDefinition:
 		return nil
-	case p.dialect == platform.Oracle || p.dialect == platform.ClickHouse:
+	case modify == descriptor.ModifyOther:
 		return fmt.Errorf(
 			"MODIFY at position %d in ALTER TABLE: %s's MODIFY is not MySQL's, which replaces the column's "+
 				"definition and is the one Ptah reads; state the column as it should be in CREATE TABLE",
@@ -5955,7 +5952,7 @@ func (p *Parser) parseAlterColumnOperation() (ast.AlterOperation, error) {
 	if p.current.MatchIdentifierValue("COLUMN") {
 		p.advance()
 		p.skipWhitespace()
-	} else if p.dialect == platform.SQLServer {
+	} else if p.target.grammar.AlterTable.AlterColumnDefinition {
 		return nil, fmt.Errorf("expected COLUMN after ALTER at position %d", p.current.Start)
 	}
 	columnName, err := p.expectIdentifier()
@@ -5964,7 +5961,7 @@ func (p *Parser) parseAlterColumnOperation() (ast.AlterOperation, error) {
 	}
 	p.skipWhitespace()
 	switch {
-	case p.dialect == platform.SQLServer:
+	case p.target.grammar.AlterTable.AlterColumnDefinition:
 		column, err := p.parseColumnDefinitionAfterName(nil, columnName)
 		if err != nil {
 			return nil, err
@@ -6191,7 +6188,7 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	if err != nil {
 		return nil, err
 	}
-	if p.dialect == platform.CockroachDB {
+	if p.target.grammar.Indexes.TrailingVisibility {
 		if _, err := p.cockroachVisibilityAt(); err != nil {
 			return nil, err
 		}
@@ -6237,7 +6234,7 @@ func (p *Parser) parseCreateIndexCondition() (string, error) {
 		p.advance()
 	}
 	kept := len(tokens)
-	if p.dialect == platform.CockroachDB {
+	if p.target.grammar.Indexes.TrailingVisibility {
 		var err error
 		if kept, err = p.splitCockroachConditionVisibility(tokens); err != nil {
 			return "", err
@@ -6545,7 +6542,7 @@ func (p *Parser) refuseCreateDomain() (ast.Node, error) {
 func (p *Parser) refuseUserType(statement, name, feature string) error {
 	target := platform.NormalizeDialect(p.dialect)
 	message := fmt.Sprintf("%s %s needs the type owner of its target, which this read did not select", statement, name)
-	if target != "" && !platform.IsPostgresFamily(target) && target != platform.Oracle {
+	if p.target.known && !p.target.grammar.Statements.UserTypes {
 		message = fmt.Sprintf("%s %s: %s has no %s, and refuses the statement", statement, name, target, feature)
 	}
 	return &ptaherr.CapabilityError{Dialect: target, Feature: feature, Err: ptaherr.ErrUnsupportedFeature, Message: message}

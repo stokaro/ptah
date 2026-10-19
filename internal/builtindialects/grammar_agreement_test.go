@@ -43,17 +43,34 @@ import (
 //     index name and parseNullsDistinctClause read the MySQL family; MySQL
 //     refused IGNORED and NOT IGNORED, MariaDB INVISIBLE; parseFunctionalKeyPart
 //     read MySQL alone.
+//   - routineParser read the MySQL family's routines, SQL Server's and the
+//     PostgreSQL family's, and isPostgresRoutineDialect read the PostgreSQL
+//     family's DO blocks, routine bodies, string defaults, and trigger WHEN
+//     and REFERENCING; collectTriggerBody took the MySQL family's one-statement
+//     trigger body; CREATE OR ALTER was SQL Server's.
+//   - parseUse, CREATE ROLE IF NOT EXISTS, ADD KEY or INDEX, RENAME INDEX,
+//     MODIFY, refuseDropCheck and refuseAlterGuard read the MySQL family, the
+//     column guard MariaDB alone; refuseModify called Oracle's and ClickHouse's
+//     MODIFY not MySQL's; ALTER COLUMN stated a definition on SQL Server.
+//   - refuseCreateExtension and GRANT target lists read the PostgreSQL family,
+//     refuseUserType the family and Oracle.
+//   - ALTER INDEX renamed on PostgreSQL and changed visibility on CockroachDB,
+//     whose indexes alone end with a visibility; SQL Server alone read DROP
+//     INDEX t.idx as table.index.
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
 var oldParserSwitches = map[string]descriptor.Grammar{
 	platform.Postgres: {
-		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 		Constraints: descriptor.ConstraintGrammar{
 			Enforcement: descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
 			NotValid:    true,
 			Match:       descriptor.Match{Clause: true},
 		},
+		Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
+		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
 	},
 	platform.MySQL: {
 		Columns: descriptor.ColumnGrammar{
@@ -83,6 +100,11 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			FunctionalParts:      true,
 			RefusesNullsDistinct: true,
 		},
+		AlterTable: descriptor.AlterTableGrammar{
+			AddIndex: true, RenameIndex: true, Modify: descriptor.ModifyDefinition, ChecksCapabilities: true,
+		},
+		Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true},
 	},
 	platform.MariaDB: {
 		Columns: descriptor.ColumnGrammar{
@@ -109,9 +131,15 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			ForeignKeyIndexName:  true,
 			RefusesNullsDistinct: true,
 		},
+		AlterTable: descriptor.AlterTableGrammar{
+			AddIndex: true, RenameIndex: true, Modify: descriptor.ModifyDefinition, ChecksCapabilities: true, ColumnGuards: true,
+		},
+		Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true},
 	},
 	platform.ClickHouse: {
-		Columns: descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+		Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 	},
 	platform.SQLite: {
 		Constraints: descriptor.ConstraintGrammar{
@@ -125,30 +153,42 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 	},
 	platform.SQLServer: {
-		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
+		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
+		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
+		AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineTransactSQL},
 	},
 	platform.CockroachDB: {
-		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 		Constraints: descriptor.ConstraintGrammar{
 			NotValid: true,
 			Match:    descriptor.Match{Clause: true},
 			Deferral: descriptor.Deferral{Refusal: "CockroachDB has no deferrable constraints, and v26.3.2 refuses " +
 				"the clause, NOT DEFERRABLE included"},
 		},
-		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
+		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
+		Indexes:    descriptor.IndexGrammar{TrailingVisibility: true, Alter: descriptor.AlterIndexVisibility},
+		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
 	},
 	platform.YugabyteDB: {
-		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 		Constraints: descriptor.ConstraintGrammar{
 			NotValid: true,
 			Match:    descriptor.Match{Clause: true},
 		},
+		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
 	},
 	platform.Spanner: {
-		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		Columns:    descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
+		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, TriggerConditions: true},
 	},
 	platform.Oracle: {
-		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
+		Statements: descriptor.StatementGrammar{UserTypes: true},
 	},
 	platform.YDB: {},
 }
@@ -173,10 +213,11 @@ func TestDescriptors_GrammarAgreesWithTheParserSwitches(t *testing.T) {
 	}
 }
 
-// TestDescriptors_ParserReadsTheFactsTheSwitchesShared pins the two facts the
+// TestDescriptors_ParserReadsTheFactsTheSwitchesShared pins the facts the
 // parser reads from other sections, which stated them before the grammar did:
-// ClickHouse alone keeps nullability in the type, and MySQL alone refuses a
-// column CHECK naming another column.
+// ClickHouse alone keeps nullability in the type, MySQL alone refuses a column
+// CHECK naming another column, and a routine of PostgreSQL's grammar is read
+// with the lexer of the family's head, PostgreSQL.
 func TestDescriptors_ParserReadsTheFactsTheSwitchesShared(t *testing.T) {
 	for _, described := range builtindialects.Descriptors() {
 		t.Run(described.Name, func(t *testing.T) {
@@ -184,6 +225,8 @@ func TestDescriptors_ParserReadsTheFactsTheSwitchesShared(t *testing.T) {
 
 			c.Assert(described.Comparison.NullableTypes, qt.Equals, described.Name == platform.ClickHouse)
 			c.Assert(described.Columns.CheckOwnColumnOnly, qt.Equals, described.Name == platform.MySQL)
+			c.Assert(described.Family == platform.Postgres, qt.Equals,
+				described.Grammar.Routines.Body == descriptor.RoutineQuotedBody)
 		})
 	}
 }

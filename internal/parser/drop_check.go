@@ -7,8 +7,8 @@ import (
 )
 
 // refuseDropCheck refuses ALTER TABLE ... DROP CHECK, written at position, on a
-// MySQL-family target that has no such spelling, and answers nil everywhere
-// else.
+// target that checks it, as the MySQL family does, and has no such spelling,
+// and answers nil everywhere else.
 //
 // MariaDB has none. Measured on MariaDB 11.8.9 and 12.3.3, after `CREATE TABLE
 // c (id int, z int, CONSTRAINT ck CHECK (z > 0))`, `ALTER TABLE c DROP CHECK
@@ -22,7 +22,7 @@ import (
 // and writes DROP CONSTRAINT where the target lacks it. The parser asks the
 // same key, so the spelling Ptah writes for a target is the one it reads.
 func (p *Parser) refuseDropCheck(position int) error {
-	if !isMySQLFamilyDialect(p.dialect) || p.targetHas(capability.DropCheckClause) {
+	if !p.target.grammar.AlterTable.ChecksCapabilities || p.targetHas(capability.DropCheckClause) {
 		return nil
 	}
 	return fmt.Errorf(

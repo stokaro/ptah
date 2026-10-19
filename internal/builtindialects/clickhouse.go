@@ -160,8 +160,11 @@ func clickHouse() descriptor.Dialect {
 		// Grammar: how the shared DDL parser reads the engine's DDL.
 		// Nullable(T), Array(T), LowCardinality(T) and Map(K, V) take bare
 		// type names, so a type argument equal to a column name is ordinary.
+		// ClickHouse's MODIFY COLUMN is not measured, so it is not read as
+		// MySQL's.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+			Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 		},
 	}
 }

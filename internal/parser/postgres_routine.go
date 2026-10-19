@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
@@ -19,7 +19,7 @@ func (postgresRoutineParser) parseCreateRoutine(p *Parser, target string, statem
 		if err != nil {
 			return nil, err
 		}
-		return parsePostgresRoutineSQL(sql, p.dialect, ast.RoutineKindProcedure)
+		return parsePostgresRoutineSQL(sql, p.dialect, p.postgresRoutineLexerOptions(), ast.RoutineKindProcedure)
 	}
 	if target == "PROC" {
 		return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
@@ -31,8 +31,21 @@ func (postgresRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart
 	return compatibilityRoutineParser{}.parseCreateDefinerRoutine(p, statementStart)
 }
 
+// isPostgresRoutineDialect reports whether the dialect writes PostgreSQL's
+// routine grammar, whose body is a string constant in a LANGUAGE.
 func (p *Parser) isPostgresRoutineDialect() bool {
-	return platform.IsPostgresFamily(p.dialect)
+	return p.target.grammar.Routines.Body == descriptor.RoutineQuotedBody
+}
+
+// postgresRoutineLexerOptions are the string rules of the head of the
+// dialect's family, which a routine of PostgreSQL's grammar and its body
+// follow whatever member of the family the document names: PostgreSQL's for
+// every engine of its family. The dialect-blind lexer reads `E'...'` as an
+// identifier and a string, which leaves a procedure written that way with no
+// body at all, and it reads a backslash in a standard string as an escape
+// (stokaro/ptah#3691).
+func (p *Parser) postgresRoutineLexerOptions() lexer.Options {
+	return dialectlexer.Options(p.target.family)
 }
 
 func (p *Parser) parsePostgresDoStatement(statementStart int) (ast.Node, error) {
@@ -43,7 +56,7 @@ func (p *Parser) parsePostgresDoStatement(statementStart int) (ast.Node, error) 
 	}
 
 	block := ast.NewPostgresDoBlock(sql)
-	body, language, err := parsePostgresDoBlockSQL(sql)
+	body, language, err := parsePostgresDoBlockSQL(sql, p.postgresRoutineLexerOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +100,8 @@ func (p *Parser) attachPostgresFunctionBody(function *ast.CreateFunctionNode) {
 	function.RoutineBody = &body
 }
 
-func parsePostgresDoBlockSQL(sql string) (ast.PostgresRoutineBody, string, error) {
-	tokens := tokenizePostgresRoutineSQL(sql)
+func parsePostgresDoBlockSQL(sql string, options lexer.Options) (ast.PostgresRoutineBody, string, error) {
+	tokens := tokenizePostgresRoutineSQL(sql, options)
 	bodyIdx := -1
 	language := ""
 	for i, tok := range tokens {
@@ -111,15 +124,15 @@ func parsePostgresDoBlockSQL(sql string) (ast.PostgresRoutineBody, string, error
 	}
 
 	bodyToken := tokens[bodyIdx].Value
-	body, err := postgresRoutineBodyText(bodyToken, "DO")
+	body, err := postgresRoutineBodyText(bodyToken, "DO", options)
 	if err != nil {
 		return ast.PostgresRoutineBody{}, "", err
 	}
 	return parsePostgresRoutineBody(body, language, dollarQuoteDelimiter(bodyToken)), language, nil
 }
 
-func parsePostgresRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.PostgresRoutineNode, error) {
-	tokens := tokenizePostgresRoutineSQL(sql)
+func parsePostgresRoutineSQL(sql, dialect string, options lexer.Options, kind ast.RoutineKind) (*ast.PostgresRoutineNode, error) {
+	tokens := tokenizePostgresRoutineSQL(sql, options)
 	routine := ast.NewPostgresRoutine(sql, dialect, kind)
 	routine.Name, routine.Parameters = parsePostgresRoutineHeader(sql, tokens, strings.ToUpper(string(kind)))
 	security, settings, err := parsePostgresRoutineClauses(tokens, strings.ToUpper(string(kind)))
@@ -131,7 +144,7 @@ func parsePostgresRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.Po
 	bodyToken, language := parsePostgresRoutineBodyClause(tokens)
 	routine.Language = strings.ToLower(language)
 	if bodyToken != "" {
-		body, err := postgresRoutineBodyText(bodyToken, "CREATE "+strings.ToUpper(string(kind)))
+		body, err := postgresRoutineBodyText(bodyToken, "CREATE "+strings.ToUpper(string(kind)), options)
 		if err != nil {
 			return nil, err
 		}
@@ -147,9 +160,10 @@ func parsePostgresRoutineSQL(sql, dialect string, kind ast.RoutineKind) (*ast.Po
 // escapes of `E'...'` undone. The body is written back between dollar quotes,
 // where neither is an escape, so a body kept with its quoting is a statement
 // the server refuses (stokaro/ptah#3691). A literal whose closing quote is
-// missing is refused here rather than read as a body.
-func postgresRoutineBodyText(token, statement string) (string, error) {
-	body, ok := lexer.StringValue(token, postgresRoutineLexerOptions)
+// missing is refused here rather than read as a body. options are the string
+// rules the token was read with.
+func postgresRoutineBodyText(token, statement string, options lexer.Options) (string, error) {
+	body, ok := lexer.StringValue(token, options)
 	if !ok {
 		return "", fmt.Errorf("unsupported %s body: %s is not a complete string literal", statement, abbreviatedToken(token))
 	}
@@ -361,16 +375,9 @@ type postgresRoutineTokenizer struct {
 	lexer *lexer.Lexer
 }
 
-func newPostgresRoutineTokenizer(sql string) postgresRoutineTokenizer {
-	return postgresRoutineTokenizer{lexer: lexer.NewLexerWithOptions(sql, postgresRoutineLexerOptions)}
+func newPostgresRoutineTokenizer(sql string, options lexer.Options) postgresRoutineTokenizer {
+	return postgresRoutineTokenizer{lexer: lexer.NewLexerWithOptions(sql, options)}
 }
-
-// postgresRoutineLexerOptions are PostgreSQL's string rules, which a routine
-// and its body follow whatever dialect of the family the document names. The
-// dialect-blind lexer reads `E'...'` as an identifier and a string, which
-// leaves a procedure written that way with no body at all, and it reads a
-// backslash in a standard string as an escape (stokaro/ptah#3691).
-var postgresRoutineLexerOptions = dialectlexer.Options(platform.Postgres)
 
 func (t postgresRoutineTokenizer) tokens() []lexer.Token {
 	tokens := make([]lexer.Token, 0)
@@ -394,8 +401,8 @@ func trackPostgresSQLBodyKeyword(value string, blockDepth *int) {
 	}
 }
 
-func tokenizePostgresRoutineSQL(sql string) []lexer.Token {
-	return newPostgresRoutineTokenizer(sql).tokens()
+func tokenizePostgresRoutineSQL(sql string, options lexer.Options) []lexer.Token {
+	return newPostgresRoutineTokenizer(sql, options).tokens()
 }
 
 func nextPostgresRoutineToken(tokens []lexer.Token, startIdx int) int {

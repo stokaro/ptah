@@ -163,10 +163,15 @@ func yugabyteDB() descriptor.Dialect {
 		// Grammar: how the shared DDL parser reads the engine's DDL.
 		// 2026.1.2 takes NOT VALID and MATCH FULL.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
 				NotValid: true,
 				Match:    descriptor.Match{Clause: true},
+			},
+			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+			Routines: descriptor.RoutineGrammar{
+				Body:              descriptor.RoutineQuotedBody,
+				TriggerConditions: true,
 			},
 		},
 	}

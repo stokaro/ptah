@@ -153,9 +153,12 @@ END;`,
 		Reach:   oracleReach(),
 
 		// Grammar: how the shared DDL parser reads the engine's DDL.
-		// Oracle reserves INDEX in a table body (ORA-03050).
+		// Oracle reserves INDEX in a table body (ORA-03050), has domains, and
+		// has a MODIFY that changes only the attributes it states.
 		Grammar: descriptor.Grammar{
-			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
+			Statements: descriptor.StatementGrammar{UserTypes: true},
 		},
 	}
 }

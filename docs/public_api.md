@@ -4851,10 +4851,13 @@ outside the database:
   names.
 
 A descriptor also states, in `Grammar`, how the shared DDL parser reads the
-engine's table bodies: which words open an index, and which clauses may follow
-a column (`Columns`), a constraint (`Constraints`) or a key (`Keys`). A
-refusal the engine answers in its own words is a sentence of the descriptor,
-which the parser writes after the position of the construct it refuses.
+engine's DDL: which words open an index, which clauses may follow a column
+(`Columns`), a constraint (`Constraints`) or a key (`Keys`), which forms of
+CREATE, ALTER and DROP INDEX (`Indexes`), ALTER TABLE clauses (`AlterTable`)
+and statements (`Statements`) it has, and which routine grammar its routines,
+triggers and DO blocks are written in (`Routines`). A refusal the engine
+answers in its own words is a sentence of the descriptor, which the parser
+writes after the position of the construct it refuses.
 
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:

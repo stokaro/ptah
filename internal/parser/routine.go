@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lexer"
 )
 
@@ -13,22 +13,25 @@ type routineParser interface {
 	parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error)
 }
 
+// routineParser answers the reader of the routine grammar the dialect's
+// descriptor names, and the best-effort one where it names none.
 func (p *Parser) routineParser() routineParser {
-	switch p.dialect {
-	case platform.MySQL, platform.MariaDB:
+	switch p.target.grammar.Routines.Body {
+	case descriptor.RoutineCompoundStatement:
 		return mysqlFamilyRoutineParser{}
-	case platform.SQLServer:
+	case descriptor.RoutineTransactSQL:
 		return sqlServerRoutineParser{}
+	case descriptor.RoutineQuotedBody:
+		return postgresRoutineParser{}
 	default:
-		if platform.IsPostgresFamily(p.dialect) {
-			return postgresRoutineParser{}
-		}
 		return compatibilityRoutineParser{}
 	}
 }
 
+// isSQLServerRoutineDialect reports whether the dialect writes SQL Server's
+// routine grammar, where CREATE OR ALTER replaces a routine.
 func (p *Parser) isSQLServerRoutineDialect() bool {
-	return p.dialect == platform.SQLServer
+	return p.target.grammar.Routines.Body == descriptor.RoutineTransactSQL
 }
 
 type compatibilityRoutineParser struct{}

@@ -1,6 +1,7 @@
 package descriptor
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 )
@@ -13,8 +14,9 @@ import (
 //
 // The zero value is an engine that has none of the constructs below and
 // restricts none of the shared ones: a table body declares no index, a
-// constraint takes no ENFORCED, NOT VALID or MATCH clause, and every deferral
-// clause is read as PostgreSQL reads it.
+// constraint takes no ENFORCED, NOT VALID or MATCH clause, every deferral
+// clause is read as PostgreSQL reads it, ALTER TABLE has no MODIFY, and a
+// routine is read best effort.
 //
 // A field that ends in Refusal holds the sentence the parser writes after the
 // position of a construct it refuses, such as "SQLite takes it only after
@@ -29,6 +31,16 @@ type Grammar struct {
 	Constraints ConstraintGrammar `json:"constraints,omitzero"`
 	// Keys states how a key or an index declared in a table body is read.
 	Keys KeyGrammar `json:"keys,omitzero"`
+	// Indexes states how CREATE INDEX, ALTER INDEX and DROP INDEX are read.
+	Indexes IndexGrammar `json:"indexes,omitzero"`
+	// AlterTable states how the clauses of an ALTER TABLE are read.
+	AlterTable AlterTableGrammar `json:"alter_table,omitzero"`
+	// Statements states which statements of the shared grammar the engine
+	// writes as it does.
+	Statements StatementGrammar `json:"statements,omitzero"`
+	// Routines states how a routine, a trigger and an anonymous code block
+	// are read.
+	Routines RoutineGrammar `json:"routines,omitzero"`
 }
 
 // ColumnGrammar states how the engine reads a column definition.
@@ -58,6 +70,11 @@ type ColumnGrammar struct {
 	// column whose type arguments all name columns of its table is refused as
 	// an index or constraint whose keyword is misspelled.
 	TypeArgumentsAreTypes bool `json:"type_arguments_are_types,omitempty"`
+	// StoredStringDefaults reports that a string default is read as the one
+	// spelling the server stores whichever constant the file wrote, so that
+	// `$$x$$` and `E'x'` are the default 'x'. Without it a string default is
+	// kept as written.
+	StoredStringDefaults bool `json:"stored_string_defaults,omitempty"`
 }
 
 // ColumnConstraint is which column constraint a CONSTRAINT keyword may
@@ -182,6 +199,139 @@ type KeyGrammar struct {
 	RefusesNullsDistinct bool `json:"refuses_nulls_distinct,omitempty"`
 }
 
+// IndexGrammar states how the engine reads CREATE INDEX, ALTER INDEX and
+// DROP INDEX.
+type IndexGrammar struct {
+	// TrailingVisibility reports that an index may end with VISIBLE, NOT
+	// VISIBLE, INVISIBLE or VISIBILITY and a share, as CockroachDB writes it:
+	// in a table body after the key's parts, and in CREATE INDEX after
+	// INCLUDE and WHERE.
+	TrailingVisibility bool `json:"trailing_visibility,omitempty"`
+	// Alter is the ALTER INDEX the engine's grammar has, as the parser reads
+	// it: [AlterIndexRename] or [AlterIndexVisibility]. Empty means the
+	// parser reads none.
+	Alter string `json:"alter,omitempty"`
+	// DropNamesTable reports that a qualified name in a DROP INDEX without ON
+	// is table.index rather than schema.index, as SQL Server's backward
+	// compatible spelling has it. The parser refuses such a name.
+	DropNamesTable bool `json:"drop_names_table,omitempty"`
+}
+
+const (
+	// AlterIndexRename is PostgreSQL's ALTER INDEX [IF EXISTS] name RENAME
+	// TO new_name.
+	AlterIndexRename = "rename"
+	// AlterIndexVisibility is CockroachDB's ALTER INDEX table@index VISIBLE |
+	// NOT VISIBLE | INVISIBLE.
+	AlterIndexVisibility = "visibility"
+)
+
+// AlterIndexGrammars returns the values an [IndexGrammar.Alter] may be.
+func AlterIndexGrammars() []string {
+	return []string{AlterIndexRename, AlterIndexVisibility}
+}
+
+// AlterTableGrammar states how the engine reads the clauses of an ALTER
+// TABLE.
+type AlterTableGrammar struct {
+	// AddIndex reports that ADD KEY, ADD INDEX, ADD SPATIAL and ADD FULLTEXT
+	// add an index.
+	AddIndex bool `json:"add_index,omitempty"`
+	// RenameIndex reports that RENAME INDEX and RENAME KEY rename an index.
+	RenameIndex bool `json:"rename_index,omitempty"`
+	// Modify is the MODIFY clause the engine has: [ModifyDefinition], or
+	// [ModifyOther] for one of another meaning, which the parser does not
+	// read. Empty means the engine has none.
+	Modify string `json:"modify,omitempty"`
+	// AlterColumnDefinition reports that ALTER COLUMN, with COLUMN required,
+	// states the column's whole new definition, as SQL Server writes it,
+	// rather than one action.
+	AlterColumnDefinition bool `json:"alter_column_definition,omitempty"`
+	// ChecksCapabilities reports that a clause only some releases take is
+	// refused where the target lacks it, by the capability key the renderer
+	// asks before it writes the clause: DROP CHECK by DropCheckClause, IF
+	// EXISTS on an index by DropIndexIfExists, on a constraint by
+	// DropConstraintIfExists, and on a column, which no key names, by
+	// ColumnGuards. Without it every one of them is read.
+	ChecksCapabilities bool `json:"checks_capabilities,omitempty"`
+	// ColumnGuards reports that DROP COLUMN takes IF EXISTS and ADD COLUMN
+	// takes IF NOT EXISTS. The parser asks it only where ChecksCapabilities is set.
+	ColumnGuards bool `json:"column_guards,omitempty"`
+}
+
+const (
+	// ModifyDefinition is the MySQL family's MODIFY [COLUMN], which states a
+	// column's whole new definition.
+	ModifyDefinition = "definition"
+	// ModifyOther is a MODIFY that means something else, such as Oracle's,
+	// which changes only the attributes it states.
+	ModifyOther = "other"
+)
+
+// ModifyGrammars returns the values an [AlterTableGrammar.Modify] may be.
+func ModifyGrammars() []string {
+	return []string{ModifyDefinition, ModifyOther}
+}
+
+// StatementGrammar states which statements of the shared grammar the engine
+// writes as it does.
+type StatementGrammar struct {
+	// UseSelectsDatabase reports that USE selects the database an unqualified
+	// table name later in the document is in.
+	UseSelectsDatabase bool `json:"use_selects_database,omitempty"`
+	// Extensions reports that CREATE EXTENSION creates an object of the
+	// engine's own, which the extension owner reads, so a read that selected
+	// no such owner says it did not. Without it the statement is refused as
+	// one the engine's server refuses.
+	Extensions bool `json:"extensions,omitempty"`
+	// UserTypes reports that CREATE DOMAIN and CREATE TYPE ... AS (...)
+	// create objects of the engine's own, which a type owner reads, so a
+	// read that selected no such owner says it did not. Without it the
+	// statements are refused as ones the engine's server refuses.
+	UserTypes bool `json:"user_types,omitempty"`
+	// GrantTargetLists reports that GRANT may name several objects, and
+	// grants each privilege on each of them.
+	GrantTargetLists bool `json:"grant_target_lists,omitempty"`
+	// RoleIfNotExists reports that CREATE ROLE takes IF NOT EXISTS.
+	RoleIfNotExists bool `json:"role_if_not_exists,omitempty"`
+}
+
+// RoutineGrammar states how the engine reads a routine, a trigger and an
+// anonymous code block.
+type RoutineGrammar struct {
+	// Body is how CREATE FUNCTION and CREATE PROCEDURE write a routine:
+	// [RoutineQuotedBody], [RoutineCompoundStatement] or [RoutineTransactSQL].
+	// Empty reads a routine best effort, as a statement whose end the parser
+	// finds.
+	Body string `json:"body,omitempty"`
+	// TriggerConditions reports that a trigger takes a WHEN condition in
+	// parentheses and a REFERENCING clause naming its transition tables.
+	TriggerConditions bool `json:"trigger_conditions,omitempty"`
+	// TriggerStatementBody reports that a trigger's body may be one statement
+	// rather than a BEGIN ... END block.
+	TriggerStatementBody bool `json:"trigger_statement_body,omitempty"`
+}
+
+const (
+	// RoutineQuotedBody is PostgreSQL's grammar: the body is a string
+	// constant, usually dollar-quoted, in the language a LANGUAGE clause
+	// names, read with the string rules of the head of the dialect's family.
+	// A DO block is read as an anonymous routine of the same grammar.
+	RoutineQuotedBody = "quoted-body"
+	// RoutineCompoundStatement is the MySQL family's grammar: the body is one
+	// statement, often a BEGIN ... END block, after a DEFINER and the
+	// routine's characteristics.
+	RoutineCompoundStatement = "compound-statement"
+	// RoutineTransactSQL is SQL Server's grammar: CREATE [OR ALTER] FUNCTION
+	// and PROC[EDURE], with the body after AS.
+	RoutineTransactSQL = "transact-sql"
+)
+
+// RoutineGrammars returns the values a [RoutineGrammar.Body] may be.
+func RoutineGrammars() []string {
+	return []string{RoutineQuotedBody, RoutineCompoundStatement, RoutineTransactSQL}
+}
+
 // KeyVisibility states which visibility clauses among a key's options the
 // engine refuses.
 type KeyVisibility struct {
@@ -209,43 +359,81 @@ func KeyVisibilityClauses() []string {
 // field of its group unreachable, or a field that refines a clause the
 // engine does not take.
 func (d Dialect) validateGrammar() error {
-	invalid := func(format string, args ...any) error {
-		return fmt.Errorf("%w: dialect %q: grammar: %s", ErrInvalidDescriptor, d.Name, fmt.Sprintf(format, args...))
+	for _, check := range []func(Grammar) error{
+		validateColumnGrammar, validateConstraintGrammar, validateKeyGrammar, validateGrammarNames,
+	} {
+		if err := check(d.Grammar); err != nil {
+			return fmt.Errorf("%w: dialect %q: grammar: %w", ErrInvalidDescriptor, d.Name, err)
+		}
 	}
-	grammar := d.Grammar
+	return nil
+}
+
+// validateColumnGrammar checks the column constraint kinds.
+func validateColumnGrammar(grammar Grammar) error {
 	constraint := grammar.Columns.Constraint
 	columnKinds := []string{ConstraintKindCheck, ConstraintKindReferences}
 	switch {
 	case constraint.Define != "" && !slices.Contains(columnKinds, constraint.Define):
-		return invalid("column constraint kind %q is not one of %q", constraint.Define, columnKinds)
+		return fmt.Errorf("column constraint kind %q is not one of %q", constraint.Define, columnKinds)
 	case constraint.Modify != "" && !slices.Contains(columnKinds, constraint.Modify):
-		return invalid("column constraint kind %q in MODIFY is not one of %q", constraint.Modify, columnKinds)
+		return fmt.Errorf("column constraint kind %q in MODIFY is not one of %q", constraint.Modify, columnKinds)
 	case constraint.Modify != "" && constraint.Define == "":
-		return invalid("a MODIFY column constraint kind needs a column constraint kind")
+		return errors.New("a MODIFY column constraint kind needs a column constraint kind")
+	default:
+		return nil
 	}
+}
+
+// validateConstraintGrammar checks the MATCH and deferral fields.
+func validateConstraintGrammar(grammar Grammar) error {
 	match := grammar.Constraints.Match
+	deferral := grammar.Constraints.Deferral
 	switch {
 	case (match.Partial || match.Refusal != "") && !match.Clause:
-		return invalid("a MATCH type or refusal needs the MATCH clause")
+		return errors.New("a MATCH type or refusal needs the MATCH clause")
 	case match.Partial && match.Refusal != "":
-		return invalid("MATCH PARTIAL cannot be both built and refused")
+		return errors.New("MATCH PARTIAL cannot be both built and refused")
+	case deferral.Refusal != "" && (deferral.KeyRefusal != "" || deferral.LoneInitiallyRefusal != ""):
+		return errors.New("a deferral refusal leaves no deferral clause to refuse after a key or before DEFERRABLE")
+	default:
+		return nil
 	}
-	if deferral := grammar.Constraints.Deferral; deferral.Refusal != "" &&
-		(deferral.KeyRefusal != "" || deferral.LoneInitiallyRefusal != "") {
-		return invalid("a deferral refusal leaves no deferral clause to refuse after a key or before DEFERRABLE")
-	}
+}
+
+// validateKeyGrammar checks the index keywords and the refused visibility
+// clauses.
+func validateKeyGrammar(grammar Grammar) error {
 	keys := grammar.Keys
 	if err := validateWords("index keyword", keys.IndexKeywords, IndexKeywordValues()); err != nil {
-		return invalid("%v", err)
+		return err
 	}
 	if keys.IndexKeywordsNeedColumns && len(keys.IndexKeywords) == 0 {
-		return invalid("index keywords that need columns name no index keyword")
+		return errors.New("index keywords that need columns name no index keyword")
 	}
 	if err := validateWords("visibility clause", keys.Visibility.Refused, KeyVisibilityClauses()); err != nil {
-		return invalid("%v", err)
+		return err
 	}
 	if (len(keys.Visibility.Refused) == 0) != (keys.Visibility.Refusal == "") {
-		return invalid("a refused visibility clause and its refusal are set together")
+		return errors.New("a refused visibility clause and its refusal are set together")
+	}
+	return nil
+}
+
+// validateGrammarNames checks the fields that name one of a declared set of
+// grammars.
+func validateGrammarNames(grammar Grammar) error {
+	for _, field := range []struct {
+		label, value string
+		allowed      []string
+	}{
+		{"ALTER INDEX", grammar.Indexes.Alter, AlterIndexGrammars()},
+		{"MODIFY", grammar.AlterTable.Modify, ModifyGrammars()},
+		{"routine body", grammar.Routines.Body, RoutineGrammars()},
+	} {
+		if field.value != "" && !slices.Contains(field.allowed, field.value) {
+			return fmt.Errorf("%s grammar %q is not one of %q", field.label, field.value, field.allowed)
+		}
 	}
 	return nil
 }
