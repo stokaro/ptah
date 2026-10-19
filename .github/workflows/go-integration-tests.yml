@@ -124,7 +124,7 @@ jobs:
           - 5435:5432
 
       pgbouncer:
-        image: edoburu/pgbouncer:v1.26.0-p0
+        image: edoburu/pgbouncer:v1.26.1-p0
         env:
           DB_HOST: postgres
           DB_PORT: 5432
