@@ -38,7 +38,7 @@ func TestExactNumberRefusesInvalidOrNonFiniteScalars(t *testing.T) {
 	cases := []struct{ tag, input string }{
 		{"!!str", "123"}, {"!!int", "1.5"}, {"!!int", "08"}, {"!!int", "0xG"},
 		{"!!float", ""}, {"!!float", "--1"}, {"!!float", "1e"}, {"!!float", "1/2"},
-		{"!!float", "1p3"}, {"!!float", ".inf"}, {"!!float", "-.Inf"}, {"!!float", ".NaN"},
+		{"!!int", "_123"}, {"!!float", ".1__2"}, {"!!float", "1p3"}, {"!!float", ".inf"}, {"!!float", "-.Inf"}, {"!!float", ".NaN"},
 	}
 	for _, test := range cases {
 		t.Run(test.tag+"/"+test.input, func(t *testing.T) {

@@ -100,6 +100,8 @@ func TestOwnerDocumentRefusesMalformedInputBeforeDispatch(t *testing.T) {
 		{"duplicate owner key", "shades: {x: {value: 1, value: 2}}"},
 		{"cyclic alias", "shades: &loop [*loop]"},
 		{"invalid integer", "shades: !!int 1.25"},
+		{"invalid integer prefix", "shades: !!int _123"},
+		{"invalid float separator", "shades: !!float .1__2"},
 		{"invalid float", "shades: !!float not-a-number"},
 		{"invalid merge", "shades: {<<: 1}"},
 		{"duplicate numeric key", "shades: {1: one, 1: another}"},

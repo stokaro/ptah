@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+var leadingDotNumber = regexp.MustCompile(`^\.[0-9](?:_?[0-9])*(?:[eE][+-]?[0-9](?:_?[0-9])*)?$`)
+
 var decimalNumber = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
 
 // ExactNumber converts a finite YAML !!int or !!float scalar to JSON number
@@ -16,6 +18,10 @@ var decimalNumber = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?
 func ExactNumber(tag, value string) (string, error) {
 	if tag != "!!int" && tag != "!!float" {
 		return "", fmt.Errorf("expected YAML numeric tag, got %q", tag)
+	}
+	if value == "" || !strings.ContainsRune("+-0123456789.", rune(value[0])) ||
+		(value[0] == '.' && !leadingDotNumber.MatchString(value)) {
+		return "", fmt.Errorf("invalid finite YAML %s value %q", tag, value)
 	}
 	plain := strings.ReplaceAll(value, "_", "")
 	if integer, ok := new(big.Int).SetString(plain, 0); ok {
