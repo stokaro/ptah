@@ -12,6 +12,7 @@
 package yamlext
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -31,6 +32,11 @@ var ErrUnselected = errors.New("no YAML schema owners were selected")
 type Extension struct {
 	// Owner names the owner, as its provider ID does.
 	Owner string
+	// Document reads all claimed sections and table keys in one call, including
+	// an empty document. Its result supplies explicit coverage. When set,
+	// Sections and EntrySections declare keys without local Decode callbacks;
+	// other decoding and coverage callbacks must be absent.
+	Document func(context.Context, Document) (DocumentResult, error)
 	// Kinds are the models the claim covers and the sections declare. The
 	// provider that registers the extension owns their desired codecs.
 	Kinds []schemaext.Kind
@@ -55,7 +61,7 @@ type Extension struct {
 	// owner's default. It is optional.
 	Cover func(claim schemaext.Coverage, objects schemaext.Objects) (schemaext.Coverage, error)
 	// Coverage is the knowledge a YAML document holds about Kinds. It is
-	// required, so the claim is always the owner's to make.
+	// required for local decoders; Document supplies its claim in the result.
 	Coverage func() (schemaext.Coverage, error)
 }
 
@@ -82,7 +88,8 @@ func None() Set {
 }
 
 // NewSet validates and freezes extensions. It refuses an extension without an
-// owner or a coverage claim, a section without a key or a decoder, target
+// owner or a coverage source (Coverage or Document), a section without a key or
+// a local or document decoder, target
 // scopes without a key, a target or a reader, and a model, a section key or
 // the entries of one key and target two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
@@ -93,8 +100,11 @@ func NewSet(extensions ...Extension) (Set, error) {
 		if strings.TrimSpace(extension.Owner) == "" {
 			return Set{}, fmt.Errorf("YAML extension %d names no owner", index)
 		}
-		if extension.Coverage == nil {
+		if extension.Coverage == nil && extension.Document == nil {
 			return Set{}, fmt.Errorf("YAML extension of %s makes no coverage claim", extension.Owner)
+		}
+		if err := checkDocumentExtension(extension, extensions); err != nil {
+			return Set{}, err
 		}
 		for _, kind := range extension.Kinds {
 			if owner, claimed := kinds[kind]; claimed {
@@ -103,12 +113,12 @@ func NewSet(extensions ...Extension) (Set, error) {
 			kinds[kind] = extension.Owner
 		}
 		for _, section := range extension.Sections {
-			if strings.TrimSpace(section.Key) == "" || section.Decode == nil {
+			if strings.TrimSpace(section.Key) == "" || (section.Decode == nil && extension.Document == nil) {
 				return Set{}, fmt.Errorf("YAML extension of %s declares a section without a key or a decoder", extension.Owner)
 			}
 			if previous, claimed := set.sections[section.Key]; claimed {
 				return Set{}, fmt.Errorf("%w: YAML key %q is read by %s and %s", schemaext.ErrDuplicate, section.Key,
-					set.extensions[previous].Owner, extension.Owner)
+					extensions[previous].Owner, extension.Owner)
 			}
 			set.sections[section.Key] = index
 		}
@@ -149,11 +159,15 @@ func (s Set) Kinds() []schemaext.Kind {
 	return kinds
 }
 
-// Coverage combines the claims of every extension of the set. A set without
-// extensions has none.
+// Coverage combines static claims from local decoders. Document owners supply
+// their claims through DecodeDocuments instead. A set without local decoders
+// has no static claim.
 func (s Set) Coverage() (schemaext.Coverage, error) {
 	var combined schemaext.Coverage
 	for _, extension := range s.extensions {
+		if extension.Document != nil {
+			continue
+		}
 		claim, err := extension.Coverage()
 		if err != nil {
 			return schemaext.Coverage{}, fmt.Errorf("coverage of %s: %w", extension.Owner, err)

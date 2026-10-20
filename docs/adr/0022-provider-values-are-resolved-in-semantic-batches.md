@@ -200,6 +200,25 @@ Public YAML and Atlas HCL parsing APIs take the context explicitly; no
 old-signature wrapper substitutes a background context. This is required before
 source decoding can safely call an independent process.
 
+## YAML document capture
+
+The YAML frontend invokes a document owner after resolving all common table
+bindings. Its claimed top-level and table keys travel together, in source order,
+with original YAML nodes, source bytes, and the filename. This preserves exact
+numbers, explicit nulls, aliases, and references to later declarations. Unknown
+keys, duplicate mappings, and cyclic aliases are refused before dispatch.
+
+A document owner returns contributions and desired coverage in one result.
+Missing fragments do not establish absence. The registry validates model
+ownership and table bindings, isolates mutable input per owner, and discards the
+result on cancellation or failure. The same owner cannot also register local
+per-key decoders or static coverage. In-process owners can keep their local
+callbacks; neither path serializes their values through the SDK.
+
+Negotiated source claims and conversion of captured YAML nodes to SDK source
+values remain application-adapter work. This frontend boundary does not claim
+that an external engine can already interpret native YAML files.
+
 ## Consequences
 
 Experimental revision 6 refuses earlier revisions. Pre-v1 compatibility does not justify

@@ -110,7 +110,7 @@ func ParseFile(ctx context.Context, owners yamlext.Set, path string) (*schemamod
 		return nil, fmt.Errorf("read schema file: %w", err)
 	}
 
-	return Parse(ctx, owners, data)
+	return parseDocument(ctx, owners, data, path)
 }
 
 // Parse parses a YAML schema document into the same *schemamodel.Database
@@ -137,6 +137,10 @@ func ParseFile(ctx context.Context, owners yamlext.Set, path string) (*schemamod
 // set is refused with [yamlext.ErrUnselected]; [yamlext.None] selects no
 // owner on purpose.
 func Parse(ctx context.Context, owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
+	return parseDocument(ctx, owners, data, "")
+}
+
+func parseDocument(ctx context.Context, owners yamlext.Set, data []byte, filename string) (*schemamodel.Database, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -159,7 +163,7 @@ func Parse(ctx context.Context, owners yamlext.Set, data []byte) (*schemamodel.D
 		return nil, err
 	}
 
-	db, err := doc.toDatabase(owners, data)
+	db, err := doc.toDatabase(ctx, owners, data, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +483,7 @@ type revokeSpec struct {
 
 type platformSpec map[string]map[string]stringScalar
 
-func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
+func (d document) toDatabase(ctx context.Context, owners yamlext.Set, data []byte, filename string) (*schemamodel.Database, error) {
 	db := &schemamodel.Database{
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
@@ -512,6 +516,9 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 		return nil, err
 	}
 	if err := d.addOwnerSections(db, owners, data); err != nil {
+		return nil, err
+	}
+	if err := d.addOwnerDocuments(ctx, db, owners, data, filename); err != nil {
 		return nil, err
 	}
 	// Once every owner has declared what it reads, each narrows the claim

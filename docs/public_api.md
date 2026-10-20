@@ -3336,7 +3336,7 @@ second YAML document in the same stream is refused rather than ignored.
 writes YAML to its standard output — and parses that output through this
 package.
 
-Both entry points take a `yamlext.Set` first: the feature owners whose models
+Both entry points take the caller context followed by a `yamlext.Set`: the feature owners whose models
 the document can declare. `core/yamlext` is that contract. An `Extension`
 names its owner, the models it claims and the knowledge a YAML document holds
 about them; `engine.Provider.YAML` registers it, and `engine.Runtime.YAML`
@@ -3353,6 +3353,23 @@ applies the document's rule for a table reference. It returns objects and
 facets of those tables. A key that no selected owner reads is unknown and
 refused, so a parse without the owner refuses the owner's section instead of
 dropping it.
+
+An owner that needs the whole document sets `Extension.Document` and declares
+its top-level `Sections` and table `EntrySections` without local decoders.
+The frontend invokes it once, including when every claimed key is absent.
+`yamlext.Document` carries the original bytes and filename, all resolved common
+table bindings, and the owner's present fragments in source order. YAML nodes
+retain scalar spelling, tags, explicit nulls, aliases, sequence order, and line
+and column positions. Each owner receives a private copy. Duplicate mapping
+keys and cyclic aliases in captured fragments are refused before dispatch.
+
+`DocumentResult` returns contributions and explicit desired coverage together.
+No objects does not imply absence, and no coverage record means uninspected.
+The set refuses undeclared model kinds, another owner's coverage, invalid table
+bindings, and mixing document callbacks with local decoding or coverage for the
+same owner. Cancellation or an owner failure returns no partial result. These
+contracts support process adapters without importing the provider SDK into core;
+the adapter owns conversion to the negotiated source protocol.
 
 An owner may also read entries of the frontend's own keys that their target
 scope makes its own. This is the YAML twin of `annotation.TargetScope`: the
