@@ -66,7 +66,7 @@ func TestClassify_Kinds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			source, err := atlassource.Classify(tc.url)
+			source, err := atlassource.Classify(tc.url, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(source.Kind, qt.Equals, tc.want)
@@ -80,7 +80,7 @@ func TestClassify_MigrationDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := writeMigrationDir(t)
 
-	source, err := atlassource.Classify("file://" + dir)
+	source, err := atlassource.Classify("file://"+dir, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.Kind, qt.Equals, atlassource.KindMigrationDir)
@@ -91,7 +91,7 @@ func TestClassify_PlainPathMigrationDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := writeMigrationDir(t)
 
-	source, err := atlassource.Classify(dir)
+	source, err := atlassource.Classify(dir, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.Kind, qt.Equals, atlassource.KindMigrationDir)
@@ -156,7 +156,7 @@ func TestClassify_Errors(t *testing.T) {
 			// rather than inheriting whatever the developer has exported.
 			t.Setenv("PTAH_ATLAS_REGISTRY", "")
 
-			_, err := atlassource.Classify(tc.url)
+			_, err := atlassource.Classify(tc.url, nil)
 
 			c.Assert(err, qt.ErrorMatches, tc.want)
 		})
@@ -172,7 +172,7 @@ func TestClassifySet_MixedKindsConflict(t *testing.T) {
 	_, err := atlassource.ClassifySet("--to", []string{
 		"file://" + schemaFile,
 		"sqlite://other.db",
-	}, atlassource.ProjectEnv{})
+	}, atlassource.ProjectEnv{}, nil)
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to mixes desired-state source kinds: "file://.*" is a local schema file, but "sqlite://other\.db" is a database URL; use one source kind per flag`)
@@ -184,7 +184,7 @@ func TestClassifySet_MultipleDatabaseURLsConflict(t *testing.T) {
 	_, err := atlassource.ClassifySet("--to", []string{
 		"sqlite://a.db",
 		"sqlite://b.db",
-	}, atlassource.ProjectEnv{})
+	}, atlassource.ProjectEnv{}, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to accepts one database URL desired-state source, got 2`)
 }
@@ -195,7 +195,7 @@ func TestClassifySet_EnvMustBeOnlyValue(t *testing.T) {
 	_, err := atlassource.ClassifySet("--to", []string{
 		"env://src",
 		"sqlite://a.db",
-	}, atlassource.ProjectEnv{})
+	}, atlassource.ProjectEnv{}, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://src": an env:// desired-state reference must be the only --to value`)
 }
@@ -242,7 +242,7 @@ func TestClassifySet_AtlasSchemeNeedsANamespace(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv("PTAH_ATLAS_REGISTRY", test.namespace)
 
-			set, err := atlassource.ClassifySet("--from", []string{"atlas://remote/app"}, atlassource.ProjectEnv{})
+			set, err := atlassource.ClassifySet("--from", []string{"atlas://remote/app"}, atlassource.ProjectEnv{}, nil)
 
 			c.Assert(errorText(err), qt.Matches, orEmpty(test.wantErr))
 			c.Assert(referenceOf(set), qt.Equals, test.wantReference)
@@ -282,7 +282,7 @@ func referenceOf(set atlassource.Set) string {
 func TestClassifySet_EnvRequiresLoadedConfig(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, atlassource.ProjectEnv{})
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, atlassource.ProjectEnv{}, nil)
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to "env://src": env:// desired-state references require an evaluated atlas.hcl project configuration; pass --config and --env to select one`)
@@ -299,7 +299,7 @@ func TestClassifySet_EnvSrcResolvesRelativePaths(t *testing.T) {
 		Config:  projectconfig.Config{SchemaSources: []string{"schema.sql"}},
 	}
 
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindLocalFile)
@@ -318,7 +318,7 @@ func TestClassifySet_EnvSchemaSrcAliasResolves(t *testing.T) {
 		Config:  projectconfig.Config{SchemaSources: []string{"file://schema.hcl"}},
 	}
 
-	set, err := atlassource.ClassifySet("--to", []string{"env://schema.src"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://schema.src"}, env, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindLocalFile)
@@ -329,7 +329,7 @@ func TestClassifySet_EnvSrcEmptyFails(t *testing.T) {
 	c := qt.New(t)
 	env := atlassource.ProjectEnv{Loaded: true, BaseDir: t.TempDir()}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to "env://src": the selected atlas.hcl env does not define schema sources \(env.src or env.schema.src\)`)
@@ -343,7 +343,7 @@ func TestClassifySet_EnvURLResolvesToDatabase(t *testing.T) {
 		Config:  projectconfig.Config{DatabaseURL: "sqlite://app.db"},
 	}
 
-	set, err := atlassource.ClassifySet("--from", []string{"env://url"}, env)
+	set, err := atlassource.ClassifySet("--from", []string{"env://url"}, env, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindDatabase)
@@ -358,7 +358,7 @@ func TestClassifySet_EnvDevResolvesToDatabase(t *testing.T) {
 		Config:  projectconfig.Config{DevURL: "sqlite://dev.db"},
 	}
 
-	set, err := atlassource.ClassifySet("--from", []string{"env://dev"}, env)
+	set, err := atlassource.ClassifySet("--from", []string{"env://dev"}, env, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindDatabase)
@@ -374,7 +374,7 @@ func TestClassifySet_EnvURLMustBeDatabase(t *testing.T) {
 		Config:  projectconfig.Config{DatabaseURL: "file://" + filepath.Join(baseDir, "schema.sql")},
 	}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://url": env://url must resolve to a database URL, got a local schema file`)
 }
@@ -383,7 +383,7 @@ func TestClassifySet_EnvURLMissingFails(t *testing.T) {
 	c := qt.New(t)
 	env := atlassource.ProjectEnv{Loaded: true, BaseDir: t.TempDir()}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://url": the selected atlas.hcl env does not define url`)
 }
@@ -396,7 +396,7 @@ func TestClassifySet_EnvNestedReferenceFails(t *testing.T) {
 		Config:  projectconfig.Config{DatabaseURL: "env://url"},
 	}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://url": nested env:// references are not supported`)
 }
@@ -409,7 +409,7 @@ func TestClassifySet_EnvNestedSchemaSourceFails(t *testing.T) {
 		Config:  projectconfig.Config{SchemaSources: []string{"env://src"}},
 	}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to "env://src": atlas.hcl schema source "env://src": nested env:// references are not supported`)
@@ -425,7 +425,7 @@ func TestClassifySet_EnvMigrationDirResolvesRelativePath(t *testing.T) {
 		Config:  projectconfig.Config{Migration: projectconfig.MigrationConfig{Dir: "file://migrations"}},
 	}
 
-	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"}, env, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindMigrationDir)
@@ -436,7 +436,7 @@ func TestClassifySet_EnvMigrationDirMissingFails(t *testing.T) {
 	c := qt.New(t)
 	env := atlassource.ProjectEnv{Loaded: true, BaseDir: t.TempDir()}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://migration"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://migration"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://migration": the selected atlas.hcl env does not define migration.dir`)
 }
@@ -445,7 +445,7 @@ func TestClassifySet_EnvUnsupportedAttributeFails(t *testing.T) {
 	c := qt.New(t)
 	env := atlassource.ProjectEnv{Loaded: true, BaseDir: t.TempDir()}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://orm"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://orm"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to "env://orm": unsupported env:// attribute "orm": supported attributes are src, schema.src, url, dev, migration, and migration.dir`)
@@ -454,7 +454,7 @@ func TestClassifySet_EnvUnsupportedAttributeFails(t *testing.T) {
 func TestSetEnsureDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := writeMigrationDir(t)
-	set, err := atlassource.ClassifySet("--to", []string{"file://" + dir}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"file://" + dir}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(set.EnsureDevDatabase(""), qt.ErrorMatches,
@@ -464,7 +464,7 @@ func TestSetEnsureDevDatabase(t *testing.T) {
 
 func TestSetEnsureDevDatabaseIgnoresOtherKinds(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--to", []string{"sqlite://a.db"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"sqlite://a.db"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(set.EnsureDevDatabase(""), qt.IsNil)
@@ -478,7 +478,7 @@ func TestSetEnsureDevIsolation_RejectsAliasedDatabase(t *testing.T) {
 			DevURL: "postgres://dev_user@localhost/app?sslmode=disable",
 		},
 	}
-	set, err := atlassource.ClassifySet("--to", []string{"env://dev"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://dev"}, env, nil)
 	c.Assert(err, qt.IsNil)
 
 	err = set.EnsureDevIsolation("postgresql://planner@localhost:5432/app?sslmode=require")
@@ -492,7 +492,7 @@ func TestSetEnsureDevIsolation_RejectsPotentialHostAlias(t *testing.T) {
 	set, err := atlassource.ClassifySet(
 		"--to",
 		[]string{"postgres://desired.example/app"},
-		atlassource.ProjectEnv{},
+		atlassource.ProjectEnv{}, nil,
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -504,7 +504,7 @@ func TestSetEnsureDevIsolation_RejectsPotentialHostAlias(t *testing.T) {
 
 func TestSetEnsureDevIsolation_AllowsIndependentDatabase(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	err = set.EnsureDevIsolation("postgres://localhost/dev")
@@ -531,7 +531,7 @@ func TestSetEnsureDevIsolation_AllowsIndependentDatabase(t *testing.T) {
 // legitimate run.
 func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(set.EnsureDevIsolation("docker://postgres/16/dev"), qt.IsNil)
@@ -550,9 +550,9 @@ func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
 // a PostgreSQL dev URL naming it, which the text still refuses.
 func TestSetEnsureDevIsolation_LeavesAYDBDevURLToTheLiveComparison(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--to", []string{"ydb://localhost:2136/local"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"ydb://localhost:2136/local"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
-	pgSet, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{})
+	pgSet, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(set.EnsureDevIsolation("ydb://localhost:2136/local"), qt.IsNil)
@@ -578,7 +578,7 @@ func TestSetEnsureDevIsolation_LeavesAWholeServerToTheLiveComparison(t *testing.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			set, err := atlassource.ClassifySet("--to", []string{test.desired}, atlassource.ProjectEnv{})
+			set, err := atlassource.ClassifySet("--to", []string{test.desired}, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(set.EnsureDevIsolation(test.dev), qt.IsNil)
@@ -591,7 +591,7 @@ func TestSetEnsureDevIsolation_IgnoresLocalFiles(t *testing.T) {
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte("CREATE TABLE users (id integer);"), 0o600), qt.IsNil)
-	set, err := atlassource.ClassifySet("--to", []string{"file://" + path}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"file://" + path}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	err = set.EnsureDevIsolation("sqlite://dev.db")
@@ -604,7 +604,7 @@ func TestSetValidateLocalSchemaSourcesRunsBeforeResolution(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{
 		"file://schema.sql",
 		"file://schema.yaml",
-	}, atlassource.ProjectEnv{})
+	}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 	seen := make([]string, 0)
 	validationErrors := map[string]error{
@@ -623,7 +623,7 @@ func TestSetValidateLocalSchemaSourcesRunsBeforeResolution(t *testing.T) {
 
 func TestPinDialect_DevURLWins(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--from", []string{"sqlite://a.db"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--from", []string{"sqlite://a.db"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	dialect, pinnedBy, err := atlassource.PinDialect("sqlite://dev.db", set)
@@ -635,7 +635,7 @@ func TestPinDialect_DevURLWins(t *testing.T) {
 
 func TestPinDialect_DatabaseSourcePinsWithoutDevURL(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	dialect, pinnedBy, err := atlassource.PinDialect("", set)
@@ -647,7 +647,7 @@ func TestPinDialect_DatabaseSourcePinsWithoutDevURL(t *testing.T) {
 
 func TestPinDialect_ConflictWithDevURL(t *testing.T) {
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	_, _, err = atlassource.PinDialect("sqlite://dev.db", set)
@@ -657,9 +657,9 @@ func TestPinDialect_ConflictWithDevURL(t *testing.T) {
 
 func TestPinDialect_ConflictBetweenSides(t *testing.T) {
 	c := qt.New(t)
-	fromSet, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{})
+	fromSet, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
-	toSet, err := atlassource.ClassifySet("--to", []string{"mysql://localhost/app"}, atlassource.ProjectEnv{})
+	toSet, err := atlassource.ClassifySet("--to", []string{"mysql://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	_, _, err = atlassource.PinDialect("", fromSet, toSet)
@@ -686,7 +686,7 @@ func TestPinDialect_MySQLFamilySpellingsAgree(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			set, err := atlassource.ClassifySet("--from", []string{test.source}, atlassource.ProjectEnv{})
+			set, err := atlassource.ClassifySet("--from", []string{test.source}, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
 			dialect, pinnedBy, err := atlassource.PinDialect(test.devURL, set)
@@ -764,7 +764,7 @@ func TestSet_DeclarativeLocalFiles(t *testing.T) {
 				urls = append(urls, "file://"+path)
 			}
 
-			set, err := atlassource.ClassifySet("--to", urls, atlassource.ProjectEnv{})
+			set, err := atlassource.ClassifySet("--to", urls, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(set.DeclarativeLocalFiles(), qt.Equals, tt.want)
@@ -801,7 +801,7 @@ func TestSet_DeclarativeLocalFilesReadsADirectory(t *testing.T) {
 				c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(""), 0o600), qt.IsNil)
 			}
 
-			set, err := atlassource.ClassifySet("--to", []string{"file://" + dir}, atlassource.ProjectEnv{})
+			set, err := atlassource.ClassifySet("--to", []string{"file://" + dir}, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(set.DeclarativeLocalFiles(), qt.Equals, tt.want)
@@ -820,7 +820,7 @@ func TestSet_DeclarativeLocalFilesJoinsADirectoryAndAFile(t *testing.T) {
 	sqlFile := filepath.Join(root, "extra.sql")
 	c.Assert(os.WriteFile(sqlFile, []byte(""), 0o600), qt.IsNil)
 
-	set, err := atlassource.ClassifySet("--to", []string{"file://" + dir, "file://" + sqlFile}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"file://" + dir, "file://" + sqlFile}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(set.DeclarativeLocalFiles(), qt.IsFalse)
@@ -842,7 +842,7 @@ func TestSet_DeclarativeLocalFilesIsAboutLocalFilesOnly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			set, err := atlassource.ClassifySet("--to", tt.urls, atlassource.ProjectEnv{})
+			set, err := atlassource.ClassifySet("--to", tt.urls, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(set.DeclarativeLocalFiles(), qt.IsFalse)

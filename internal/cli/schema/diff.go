@@ -10,13 +10,13 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/cli/internal/tablerebuild"
@@ -129,7 +129,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	default:
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --%s %q: expected sql or json", diffFormatFlag, opts.format))
 	}
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -188,14 +188,14 @@ func validateSchemaDiffSources(opts schemaDiffOptions, selections selectext.Set)
 	// Classification rejects unsupported schemes and source conflicts, and
 	// migration-directory sources require a dev database, before any database
 	// is contacted. --from is validated first, then --to.
-	fromSet, err := atlassource.ClassifySet("--"+diffFromFlag, opts.fromURLs, atlassource.ProjectEnv{})
+	fromSet, err := atlassource.ClassifySet("--"+diffFromFlag, opts.fromURLs, atlassource.ProjectEnv{}, nil)
 	if err != nil {
 		return err
 	}
 	if err := fromSet.EnsureDevDatabase(opts.devURL); err != nil {
 		return err
 	}
-	toSet, err := atlassource.ClassifySet("--"+diffToFlag, opts.toURLs, atlassource.ProjectEnv{})
+	toSet, err := atlassource.ClassifySet("--"+diffToFlag, opts.toURLs, atlassource.ProjectEnv{}, nil)
 	if err != nil {
 		return err
 	}

@@ -151,6 +151,9 @@ func (c *Client) Open(ctx context.Context, request *protocol.OpenRequest) (*prot
 	if result.GetId() == "" || result.GetEngine() != request.GetEngine() {
 		return nil, fmt.Errorf("%w: invalid session identity", provider.ErrProtocol)
 	}
+	if err := provider.ValidateIdentifierRules(result.GetIdentifiers()); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -255,4 +258,18 @@ func validateOptions(options Options) ([]byte, error) {
 	}
 
 	return checksum, nil
+}
+
+// AnalyzeSQL accepts only complete owner-defined boundaries and safety facts.
+func (c *Client) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
+	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	defer cancel()
+	result, err := c.rpc.AnalyzeSQL(call, request)
+	if err != nil {
+		return nil, remoteError(call, "SQL analysis", err)
+	}
+	if err := provider.ValidateSQLAnalysis(request, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

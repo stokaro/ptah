@@ -3,7 +3,6 @@ package onlineddl
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/internal/testutils"
 )
 
@@ -26,7 +26,7 @@ type fakeConn struct {
 
 func (f fakeConn) Info() catalog.ServerInfo { return f.info }
 
-func (f fakeConn) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
+func (f fakeConn) QueryRowContext(_ context.Context, _ string, _ ...any) dataext.Row {
 	panic("QueryRowContext must not be called in unit tests")
 }
 

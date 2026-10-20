@@ -221,7 +221,9 @@ import "ptah.run/engine/builtin"
 ```
 
 `engine.New` registers caller-supplied providers; duplicate targets and aliases
-are refused. `builtin.New` selects the bundled providers. Runtime services
+are refused. `builtin.New` selects the bundled providers and accepts explicit
+additional providers. Additional targets keep their own services; an omitted
+service remains unavailable. Conflicting target names are refused. Runtime services
 propagate errors and cancellation without partial output. Rendering returns one
 `Fragments` entry per input node: empty for no output, or holding one or more
 statements. `Result.SQL()` joins fragments without adding separators.
@@ -754,6 +756,30 @@ The scoped connection must stay inside the callback. Ptah discards the physical
 connection afterward to prevent state leaks. `WithSessionOrCurrent` reuses an
 existing pinned session and its lifecycle, or pins a pool-backed connection.
 
+`dbschema.WithNativeConnections` selects explicit URL-scheme bindings for
+provider-owned sessions. `dbschema.NativeTargets` returns a defensive copy of
+the same selection for URL classification. `NativeConnector` opens each session with the requested
+database or server scope. The connector must report the selected target,
+identifier semantics, and a complete `catalog.ProviderIdentity`. That identity
+records the provider ID, version, semantic identity, executable SHA-256,
+protocol revision, and the digest of the negotiated contract. The contract
+digest comes from a versioned semantic projection, not Protobuf bytes. A failed provider open never falls back to a bundled
+connector. Selection belongs to the context; the application owns provider
+process lifetime. The display URL contains only the target name because the host
+cannot identify every credential field in a provider-specific address.
+
+`NativeSession` supplies readers and writers for the same handle. `WithSession`
+opens an independent handle, preserves its provider identity, schema scope, and dry-run setting,
+and closes it after the callback, including on failure. Closing the scoped
+connection inside that callback leaves cleanup with `WithSession`.
+
+Native sessions do not expose `database/sql` handles. Raw queries, raw execution,
+SQL transactions, and isolated SQL-query callbacks return
+`ptaherr.ErrUnsupportedFeature`. Schema operations use the selected reader and
+writer. `QueryRow` and `QueryRowContext` return `dataext.Row`, which keeps `Scan`
+and `Err` available for either a database row or an explicit refusal. This
+changes the pre-v1 API without retaining an old signature.
+
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers
 always roll the transaction back; ClickHouse runs directly on the disposable
@@ -997,3 +1023,9 @@ and missing planners are refused.
 
 The process-wide planner registration and lookup functions are removed.
 Embedders import the neutral contracts and pass their runtime explicitly.
+
+For native CLI selection, see [executable providers](../executable-providers/).
+A renderer sets `renderer.Result.ExecutableUnits` when its fragments already
+carry exact execution boundaries. Planning preserves each unit's bytes and node
+provenance. Safety assessment keeps those boundaries and consults the selected
+owner for SQL analysis.

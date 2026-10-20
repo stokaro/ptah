@@ -51,7 +51,7 @@ func TestClassifySet_ARegisteredMigrationDirIsNotResolvedAsAPath(t *testing.T) {
 	config, baseDir := projectWithMigrationDir(c, "atlas://acme-migrations")
 
 	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"},
-		atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config})
+		atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config}, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Sources, qt.HasLen, 1)
@@ -83,7 +83,7 @@ func TestClassifySet_ALocalMigrationDirStillResolvesToAPath(t *testing.T) {
 			config, baseDir := projectWithMigrationDir(c, test.dir)
 
 			set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"},
-				atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config})
+				atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config}, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(set.Sources[0].FileSystem, qt.IsNil)
@@ -161,7 +161,7 @@ env "local" {
 	})
 	c.Assert(err, qt.IsNil)
 	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"},
-		atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config})
+		atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config}, nil)
 	c.Assert(err, qt.IsNil)
 
 	var captured string

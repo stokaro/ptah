@@ -84,7 +84,7 @@ func TestClassifySetExternalSchema_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			env := externalSchemaProjectEnv("sql")
 
-			set, err := atlassource.ClassifySet("--to", []string{test.rawURL}, env)
+			set, err := atlassource.ClassifySet("--to", []string{test.rawURL}, env, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(set.Kind, qt.Equals, atlassource.KindExternalSchema)
@@ -142,7 +142,7 @@ func TestClassifySetExternalSchema_GateFailurePath(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 
-			_, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))
+			_, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"), nil)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -160,7 +160,7 @@ func TestClassifySetExternalSchemaGateRefusesAMalformedValueWithNoProgram(t *tes
 	env := externalSchemaProjectEnv("sql")
 	env.Config.SchemaSources = []string{"file://schema.hcl"}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://src": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`)
 }
@@ -175,7 +175,7 @@ func TestClassifySetRefusesAMalformedValueOnAnUnrelatedEnvAttribute(t *testing.T
 	env := externalSchemaProjectEnv("sql")
 	env.Config.DatabaseURL = "sqlite://target.db"
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env, nil)
 
 	c.Assert(err, qt.ErrorMatches, `--to "env://url": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`)
 }
@@ -199,7 +199,7 @@ func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
 		},
 	}
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 	c.Assert(err, qt.IsNotNil)
 	_, statErr := os.Stat(sentinel)
@@ -209,7 +209,7 @@ func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
 func TestResolveExternalSchema_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"), nil)
 	c.Assert(err, qt.IsNil)
 
 	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
@@ -229,7 +229,7 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 
 	t.Run("program exiting non-zero surfaces stderr", func(t *testing.T) {
 		c := qt.New(t)
-		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("fail"))
+		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("fail"), nil)
 		c.Assert(err, qt.IsNil)
 
 		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
@@ -241,7 +241,7 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 
 	t.Run("empty stdout is rejected", func(t *testing.T) {
 		c := qt.New(t)
-		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("empty"))
+		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("empty"), nil)
 		c.Assert(err, qt.IsNil)
 
 		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
@@ -257,7 +257,7 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 func TestResolveExternalSchemaCommandIsIsolatedPerResolve(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"), nil)
 	c.Assert(err, qt.IsNil)
 
 	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})

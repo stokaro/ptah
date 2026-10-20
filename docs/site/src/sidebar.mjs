@@ -259,6 +259,7 @@ export const sidebar = [
     items: [
       { slug: 'extend/overview', label: 'Overview' },
       { slug: 'extend/editor-and-shell' },
+      { slug: 'extend/executable-providers' },
       {
         label: 'Go integration',
         items: [

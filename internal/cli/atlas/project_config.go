@@ -1287,7 +1287,7 @@ func applyAtlasSchemaTestProjectConfig(
 	// atlas.hcl directory, so the local-file resolver below cannot take it. The
 	// verb reads a database URL as --url directly, which is why this comes
 	// before the refusal of every other non-file state.
-	if source, err := atlassource.Classify(sources.Value[0]); err == nil && source.Kind == atlassource.KindDatabase {
+	if source, err := atlassource.Classify(sources.Value[0], nil); err == nil && source.Kind == atlassource.KindDatabase {
 		return append(args, "--url", strings.TrimSpace(sources.Value[0])), nativeVars, nil
 	}
 	if expanded != "" {

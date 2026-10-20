@@ -13,6 +13,7 @@ service Provider {
   rpc Close(CloseRequest) returns (Empty);
   rpc Inspect(InspectRequest) returns (Schema);
   rpc Render(RenderRequest) returns (RenderResult);
+  rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -36,6 +37,25 @@ message Engine {
   repeated string aliases = 2;
   string default_schema = 3;
   repeated string features = 4;
+  IdentifierRules identifiers = 5;
+}
+// IdentifierRules are owner-supplied comparison facts. Missing or unknown
+// values are refused; the host must not borrow rules from a built-in engine.
+message IdentifierRules {
+  enum Comparison {
+    COMPARISON_UNSPECIFIED = 0;
+    EXACT = 1;
+    ASCII_CASE_INSENSITIVE = 2;
+  }
+  enum IndexNamespace {
+    INDEX_NAMESPACE_UNSPECIFIED = 0;
+    TABLE = 1;
+    SCHEMA = 2;
+  }
+  Comparison table_names = 1;
+  Comparison column_names = 2;
+  Comparison index_names = 3;
+  IndexNamespace index_namespace = 4;
 }
 // Reference keeps identity components separate. Display spelling does not
 // replace normalized identity. No component is folded by the transport.
@@ -72,6 +92,7 @@ message Session {
   string default_schema = 4;
   string server_version = 5;
   repeated string features = 6;
+  IdentifierRules identifiers = 7;
 }
 message CloseRequest {
   string session_id = 1;
@@ -166,4 +187,37 @@ message Execution {
   string diagnostic_code = 3;
   // Provider-authored, redacted text. Never include credentials or raw URLs.
   string message = 4;
+}
+
+// AnalyzeSQL keeps statement boundaries and safety knowledge with the owner.
+// A refused batch returns no prefix. Every source byte belongs to a statement
+// or whitespace; unsupported comments or syntax must be refused, not skipped.
+message AnalyzeSQLRequest {
+  string engine = 1;
+  repeated string sources = 2;
+}
+message SQLAnalysis {
+  bool complete = 1;
+  repeated SQLFile files = 2;
+}
+message SQLFile { repeated SQLStatement statements = 1; }
+message SQLStatement {
+  uint32 start = 1;
+  uint32 end = 2;
+  uint32 line = 3;
+  repeated string words = 4;
+  repeated string source_words = 5;
+  string canonical = 6;
+  enum Safety {
+    SAFETY_UNSPECIFIED = 0;
+    // COMMON_DDL permits the host's common DDL assessment. It is not a claim
+    // that the operation is safe. Native effects require another disposition.
+    COMMON_DDL = 1;
+    BEHAVIORAL = 2;
+    DESTRUCTIVE = 3;
+    UNKNOWN = 4;
+  }
+  Safety safety = 7;
+  // Redacted explanation of a native effect or an unknown assessment.
+  string reason = 8;
 }

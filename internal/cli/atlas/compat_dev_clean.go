@@ -28,7 +28,7 @@ func atlasInspectDevRefusal(
 	if !ok {
 		return err
 	}
-	set, classifyErr := atlassource.ClassifySet("--url", []string{opts.url}, projectEnv)
+	set, classifyErr := atlassource.ClassifySet("--url", []string{opts.url}, projectEnv, nil)
 	if classifyErr != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func refuseUncleanAtlasApplyDev(
 ) error {
 	// validateAtlasSchemaApplyOptions classified --to and refused an error
 	// already.
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 	if err != nil {
 		return nil //nolint:nilerr // the verb reported the classification error already
 	}

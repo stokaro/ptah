@@ -39,7 +39,7 @@ import (
 // Options configures the served view.
 type Options struct {
 	// Runtime selects the model services shared by this handler's requests.
-	Runtime schemadiff.DatabaseRuntime
+	Runtime schemaops.Runtime
 	// DatabaseURL is the database to compare against. Required.
 	DatabaseURL string
 	// RootDirs names the declared schema as Go annotation roots.

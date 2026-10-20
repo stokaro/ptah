@@ -482,7 +482,7 @@ func Acquire(
 		return nil, err
 	}
 
-	lock, acquireErr := acquireOnSession(ctx, session, conn, dialect, name, timeout, false)
+	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, conn, dialect, name, timeout, false)
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}

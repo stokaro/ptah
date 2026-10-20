@@ -619,7 +619,7 @@ func prepareAtlasMigrateDiffSource(
 	// whether the dev database and `--to` are the same database -- answers the
 	// same way for it as for the URL it will be provisioned into. The container
 	// itself is started later, next to the connection that uses it.
-	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 	if err != nil {
 		return atlassource.Set{}, err
 	}

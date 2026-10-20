@@ -326,14 +326,14 @@ func validateAtlasSchemaDiffOptions(
 	// database is contacted. --from is validated first, then --to, so the
 	// first side that needs one names the refusal.
 	devRule := atlasDiffDevURLRule{devURL: opts.devURL, withoutDevURL: withoutDevURL}
-	fromSet, err := atlassource.ClassifySet("--from", opts.fromURLs, projectEnv)
+	fromSet, err := atlassource.ClassifySet("--from", opts.fromURLs, projectEnv, nil)
 	if err != nil {
 		return err
 	}
 	if err := devRule.ensure(fromSet); err != nil {
 		return err
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 	if err != nil {
 		return err
 	}

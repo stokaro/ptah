@@ -1367,6 +1367,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
 | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
@@ -1525,6 +1526,7 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--out-dir` | `string` | — | `PTAH_OUT_DIR` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--provider-config` | `string` | — | — | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--split` | `string` | — | `PTAH_SPLIT` | — |
@@ -1571,6 +1573,7 @@ Read the columns as follows.
 | `--output` | `string` | — | `PTAH_OUTPUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |

@@ -84,7 +84,7 @@ func TestClassifySetCompositeSchema_HappyPath(t *testing.T) {
 		"app/a.sql":  "CREATE TABLE app.a (id int PRIMARY KEY);\n",
 	})
 
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindCompositeSchema)
@@ -111,7 +111,7 @@ func TestClassifySetCompositeSchema_FailurePath(t *testing.T) {
   }
 `), nil)
 
-		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 		c.Assert(err, qt.ErrorMatches, `--to "env://src": atlas\.hcl schema source: data\.composite_schema "project" `+
 			`schema "public" at .*atlas\.hcl:2: "postgres://localhost:5432/app" is a database URL, which cannot be a `+
@@ -127,7 +127,7 @@ func TestClassifySetCompositeSchema_FailurePath(t *testing.T) {
   }
 `), map[string]string{"migrations/atlas.sum": "h1:x=\n"})
 
-		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 		c.Assert(err, qt.ErrorMatches, `.*unlabeled schema block at .*atlas\.hcl:2: "file://migrations" is a `+
 			`migration directory, which cannot be a composite part.*`)
@@ -146,7 +146,7 @@ func TestClassifySetCompositeSchema_FailurePath(t *testing.T) {
   }
 `), nil)
 
-		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
 		c.Assert(err, qt.ErrorMatches, `.*schema "public" at .*: atlas\.hcl data\.external_schema executes a `+
 			`repository-controlled program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`)
@@ -157,7 +157,7 @@ func TestClassifySetCompositeSchema_FailurePath(t *testing.T) {
 		c := qt.New(t)
 
 		set, err := atlassource.ClassifySet("--to", []string{projectconfig.CompositeSchemaMarkerScheme + "://project"},
-			atlassource.ProjectEnv{})
+			atlassource.ProjectEnv{}, nil)
 
 		c.Assert(err, qt.ErrorMatches, `--to "ptah-composite-schema://project": ptah-composite-schema:// is a `+
 			`reserved internal marker scheme; reference data\.composite_schema\.<name>\.url from an atlas\.hcl env `+
@@ -178,7 +178,7 @@ func TestSetValidateLocalSchemaSources_ReachesCompositeParts(t *testing.T) {
     url = "file://auth.hcl"
   }
 `), map[string]string{"schema.sql": "CREATE TABLE t (id int);\n", "auth.hcl": authHCL})
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 	c.Assert(err, qt.IsNil)
 	var seen []string
 
@@ -227,7 +227,7 @@ func TestResolveCompositeSchema_HappyPath(t *testing.T) {
 		"auth.hcl":   authHCL,
 		"public.sql": "CREATE TABLE posts (id int PRIMARY KEY, author_id int REFERENCES auth.users(id));\n",
 	})
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 	c.Assert(err, qt.IsNil)
 
 	state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "postgres"})
@@ -287,7 +287,7 @@ func TestResolveCompositeSchema_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			env := compositeProject(c, compositeHCL(test.parts), test.files)
-			set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+			set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 			c.Assert(err, qt.IsNil)
 
 			state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "postgres"})
@@ -485,7 +485,7 @@ table "users" {
   }
 }
 `})
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 	c.Assert(err, qt.IsNil)
 
 	state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "postgres"})

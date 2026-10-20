@@ -10,9 +10,9 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/defaultprivnote"
@@ -124,7 +124,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	hashshard.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return err
 	}

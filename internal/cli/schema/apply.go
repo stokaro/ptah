@@ -16,7 +16,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -25,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/editor"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/cli/internal/secretrotation"
@@ -356,7 +356,7 @@ func applySchema(
 		return "", err
 	}
 	opts.devServerDisposable = devServerDisposable
-	opts.runtime, err = builtin.New()
+	opts.runtime, err = engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return "", err
 	}
@@ -413,7 +413,7 @@ func applySchema(
 		// Classification rejects unsupported schemes and source conflicts, and
 		// the dev-database requirement is checked here, before the target
 		// database is contacted.
-		set, err := atlassource.ClassifySet("--"+applyToFlag, opts.toURLs, atlassource.ProjectEnv{})
+		set, err := atlassource.ClassifySet("--"+applyToFlag, opts.toURLs, atlassource.ProjectEnv{}, dbschema.NativeTargets(cmd.Context()))
 		if err != nil {
 			return "", err
 		}

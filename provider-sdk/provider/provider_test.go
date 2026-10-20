@@ -115,6 +115,10 @@ func TestNativeUnitRequiresVersionedEnvelope(t *testing.T) {
 }
 
 func TestDescriptionNegotiatesExactRevisionAndRequiredFeatures(t *testing.T) {
+	missingRules := description()
+	missingRules.Engines[0].Identifiers = nil
+	previousRevision := description()
+	previousRevision.Revision--
 	tests := []struct {
 		name        string
 		description *protocol.Description
@@ -122,6 +126,8 @@ func TestDescriptionNegotiatesExactRevisionAndRequiredFeatures(t *testing.T) {
 		want        error
 	}{
 		{"available", description(), []string{provider.InspectFeature}, nil},
+		{"missing identifier rules", missingRules, nil, provider.ErrProtocol},
+		{"previous revision", previousRevision, nil, provider.ErrProtocol},
 		{"required service missing", description(), []string{provider.ExecuteFeature}, provider.ErrProtocol},
 		{"missing identity", &protocol.Description{Revision: provider.Revision}, nil, provider.ErrProtocol},
 		{"different revision", &protocol.Description{Revision: provider.Revision + 1}, nil, provider.ErrProtocol},
@@ -140,5 +146,32 @@ func TestDescriptionNegotiatesExactRevisionAndRequiredFeatures(t *testing.T) {
 }
 
 func description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "1", SemanticIdentity: "table-1", Engines: []*protocol.Engine{{Id: "fixture"}}, Features: []string{provider.InspectFeature}}
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "1", SemanticIdentity: "table-1", Engines: []*protocol.Engine{{Id: "fixture", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.InspectFeature}}
+}
+
+func TestIdentifierRulesRequireExplicitSupportedSemantics(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules *protocol.IdentifierRules
+		want  error
+	}{
+		{"missing", nil, provider.ErrProtocol},
+		{"exact", rules(protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_TABLE), nil},
+		{"ascii", rules(protocol.IdentifierRules_ASCII_CASE_INSENSITIVE, protocol.IdentifierRules_ASCII_CASE_INSENSITIVE, protocol.IdentifierRules_ASCII_CASE_INSENSITIVE, protocol.IdentifierRules_SCHEMA), nil},
+		{"missing table comparison", rules(0, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_TABLE), provider.ErrProtocol},
+		{"missing column comparison", rules(protocol.IdentifierRules_EXACT, 0, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_TABLE), provider.ErrProtocol},
+		{"unknown index comparison", rules(protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, 99, protocol.IdentifierRules_TABLE), provider.ErrProtocol},
+		{"missing namespace", rules(protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, 0), provider.ErrProtocol},
+		{"unknown namespace", rules(protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, protocol.IdentifierRules_EXACT, 99), provider.ErrProtocol},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(provider.ValidateIdentifierRules(test.rules), qt.ErrorIs, test.want)
+		})
+	}
+}
+
+func rules(table, column, index protocol.IdentifierRules_Comparison, namespace protocol.IdentifierRules_IndexNamespace) *protocol.IdentifierRules {
+	return &protocol.IdentifierRules{TableNames: table, ColumnNames: column, IndexNames: index, IndexNamespace: namespace}
 }

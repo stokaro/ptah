@@ -2,7 +2,6 @@ package onlineddl
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/dbschema"
 )
 
@@ -36,7 +36,7 @@ const (
 // narrow so tests can fake it.
 type Conn interface {
 	Info() catalog.ServerInfo
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row
 }
 
 // CommandRunner executes an external tool invocation.

@@ -16,12 +16,12 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/testexternal"
 	"ptah.run/internal/devdocker"
@@ -214,7 +214,7 @@ The command exits non-zero if any case fails.`,
 // machines, and a note interleaved with them makes a passing run unparseable
 // while still exiting 0.
 func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) error {
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(ctx)
 	if err != nil {
 		return err
 	}
@@ -343,7 +343,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
 	}
 	if source := strings.TrimSpace(opts.sourceDBURL); source != "" {
-		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{})
+		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -352,7 +352,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		}
 		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
 	}
-	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{}, nil)
 	if err == nil && set.Kind == atlassource.KindDatabase {
 		if err := noteRootDirShape(diag, testSourceDBURLFlag, opts.rootDir); err != nil {
 			return nil, err

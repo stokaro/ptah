@@ -1,6 +1,7 @@
 package builtin_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	// attached in-memory database of that name provides.
 	_ "modernc.org/sqlite"
 
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
@@ -16,7 +18,7 @@ import (
 
 // informationSchema opens a database whose information_schema.columns holds
 // one column, state, of the table schema_migrations in schema ptah_test.
-func informationSchema(c *qt.C) *sql.DB {
+func informationSchema(c *qt.C) catalogQueryer {
 	db, err := sql.Open("sqlite", ":memory:")
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = db.Close() })
@@ -29,7 +31,7 @@ func informationSchema(c *qt.C) *sql.DB {
 		_, err := db.ExecContext(c.Context(), statement)
 		c.Assert(err, qt.IsNil)
 	}
-	return db
+	return catalogQueryer{DB: db}
 }
 
 // The MySQL family and Spanner ask information_schema in the configured
@@ -61,4 +63,10 @@ func TestCatalog_ColumnExistsAsksTheResolvedSchema(t *testing.T) {
 			c.Assert(found, qt.Equals, test.want)
 		})
 	}
+}
+
+type catalogQueryer struct{ *sql.DB }
+
+func (q catalogQueryer) QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row {
+	return q.DB.QueryRowContext(ctx, query, args...)
 }

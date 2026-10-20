@@ -129,3 +129,15 @@ func TestAssessRenderedKeepsExtensionRiskThroughContainers(t *testing.T) {
 		}
 	}
 }
+
+func TestAssessRenderedPreservesOwnerExecutionUnitBoundaries(t *testing.T) {
+	c := qt.New(t)
+	text := "CREATE WIDGET first; DROP WIDGET second;\n"
+	service := selectedRendering(func(context.Context, renderer.Request) (renderer.Result, error) {
+		return renderer.Result{Complete: true, ExecutableUnits: true, Fragments: []string{text}}, nil
+	})
+	assessments, err := safety.AssessRendered(t.Context(), service, []ast.Node{&ast.ExtensionStatement{Payload: &unknownPayload{}}}, "external")
+	c.Assert(err, qt.IsNil)
+	c.Assert(assessments, qt.HasLen, 1)
+	c.Assert(assessments[0].Severity, qt.Equals, safety.Destructive)
+}

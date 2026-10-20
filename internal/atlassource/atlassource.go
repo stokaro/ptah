@@ -267,10 +267,39 @@ var fileDialects = descriptortable.New(func(described descriptor.Dialect) string
 	return described.Name
 })
 
+type sourceSchemeRole uint8
+
+const (
+	unreservedSourceScheme sourceSchemeRole = iota
+	fileSourceScheme
+	envSourceScheme
+	atlasSourceScheme
+	remoteSourceScheme
+	compositeSourceScheme
+	externalSourceScheme
+)
+
+// The same reservation drives source classification and explicit provider
+// selection. A provider must not reinterpret a source protocol as a database.
+var sourceSchemeRoles = map[string]sourceSchemeRole{
+	"file":                                 fileSourceScheme,
+	"env":                                  envSourceScheme,
+	"atlas":                                atlasSourceScheme,
+	projectconfig.RemoteSchemaMarkerScheme: remoteSourceScheme,
+	projectconfig.CompositeSchemaMarkerScheme: compositeSourceScheme,
+	"ptah-external-schema":                    externalSourceScheme,
+}
+
+// IsReservedScheme reports a source or dev-database protocol that cannot be
+// assigned to a provider's database connector.
+func IsReservedScheme(scheme string) bool {
+	return sourceSchemeRoles[strings.ToLower(scheme)] != unreservedSourceScheme || atlasurl.IsDockerScheme(strings.ToLower(scheme))
+}
+
 // Classify determines the source kind of one desired-state URL. env://
 // references are returned unexpanded; use ClassifySet to expand them against
 // an evaluated atlas.hcl environment.
-func Classify(rawURL string) (Source, error) {
+func Classify(rawURL string, databaseTargets map[string]string) (Source, error) {
 	trimmed := strings.TrimSpace(rawURL)
 	// Query parameters are cut before scheme detection so malformed values
 	// keep the schema-file loader's error messages.
@@ -286,10 +315,12 @@ func Classify(rawURL string) (Source, error) {
 		}
 		return classifyLocal(trimmed)
 	}
-	switch scheme = strings.ToLower(scheme); {
-	case scheme == "file":
+	scheme = strings.ToLower(scheme)
+	role := sourceSchemeRoles[scheme]
+	switch {
+	case role == fileSourceScheme:
 		return classifyLocal(trimmed)
-	case scheme == "env":
+	case role == envSourceScheme:
 		if hasQuery {
 			return Source{}, errors.New("env:// desired-state references do not accept query parameters")
 		}
@@ -298,13 +329,15 @@ func Classify(rawURL string) (Source, error) {
 			return Source{}, errors.New("env:// desired-state reference is missing the env attribute (for example env://src)")
 		}
 		return Source{Raw: trimmed, Kind: KindEnv, EnvAttr: attr}, nil
+	case databaseTargets[scheme] != "" && !IsReservedScheme(scheme):
+		return Source{Raw: trimmed, Kind: KindDatabase, Dialect: databaseTargets[scheme]}, nil
 	case platform.NormalizeDialect(scheme) != "":
 		return Source{Raw: trimmed, Kind: KindDatabase, Dialect: platform.NormalizeDialect(scheme)}, nil
 	case atlasurl.IsDockerScheme(scheme):
 		return Source{}, fmt.Errorf("%s:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL", scheme)
-	case scheme == "atlas":
+	case role == atlasSourceScheme:
 		return classifyAtlasReference(trimmed)
-	case scheme == projectconfig.RemoteSchemaMarkerScheme:
+	case role == remoteSourceScheme:
 		// Reserved for the same reason ptah-external-schema is, and refused for
 		// a sharper one: `oci://` is deliberately NOT a desired-state scheme on
 		// this surface, because the pinned community binary answers it with
@@ -315,13 +348,13 @@ func Classify(rawURL string) (Source, error) {
 		return Source{}, errors.New(
 			projectconfig.RemoteSchemaMarkerScheme + ":// is a reserved internal marker scheme; " +
 				"reference data.remote_schema.<name>.url from an atlas.hcl env src instead")
-	case scheme == projectconfig.CompositeSchemaMarkerScheme:
+	case role == compositeSourceScheme:
 		// Reserved like the other two markers: only a declared data source
 		// mints it, and only a project file's own sources may carry it.
 		return Source{}, errors.New(
 			projectconfig.CompositeSchemaMarkerScheme + ":// is a reserved internal marker scheme; " +
 				"reference data.composite_schema.<name>.url from an atlas.hcl env src instead")
-	case scheme == "ptah-external-schema":
+	case role == externalSourceScheme:
 		// The marker is minted internally when an atlas.hcl env src selects a
 		// data "external_schema" source; spelled directly it must never reach
 		// classification, so reject it here rather than relying on the
@@ -360,10 +393,10 @@ func (e *UnsupportedSchemeError) Error() string {
 
 // ClassifySet classifies all URLs of one flag, expands env:// references
 // through env, and enforces the one-kind-per-flag and multiplicity rules.
-func ClassifySet(flag string, rawURLs []string, env ProjectEnv) (Set, error) {
+func ClassifySet(flag string, rawURLs []string, env ProjectEnv, databaseTargets map[string]string) (Set, error) {
 	set := Set{Flag: flag, Kind: KindLocalFile}
 	for _, rawURL := range rawURLs {
-		source, err := Classify(rawURL)
+		source, err := Classify(rawURL, databaseTargets)
 		if err != nil {
 			return Set{}, fmt.Errorf("%s %q: %w", flag, rawURL, err)
 		}
@@ -374,7 +407,7 @@ func ClassifySet(flag string, rawURLs []string, env ProjectEnv) (Set, error) {
 		if len(rawURLs) > 1 {
 			return Set{}, fmt.Errorf("%s %q: an env:// desired-state reference must be the only %s value", flag, rawURL, flag)
 		}
-		expanded, err := expandEnv(source, env)
+		expanded, err := expandEnv(source, env, databaseTargets)
 		if err != nil {
 			return Set{}, fmt.Errorf("%s %q: %w", flag, rawURL, err)
 		}
@@ -665,7 +698,7 @@ func joinEnvAttrs() string {
 	return strings.Join(EnvAttrs[:len(EnvAttrs)-1], ", ") + ", and " + EnvAttrs[len(EnvAttrs)-1]
 }
 
-func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
+func expandEnv(source Source, env ProjectEnv, databaseTargets map[string]string) ([]Source, error) {
 	if !env.Loaded {
 		return nil, errors.New("env:// desired-state references require an evaluated atlas.hcl project configuration; pass --config and --env to select one")
 	}
@@ -689,11 +722,11 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 		if !allowExternal && envSelectsExternalSchema(env) {
 			return nil, errExternalSchemaDisabled()
 		}
-		return expandEnvSchemaSources(source, env)
+		return expandEnvSchemaSources(source, env, databaseTargets)
 	case "url":
-		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DatabaseURL)
+		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DatabaseURL, databaseTargets)
 	case "dev":
-		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DevURL)
+		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DevURL, databaseTargets)
 	case "migration", "migration.dir":
 		return expandEnvMigrationDir(env)
 	default:
@@ -704,7 +737,7 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 	}
 }
 
-func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
+func expandEnvSchemaSources(source Source, env ProjectEnv, databaseTargets map[string]string) ([]Source, error) {
 	if len(env.Config.SchemaSources) == 0 {
 		if envSelectsExternalSchema(env) {
 			return expandEnvExternalSchema(source, env)
@@ -714,14 +747,14 @@ func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 	sources := make([]Source, 0, len(env.Config.SchemaSources))
 	for _, value := range env.Config.SchemaSources {
 		if composite, ok := env.Config.CompositeSchema(value); ok {
-			source, err := classifyCompositeSchema(value, composite, env)
+			source, err := classifyCompositeSchema(value, composite, env, databaseTargets)
 			if err != nil {
 				return nil, fmt.Errorf("atlas.hcl schema source: %w", err)
 			}
 			sources = append(sources, source)
 			continue
 		}
-		source, err := classifyEnvValue(value, env.BaseDir)
+		source, err := classifyEnvValue(value, env.BaseDir, databaseTargets)
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl schema source %q: %w", value, err)
 		}
@@ -857,7 +890,7 @@ func EnvSourceIsLocal(value string) bool {
 	return !strings.Contains(base, "://") || strings.HasPrefix(base, "file://")
 }
 
-func classifyEnvValue(value, baseDir string) (Source, error) {
+func classifyEnvValue(value, baseDir string, databaseTargets map[string]string) (Source, error) {
 	trimmed := strings.TrimSpace(value)
 	// A remote-schema marker is recognized HERE and nowhere else: this function
 	// reads values the project file minted, while [Classify] reads values a
@@ -871,7 +904,7 @@ func classifyEnvValue(value, baseDir string) (Source, error) {
 		return Source{Raw: trimmed, Kind: KindRemoteSchema, OCIReference: reference}, nil
 	}
 	if !EnvSourceIsLocal(trimmed) {
-		source, err := Classify(trimmed)
+		source, err := Classify(trimmed, databaseTargets)
 		if err != nil {
 			return Source{}, err
 		}
@@ -884,16 +917,16 @@ func classifyEnvValue(value, baseDir string) (Source, error) {
 	if err != nil {
 		return Source{}, err
 	}
-	return Classify(resolved)
+	return Classify(resolved, databaseTargets)
 }
 
-func expandEnvDatabaseURL(attr, value string) ([]Source, error) {
+func expandEnvDatabaseURL(attr, value string, databaseTargets map[string]string) ([]Source, error) {
 	if strings.TrimSpace(value) == "" {
 		return nil, fmt.Errorf("the selected atlas.hcl env does not define %s", attr)
 	}
 	// The configured value may embed credentials, so wrapping errors must not
 	// echo it.
-	source, err := Classify(value)
+	source, err := Classify(value, databaseTargets)
 	if err != nil {
 		return nil, fmt.Errorf("atlas.hcl env %s: %w", attr, err)
 	}

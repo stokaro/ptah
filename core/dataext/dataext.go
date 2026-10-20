@@ -146,3 +146,11 @@ type Runtime interface {
 	// not know.
 	DataServices(target string) (Services, error)
 }
+
+// Row is the result of a query for one row. Scan and Err expose a refusal when
+// the selected connection cannot provide raw SQL queries. A database/sql Row
+// implements it without copying its data or creating a driver.
+type Row interface {
+	Scan(...any) error
+	Err() error
+}

@@ -69,12 +69,15 @@ type PlanStatement struct {
 // state they were computed against, so a stale plan is detectable before
 // execution.
 type PlanFile struct {
-	FormatVersion   int      `json:"format_version"`
-	Name            string   `json:"name"`
-	Dialect         string   `json:"dialect"`
-	FromFingerprint string   `json:"from_fingerprint"`
-	ToFingerprint   string   `json:"to_fingerprint"`
-	Exclude         []string `json:"exclude,omitempty"`
+	// Provider records executable identity, negotiated semantics, and target
+	// facts. It is required when a plan targets an executable provider.
+	Provider        *PlanProviderBinding `json:"provider,omitempty"`
+	FormatVersion   int                  `json:"format_version"`
+	Name            string               `json:"name"`
+	Dialect         string               `json:"dialect"`
+	FromFingerprint string               `json:"from_fingerprint"`
+	ToFingerprint   string               `json:"to_fingerprint"`
+	Exclude         []string             `json:"exclude,omitempty"`
 	// SchemasBeyondURL names the schemas the source fingerprint covers that the
 	// connection URL's own scope does not: a desired state naming a schema other
 	// than the one a schema-limited URL connects to. The fingerprint describes
@@ -214,6 +217,10 @@ func PreparePlanFileReportingUndecided(
 	if conn == nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, errors.New("schema plan requires database connection")
 	}
+	binding, err := planProviderBinding(conn.Info())
+	if err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, err
+	}
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
@@ -290,6 +297,7 @@ func PreparePlanFileReportingUndecided(
 	statements = slices.Insert(statements, computation.dataIndex(), data...)
 
 	return PlanFile{
+		Provider:         binding,
 		FormatVersion:    PlanFormatVersion,
 		Name:             name,
 		Dialect:          conn.Info().Dialect,
@@ -641,6 +649,9 @@ func (p PlanFile) StatementSQL() []string {
 // MarshalPlanFile renders the canonical plan document. The output is
 // deterministic for identical plan contents.
 func MarshalPlanFile(plan PlanFile) ([]byte, error) {
+	if err := validatePlanProvider(plan.Provider); err != nil {
+		return nil, err
+	}
 	document, err := json.MarshalIndent(plan, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("render plan file: %w", err)
@@ -717,6 +728,9 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 	}
 	if conn == nil {
 		return errors.New("plan verification requires database connection")
+	}
+	if err := verifyPlanProvider(plan.Provider, conn.Info()); err != nil {
+		return err
 	}
 	// Atlas-format plan files carry no dialect field; for those the rehearsal
 	// and desired-state verification pin the semantics instead.
@@ -829,6 +843,9 @@ func managedRowsFingerprint(ctx context.Context, conn *dbschema.DatabaseConnecti
 }
 
 func validatePlanFile(plan PlanFile) error {
+	if err := validatePlanProvider(plan.Provider); err != nil {
+		return err
+	}
 	if plan.FormatVersion != PlanFormatVersion {
 		return fmt.Errorf("unsupported plan format_version %d (this Ptah build supports %d)",
 			plan.FormatVersion, PlanFormatVersion)

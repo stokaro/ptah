@@ -12,6 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 )
@@ -58,7 +59,7 @@ func TestBeginWithoutTransaction_ReadsTheKeyAboutTheWrapper(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			unwrapped, ok := beginWithoutTransaction(test.caps, &recordingExecutor{})
+			unwrapped, ok := beginWithoutTransaction(catalog.ServerInfo{Capabilities: test.caps}, &recordingExecutor{})
 
 			c.Assert(ok, qt.Equals, test.wantUnwapped)
 			c.Assert(unwrapped != nil, qt.Equals, test.wantUnwapped)

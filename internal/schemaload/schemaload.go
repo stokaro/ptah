@@ -399,7 +399,7 @@ func (o Options) expandEnvSchemaFiles(
 		if !o.ProjectEnv.Loaded {
 			return nil, nil, rejectEnvReference(schemaFile, o.EnvSelectorFlag)
 		}
-		set, err := atlassource.ClassifySet("--schema-file", []string{schemaFile}, o.ProjectEnv)
+		set, err := atlassource.ClassifySet("--schema-file", []string{schemaFile}, o.ProjectEnv, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("--schema-file %q: %w", schemaFile, err)
 		}
@@ -590,7 +590,7 @@ func rejectEnvReference(schemaFile, envSelectorFlag string) error {
 	if !strings.HasPrefix(strings.ToLower(trimmed), envScheme) {
 		return nil
 	}
-	source, err := atlassource.Classify(trimmed)
+	source, err := atlassource.Classify(trimmed, nil)
 	if err != nil {
 		return fmt.Errorf("--schema-file %q: %w", schemaFile, err)
 	}

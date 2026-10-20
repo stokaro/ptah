@@ -31,10 +31,10 @@ type CompositePart struct {
 
 // classifyCompositeSchema classifies every part of a `data "composite_schema"`
 // block the env's desired state names.
-func classifyCompositeSchema(raw string, composite projectconfig.CompositeSchema, env ProjectEnv) (Source, error) {
+func classifyCompositeSchema(raw string, composite projectconfig.CompositeSchema, env ProjectEnv, databaseTargets map[string]string) (Source, error) {
 	source := Source{Raw: raw, Kind: KindCompositeSchema}
 	for _, part := range composite.Parts {
-		classified, err := classifyCompositePart(part, env)
+		classified, err := classifyCompositePart(part, env, databaseTargets)
 		if err != nil {
 			return Source{}, fmt.Errorf("data.composite_schema %q %s at %s:%d: %w",
 				composite.Name, compositePartName(part.Schema), part.Filename, part.Line, err)
@@ -62,7 +62,7 @@ func compositePartName(schema string) string {
 // directory, a program's output, or a registry artifact. A database URL or a
 // migration directory is refused rather than read, because reading either
 // needs a connection the composition has no way to scope to one part.
-func classifyCompositePart(part projectconfig.CompositeSchemaPart, env ProjectEnv) (Source, error) {
+func classifyCompositePart(part projectconfig.CompositeSchemaPart, env ProjectEnv, databaseTargets map[string]string) (Source, error) {
 	if external := part.ExternalSchema; external != nil {
 		// The same gate an env-level external schema meets: the program is
 		// repository-controlled code reached through a project file.
@@ -84,7 +84,7 @@ func classifyCompositePart(part projectconfig.CompositeSchemaPart, env ProjectEn
 			},
 		}, nil
 	}
-	source, err := classifyEnvValue(part.URL, env.BaseDir)
+	source, err := classifyEnvValue(part.URL, env.BaseDir, databaseTargets)
 	if err != nil {
 		return Source{}, err
 	}

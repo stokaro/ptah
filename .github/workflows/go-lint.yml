@@ -267,7 +267,9 @@ jobs:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Policy gates and both lint contours run serially across every module.
+    # Allow the SDK and independent fixture checks to finish after a cold build.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v7

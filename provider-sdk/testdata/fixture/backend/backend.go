@@ -33,9 +33,15 @@ type session struct {
 
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-1",
-		Engines:  []*protocol.Engine{{Id: "fixture", Features: []string{"tables", "columns"}}},
-		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature}}
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-2",
+		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature}, Identifiers: identifierRules()}},
+		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature}}
+}
+
+func identifierRules() *protocol.IdentifierRules {
+	return &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE,
+		ColumnNames: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE, IndexNames: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE,
+		IndexNamespace: protocol.IdentifierRules_SCHEMA}
 }
 
 // Open creates an independent connection pool without changing the schema.
@@ -70,7 +76,7 @@ func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*pr
 		p.sessions = make(map[string]*session)
 	}
 	p.sessions[id] = &session{db: database, path: path, fault: u.Query().Get("fault")}
-	return &protocol.Session{Id: id, Engine: "fixture", Database: path, ServerVersion: "fixture-1"}, nil
+	return &protocol.Session{Id: id, Engine: "fixture", Database: path, ServerVersion: "fixture-1", DefaultSchema: "main", Identifiers: identifierRules()}, nil
 }
 
 func (p *Provider) lookup(id string) (*session, error) {
@@ -108,8 +114,10 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	if len(request.GetSchemas()) != 0 {
-		return nil, fmt.Errorf("fixture has no named schemas")
+	for _, schema := range request.GetSchemas() {
+		if schema != "main" {
+			return nil, fmt.Errorf("fixture supports only the main schema")
+		}
 	}
 	var unsupported int
 	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type IN ('view', 'trigger', 'index') AND name NOT LIKE 'sqlite_%'").Scan(&unsupported); err != nil {
@@ -244,6 +252,9 @@ func renderChange(change *protocol.Change) (string, error) {
 func renderColumn(column *protocol.Column) (string, error) {
 	if column.GetName() == "" || len(column.GetFacets()) != 0 || column.DefaultExpression != nil {
 		return "", fmt.Errorf("unsupported fixture column")
+	}
+	if column.GetPrimaryKey() && column.GetNullable() {
+		return "", fmt.Errorf("fixture requires an explicitly non-null primary key")
 	}
 	kind := strings.ToUpper(column.GetType())
 	switch kind {

@@ -19,12 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Provider_Describe_FullMethodName = "/ptah.provider.experimental.Provider/Describe"
-	Provider_Open_FullMethodName     = "/ptah.provider.experimental.Provider/Open"
-	Provider_Close_FullMethodName    = "/ptah.provider.experimental.Provider/Close"
-	Provider_Inspect_FullMethodName  = "/ptah.provider.experimental.Provider/Inspect"
-	Provider_Render_FullMethodName   = "/ptah.provider.experimental.Provider/Render"
-	Provider_Execute_FullMethodName  = "/ptah.provider.experimental.Provider/Execute"
+	Provider_Describe_FullMethodName   = "/ptah.provider.experimental.Provider/Describe"
+	Provider_Open_FullMethodName       = "/ptah.provider.experimental.Provider/Open"
+	Provider_Close_FullMethodName      = "/ptah.provider.experimental.Provider/Close"
+	Provider_Inspect_FullMethodName    = "/ptah.provider.experimental.Provider/Inspect"
+	Provider_Render_FullMethodName     = "/ptah.provider.experimental.Provider/Render"
+	Provider_AnalyzeSQL_FullMethodName = "/ptah.provider.experimental.Provider/AnalyzeSQL"
+	Provider_Execute_FullMethodName    = "/ptah.provider.experimental.Provider/Execute"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -40,6 +41,7 @@ type ProviderClient interface {
 	Close(ctx context.Context, in *CloseRequest, opts ...grpc.CallOption) (*Empty, error)
 	Inspect(ctx context.Context, in *InspectRequest, opts ...grpc.CallOption) (*Schema, error)
 	Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResult, error)
+	AnalyzeSQL(ctx context.Context, in *AnalyzeSQLRequest, opts ...grpc.CallOption) (*SQLAnalysis, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 }
 
@@ -101,6 +103,16 @@ func (c *providerClient) Render(ctx context.Context, in *RenderRequest, opts ...
 	return out, nil
 }
 
+func (c *providerClient) AnalyzeSQL(ctx context.Context, in *AnalyzeSQLRequest, opts ...grpc.CallOption) (*SQLAnalysis, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SQLAnalysis)
+	err := c.cc.Invoke(ctx, Provider_AnalyzeSQL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Execution)
@@ -124,6 +136,7 @@ type ProviderServer interface {
 	Close(context.Context, *CloseRequest) (*Empty, error)
 	Inspect(context.Context, *InspectRequest) (*Schema, error)
 	Render(context.Context, *RenderRequest) (*RenderResult, error)
+	AnalyzeSQL(context.Context, *AnalyzeSQLRequest) (*SQLAnalysis, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	mustEmbedUnimplementedProviderServer()
 }
@@ -149,6 +162,9 @@ func (UnimplementedProviderServer) Inspect(context.Context, *InspectRequest) (*S
 }
 func (UnimplementedProviderServer) Render(context.Context, *RenderRequest) (*RenderResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Render not implemented")
+}
+func (UnimplementedProviderServer) AnalyzeSQL(context.Context, *AnalyzeSQLRequest) (*SQLAnalysis, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AnalyzeSQL not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -264,6 +280,24 @@ func _Provider_Render_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_AnalyzeSQL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnalyzeSQLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).AnalyzeSQL(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_AnalyzeSQL_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).AnalyzeSQL(ctx, req.(*AnalyzeSQLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExecuteRequest)
 	if err := dec(in); err != nil {
@@ -308,6 +342,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Render",
 			Handler:    _Provider_Render_Handler,
+		},
+		{
+			MethodName: "AnalyzeSQL",
+			Handler:    _Provider_AnalyzeSQL_Handler,
 		},
 		{
 			MethodName: "Execute",

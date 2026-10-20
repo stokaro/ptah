@@ -17,6 +17,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"ptah.run/core/dataext"
 )
 
 // Request is one acquisition of a lock.
@@ -41,9 +43,9 @@ type Request struct {
 }
 
 // Session is the database session a [SessionLock] is taken and given back
-// on. *sql.Conn and a pinned *dbschema.DatabaseConnection satisfy it.
+// on. SQLSession and a pinned *dbschema.DatabaseConnection satisfy it.
 type Session interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row
 }
 
 // Pool hands out database sessions of their own, which the caller closes.
@@ -134,4 +136,13 @@ type Services struct {
 // Locks reports whether the services take a lock.
 func (s Services) Locks() bool {
 	return s.Session != nil || s.Separate != nil
+}
+
+// SQLSession adapts a database/sql connection to the lock query contract.
+// It retains the caller's ownership of the physical connection.
+type SQLSession struct{ *sql.Conn }
+
+// QueryRowContext returns the SQL driver's row through the shared query contract.
+func (s SQLSession) QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row {
+	return s.Conn.QueryRowContext(ctx, query, args...)
 }

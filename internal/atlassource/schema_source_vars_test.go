@@ -148,7 +148,7 @@ env "local" {
 				ProjectSourceURLs: test.projectSources,
 			}
 
-			set, err := atlassource.ClassifySet(test.flag, cfg.SchemaSources, env)
+			set, err := atlassource.ClassifySet(test.flag, cfg.SchemaSources, env, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(set.Sources, qt.HasLen, 1)

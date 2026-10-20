@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -70,7 +71,7 @@ func commentedExtensions(current *catalog.Database) ([]extensionVersion, error) 
 // extensionControlComment is the query for one extension's control file
 // comment: of the version the rebuild names, or of the default version when it
 // names none, which is what CREATE EXTENSION installs then.
-func extensionControlComment(ctx context.Context, devConn *dbschema.DatabaseConnection, key extensionVersion) *sql.Row {
+func extensionControlComment(ctx context.Context, devConn *dbschema.DatabaseConnection, key extensionVersion) dataext.Row {
 	if key.version == "" {
 		return devConn.QueryRowContext(ctx,
 			"SELECT comment FROM pg_catalog.pg_available_extensions WHERE name = $1", key.name)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -46,7 +47,7 @@ import (
 // for one database would otherwise be handed a whole server. [ConnectToServer]
 // is the connector that accepts one.
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	return connect(ctx, dbURL, requireDatabase)
+	return connect(ctx, dbURL, DatabaseScope)
 }
 
 // ConnectToServer is [ConnectToDatabase] for a caller that also handles a
@@ -61,25 +62,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 // The pinned Atlas community binary v1.3.0 reads such a URL the same way
 // (stokaro/ptah#3789).
 func ConnectToServer(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	return connect(ctx, dbURL, acceptServer)
-}
-
-// scopeRule decides, from the URL alone, whether a connector opens a URL its
-// dialect's service connects to: nil opens it, an error refuses it before
-// anything is dialed.
-type scopeRule func(service connector.Service, parsedURL *url.URL) error
-
-// requireDatabase refuses a URL that names a whole server rather than one
-// database, such as a MySQL-family URL that names no database, whose session
-// would start with no default database.
-func requireDatabase(service connector.Service, parsedURL *url.URL) error {
-	return service.RequireDatabase(parsedURL)
-}
-
-// acceptServer opens every URL, a MySQL-family one naming no database as the
-// whole server.
-func acceptServer(connector.Service, *url.URL) error {
-	return nil
+	return connect(ctx, dbURL, ServerScope)
 }
 
 // admitted is the request a URL connects with, and the service of its
@@ -90,7 +73,7 @@ func admitted(
 	ctx context.Context,
 	dbURL string,
 	parsedURL *url.URL,
-	scope scopeRule,
+	scope ConnectionScope,
 ) (connector.Request, connector.Service, error) {
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
@@ -111,17 +94,23 @@ func admitted(
 			"connecting to %s is not supported yet: Ptah renders and plans %s schemas, "+
 				"and reading a live %s catalog is not implemented", dialect, dialect, dialect)
 	}
-	if err := scope(service, parsedURL); err != nil {
-		return connector.Request{}, nil, err
+	if scope == DatabaseScope {
+		if err := service.RequireDatabase(parsedURL); err != nil {
+			return connector.Request{}, nil, err
+		}
 	}
 	return connector.Request{Dialect: described, URL: dbURL, Parsed: parsedURL}, service, nil
 }
 
 // connect opens dbURL once scope accepts it.
-func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConnection, error) {
+func connect(ctx context.Context, dbURL string, scope ConnectionScope) (*DatabaseConnection, error) {
 	parsedURL, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database URL: %w", err)
+	}
+
+	if selected, found, err := nativeConnection(ctx, parsedURL.Scheme, dbURL, scope); found {
+		return selected, err
 	}
 
 	request, service, err := admitted(ctx, dbURL, parsedURL, scope)
@@ -272,6 +261,7 @@ func resolveDatabaseCapabilities(info catalog.ServerInfo) capability.VersionReso
 
 // DatabaseConnection represents a database connection with metadata
 type DatabaseConnection struct {
+	native    NativeSession
 	db        *sql.DB
 	runner    sqlrunner.Runner
 	info      catalog.ServerInfo
@@ -392,6 +382,9 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*catalog
 // back to scoping the shared reader and restoring it afterwards, which is the
 // behavior that cannot be made concurrency-safe.
 func (dc *DatabaseConnection) readerScopedTo(schemas []string) (catalog.SchemaReader, func()) {
+	if dc.native != nil {
+		return dc.native.Reader(slices.Clone(schemas)), func() {}
+	}
 	if dc.newReader != nil {
 		reader := dc.newReader(dc.sqlRunner())
 		if scoped, ok := reader.(schemaScopedReader); ok {
@@ -521,6 +514,9 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	opts *sql.TxOptions,
 	use func(IsolatedQueryer) error,
 ) (resultErr error) {
+	if dc != nil && dc.native != nil {
+		return rawSQLUnavailable()
+	}
 	if dc == nil || dc.db == nil {
 		return fmt.Errorf("isolated query session requires an open database connection")
 	}
@@ -591,7 +587,7 @@ func (dc *DatabaseConnection) WithSession(
 	ctx context.Context,
 	use func(*DatabaseConnection) error,
 ) (resultErr error) {
-	if dc == nil || dc.db == nil {
+	if dc == nil || (dc.db == nil && dc.native == nil) {
 		return fmt.Errorf("database session requires an open database connection")
 	}
 	if use == nil {
@@ -599,6 +595,9 @@ func (dc *DatabaseConnection) WithSession(
 	}
 	if dc.pinned {
 		return fmt.Errorf("database connection is already pinned to a session")
+	}
+	if dc.native != nil {
+		return dc.withNativeSession(ctx, use)
 	}
 	if dc.newReader == nil || dc.newWriter == nil {
 		return fmt.Errorf("database connection does not support session rebinding")
@@ -649,7 +648,7 @@ func (dc *DatabaseConnection) WithSessionOrCurrent(
 	ctx context.Context,
 	use func(*DatabaseConnection) error,
 ) error {
-	if dc == nil || dc.db == nil {
+	if dc == nil || (dc.db == nil && dc.native == nil) {
 		return fmt.Errorf("database session requires an open database connection")
 	}
 	if use == nil {
@@ -694,21 +693,33 @@ func closeSQLConnection(session *sql.Conn, label string) error {
 
 // Query executes a query and returns the result rows
 func (dc *DatabaseConnection) Query(query string, args ...any) (*sql.Rows, error) {
+	if dc.native != nil {
+		return nil, rawSQLUnavailable()
+	}
 	return dc.sqlRunner().Query(query, args...)
 }
 
 // QueryContext executes a query using a context and returns the result rows.
 func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if dc.native != nil {
+		return nil, rawSQLUnavailable()
+	}
 	return dc.sqlRunner().QueryContext(ctx, query, args...)
 }
 
 // QueryRow executes a query that returns a single row
-func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row {
+func (dc *DatabaseConnection) QueryRow(query string, args ...any) dataext.Row {
+	if dc.native != nil {
+		return refusedRow{rawSQLUnavailable()}
+	}
 	return dc.sqlRunner().QueryRow(query, args...)
 }
 
 // QueryRowContext executes a query that returns a single row using a context
-func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row {
+	if dc.native != nil {
+		return refusedRow{rawSQLUnavailable()}
+	}
 	return dc.sqlRunner().QueryRowContext(ctx, query, args...)
 }
 
@@ -723,6 +734,9 @@ func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string,
 // carry dialect handling, dry-run and the safety gates, and a caller driving a
 // transaction directly opts out of all three.
 func (dc *DatabaseConnection) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	if dc.native != nil {
+		return nil, rawSQLUnavailable()
+	}
 	return dc.db.BeginTx(ctx, opts)
 }
 
@@ -742,6 +756,9 @@ func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error
 			return nil, err
 		}
 		return driver.RowsAffected(0), nil
+	}
+	if dc.native != nil {
+		return nil, rawSQLUnavailable()
 	}
 	return dc.sqlRunner().Exec(query, args...)
 }
@@ -764,6 +781,9 @@ func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, arg
 			return nil, err
 		}
 		return driver.RowsAffected(0), nil
+	}
+	if dc.native != nil {
+		return nil, rawSQLUnavailable()
 	}
 	return dc.sqlRunner().ExecContext(ctx, query, args...)
 }
@@ -811,6 +831,9 @@ func (dc *DatabaseConnection) WithUntrustedSQLSession(
 // pinned session's dialect. Dialects without such controls are a no-op, which
 // WithUntrustedSQLSession documents.
 func (dc *DatabaseConnection) restrictUntrustedSQL(ctx context.Context) error {
+	if dc.pinned && dc.native != nil {
+		return dc.native.RestrictUntrustedSQL(ctx)
+	}
 	if !dc.pinned || dc.session == nil {
 		return fmt.Errorf("untrusted SQL restrictions require a pinned session")
 	}
@@ -820,6 +843,9 @@ func (dc *DatabaseConnection) restrictUntrustedSQL(ctx context.Context) error {
 // Conn returns a dedicated database session. Callers that use session-scoped
 // database features must close the returned connection when finished.
 func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error) {
+	if dc.native != nil {
+		return nil, rawSQLUnavailable()
+	}
 	if dc.pinned {
 		return nil, fmt.Errorf("database connection is already pinned to a session")
 	}
@@ -836,6 +862,9 @@ func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error) {
 func (dc *DatabaseConnection) Close() error {
 	if dc.pinned {
 		return nil
+	}
+	if dc.native != nil {
+		return dc.native.Close()
 	}
 	if dc.db == nil {
 		return nil

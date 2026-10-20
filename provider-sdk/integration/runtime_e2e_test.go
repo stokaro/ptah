@@ -37,6 +37,9 @@ func TestIndependentProviderProcess(t *testing.T) {
 		c := qt.New(t)
 		client := start(c, options)
 		session := open(c, client, "")
+		c.Assert(session.GetDefaultSchema(), qt.Equals, "main")
+		c.Assert(session.GetIdentifiers().GetTableNames(), qt.Equals, protocol.IdentifierRules_ASCII_CASE_INSENSITIVE)
+		c.Assert(client.Description().GetEngines()[0].GetIdentifiers().GetColumnNames(), qt.Equals, protocol.IdentifierRules_ASCII_CASE_INSENSITIVE)
 		before, err := client.Inspect(c.Context(), &protocol.InspectRequest{SessionId: session.Id})
 		c.Assert(err, qt.IsNil)
 		c.Assert(before.GetTables(), qt.HasLen, 0)
@@ -57,6 +60,14 @@ func TestIndependentProviderProcess(t *testing.T) {
 		c.Assert(err, qt.IsNotNil)
 		client.Close()
 		client.Close()
+	})
+
+	t.Run("nullable primary key refuses rendering", func(t *testing.T) {
+		c := qt.New(t)
+		client := start(c, options)
+		result, err := client.Render(c.Context(), &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{{Id: "create", Object: &protocol.Reference{Kind: "table", Name: "items"}, Operation: &protocol.Change_CreateTable{CreateTable: &protocol.Table{Columns: []*protocol.Column{{Name: "id", Type: "INTEGER", PrimaryKey: true, Nullable: true}}}}}}})
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(result, qt.IsNil)
 	})
 
 	t.Run("crash after committed write is unknown", func(t *testing.T) {

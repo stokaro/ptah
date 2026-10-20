@@ -36,7 +36,7 @@ func TestGooseNoTransactionArtifactImportsAppliesAndRollsBack(t *testing.T) {
 	desired, err := atlassource.ClassifySet(
 		"--to",
 		[]string{"file://" + desiredPath},
-		atlassource.ProjectEnv{},
+		atlassource.ProjectEnv{}, nil,
 	)
 	c.Assert(err, qt.IsNil)
 	dev, err := dbschema.ConnectToDatabase(

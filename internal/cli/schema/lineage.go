@@ -9,9 +9,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
@@ -118,7 +118,7 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -212,7 +212,7 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	// against a live database is about that database, and a routine body is
 	// read by its own engine's parser.
 	dialect := conn.Info().Dialect
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

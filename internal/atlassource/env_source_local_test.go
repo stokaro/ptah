@@ -130,7 +130,7 @@ func TestEnvSourceIsLocal_AgreesWithEnvSrcExpansion(t *testing.T) {
 			c.Assert(cfg.SchemaSources, qt.HasLen, 1)
 
 			set, err := atlassource.ClassifySet("--to", []string{"env://src"},
-				atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: dir})
+				atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: dir}, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(set.Kind, qt.Equals, test.wantKind)

@@ -835,3 +835,13 @@ v0.13.0 ptah.run/migration/schemadiff/difftypes
 v0.13.0 ptah.run/migration/diffpolicy
 # Project configuration exposes the same moved change-kind vocabulary.
 v0.13.0 ptah.run/config/projectconfig
+
+# #4204 makes QueryRow and QueryRowContext return core/dataext.Row so a
+# provider-owned connection can refuse unsupported SQL without a fake SQL
+# driver. Callers use Scan and Err directly. Pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/dbschema
+
+# #4204 lets builtin.New accept additional provider descriptors. Its variadic
+# signature changes function-value assignments; callers update them directly.
+# The selected services remain owned by their providers. Pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/engine/builtin

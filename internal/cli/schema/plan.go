@@ -11,11 +11,11 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
@@ -219,7 +219,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
@@ -259,7 +259,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		}
 	}
 
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
