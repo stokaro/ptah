@@ -126,6 +126,9 @@ func validateSourceModelValue(
 ) error {
 	normalized := value.GetValue()
 	envelope := normalized.GetValue()
+	if document.GetFormat() == protocol.SourceDocument_YAML && !slices.Contains(fragment.GetYamlKey().GetModels(), envelope.GetKind()) {
+		return sourceError("decoded YAML value is outside its key claim")
+	}
 	switch value.GetPlacement() {
 	case protocol.SourceModelValue_NATIVE_OBJECT:
 		if envelope.GetKind() != envelope.GetOwner().GetKind() {

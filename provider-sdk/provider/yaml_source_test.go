@@ -116,3 +116,23 @@ func TestDocumentYAMLClaimsRefuseInventedAttachments(t *testing.T) {
 	request.Documents[0].Fragments[0].Subject = nil
 	c.Assert(provider.ValidateSourceRequest(description, request), qt.IsNil)
 }
+
+func TestYAMLResultCannotBorrowAnotherKeysModelScope(t *testing.T) {
+	c := qt.New(t)
+	description, request, result := sourceExchange()
+	second := proto.CloneOf(description.Engines[0].ValueModels[0])
+	second.Kind = "example.org/fixture/another"
+	description.Engines[0].ValueModels = append(description.Engines[0].ValueModels, second)
+	description.Engines[0].YamlSourceKeys = append(description.Engines[0].YamlSourceKeys, &protocol.YAMLSourceKey{
+		Scope: protocol.YAMLSourceKey_TABLE, Key: "another", Selector: "another", Models: []string{second.Kind},
+	})
+	request.Documents[0].Models = append(request.Documents[0].Models, proto.CloneOf(second))
+	result.Documents[0].Coverage.Kinds = append(result.Documents[0].Coverage.Kinds, &protocol.ModelKindCoverage{
+		Model: proto.CloneOf(second), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE},
+	})
+	c.Assert(provider.ValidateDescription(description, nil), qt.IsNil)
+	c.Assert(provider.ValidateDecodedSource(description, request, result), qt.IsNil)
+	result.Documents[0].Fragments[0].Values[0].Value.Value.Kind = second.Kind
+	result.Documents[0].Coverage.Subjects[0].Kind = second.Kind
+	c.Assert(provider.ValidateDecodedSource(description, request, result), qt.ErrorIs, provider.ErrProtocol)
+}
