@@ -9,13 +9,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const testValueDefinition = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+const testValueDefinition = "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0"
 
 func valueInputs() (*protocol.Description, *protocol.NormalizeValuesRequest) {
 	owner := description()
 	owner.Features = append(owner.Features, provider.NormalizeValuesFeature)
 	owner.Engines[0].Features = []string{"retention"}
-	owner.Engines[0].ValueModels = []*protocol.ValueModel{{Kind: "example.org/fixture/retention", Representation: protocol.ValueInput_DESIRED, SchemaVersion: 1, Encoding: "json", DefinitionSha256: testValueDefinition, CanonicalFormat: "seconds-json-v1"}}
+	owner.Engines[0].ValueModels = []*protocol.ValueModel{{Kind: "example.org/fixture/retention", Representation: protocol.ValueInput_DESIRED, SchemaVersion: 1, Encoding: "json", DefinitionJson: []byte(`{"type":"object"}`), DefinitionSha256: testValueDefinition, CanonicalFormat: "seconds-json-v1"}}
 	request := &protocol.NormalizeValuesRequest{Engine: "fixture", TargetFeatures: []string{"retention"}, Values: []*protocol.ValueInput{{
 		Id: "first", Representation: protocol.ValueInput_DESIRED, Value: &protocol.Envelope{
 			DefinitionSha256: testValueDefinition, ProviderId: owner.ProviderId, Kind: "example.org/fixture/retention", SchemaVersion: 1, Encoding: "json", Payload: []byte(`{"minutes":1}`),

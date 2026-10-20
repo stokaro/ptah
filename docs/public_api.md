@@ -1380,7 +1380,20 @@ Providers supply versioned `Codec` descriptors through `Provider.Codecs`.
 refuse unknown kinds, changed definitions, and incompatible versions without
 partial results. Wire identity uses the provider, semantic kind, representation,
 version, and definition hash; Go package names are absent. A codec registration
-does not establish target support. Owner callbacks are pure local operations.
+does not establish target support. `Clone`, `Encode`, and `Canonical` remain
+pure local operations. `Codec.Decode` is local too.
+
+An external owner instead
+registers `Provider.ModelDecoder`, or one shared `OwnedCodec.BatchDecoder`
+when constructing a registry directly, and leaves `Codec.Decode` unset.
+`Registry.Decode` checks every envelope before dispatch and invokes each owner
+once across its kinds and representations. The owner returns the complete
+ordered batch; errors, cancellation, or invalid results return no prefix.
+Registration snapshots the decoder callback. Resolved values retain no process
+client, so copying, comparison, encoding, and fingerprints work after shutdown.
+Loading external serialized values requires the selected owner again; persisted
+bytes cannot supply their own trusted semantic projection.
+
 `Fingerprint` uses owner-defined canonical ordering, retaining ordered lists;
 it does not decide semantic equality. Default JSON serialization of feature
 collections is refused so callers cannot lose concrete payload types.

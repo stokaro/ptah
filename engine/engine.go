@@ -44,6 +44,9 @@ type Provider struct {
 	// Codecs declares understood model representations. Registration alone does
 	// not grant any target permission or capability to use those models.
 	Codecs []schemaext.Codec
+	// ModelDecoder resolves this owner's serialized models in complete batches.
+	// When present, all its Codecs omit the per-value Decode function.
+	ModelDecoder *schemaext.BatchDecoder
 	// Conversions assigns each target/kind pair to one batched service. The
 	// provider must own both schema codecs for each kind it converts.
 	Conversions []Conversion
@@ -298,7 +301,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		}
 		owners[provider.ID] = struct{}{}
 		for _, codec := range provider.Codecs {
-			codecs = append(codecs, schemaext.OwnedCodec{Owner: provider.ID, Codec: codec})
+			codecs = append(codecs, schemaext.OwnedCodec{Owner: provider.ID, Codec: codec, BatchDecoder: provider.ModelDecoder})
 		}
 		for _, declared := range provider.Targets {
 			if err := runtime.register(provider.ID, declared); err != nil {

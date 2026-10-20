@@ -3725,8 +3725,11 @@ type ValueModel struct {
 	DefinitionSha256 string                    `protobuf:"bytes,5,opt,name=definition_sha256,json=definitionSha256,proto3" json:"definition_sha256,omitempty"`
 	CanonicalFormat  string                    `protobuf:"bytes,6,opt,name=canonical_format,json=canonicalFormat,proto3" json:"canonical_format,omitempty"`
 	SourceFormats    []SourceDocument_Format   `protobuf:"varint,7,rep,packed,name=source_formats,json=sourceFormats,proto3,enum=ptah.provider.experimental.SourceDocument_Format" json:"source_formats,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Full owner definition, canonicalized with modeljson.Canonical. Its exact
+	// SHA-256 must match definition_sha256. It is a nonempty JSON object.
+	DefinitionJson []byte `protobuf:"bytes,8,opt,name=definition_json,json=definitionJson,proto3" json:"definition_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ValueModel) Reset() {
@@ -3804,6 +3807,13 @@ func (x *ValueModel) GetCanonicalFormat() string {
 func (x *ValueModel) GetSourceFormats() []SourceDocument_Format {
 	if x != nil {
 		return x.SourceFormats
+	}
+	return nil
+}
+
+func (x *ValueModel) GetDefinitionJson() []byte {
+	if x != nil {
+		return x.DefinitionJson
 	}
 	return nil
 }
@@ -4629,7 +4639,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x04Root\x12\x14\n" +
 	"\x10ROOT_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aCONTENT\x10\x01\x12\x18\n" +
-	"\x14INHERITED_ATTRIBUTES\x10\x02\"\xf4\x02\n" +
+	"\x14INHERITED_ATTRIBUTES\x10\x02\"\x9d\x03\n" +
 	"\n" +
 	"ValueModel\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12]\n" +
@@ -4638,7 +4648,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\bencoding\x18\x04 \x01(\tR\bencoding\x12+\n" +
 	"\x11definition_sha256\x18\x05 \x01(\tR\x10definitionSha256\x12)\n" +
 	"\x10canonical_format\x18\x06 \x01(\tR\x0fcanonicalFormat\x12X\n" +
-	"\x0esource_formats\x18\a \x03(\x0e21.ptah.provider.experimental.SourceDocument.FormatR\rsourceFormats\"\xdf\x01\n" +
+	"\x0esource_formats\x18\a \x03(\x0e21.ptah.provider.experimental.SourceDocument.FormatR\rsourceFormats\x12'\n" +
+	"\x0fdefinition_json\x18\b \x01(\fR\x0edefinitionJson\"\xdf\x01\n" +
 	"\x0eModelKnowledge\x12F\n" +
 	"\x05state\x18\x01 \x01(\x0e20.ptah.provider.experimental.ModelKnowledge.StateR\x05state\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"m\n" +

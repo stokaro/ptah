@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/providercatalog"
 )
@@ -37,6 +38,8 @@ type Host struct {
 	description *protocol.Description
 	artifact    string
 	targets     map[string]*target
+	models      map[modelKey]*modelContract
+	modelCodecs []schemaext.Codec
 }
 
 type target struct {
@@ -66,6 +69,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 			return nil, fmt.Errorf("%w: engine %q does not declare the common table identity contract", provider.ErrProtocol, engine.GetId())
 		}
 		host.targets[engine.GetId()] = &target{host: host, engine: engine}
+	}
+	if err := host.initializeModels(); err != nil {
+		client.Close()
+		return nil, err
 	}
 	return host, nil
 }
@@ -109,7 +116,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 	if err != nil {
 		return catalog.ProviderIdentity{}, err
 	}
-	// Version 1 is a fixed host-owned JSON projection. Repeated protocol fields
+	// Version 2 is a fixed host-owned JSON projection. Repeated protocol fields
 	// are sets here; their wire order is not semantic identity. Session IDs and
 	// database addresses are deliberately absent.
 	projection := struct {
@@ -119,7 +126,8 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		EngineFeatures     []string             `json:"engine_features"`
 		SessionFeatures    []string             `json:"session_features"`
 		OfflineIdentifiers identifier.Semantics `json:"offline_identifiers"`
-	}{1, t.engine.GetId(), featureSet(t.host.description.GetFeatures()), featureSet(t.engine.GetFeatures()), featureSet(session.GetFeatures()), rules}
+		Models             []modelIdentity      `json:"models"`
+	}{2, t.engine.GetId(), featureSet(t.host.description.GetFeatures()), featureSet(t.engine.GetFeatures()), featureSet(session.GetFeatures()), rules, modelIdentities(t.engine.GetValueModels())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return catalog.ProviderIdentity{}, fmt.Errorf("encode negotiated provider contract: %w", err)

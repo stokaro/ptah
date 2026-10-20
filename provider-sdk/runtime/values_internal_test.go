@@ -79,10 +79,10 @@ func (*mutatingNormalizer) NormalizeValues(_ context.Context, request *protocol.
 	}}}, nil
 }
 
-const testModelDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+const testModelDigest = "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0"
 
 func normalizationExchange() (*protocol.Description, *protocol.NormalizeValuesRequest, *protocol.NormalizedValues) {
-	description := &protocol.Description{ProviderId: "example.org/test", Features: []string{provider.NormalizeValuesFeature}, Engines: []*protocol.Engine{{Id: "test", ValueModels: []*protocol.ValueModel{{Kind: "example.org/test/value", Representation: protocol.ValueInput_DESIRED, SchemaVersion: 1, Encoding: "json", DefinitionSha256: testModelDigest, CanonicalFormat: "example.org/value-v1"}}}}}
+	description := &protocol.Description{ProviderId: "example.org/test", Features: []string{provider.NormalizeValuesFeature}, Engines: []*protocol.Engine{{Id: "test", ValueModels: []*protocol.ValueModel{{Kind: "example.org/test/value", Representation: protocol.ValueInput_DESIRED, SchemaVersion: 1, Encoding: "json", DefinitionJson: []byte(`{"type":"object"}`), DefinitionSha256: testModelDigest, CanonicalFormat: "example.org/value-v1"}}}}}
 	value := &protocol.Envelope{DefinitionSha256: testModelDigest, ProviderId: "example.org/test", Kind: "example.org/test/value", SchemaVersion: 1, Encoding: "json",
 		Owner: &protocol.Reference{Engine: "test", Kind: "table", Name: "original"}, Payload: []byte("{}")}
 	request := &protocol.NormalizeValuesRequest{Engine: "test", Values: []*protocol.ValueInput{{Id: "first", Representation: protocol.ValueInput_DESIRED, Value: value}}}

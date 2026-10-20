@@ -15,6 +15,12 @@ func TestModelDefinitionsAreNegotiatedExactly(t *testing.T) {
 		name   string
 		mutate func(*protocol.ValueModel)
 	}{
+		{"missing definition", func(m *protocol.ValueModel) { m.DefinitionJson = nil }},
+		{"empty definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{}`) }},
+		{"non-object definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`[]`) }},
+		{"noncanonical definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(` {"type":"object"} `) }},
+		{"duplicate definition key", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{"type":"object","type":"object"}`) }},
+		{"different definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{"type":"string"}`) }},
 		{"missing kind", func(m *protocol.ValueModel) { m.Kind = "" }},
 		{"missing version", func(m *protocol.ValueModel) { m.SchemaVersion = 0 }},
 		{"missing encoding", func(m *protocol.ValueModel) { m.Encoding = "" }},

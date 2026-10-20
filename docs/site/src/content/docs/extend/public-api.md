@@ -409,6 +409,13 @@ fingerprints. A document records its provider, kind, representation, version,
 and model-definition hash. Unknown or incompatible definitions are errors;
 registering a codec alone does not grant a target support for that feature.
 
+An external owner registers `Provider.ModelDecoder` and leaves `Codec.Decode`
+unset. The registry validates all envelopes before sending one ordered batch
+per owner across its kinds and representations. Errors and cancellation return
+no partial result. Resolved values copy, compare, encode, and fingerprint
+locally, even after the provider stops. Loading serialized external values
+requires the selected provider to validate them again.
+
 `chschema.DesiredTable` and `DesiredIndex` distinguish omitted settings,
 defaults, and explicit values. `ObservedTable` and `ObservedIndex` require
 complete settings; table observations keep sorting and primary keys separate.

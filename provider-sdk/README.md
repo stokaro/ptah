@@ -179,7 +179,7 @@ work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-s
 
 ## Captured extension sources
 
-Experimental revision 4 adds `source.decode` and exact `ValueModel` identities.
+Experimental revision 5 carries `source.decode` and complete `ValueModel` definitions.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
 session, connection address, host AST, or callback. The host evaluates frontend
@@ -188,9 +188,11 @@ expressions and enforces file access policy before capture.
 Each document explicitly enrolls desired models from the selected engine's
 negotiated description. A model identifies its kind, representation, schema
 version, encoding, SHA-256 definition digest, canonical projection format, and
-accepted source formats. The owner hashes its canonical model definition;
-Protobuf bytes and value payloads are not model definitions. The SDK checks
-exact agreement with the negotiated identity, not the truth of the definition.
+accepted source formats. The full definition is a nonempty JSON object
+normalized by `modeljson.Canonical`. The SDK verifies its exact SHA-256 digest
+and refuses duplicate keys, lossy strings, or a changed definition. Number text
+remains exact. Protobuf bytes and value payloads are not model definitions.
+These checks bind the declared format; they do not prove engine semantics.
 
 Captured values preserve missing entries, explicit null, false, empty values,
 exact number text, expressions, and structured references. Mapping keys,
