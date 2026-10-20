@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -147,5 +149,28 @@ func TestMissingOfficialProviderDiagnosticsAcrossNativeCommands(t *testing.T) {
 				c.Assert(report.Diagnostic.SetupURL, qt.Equals, entry.SetupURL)
 			})
 		}
+	}
+}
+
+func TestProviderSetupLinksMatchPublishedDocumentation(t *testing.T) {
+	c := qt.New(t)
+	site := filepath.Join("..", "..", "docs", "site")
+	declaration, err := os.ReadFile(filepath.Join(site, "src", "lib", "docs-origin.mjs"))
+	c.Assert(err, qt.IsNil)
+	origin := regexp.MustCompile(`(?m)^export const Origin = '([^']+)';$`).FindSubmatch(declaration)
+	c.Assert(origin, qt.HasLen, 2)
+	ledger, err := os.ReadFile(filepath.Join(site, "scripts", "data", "published-routes.json"))
+	c.Assert(err, qt.IsNil)
+	for _, entry := range providercatalog.Entries() {
+		parsed, err := url.Parse(entry.SetupURL)
+		c.Assert(err, qt.IsNil)
+		c.Assert(parsed.Scheme+"://"+parsed.Host, qt.Equals, string(origin[1]))
+		c.Assert(strings.HasPrefix(parsed.Path, "/edge/"), qt.IsTrue)
+		route := strings.TrimPrefix(parsed.Path, "/edge")
+		c.Assert(string(ledger), qt.Contains, `"`+route+`"`)
+		page := filepath.Join(site, "src", "content", "docs", strings.Trim(route, "/")+".md")
+		content, err := os.ReadFile(page)
+		c.Assert(err, qt.IsNil)
+		c.Assert(string(content), qt.Contains, entry.ProviderID)
 	}
 }
