@@ -298,15 +298,24 @@ func validateRepositoryIntegrationLayout(ctx context.Context, config Config) err
 		ctx,
 		"git",
 		"-c", "core.quotePath=false",
-		"ls-files", "--full-name", "--cached", "--others", "--exclude-standard", "-z", "--", "*_test.go",
+		"ls-files", "--full-name", "--cached", "--others", "--exclude-standard", "-z", "--", "*_test.go", "go.mod", "*/go.mod",
 	)
 	listCommand.Dir = config.Dir
 	output, err := listCommand.Output()
 	if err != nil {
 		return fmt.Errorf("list repository test files for integration layout: %w", err)
 	}
+	// Module boundaries come from the same git inventory as tests. A linked
+	// checkout parked below this one contributes neither modules nor tests.
+	var modules []string
 	for rawPath := range bytes.SplitSeq(output, []byte{0}) {
-		if len(rawPath) == 0 {
+		path := filepath.ToSlash(string(rawPath))
+		if filepath.Base(path) == "go.mod" {
+			modules = append(modules, strings.TrimSuffix(path, "go.mod"))
+		}
+	}
+	for rawPath := range bytes.SplitSeq(output, []byte{0}) {
+		if len(rawPath) == 0 || !bytes.HasSuffix(rawPath, []byte("_test.go")) {
 			continue
 		}
 		relativePath := filepath.ToSlash(string(rawPath))
@@ -314,7 +323,7 @@ func validateRepositoryIntegrationLayout(ctx context.Context, config Config) err
 		if err != nil {
 			return err
 		}
-		allowedPath := integrationTestPathAllowed(relativePath)
+		allowedPath := integrationTestPathAllowed(relativePath, modules)
 		if policy.positive && !policy.required {
 			return fmt.Errorf("integration test file %s has a build constraint that can select it without integration", relativePath)
 		}
@@ -339,8 +348,16 @@ func validateRepositoryIntegrationLayout(ctx context.Context, config Config) err
 	return nil
 }
 
-func integrationTestPathAllowed(path string) bool {
-	return strings.HasPrefix(path, "integration/")
+func integrationTestPathAllowed(path string, modules []string) bool {
+	// The nearest module owns a test. A directory named integration elsewhere
+	// does not enroll a package in the module's integration contour.
+	var owner string
+	for _, module := range modules {
+		if len(module) > len(owner) && strings.HasPrefix(path, module) {
+			owner = module
+		}
+	}
+	return strings.HasPrefix(strings.TrimPrefix(path, owner), "integration/")
 }
 
 func validateIntegrationFilePackage(path, relativePath string) error {

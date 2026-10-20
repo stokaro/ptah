@@ -1,0 +1,169 @@
+syntax = "proto3";
+
+package ptah.provider.experimental;
+
+option go_package = "github.com/stokaro/ptah/provider-sdk/protocol/experimental;protocol";
+
+// Provider is the experimental, local subprocess boundary. Each request is a
+// whole semantic batch. This revision makes no cross-revision compatibility
+// promise and does not serialize host ASTs or Go interface values.
+service Provider {
+  rpc Describe(DescribeRequest) returns (Description);
+  rpc Open(OpenRequest) returns (Session);
+  rpc Close(CloseRequest) returns (Empty);
+  rpc Inspect(InspectRequest) returns (Schema);
+  rpc Render(RenderRequest) returns (RenderResult);
+  rpc Execute(ExecuteRequest) returns (Execution);
+}
+
+message Empty {}
+message DescribeRequest {
+  uint32 revision = 1;
+  repeated string required_features = 2;
+}
+message Description {
+  uint32 revision = 1;
+  string provider_id = 2;
+  string version = 3;
+  string semantic_identity = 4;
+  repeated Engine engines = 5;
+  repeated string features = 6;
+}
+// Engine contains transport-neutral registration data. An alias grants no
+// implementation fallback and a feature is an explicit semantic promise.
+message Engine {
+  string id = 1;
+  repeated string aliases = 2;
+  string default_schema = 3;
+  repeated string features = 4;
+}
+// Reference keeps identity components separate. Display spelling does not
+// replace normalized identity. No component is folded by the transport.
+message Reference {
+  string engine = 1;
+  string database = 2;
+  string catalog = 3;
+  string schema = 4;
+  repeated string path = 5;
+  string kind = 6;
+  string name = 7;
+  repeated string overload = 8;
+  string display_name = 9;
+}
+message Envelope {
+  string provider_id = 1;
+  string kind = 2;
+  uint32 schema_version = 3;
+  string encoding = 4;
+  Reference owner = 5;
+  bytes payload = 6;
+  repeated string required_features = 7;
+}
+message OpenRequest {
+  string engine = 1;
+  // The connection address can contain credentials. Neither logs nor durable
+  // identity records may contain it.
+  string address = 2;
+}
+message Session {
+  string id = 1;
+  string engine = 2;
+  string database = 3;
+  string default_schema = 4;
+  string server_version = 5;
+  repeated string features = 6;
+}
+message CloseRequest {
+  string session_id = 1;
+}
+message InspectRequest {
+  string session_id = 1;
+  repeated string schemas = 2;
+}
+// A false completeness bit is a refused comparison input, never an empty
+// authoritative catalog. Unsupported observed facts carry dispositions.
+message Schema {
+  bool complete = 1;
+  repeated Table tables = 2;
+  repeated Envelope native_objects = 3;
+  repeated Disposition dispositions = 4;
+}
+message Table {
+  Reference identity = 1;
+  repeated Column columns = 2;
+  repeated Envelope facets = 3;
+}
+message Column {
+  string name = 1;
+  string type = 2;
+  bool nullable = 3;
+  bool primary_key = 4;
+  optional string default_expression = 5;
+  repeated Envelope facets = 6;
+}
+message Disposition {
+  Reference object = 1;
+  string field_path = 2;
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    MODELED = 1;
+    NORMALIZED = 2;
+    UNSUPPORTED = 3;
+    NOT_INSPECTED = 4;
+  }
+  State state = 3;
+  string reason = 4;
+}
+// Change is a typed rendering contribution, not a serialized host AST. The
+// host compares and orders changes; the owner renders their engine semantics.
+message Change {
+  string id = 1;
+  Reference object = 2;
+  oneof operation {
+    Table create_table = 3;
+    Empty drop_table = 4;
+    Column add_column = 5;
+    string drop_column = 6;
+    Envelope native = 7;
+  }
+}
+message RenderRequest {
+  string engine = 1;
+  repeated Change changes = 2;
+  repeated string target_features = 3;
+}
+message Unit {
+  string change_id = 1;
+  oneof body {
+    string sql = 2;
+    Envelope native = 3;
+  }
+}
+message RenderResult {
+  bool complete = 1;
+  repeated Unit units = 2;
+}
+message ExecuteRequest {
+  string session_id = 1;
+  // Correlation only. A request ID does not promise exactly-once execution.
+  string request_id = 2;
+  repeated Unit units = 3;
+}
+message Execution {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    NOT_STARTED = 1;
+    RUNNING = 2;
+    APPLIED = 3;
+    NOT_APPLIED = 4;
+    PARTIAL = 5;
+    UNKNOWN = 6;
+  }
+  Outcome outcome = 1;
+  // A contiguous prefix of the request's units, confirmed applied. A lost
+  // reply cannot be used as evidence that the remaining units did not apply.
+  uint32 applied_count = 2;
+  string diagnostic_code = 3;
+  // Provider-authored, redacted text. Never include credentials or raw URLs.
+  string message = 4;
+}
