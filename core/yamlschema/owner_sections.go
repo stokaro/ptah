@@ -101,6 +101,9 @@ func ownedKeys(owners yamlext.Set, entry, origin string, owned map[string]yaml.N
 // document's feature objects, a facet to the table, the last one db holds.
 func addTableSections(db *schemamodel.Database, owners yamlext.Set, data []byte, table yamlext.Table, keys []string) error {
 	for _, key := range keys {
+		if owners.DocumentKey(yamlext.EntryTable, key) {
+			continue
+		}
 		contributions, err := owners.DecodeEntrySection(key, func(target any) error {
 			return decodeTableSection(data, table.Key, key, target)
 		}, table)
@@ -190,6 +193,9 @@ func decodeSection(data []byte, key string, target any) error {
 func (d document) addOwnerSections(db *schemamodel.Database, owners yamlext.Set, data []byte) error {
 	tables := d.documentTables(db)
 	for _, key := range sortedKeys(d.Owned) {
+		if owners.DocumentKey("", key) {
+			continue
+		}
 		contributions, err := owners.Decode(key, func(target any) error { return decodeSection(data, key, target) }, tables)
 		if err != nil {
 			return err

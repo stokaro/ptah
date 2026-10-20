@@ -47,7 +47,8 @@ type EntryAttributes struct {
 }
 
 // EntrySection is a key an owner adds to the frontend's table entries whose
-// value is not a scalar, such as the changefeeds of a YDB table.
+// value is not a scalar, such as the changefeeds of a YDB table. A document
+// owner may claim any value shape here and leaves Decode nil.
 type EntrySection struct {
 	// Key is the table entry's key. A key belongs to one owner, and never to
 	// the entry itself.
@@ -72,7 +73,7 @@ func (s *Set) claimEntryKeys(index int, extension Extension) error {
 		}
 	}
 	for _, section := range extension.EntrySections {
-		if section.Decode == nil {
+		if section.Decode == nil && extension.Document == nil {
 			return fmt.Errorf("YAML extension of %s declares a table key without a decoder", extension.Owner)
 		}
 		if err := s.claimEntryKey(index, extension, EntryTable, section.Key); err != nil {
@@ -92,8 +93,12 @@ func (s *Set) claimEntryKey(index int, extension Extension, entry, key string) e
 		s.entryKeys[entry] = claimed
 	}
 	if previous, taken := claimed[key]; taken {
+		previousOwner := extension.Owner
+		if previous < len(s.extensions) {
+			previousOwner = s.extensions[previous].Owner
+		}
 		return fmt.Errorf("%w: key %q of %s is read by %s and %s", schemaext.ErrDuplicate, key, entry,
-			s.extensions[previous].Owner, extension.Owner)
+			previousOwner, extension.Owner)
 	}
 	claimed[key] = index
 	return nil
@@ -189,6 +194,9 @@ func (s Set) DecodeEntrySection(key string, decode func(target any) error, table
 		return nil, fmt.Errorf("no selected owner reads key %q of a table", key)
 	}
 	extension := s.extensions[index]
+	if extension.Document != nil {
+		return nil, fmt.Errorf("YAML table key %q requires whole-document decoding", key)
+	}
 	for _, section := range extension.EntrySections {
 		if section.Key != key {
 			continue
