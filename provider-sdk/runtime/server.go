@@ -41,12 +41,13 @@ var handshake = plugin.HandshakeConfig{
 // copied before serving. Advertised services must have implementations. Service
 // implementations must honor cancellation and isolate sessions and credentials.
 type Server struct {
-	Description *protocol.Description
-	Sessions    provider.Sessions
-	Inspector   provider.Inspector
-	Renderer    provider.Renderer
-	Executor    provider.Executor
-	SQLAnalyzer provider.SQLAnalyzer
+	Description     *protocol.Description
+	Sessions        provider.Sessions
+	Inspector       provider.Inspector
+	Renderer        provider.Renderer
+	Executor        provider.Executor
+	SQLAnalyzer     provider.SQLAnalyzer
+	ValueNormalizer provider.ValueNormalizer
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -65,6 +66,7 @@ func (s Server) Validate() error {
 		{provider.RenderFeature, !nilService(s.Renderer)},
 		{provider.ExecuteFeature, !nilService(s.Executor)},
 		{provider.AnalyzeSQLFeature, !nilService(s.SQLAnalyzer)},
+		{provider.NormalizeValuesFeature, !nilService(s.ValueNormalizer)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

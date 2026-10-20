@@ -39,3 +39,22 @@ func TestCanceledStartupDoesNotNeedAnExecutable(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(client, qt.IsNil)
 }
+
+func TestServerRequiresAdvertisedValueNormalizer(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}}
+	server := transport.Server{Description: description, Sessions: &sessions{}, ValueNormalizer: &normalizer{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Features = []string{provider.NormalizeValuesFeature}
+	c.Assert(server.Validate(), qt.IsNil)
+	server.ValueNormalizer = (*normalizer)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.ValueNormalizer = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type normalizer struct{}
+
+func (*normalizer) NormalizeValues(context.Context, *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
+	return &protocol.NormalizedValues{Complete: true}, nil
+}
