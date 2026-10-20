@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"ptah.run/core/planext"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -18,6 +16,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
