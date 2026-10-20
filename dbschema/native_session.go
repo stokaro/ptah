@@ -71,6 +71,18 @@ func WithNativeConnections(ctx context.Context, registrations map[string]NativeR
 	return context.WithValue(ctx, nativeConnectionsKey{}, selected), nil
 }
 
+// NativeTargets returns the selected URL schemes and their canonical targets.
+// Source classification and connection dispatch must use the same frozen
+// registrations. The returned copy exposes no connector or mutable selection.
+func NativeTargets(ctx context.Context) map[string]string {
+	selected, _ := ctx.Value(nativeConnectionsKey{}).(map[string]NativeRegistration)
+	targets := make(map[string]string, len(selected))
+	for scheme, registration := range selected {
+		targets[scheme] = registration.Target
+	}
+	return targets
+}
+
 func nilNativeService(value any) bool {
 	if value == nil {
 		return true

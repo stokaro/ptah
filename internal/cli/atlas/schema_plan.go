@@ -487,7 +487,7 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 // against.
 func ensureAtlasPlanDatabaseURL(verb, raw string) error {
 	trimmed := strings.TrimSpace(raw)
-	source, err := atlassource.Classify(trimmed)
+	source, err := atlassource.Classify(trimmed, nil)
 	if err != nil || source.Kind != atlassource.KindDatabase {
 		return fmt.Errorf("%s requires --from to be the target database URL the plan will be applied to "+
 			"(got %q); local desired-state schema files belong in --to", verb, raw)

@@ -41,6 +41,11 @@ type Result struct {
 	// can contain several statements. Separators belong to the fragments, so
 	// concatenating them without additional text produces the complete script.
 	Fragments []string
+	// ExecutableUnits means each nonempty fragment is already one exact
+	// execution unit. Consumers must preserve its bytes and boundary rather
+	// than split it with a host SQL grammar. Script concatenation must still
+	// be valid; separators remain the rendering owner's responsibility.
+	ExecutableUnits bool
 	// Omissions records declarations the target did not emit, in the provider's
 	// deterministic report order. Reporting need not cover every unsupported
 	// property; an empty list does not establish lossless rendering.

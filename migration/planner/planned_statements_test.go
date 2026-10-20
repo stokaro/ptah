@@ -87,3 +87,13 @@ func TestRenderedPlanPlannedStatements(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderedPlanPreservesOwnerExecutionUnits(t *testing.T) {
+	c := qt.New(t)
+	first := "OWNER BEGIN; step one; step two; END;\n"
+	last := "DROP TABLE other;\n"
+	plan := planner.RenderedPlan{Result: renderer.Result{Complete: true, ExecutableUnits: true, Fragments: []string{first, "", last}}, Dialect: "external"}
+	c.Assert(plan.PlannedStatements(), qt.DeepEquals, []planner.PlannedStatement{{SQL: first, Node: 0}, {SQL: last, Node: 2}})
+	c.Assert(plan.Statements(), qt.DeepEquals, []string{first, last})
+	c.Assert(plan.SQL(), qt.Equals, first+last)
+}

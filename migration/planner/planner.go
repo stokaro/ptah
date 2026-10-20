@@ -327,6 +327,15 @@ type PlannedStatement struct {
 // a SQL Server routine whose body would otherwise reach the end of the batch,
 // still ends where its node ends.
 func (p RenderedPlan) PlannedStatements() []PlannedStatement {
+	if p.Result.ExecutableUnits {
+		units := make([]PlannedStatement, 0, len(p.Result.Fragments))
+		for node, sql := range p.Result.Fragments {
+			if sql != "" {
+				units = append(units, PlannedStatement{SQL: sql, Node: node})
+			}
+		}
+		return units
+	}
 	var statements []PlannedStatement
 	carry := ""
 	for node, fragment := range p.Result.Fragments {

@@ -43,7 +43,7 @@ func BeginTransaction(
 	conn *dbschema.DatabaseConnection,
 	statements []string,
 ) (catalog.SchemaTransaction, error) {
-	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
+	if unwrapped, ok := beginWithoutTransaction(conn.Info(), conn.Writer()); ok {
 		return unwrapped, nil
 	}
 	if sqliteforeignkeys.Brackets(statements) {
@@ -59,7 +59,7 @@ func BeginTransactionForSQL(
 	conn *dbschema.DatabaseConnection,
 	sqlText string,
 ) (catalog.SchemaTransaction, error) {
-	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
+	if unwrapped, ok := beginWithoutTransaction(conn.Info(), conn.Writer()); ok {
 		return unwrapped, nil
 	}
 	if sqliteforeignkeys.BracketsSQL(sqlText) {
@@ -76,7 +76,7 @@ func BeginTransactionForAnySQL(
 	conn *dbschema.DatabaseConnection,
 	sqlTexts []string,
 ) (catalog.SchemaTransaction, error) {
-	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
+	if unwrapped, ok := beginWithoutTransaction(conn.Info(), conn.Writer()); ok {
 		return unwrapped, nil
 	}
 	if slices.ContainsFunc(sqlTexts, sqliteforeignkeys.BracketsSQL) {
@@ -103,12 +103,14 @@ func BeginTransactionForAnySQL(
 // inside one.
 //
 // This is the only place schema SQL opens a transaction, which is why the
-// answer belongs here rather than in each writer.
+// answer belongs here rather than in each writer. External providers own their
+// transaction behavior; their empty built-in capability profile cannot authorize
+// this wrapper. Their writer must accept or refuse the requested transaction.
 func beginWithoutTransaction(
-	caps capability.Capabilities,
+	info catalog.ServerInfo,
 	writer catalog.SchemaExecutor,
 ) (catalog.SchemaTransaction, bool) {
-	if writer == nil || caps.Has(capability.DDLInsideTransaction) {
+	if writer == nil || !info.Provider.IsZero() || info.Capabilities.Has(capability.DDLInsideTransaction) {
 		return nil, false
 	}
 	return unwrappedTransaction{writer: writer}, true

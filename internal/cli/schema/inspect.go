@@ -415,7 +415,7 @@ func resolveInspectSources(opts schemaInspectOptions) ([]string, error) {
 		if err := cmdutil.StatDir(dir); err != nil {
 			return nil, err
 		}
-		source, err := atlassource.Classify(dir)
+		source, err := atlassource.Classify(dir, nil)
 		if err != nil {
 			return nil, fmt.Errorf("--%s %q: %w", inspectMigrationsDirFlag, opts.migrationsDir, err)
 		}

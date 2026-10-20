@@ -759,7 +759,7 @@ func loadDesiredApplySchema(
 		set = *opts.PreparedTo
 	} else {
 		var err error
-		set, err = atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+		set, err = atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -908,14 +908,14 @@ func loadAndValidateDesiredApplySchema(
 // desiredApplySet classifies the --to sources the way the load will, for a
 // refusal that has to be decided before anything is contacted. A source the
 // load would refuse classifies as nothing, and the load reports it.
-func desiredApplySet(opts ApplyRuntimeOptions) atlassource.Set {
+func desiredApplySet(ctx context.Context, opts ApplyRuntimeOptions) atlassource.Set {
 	if opts.PreparedTo != nil {
 		return *opts.PreparedTo
 	}
 	if opts.Desired != nil {
 		return atlassource.Set{}
 	}
-	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
 	if err != nil {
 		return atlassource.Set{}
 	}
@@ -935,7 +935,7 @@ func PrepareApply(
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
-	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL, desiredApplySet(opts), opts.Runtime.HCL()); err != nil {
+	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL, desiredApplySet(ctx, opts), opts.Runtime.HCL()); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 

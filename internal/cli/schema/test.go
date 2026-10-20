@@ -343,7 +343,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
 	}
 	if source := strings.TrimSpace(opts.sourceDBURL); source != "" {
-		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{})
+		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -352,7 +352,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		}
 		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
 	}
-	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{}, nil)
 	if err == nil && set.Kind == atlassource.KindDatabase {
 		if err := noteRootDirShape(diag, testSourceDBURLFlag, opts.rootDir); err != nil {
 			return nil, err

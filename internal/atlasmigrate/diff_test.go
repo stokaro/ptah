@@ -778,7 +778,7 @@ func assertDevDatabaseEmpty(c *qt.C, conn *dbschema.DatabaseConnection) {
 
 func localDesiredSet(c *qt.C, rawURL string) atlassource.Set {
 	c.Helper()
-	set, err := atlassource.ClassifySet("--to", []string{rawURL}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{rawURL}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 	return set
 }

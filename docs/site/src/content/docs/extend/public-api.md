@@ -757,7 +757,8 @@ connection afterward to prevent state leaks. `WithSessionOrCurrent` reuses an
 existing pinned session and its lifecycle, or pins a pool-backed connection.
 
 `dbschema.WithNativeConnections` selects explicit URL-scheme bindings for
-provider-owned sessions. `NativeConnector` opens each session with the requested
+provider-owned sessions. `dbschema.NativeTargets` returns a defensive copy of
+the same selection for URL classification. `NativeConnector` opens each session with the requested
 database or server scope. The connector must report the selected target,
 identifier semantics, and a complete `catalog.ProviderIdentity`. That identity
 records the provider ID, version, semantic identity, executable SHA-256,
@@ -1022,3 +1023,9 @@ and missing planners are refused.
 
 The process-wide planner registration and lookup functions are removed.
 Embedders import the neutral contracts and pass their runtime explicitly.
+
+For native CLI selection, see [executable providers](../executable-providers/).
+A renderer sets `renderer.Result.ExecutableUnits` when its fragments already
+carry exact execution boundaries. Planning preserves each unit's bytes and node
+provenance. Safety assessment keeps those boundaries and consults the selected
+owner for SQL analysis.

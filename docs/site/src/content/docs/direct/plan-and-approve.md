@@ -169,6 +169,8 @@ rules used during planning. Apply checks that binding before reading the target.
 A changed or missing provider binding requires a new plan and approval, even if
 the schema has not changed. Addresses and credentials are excluded. The Atlas
 `.plan.hcl` format cannot preserve this binding and refuses such plans.
+Use the same explicit [provider configuration](../../extend/executable-providers/)
+for planning and application.
 
 When the database already matches the desired schema, the command prints
 `Schema is synced, no changes to be made.` and writes no file at all. A script

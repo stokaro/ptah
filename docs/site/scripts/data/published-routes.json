@@ -43,6 +43,7 @@
   "/examples/yaml-schema/",
   "/extend/components/",
   "/extend/editor-and-shell/",
+  "/extend/executable-providers/",
   "/extend/overview/",
   "/extend/public-api/",
   "/extend/query-builder/",

@@ -129,7 +129,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	prepared, err := prepareDiffSources(opts)
+	prepared, err := prepareDiffSources(ctx, opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -852,12 +852,12 @@ type preparedDiffSources struct {
 	dialectFlag string
 }
 
-func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
-	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv)
+func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSources, error) {
+	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
 	if err != nil {
 		return preparedDiffSources{}, err
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
 	if err != nil {
 		return preparedDiffSources{}, err
 	}

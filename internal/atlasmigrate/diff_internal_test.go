@@ -211,7 +211,7 @@ func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
 	desired, err := atlassource.ClassifySet(
 		"--to",
 		[]string{"file://" + desiredPath},
-		atlassource.ProjectEnv{},
+		atlassource.ProjectEnv{}, nil,
 	)
 	c.Assert(err, qt.IsNil)
 	conn := connectDiffComparisonSQLite(c)
@@ -1454,7 +1454,7 @@ CREATE VIEW replayed_user_ids AS SELECT id FROM replayed_users;
 	desired, err := atlassource.ClassifySet(
 		"--to",
 		[]string{"file://" + schemaPath},
-		atlassource.ProjectEnv{},
+		atlassource.ProjectEnv{}, nil,
 	)
 	c.Assert(err, qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(

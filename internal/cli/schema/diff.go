@@ -188,14 +188,14 @@ func validateSchemaDiffSources(opts schemaDiffOptions, selections selectext.Set)
 	// Classification rejects unsupported schemes and source conflicts, and
 	// migration-directory sources require a dev database, before any database
 	// is contacted. --from is validated first, then --to.
-	fromSet, err := atlassource.ClassifySet("--"+diffFromFlag, opts.fromURLs, atlassource.ProjectEnv{})
+	fromSet, err := atlassource.ClassifySet("--"+diffFromFlag, opts.fromURLs, atlassource.ProjectEnv{}, nil)
 	if err != nil {
 		return err
 	}
 	if err := fromSet.EnsureDevDatabase(opts.devURL); err != nil {
 		return err
 	}
-	toSet, err := atlassource.ClassifySet("--"+diffToFlag, opts.toURLs, atlassource.ProjectEnv{})
+	toSet, err := atlassource.ClassifySet("--"+diffToFlag, opts.toURLs, atlassource.ProjectEnv{}, nil)
 	if err != nil {
 		return err
 	}

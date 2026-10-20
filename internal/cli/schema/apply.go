@@ -413,7 +413,7 @@ func applySchema(
 		// Classification rejects unsupported schemes and source conflicts, and
 		// the dev-database requirement is checked here, before the target
 		// database is contacted.
-		set, err := atlassource.ClassifySet("--"+applyToFlag, opts.toURLs, atlassource.ProjectEnv{})
+		set, err := atlassource.ClassifySet("--"+applyToFlag, opts.toURLs, atlassource.ProjectEnv{}, dbschema.NativeTargets(cmd.Context()))
 		if err != nil {
 			return "", err
 		}

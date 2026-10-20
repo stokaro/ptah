@@ -283,3 +283,16 @@ func TestNativeSessionRefusesAChangedProviderIdentity(t *testing.T) {
 	c.Assert(fixture.sessions[1].closes.Load(), qt.Equals, int64(1))
 	c.Assert(conn.Info().Provider, qt.Equals, nativeIdentity())
 }
+
+func TestNativeTargetsExposeTheFrozenSelectionWithoutOpening(t *testing.T) {
+	c := qt.New(t)
+	fixture := &nativeFixture{}
+	ctx := nativeContext(c, fixture)
+	targets := dbschema.NativeTargets(ctx)
+	c.Assert(targets, qt.DeepEquals, map[string]string{"example": "example"})
+	targets["example"] = "changed"
+	targets["other"] = "other"
+	c.Assert(dbschema.NativeTargets(ctx), qt.DeepEquals, map[string]string{"example": "example"})
+	c.Assert(dbschema.NativeTargets(t.Context()), qt.HasLen, 0)
+	c.Assert(fixture.opens.Load(), qt.Equals, int64(0))
+}

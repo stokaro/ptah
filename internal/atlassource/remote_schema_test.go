@@ -44,7 +44,7 @@ func TestClassify_RemoteSchemaMarkerIsReserved(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := atlassource.Classify(
-		projectconfig.RemoteSchemaMarkerScheme + "://ghcr.io/acme/app:prod")
+		projectconfig.RemoteSchemaMarkerScheme+"://ghcr.io/acme/app:prod", nil)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "reserved internal marker scheme")
@@ -60,7 +60,7 @@ func TestClassify_RemoteSchemaMarkerIsReserved(t *testing.T) {
 func TestClassify_OCIStaysUnsupportedOnAFlag(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlassource.Classify("oci://ghcr.io/acme/app:prod")
+	_, err := atlassource.Classify("oci://ghcr.io/acme/app:prod", nil)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unsupported desired-state URL scheme "oci"`)
@@ -75,7 +75,7 @@ func TestClassifySet_RemoteSchemaMarkerFromEnvResolvesToTheArtifact(t *testing.T
 	host := schemaartifacttest.StartSchemaArtifactRegistry(c, "acme/app", "prod", remoteUsersSchema())
 	marker := projectconfig.RemoteSchemaMarkerScheme + "://oci://" + host + "/acme/app:prod"
 
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker))
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker), nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindRemoteSchema)
 
@@ -102,7 +102,7 @@ func TestClassifySet_RemoteSchemaMissingArtifactNamesTheReference(t *testing.T) 
 	host := schemaartifacttest.StartSchemaArtifactRegistry(c, "acme/app", "prod", remoteUsersSchema())
 	marker := projectconfig.RemoteSchemaMarkerScheme + "://oci://" + host + "/acme/app:absent"
 
-	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker))
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker), nil)
 	c.Assert(err, qt.IsNil)
 	_, err = set.Resolve(c.TB.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
@@ -116,7 +116,7 @@ func TestClassifyEnv_RemoteSchemaMarkerWithoutAReferenceIsRefused(t *testing.T) 
 	c := qt.New(t)
 	marker := projectconfig.RemoteSchemaMarkerScheme + "://"
 
-	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker))
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker), nil)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "carries no artifact reference")

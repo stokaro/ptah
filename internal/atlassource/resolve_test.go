@@ -35,7 +35,7 @@ func seedSQLite(t *testing.T, ddl string) string {
 func classifySingle(t *testing.T, flag, url string) atlassource.Set {
 	t.Helper()
 	c := qt.New(t)
-	set, err := atlassource.ClassifySet(flag, []string{url}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet(flag, []string{url}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 	return set
 }
@@ -220,7 +220,7 @@ func TestResolve_MigrationDirWithoutSumViaEnvReplays(t *testing.T) {
 		BaseDir: baseDir,
 		Config:  projectconfig.Config{Migration: projectconfig.MigrationConfig{Dir: "file://migrations"}},
 	}
-	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"}, env)
+	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"}, env, nil)
 	c.Assert(err, qt.IsNil)
 
 	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),

@@ -30,7 +30,7 @@ func classifiedTo(c *qt.C, name, contents string) atlassource.Set {
 	} else {
 		c.Assert(os.WriteFile(path, []byte(contents), 0o600), qt.IsNil)
 	}
-	set, err := atlassource.ClassifySet("--to", []string{"file://" + filepath.ToSlash(path)}, atlassource.ProjectEnv{})
+	set, err := atlassource.ClassifySet("--to", []string{"file://" + filepath.ToSlash(path)}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 	return set
 }

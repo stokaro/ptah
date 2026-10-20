@@ -151,7 +151,7 @@ func atlasDesiredStateURLDiagnostic(rawURL string) error {
 	if strings.TrimSpace(rawURL) == "" {
 		return errors.New(atlasMissingSchemeMessage)
 	}
-	_, err := atlassource.Classify(rawURL)
+	_, err := atlassource.Classify(rawURL, nil)
 	if unsupported, ok := errors.AsType[*atlassource.UnsupportedSchemeError](err); ok {
 		return atlasUnknownDriverError(unsupported.Scheme)
 	}

@@ -285,10 +285,7 @@ func AssessRenderedWithCapabilities(
 	rendered := make([][]string, len(units))
 	var all []string
 	for i := range units {
-		statements := sqlutil.SplitSQLStatementsForDialect(result.Fragments[i], dialect)
-		if len(statements) == 0 && strings.TrimSpace(result.Fragments[i]) != "" {
-			statements = []string{strings.TrimSpace(result.Fragments[i])}
-		}
+		statements := renderedFragmentStatements(result, i, dialect)
 		rendered[i] = statements
 		all = append(all, statements...)
 	}
@@ -1249,4 +1246,19 @@ func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int
 		unforced++
 	}
 	return forced, unforced
+}
+
+func renderedFragmentStatements(result renderer.Result, index int, dialect string) []string {
+	fragment := result.Fragments[index]
+	if result.ExecutableUnits {
+		if fragment == "" {
+			return nil
+		}
+		return []string{fragment}
+	}
+	statements := sqlutil.SplitSQLStatementsForDialect(fragment, dialect)
+	if len(statements) == 0 && strings.TrimSpace(fragment) != "" {
+		return []string{strings.TrimSpace(fragment)}
+	}
+	return statements
 }

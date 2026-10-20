@@ -420,7 +420,7 @@ func checkAtlasSchemaApplyDevURL(devURL string) error {
 // database is contacted. validateAtlasSchemaApplyOptions refused a source that
 // does not classify already, so an error here classifies as nothing.
 func classifiedAtlasApplyTo(opts atlasSchemaApplyOptions, projectEnv atlassource.ProjectEnv) atlassource.Set {
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 	if err != nil {
 		return atlassource.Set{}
 	}
@@ -537,7 +537,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
 	var preparedTo *atlassource.Set
 	if migrationSourceValidator != nil {
-		toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+		toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -1383,7 +1383,7 @@ func validateAtlasSchemaApplyOptions(
 	// Classification rejects unsupported schemes and source conflicts before
 	// the target database is contacted. The dev-database requirement is
 	// [ensureAtlasSchemaApplyDevURL]'s, after the flag values are parsed.
-	_, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	_, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 	return err
 }
 
@@ -1486,7 +1486,7 @@ func ensureAtlasSchemaApplyDevURL(
 	if strings.TrimSpace(opts.devURL) != "" {
 		return nil
 	}
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
 	if err != nil || set.Kind == atlassource.KindDatabase || len(set.Sources) == 0 ||
 		set.DeclarativeLocalFiles() {
 		// A classification error was already refused by

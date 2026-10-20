@@ -1089,7 +1089,7 @@ func atlasSchemaTestSourceValue(value string) (string, error) {
 	if !strings.Contains(trimmed, "://") || strings.HasPrefix(trimmed, "file://") {
 		return atlasargs.LocalDirValue(value)
 	}
-	source, err := atlassource.Classify(trimmed)
+	source, err := atlassource.Classify(trimmed, nil)
 	if err != nil {
 		return "", err
 	}
@@ -1818,7 +1818,7 @@ func atlasSchemaTestSourceValueWithEnv(
 		if !strings.HasPrefix(strings.ToLower(trimmed), "env://") {
 			return atlasSchemaTestSourceValue(value)
 		}
-		set, err := atlassource.ClassifySet("-u", []string{trimmed}, projectEnv)
+		set, err := atlassource.ClassifySet("-u", []string{trimmed}, projectEnv, nil)
 		if err != nil {
 			return "", err
 		}
