@@ -72,7 +72,8 @@ inspection fails; it never represents an empty authoritative database.
 ## Plan and apply
 
 Create `schema.yaml` for the fixture's common table grammar. The fixture accepts
-unqualified tables; explicit schema qualifiers reach the provider unchanged:
+unqualified tables and explicitly non-null primary keys. Explicit schema
+qualifiers reach the provider unchanged:
 
 ```yaml
 # schema.yaml

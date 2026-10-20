@@ -31,7 +31,7 @@ func TestIndependentProviderOwnsSQLFraming(t *testing.T) {
 	c.Assert(first.Line, qt.Equals, uint32(2))
 	c.Assert(result.Files[0].Statements[1].Line, qt.Equals, uint32(3))
 	c.Assert(result.Files[1].Statements, qt.HasLen, 0)
-	for _, text := range []string{"CREATE TABLE \"x\" (\"i\" INTEGER CHECK (1));", "DROP SECRET x", "-- unsupported comment\nDROP TABLE \"x\";", "CREATE TABLE \"unterminated"} {
+	for _, text := range []string{"CREATE TABLE \"x\" (\"i\" INTEGER CHECK (1));", "DROP SECRET x", `CREATE TABLE "x" ("i" INTEGER PRIMARY KEY);`, "-- unsupported comment\nDROP TABLE \"x\";", "CREATE TABLE \"unterminated"} {
 		rejected, err := client.AnalyzeSQL(c.Context(), &protocol.AnalyzeSQLRequest{Engine: "fixture", Sources: []string{source, text}})
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(rejected, qt.IsNil)

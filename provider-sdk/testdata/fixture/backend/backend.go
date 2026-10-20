@@ -253,6 +253,9 @@ func renderColumn(column *protocol.Column) (string, error) {
 	if column.GetName() == "" || len(column.GetFacets()) != 0 || column.DefaultExpression != nil {
 		return "", fmt.Errorf("unsupported fixture column")
 	}
+	if column.GetPrimaryKey() && column.GetNullable() {
+		return "", fmt.Errorf("fixture requires an explicitly non-null primary key")
+	}
 	kind := strings.ToUpper(column.GetType())
 	switch kind {
 	case "INTEGER", "TEXT", "REAL", "BLOB":

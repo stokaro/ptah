@@ -133,10 +133,14 @@ func commonColumnWords(words []string) bool {
 		return false
 	}
 	rest := words[2:]
-	if len(rest) >= 2 && rest[0] == "NOT" && rest[1] == "NULL" {
+	notNull := len(rest) >= 2 && rest[0] == "NOT" && rest[1] == "NULL"
+	if notNull {
 		rest = rest[2:]
 	}
 	if len(rest) >= 2 && rest[0] == "PRIMARY" && rest[1] == "KEY" {
+		if !notNull {
+			return false
+		}
 		rest = rest[2:]
 	}
 	return len(rest) == 0
