@@ -9,10 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 )
 
 func modelIdentityTarget() *target {
-	description := &protocol.Description{ProviderId: "example.org/fixture", Version: "1", SemanticIdentity: "semantics", Revision: 5}
+	description := &protocol.Description{ProviderId: "example.org/fixture", Version: "1", SemanticIdentity: "semantics", Revision: provider.Revision}
 	declared := &protocol.Engine{Id: "fixture", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}, ValueModels: []*protocol.ValueModel{{Kind: "example.org/fixture/value", Representation: protocol.ValueInput_DESIRED, SchemaVersion: 1, Encoding: "json", DefinitionJson: []byte(`{"type":"object"}`), DefinitionSha256: "definition", CanonicalFormat: "format", SourceFormats: []protocol.SourceDocument_Format{protocol.SourceDocument_YAML, protocol.SourceDocument_HCL}}}}
 	return &target{host: &Host{description: description, artifact: "artifact"}, engine: declared}
 }
@@ -58,4 +59,64 @@ func TestContractIdentityDoesNotDependOnModelOrFormatOrder(t *testing.T) {
 	after, err := target.identity(nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(after.ContractSHA256, qt.Equals, before.ContractSHA256)
+}
+
+func yamlIdentityTarget() *target {
+	selected := modelIdentityTarget()
+	selected.engine.YamlSourceKeys = []*protocol.YAMLSourceKey{{Scope: protocol.YAMLSourceKey_TABLE, Key: "retention", Selector: "retention", Models: []string{"example.org/fixture/value"}}}
+	selected.host.targets = map[string]*target{"fixture": selected}
+	selected.host.description.Engines = []*protocol.Engine{selected.engine}
+	return selected
+}
+
+func TestContractAndModelDefinitionsBindYAMLGrammar(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(*protocol.YAMLSourceKey)
+	}{
+		{"key", func(key *protocol.YAMLSourceKey) { key.Key = "different" }},
+		{"scope", func(key *protocol.YAMLSourceKey) { key.Scope = protocol.YAMLSourceKey_DOCUMENT }},
+		{"selector", func(key *protocol.YAMLSourceKey) { key.Selector = "different" }},
+		{"models", func(key *protocol.YAMLSourceKey) { key.Models = []string{"example.org/fixture/other"} }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := yamlIdentityTarget()
+			contract := &modelContract{engines: map[string]*protocol.ValueModel{"fixture": target.engine.ValueModels[0]}}
+			before, err := target.identity(nil)
+			c.Assert(err, qt.IsNil)
+			definition, err := target.host.modelDefinition(contract)
+			c.Assert(err, qt.IsNil)
+			test.change(target.engine.YamlSourceKeys[0])
+			after, err := target.identity(nil)
+			c.Assert(err, qt.IsNil)
+			changedDefinition, err := target.host.modelDefinition(contract)
+			c.Assert(err, qt.IsNil)
+			c.Assert(after.ContractSHA256, qt.Not(qt.Equals), before.ContractSHA256)
+			c.Assert(string(changedDefinition), qt.Not(qt.Equals), string(definition))
+		})
+	}
+}
+
+func TestYAMLGrammarIdentityIgnoresDeclarationOrder(t *testing.T) {
+	c := qt.New(t)
+	target := yamlIdentityTarget()
+	target.engine.YamlSourceKeys[0].Models = []string{"example.org/fixture/value", "example.org/fixture/other"}
+	target.engine.YamlSourceKeys = append(target.engine.YamlSourceKeys, &protocol.YAMLSourceKey{
+		Scope: protocol.YAMLSourceKey_DOCUMENT, Key: "retention", Selector: "retention", Models: []string{"example.org/fixture/value"},
+	})
+	contract := &modelContract{engines: map[string]*protocol.ValueModel{"fixture": target.engine.ValueModels[0]}}
+	before, err := target.identity(nil)
+	c.Assert(err, qt.IsNil)
+	definition, err := target.host.modelDefinition(contract)
+	c.Assert(err, qt.IsNil)
+	target.engine.YamlSourceKeys[0].Models = []string{"example.org/fixture/other", "example.org/fixture/value"}
+	target.engine.YamlSourceKeys[0], target.engine.YamlSourceKeys[1] = target.engine.YamlSourceKeys[1], target.engine.YamlSourceKeys[0]
+	after, err := target.identity(nil)
+	c.Assert(err, qt.IsNil)
+	reorderedDefinition, err := target.host.modelDefinition(contract)
+	c.Assert(err, qt.IsNil)
+	c.Assert(after.ContractSHA256, qt.Equals, before.ContractSHA256)
+	c.Assert(string(reorderedDefinition), qt.Equals, string(definition))
 }

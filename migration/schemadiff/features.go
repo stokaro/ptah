@@ -239,7 +239,7 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 			diff.FeatureChanges = append(diff.FeatureChanges, change)
 			continue
 		}
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: change.Subject.Catalog, Schema: change.Subject.Schema, Name: change.Subject.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: change.Subject.Database, Namespace: change.Subject.Namespace, Catalog: change.Subject.Catalog, Schema: change.Subject.Schema, Name: change.Subject.Parent}
 		if change.Subject.Kind == objectidentity.KindTable {
 			parent = change.Subject
 		}

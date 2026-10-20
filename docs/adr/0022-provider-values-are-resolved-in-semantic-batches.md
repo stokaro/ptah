@@ -167,8 +167,8 @@ equality, encoding, and fingerprints remain local after provider shutdown.
 Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
 Operation and change models remain refused until their native adapters exist.
-This boundary does not yet connect frontend source capture, native object
-comparison, planning, or engine transaction and history services.
+Native object comparison, planning, and engine transaction and history
+services still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -180,9 +180,104 @@ Public YAML and Atlas HCL parsing APIs take the context explicitly; no
 old-signature wrapper substitutes a background context. This is required before
 source decoding can safely call an independent process.
 
+## YAML document capture
+
+The YAML frontend invokes a document owner after resolving all common table
+bindings. Its claimed top-level and table keys travel together, in source order,
+with original YAML nodes, source bytes, and the filename. This preserves exact
+numbers, explicit nulls, aliases, and references to later declarations. Unknown
+keys, duplicate mappings, and cyclic aliases are refused before dispatch.
+
+Validation does not impose Go integer or floating-point ranges on explicitly
+typed owner numbers. Their tags and original scalar text reach the owner
+unchanged, including decimal exponents beyond machine ranges. Finite numbers
+can be converted to exact JSON number syntax without expanding exponents or
+rounding. Nonfinite YAML values remain distinguishable at capture; a transport
+that accepts only finite numbers must refuse them explicitly.
+
+Every captured node carries a range in the original source bytes, including
+its exclusive end. Character columns from the parser are converted to byte
+columns using the source encoding. UTF-8 and UTF-16 BOMs, supplementary Unicode,
+and YAML line breaks keep their original offsets. An alias has its own range
+and shares the captured declaration node; the declaration retains its range.
+
+The maintained YAML decoder still owns schema decoding and structural checks.
+A pinned AST-only parser supplies end marks because the decoder's node API
+exposes only start positions. Before accepting a range, capture checks the
+node's kind, start position, tag, value, anchor, and child count against the
+primary parse. A disagreement fails before owner dispatch. This dependency
+supplies source locations; it does not decode Go values or select schema
+semantics. No owner keys means no range-index pass.
+
+A document owner returns contributions and desired coverage in one result.
+Missing fragments do not establish absence. The registry validates model
+ownership and table bindings, isolates mutable input per owner, and discards the
+result on cancellation or failure. The same owner cannot also register local
+per-key decoders or static coverage. In-process owners can keep their local
+callbacks; neither path serializes their values through the SDK.
+
+## Negotiated YAML ownership
+
+An engine declares each YAML key it owns, the document or table scope, the
+selector its decoder understands, and the desired models that key can declare.
+A YAML-capable model must have an explicit key claim. The host must check claims
+against common frontend keys and the other selected owners before parsing.
+Model kind names and owner JSON definitions do not imply key ownership.
+
+A captured YAML fragment carries its frozen claim. Both SDK boundaries refuse a
+changed claim, a selector mismatch, a model outside the captured document's
+scope, or a missing table binding before invoking owner code. Document keys do
+not carry an implicit table attachment. A returned value must belong to a model
+named by its fragment's key, even when the document enrolls other models.
+Other source formats cannot carry YAML claims. The host includes this grammar in contract and model-definition digests,
+with key and model declaration order normalized as sets.
+
+## Native YAML provider adapter
+
+The host registers negotiated document and table keys with the same YAML owner
+set as in-process extensions. Each engine receives its claimed fragments and
+the complete common table binding set in one offline request per document.
+A missing key still enrolls its models, requiring an explicit coverage result.
+The host does not select the first engine or treat a provider ID as an engine.
+YAML has no selected server profile, so the request declares no target features.
+
+Conversion preserves exact finite numbers, explicit nulls, string tags,
+sequence order, alias-use positions, and original encoded byte coordinates.
+Mapping merges retain YAML override precedence and declaration positions for
+inherited entries. Cyclic aliases, expansion limits, non-string mapping keys,
+nonfinite numbers, and unsupported tags cause refusal. The provider cannot
+recover missing data by reading source files.
+
+Validated results enter the shared schema as target-scoped table facets or
+native objects. Their coverage uses the registered host codec identity, and
+their canonical values require no second normalization RPC. Copying, encoding,
+and comparison of resolved values remain local after the process closes.
+Any failure discards the complete desired schema. If another registered engine
+cannot express the same model in YAML, kind-wide coverage stays uninspected;
+explicit subject records retain their engine scope. Target-specific absence
+claims need target-scoped kind coverage in the shared schema before this limit
+can be removed.
+
+The shared placement identity retains database components and ordered namespace
+paths with separate source and normalized forms. Immutable tuple nodes keep
+IDs comparable without exposing writable slices or delimiter-based keys.
+Collections, coverage, dependency capture, and codecs retain these components.
+
+A provider result that changes the path component count during normalization
+is refused: the shared model cannot pair its source and normalized components.
+Overload tuples still require a shared identity representation and are refused.
+A common table facet with database, catalog, or path qualification is refused;
+matching it by table name and schema would drop part of its identity.
+
+Facets of columns and indexes also require placement adapters. Conflicting
+values for the same model and subject across engines are refused by the shared
+collections. These gaps, HCL and Go annotation capture, and native planning
+remain part of #4204. The fixture's retention value proves transport and schema
+placement; it does not implement SQLite retention or qualify YDB extraction.
+
 ## Consequences
 
-Experimental revision 5 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 6 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic

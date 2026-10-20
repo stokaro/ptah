@@ -163,7 +163,7 @@ func (p Property) Ref() objectidentity.ID {
 // schema and name as written, and its table and column folded, with no value.
 // ok is false for any other identity.
 func RefAddress(ref objectidentity.ID) (Property, bool) {
-	if ref.Kind != objectidentity.Kind(Kind) {
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() || ref.Kind != objectidentity.Kind(Kind) {
 		return Property{}, false
 	}
 	address := Property{Schema: ref.Schema.Source, Name: ref.Name.Source}

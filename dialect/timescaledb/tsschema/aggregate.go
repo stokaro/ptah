@@ -220,7 +220,7 @@ func ObservedContinuousAggregateObject(schema, name string, aggregate ObservedCo
 // kind with a name and no table parent or signature.
 func ValidateContinuousAggregateRef(ref objectidentity.ID) error {
 	if ref.Kind != objectidentity.Kind(ContinuousAggregateKind) || strings.TrimSpace(ref.Name.Source) == "" ||
-		ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Catalog.Empty() || ref.Signature != "" {
+		ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || ref.Signature != "" {
 		return fmt.Errorf("%w: a continuous aggregate requires a schema-scoped identity", schemaext.ErrInvalidValue)
 	}
 	return nil

@@ -17,7 +17,7 @@ import (
 // Provider returns services for the explicitly selected target declarations.
 // No built-in renderer, planner, or capability preset supplies missing behavior.
 func (h *Host) Provider() engine.Provider {
-	result := engine.Provider{ID: h.description.GetProviderId(), Codecs: slices.Clone(h.modelCodecs)}
+	result := engine.Provider{ID: h.description.GetProviderId(), Codecs: slices.Clone(h.modelCodecs), YAML: h.yamlExtension()}
 	for i := range result.Codecs {
 		result.Codecs[i].Definition = slices.Clone(result.Codecs[i].Definition)
 	}

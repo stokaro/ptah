@@ -319,7 +319,7 @@ func Validate(s Synonym) error {
 
 // ValidateRef requires the identity [Synonym.Ref] gives a synonym.
 func ValidateRef(ref objectidentity.ID) error {
-	if ref.Kind != objectidentity.Kind(Kind) || ref.Name.Normalized == "" || !ref.Parent.Empty() || ref.Signature != "" {
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() || ref.Kind != objectidentity.Kind(Kind) || ref.Name.Normalized == "" || !ref.Parent.Empty() || ref.Signature != "" {
 		return fmt.Errorf("%w: invalid synonym identity %v", schemaext.ErrInvalidValue, ref)
 	}
 	return nil

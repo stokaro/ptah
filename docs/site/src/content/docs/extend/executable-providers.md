@@ -160,6 +160,13 @@ Inspection reports `items`. The second command reports `"outcome": "no-changes"`
 The CLI closes sessions and terminates its provider processes on success and
 failure.
 
+Native YAML objects retain the provider's database and ordered namespace path
+through schema capture and serialization. Identical names in different paths
+remain distinct. Table facets cannot use database, catalog, or path qualification.
+Overload tuples and normalization that changes the path component count are
+refused. Native planning for these objects remains part of
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,
@@ -188,8 +195,14 @@ A provider crash, lost response, or cancellation after dispatch can report
 does not automatically retry execution, and terminating a provider does not prove
 rollback. A stale plan refuses application after the target changes.
 
-This adapter does not support native objects, engine-specific facets, managed
-data, database cleanup, or isolated execution of untrusted SQL. It does not add
+YAML loading accepts document and table keys explicitly declared by the selected
+provider. It preserves exact numbers and source locations and requires complete
+interpretation and coverage from the owner. Unknown keys and unsupported values
+are refused. This source-loading support does not make native objects or
+engine-specific facets available to planning and execution yet.
+
+The execution adapter does not support managed data, database cleanup, or
+isolated execution of untrusted SQL. It does not add
 provider selection to `ptah-compat` or other native command groups. Project-file
 URLs and saved plans do not select a provider: pass `--provider-engine` with
 `--provider-config` for those workflows. The selected connection scope refuses

@@ -50,7 +50,7 @@ func planIndexPartitioningChange(request featureplan.Request, record schemaext.C
 	if err := ydbdiff.ValidateIndexPartitioning(change); err != nil {
 		return result, plan, err
 	}
-	parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: record.Subject.Catalog, Schema: record.Subject.Schema, Name: record.Subject.Parent}
+	parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: record.Subject.Database, Namespace: record.Subject.Namespace, Catalog: record.Subject.Catalog, Schema: record.Subject.Schema, Name: record.Subject.Parent}
 	position := slices.IndexFunc(request.Tables, func(table featureplan.Table) bool { return table.Subject.Key() == parent.Key() })
 	if position < 0 {
 		return result, plan, fmt.Errorf("%w: an index partitioning change requires captured parent state", schemaext.ErrInvalidValue)

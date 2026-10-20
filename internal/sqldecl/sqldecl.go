@@ -137,6 +137,9 @@ func Owned(ref objectidentity.ID) sqlext.Declaration {
 	if index := strings.LastIndex(noun, "/"); index >= 0 {
 		noun = noun[index+1:]
 	}
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() {
+		return declaration(strings.ReplaceAll(noun, "-", " "), ref.Path())
+	}
 	parts := make([]string, 0, 4)
 	for _, part := range []string{ref.Catalog.Authored(), ref.Schema.Authored(), ref.Parent.Source, ref.Name.Source} {
 		switch {

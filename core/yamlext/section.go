@@ -13,7 +13,8 @@ import (
 )
 
 // Section is a top-level key of a YAML schema document whose value one owner
-// reads, such as the ClickHouse owner's row_policies.
+// reads, such as the ClickHouse owner's row_policies. A document owner
+// declares the key here and leaves Decode nil.
 type Section struct {
 	// Key is the document key. A key belongs to one owner, and never to the
 	// frontend's own grammar.
@@ -125,6 +126,9 @@ func (s Set) Decode(key string, decode func(target any) error, tables Tables) ([
 		return nil, fmt.Errorf("no selected owner reads YAML key %q", key)
 	}
 	extension := s.extensions[index]
+	if extension.Document != nil {
+		return nil, fmt.Errorf("YAML key %q requires whole-document decoding", key)
+	}
 	var section Section
 	for _, candidate := range extension.Sections {
 		if candidate.Key == key {

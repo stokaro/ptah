@@ -179,7 +179,8 @@ work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-s
 
 ## Captured extension sources
 
-Experimental revision 5 carries `source.decode` and complete `ValueModel` definitions.
+Experimental revision 6 carries `source.decode`, complete `ValueModel` definitions,
+and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
 session, connection address, host AST, or callback. The host evaluates frontend
@@ -193,6 +194,20 @@ normalized by `modeljson.Canonical`. The SDK verifies its exact SHA-256 digest
 and refuses duplicate keys, lossy strings, or a changed definition. Number text
 remains exact. Protobuf bytes and value payloads are not model definitions.
 These checks bind the declared format; they do not prove engine semantics.
+
+Each YAML-capable engine declares `yaml_source_keys`. A claim names the key,
+its `DOCUMENT` or `TABLE` scope, a decoder selector, and the desired model kinds
+it can declare. The SDK refuses duplicate keys within a scope, missing or
+unsupported models, and a YAML-capable model with no key claim. The host must
+also refuse collisions with common frontend keys or another selected owner.
+A model's JSON definition and kind name do not imply grammar ownership.
+
+Every YAML fragment carries the exact negotiated `yaml_key` claim. Its selector
+must match, and its document must enroll every model the claim names. A table
+key needs a common table binding with an entry key; a document key has no
+implicit table attachment. The client and server validate these facts before
+owner code runs. Other source formats cannot carry a YAML claim. Grammar claims
+are metadata, not a promise that the host has connected every frontend adapter.
 
 Captured values preserve missing entries, explicit null, false, empty values,
 exact number text, expressions, and structured references. Mapping keys,
@@ -212,8 +227,9 @@ knowledge are distinct. Absence and defaults need a specific subject; observed
 coverage cannot request defaults. An incomplete source result is refused.
 
 Source traces name an original document and fragment and follow typed keys,
-indices, attributes, child blocks, or labels. Coordinates use zero-based UTF-8
-byte offsets and one-based lines and byte columns. Authored values require
+indices, attributes, child blocks, or labels. Coordinates use zero-based offsets into the original encoded bytes and
+one-based lines and byte columns in that encoding. A BOM contributes bytes to
+the first column; UTF-16 source is not silently re-encoded. Authored values require
 positions; inherited defaults can lack an authored position. A missing path is
 an error, distinct from an inherited default with no position. Validation reads
 no files, checks bounds and cycles, and limits depth and batch size.
@@ -221,6 +237,7 @@ no files, checks bounds and cycles, and limits depth and batch size.
 The independent fixture exercises evaluated YAML, HCL, and Go annotation
 fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
-retention to SQLite. The application frontends do not yet capture sources for
-this RPC. Official-engine adapters, native planning, transactions, and history
+retention to SQLite. The host YAML frontend captures negotiated document and
+table keys for this RPC. The host HCL and Go annotation adapters, official-engine
+adapters, native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.

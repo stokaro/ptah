@@ -151,7 +151,7 @@ func (c Coverage) Lookup(kind Kind, subject objectidentity.ID) Knowledge {
 	// Parent component names a table; common column/index facets do not take
 	// this path because their subject kind remains the common envelope kind.
 	if subject.Kind == objectidentity.Kind(kind) && !subject.Parent.Empty() {
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: subject.Database, Namespace: subject.Namespace, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
 		if record, found := c.subjects[subjectKey{kind: kind, ref: parent.Key()}]; found {
 			return record.Knowledge
 		}

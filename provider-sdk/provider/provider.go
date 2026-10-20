@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 5
+const Revision uint32 = 6
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -89,6 +89,9 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 			return fmt.Errorf("%w: invalid engine ID", ErrProtocol)
 		}
 		if err := validateValueModels(engine.GetValueModels()); err != nil {
+			return err
+		}
+		if err := validateYAMLSourceKeys(value, engine); err != nil {
 			return err
 		}
 		if err := ValidateIdentifierRules(engine.GetIdentifiers()); err != nil {

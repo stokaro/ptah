@@ -31,7 +31,7 @@ func BindCoverage(coverage schemaext.Coverage, target string, semantics identifi
 			subjects[i].Subject = bindOwned(ref, target, semantics)
 			continue
 		}
-		if !ref.Catalog.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
+		if !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
 			return schemaext.Coverage{}, fmt.Errorf("%w: invalid table coverage identity %s", schemaext.ErrInvalidValue, ref)
 		}
 		schema := ref.Schema.Source

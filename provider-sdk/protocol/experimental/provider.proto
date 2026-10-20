@@ -41,6 +41,18 @@ message Engine {
   repeated string features = 4;
   IdentifierRules identifiers = 5;
   repeated ValueModel value_models = 6;
+  repeated YAMLSourceKey yaml_source_keys = 7;
+}
+// YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
+// The host refuses collisions with common keys or other selected owners.
+// Models name desired value kinds that this key can declare. They are not
+// inferred from the key, selector, or owner-specific JSON definition.
+message YAMLSourceKey {
+  enum Scope { SCOPE_UNSPECIFIED = 0; DOCUMENT = 1; TABLE = 2; }
+  Scope scope = 1;
+  string key = 2;
+  string selector = 3;
+  repeated string models = 4;
 }
 // IdentifierRules are owner-supplied comparison facts. Missing or unknown
 // values are refused; the host must not borrow rules from a built-in engine.
@@ -266,9 +278,10 @@ message NormalizedValue {
   bytes canonical_projection = 5;
 }
 
-// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
-// byte-column coordinates. It describes the captured source, not a temporary
-// rendering of its evaluated values.
+// SourcePosition uses a zero-based offset into the original encoded bytes and
+// one-based line and byte-column coordinates in that same encoding. A BOM
+// contributes bytes to the first column. Coordinates never refer to a temporary
+// rendering of evaluated values.
 message SourcePosition {
   uint64 byte_offset = 1;
   uint32 line = 2;
@@ -326,6 +339,8 @@ message SourceBinding {
   string entry_key = 4;
 }
 message SourceFragment {
+  // Frozen negotiated grammar claim, required only for YAML fragments.
+  YAMLSourceKey yaml_key = 10;
   string id = 1;
   string selector = 2;
   // The shared frontend's attachment context, if already known. An owner may

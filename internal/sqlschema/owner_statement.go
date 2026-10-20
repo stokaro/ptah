@@ -109,7 +109,7 @@ func declaredChild(databases []*schemamodel.Database, ref objectidentity.ID, sou
 // built with, which defaults an unwritten one, so a parent in the dialect's
 // default schema also names the table the schema declares without one.
 func childTable(databases []*schemamodel.Database, ref objectidentity.ID, sourcePlatform string) *schemamodel.Table {
-	if ref.Parent.Empty() {
+	if ref.Parent.Empty() || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() {
 		return nil
 	}
 	return declaredOwnerTable(databases, objectidentity.ID{Schema: ref.Schema, Name: ref.Parent}, sourcePlatform)
@@ -118,6 +118,9 @@ func childTable(databases []*schemamodel.Database, ref objectidentity.ID, source
 // declaredOwnerTable resolves a table identity from an owner's declaration.
 // An explicit default schema also reaches a table declared without a schema.
 func declaredOwnerTable(databases []*schemamodel.Database, ref objectidentity.ID, sourcePlatform string) *schemamodel.Table {
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() {
+		return nil
+	}
 	written := schemamodel.QualifyTableName(ownerName(ref.Schema), ownerName(ref.Name))
 	if table := resolveTable(databases, normalizeSQLTableReference("", written), sourcePlatform); table != nil {
 		return table

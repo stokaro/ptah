@@ -14,7 +14,7 @@ func TestCoverage_ParentNamespaceDoesNotHideSubjectLimits(t *testing.T) {
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	child := widgetRef("orders.2024", "updates")
-	parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: child.Catalog, Schema: child.Schema, Name: child.Parent}
+	parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: child.Database, Namespace: child.Namespace, Catalog: child.Catalog, Schema: child.Schema, Name: child.Parent}
 	limit := schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "unknown child field"}
 	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source has no feature syntax"}}}, []schemaext.SubjectCoverage{
 		{Kind: widgetKind, Subject: parent, Knowledge: schemaext.Knowledge{State: schemaext.Complete}},

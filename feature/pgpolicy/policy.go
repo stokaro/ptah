@@ -228,7 +228,7 @@ func PolicyRefWith(semantics identifier.Semantics, schema, table, name string) o
 
 // Table returns the identity of the table a policy reference is on.
 func Table(ref objectidentity.ID) objectidentity.ID {
-	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+	return objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }
 
 // ValidatePolicyRef requires an identity of this kind with a schema, a table
@@ -237,7 +237,7 @@ func Table(ref objectidentity.ID) objectidentity.ID {
 func ValidatePolicyRef(ref objectidentity.ID) error {
 	if ref.Kind != objectidentity.Kind(PolicyKind) || ref.Name.Source == "" || ref.Name.Normalized == "" ||
 		ref.Parent.Source == "" || ref.Parent.Normalized == "" || ref.Schema.Source == "" || ref.Schema.Normalized == "" ||
-		!ref.Catalog.Empty() || ref.Signature != "" {
+		!ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || ref.Signature != "" {
 		return fmt.Errorf("%w: a row-security policy requires a schema, a table and a name", schemaext.ErrInvalidValue)
 	}
 	return nil
