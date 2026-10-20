@@ -97,6 +97,22 @@ printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.
 git -C "$work_dir/repo" add -A >/dev/null 2>&1
 assert_rejected "a module declaring another path" "every module here belongs to"
 
+# The independent SDK has one exact module identity and one exact directory.
+write_repo
+mkdir -p "$work_dir/repo/provider-sdk"
+printf 'module github.com/stokaro/ptah/provider-sdk\n\ngo 1.26.5\n' >"$work_dir/repo/provider-sdk/go.mod"
+if ! (cd "$work_dir/repo" && bash scripts/check-module-path.sh) >"$work_dir/out" 2>"$work_dir/err"; then
+ echo 'module path self-test: the independent SDK was rejected:' >&2
+ cat "$work_dir/err" >&2
+ exit 1
+fi
+printf '  %-46s accepted\n' "the independent SDK"
+printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/provider-sdk/go.mod"
+assert_rejected "a different SDK identity" "provider SDK must declare"
+write_repo
+printf 'module github.com/stokaro/ptah/provider-sdk\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.mod"
+assert_rejected "SDK identity in another module" "every module here belongs to"
+
 # 6. Not staged. Nothing here stages the fixture, which is the whole point.
 write_repo
 git -C "$work_dir/repo" add -A >/dev/null 2>&1
@@ -122,4 +138,4 @@ grep -qF "is not reporting on it" "$work_dir/err" || {
 }
 printf '  %-46s rejected\n' "a corpus too small to be this repository"
 
-echo "check-module-path-selftest: OK (7 broken rules each noticed, control accepted)"
+echo "check-module-path-selftest: OK (9 broken rules each noticed, controls accepted)"

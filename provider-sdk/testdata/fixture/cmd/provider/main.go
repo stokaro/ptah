@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"example.org/ptah-fixture-provider/backend"
+	"example.com/ptah-fixture-provider/backend"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
 )
 
