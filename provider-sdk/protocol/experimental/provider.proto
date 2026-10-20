@@ -14,6 +14,7 @@ service Provider {
   rpc Inspect(InspectRequest) returns (Schema);
   rpc Render(RenderRequest) returns (RenderResult);
   rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
+  rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -220,4 +221,44 @@ message SQLStatement {
   Safety safety = 7;
   // Redacted explanation of a native effect or an unknown assessment.
   string reason = 8;
+}
+
+// NormalizeValues is an offline owner operation. It validates the whole batch
+// and produces representation-local canonical projections. It does not compare
+// desired state with observed state or decide which migrations to execute.
+message NormalizeValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  repeated ValueInput values = 3;
+}
+message ValueInput {
+  string id = 1;
+  enum Representation {
+    REPRESENTATION_UNSPECIFIED = 0;
+    DESIRED = 1;
+    OBSERVED = 2;
+    OPERATION = 3;
+    CHANGE = 4;
+  }
+  Representation representation = 2;
+  Envelope value = 3;
+}
+message NormalizedValues {
+  bool complete = 1;
+  // One result per input, in the same order. A refusal exposes no prefix.
+  repeated NormalizedValue values = 2;
+}
+message NormalizedValue {
+  string id = 1;
+  // Payload normalization preserves the input envelope's owner, kind, version,
+  // encoding, and required features. Unknown fields must be refused by the owner.
+  Envelope value = 2;
+  // Owner-defined normalized identity, separate from the original spelling.
+  // Components remain separate; concatenation is not an identity encoding.
+  Reference normalized_owner = 3;
+  // The provider defines and versions this format. A host binds it to the
+  // negotiated semantic identity, engine, target features, kind, and input
+  // representation. It never substitutes serialized Protobuf or raw payload.
+  string canonical_format = 4;
+  bytes canonical_projection = 5;
 }

@@ -31,6 +31,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
+| `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
 Common records represent tables and columns explicitly. Native records use a
@@ -148,3 +149,29 @@ A failed process launch or transport bootstrap wraps `runtime.ErrStartup`.
 A rejected protocol revision, service contract, or provider identity wraps
 `provider.ErrProtocol`. Cancellation and deadline errors preserve their context
 sentinels. A caller can distinguish these failures from a missing installation.
+
+## Owner-defined value normalization
+
+Experimental revision 3 adds `values.normalize`. A `ValueNormalizer` validates
+and normalizes a complete batch without a session or connection address. Inputs
+identify their desired, observed, operation, or change representation. A provider
+refuses representations and payload fields it cannot interpret.
+
+A normalized envelope retains its input owner, kind, schema version, encoding,
+and required features. The response supplies a separate normalized subject and
+an owner-defined canonical format and projection. The client and server check
+ownership, feature selection, ordered correlation IDs, and complete results.
+A failed or canceled call exposes no usable prefix.
+
+Canonical projections are representation-local. Bind them to the negotiated
+provider semantic identity, engine, target features, representation, kind,
+schema version, and canonical format. Never substitute raw payload bytes or
+serialized Protobuf for that owner-defined contract. A projection does not
+replace contextual desired/observed comparison or authorize a migration.
+
+The independent fixture normalizes a synthetic retention value offline. It
+preserves integers beyond the exact range of floating-point numbers, distinguishes
+omission from null and zero, and refuses unknown or duplicate fields. The fixture
+SQL service does not support retention. Native object/facet adaptation, source
+decoding, contextual comparison, and migration backend operations remain required
+work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).

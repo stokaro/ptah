@@ -31,6 +31,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0019](0019-a-declared-row-set-is-artifact-content.md) | A declared row set is artifact content, and a checkpoint carries the rows its successors read | Proposed |
 | [0020](0020-row-access-policies-keep-their-engine-semantics.md) | Row-access policies keep their engine semantics | Proposed |
 | [0021](0021-provider-recognition-does-not-authorize-execution.md) | Provider recognition does not authorize execution | Proposed |
+| [0022](0022-provider-values-are-resolved-in-semantic-batches.md) | Provider values are resolved in semantic batches | Proposed |
 
 ## Writing one
 

@@ -35,7 +35,7 @@ type session struct {
 func Description() *protocol.Description {
 	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-2",
 		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature}, Identifiers: identifierRules()}},
-		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature}}
+		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature}}
 }
 
 func identifierRules() *protocol.IdentifierRules {

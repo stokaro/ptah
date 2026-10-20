@@ -18,7 +18,7 @@ func main() {
 		}
 	}
 	owner := &backend.Provider{}
-	err := runtime.Serve(runtime.Server{Description: backend.Description(), Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner})
+	err := runtime.Serve(runtime.Server{Description: backend.Description(), Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
