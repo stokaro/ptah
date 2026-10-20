@@ -31,6 +31,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
+| `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
@@ -152,26 +153,72 @@ sentinels. A caller can distinguish these failures from a missing installation.
 
 ## Owner-defined value normalization
 
-Experimental revision 3 adds `values.normalize`. A `ValueNormalizer` validates
+The `values.normalize` service uses a `ValueNormalizer` that validates
 and normalizes a complete batch without a session or connection address. Inputs
 identify their desired, observed, operation, or change representation. A provider
 refuses representations and payload fields it cannot interpret.
 
 A normalized envelope retains its input owner, kind, schema version, encoding,
-and required features. The response supplies a separate normalized subject and
+definition digest, and required features. The response supplies a separate normalized subject and
 an owner-defined canonical format and projection. The client and server check
 ownership, feature selection, ordered correlation IDs, and complete results.
 A failed or canceled call exposes no usable prefix.
 
 Canonical projections are representation-local. Bind them to the negotiated
 provider semantic identity, engine, target features, representation, kind,
-schema version, and canonical format. Never substitute raw payload bytes or
+schema version, model definition digest, and canonical format. Never substitute raw payload bytes or
 serialized Protobuf for that owner-defined contract. A projection does not
 replace contextual desired/observed comparison or authorize a migration.
 
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. Native object/facet adaptation, source
-decoding, contextual comparison, and migration backend operations remain required
+SQL service does not support retention. Native object/facet adaptation in the host, frontend capture, contextual
+comparison, and migration backend operations remain required
 work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+
+## Captured extension sources
+
+Experimental revision 4 adds `source.decode` and exact `ValueModel` identities.
+It refuses earlier revisions. The SDK has no compatibility decoder or built-in
+fallback. A `SourceDecoder` receives complete captured documents without a
+session, connection address, host AST, or callback. The host evaluates frontend
+expressions and enforces file access policy before capture.
+
+Each document explicitly enrolls desired models from the selected engine's
+negotiated description. A model identifies its kind, representation, schema
+version, encoding, SHA-256 definition digest, canonical projection format, and
+accepted source formats. The owner hashes its canonical model definition;
+Protobuf bytes and value payloads are not model definitions. The SDK checks
+exact agreement with the negotiated identity, not the truth of the definition.
+
+Captured values preserve missing entries, explicit null, false, empty values,
+exact number text, expressions, and structured references. Mapping keys,
+block attributes, child blocks, and labels retain their separate namespaces.
+Bindings carry common object identity and frontend naming. The owner receives
+all bindings before interpreting fragments, so declaration order need not limit
+reference resolution. It must interpret every supplied field or refuse the
+whole batch, including inherited attributes it requested from the host.
+
+A successful response contains a result for every document and fragment in
+input order. Every emitted object or facet names an enrolled model, provides
+its normalized value and canonical projection, and has matching subject
+coverage. Duplicate normalized identities are refused. Coverage retains the
+original model scope; empty scope never means all kinds in the provider's
+current registry. Complete, absent, defaulted, uninspected, and unrepresentable
+knowledge are distinct. Absence and defaults need a specific subject; observed
+coverage cannot request defaults. An incomplete source result is refused.
+
+Source traces name an original document and fragment and follow typed keys,
+indices, attributes, child blocks, or labels. Coordinates use zero-based UTF-8
+byte offsets and one-based lines and byte columns. Authored values require
+positions; inherited defaults can lack an authored position. A missing path is
+an error, distinct from an inherited default with no position. Validation reads
+no files, checks bounds and cycles, and limits depth and batch size.
+
+The independent fixture exercises evaluated YAML, HCL, and Go annotation
+fragments. It accepts a synthetic retention mapping or HCL block, resolves its
+`on` binding, and preserves exact integers. It refuses SQL and does not apply
+retention to SQLite. The application frontends do not yet capture sources for
+this RPC. Official-engine adapters, native planning, transactions, and history
+remain part of #4204; this transport is not a claim of YDB source support.

@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 3
+const Revision uint32 = 4
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -80,10 +80,16 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 	if strings.TrimSpace(value.GetProviderId()) == "" || value.GetVersion() == "" || value.GetSemanticIdentity() == "" {
 		return fmt.Errorf("%w: provider identity, version, and semantic identity are required", ErrProtocol)
 	}
+	if slices.Contains(value.GetFeatures(), DecodeSourceFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
+		return fmt.Errorf("%w: source decoding requires value normalization", ErrProtocol)
+	}
 	names := make(map[string]bool)
 	for _, engine := range value.GetEngines() {
 		if engine == nil || !validName(engine.GetId()) {
 			return fmt.Errorf("%w: invalid engine ID", ErrProtocol)
+		}
+		if err := validateValueModels(engine.GetValueModels()); err != nil {
+			return err
 		}
 		if err := ValidateIdentifierRules(engine.GetIdentifiers()); err != nil {
 			return err

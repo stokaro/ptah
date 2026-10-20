@@ -39,6 +39,9 @@ func ValidateValueInputs(description *protocol.Description, request *protocol.No
 	if engine == nil {
 		return fmt.Errorf("%w: value engine is not owned by this provider", ErrProtocol)
 	}
+	if err := validateValueModels(engine.GetValueModels()); err != nil {
+		return err
+	}
 	features := make(map[string]bool)
 	for _, feature := range request.GetTargetFeatures() {
 		if feature == "" || features[feature] || !slices.Contains(engine.GetFeatures(), feature) {
@@ -59,6 +62,10 @@ func ValidateValueInputs(description *protocol.Description, request *protocol.No
 		}
 		if err := validateValueEnvelope(description.GetProviderId(), request.GetEngine(), features, input.GetValue()); err != nil {
 			return err
+		}
+		model := findValueModel(description, request.GetEngine(), input.GetValue().GetKind(), input.GetRepresentation())
+		if !envelopeMatchesModel(input.GetValue(), model) {
+			return fmt.Errorf("%w: value does not match the negotiated model definition", ErrProtocol)
 		}
 	}
 	return nil
@@ -101,13 +108,14 @@ func ValidateNormalizedValues(description *protocol.Description, request *protoc
 		before, after := input.GetValue(), output.GetValue()
 		if output.GetId() != input.GetId() || after == nil || before.GetProviderId() != after.GetProviderId() ||
 			before.GetKind() != after.GetKind() || before.GetSchemaVersion() != after.GetSchemaVersion() ||
-			before.GetEncoding() != after.GetEncoding() || !slices.Equal(before.GetRequiredFeatures(), after.GetRequiredFeatures()) ||
+			before.GetEncoding() != after.GetEncoding() || before.GetDefinitionSha256() != after.GetDefinitionSha256() || !slices.Equal(before.GetRequiredFeatures(), after.GetRequiredFeatures()) ||
 			!proto.Equal(before.GetOwner(), after.GetOwner()) {
 			return fmt.Errorf("%w: normalized value changed input ownership or metadata", ErrProtocol)
 		}
+		model := findValueModel(description, request.GetEngine(), before.GetKind(), input.GetRepresentation())
 		if !validValueReference(output.GetNormalizedOwner(), request.GetEngine()) ||
 			output.GetNormalizedOwner().GetKind() != before.GetOwner().GetKind() ||
-			strings.TrimSpace(output.GetCanonicalFormat()) == "" || len(output.GetCanonicalProjection()) == 0 {
+			output.GetCanonicalFormat() != model.GetCanonicalFormat() || len(output.GetCanonicalProjection()) == 0 {
 			return fmt.Errorf("%w: normalized identity or canonical projection is missing", ErrProtocol)
 		}
 	}
