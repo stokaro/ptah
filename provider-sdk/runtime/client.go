@@ -175,13 +175,20 @@ func (c *Client) CloseSession(ctx context.Context, id string) error {
 // Inspect returns only a complete, validated snapshot. A transport failure
 // yields an error and no schema, even if the database could be empty.
 func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
+	request = proto.CloneOf(request)
+	if request.GetSessionId() == "" {
+		return nil, fmt.Errorf("%w: inspection session is missing", provider.ErrProtocol)
+	}
 	call, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
-	result, err := c.rpc.Inspect(call, request)
+	result, err := c.rpc.Inspect(call, proto.CloneOf(request))
 	if err != nil {
 		return nil, remoteError(call, "inspect", err)
 	}
-	if err := provider.ValidateSchema(result); err != nil {
+	if err := call.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := provider.InspectionValues(c.description, request, result); err != nil {
 		return nil, err
 	}
 	return result, nil
