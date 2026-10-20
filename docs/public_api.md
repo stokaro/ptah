@@ -1375,6 +1375,26 @@ value is uninspected. Registering another provider cannot make an older source
 authoritative over that provider's objects. Subject claims distinguish explicit
 absence, requested defaults, complete inspection, and unrepresentable state.
 
+`KindCoverage.Knowledge` is an immutable `KnowledgeDomain`. `GlobalKnowledge`
+states an unrestricted claim. `NewScopedKnowledge` records an outside claim and
+bounded `NamespaceKnowledge` regions. `NamespaceScope` selects target names,
+database, catalog, schema, and whole namespace path components. A nil qualifier
+is unrestricted; a present empty qualifier matches only the empty component.
+Source spelling is preserved; matching uses owner-normalized components.
+
+Call `Coverage.ForTarget` before looking up claims for a selected engine.
+`Coverage.Lookup` gives explicit subject and parent claims priority over namespace
+regions. Overlapping regions combine conservatively. `Coverage.Merge` intersects
+source knowledge point by point, so disjoint complete regions cannot establish
+complete coverage together. `Unscoped` reports a conservative global claim;
+`IsUninspected` checks every captured claim, including bounded regions.
+
+Coverage documents and `ptah:feature-coverage` headers use format 2. They preserve
+namespace boundaries through encoding and representation conversion and refuse
+scalar knowledge records. Source formats that only carry global limits refuse
+bounded domains. Common table identity binding also refuses bounded domains
+until an owner can bind their namespaces together with the table subjects.
+
 `Coverage.SelectSubjects` projects explicit subject and parent records while
 retaining the source's kind-wide knowledge. Apply the same projection to schema
 objects: deleting an override alone makes lookups fall back to kind-wide knowledge.

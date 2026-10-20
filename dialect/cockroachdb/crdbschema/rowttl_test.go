@@ -293,7 +293,7 @@ func TestRowTTLCoverage_RecordsTheClaimItIsGiven(t *testing.T) {
 	c.Assert(records, qt.HasLen, 1)
 	c.Assert(records[0].Model.Owner, qt.Equals, crdbschema.Owner)
 	c.Assert(records[0].Model.Kind, qt.Equals, crdbschema.RowTTLKind)
-	c.Assert(records[0].Knowledge.State, qt.Equals, schemaext.Complete)
+	c.Assert(records[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Complete)
 	_, err = crdbschema.RowTTLCoverage(schemaext.Change, schemaext.Knowledge{State: schemaext.Complete}, nil)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 }

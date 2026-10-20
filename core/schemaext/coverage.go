@@ -37,8 +37,8 @@ type Knowledge struct {
 // KindCoverage enrolls one precise model definition in a source's claims.
 // Registry growth cannot add entries to an already captured source description.
 type KindCoverage struct {
-	Model     CodecIdentity `json:"model"`
-	Knowledge Knowledge     `json:"knowledge"`
+	Model     CodecIdentity   `json:"model"`
+	Knowledge KnowledgeDomain `json:"knowledge"`
 }
 
 // SubjectCoverage overrides a kind-wide claim for one structured subject.
@@ -118,10 +118,7 @@ func validateKindCoverage(representation Representation, record KindCoverage) er
 	if !model.Kind.Valid() || !Kind(model.Owner).Valid() || model.Version == 0 || model.Definition == "" || model.Representation != representation {
 		return fmt.Errorf("%w: incomplete or mismatched coverage model", ErrInvalidValue)
 	}
-	if record.Knowledge.State == Absent || record.Knowledge.State == Defaulted {
-		return fmt.Errorf("%w: absence/default assertions require a specific subject", ErrInvalidValue)
-	}
-	return validateKnowledge(representation, record.Knowledge)
+	return record.Knowledge.validate()
 }
 
 func validateKnowledge(representation Representation, knowledge Knowledge) error {
@@ -157,7 +154,7 @@ func (c Coverage) Lookup(kind Kind, subject objectidentity.ID) Knowledge {
 		}
 	}
 	if record, found := c.kinds[kind]; found {
-		return record.Knowledge
+		return record.Knowledge.Lookup(subject)
 	}
 	return Knowledge{State: Uninspected, Reason: "this source did not describe the feature kind"}
 }

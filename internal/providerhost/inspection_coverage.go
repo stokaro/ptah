@@ -28,7 +28,7 @@ func (r reader) observedCoverage(source *protocol.ModelCoverage) (schemaext.Cove
 			knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "inspection covers one session, not the global model namespace"}
 		}
 		kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind,
-			Representation: schemaext.Observed, Version: 1, Definition: contract.signature}, Knowledge: knowledge})
+			Representation: schemaext.Observed, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(knowledge)})
 	}
 	var subjects []schemaext.SubjectCoverage
 	for _, record := range source.GetSubjects() {

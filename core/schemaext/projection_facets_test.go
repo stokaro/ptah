@@ -22,7 +22,7 @@ func facetProjectionRegistry(c *qt.C) schemaext.Registry {
 func facetProjectionCoverage(registry schemaext.Registry, claims ...schemaext.SubjectCoverage) schemaext.Coverage {
 	var kinds []schemaext.KindCoverage
 	for _, definition := range registry.Definitions() {
-		kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "partial table inspection"}})
+		kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "partial table inspection"})})
 	}
 	return must.Must(schemaext.NewCoverage(schemaext.Observed, kinds, claims))
 }

@@ -225,7 +225,7 @@ func TestReadSchema_ClaimsOnlyTheTypeKindsThePresetHolds(t *testing.T) {
 func claimedKinds(read *catalog.Database) []schemaext.Kind {
 	var kinds []schemaext.Kind
 	for _, record := range read.FeatureCoverage.KindRecords() {
-		if record.Knowledge.State == schemaext.Complete && slices.Contains(oratype.Kinds(), record.Model.Kind) {
+		if record.Knowledge.Unscoped().State == schemaext.Complete && slices.Contains(oratype.Kinds(), record.Model.Kind) {
 			kinds = append(kinds, record.Model.Kind)
 		}
 	}

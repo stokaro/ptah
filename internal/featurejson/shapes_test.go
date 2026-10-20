@@ -269,7 +269,7 @@ func TestUnmarshal_ReadsSchemaEnvelopesStrictly_FailurePath(t *testing.T) {
 	for _, test := range []envelopeCorruption{
 		{"an unknown field in a facet envelope", `"facets":[{"kind":`, `"facets":[{"extra":true,"kind":`, `.*unknown field "extra".*`},
 		{"a repeated key in a facet envelope", `"facets":[{"kind":`, `"facets":[{"kind":"x","kind":`, `.*duplicate object key "kind".*`},
-		{"an unknown field in a coverage document", `"feature_coverage":{"format":1,`, `"feature_coverage":{"format":1,"extra":true,`, `.*unknown field "extra".*`},
+		{"an unknown field in a coverage document", `"feature_coverage":{"format":2,`, `"feature_coverage":{"format":2,"extra":true,`, `.*unknown field "extra".*`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

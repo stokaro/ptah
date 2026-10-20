@@ -25,7 +25,7 @@ type comparisonCoverageInput struct {
 func comparisonCoverageRequirements(coverage schemaext.Coverage, kinds, required map[schemaext.Kind]bool) {
 	for _, record := range coverage.KindRecords() {
 		kinds[record.Model.Kind] = true
-		if record.Knowledge.State == schemaext.Unrepresentable {
+		if record.Knowledge.Unscoped().State == schemaext.Unrepresentable {
 			required[record.Model.Kind] = true
 		}
 	}
@@ -46,13 +46,13 @@ func validateComparisonCoverage(request comparisonCoverageInput, result schemaex
 	}
 	for _, original := range request.desired.KindRecords() {
 		returned, found := records[original.Model.Kind]
-		if !found || original != returned {
+		if !found || original.Model != returned.Model || !original.Knowledge.Equal(returned.Knowledge) {
 			return fmt.Errorf("%w: comparison changed source-wide coverage for %q", schemaext.ErrInvalidValue, original.Model.Kind)
 		}
 		delete(records, original.Model.Kind)
 	}
 	for kind, record := range records {
-		if record.Knowledge.State != schemaext.Uninspected {
+		if !record.Knowledge.IsUninspected() {
 			return fmt.Errorf("%w: comparison invented source-wide authority for %q", schemaext.ErrInvalidValue, kind)
 		}
 	}

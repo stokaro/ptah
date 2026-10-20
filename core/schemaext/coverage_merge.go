@@ -34,7 +34,7 @@ func (c Coverage) Merge(other Coverage) (Coverage, error) {
 	}
 	kinds := make([]KindCoverage, 0, len(models))
 	for kind, record := range models {
-		knowledge, err := mergeKnowledge(c.kindKnowledge(kind), other.kindKnowledge(kind))
+		knowledge, err := c.kindKnowledge(kind).Intersect(other.kindKnowledge(kind))
 		if err != nil {
 			return Coverage{}, err
 		}
@@ -59,11 +59,11 @@ func (c Coverage) Merge(other Coverage) (Coverage, error) {
 	return NewCoverage(direction, kinds, overrides)
 }
 
-func (c Coverage) kindKnowledge(kind Kind) Knowledge {
+func (c Coverage) kindKnowledge(kind Kind) KnowledgeDomain {
 	if record, found := c.kinds[kind]; found {
 		return record.Knowledge
 	}
-	return Knowledge{State: Uninspected, Reason: "one source did not describe the feature kind"}
+	return GlobalKnowledge(Knowledge{State: Uninspected, Reason: "one source did not describe the feature kind"})
 }
 
 func mergeKnowledge(a, b Knowledge) (Knowledge, error) {

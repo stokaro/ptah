@@ -136,7 +136,7 @@ func validateLoweringCoverage(coverage schemaext.Coverage, objects schemaext.Obj
 	// except a setting of one owner the source could not capture: the owner
 	// is lowered without it, and a note says so.
 	for _, record := range coverage.KindRecords() {
-		if err := validateLoweringKnowledge(record.Model.Kind, record.Knowledge); err != nil {
+		if err := validateLoweringKnowledge(record.Model.Kind, record.Knowledge.Unscoped()); err != nil {
 			return nil, err
 		}
 	}

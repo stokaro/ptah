@@ -37,7 +37,7 @@ func levelCoverage() (schemaext.Coverage, error) {
 		return schemaext.Coverage{}, err
 	}
 	model, _ := registry.Identity(levelKind, schemaext.Desired)
-	return schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil)
+	return schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil)
 }
 
 func TestNewSet_HappyPath(t *testing.T) {

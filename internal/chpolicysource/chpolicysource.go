@@ -104,9 +104,9 @@ func (c *Collector) Objects() schemaext.Objects { return c.objects }
 // it would drop the policies the server holds.
 func RequireDescribed(coverage schemaext.Coverage) error {
 	for _, record := range coverage.KindRecords() {
-		if record.Model.Kind == chschema.RowPolicyKind && record.Knowledge.State != schemaext.Complete {
+		if record.Model.Kind == chschema.RowPolicyKind && record.Knowledge.Unscoped().State != schemaext.Complete {
 			return fmt.Errorf("%w: ClickHouse row policies cannot be exported: the read did not describe them (%s)",
-				ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason)
+				ptaherr.ErrUnsupportedFeature, record.Knowledge.Unscoped().Reason)
 		}
 	}
 	for _, record := range coverage.SubjectRecords() {

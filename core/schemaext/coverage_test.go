@@ -15,7 +15,7 @@ func TestCoverage_RuntimeGrowthDoesNotInventAuthority(t *testing.T) {
 	original, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{
-		{Model: original.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}},
+		{Model: original.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})},
 	}, nil)
 	c.Assert(err, qt.IsNil)
 	document, err := original.EncodeCoverage(context.Background(), schemaext.Desired, coverage)
@@ -50,7 +50,7 @@ func TestCoverage_PreserveAbsenceDefaultsAndUnknownState(t *testing.T) {
 			c := qt.New(t)
 			ref := widgetRef("table", "name")
 			coverage, err := schemaext.NewCoverage(schemaext.Desired,
-				[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+				[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}},
 				[]schemaext.SubjectCoverage{{Kind: widgetKind, Subject: ref, Knowledge: knowledge}})
 			c.Assert(err, qt.IsNil)
 			document, err := registry.EncodeCoverage(context.Background(), schemaext.Desired, coverage)
@@ -67,7 +67,7 @@ func TestCoverage_RefuseInvalidClaims(t *testing.T) {
 	c := qt.New(t)
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Observed)))
 	c.Assert(err, qt.IsNil)
-	kind := schemaext.KindCoverage{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}
+	kind := schemaext.KindCoverage{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}
 	_, err = schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{kind, kind}, nil)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
 	_, err = schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{kind}, nil)
@@ -86,7 +86,7 @@ func TestCoverage_RefuseInvalidClaims(t *testing.T) {
 		{Kind: widgetKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Complete}},
 	})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-	kind.Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: " \t"}
+	kind.Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: " \t"})
 	_, err = schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{kind}, nil)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 }

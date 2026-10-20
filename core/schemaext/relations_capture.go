@@ -107,7 +107,7 @@ func (s RelationSnapshot) captureConnectedRelations(ctx context.Context, queue [
 func (s RelationSnapshot) requireCompleteRelations() error {
 	claims := make(map[Kind]Knowledge)
 	for _, record := range s.coverage.KindRecords() {
-		claims[record.Model.Kind] = record.Knowledge
+		claims[record.Model.Kind] = record.Knowledge.Unscoped()
 	}
 	for _, kind := range s.kinds {
 		if claims[kind].State != Complete {

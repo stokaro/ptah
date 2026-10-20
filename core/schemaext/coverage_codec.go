@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const coverageFormat = 2
+
 // CoverageDocument is the versioned, concrete wire form of source knowledge.
 // Model identities bind even empty object namespaces to their recorded meanings.
 type CoverageDocument struct {
@@ -31,7 +33,7 @@ func (r Registry) EncodeCoverage(ctx context.Context, representation Representat
 			return CoverageDocument{}, err
 		}
 	}
-	return CoverageDocument{Format: envelopeFormat, Representation: representation,
+	return CoverageDocument{Format: coverageFormat, Representation: representation,
 		Kinds: coverage.KindRecords(), Subjects: coverage.SubjectRecords()}, nil
 }
 
@@ -42,7 +44,7 @@ func (r Registry) DecodeCoverage(ctx context.Context, document CoverageDocument)
 	if err := codecContext(ctx); err != nil {
 		return Coverage{}, err
 	}
-	if document.Format != envelopeFormat || document.Kinds == nil {
+	if document.Format != coverageFormat || document.Kinds == nil {
 		return Coverage{}, fmt.Errorf("%w: invalid coverage document format or missing kinds", ErrIncompatibleCodec)
 	}
 	coverage, err := NewCoverage(document.Representation, document.Kinds, document.Subjects)

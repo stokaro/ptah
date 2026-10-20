@@ -99,7 +99,7 @@ func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, viewLim
 	var kinds []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {
 		if claim, found := knowledge[model.Kind]; found && model.Representation == schemaext.Observed {
-			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: claim})
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(claim)})
 		}
 	}
 	if len(kinds) != len(knowledge) {

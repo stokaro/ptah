@@ -63,7 +63,7 @@ func TestDocumentProjectionPreservesExplicitKnowledgeLimits(t *testing.T) {
 		return model.Kind == chschema.TableKind && model.Representation == schemaext.Desired
 	})
 	c.Assert(index >= 0, qt.IsTrue)
-	source.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: models[index], Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "source omitted a storage clause"}}}, nil))
+	source.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: models[index], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "source omitted a storage clause"})}}, nil))
 
 	projected, err := goschematodb.ToDBSchema(t.Context(), source, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)

@@ -88,8 +88,8 @@ func refreshAttributes(slot annotation.SlotFacets) (annotation.SlotAttributes, e
 // it would remove the schedule (stokaro/ptah#4278).
 func requireCapturedSchedules(coverage schemaext.Coverage, format string) error {
 	for _, record := range coverage.KindRecords() {
-		if record.Model.Kind == chschema.RefreshKind && (record.Knowledge.State == schemaext.Unrepresentable || record.Knowledge.State == schemaext.Uninspected) {
-			return fmt.Errorf("%w: ClickHouse refresh schedules were not captured (%s), and %s states every schedule", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason, format)
+		if record.Model.Kind == chschema.RefreshKind && (record.Knowledge.Unscoped().State == schemaext.Unrepresentable || record.Knowledge.Unscoped().State == schemaext.Uninspected) {
+			return fmt.Errorf("%w: ClickHouse refresh schedules were not captured (%s), and %s states every schedule", ptaherr.ErrUnsupportedFeature, record.Knowledge.Unscoped().Reason, format)
 		}
 	}
 	for _, record := range coverage.SubjectRecords() {

@@ -64,7 +64,7 @@ func Coverage(representation schemaext.Representation, knowledge schemaext.Knowl
 	}
 	for _, model := range registry.Definitions() {
 		if model.Kind == Kind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: synonym coverage requires a schema representation", schemaext.ErrInvalidValue)
