@@ -24,7 +24,7 @@ func (g cancelingGrammar) ReadSQL(ctx context.Context, _ sqlext.GrammarRequest) 
 }
 func (g cancelingGrammar) DecodeHCL(ctx context.Context, _ hclext.Request) (hclext.Result, error) {
 	g.check(ctx)
-	return hclext.Result{}, ctx.Err()
+	return hclext.Result{}, &hclext.ClaimError{Claim: 0, Err: ctx.Err()}
 }
 
 func TestSchemaLoadPropagatesCancellationToOwners(t *testing.T) {

@@ -44,8 +44,7 @@ type Command struct {
 	// PWD environment variable, on every platform.
 	Dir string
 	// Timeout bounds execution and output interpretation. Zero uses
-	// DefaultTimeout; a negative value
-	// disables the timeout.
+	// DefaultTimeout; a negative value disables the timeout.
 	Timeout time.Duration
 	// Env holds extra "KEY=VALUE" entries appended to the current environment.
 	// A malformed entry — no equals sign, or an empty key — is refused before
@@ -77,9 +76,8 @@ type Formats interface {
 // formats, the readers of each output format; a nil formats is refused with
 // [ErrNoFormats] before the program starts.
 //
-// Execution and output interpretation share the resolved timeout. When Run returns — on
-// success, failure, cancellation, or timeout — descendant processes the
-// program started are terminated with it. Caller cancellation and a timeout
+// Execution and output interpretation share the resolved timeout. When Run
+// returns, descendant processes the program started are terminated with it. Caller cancellation and a timeout
 // are distinguishable: both wrap the context error, so errors.Is against
 // context.Canceled or context.DeadlineExceeded tells them apart.
 //

@@ -578,7 +578,7 @@ func (p *parser) decodeOwnerClaims() (declarations []hclext.Declaration, documen
 	// Owner decoding shares the caller deadline and cancellation.
 	declarations, err = p.owners.Decode(p.requestCtx, matches)
 	if refused, ok := errors.AsType[*hclext.ClaimError](err); ok {
-		return nil, nil, p.blockError(p.ownerClaims[refused.Claim].block, "%v", refused.Err)
+		return nil, nil, p.blockError(p.ownerClaims[refused.Claim].block, "%w", refused.Err)
 	}
 	if documentErr = cmp.Or(unresolved, err); documentErr != nil {
 		return nil, documentErr, nil
