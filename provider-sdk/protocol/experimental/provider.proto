@@ -278,9 +278,10 @@ message NormalizedValue {
   bytes canonical_projection = 5;
 }
 
-// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
-// byte-column coordinates. It describes the captured source, not a temporary
-// rendering of its evaluated values.
+// SourcePosition uses a zero-based offset into the original encoded bytes and
+// one-based line and byte-column coordinates in that same encoding. A BOM
+// contributes bytes to the first column. Coordinates never refer to a temporary
+// rendering of evaluated values.
 message SourcePosition {
   uint64 byte_offset = 1;
   uint32 line = 2;
