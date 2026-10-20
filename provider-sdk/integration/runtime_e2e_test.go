@@ -225,6 +225,9 @@ func start(c *qt.C, options transport.Options) *transport.Client {
 func open(c *qt.C, client *transport.Client, fault string) *protocol.Session {
 	c.Helper()
 	address := &url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(c.TempDir(), "database.db")), "/"), RawQuery: url.Values{"fault": {fault}}.Encode()}
+	// TempDir registers its cleanup above. Terminate the process before that
+	// cleanup runs, because Windows refuses to remove an open database file.
+	c.Cleanup(client.Close)
 	session, err := client.Open(c.Context(), &protocol.OpenRequest{Engine: "fixture", Address: address.String()})
 	c.Assert(err, qt.IsNil)
 	return session

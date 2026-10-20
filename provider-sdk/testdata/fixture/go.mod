@@ -1,4 +1,4 @@
-module example.org/ptah-fixture-provider
+module example.com/ptah-fixture-provider
 
 go 1.26.5
 
