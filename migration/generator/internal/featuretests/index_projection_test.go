@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -14,7 +16,6 @@ import (
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func indexProjectionOptions(c *qt.C) generator.BidirectionalSchemaPlanOptions {
@@ -68,8 +69,8 @@ func TestGeneratorProjectsAcceptedIndexLifecycleWithFeatureChanges(t *testing.T)
 func TestGeneratorPreservesSkippedIndexAndItsComment(t *testing.T) {
 	c := qt.New(t)
 	opts := indexProjectionOptions(c)
-	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex), "ydb")
-	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{{Kind: diffpolicy.DropIndex, Object: "items.gone"}})
+	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(planext.DropIndex), "ydb")
+	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{{Kind: planext.DropIndex, Object: "items.gone"}})
 	opts.Diff = filtered
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
 	c.Assert(err, qt.IsNil)

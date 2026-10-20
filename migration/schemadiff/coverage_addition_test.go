@@ -8,10 +8,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A record on the CURRENT side says the read never looked. It does not say the

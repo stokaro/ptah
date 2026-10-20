@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -223,7 +225,7 @@ func planError(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel
 	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities},
+		planext.Options{Capabilities: info.Capabilities},
 	)
 	return err
 }

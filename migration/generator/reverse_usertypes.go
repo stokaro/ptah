@@ -5,9 +5,9 @@ package generator
 // which reverse them.
 
 import (
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reverseEnumDiffs reverses enum modifications for down migrations.

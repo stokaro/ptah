@@ -10,12 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -23,7 +26,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestOracleRoleCatalogIsNotDescribedWithoutPrivilegeE2E pins the answer an
@@ -356,7 +358,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, before, platform.Oracle, must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -387,7 +389,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 	// statement-level form of the same claim.
 	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		settled, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		settled, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleStatementsNaming(settledStatements, "ROLE"), qt.HasLen, 0)

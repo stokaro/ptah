@@ -664,6 +664,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-difftypes",
+      "kind": "public-package",
+      "surface": "ptah.run/core/difftypes",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-featureplan",
       "kind": "public-package",
       "surface": "ptah.run/core/featureplan",
@@ -697,6 +703,12 @@
       "id": "gopkg-core-objectidentity",
       "kind": "public-package",
       "surface": "ptah.run/core/objectidentity",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-core-planext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/planext",
       "claimed_by": null
     },
     {
@@ -1705,12 +1717,6 @@
       "id": "gopkg-migration-schemadiff",
       "kind": "public-package",
       "surface": "ptah.run/migration/schemadiff",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-migration-schemadiff-difftypes",
-      "kind": "public-package",
-      "surface": "ptah.run/migration/schemadiff/difftypes",
       "claimed_by": null
     },
     {

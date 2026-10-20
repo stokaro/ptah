@@ -8,12 +8,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement is the
@@ -77,7 +78,7 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
 				diff, platform.Oracle,
-				planner.Options{Capabilities: capability.Oracle23()},
+				planext.Options{Capabilities: capability.Oracle23()},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -115,7 +116,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, platform.Oracle,
-		planner.Options{Capabilities: capability.Oracle23()},
+		planext.Options{Capabilities: capability.Oracle23()},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -153,7 +154,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate(t *t
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, platform.Oracle,
-		planner.Options{Capabilities: capability.Oracle23()},
+		planext.Options{Capabilities: capability.Oracle23()},
 	)
 
 	c.Assert(err, qt.IsNil)

@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/internal/tableidentity"
+	"ptah.run/internal/tableidentity"
 )
 
 // suppressScopedAway removes from the current schema every object a scope kept

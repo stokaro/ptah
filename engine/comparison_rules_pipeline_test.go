@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // carryingIndexes reads every index's options as equal, and carries a facet

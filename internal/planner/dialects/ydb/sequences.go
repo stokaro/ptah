@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtype"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // serialSequencePlan is the ALTER SEQUENCE statements a plan writes, split by

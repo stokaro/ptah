@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -19,7 +20,6 @@ import (
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {

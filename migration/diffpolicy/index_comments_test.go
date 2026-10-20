@@ -5,9 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestSkipIndexDropPreservesOnlyTheRetainedIndexesComment(t *testing.T) {
@@ -33,7 +34,7 @@ func TestSkipIndexDropPreservesOnlyTheRetainedIndexesComment(t *testing.T) {
 				IndexesAdded:         difftypes.IndexChanges{{TableName: test.removed, Index: schemamodel.Index{Name: "rebuilt", Fields: []string{"id"}}}},
 				IndexCommentsChanged: []difftypes.IndexCommentChange{cleanup, other, cleared, replaced},
 			}
-			filtered, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex), test.dialect)
+			filtered, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(planext.DropIndex), test.dialect)
 			c.Assert(skipped, qt.HasLen, 1)
 			c.Assert(filtered.IndexCommentsChanged, qt.DeepEquals, []difftypes.IndexCommentChange{other, cleared, replaced})
 			c.Assert(diff.IndexCommentsChanged, qt.DeepEquals, []difftypes.IndexCommentChange{cleanup, other, cleared, replaced})

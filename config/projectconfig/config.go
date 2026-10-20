@@ -22,7 +22,7 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/migration/diffpolicy"
+	"ptah.run/core/planext"
 )
 
 const (
@@ -807,7 +807,7 @@ type DiffSkipConfig struct {
 	// read as bool` even on `schema inspect`.
 	//
 	// It has no entry in SkipChangeKinds because Ptah's planner has no
-	// schema-removal change kind to omit: migration/schemadiff/difftypes.SchemaDiff
+	// schema-removal change kind to omit: core/difftypes.SchemaDiff
 	// carries no removed-schema list and no code path renders DROP SCHEMA into a
 	// plan. Measured on the community binary, `schema apply --dry-run` against a
 	// realm URL holding a schema the desired state omits prints
@@ -824,19 +824,19 @@ type DiffSkipConfig struct {
 // SkipChangeKinds returns the change kinds this policy skips, in the canonical
 // diffpolicy order. It is the bridge from the config IR to the planner/generator
 // vocabulary.
-func (c DiffConfig) SkipChangeKinds() []diffpolicy.ChangeKind {
-	var kinds []diffpolicy.ChangeKind
+func (c DiffConfig) SkipChangeKinds() []planext.ChangeKind {
+	var kinds []planext.ChangeKind
 	if c.Skip.DropTable.Value {
-		kinds = append(kinds, diffpolicy.DropTable)
+		kinds = append(kinds, planext.DropTable)
 	}
 	if c.Skip.DropColumn.Value {
-		kinds = append(kinds, diffpolicy.DropColumn)
+		kinds = append(kinds, planext.DropColumn)
 	}
 	if c.Skip.DropIndex.Value {
-		kinds = append(kinds, diffpolicy.DropIndex)
+		kinds = append(kinds, planext.DropIndex)
 	}
 	if c.Skip.DropEnum.Value {
-		kinds = append(kinds, diffpolicy.DropEnum)
+		kinds = append(kinds, planext.DropEnum)
 	}
 	return kinds
 }

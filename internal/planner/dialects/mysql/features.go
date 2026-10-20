@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // featureOwner is the contribution owner of the common steps a plan of this

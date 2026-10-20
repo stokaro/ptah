@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -40,7 +41,7 @@ func ExampleDesiredReplicationObject() {
 		fmt.Println(err)
 		return
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, runtime, diff, "ydb", planner.Options{Capabilities: caps})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, runtime, diff, "ydb", planext.Options{Capabilities: caps})
 	if err != nil {
 		fmt.Println(err)
 		return

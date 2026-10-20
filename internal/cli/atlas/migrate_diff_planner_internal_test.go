@@ -12,13 +12,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestCompatBidirectionalPlannerForFormat_NativeAtlasStaysForwardOnly(t *testing.T) {

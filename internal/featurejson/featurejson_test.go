@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -19,7 +20,6 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/featurejson"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func codecs() schemaext.Registry {

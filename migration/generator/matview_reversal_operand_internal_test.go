@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestReverseSchemaDiff_AMaterializedViewOperandComesFromThePriorSchema pins

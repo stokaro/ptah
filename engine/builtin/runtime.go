@@ -65,25 +65,22 @@ var bundled = sync.OnceValues(New)
 // fresh registry on every call. The provider services create their own visitor
 // for each batch, so the runtime can render concurrently without sharing output
 // buffers.
-//
-// It installs process-global handlers, once per process: the migration
-// planner of every bundled dialect, in migration/planner's registry, which
-// links no dialect. Until New runs, planner.GetPlanner refuses a bundled
-// dialect as unregistered.
 func New() (*engine.Runtime, error) {
-	if err := registerPlanners(); err != nil {
-		return nil, fmt.Errorf("register the bundled migration planners: %w", err)
-	}
 	// The built-in descriptors, not the process registry: a dialect another
 	// program registered has no bundled provider.
 	described := builtindialects.Descriptors()
 	providers := make([]engine.Provider, 0, len(described))
 	for _, dialect := range described {
 		name := dialect.Name
+		factory, found := plannerFactory(dialect)
+		if !found {
+			return nil, fmt.Errorf("no migration planner for the bundled dialect %q", name)
+		}
 		provider := engine.Provider{
 			ID: "ptah.run/" + name,
 			Targets: []engine.Target{{
 				Name:        name,
+				Planner:     factory,
 				Aliases:     dialect.Aliases,
 				Rendering:   renderingService{},
 				Preparation: schemapreparation.Identity{},

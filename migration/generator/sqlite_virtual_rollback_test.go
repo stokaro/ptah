@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/sqlite/sqlitetable"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/generator"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates is the seam test

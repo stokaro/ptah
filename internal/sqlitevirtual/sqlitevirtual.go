@@ -126,7 +126,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -134,11 +136,10 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/envbool"
-	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/internal/sqlitemodule"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // AllowDropEnvVar plans the removal of a live virtual table the desired state
@@ -321,21 +322,21 @@ type Policy struct {
 // skipSet is this policy in the vocabulary the callers filter with, so the
 // prediction and the filtering cannot disagree about what a skip removes.
 //
-// [diffpolicy.ChangeKind] has a fourth member, `drop_enum`, and it is
+// [planext.ChangeKind] has a fourth member, `drop_enum`, and it is
 // deliberately absent: SQLite has no enum type, nothing in a SQLite diff
 // populates EnumsRemoved, and this gate reads no enum field. The census in
 // TestDiffPolicySkipKindsAreClassified fails if a fifth kind appears without
 // being placed on one side of that line.
 func (p Policy) skipSet() diffpolicy.SkipSet {
-	var kinds []diffpolicy.ChangeKind
+	var kinds []planext.ChangeKind
 	if p.SkipDropTable {
-		kinds = append(kinds, diffpolicy.DropTable)
+		kinds = append(kinds, planext.DropTable)
 	}
 	if p.SkipDropColumn {
-		kinds = append(kinds, diffpolicy.DropColumn)
+		kinds = append(kinds, planext.DropColumn)
 	}
 	if p.SkipDropIndex {
-		kinds = append(kinds, diffpolicy.DropIndex)
+		kinds = append(kinds, planext.DropIndex)
 	}
 	return diffpolicy.NewSkipSet(kinds...)
 }

@@ -9,12 +9,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // childDeclaringColumnKey is `c.p_id REFERENCES p(id) ON DELETE CASCADE`, the

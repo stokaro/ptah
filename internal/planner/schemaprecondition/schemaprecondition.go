@@ -16,10 +16,10 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Node returns the creation for one schema, carrying what the declaration says
@@ -27,7 +27,7 @@ import (
 //
 // name is the schema an added object needs, which is why the node is emitted at
 // all; declared is every schema the desired document declares, normally
-// [ptah.run/migration/schemadiff/difftypes.SchemaDiff.DeclaredSchemas].
+// [ptah.run/core/difftypes.SchemaDiff.DeclaredSchemas].
 // A name no declaration matches yields the bare guarded creation, which is the
 // established behavior for a schema reached only through an object's qualifier.
 //

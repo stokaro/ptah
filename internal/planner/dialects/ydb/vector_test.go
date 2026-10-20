@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // plannedVector is the vector index a plan below adds, over column.

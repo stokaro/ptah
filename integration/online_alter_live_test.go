@@ -9,15 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // What the ALGORITHM clause buys is the server's own answer rather than Ptah's
@@ -88,7 +90,7 @@ func onlineAlterAddColumnStatement(c *qt.C, caps capability.Capabilities) string
 			DeclaredTables: []schemamodel.Table{{StructName: "OnlineAlter", Name: "online_alter"}},
 		},
 		"mysql",
-		planner.Options{Capabilities: caps, OnlineAlter: true},
+		planext.Options{Capabilities: caps, OnlineAlter: true},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
@@ -132,7 +134,7 @@ func TestOnlineAlterPostgresAddsAndValidatesSeparatelyLive(t *testing.T) {
 			Name: "ck_amount", TableName: table, Type: "CHECK", CheckExpression: "amount > 0",
 		}}},
 		"postgres",
-		planner.Options{Capabilities: capability.Postgres18(), OnlineAlter: true},
+		planext.Options{Capabilities: capability.Postgres18(), OnlineAlter: true},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)

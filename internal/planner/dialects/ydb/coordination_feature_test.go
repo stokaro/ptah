@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -15,7 +16,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // The public native planner joins standalone owner changes to common table

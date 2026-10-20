@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
@@ -19,7 +20,6 @@ import (
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/shadow"
 )
 

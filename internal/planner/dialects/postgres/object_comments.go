@@ -2,10 +2,10 @@ package postgres
 
 import (
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/routineargs"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // objectCommentStatements maps the kind a comparison reports to the kind

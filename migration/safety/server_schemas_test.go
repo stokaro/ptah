@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestClassifySchemaDiff_TheDatabasesOfAWholeServer grades a dropped database

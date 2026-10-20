@@ -7,11 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/cli/internal/diffreport"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A default ACL's role identity and every changed right reach the CLI report.

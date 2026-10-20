@@ -6,10 +6,10 @@ package generator
 import (
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/planner/objectlookup"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/objectlookup"
 )
 
 // reverseSequenceDiffs reverses sequence modifications for down migrations.

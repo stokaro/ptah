@@ -6,12 +6,12 @@ import (
 	"iter"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Resolver contains the validated target indexes needed by one migration plan.

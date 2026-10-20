@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -24,7 +25,6 @@ import (
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // viewSetting is an attached setting of a materialized view.

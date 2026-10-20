@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -13,7 +14,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // storagePhases are the common operations of a plan in the order they run.

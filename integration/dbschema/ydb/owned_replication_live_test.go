@@ -5,6 +5,8 @@ package ydb_test
 import (
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -28,7 +30,7 @@ func ownedPlan(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, replicationSchemas), info, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities})
+		planext.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return statements
 }

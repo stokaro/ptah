@@ -5,11 +5,11 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // projectConstraints applies intrinsic constraint transitions. Key creation and

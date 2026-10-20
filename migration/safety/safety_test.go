@@ -10,12 +10,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {

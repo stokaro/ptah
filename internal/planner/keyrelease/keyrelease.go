@@ -21,11 +21,11 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Releases are the removals a plan runs before its column changes, in the

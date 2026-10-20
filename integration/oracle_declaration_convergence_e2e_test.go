@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -26,7 +27,6 @@ import (
 	"ptah.run/internal/genexprprobe"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestOracleDeclarationConvergesE2E is the assertion every other engine here

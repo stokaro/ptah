@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // vectorColumnDiff is one column whose type transition the comparator recorded.

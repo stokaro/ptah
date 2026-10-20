@@ -3,8 +3,8 @@ package ydb
 import (
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // objectChange is one family of objects a diff may carry and the refusal a

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // The comment on the drop names what changed. A fixed reason would report a

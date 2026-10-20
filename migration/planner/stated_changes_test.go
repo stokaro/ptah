@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -31,7 +32,7 @@ func TestGenerateSchemaDiffASTWithOptions_ModificationStatesItsChanges(t *testin
 
 			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, dialect, planner.Options{},
+				diff, dialect, planext.Options{},
 			)
 
 			c.Assert(err, qt.IsNil)

@@ -3,9 +3,10 @@ package diffpolicy_test
 import (
 	"fmt"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ExampleApply filters a schema diff through a policy that skips table drops.
@@ -28,7 +29,7 @@ func ExampleApply() {
 		},
 	}
 
-	filtered, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropTable))
+	filtered, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropTable))
 
 	fmt.Println("table drops left:", len(filtered.TablesRemoved))
 	for _, ref := range filtered.IndexRemovals() {
@@ -84,7 +85,7 @@ func ExampleApplyForDialect() {
 
 	filtered, skipped := diffpolicy.ApplyForDialect(
 		diff,
-		diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+		diffpolicy.NewSkipSet(planext.DropIndex),
 		"postgres",
 	)
 

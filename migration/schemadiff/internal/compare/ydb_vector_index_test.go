@@ -7,11 +7,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // builtVector is the settings of the index the tests below hold.

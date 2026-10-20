@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -12,8 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
-	"ptah.run/internal/planner/objectlookup"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/objectlookup"
 )
 
 // reportUnsupportedObjectsBeforeTables and planObjectsAfterTables append the

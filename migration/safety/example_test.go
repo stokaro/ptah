@@ -8,9 +8,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ExampleAssessSQL classifies raw SQL strings of one target, the entry point

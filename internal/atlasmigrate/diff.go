@@ -14,6 +14,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -41,7 +43,6 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (
@@ -116,7 +117,7 @@ type DiffOptions struct {
 	IgnoreUnknownHCLNames bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
-	// [ptah.run/migration/planner.Options]. The caller selects it from its
+	// [ptah.run/migration/planext.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
 	// MarkFileModeRefusals tags `-- atlas:txmode none` on each Atlas-layout
@@ -608,7 +609,7 @@ func planDiffFileContents(
 	if opts.PlanBidirectional == nil {
 		upNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 			ctx, opts.Runtime,
-			diff, info.Dialect, planner.Options{
+			diff, info.Dialect, planext.Options{
 				Capabilities:         info.Capabilities,
 				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 				OnlineAlter:          opts.Policy.OnlineAlter,

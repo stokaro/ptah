@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/dataext"
 	"ptah.run/core/hclext"
 	"ptah.run/core/lintext"
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/routineext"
@@ -159,6 +160,9 @@ type Target struct {
 	Aliases []string
 	// Rendering is optional. A typed-nil service is an invalid registration.
 	Rendering renderer.Service
+	// Planner constructs the common migration planner for this target. Nil leaves
+	// planning unavailable. Factories must be safe for concurrent calls.
+	Planner planext.Factory
 	// SchemaRendering lowers and renders whole declarations. Nil means unavailable.
 	SchemaRendering renderer.SchemaService
 	// Validation checks complete declarations offline. A nil service is unavailable.
@@ -247,6 +251,7 @@ type Runtime struct {
 }
 
 type target struct {
+	planner         planext.Factory
 	owner           string
 	name            string
 	selection       schemaext.TargetSelection
@@ -461,7 +466,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 				ErrInvalidRegistration, name, existing.owner, owner)
 		}
 		r.targets[name] = target{
-			owner: owner, name: declared.Name, selection: selection,
+			owner: owner, name: declared.Name, selection: selection, planner: declared.Planner,
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,

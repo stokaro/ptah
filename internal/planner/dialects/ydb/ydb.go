@@ -96,6 +96,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -113,7 +114,6 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Planner plans YDB migrations for one capability set.

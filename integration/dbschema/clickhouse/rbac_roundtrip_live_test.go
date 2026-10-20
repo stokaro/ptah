@@ -12,10 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -25,7 +28,6 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // The live half of stokaro/ptah#1025: ClickHouse roles and grants applied,
@@ -508,7 +510,7 @@ func planClickHouseRBAC(
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return diff, statements

@@ -2,7 +2,7 @@ package postgres
 
 import (
 	"ptah.run/core/ast"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // changeConstraintComments sets the comment of each constraint whose comment

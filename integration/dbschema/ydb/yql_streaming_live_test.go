@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -42,7 +44,7 @@ func TestYDBDesiredYQL_StreamingQueries(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, "ydb", planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
 	c.Assert(statements, qt.HasLen, 0)

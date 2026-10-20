@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // uniqueKey is one UNIQUE of `c`: its name and its columns.

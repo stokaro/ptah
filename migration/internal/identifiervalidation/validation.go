@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ValidateCoverage rejects catalog-resolved snapshots that omit a candidate.

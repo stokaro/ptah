@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -324,7 +326,7 @@ func TestSpannerLiveComparesADatabaseOfSeveralTables(t *testing.T) {
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, engine, diff, platform.Spanner,
-		planner.Options{Capabilities: conn.Info().Capabilities})
+		planext.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	for _, table := range tables {
 		c.Assert(spannerLiveJoined(planned), qt.Not(qt.Contains), table)
@@ -388,7 +390,7 @@ CREATE TABLE %[2]s (id bigint PRIMARY KEY, x bigint, y bigint, CONSTRAINT fk_%[2
 	diff, err := schemadiff.CompareWithDatabaseInfo(ctx, &desired, live, conn.Info(), nil, engine)
 	c.Assert(err, qt.IsNil)
 	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, engine, diff, platform.Spanner,
-		planner.Options{Capabilities: conn.Info().Capabilities})
+		planext.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	for _, table := range []string{parent, child} {
 		c.Assert(spannerLiveJoined(planned), qt.Not(qt.Contains), table)

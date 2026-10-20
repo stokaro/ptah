@@ -5,13 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestTableCaptures_OwnedFeaturesKeepIdentityAndUnknownState(t *testing.T) {

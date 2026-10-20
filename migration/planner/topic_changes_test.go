@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // topicRefusals is what each planner but YDB's answers a topic change with.
@@ -65,14 +65,12 @@ func TestEveryPlannerButYDBRefusesTopicChanges(t *testing.T) {
 
 // TestEveryPlannerButYDBRefusesTopicChanges_CoversEveryPlanner holds the table
 // above to the planners Ptah ships, so a new one cannot plan a topic change
-// unmeasured. Another test of this package registers planners of its own under
-// names NormalizeDialect does not know; those plan whatever their test asks.
+// unmeasured. Independent test runtimes cannot change this selection.
 func TestEveryPlannerButYDBRefusesTopicChanges_CoversEveryPlanner(t *testing.T) {
 	c := qt.New(t)
-	dialects, err := planner.RegisteredDialects()
-	c.Assert(err, qt.IsNil)
+	dialects := builtintest.Runtime().Targets()
 	dialects = slices.DeleteFunc(dialects, func(dialect string) bool {
-		return dialect == platform.YDB || platform.NormalizeDialect(dialect) != dialect
+		return dialect == platform.YDB
 	})
 	var covered []string
 	for _, test := range topicRefusals {

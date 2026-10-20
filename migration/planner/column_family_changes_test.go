@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestEveryPlannerButYDBRefusesColumnFamilyChanges drives a hand-built diff
@@ -25,8 +25,7 @@ import (
 // it would plan nothing and report the database synced.
 func TestEveryPlannerButYDBRefusesColumnFamilyChanges(t *testing.T) {
 	c := qt.New(t)
-	dialects, err := planner.RegisteredDialects()
-	c.Assert(err, qt.IsNil)
+	dialects := must.Must(builtin.New()).Targets()
 	dialects = slices.DeleteFunc(dialects, func(dialect string) bool { return dialect == platform.YDB })
 	c.Assert(len(dialects) >= 8, qt.IsTrue, qt.Commentf("registered dialects: %v", dialects))
 

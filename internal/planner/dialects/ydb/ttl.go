@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // How a YDB plan changes a table's TTL.

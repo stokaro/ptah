@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ExampleTableCreationsFor builds the table additions of a hand-written diff.

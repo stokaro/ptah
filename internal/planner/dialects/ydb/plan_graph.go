@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/planner/featurehost"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func (p *Planner) scheduleFeatureChanges(

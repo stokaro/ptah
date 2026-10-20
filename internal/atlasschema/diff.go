@@ -11,6 +11,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -36,7 +38,6 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type DiffOptions struct {
@@ -79,7 +80,7 @@ type DiffOptions struct {
 	IgnoreUnknownHCLNames bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
-	// [ptah.run/migration/planner.Options]. The caller selects it from its
+	// [ptah.run/migration/planext.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
 	// ValidateSchema applies a caller-selected policy to both fully resolved
@@ -469,7 +470,7 @@ func diffResolvedStates(
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
 			ctx, opts.Runtime,
-			diff, dialect, planner.Options{
+			diff, dialect, planext.Options{
 
 				Capabilities:         capabilities,
 				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,

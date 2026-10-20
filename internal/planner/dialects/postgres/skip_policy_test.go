@@ -7,11 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
@@ -56,7 +56,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 
 	t.Run("skip drop_table omits the drop and comments it", func(t *testing.T) {
 		c := qt.New(t)
-		planner := postgres.New().WithSkipChangeKinds(diffpolicy.DropTable)
+		planner := postgres.New().WithSkipChangeKinds(planext.DropTable)
 		sql := renderPostgresSkip(c, planner, diff, desired)
 		// The DDL statement is gone; only the SKIP comment mentions the table.
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
@@ -70,7 +70,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 	t.Run("skip all destructive kinds omits them all", func(t *testing.T) {
 		c := qt.New(t)
 		planner := postgres.New().WithSkipChangeKinds(
-			diffpolicy.DropTable, diffpolicy.DropColumn, diffpolicy.DropIndex, diffpolicy.DropEnum,
+			planext.DropTable, planext.DropColumn, planext.DropIndex, planext.DropEnum,
 		)
 		sql := renderPostgresSkip(c, planner, diff, desired)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
@@ -86,7 +86,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 	t.Run("WithSkipChangeKinds is immutable and no-op safe", func(t *testing.T) {
 		c := qt.New(t)
 		base := postgres.New()
-		derived := base.WithSkipChangeKinds(diffpolicy.DropTable)
+		derived := base.WithSkipChangeKinds(planext.DropTable)
 		// The base planner is unaffected by the derived policy.
 		c.Assert(renderPostgresSkip(c, base, diff, desired), qt.Contains, "DROP TABLE IF EXISTS")
 		c.Assert(renderPostgresSkip(c, derived, diff, desired), qt.Not(qt.Contains), "DROP TABLE IF EXISTS")

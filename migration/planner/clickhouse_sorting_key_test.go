@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -72,7 +73,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseSortingKey_HappyPath(t *testi
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				diff, platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -115,7 +116,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseSortingKey_FailurePath(t *tes
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
 				must.Must(schemadiff.CompareSchemas(t.Context(), keyedTable(test.declared), liveTable(test.live, test.keys...), platform.ClickHouse, must.Must(builtin.New()))),
-				platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

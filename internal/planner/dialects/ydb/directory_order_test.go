@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func coordinationCreated(schema, name string) schemaext.ChangeRecord {

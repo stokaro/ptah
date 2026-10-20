@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // The source resolves an omitted table attribute through its Go struct.

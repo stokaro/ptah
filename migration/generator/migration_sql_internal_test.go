@@ -9,11 +9,12 @@ import (
 	"context"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // upMigrationSQL renders the up file of diff the way a generated migration
@@ -27,7 +28,7 @@ func upMigrationSQL(ctx context.Context, runtime Runtime, diff *difftypes.Schema
 	if len(caps) > 0 {
 		selected = caps[0]
 	}
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(ctx, runtime, diff, dialect, planner.Options{Capabilities: selected})
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(ctx, runtime, diff, dialect, planext.Options{Capabilities: selected})
 	if err != nil {
 		return "", err
 	}

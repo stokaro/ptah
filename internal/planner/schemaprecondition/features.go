@@ -3,8 +3,8 @@ package schemaprecondition
 import (
 	"fmt"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // RefuseFeatureChanges is the boundary for a planner with no selected feature

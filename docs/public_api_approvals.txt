@@ -819,3 +819,19 @@ v0.13.0 ptah.run/core/ast
 # callers use the common types without aliases. Pre-v1, so no compatibility is
 # owed.
 v0.13.0 ptah.run/core/ast
+
+# #4204 removes process-wide planner registration and lookup. PlanningRuntime
+# includes Resolver, and engine.SchemaRuntime supplies MigrationPlanner from
+# its own target factories. Embedders choose one runtime explicitly. No aliases
+# or global fallback remain. Pre-v1, so compatibility with older Ptah is not owed.
+v0.13.0 ptah.run/migration/planner
+v0.13.0 ptah.run/engine
+
+# #4204 moves the common diff model to core/difftypes and planning contracts
+# to core/planext. The old model package and planner/diffpolicy declarations are
+# removed without aliases. The neutral engine runtime can select a planner
+# without importing migration implementations. Pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/migration/schemadiff/difftypes
+v0.13.0 ptah.run/migration/diffpolicy
+# Project configuration exposes the same moved change-kind vocabulary.
+v0.13.0 ptah.run/config/projectconfig

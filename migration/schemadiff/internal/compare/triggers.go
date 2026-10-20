@@ -7,13 +7,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
-	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/triggerdef"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Triggers compares trigger definitions between generated and database schemas.

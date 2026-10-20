@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ErrIncompleteComparison means source knowledge could not establish every

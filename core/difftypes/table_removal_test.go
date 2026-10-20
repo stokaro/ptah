@@ -7,11 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type removalFacet struct{ Setting string }

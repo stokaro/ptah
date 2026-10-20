@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -78,7 +80,7 @@ func inlineEnumPlan(c *qt.C, conn *dbschema.DatabaseConnection, desired *schemam
 	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, desired, current, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		c.Context(), runtime, diff, conn.Info().Dialect, planner.Options{Capabilities: conn.Info().Capabilities},
+		c.Context(), runtime, diff, conn.Info().Dialect, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements

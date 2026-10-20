@@ -13,7 +13,7 @@ import (
 // TestComparison_AgreesWithTheSwitchesItReplaced pins each built-in
 // descriptor's comparison facts to what the dialect switches in
 // migration/schemadiff, internal/indexbacking, internal/foreignkeyscope,
-// internal/dbexprprobe and migration/internal/tableidentity answered, and the
+// internal/dbexprprobe and internal/tableidentity answered, and the
 // two TestComparison_ServerDatabasesAndRespelledIndexes_AgreeWithTheSwitchesTheyReplaced
 // pins for every spelling.
 func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {

@@ -3,11 +3,11 @@ package compare
 import (
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // tableMemberKey identifies something owned by a table -- a constraint, a

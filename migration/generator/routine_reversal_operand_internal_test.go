@@ -12,12 +12,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema pins both

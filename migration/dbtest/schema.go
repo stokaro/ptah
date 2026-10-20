@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -19,7 +21,6 @@ import (
 	"ptah.run/engine"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // SchemaOptions configures a single [RunSchemaTest] invocation.
@@ -222,7 +223,7 @@ func applyDesiredSchema(
 		diff,
 
 		info.Dialect,
-		planner.Options{Capabilities: info.Capabilities},
+		planext.Options{Capabilities: info.Capabilities},
 	)
 
 	if err != nil {

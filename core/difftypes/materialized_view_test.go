@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type viewSetting struct{ Replace bool }

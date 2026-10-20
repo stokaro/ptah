@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -270,7 +271,7 @@ func ownedPlan(c *qt.C, desired *schemamodel.Database, current *catalog.Database
 		return nil, err
 	}
 	return planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, platform.YDB,
-		planner.Options{Capabilities: capability.YDB262()})
+		planext.Options{Capabilities: capability.YDB262()})
 }
 
 // TestPlan_OwnedTransfer_DroppedBeforeItsTopic drops a transfer before the

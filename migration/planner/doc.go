@@ -14,11 +14,11 @@
 //
 // # Architecture
 //
-// The package follows a registry pattern with dialect-specific implementations:
+// The selected runtime owns each dialect-specific implementation:
 //
 //	┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-//	│   SchemaDiff    │───▶│     Planner      │───▶│   AST Nodes     │
-//	│   (Changes)     │    │   (Registry)     │    │  (SQL Logic)    │
+//	│   SchemaDiff    │───▶│     planext.Planner      │───▶│   AST Nodes     │
+//	│   (Changes)     │    │   (Runtime)      │    │  (SQL Logic)    │
 //	└─────────────────┘    └──────────────────┘    └─────────────────┘
 //	                                │
 //	                                ▼
@@ -29,7 +29,7 @@
 //
 // # Key Features
 //
-//   - A planner for every registered dialect (see Supported Dialects below)
+//   - A planner for each target supplied by the selected runtime
 //   - AST-based SQL generation for type safety and consistency
 //   - Proper dependency ordering to avoid constraint violations
 //   - Safety checks and warnings for destructive operations
@@ -37,9 +37,9 @@
 //
 // # Core Interface
 //
-// The package provides a Planner interface for extensible dialect support:
+// The package provides a planext.Planner interface for extensible dialect support:
 //
-//	type Planner interface {
+//	type planext.Planner interface {
 //		GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error)
 //	}
 //
@@ -55,31 +55,12 @@
 //
 // # Supported Dialects
 //
-// The built-in runtime (engine/builtin.New) registers a planner for each of
-// these dialects; this package links none of them. Use the platform package's
-// constants rather than spelling the names out. Several
-// dialects share one implementation configured with their own capability
-// preset, which is why the count of dialects exceeds the count of planners:
-//
-//   - postgres: ENUM types, SERIAL columns, and PostgreSQL-specific constraints
-//   - cockroachdb, yugabytedb, spanner: the PostgreSQL planner built for that
-//     dialect, so each one's capability preset decides what it emits
-//   - mysql: AUTO_INCREMENT, ENGINE specifications, and charset handling, under
-//     the capability.MySQL84 preset (no IF EXISTS guards -- exactly-once drops)
-//   - mariadb: the same MySQL planner under capability.MariaDB1011, which
-//     additionally requests IF EXISTS guards on constraint drops (issue #226)
-//   - sqlserver: a portable T-SQL subset with schemas, IDENTITY columns, and
-//     explicit errors for ALTER shapes that cannot be represented safely yet
-//   - oracle: Oracle's own ALTER TABLE clause vocabulary and identity rules
-//   - clickhouse: MergeTree-oriented table and index planning
-//   - sqlite: conservative planning for native CREATE TABLE, ADD COLUMN,
-//     indexes, views, triggers, and drops; table rebuilds are reported for
-//     structural ALTER operations SQLite cannot perform directly
-//
-// Built-in dialect planners are implementation details behind internal package
-// boundaries. Use the public registry functions in this package instead of
-// importing dialect implementations directly, and call RegisteredDialects for the
-// registered set at runtime rather than reading it off this list.
+// engine/builtin.New assembles the bundled dialects and their planners. This
+// package links none of them. Runtime.Targets lists the selected targets, and
+// Runtime.MigrationPlanner resolves a target or its alias within that runtime.
+// Constructing another runtime does not change the selection. A missing target
+// returns ptaherr.ErrUnsupportedDialect; a target without a planner returns
+// ptaherr.ErrUnsupportedFeature.
 //
 // # Main Functions
 //
@@ -88,8 +69,7 @@
 //   - GenerateSchemaDiffAST(): Generates AST nodes from schema differences
 //   - GenerateSchemaDiffSQL(): Generates complete SQL string from schema differences
 //   - GenerateSchemaDiffSQLStatements(): Generates individual SQL statements as string slice
-//   - GetPlanner(): Registry-backed function to get dialect-specific planners
-//   - Register(): Extension point for third-party planner dialects
+//   - planext.Resolver.MigrationPlanner(): Selects a planner from the caller's runtime
 //
 // # Usage Example
 //
@@ -186,7 +166,7 @@
 //
 // This package integrates with other Ptah components:
 //
-//   - ptah/migration/schemadiff/difftypes: Consumes schema difference data
+//   - ptah/core/difftypes: Consumes schema difference data
 //   - ptah/core/goschema: Uses generated schema information
 //   - ptah/core/ast: Generates AST nodes for SQL representation
 //   - ptah/engine/builtin: Converts AST nodes to dialect-specific SQL
@@ -220,25 +200,12 @@
 //
 // # Extensibility
 //
-// New database dialects can be added by:
-//
-//  1. Implementing the Planner interface
-//  2. Registering a factory with Register, typically from the dialect package's init
-//  3. Adding a capability preset when a dialect reuses an existing planner
-//  4. Implementing dialect-specific SQL generation logic
-//
-// Built-in dialects are registered by this package. Third-party packages can
-// register additional dialects without forking Ptah:
-//
-//	func init() {
-//		err := planner.Register("acme", func(opts planner.Options) planner.Planner {
-//			return acmeplanner.New(opts.Capabilities)
-//		})
-//		if err != nil {
-//			// Store or report the error through the extension package's own
-//			// initialization contract.
-//		}
-//	}
+// A provider supplies a planext.Planner factory on its engine.Target. The application
+// passes that provider to engine.New and keeps the returned runtime throughout
+// comparison, planning, and rendering. Factories receive planext.Options, including the
+// live capability set when available. There is no package-level registration or
+// fallback to another runtime. See ExamplePlanningRuntime_unsupportedDialect and
+// ExamplePlanningRuntime_targets for selection examples.
 //
 // # Thread Safety
 //

@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -20,7 +21,6 @@ import (
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // typedRoutine is a routine whose signature names the type zip, and plainRoutine

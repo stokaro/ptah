@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacapture"
@@ -21,7 +22,6 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbtype"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // How a YDB plan rebuilds a table.

@@ -1,9 +1,9 @@
 package postgres
 
 import (
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func (p *Planner) typeContext(diff *difftypes.SchemaDiff) featureplan.TypeContext {

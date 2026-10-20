@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -70,7 +71,7 @@ func TestClickHouseResolvedFacetsReachCreatePlanning(t *testing.T) {
 			c.Assert(diff.TablesAdded[0].Table.Facets.TargetScope(chschema.TableKind), qt.DeepEquals, []string{"clickhouse"})
 			c.Assert(diff.TablePreparation.Source[0].Desired.Table.Facets, qt.DeepEquals, facets)
 			c.Assert(source.Tables[0].Facets, qt.DeepEquals, facets)
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planner.Options{})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 1)
 			c.Assert(statements[0], qt.Contains, "ORDER BY ("+test.want+")")
@@ -130,7 +131,7 @@ func TestClickHouseCreationLeavesUnrelatedUnmanagedSettingsAlone(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planner.Options{})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains, "CREATE TABLE added")

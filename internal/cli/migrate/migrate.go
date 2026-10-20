@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
@@ -247,7 +248,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		cmd.Context(), runtime,
-		diff, info.Dialect, planner.Options{
+		diff, info.Dialect, planext.Options{
 			Capabilities:      info.Capabilities,
 			AllowTableRebuild: rebuild,
 		},

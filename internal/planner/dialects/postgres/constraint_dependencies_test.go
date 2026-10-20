@@ -8,11 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_ReleasesForeignKeysBeforeKeysAndColumns(t *testing.T) {
@@ -82,7 +82,7 @@ func TestPlanner_SkippedTableDropRetainsItsForeignKeys(t *testing.T) {
 			{Name: "other_fk", TableName: "archives", Type: "FOREIGN KEY"},
 		},
 	}
-	planner := postgres.New().WithSkipChangeKinds(diffpolicy.DropTable)
+	planner := postgres.New().WithSkipChangeKinds(planext.DropTable)
 	sql := renderPostgresSkip(c, planner, diff, &schemamodel.Database{})
 	c.Assert(sql, qt.Not(qt.Contains), `DROP CONSTRAINT IF EXISTS "parent_fk"`)
 	c.Assert(sql, qt.Contains, `DROP CONSTRAINT IF EXISTS "other_fk"`)

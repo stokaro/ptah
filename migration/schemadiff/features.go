@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -17,9 +18,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/tableidentity"
 	"ptah.run/migration/internal/identifiervalidation"
-	"ptah.run/migration/internal/tableidentity"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func comparisonIdentifiers(desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions) (identifier.Semantics, error) {

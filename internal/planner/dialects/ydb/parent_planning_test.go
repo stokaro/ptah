@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlannerRefusesDropWithUnknownCapturedChildren(t *testing.T) {

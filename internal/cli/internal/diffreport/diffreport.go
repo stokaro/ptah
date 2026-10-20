@@ -15,7 +15,7 @@ import (
 	"reflect"
 	"strings"
 
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // maxObjectNameParts bounds how many string fields of one changed object are

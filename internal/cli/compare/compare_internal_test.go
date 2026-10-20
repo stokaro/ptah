@@ -9,9 +9,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestCompareExitCode_EmptyDiff(t *testing.T) {

@@ -7,12 +7,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
@@ -112,7 +113,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 				test.diff,
 
 				platform.ClickHouse,
-				planner.Options{Capabilities: caps},
+				planext.Options{Capabilities: caps},
 			)
 
 			c.Assert(err, qt.IsNil)

@@ -7,6 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -14,7 +16,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // asnSchema is a ClickHouse table asn whose column n is the field given.
@@ -98,7 +99,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_HappyPath(t *te
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				asnDiff(test.desired, test.current), platform.ClickHouse, planner.Options{Capabilities: test.caps},
+				asnDiff(test.desired, test.current), platform.ClickHouse, planext.Options{Capabilities: test.caps},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -127,7 +128,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_FailurePath(t *
 				context.Background(), must.Must(builtin.New()),
 				asnDiff(schemamodel.Field{Type: "INTEGER"}, schemamodel.Field{Type: "INTEGER", Nullable: true}),
 				platform.ClickHouse,
-				planner.Options{Capabilities: test.caps},
+				planext.Options{Capabilities: test.caps},
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/schemaprep"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reverseIndexRemovals splits the up direction's index removals by what the

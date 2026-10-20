@@ -15,6 +15,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // These tests apply a SQL schema file that names its tables and columns in

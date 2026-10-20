@@ -8,12 +8,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestGetPlanner_CapabilityWiring proves the factory wires the right
@@ -73,7 +74,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 
 		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 			context.Background(), must.Must(builtin.New()),
-			diff, "mysql", planner.Options{Capabilities: caps},
+			diff, "mysql", planext.Options{Capabilities: caps},
 		)
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
@@ -88,7 +89,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 
 		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 			context.Background(), must.Must(builtin.New()),
-			diff, "mysql", planner.Options{Capabilities: caps},
+			diff, "mysql", planext.Options{Capabilities: caps},
 		)
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
@@ -102,7 +103,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 
 		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 			context.Background(), must.Must(builtin.New()),
-			diff, "mysql", planner.Options{Capabilities: caps},
+			diff, "mysql", planext.Options{Capabilities: caps},
 		)
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))

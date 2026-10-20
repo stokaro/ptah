@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbindex"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // columnTTLPlan detaches existing policies before source replacement or column

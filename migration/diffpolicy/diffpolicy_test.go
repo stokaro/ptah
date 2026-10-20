@@ -5,23 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestParseChangeKind(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    diffpolicy.ChangeKind
+		want    planext.ChangeKind
 		wantErr bool
 	}{
-		{name: "drop_table", input: "drop_table", want: diffpolicy.DropTable},
-		{name: "drop_column", input: "drop_column", want: diffpolicy.DropColumn},
-		{name: "drop_index", input: "drop_index", want: diffpolicy.DropIndex},
-		{name: "drop_enum", input: "drop_enum", want: diffpolicy.DropEnum},
-		{name: "uppercase and spaces", input: "  DROP_TABLE ", want: diffpolicy.DropTable},
+		{name: "drop_table", input: "drop_table", want: planext.DropTable},
+		{name: "drop_column", input: "drop_column", want: planext.DropColumn},
+		{name: "drop_index", input: "drop_index", want: planext.DropIndex},
+		{name: "drop_enum", input: "drop_enum", want: planext.DropEnum},
+		{name: "uppercase and spaces", input: "  DROP_TABLE ", want: planext.DropTable},
 		{name: "unknown", input: "drop_universe", wantErr: true},
 		{name: "empty", input: "", wantErr: true},
 	}
@@ -40,19 +41,19 @@ func TestSkipSet(t *testing.T) {
 
 	empty := diffpolicy.NewSkipSet()
 	c.Assert(empty.Empty(), qt.IsTrue)
-	c.Assert(empty.Has(diffpolicy.DropTable), qt.IsFalse)
+	c.Assert(empty.Has(planext.DropTable), qt.IsFalse)
 
-	set := diffpolicy.NewSkipSet(diffpolicy.DropTable, diffpolicy.DropTable, diffpolicy.DropEnum)
+	set := diffpolicy.NewSkipSet(planext.DropTable, planext.DropTable, planext.DropEnum)
 	c.Assert(set.Empty(), qt.IsFalse)
-	c.Assert(set.Has(diffpolicy.DropTable), qt.IsTrue)
-	c.Assert(set.Has(diffpolicy.DropEnum), qt.IsTrue)
-	c.Assert(set.Has(diffpolicy.DropColumn), qt.IsFalse)
+	c.Assert(set.Has(planext.DropTable), qt.IsTrue)
+	c.Assert(set.Has(planext.DropEnum), qt.IsTrue)
+	c.Assert(set.Has(planext.DropColumn), qt.IsFalse)
 }
 
 func TestApplyNilOrEmptyReturnsInput(t *testing.T) {
 	c := qt.New(t)
 
-	got, skipped := diffpolicy.Apply(nil, diffpolicy.NewSkipSet(diffpolicy.DropTable))
+	got, skipped := diffpolicy.Apply(nil, diffpolicy.NewSkipSet(planext.DropTable))
 	c.Assert(got, qt.IsNil)
 	c.Assert(skipped, qt.HasLen, 0)
 
@@ -94,7 +95,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 		},
 	}
 
-	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropTable))
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropTable))
 
 	// The dropped table and only its dependents are removed; the kept table's
 	// removals (orders) and the schema-level grant survive.
@@ -112,7 +113,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	c.Assert(got.GrantsRemoved, qt.HasLen, 2)
 
 	c.Assert(skipped, qt.HasLen, 1)
-	c.Assert(skipped[0].Kind, qt.Equals, diffpolicy.DropTable)
+	c.Assert(skipped[0].Kind, qt.Equals, planext.DropTable)
 	c.Assert(skipped[0].Object, qt.Equals, "users")
 
 	// The input diff must not be mutated.
@@ -129,7 +130,7 @@ func TestApplyDropColumn(t *testing.T) {
 		},
 	}
 
-	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropColumn))
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropColumn))
 
 	c.Assert(got.TablesModified[0].ColumnsRemoved, qt.HasLen, 0)
 	c.Assert(got.TablesModified[0].ColumnsAdded.Names(), qt.DeepEquals, []string{"age"})
@@ -155,13 +156,13 @@ func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 		},
 	}
 
-	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex))
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropIndex))
 
 	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_rebuild", TableName: "users"},
 	})
 	c.Assert(skipped, qt.HasLen, 1)
-	c.Assert(skipped[0].Kind, qt.Equals, diffpolicy.DropIndex)
+	c.Assert(skipped[0].Kind, qt.Equals, planext.DropIndex)
 	c.Assert(skipped[0].Object, qt.Equals, "legacy.idx_gone")
 }
 
@@ -170,7 +171,7 @@ func TestApplyDropEnum(t *testing.T) {
 
 	diff := &difftypes.SchemaDiff{EnumsRemoved: difftypes.EnumChanges{{Name: "status"}, {Name: "kind"}}}
 
-	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropEnum))
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropEnum))
 
 	c.Assert(got.EnumsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(skipped, qt.HasLen, 2)

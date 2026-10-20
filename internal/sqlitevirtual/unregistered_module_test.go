@@ -9,12 +9,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestValidateComparisonRefusesAnUnregisteredModule is the guard on the second
@@ -1397,23 +1398,23 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 	// drop_enum is the deliberate omission: SQLite has no enum type, nothing in
 	// a SQLite comparison populates EnumsRemoved, and this gate reads no enum
 	// field at all.
-	unread := []diffpolicy.ChangeKind{diffpolicy.DropEnum}
+	unread := []planext.ChangeKind{planext.DropEnum}
 
 	tests := []struct {
 		name   string
-		kind   diffpolicy.ChangeKind
+		kind   planext.ChangeKind
 		diff   *difftypes.SchemaDiff
 		policy sqlitevirtual.Policy
 	}{
 		{
 			name:   "drop_table",
-			kind:   diffpolicy.DropTable,
+			kind:   planext.DropTable,
 			diff:   removing("docs_stat"),
 			policy: sqlitevirtual.Policy{SkipDropTable: true},
 		},
 		{
 			name: "drop_column",
-			kind: diffpolicy.DropColumn,
+			kind: planext.DropColumn,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsRemoved: difftypes.ColumnChanges{{Name: "c1body"}},
@@ -1422,7 +1423,7 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 		},
 		{
 			name: "drop_index",
-			kind: diffpolicy.DropIndex,
+			kind: planext.DropIndex,
 			diff: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 				{Name: "docs_content_title_idx", TableName: "docs_content"},
 			}},

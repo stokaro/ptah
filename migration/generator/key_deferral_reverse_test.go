@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // A rollback that adds back a key the forward change dropped adds it as it

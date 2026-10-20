@@ -14,13 +14,13 @@ import (
 	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // These tests apply a schema file that names an existing role, and compare it

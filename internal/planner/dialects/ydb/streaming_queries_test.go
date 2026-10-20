@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestStreamingQueries_StopBeforeSourcesAndRestartAfterCreation(t *testing.T) {

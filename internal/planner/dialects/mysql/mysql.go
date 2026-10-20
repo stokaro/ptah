@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -20,14 +21,13 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
-	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (

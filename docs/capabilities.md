@@ -854,7 +854,7 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   session.
 
 Offline SQL generation has no server banner to inspect. Factories such as
-`planner.GetPlanner`, `builtin.NewRenderer`, and
+`engine.Runtime.MigrationPlanner`, `builtin.NewRenderer`, and
 `planner.GenerateSchemaDiffSQLStatements` therefore use `ForDialect`, which is
 the current-version default for the normalized dialect. Use the
 `...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`

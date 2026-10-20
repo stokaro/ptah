@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -54,7 +55,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseRemovedDefault(t *testing.T) 
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				asnDiff(test.desired, test.current), platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				asnDiff(test.desired, test.current), platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.IsNil)

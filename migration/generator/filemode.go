@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planMigrationFiles plans the migration files for diff and marks those the

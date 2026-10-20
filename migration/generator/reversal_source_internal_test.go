@@ -27,7 +27,7 @@ func fieldsNamedByReversalBuilders(c *qt.C) map[string]bool {
 	root, err := exec.CommandContext(c.Context(), "git", "rev-parse", "--show-toplevel").Output()
 	c.Assert(err, qt.IsNil)
 	repository := strings.TrimSpace(string(root))
-	command := exec.CommandContext(c.Context(), "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "migration/generator", "migration/schemadiff/difftypes")
+	command := exec.CommandContext(c.Context(), "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "migration/generator", "core/difftypes")
 	command.Dir = repository
 	listing, err := command.Output()
 	c.Assert(err, qt.IsNil)
@@ -38,7 +38,7 @@ func fieldsNamedByReversalBuilders(c *qt.C) map[string]bool {
 		}
 	}
 	c.Assert(len(selected) > 20, qt.IsTrue)
-	loaded, err := packages.Load(&packages.Config{Context: c.Context(), Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}, ".", "ptah.run/migration/schemadiff/difftypes")
+	loaded, err := packages.Load(&packages.Config{Context: c.Context(), Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}, ".", "ptah.run/core/difftypes")
 	c.Assert(err, qt.IsNil)
 	functions := make(map[*types.Func]reversalSource)
 	var roots []*types.Func
@@ -127,7 +127,7 @@ func reversalTypeName(value types.Type) string {
 	if pointer, ok := value.(*types.Pointer); ok {
 		value = types.Unalias(pointer.Elem())
 	}
-	if named, ok := value.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "ptah.run/migration/schemadiff/difftypes" {
+	if named, ok := value.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "ptah.run/core/difftypes" {
 		return named.Obj().Name()
 	}
 	return ""
@@ -168,7 +168,7 @@ func reversalSourceFixture(c *qt.C, body string) (map[*types.Func]reversalSource
 	c.Assert(err, qt.IsNil)
 	info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue), Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object), Selections: make(map[*ast.SelectorExpr]*types.Selection)}
 	configuration := &types.Config{}
-	_, err = configuration.Check("ptah.run/migration/schemadiff/difftypes", fset, []*ast.File{file}, info)
+	_, err = configuration.Check("ptah.run/core/difftypes", fset, []*ast.File{file}, info)
 	c.Assert(err, qt.IsNil)
 	functions := make(map[*types.Func]reversalSource)
 	var roots []*types.Func

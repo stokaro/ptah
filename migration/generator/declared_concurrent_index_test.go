@@ -7,12 +7,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A desired state may ask for PostgreSQL's non-locking index build in its own

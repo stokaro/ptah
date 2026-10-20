@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // RoleMemberships compares the membership of each role in other roles, on a

@@ -6,11 +6,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/concurrentindex"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // DiffPolicy holds Atlas-compatible schema diff policy that maps to Ptah's
@@ -42,7 +42,7 @@ type DiffPolicy struct {
 	AllowTableRebuild bool
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and the
 	// refusal of a change only a rebuild can make names it. Empty names the
-	// native flag. See [ptah.run/migration/planner.Options.TableRebuildRequest].
+	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
 
 	// RotateSecrets names the YDB secrets, by path, the plan gives the value

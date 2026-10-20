@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbsource"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // declaredTTL is a one-table declaration carrying the given policy, from a

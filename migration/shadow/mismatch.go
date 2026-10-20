@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func describeDiff(diff *difftypes.SchemaDiff) string {

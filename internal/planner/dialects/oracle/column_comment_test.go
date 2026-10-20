@@ -8,10 +8,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	oracleplanner "ptah.run/internal/planner/dialects/oracle"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Oracle emits a column's comment as a statement of its own, and emits no

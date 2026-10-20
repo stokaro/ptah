@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // testOperationPlanning tests generating detailed operation plans

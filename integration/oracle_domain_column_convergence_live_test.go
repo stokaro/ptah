@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -102,7 +104,7 @@ func planOracleDomainColumns(ctx context.Context, c *qt.C, conn *dbschema.Databa
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	var fixture []string
