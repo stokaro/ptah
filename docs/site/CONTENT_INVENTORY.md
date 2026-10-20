@@ -211,3 +211,11 @@ The restructuring is implemented as six stacked phases: governance,
 onboarding, navigation, visuals and examples, reference and compatibility, and
 the editorial sweep. Each phase leaves its target branch buildable. Published
 routes remain in the redirect ledger even when later work moves them.
+
+## Executable provider installation guidance
+
+The executable-provider workflow owns manifest trust, selection, and diagnostic
+codes. Engine-specific setup pages answer catalog errors for YDB, DuckDB, and
+Spanner. They link to the shared procedure instead of copying it. Each page
+separates the reserved official identity and distribution policy from available
+release artifacts. The experimental fixture is not evidence of engine support.

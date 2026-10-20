@@ -12,6 +12,9 @@ sourceOfTruth:
   - "internal/providerhost"
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
+owns:
+  - cli-ptah-providers-list
+  - cli-ptah-providers-check
 generated: false
 overlaps: []
 disposition: keep
@@ -34,12 +37,13 @@ with the values for the artifact you trust:
 
 ```json
 {
-  "format_version": 1,
+  "format_version": 2,
   "providers": [
     {
       "executable": "/absolute/path/to/provider",
       "sha256": "<artifact-sha256>",
       "provider_id": "example.org/fixture",
+      "engines": [{"id": "fixture", "aliases": []}],
       "environment": []
     }
   ]
@@ -54,7 +58,39 @@ request rather than process arguments.
 
 Pass `--provider-config providers.json` on each supported command. This flag has
 no environment-variable binding. Ptah does not discover providers from `PATH` or
-the current directory. Conflicting engine names or URL aliases are errors.
+the current directory. Conflicting engine names or URL aliases are errors, even
+when an entry is disabled or unselected. Only the selected installation starts.
+
+Select an engine explicitly with `--provider-engine fixture` when the command
+does not identify it through a URL. An explicit engine requires an executable
+provider. It never selects an embedded implementation. A manifest with multiple
+engines requires an unambiguous URL or `--provider-engine`. The declared engine
+IDs and aliases must match the executable's negotiated description.
+
+## Check the installation
+
+List catalog records and configured installations without starting a process:
+
+```console
+ptah providers list --provider-config providers.json --json
+```
+
+The catalog lists official identities and setup links. It does not prove an
+installation exists. Each configured entry reports its integrity status and
+`"protocol_status": "not_checked"`. Listing exits successfully after reporting
+installation failures; use `providers check` to require a usable installation.
+
+Check one trusted executable without opening a database:
+
+```console
+ptah providers check --provider-config providers.json \
+  --provider-engine fixture --json
+```
+
+Success reports `"status": "compatible"`, the executable path, provider version,
+protocol revision, and semantic identity. The process closes after negotiation.
+Compatibility with the transport does not establish support for every schema
+object or database operation.
 
 ## Inspect the starting state
 
@@ -126,6 +162,22 @@ failure.
 
 ## Resolve failures
 
+Missing official providers include an engine ID, provider ID, repository URL,
+and setup URL in the error. JSON plan and apply reports preserve these fields
+in `provider_diagnostic`. Installation checks use `diagnostic`.
+
+| Code | Action |
+| --- | --- |
+| `provider_missing` | Follow the engine-specific setup page and configure a trusted artifact. |
+| `provider_disabled` | Enable the intended installation explicitly. |
+| `provider_executable_missing` | Restore the executable or correct its absolute path. |
+| `provider_unreadable` | Check file permissions and ensure the path names a regular file. |
+| `provider_untrusted` | Verify provenance before accepting a different checksum. |
+| `provider_start_failed` | Check the executable platform and startup environment. |
+| `provider_incompatible` | Select an artifact with the required identity and protocol. |
+| `provider_identity_mismatch` | Correct the declared engines and aliases after reviewing the artifact. |
+| `provider_target_mismatch` | Make the database target agree with the selected engine. |
+
 A checksum or identity mismatch refuses startup. Fix the explicit manifest only
 after verifying the intended artifact. A missing service or unsupported schema
 property requires provider or protocol support; Ptah does not select an embedded
@@ -138,7 +190,15 @@ rollback. A stale plan refuses application after the target changes.
 
 This adapter does not support native objects, engine-specific facets, managed
 data, database cleanup, or isolated execution of untrusted SQL. It does not add
-provider selection to `ptah-compat` or other native command groups.
+provider selection to `ptah-compat` or other native command groups. Project-file
+URLs and saved plans do not select a provider: pass `--provider-engine` with
+`--provider-config` for those workflows. The selected connection scope refuses
+every unregistered URL scheme, including schemes with embedded drivers.
+
+The official catalog recognizes [YDB](../providers/ydb/),
+[DuckDB](../providers/duckdb/), and [Spanner](../providers/spanner/). These entries
+state provider ownership and distribution policy. Official extraction and
+release artifacts remain part of [issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
 Continue with [plan approval and target checks](../../direct/plan-and-approve/) or the
 [public embedding API](../public-api/).

@@ -60,6 +60,8 @@ type nativeConnectionsKey struct{}
 // WithNativeConnections freezes the selected scheme bindings for this request.
 // The context owns selection, not process lifetime; the application closes its
 // providers after its commands finish. Registrations are copied before use.
+// Selection is exclusive: an unregistered URL scheme is refused, including
+// schemes for bundled drivers. An empty selection permits no connections.
 func WithNativeConnections(ctx context.Context, registrations map[string]NativeRegistration) (context.Context, error) {
 	selected := make(map[string]NativeRegistration, len(registrations))
 	for scheme, registration := range registrations {
@@ -97,9 +99,12 @@ func nilNativeService(value any) bool {
 }
 
 func nativeConnection(ctx context.Context, scheme, address string, scope ConnectionScope) (*DatabaseConnection, bool, error) {
-	selected, _ := ctx.Value(nativeConnectionsKey{}).(map[string]NativeRegistration)
+	selected, configured := ctx.Value(nativeConnectionsKey{}).(map[string]NativeRegistration)
 	registration, found := selected[scheme]
 	if !found {
+		if configured {
+			return nil, true, fmt.Errorf("the selected provider does not own the database URL scheme")
+		}
 		return nil, false, nil
 	}
 	if err := ctx.Err(); err != nil {

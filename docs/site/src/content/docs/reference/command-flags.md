@@ -1333,6 +1333,29 @@ Read the columns as follows.
 
 </div>
 
+**`ptah providers check`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--json` | `bool` | `false` | — | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
+
+</div>
+
+**`ptah providers list`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--json` | `bool` | `false` | — | — |
+| `--provider-config` | `string` | — | — | — |
+
+</div>
+
 **`ptah schema annotations`**
 
 <div class="ptah-wide-table">
@@ -1368,6 +1391,7 @@ Read the columns as follows.
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
@@ -1527,6 +1551,7 @@ Read the columns as follows.
 | `--out-dir` | `string` | — | `PTAH_OUT_DIR` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--split` | `string` | — | `PTAH_SPLIT` | — |
@@ -1574,6 +1599,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |

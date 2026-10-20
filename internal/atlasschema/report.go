@@ -5,6 +5,7 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 
+	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -165,6 +166,8 @@ type PlanReport struct {
 	// Error is the run's error message, present when Outcome is refused or
 	// failed. It is the sentence the command prints on standard error.
 	Error string `json:"error,omitempty"`
+	// ProviderDiagnostic preserves structured provider setup and trust failures.
+	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 }
 
 // PlanEvidence is what a caller saw of one `schema plan` run.
@@ -187,6 +190,7 @@ func NewPlanReport(evidence PlanEvidence) PlanReport {
 	report := PlanReport{ContractVersion: PlanReportContractVersion, Undecided: evidence.Undecided.Clone()}
 	if evidence.Err != nil {
 		report.Error = evidence.Err.Error()
+		report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
 		report.Refusal = refusalFor(evidence.Err)
 		report.Outcome = PlanOutcomeFailed
 		if report.Refusal != nil {
@@ -236,6 +240,8 @@ type ApplyReport struct {
 	// failed or unknown. It is the sentence the command prints on standard
 	// error.
 	Error string `json:"error,omitempty"`
+	// ProviderDiagnostic preserves structured provider setup and trust failures.
+	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 }
 
 // ApplyEvidence is what a caller saw of one `schema apply` run.
@@ -280,6 +286,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		return report
 	}
 	report.Error = evidence.Err.Error()
+	report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
 	if evidence.Dispatched {
 		report.Outcome = ApplyOutcomeUnknown
 		return report

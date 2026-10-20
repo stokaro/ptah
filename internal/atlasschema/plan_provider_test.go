@@ -20,13 +20,23 @@ import (
 )
 
 type boundProvider struct {
+	base    context.Context
 	info    catalog.ServerInfo
 	address string
 	reads   atomic.Int64
 }
 
 func (p *boundProvider) Open(ctx context.Context, _ dbschema.NativeRequest) (dbschema.NativeSession, error) {
-	conn, err := dbschema.ConnectToDatabase(ctx, p.address)
+	// This fixture implements its own storage through the bundled SQLite
+	// adapter. The host's exclusive URL selection belongs to the outer call.
+	storage, cancel := context.WithCancel(p.base)
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	conn, err := dbschema.ConnectToDatabase(storage, p.address)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +96,7 @@ func prepareBoundPlan(c *qt.C) (*boundProvider, *dbschema.DatabaseConnection, at
 		ID: "example.provider", Version: "experiment", SemanticIdentity: "tables-1",
 		ProtocolRevision: 2, ArtifactSHA256: strings.Repeat("a", 64), ContractSHA256: strings.Repeat("b", 64),
 	}
-	provider := &boundProvider{info: info, address: "sqlite://" + path}
+	provider := &boundProvider{base: c.Context(), info: info, address: "sqlite://" + path}
 	conn := connectBoundProvider(c, provider)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
@@ -145,7 +155,7 @@ func TestSavedPlanRefusesChangedProviderBeforeReadingTheTarget(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			provider, _, plan := prepareBoundPlan(c)
-			changed := &boundProvider{info: provider.info, address: provider.address}
+			changed := &boundProvider{base: c.Context(), info: provider.info, address: provider.address}
 			test.change(&changed.info)
 			conn := connectBoundProvider(c, changed)
 			runtime, err := builtin.New()
@@ -181,7 +191,7 @@ func TestProviderTargetProjectionIgnoresIdentifierFactOrder(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	plan, err := atlasschema.PreparePlanFile(c.Context(), conn, atlasschema.PlanFileOptions{Runtime: runtime, Desired: &schemamodel.Database{}})
 	c.Assert(err, qt.IsNil)
-	changed := &boundProvider{info: provider.info, address: provider.address}
+	changed := &boundProvider{base: c.Context(), info: provider.info, address: provider.address}
 	changed.info.IdentifierSemantics.ResolvedNames = []identifier.ResolvedName{{Name: "a", Key: "a"}, {Name: "b", Key: "b"}}
 	c.Assert(atlasschema.VerifyPlanTarget(c.Context(), connectBoundProvider(c, changed), plan, runtime), qt.IsNil)
 }

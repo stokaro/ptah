@@ -260,6 +260,11 @@ export const sidebar = [
       { slug: 'extend/overview', label: 'Overview' },
       { slug: 'extend/editor-and-shell' },
       { slug: 'extend/executable-providers' },
+      { label: 'Official providers', items: [
+        { slug: 'extend/providers/ydb' },
+        { slug: 'extend/providers/duckdb' },
+        { slug: 'extend/providers/spanner' },
+      ] },
       {
         label: 'Go integration',
         items: [

@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 95,
+  "claimed": 97,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -464,6 +464,18 @@
       "kind": "native-verb",
       "surface": "ptah project inspect",
       "claimed_by": "docs/site/src/content/docs/atlas/adoption.md"
+    },
+    {
+      "id": "cli-ptah-providers-check",
+      "kind": "native-verb",
+      "surface": "ptah providers check",
+      "claimed_by": "docs/site/src/content/docs/extend/executable-providers.md"
+    },
+    {
+      "id": "cli-ptah-providers-list",
+      "kind": "native-verb",
+      "surface": "ptah providers list",
+      "claimed_by": "docs/site/src/content/docs/extend/executable-providers.md"
     },
     {
       "id": "cli-ptah-schema-annotations",

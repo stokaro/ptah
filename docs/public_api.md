@@ -4192,6 +4192,13 @@ before applying any statement. An environment observation grants no permission
 to change it. YDB uses this to compare database-wide workload settings while
 rehearsing directory-local table changes.
 
+`dbschema.WithNativeConnections` freezes an exclusive selection of URL schemes
+and their provider-owned connectors in a context. Every database connection made
+with that context must use a registered scheme. An empty selection permits no
+connections. Unregistered schemes cannot select bundled drivers, and a failed
+provider connection never falls back to one. `NativeTargets` returns a private
+copy of the scheme-to-engine mapping without opening a session.
+
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.
 Use it when session-local state must remain consistent across cleanup, replay,

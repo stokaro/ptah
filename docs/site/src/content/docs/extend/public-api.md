@@ -756,14 +756,20 @@ The scoped connection must stay inside the callback. Ptah discards the physical
 connection afterward to prevent state leaks. `WithSessionOrCurrent` reuses an
 existing pinned session and its lifecycle, or pins a pool-backed connection.
 
-`dbschema.WithNativeConnections` selects explicit URL-scheme bindings for
-provider-owned sessions. `dbschema.NativeTargets` returns a defensive copy of
+`dbschema.WithNativeConnections` selects exclusive URL-scheme bindings for
+provider-owned sessions. Every connection under that context requires a
+registered scheme, including URLs that otherwise select embedded drivers. An
+empty selection permits no connections.
+
+`dbschema.NativeTargets` returns a defensive copy of
 the same selection for URL classification. `NativeConnector` opens each session with the requested
 database or server scope. The connector must report the selected target,
 identifier semantics, and a complete `catalog.ProviderIdentity`. That identity
 records the provider ID, version, semantic identity, executable SHA-256,
 protocol revision, and the digest of the negotiated contract. The contract
-digest comes from a versioned semantic projection, not Protobuf bytes. A failed provider open never falls back to a bundled
+digest comes from a versioned semantic projection, not Protobuf bytes.
+
+A failed provider open never falls back to a bundled
 connector. Selection belongs to the context; the application owns provider
 process lifetime. The display URL contains only the target name because the host
 cannot identify every credential field in a provider-specific address.

@@ -296,3 +296,16 @@ func TestNativeTargetsExposeTheFrozenSelectionWithoutOpening(t *testing.T) {
 	c.Assert(dbschema.NativeTargets(t.Context()), qt.HasLen, 0)
 	c.Assert(fixture.opens.Load(), qt.Equals, int64(0))
 }
+
+func TestSelectedNativeProviderRefusesUnregisteredSchemes(t *testing.T) {
+	for _, address := range []string{"sqlite:///:memory:", "postgres://user:secret@127.0.0.1/db", "unknown://secret"} {
+		t.Run(address, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := &nativeFixture{}
+			conn, err := dbschema.ConnectToDatabase(nativeContext(c, fixture), address)
+			c.Assert(conn, qt.IsNil)
+			c.Assert(err, qt.ErrorMatches, "the selected provider does not own the database URL scheme")
+			c.Assert(fixture.opens.Load(), qt.Equals, int64(0))
+		})
+	}
+}

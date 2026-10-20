@@ -30,6 +30,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0018](0018-the-session-is-the-unit-of-shared-agent-state.md) | The session is the unit of shared agent state, and Phase 9's deferred items are evaluated against it | Proposed |
 | [0019](0019-a-declared-row-set-is-artifact-content.md) | A declared row set is artifact content, and a checkpoint carries the rows its successors read | Proposed |
 | [0020](0020-row-access-policies-keep-their-engine-semantics.md) | Row-access policies keep their engine semantics | Proposed |
+| [0021](0021-provider-recognition-does-not-authorize-execution.md) | Provider recognition does not authorize execution | Proposed |
 
 ## Writing one
 
